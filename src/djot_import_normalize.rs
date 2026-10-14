@@ -3315,7 +3315,7 @@ pub(super) fn image_label_attributes(source: &str) -> String {
     image_label_attributes_with_lines(source, false)
 }
 
-fn image_label_attributes_for_losses(source: &str) -> String {
+pub(super) fn image_label_attributes_for_losses(source: &str) -> String {
     image_label_attributes_with_lines(source, true)
 }
 
@@ -4788,6 +4788,7 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
         .map(|&at| (at, RAW_FORMAT_MESSAGE))
         .collect();
     let mut raw_ignored = Vec::new();
+    let mut image_labels = Vec::new();
     if has_djot_code_layout_candidates(source) {
         let mut raw_code = Vec::new();
         let _ = close_djot_table_code(
@@ -4841,12 +4842,18 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
         let destination = if definitions.is_empty() {
             None
         } else {
-            definitions.get(&cached_reference_label(
-                reference.text,
-                reference.label,
-                reference.quote_depth,
-                &mut label_cache,
-            ))
+            let key = if image && reference.label.is_empty() {
+                let projected = projected_reference_text(reference.text, reference.quote_depth);
+                definition_label(&image_label_loss_text(&projected, &mut image_loss_cache))
+            } else {
+                cached_reference_label(
+                    reference.text,
+                    reference.label,
+                    reference.quote_depth,
+                    &mut label_cache,
+                )
+            };
+            definitions.get(&key)
         };
         match destination {
             Some(destination) if destination.is_empty() => findings.push((
@@ -5018,6 +5025,9 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
                 let image = start > 0 && bytes[start - 1] == b'!' && !is_escaped(bytes, start - 1);
                 let valid_form =
                     destinations.contains_key(&(i + 1)) || reference_starts.contains(&start);
+                if image && valid_form {
+                    image_labels.push((start, i + 1));
+                }
                 if image && valid_form || bytes.get(start + 1) == Some(&b'^') && i > start + 2 {
                     raw_ignored.push((start, i + 1));
                 }
@@ -5131,6 +5141,23 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
         offset += line.len() + 1;
     }
     findings.sort_unstable();
+    image_labels.sort_unstable();
+    let mut image_index = 0;
+    let mut image_end = 0;
+    findings.retain(|&(at, message)| {
+        while image_labels
+            .get(image_index)
+            .is_some_and(|range| range.0 < at)
+        {
+            image_end = image_end.max(image_labels[image_index].1);
+            image_index += 1;
+        }
+        !matches!(
+            message,
+            "A link with an empty destination cannot be written in Carve."
+                | "An image with an empty destination cannot be written in Carve."
+        ) || at >= image_end
+    });
     findings.dedup();
     let mut reported = HashSet::new();
     let mut diagnostics = Vec::new();

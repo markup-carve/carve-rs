@@ -187,8 +187,55 @@ fn convert_djot_document(
     } else {
         std::borrow::Cow::Borrowed(body)
     };
+    let image_attributes = if caret_references.contains("![")
+        && caret_references.contains("][]")
+        && caret_references.contains('{')
+        && caret_references.contains('\n')
+    {
+        let mask = mask_code_and_destinations(&caret_references);
+        let owners = image_line_owners(&caret_references, &mask).1;
+        let mut line = 0;
+        std::borrow::Cow::Owned(replace_image_labels(
+            &caret_references,
+            &mask,
+            |image, label, at| {
+                if !caret_references[at + image.len()..].starts_with("[]")
+                    || !label.contains('{')
+                    || !label.contains('\n')
+                {
+                    return image.to_owned();
+                }
+                while owners[line].0 <= at {
+                    line += 1;
+                }
+                let owner = owners[line];
+                let (normalized, continuations, valid) =
+                    image_alt_layout(label, owner.1, owner.2, owner.3, owner.4);
+                if !valid {
+                    return image.to_owned();
+                }
+                let text = normalize::image_label_attributes_for_losses(&normalized);
+                let mut restored = String::new();
+                for (index, value) in text.split('\n').enumerate() {
+                    if index > 0 {
+                        restored.push('\n');
+                        restored.push_str(
+                            continuations
+                                .get(index - 1)
+                                .map(String::as_str)
+                                .unwrap_or(""),
+                        );
+                    }
+                    restored.push_str(value);
+                }
+                format!("![{restored}]")
+            },
+        ))
+    } else {
+        std::borrow::Cow::Borrowed(caret_references.as_ref())
+    };
     let carried = carry_djot_attributes_across_quote_exits(
-        &carry_djot_attributes_across_div_closers(&caret_references),
+        &carry_djot_attributes_across_div_closers(&image_attributes),
     );
     let (literal_attributes, inherited) = escape_invalid_djot_attributes(&carried);
     let attributes = normalize_djot_attribute_lines(&literal_attributes);
@@ -328,6 +375,57 @@ fn convert_djot_document(
             caps[0].to_string()
         }
     });
+    let mut reference_edits = Vec::new();
+    if !definitions.is_empty() && folded.contains("][]") {
+        let mask = mask_code_and_destinations(&folded);
+        let owners = image_line_owners(&folded, &mask).1;
+        let mut line = 0;
+        replace_image_labels(&folded, &mask, |image, label, at| {
+            let end = at + image.len();
+            if !folded[end..].starts_with("[]") || label.starts_with('^') && label.len() > 1 {
+                return image.to_owned();
+            }
+            while owners[line].0 <= at {
+                line += 1;
+            }
+            let owner = owners[line];
+            let (normalized, _, valid) =
+                image_alt_layout(label, owner.1, owner.2, owner.3, owner.4);
+            if !valid {
+                return image.to_owned();
+            }
+            let text = if !normalized
+                .bytes()
+                .any(|byte| b"_*`{~^\\[]=!/<:\"'\0".contains(&byte))
+            {
+                normalized.clone()
+            } else if normalized.len() <= 256 {
+                child_text_cache
+                    .entry(format!("REF:{normalized}"))
+                    .or_insert_with(|| {
+                        djot_image_label_child_text(&normalized, &inherited, true, true, true)
+                    })
+                    .clone()
+            } else {
+                djot_image_label_child_text(&normalized, &inherited, true, true, true)
+            };
+            let key = collapsed_space.replace_all(text.trim_matches([' ', '\t', '\r', '\n']), " ");
+            if let Some(definition) = definitions.get(key.as_ref()) {
+                reference_edits.push((end + 1, definition.clone()));
+            }
+            image.to_owned()
+        });
+    }
+    reference_edits.sort_by_key(|entry| entry.0);
+    let mut resolved = String::new();
+    let mut cursor = 0;
+    for (at, name) in reference_edits {
+        resolved.push_str(&folded[cursor..at]);
+        resolved.push_str(&name);
+        cursor = at;
+    }
+    resolved.push_str(&folded[cursor..]);
+    let folded = resolved;
     let alt_prefix = djot_placeholder_prefix(&folded, "\0DJOTALT\0");
     let image_paragraph = djot_placeholder_prefix(&folded, "\0DJOTIMAGEPARAGRAPH\0");
     let mut alts = Vec::new();
@@ -387,7 +485,10 @@ fn convert_djot_document(
             .or_insert_with(|| {
                 djot_image_label_child_text(&normalized_label, &inherited, true, true, false)
             });
-        let plain = crate::render_carve::escape_image_alt(plain, in_table);
+        let plain = cached_regex!(r"\n(?:[ \t]*\n)+")
+            .unwrap()
+            .replace_all(plain, "\n");
+        let plain = crate::render_carve::escape_image_alt(&plain, in_table);
         let mut alt = String::new();
         for (index, line) in plain.split('\n').enumerate() {
             if index > 0 {
@@ -664,6 +765,77 @@ impl ImageBoundaryIndex {
     }
 }
 
+fn djot_image_empty_destinations(source: &str) -> String {
+    if !source.contains("](") {
+        return source.to_owned();
+    }
+    let mask = mask_code_and_destinations(source);
+    let ranges = djot_simple_destination_ranges(source).unwrap_or_else(|| {
+        let code_mask = mask_djot_forms_with_options(
+            source,
+            true,
+            true,
+            None,
+            &[],
+            OpaqueOptions {
+                destinations: false,
+                ..OpaqueOptions::default()
+            },
+        );
+        djot_destination_ranges(source, &code_mask)
+    });
+    let empty: HashMap<usize, usize> = ranges
+        .into_iter()
+        .filter(|&(start, end)| {
+            source[start + 1..end - 1]
+                .trim_matches([' ', '\t', '\r', '\n'])
+                .is_empty()
+        })
+        .collect();
+    if empty.is_empty() {
+        return source.to_owned();
+    }
+    let bytes = source.as_bytes();
+    let mut brackets = Vec::new();
+    let mut removed = vec![false; bytes.len()];
+    for at in 0..bytes.len() {
+        if mask.as_bytes()[at] != bytes[at] || is_escaped(bytes, at) {
+            continue;
+        }
+        if bytes[at] == b'[' {
+            brackets.push(at);
+        } else if bytes[at] == b']' {
+            let open = brackets.pop();
+            if let (Some(open), Some(&end)) = (open, empty.get(&(at + 1))) {
+                if bytes.get(open + 1) == Some(&b'^') {
+                    continue;
+                }
+                removed[open] = true;
+                removed[at..end].fill(true);
+                if open > 0 && bytes[open - 1] == b'!' && !is_escaped(bytes, open - 1) {
+                    removed[open - 1] = true;
+                }
+            }
+        }
+    }
+    let mut output = String::new();
+    let mut cursor = 0;
+    let mut at = 0;
+    while at < removed.len() {
+        if removed[at] {
+            output.push_str(&source[cursor..at]);
+            while at < removed.len() && removed[at] {
+                at += 1;
+            }
+            cursor = at;
+        } else {
+            at += 1;
+        }
+    }
+    output.push_str(&source[cursor..]);
+    output
+}
+
 fn djot_image_label_child_text(
     label: &str,
     inherited: &HashSet<String>,
@@ -686,7 +858,8 @@ fn djot_image_label_child_text(
         smart_typography: crate::SmartTypographyMode::Source,
         ..crate::Options::default()
     };
-    let normalized = normalize::image_label_attributes(label);
+    let empty_destinations = djot_image_empty_destinations(label);
+    let normalized = normalize::image_label_attributes(&empty_destinations);
     let label = normalized.as_str();
     let (protected_label, scalars, scalar_prefix) = protect_image_alt_scalars(
         label,

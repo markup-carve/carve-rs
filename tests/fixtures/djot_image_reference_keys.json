@@ -1,0 +1,290 @@
+[
+  {
+    "source": "![x [DJOTTRAILSPACE](u)0Z\nl [m](u \nv)][]\n\n[x DJOTTRAILSPACE0Z l m]: img",
+    "html": "<p><img alt=\"x DJOTTRAILSPACE0Z\nl m\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "![x [DJOTTRAILSPACE](u)0Z\r\nl [m](u \r\nv)][]\r\n\r\n[x DJOTTRAILSPACE0Z l m]: img",
+    "html": "<p><img alt=\"x DJOTTRAILSPACE0Z\nl m\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "before\n\n![x [DJOTTRAILSPACE](u)0Z\nl [m](u \nv)][]\n\n[x DJOTTRAILSPACE0Z l m]: img",
+    "html": "<p>before</p>\n<p><img alt=\"x DJOTTRAILSPACE0Z\nl m\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "before\r\n\r\n![x [DJOTTRAILSPACE](u)0Z\r\nl [m](u \r\nv)][]\r\n\r\n[x DJOTTRAILSPACE0Z l m]: img",
+    "html": "<p>before</p>\n<p><img alt=\"x DJOTTRAILSPACE0Z\nl m\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "> ![x [DJOTTRAILSPACE](u)0Z\n> l [m](u \n> v)][]\n\n[x DJOTTRAILSPACE0Z l m]: img",
+    "html": "<blockquote>\n<p><img alt=\"x DJOTTRAILSPACE0Z\nl m\" src=\"img\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "> ![x [DJOTTRAILSPACE](u)0Z\r\n> l [m](u \r\n> v)][]\r\n\r\n[x DJOTTRAILSPACE0Z l m]: img",
+    "html": "<blockquote>\n<p><img alt=\"x DJOTTRAILSPACE0Z\nl m\" src=\"img\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "before\n\n> ![x [DJOTTRAILSPACE](u)0Z\n> l [m](u \n> v)][]\n\n[x DJOTTRAILSPACE0Z l m]: img",
+    "html": "<p>before</p>\n<blockquote>\n<p><img alt=\"x DJOTTRAILSPACE0Z\nl m\" src=\"img\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "before\r\n\r\n> ![x [DJOTTRAILSPACE](u)0Z\r\n> l [m](u \r\n> v)][]\r\n\r\n[x DJOTTRAILSPACE0Z l m]: img",
+    "html": "<p>before</p>\n<blockquote>\n<p><img alt=\"x DJOTTRAILSPACE0Z\nl m\" src=\"img\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > ![x [DJOTTRAILSPACE](u)0Z\n> > l [m](u \n> > v)][]\n\n[x DJOTTRAILSPACE0Z l m]: img",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"x DJOTTRAILSPACE0Z\nl m\" src=\"img\"></p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> > ![x [DJOTTRAILSPACE](u)0Z\r\n> > l [m](u \r\n> > v)][]\r\n\r\n[x DJOTTRAILSPACE0Z l m]: img",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"x DJOTTRAILSPACE0Z\nl m\" src=\"img\"></p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "before\n\n> > ![x [DJOTTRAILSPACE](u)0Z\n> > l [m](u \n> > v)][]\n\n[x DJOTTRAILSPACE0Z l m]: img",
+    "html": "<p>before</p>\n<blockquote>\n<blockquote>\n<p><img alt=\"x DJOTTRAILSPACE0Z\nl m\" src=\"img\"></p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "before\r\n\r\n> > ![x [DJOTTRAILSPACE](u)0Z\r\n> > l [m](u \r\n> > v)][]\r\n\r\n[x DJOTTRAILSPACE0Z l m]: img",
+    "html": "<p>before</p>\n<blockquote>\n<blockquote>\n<p><img alt=\"x DJOTTRAILSPACE0Z\nl m\" src=\"img\"></p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "![a\n{.x \n.y}\nb][]\n\n[a b]: img",
+    "html": "<p><img alt=\"a\n\nb\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "![a\r\n{.x \r\n.y}\r\nb][]\r\n\r\n[a b]: img",
+    "html": "<p><img alt=\"a\n\nb\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "before\n\n![a\n{.x \n.y}\nb][]\n\n[a b]: img",
+    "html": "<p>before</p>\n<p><img alt=\"a\n\nb\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "before\r\n\r\n![a\r\n{.x \r\n.y}\r\nb][]\r\n\r\n[a b]: img",
+    "html": "<p>before</p>\n<p><img alt=\"a\n\nb\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "> ![a\n> {.x \n> .y}\n> b][]\n\n[a b]: img",
+    "html": "<blockquote>\n<p><img alt=\"a\n\nb\" src=\"img\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "> ![a\r\n> {.x \r\n> .y}\r\n> b][]\r\n\r\n[a b]: img",
+    "html": "<blockquote>\n<p><img alt=\"a\n\nb\" src=\"img\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "before\n\n> ![a\n> {.x \n> .y}\n> b][]\n\n[a b]: img",
+    "html": "<p>before</p>\n<blockquote>\n<p><img alt=\"a\n\nb\" src=\"img\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "before\r\n\r\n> ![a\r\n> {.x \r\n> .y}\r\n> b][]\r\n\r\n[a b]: img",
+    "html": "<p>before</p>\n<blockquote>\n<p><img alt=\"a\n\nb\" src=\"img\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > ![a\n> > {.x \n> > .y}\n> > b][]\n\n[a b]: img",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"a\n\nb\" src=\"img\"></p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> > ![a\r\n> > {.x \r\n> > .y}\r\n> > b][]\r\n\r\n[a b]: img",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"a\n\nb\" src=\"img\"></p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "before\n\n> > ![a\n> > {.x \n> > .y}\n> > b][]\n\n[a b]: img",
+    "html": "<p>before</p>\n<blockquote>\n<blockquote>\n<p><img alt=\"a\n\nb\" src=\"img\"></p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "before\r\n\r\n> > ![a\r\n> > {.x \r\n> > .y}\r\n> > b][]\r\n\r\n[a b]: img",
+    "html": "<p>before</p>\n<blockquote>\n<blockquote>\n<p><img alt=\"a\n\nb\" src=\"img\"></p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "![a [b](u\\\nv)\nc][]\n\n[a b c]: img",
+    "html": "<p><img alt=\"a b\nc\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "![a [b](u\\\r\nv)\r\nc][]\r\n\r\n[a b c]: img",
+    "html": "<p><img alt=\"a b\nc\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "> ![a [b](u\\\n> v)\n> c][]\n\n[a b c]: img",
+    "html": "<blockquote>\n<p><img alt=\"a b\nc\" src=\"img\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "> ![a [b](u\\\r\n> v)\r\n> c][]\r\n\r\n[a b c]: img",
+    "html": "<blockquote>\n<p><img alt=\"a b\nc\" src=\"img\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- ![a [b](u\\\n  v)\n  c][]\n\n[a b c]: img",
+    "html": "<ul>\n<li>\n<img alt=\"a b\nc\" src=\"img\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- ![a [b](u\\\r\n  v)\r\n  c][]\r\n\r\n[a b c]: img",
+    "html": "<ul>\n<li>\n<img alt=\"a b\nc\" src=\"img\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- > ![a [b](u\\\n  > v)\n  > c][]\n\n[a b c]: img",
+    "html": "<ul>\n<li>\n<blockquote>\n<img alt=\"a b\nc\" src=\"img\">\n</blockquote>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- > ![a [b](u\\\r\n  > v)\r\n  > c][]\r\n\r\n[a b c]: img",
+    "html": "<ul>\n<li>\n<blockquote>\n<img alt=\"a b\nc\" src=\"img\">\n</blockquote>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "::: box\n![a [b](u\\\nv)\nc][]\n:::\n\n[a b c]: img",
+    "html": "<div class=\"box\">\n<p><img alt=\"a b\nc\" src=\"img\"></p>\n</div>\n"
+  },
+  {
+    "source": "::: box\r\n![a [b](u\\\r\nv)\r\nc][]\r\n:::\r\n\r\n[a b c]: img",
+    "html": "<div class=\"box\">\n<p><img alt=\"a b\nc\" src=\"img\"></p>\n</div>\n"
+  },
+  {
+    "source": "![a [b]()\nc][]\n\n[a b c]: img",
+    "html": "<p><img alt=\"a b\nc\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "![a [b]()\r\nc][]\r\n\r\n[a b c]: img",
+    "html": "<p><img alt=\"a b\nc\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "> ![a [b]()\n> c][]\n\n[a b c]: img",
+    "html": "<blockquote>\n<p><img alt=\"a b\nc\" src=\"img\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "> ![a [b]()\r\n> c][]\r\n\r\n[a b c]: img",
+    "html": "<blockquote>\n<p><img alt=\"a b\nc\" src=\"img\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- ![a [b]()\n  c][]\n\n[a b c]: img",
+    "html": "<ul>\n<li>\n<img alt=\"a b\nc\" src=\"img\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- ![a [b]()\r\n  c][]\r\n\r\n[a b c]: img",
+    "html": "<ul>\n<li>\n<img alt=\"a b\nc\" src=\"img\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- > ![a [b]()\n  > c][]\n\n[a b c]: img",
+    "html": "<ul>\n<li>\n<blockquote>\n<img alt=\"a b\nc\" src=\"img\">\n</blockquote>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- > ![a [b]()\r\n  > c][]\r\n\r\n[a b c]: img",
+    "html": "<ul>\n<li>\n<blockquote>\n<img alt=\"a b\nc\" src=\"img\">\n</blockquote>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "::: box\n![a [b]()\nc][]\n:::\n\n[a b c]: img",
+    "html": "<div class=\"box\">\n<p><img alt=\"a b\nc\" src=\"img\"></p>\n</div>\n"
+  },
+  {
+    "source": "::: box\r\n![a [b]()\r\nc][]\r\n:::\r\n\r\n[a b c]: img",
+    "html": "<div class=\"box\">\n<p><img alt=\"a b\nc\" src=\"img\"></p>\n</div>\n"
+  },
+  {
+    "source": "![a\n{.x \n.y}\nb][]\n\n[a b]: img",
+    "html": "<p><img alt=\"a\n\nb\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "![a\r\n{.x \r\n.y}\r\nb][]\r\n\r\n[a b]: img",
+    "html": "<p><img alt=\"a\n\nb\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "> ![a\n> {.x \n> .y}\n> b][]\n\n[a b]: img",
+    "html": "<blockquote>\n<p><img alt=\"a\n\nb\" src=\"img\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "> ![a\r\n> {.x \r\n> .y}\r\n> b][]\r\n\r\n[a b]: img",
+    "html": "<blockquote>\n<p><img alt=\"a\n\nb\" src=\"img\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- ![a\n  {.x \n  .y}\n  b][]\n\n[a b]: img",
+    "html": "<ul>\n<li>\n<img alt=\"a\n\nb\" src=\"img\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- ![a\r\n  {.x \r\n  .y}\r\n  b][]\r\n\r\n[a b]: img",
+    "html": "<ul>\n<li>\n<img alt=\"a\n\nb\" src=\"img\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- > ![a\n  > {.x \n  > .y}\n  > b][]\n\n[a b]: img",
+    "html": "<ul>\n<li>\n<blockquote>\n<img alt=\"a\n\nb\" src=\"img\">\n</blockquote>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- > ![a\r\n  > {.x \r\n  > .y}\r\n  > b][]\r\n\r\n[a b]: img",
+    "html": "<ul>\n<li>\n<blockquote>\n<img alt=\"a\n\nb\" src=\"img\">\n</blockquote>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "::: box\n![a\n{.x \n.y}\nb][]\n:::\n\n[a b]: img",
+    "html": "<div class=\"box\">\n<p><img alt=\"a\n\nb\" src=\"img\"></p>\n</div>\n"
+  },
+  {
+    "source": "::: box\r\n![a\r\n{.x \r\n.y}\r\nb][]\r\n:::\r\n\r\n[a b]: img",
+    "html": "<div class=\"box\">\n<p><img alt=\"a\n\nb\" src=\"img\"></p>\n</div>\n"
+  },
+  {
+    "source": "![a [b](u \nv)\nc][]\n\n[a b c]: img",
+    "html": "<p><img alt=\"a b\nc\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "![a [b](u \r\nv)\r\nc][]\r\n\r\n[a b c]: img",
+    "html": "<p><img alt=\"a b\nc\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "> ![a [b](u \n> v)\n> c][]\n\n[a b c]: img",
+    "html": "<blockquote>\n<p><img alt=\"a b\nc\" src=\"img\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "> ![a [b](u \r\n> v)\r\n> c][]\r\n\r\n[a b c]: img",
+    "html": "<blockquote>\n<p><img alt=\"a b\nc\" src=\"img\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- ![a [b](u \n  v)\n  c][]\n\n[a b c]: img",
+    "html": "<ul>\n<li>\n<img alt=\"a b\nc\" src=\"img\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- ![a [b](u \r\n  v)\r\n  c][]\r\n\r\n[a b c]: img",
+    "html": "<ul>\n<li>\n<img alt=\"a b\nc\" src=\"img\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- > ![a [b](u \n  > v)\n  > c][]\n\n[a b c]: img",
+    "html": "<ul>\n<li>\n<blockquote>\n<img alt=\"a b\nc\" src=\"img\">\n</blockquote>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- > ![a [b](u \r\n  > v)\r\n  > c][]\r\n\r\n[a b c]: img",
+    "html": "<ul>\n<li>\n<blockquote>\n<img alt=\"a b\nc\" src=\"img\">\n</blockquote>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "::: box\n![a [b](u \nv)\nc][]\n:::\n\n[a b c]: img",
+    "html": "<div class=\"box\">\n<p><img alt=\"a b\nc\" src=\"img\"></p>\n</div>\n"
+  },
+  {
+    "source": "::: box\r\n![a [b](u \r\nv)\r\nc][]\r\n:::\r\n\r\n[a b c]: img",
+    "html": "<div class=\"box\">\n<p><img alt=\"a b\nc\" src=\"img\"></p>\n</div>\n"
+  },
+  {
+    "source": "![a [b]( )\nc][]\n\n[a b c]: img",
+    "html": "<p><img alt=\"a b\nc\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "![a [b]( )\r\nc][]\r\n\r\n[a b c]: img",
+    "html": "<p><img alt=\"a b\nc\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "![a [ä]( )\nc][]\n\n[a ä c]: img",
+    "html": "<p><img alt=\"a ä\nc\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "![a [ä]( )\r\nc][]\r\n\r\n[a ä c]: img",
+    "html": "<p><img alt=\"a ä\nc\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "![a [b]( )\nc][]\n\n[a b c]: img",
+    "html": "<p><img alt=\"a b\nc\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "![a [b]( )\r\nc][]\r\n\r\n[a b c]: img",
+    "html": "<p><img alt=\"a b\nc\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "![a [ä]( )\nc][]\n\n[a ä c]: img",
+    "html": "<p><img alt=\"a ä\nc\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "![a [ä]( )\r\nc][]\r\n\r\n[a ä c]: img",
+    "html": "<p><img alt=\"a ä\nc\" src=\"img\"></p>\n"
+  }
+]
