@@ -3545,6 +3545,31 @@ fn attributes(text: &str) -> Vec<(String, Vec<String>)> {
     result
 }
 
+fn literal_reference_attributes(source: &str, depth: usize) -> String {
+    let prefix = cached_regex!(r"^[ \t]*>(?:[ \t]|$)").unwrap();
+    let mut literal = String::new();
+    for (index, line) in source.split('\n').enumerate() {
+        let mut at = 0;
+        if index > 0 {
+            literal.push('\n');
+            for _ in 0..depth {
+                let Some(marker) = prefix.find(&line[at..]) else {
+                    break;
+                };
+                at += marker.end();
+            }
+        }
+        literal.push_str(&line[..at]);
+        for ch in line[at..].chars() {
+            if ch.is_ascii_punctuation() {
+                literal.push('\\');
+            }
+            literal.push(ch);
+        }
+    }
+    literal
+}
+
 struct ReferenceUse<'a> {
     start: usize,
     end: usize,
@@ -4130,7 +4155,10 @@ fn references_impl(
                 continue;
             }
             let heading_key = attributed.key.replace("\0U\0", "\0");
-            if heading_key.contains('\0') && !definitions.contains_key(&attributed.key) {
+            if heading_targets.is_some()
+                && (heading_key.contains('\0') || heading_key.contains('�'))
+                && !definitions.contains_key(&attributed.key)
+            {
                 if let Some(target) = heading_targets.and_then(|targets| targets.get(&heading_key))
                 {
                     let reference = &attributed.reference;
@@ -4143,6 +4171,30 @@ fn references_impl(
                         reference.end,
                         format!("({target})"),
                     ));
+                    continue;
+                } else {
+                    let start = attributed.reference.start;
+                    heading_edits.push((start, start, "\\".to_owned()));
+                    let label_start =
+                        attributed.reference.end - attributed.reference.label.len() - 2;
+                    heading_edits.push((label_start, label_start, "\\".to_owned()));
+                    let mut attribute_at = attributed.reference.end;
+                    while source[attribute_at..].starts_with('{') {
+                        let Some((end, wire)) = read_djot_word_attributes(source, attribute_at)
+                        else {
+                            break;
+                        };
+                        let literal = if attributes(&wire).is_empty() {
+                            String::new()
+                        } else {
+                            literal_reference_attributes(
+                                &source[attribute_at..end],
+                                attributed.reference.quote_depth,
+                            )
+                        };
+                        heading_edits.push((attribute_at, end, literal));
+                        attribute_at = end;
+                    }
                     continue;
                 }
             }
