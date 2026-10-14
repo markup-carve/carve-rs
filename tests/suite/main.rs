@@ -2150,3 +2150,6 @@ mod djot_task_bullet_separators;
 
 #[path = "../djot_empty_nested_tasks.rs"]
 mod djot_empty_nested_tasks;
+
+#[path = "../djot_generic_div_classes.rs"]
+mod djot_generic_div_classes;

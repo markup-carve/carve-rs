@@ -126,7 +126,10 @@ fn authored_metadata_and_nested_valid_fences_during_djot_migration() {
         );
     }
     let source = "::: tip Bad X\n\n::: note\nx\n:::\n:::\n";
-    assert_eq!(to_html(&carve::djot_to_carve(source)), "<p>::: tip Bad X</p>\n<aside class=\"admonition note\" aria-label=\"Note\">\n  <p>x</p>\n</aside>\n<p>:::</p>");
+    assert_eq!(
+        to_html(&carve::djot_to_carve(source)),
+        "<p>::: tip Bad X</p>\n<div class=\"note\">\n  <p>x</p>\n</div>\n<p>:::</p>"
+    );
 }
 
 #[test]
