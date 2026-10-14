@@ -18,6 +18,8 @@ mod footnote_container_paragraph_breaks;
 #[path = "../verbatim_continuation_guards.rs"]
 mod verbatim_continuation_guards;
 
+#[path = "../markdown_autolink_roundtrip.rs"]
+mod markdown_autolink_roundtrip;
 #[path = "../markdown_unicode_marker_exhaustion.rs"]
 mod markdown_unicode_marker_exhaustion;
 
@@ -222,6 +224,8 @@ mod a_continuation_marker_attaches_only_a_flush_left_block;
 mod a_continuation_rows_open_run_spans_it;
 #[path = "../a_critic_mark_pairs_inside_one_bracket_run.rs"]
 mod a_critic_mark_pairs_inside_one_bracket_run;
+#[path = "../a_cross_reference_is_opaque_to_emphasis.rs"]
+mod a_cross_reference_is_opaque_to_emphasis;
 #[path = "../a_crossing_bracket_escape_is_decided_on_the_completed_run.rs"]
 mod a_crossing_bracket_escape_is_decided_on_the_completed_run;
 #[path = "../a_crossref_label_built_from_an_expansion_degrades_to_its_target.rs"]
@@ -681,6 +685,8 @@ mod an_escalation_reaches_the_block_that_failed;
 mod an_escaped_attribute_block_escapes_what_opens_it;
 #[path = "../an_escaped_closing_pipe_is_an_escape.rs"]
 mod an_escaped_closing_pipe_is_an_escape;
+#[path = "../an_escaped_include_directive_stays_literal.rs"]
+mod an_escaped_include_directive_stays_literal;
 #[path = "../an_escaped_marker_ends_no_delimiter_run.rs"]
 mod an_escaped_marker_ends_no_delimiter_run;
 #[path = "../an_escaped_marker_leaves_the_next_run_spelled.rs"]

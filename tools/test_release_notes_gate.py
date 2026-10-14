@@ -26,7 +26,10 @@ BASH = shutil.which("bash") or "/bin/bash"
 
 def _stub(directory: Path, name: str, body: str) -> None:
     path = directory / name
-    path.write_text("#!/bin/sh\n" + body, encoding="utf-8")
+    # Drain stdin like the real tool: a stub that exits unread races its writer
+    # into SIGPIPE, and pipefail turns that into exit 141. A builtin, because
+    # PATH holds the stubs alone.
+    path.write_text("#!/bin/sh\nwhile read -r _; do :; done\n" + body, encoding="utf-8")
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
 
 
@@ -41,6 +44,7 @@ def _run(path_dir: Path, **env):
         [BASH, str(GATE), "0.0.0-test"],
         cwd=ROOT,
         env=environment,
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
     )
