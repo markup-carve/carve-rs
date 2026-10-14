@@ -89,14 +89,17 @@ jobs:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
-      - run: cargo build --locked --all-targets
+      # Builds only the timing binary; it needs nothing from the other targets.
+      - run: cargo test --locked --no-run --test perf_regressions
       # Single-threaded and alone, which is the whole point of the job.
       # `--no-fail-fast` for the reason ci.yml gives: a suite that stops at the
       # first failure cannot say how big a breakage is.
-      - run: cargo nextest run -E 'binary(perf_regressions)' --test-threads 1 --no-fail-fast
+      - run: cargo nextest run --locked --test perf_regressions --test-threads 1 --no-fail-fast
 
   # A JOB NO PULL REQUEST GATES HAS TO REACH A PERSON BY ITSELF, or this change
   # trades a minute of review time for a guard going red into an Actions tab
