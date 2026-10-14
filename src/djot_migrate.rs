@@ -3174,64 +3174,104 @@ fn definition_term(line: &str) -> Option<(usize, usize)> {
 }
 
 fn definition_term_block_boundaries(source: &str) -> String {
-    if !source.contains(':')
-        || !(source.contains('|') || source.contains("```") || source.contains("~~~"))
-    {
+    if !source.contains(':') {
         return source.to_owned();
     }
     let mask = mask_code_and_destinations(source);
+    let masks: Vec<&str> = mask.split('\n').collect();
     let boundaries: HashSet<usize> = djot_inline_boundaries_with_code_scopes(source, &mask, true)
         .into_iter()
         .collect();
-    let fence = cached_regex!(r"^(?:`{3,}|~{3,})[ \t]*=?[A-Za-z0-9_+#.-]*[ \t\r]*$").unwrap();
-    let mut column = None;
+    let item = cached_regex!(r"^(?:[ \t]*(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})\))[ \t]+)+(:)").unwrap();
+    let marker = cached_regex!(r"^(?:#{1,6}(?:[ \t]|$)|:{3,}|:(?:[ \t]|$)|[-*+](?:[ \t]|$)|(?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})[.)](?:[ \t]|$)|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})\)(?:[ \t]|$)|(?:[*-][ \t]*){3,}$)").unwrap();
+    let quote = cached_regex!(r"^(?:[ \t]*>(?:[ \t]|$))*").unwrap();
+    fn project<'a>(line: &'a str, quote: &regex::Regex) -> (&'a str, &'a str, usize, usize, usize) {
+        let prefix = quote.find(line).unwrap().as_str();
+        let body = &line[prefix.len()..];
+        let (indent, first) = leading_indent(body);
+        (
+            prefix,
+            body,
+            prefix.bytes().filter(|byte| *byte == b'>').count(),
+            indent,
+            first,
+        )
+    }
+    let mut held: Option<(usize, usize)> = None;
     let mut previous_blank = true;
+    let mut previous_block = true;
     let mut offset = 0;
-    let mut lines = Vec::new();
-    for (line, visible) in source.split('\n').zip(mask.split('\n')) {
-        let (indent, first) = leading_indent(line);
-        let blank = line.trim().is_empty();
+    let mut lines: Vec<String> = Vec::new();
+    for (index, line) in source.split('\n').enumerate() {
+        let (prefix, body, depth, indent, first) = project(line, quote);
+        let visible = &masks[index][prefix.len()..];
+        let first = item
+            .captures(body)
+            .map_or(first, |capture| capture.get(1).unwrap().start());
+        let blank = body.trim_matches([' ', '\t']).is_empty();
         if blank {
-            column = None;
+            held = None;
         }
-        if visible.as_bytes().get(first) == Some(&b':') {
-            if let Some((next, _)) = definition_term(line) {
-                if previous_blank
-                    || (column.is_none() && boundaries.contains(&offset))
-                    || column.is_some_and(|held| next <= held)
-                {
-                    column = Some(next);
+        if visible.as_bytes().get(first) == Some(&b':')
+            && cached_regex!(r"^:(?:[ \t]|$)")
+                .unwrap()
+                .is_match(&body[first..])
+            && (previous_blank
+                || previous_block
+                || held.is_some_and(|(_, owner)| owner == depth)
+                || boundaries.contains(&offset))
+        {
+            let column = body[..first].bytes().fold(0, |column, byte| {
+                if byte == b'\t' {
+                    column + 4 - column % 4
+                } else {
+                    column + 1
                 }
+            });
+            if !held.is_some_and(|(prior, owner)| depth == owner && column > prior) {
+                held = Some((column, depth));
             }
-        } else if column.is_some_and(|held| indent <= held) {
-            let pipe =
-                visible.as_bytes().get(first) == Some(&b'|') && line.trim_end().ends_with('|');
-            let code = fence.is_match(&line[first..]);
-            if pipe || code {
+        } else if held
+            .is_some_and(|(column, owner)| depth < owner || depth == owner && indent <= column)
+        {
+            let text = &body[leading_indent(body).1..];
+            let masked = &visible[leading_indent(body).1..];
+            let pipe = text.starts_with('|') && cached_regex!(r"\|[ \t]*$").unwrap().is_match(text);
+            let code = cached_regex!(r"^(?:`{3,}|~{3,})[ \t]*=?[A-Za-z0-9_+#.-]*[ \t]*$")
+                .unwrap()
+                .is_match(text);
+            if pipe || code || marker.is_match(text) {
                 let mut at = lines.len();
                 while at > 0 {
-                    let prior: &String = &lines[at - 1];
-                    let (prior_indent, first) = leading_indent(prior);
+                    let (_, prior, prior_depth, prior_indent, first) =
+                        project(&lines[at - 1], quote);
                     let attrs = if prior.as_bytes().get(first) == Some(&b'{') {
                         read_djot_word_attributes(prior, first)
                     } else {
                         None
                     };
-                    if prior_indent > indent
-                        || !attrs.is_some_and(|(end, _)| prior[end..].trim().is_empty())
+                    if prior_depth != depth
+                        || prior_indent > indent
+                        || !attrs.is_some_and(|(end, _)| {
+                            prior[end..].trim_matches([' ', '\t']).is_empty()
+                        })
                     {
                         break;
                     }
                     at -= 1;
                 }
-                lines.insert(at, String::new());
-                column = None;
-            } else if cached_regex!(r"^(?:#{1,6}(?:[ \t]|$)|>|:{3,}|[-*+][ \t]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)][ \t]|(?:[*-][ \t]*){3,}$)").unwrap().is_match(&visible[first..]) {
-                column = None;
+                lines.insert(at, format!("{prefix}{}", " ".repeat(indent)));
+                held = None;
+            } else if masked.starts_with('>') {
+                held = None;
             }
         }
         lines.push(line.to_owned());
         previous_blank = blank;
+        previous_block = blank
+            || cached_regex!(r"^:{3,}(?:[ \t]+[A-Za-z0-9_-]+)?[ \t]*$")
+                .unwrap()
+                .is_match(&visible[leading_indent(body).1..]);
         offset += line.len() + 1;
     }
     lines.join("\n")
@@ -3253,7 +3293,7 @@ fn convert_definition_lists_at(source: &str, empty_term: &str, depth: usize) -> 
     if depth >= crate::parse::MAX_NESTING_DEPTH {
         return convert_root_definition_lists(source, empty_term);
     }
-    let gate = cached_regex!(r"(?m)^[ \t]*(?:>[ \t]*)+(?:(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]+)*:(?:[ \t]|$)").unwrap();
+    let gate = cached_regex!(r"(?m)^[ \t]*(?:>[ \t]*)+(?:(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})\))[ \t]+)*:(?:[ \t]|$)").unwrap();
     if !gate.is_match(source) {
         return convert_unquoted_definition_lists(source, empty_term, depth);
     }
@@ -3295,7 +3335,7 @@ fn convert_definition_lists_at(source: &str, empty_term: &str, depth: usize) -> 
             let Some(prefix) = prefix else {
                 let text = lines[end].trim_start_matches([' ', '\t']);
                 let visible = masks[end].trim_start_matches([' ', '\t']);
-                let block = cached_regex!(r"^(?:#{1,6}(?:[ \t]|$)|>|:(?:[ \t]|$)|:{3,}|[-*+][ \t]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)][ \t]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\)[ \t]|(?:[*-][ \t]*){3,}$)").unwrap().is_match(visible)
+                let block = cached_regex!(r"^(?:#{1,6}(?:[ \t]|$)|>|:(?:[ \t]|$)|:{3,}|[-*+][ \t]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})[.)][ \t]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})\)[ \t]|(?:[*-][ \t]*){3,}$)").unwrap().is_match(visible)
                     || visible.starts_with('|') && text.ends_with('|')
                     || cached_regex!(r"^(?:`{3,}|~{3,})[ \t]*=?[A-Za-z0-9_+#.-]*[ \t]*$").unwrap().is_match(text);
                 if term_column.is_none() || text.is_empty() || block {
@@ -3308,10 +3348,10 @@ fn convert_definition_lists_at(source: &str, empty_term: &str, depth: usize) -> 
             };
             let child = &lines[end][prefix.end()..];
             let body = quoted(child).1;
-            if let Some(term) = cached_regex!(r"^([ \t]*(?:(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]+)*):(?:[ \t]|$)").unwrap().captures(body) {
+            if let Some(term) = cached_regex!(r"^([ \t]*(?:(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})\))[ \t]+)*):(?:[ \t]|$)").unwrap().captures(body) {
                 term_column = Some(term[1].len());
             } else if body.trim_matches([' ', '\t']).is_empty() || term_column.is_some_and(|column| leading_indent(body).0 <= column)
-                && cached_regex!(r"^(?:#{1,6}(?:[ \t]|$)|>|:{3,}|[-*+][ \t]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)][ \t]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\)[ \t])").unwrap().is_match(body.trim_start_matches([' ', '\t'])) {
+                && cached_regex!(r"^(?:#{1,6}(?:[ \t]|$)|>|:{3,}|[-*+][ \t]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})[.)][ \t]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})\)[ \t])").unwrap().is_match(body.trim_start_matches([' ', '\t'])) {
                 term_column = None;
             }
             nested.push(child);
@@ -3344,7 +3384,7 @@ fn convert_definition_lists_at(source: &str, empty_term: &str, depth: usize) -> 
 }
 
 fn convert_unquoted_definition_lists(source: &str, empty_term: &str, depth: usize) -> String {
-    let gate = cached_regex!(r"(?m)^[ \t]*(?:(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]+)+:").unwrap();
+    let gate = cached_regex!(r"(?m)^[ \t]*(?:(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})\))[ \t]+)+:").unwrap();
     if !gate.is_match(source) {
         return convert_root_definition_lists(source, empty_term);
     }
@@ -3354,8 +3394,8 @@ fn convert_unquoted_definition_lists(source: &str, empty_term: &str, depth: usiz
     let boundaries: HashSet<usize> = djot_inline_boundaries_with_code_scopes(source, &mask, true)
         .into_iter()
         .collect();
-    let item = cached_regex!(r"^([ \t]*(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]+)((?:(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]+)*:(?:[ \t].*|$))$").unwrap();
-    let block = cached_regex!(r"^(?:[-*+][ \t]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)][ \t]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\)[ \t]|#{1,6}(?:[ \t]|$)|>|:{3,}|[`~]{3,}|\|)").unwrap();
+    let item = cached_regex!(r"^([ \t]*(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})\))[ \t]+)((?:(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})\))[ \t]+)*:(?:[ \t].*|$))$").unwrap();
+    let block = cached_regex!(r"^(?:[-*+][ \t]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})[.)][ \t]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})\)[ \t]|#{1,6}(?:[ \t]|$)|>|:{3,}|[`~]{3,}|\|)").unwrap();
     let mut result = Vec::new();
     let mut offset = 0;
     let mut start = 0;
