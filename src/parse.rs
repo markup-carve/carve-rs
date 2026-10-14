@@ -20135,6 +20135,8 @@ fn apply_column_aligns(row: &mut TableRow, aligns: &[Option<TableAlign>]) {
 struct CellFragment {
     text: String,
     anchor: Option<(usize, isize)>,
+    marker_pos: Option<Pos>,
+    separator_pos: Option<Pos>,
     /// The continuation line of its row it came from, counted from 1.
     line: usize,
     /// Rows down from the receiving cell to that row (CARVE-P12-069).
@@ -20280,6 +20282,8 @@ fn join_marker_continuations(
             // A row below the cell's own lies outside the cell's placed span.
             if marker.0 != origin.0 {
                 fragment.anchor = None;
+                fragment.marker_pos = None;
+                fragment.separator_pos = None;
             }
         }
         row_inputs[origin.0][origin.1].extra.extend(moved);
@@ -20411,6 +20415,17 @@ fn collect_continuation_fragments(
     let mut open_len = row.open_len;
     let mut open_run_at = row.open_run_at;
     for (line_index, (line, base)) in conts.iter().enumerate() {
+        let marker_pos = base.and_then(|(line_no, stripped)| {
+            line.find('+').map(|at| Pos {
+                start_line: line_no,
+                end_line: line_no,
+                start_column: document_column(stripped, line[..at].chars().count()),
+                end_column: document_column(stripped, line[..at].chars().count() + 1),
+                start_offset: 0,
+                end_offset: 0,
+                file: None,
+            })
+        });
         let mut content = trim_ascii(line);
         if let Some(stripped) = content.strip_prefix('+') {
             content = stripped;
@@ -20440,9 +20455,24 @@ fn collect_continuation_fragments(
                 _ => None,
             };
             if let Some(slot) = fragments.get_mut(idx) {
+                let separator_pos = if idx > 0 {
+                    base.zip(content_off).map(|((line_no, stripped), off)| Pos {
+                        start_line: line_no,
+                        end_line: line_no,
+                        start_column: document_column(stripped, off + cell.start - 1),
+                        end_column: document_column(stripped, off + cell.start),
+                        start_offset: 0,
+                        end_offset: 0,
+                        file: None,
+                    })
+                } else {
+                    None
+                };
                 slot.push(CellFragment {
                     text: text.to_string(),
                     anchor,
+                    marker_pos: marker_pos.clone(),
+                    separator_pos,
                     line: line_index + 1,
                     row: 0,
                     col: 0,
@@ -20646,15 +20676,21 @@ fn parse_cell_content(
     let mut lines = vec![base];
     let mut breaks = Vec::new();
     let mut wraps = Vec::new();
+    let mut previous_line = None;
     for fragment in extra {
         if !text.is_empty() || fragment.line > 1 {
+            let marker_pos = if previous_line == Some(fragment.line) {
+                fragment.separator_pos.clone()
+            } else {
+                fragment.marker_pos.clone()
+            };
             wraps.push((
                 text.len(),
                 CellWrap {
                     line: fragment.line,
                     row: (fragment.row > 0).then_some(fragment.row),
                     col: (fragment.col > 0).then_some(fragment.col),
-                    pos: None,
+                    pos: marker_pos,
                 },
             ));
             // The joiner is the LAST character of the segment before it, which
@@ -20669,6 +20705,7 @@ fn parse_cell_content(
         breaks.push(text.len());
         text.push_str(&fragment.text);
         lines.push(fragment.anchor);
+        previous_line = Some(fragment.line);
     }
     let leading_wrap = wraps
         .first()

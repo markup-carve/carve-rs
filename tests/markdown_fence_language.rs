@@ -42,3 +42,12 @@ fn fence_languages_survive_import() {
         assert_eq!(carve::to_html(&converted).trim(), expected, "{source}");
     }
 }
+
+#[test]
+fn code_fence_after_paragraph_in_tight_hosted_container() {
+    let source = "- a\n  ::: box\n     ```\n     code\n     ```\n  :::\ntail\n";
+    assert_eq!(
+        carve::to_markdown(source),
+        "- a\n  ```\n  code\n  ```\n\ntail\n"
+    );
+}

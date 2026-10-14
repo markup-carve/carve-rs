@@ -50,6 +50,8 @@ mod normalize;
 
 use std::collections::{HashMap, HashSet};
 
+const DJOT_LINE_SPACING: [char; 3] = [' ', '\t', '\r'];
+
 use crate::ast::{BlockNode, FigureTarget};
 
 fn djot_placeholder_prefix(source: &str, base: &str) -> String {
@@ -636,6 +638,17 @@ fn djot_image_label_child_text(
     nul_shielded: bool,
     preserve_source_nuls: bool,
 ) -> String {
+    if let Some(inner) = simple_nested_image_label(label) {
+        return djot_image_label_child_text(
+            inner,
+            inherited,
+            omit_quote_delimiters,
+            nul_shielded,
+            preserve_source_nuls,
+        );
+    }
+    #[cfg(test)]
+    IMAGE_LABEL_FULL_PARSES.with(|count| count.set(count.get() + 1));
     let options = crate::Options {
         smart_typography: crate::SmartTypographyMode::Source,
         ..crate::Options::default()
@@ -690,6 +703,51 @@ fn djot_image_label_child_text(
             })
     };
     plain.into_owned()
+}
+
+// A chain of images whose entire label is another image has the innermost
+// label as its plain text. Reading each enclosing label independently would
+// reparse the same suffix at every depth.
+fn simple_nested_image_label(label: &str) -> Option<&str> {
+    let bytes = label.as_bytes();
+    let mut start = 0;
+    while bytes.get(start..start + 2) == Some(b"![") {
+        start += 2;
+    }
+    if start == 0 {
+        return None;
+    }
+    let mut end = bytes.len();
+    let mut count = 0;
+    while end > start && bytes[end - 1] == b')' {
+        let open = label[..end].rfind("](")?;
+        if !bytes[open + 2..end - 1]
+            .iter()
+            .all(|b| b.is_ascii_alphanumeric() || b"/._-".contains(b))
+        {
+            return None;
+        }
+        end = open;
+        count += 1;
+    }
+    if count != start / 2 || start >= end {
+        return None;
+    }
+    let mut at = start;
+    while at < end {
+        match bytes[at] {
+            b'\\' if at + 1 < end && !matches!(bytes[at + 1], b'\n' | b'\r') => at += 2,
+            b'[' | b']' | b'\\' => return None,
+            _ => at += 1,
+        }
+    }
+    Some(&label[start..end])
+}
+
+#[cfg(test)]
+thread_local! {
+    #[allow(clippy::missing_const_for_thread_local)]
+    static IMAGE_LABEL_FULL_PARSES: std::cell::Cell<usize> = std::cell::Cell::new(0);
 }
 
 fn image_quote_layout(source: &str, omit_quote_delimiters: bool) -> String {
@@ -1984,7 +2042,7 @@ fn scan_comment_paragraph(source: &str, start: usize, context: ParagraphContext)
             return false;
         }
         if raw[emphasis::structural_prefix_end(raw)..]
-            .trim()
+            .trim_matches(DJOT_LINE_SPACING)
             .is_empty()
         {
             if lines.is_empty() {
@@ -2003,7 +2061,7 @@ fn scan_comment_paragraph(source: &str, start: usize, context: ParagraphContext)
                     }
                     break;
                 }
-                if parent.trim().is_empty() {
+                if parent.trim_matches(DJOT_LINE_SPACING).is_empty() {
                     break;
                 }
                 parent_end = parent_from.checked_sub(1);
@@ -2085,7 +2143,7 @@ fn scan_comment_paragraph(source: &str, start: usize, context: ParagraphContext)
             if prefix.len() <= body_at {
                 return false;
             }
-            kind = if body[1..].trim().is_empty() {
+            kind = if body[1..].trim_matches(DJOT_LINE_SPACING).is_empty() {
                 None
             } else {
                 Some("paragraph")
@@ -2096,7 +2154,7 @@ fn scan_comment_paragraph(source: &str, start: usize, context: ParagraphContext)
             if prefix.len() < body_at + 2 {
                 return false;
             }
-            kind = if note[1].trim().is_empty() {
+            kind = if note[1].trim_matches(DJOT_LINE_SPACING).is_empty() {
                 None
             } else {
                 Some("paragraph")
@@ -3618,7 +3676,7 @@ fn consume_orphan_djot_attributes(source: &str) -> (String, OrphanAttributeSpans
         let line = source_lines[index];
         let first = quote_prefix.find(line).unwrap().end();
         let depth = line[..first].bytes().filter(|&byte| byte == b'>').count();
-        if line[first..].trim().is_empty() {
+        if line[first..].trim_matches(DJOT_LINE_SPACING).is_empty() {
             if depth != 0 {
                 follows_blank = true;
                 next_depth = Some(depth);
@@ -3628,7 +3686,8 @@ fn consume_orphan_djot_attributes(source: &str) -> (String, OrphanAttributeSpans
         let visible = masked_lines[index].as_bytes().get(first);
         let attribute = matches!(visible, Some(b'{' | 0))
             && pattern.find(line).is_some_and(|attrs| {
-                attrs.start() == first && attrs.end() == line.trim_end().len()
+                attrs.start() == first
+                    && attrs.end() == line.trim_end_matches(DJOT_LINE_SPACING).len()
             });
         if attribute {
             if next_depth.is_some_and(|next| next != depth) {
@@ -3653,9 +3712,9 @@ fn consume_orphan_djot_attributes(source: &str) -> (String, OrphanAttributeSpans
             .unwrap();
     for (index, line) in source_lines.iter().enumerate() {
         let first = quote_prefix.find(line).unwrap().end();
-        let body = line[first..].trim_end();
+        let body = line[first..].trim_end_matches(DJOT_LINE_SPACING);
         let depth = line[..first].bytes().filter(|&byte| byte == b'>').count();
-        if body.trim().is_empty() && depth <= previous_depth {
+        if body.trim_matches(DJOT_LINE_SPACING).is_empty() && depth <= previous_depth {
             previous_depth = previous_depth.min(depth);
             continue;
         }
@@ -3682,7 +3741,7 @@ fn consume_orphan_djot_attributes(source: &str) -> (String, OrphanAttributeSpans
             depth < owner_depth || depth == owner_depth && first < start
         });
         let can_open_owner = index == 0
-            || previous_body.trim().is_empty()
+            || previous_body.trim_matches(DJOT_LINE_SPACING).is_empty()
             || owner_outdent
             || index > 0 && block_attributes[index - 1];
         let row_end = line.trim_end().len().saturating_sub(1);
@@ -3701,10 +3760,11 @@ fn consume_orphan_djot_attributes(source: &str) -> (String, OrphanAttributeSpans
             || cached_regex!(r"^(?:`{3,}|~{3,})[ \t]*=?[A-Za-z0-9_+#.-]*[ \t]*$")
                 .unwrap()
                 .is_match(body);
-        if previous_body.trim().is_empty()
-            || pattern
-                .find(line)
-                .is_some_and(|attrs| attrs.start() == first && attrs.end() == line.trim_end().len())
+        if previous_body.trim_matches(DJOT_LINE_SPACING).is_empty()
+            || pattern.find(line).is_some_and(|attrs| {
+                attrs.start() == first
+                    && attrs.end() == line.trim_end_matches(DJOT_LINE_SPACING).len()
+            })
             || closes_owner
             || owner_outdent && table_rows.get(index.wrapping_sub(1)) == Some(&true)
         {
@@ -3726,9 +3786,10 @@ fn consume_orphan_djot_attributes(source: &str) -> (String, OrphanAttributeSpans
             }
         }
         if !matches!(masked_lines[index].as_bytes().get(first), Some(b'{' | 0))
-            || !pattern
-                .find(line)
-                .is_some_and(|attrs| attrs.start() == first && attrs.end() == line.trim_end().len())
+            || !pattern.find(line).is_some_and(|attrs| {
+                attrs.start() == first
+                    && attrs.end() == line.trim_end_matches(DJOT_LINE_SPACING).len()
+            })
         {
             continue;
         }
@@ -3745,7 +3806,7 @@ fn consume_orphan_djot_attributes(source: &str) -> (String, OrphanAttributeSpans
                 && (note_at.is_some() || list_marker.is_match(&previous[..previous_start]));
         let previous = quote_prefix.replace(previous, "");
         block_attributes[index] = index == 0
-            || previous.trim().is_empty()
+            || previous.trim_matches(DJOT_LINE_SPACING).is_empty()
             || outdented
             || owner_outdent
             || (index > 0 && block_attributes[index - 1])
@@ -3758,9 +3819,12 @@ fn consume_orphan_djot_attributes(source: &str) -> (String, OrphanAttributeSpans
         let first = quote_prefix.find(line).unwrap().end();
         let attribute = matches!(masked_lines[index].as_bytes().get(first), Some(b'{' | 0))
             && pattern.find(line).is_some_and(|attrs| {
-                attrs.start() == first && attrs.end() == line.trim_end().len()
+                attrs.start() == first
+                    && attrs.end() == line.trim_end_matches(DJOT_LINE_SPACING).len()
             });
-        if quote_scope_changes[index] || !line[first..].trim().is_empty() && !attribute {
+        if quote_scope_changes[index]
+            || !line[first..].trim_matches(DJOT_LINE_SPACING).is_empty() && !attribute
+        {
             following = Some(index);
         }
     }
@@ -3779,7 +3843,9 @@ fn consume_orphan_djot_attributes(source: &str) -> (String, OrphanAttributeSpans
             let at = attrs.start();
             if at < cursor
                 || (mask[at] != b'{'
-                    && !(dangling[index] && at == first && attrs.end() == line.trim_end().len()))
+                    && !(dangling[index]
+                        && at == first
+                        && attrs.end() == line.trim_end_matches(DJOT_LINE_SPACING).len()))
                 || is_escaped(bytes, at)
             {
                 continue;
@@ -3794,7 +3860,8 @@ fn consume_orphan_djot_attributes(source: &str) -> (String, OrphanAttributeSpans
             if marker_only {
                 continue;
             }
-            let alone = at == first && attrs.end() == line.trim_end().len();
+            let alone =
+                at == first && attrs.end() == line.trim_end_matches(DJOT_LINE_SPACING).len();
             let block = block_attributes[index];
             if alone && block {
                 if !dangling[index] {
@@ -3842,7 +3909,7 @@ fn consume_orphan_djot_attributes(source: &str) -> (String, OrphanAttributeSpans
         if !drop_line {
             lines.push(output);
         } else if line[..first].contains('>') {
-            lines.push(line[..first].trim_end().to_owned());
+            lines.push(line[..first].trim_end_matches(DJOT_LINE_SPACING).to_owned());
         }
     }
     (lines.join("\n"), spans)
@@ -4811,6 +4878,20 @@ fn mask_djot_opaque_with_comments(
     source: &str,
     options: OpaqueOptions<'_>,
 ) -> (Vec<u8>, Vec<(usize, usize)>) {
+    mask_djot_opaque_with_comments_and_code(source, options, None)
+}
+
+struct DjotCodeSpan {
+    start: usize,
+    end: usize,
+    closed: bool,
+}
+
+fn mask_djot_opaque_with_comments_and_code(
+    source: &str,
+    options: OpaqueOptions,
+    mut code_spans: Option<&mut Vec<DjotCodeSpan>>,
+) -> (Vec<u8>, Vec<(usize, usize)>) {
     let reference_boundary =
         cached_regex!(r"^(?:#{1,6} |:{3,}|[`~]{3,}|\{|\[[^\]]+\]:|(?:[*-][ \t]*){3,}$)").unwrap();
     let paragraph_break = cached_regex!(r"\n[ \t]*(?:>[ \t]*)*\n").unwrap();
@@ -4889,7 +4970,8 @@ fn mask_djot_opaque_with_comments(
         breaks.sort_unstable();
     }
     let mut boundary = 0;
-    let mut tick_closers: Option<HashMap<usize, usize>> = None;
+    let mut tick_closers: Option<HashMap<usize, usize>> =
+        code_spans.as_ref().map(|_| djot_backtick_closers(bytes));
     let mut brackets = Vec::new();
     let mut at = 0;
     while at < bytes.len() {
@@ -4969,6 +5051,25 @@ fn mask_djot_opaque_with_comments(
             continue;
         }
         let width = bytes[at..].iter().take_while(|b| **b == b'`').count();
+        if let Some(spans) = code_spans.as_mut() {
+            let close = tick_closers
+                .as_ref()
+                .and_then(|closers| closers.get(&at))
+                .copied()
+                .filter(|close| close + width <= paragraph_end);
+            let end = close.map_or(paragraph_end, |close| close + width);
+            let math = at > 0 && bytes[at - 1] == b'$' && !is_escaped(bytes, at - 1);
+            if !math
+                && !raw_formats.contains_key(&end)
+                && (close.is_some() || options.unclosed_code)
+            {
+                spans.push(DjotCodeSpan {
+                    start: at,
+                    end,
+                    closed: close.is_some(),
+                });
+            }
+        }
         let close = if let Some(closers) = &tick_closers {
             closers
                 .get(&at)
@@ -5648,6 +5749,16 @@ mod tests {
         ] {
             assert_eq!(super::djot_to_carve(source), expected, "{source:?}");
         }
+    }
+
+    #[test]
+    fn nested_image_label_import_has_bounded_work() {
+        let depth = 1600;
+        let source = format!("{}x{}", "![".repeat(depth), "](u)".repeat(depth));
+        super::IMAGE_LABEL_FULL_PARSES.with(|count| count.set(0));
+        assert_eq!(super::djot_to_carve(&source), "{%%}![x](u)");
+        super::IMAGE_LABEL_FULL_PARSES.with(|count| assert!(count.get() <= 2));
+        assert!(super::simple_nested_image_label("![a](u) ![b](v)").is_none());
     }
     use super::*;
 
@@ -7604,11 +7715,14 @@ fn normalize_djot_links(source: &str, inherited: &HashSet<String>) -> String {
                 crate::render_plain_text_with_options(&document, &options).unwrap_or_default();
             let plain = alt_end.replace(&plain, "");
             label = plain[8..]
-                .replace('\\', "\\\\")
-                .replace('[', "\\[")
-                .replace(']', "\\]")
-                .replace('"', "\\\"")
-                .replace('\'', "\\'")
+                .chars()
+                .fold(String::new(), |mut escaped, ch| {
+                    if ch.is_ascii_punctuation() {
+                        escaped.push('\\');
+                    }
+                    escaped.push(ch);
+                    escaped
+                })
                 .into_bytes();
         }
         let mut target = String::new();
@@ -7773,7 +7887,7 @@ fn carry_djot_attributes_across_div_closers(source: &str) -> std::borrow::Cow<'_
         if follows_block
             && depth == previous_depth
             && candidate.as_ref().is_some_and(|(end, value)| {
-                *end == content.trim_end_matches([' ', '\t', '\r']).len() && value == "{}"
+                *end == content.trim_end_matches(DJOT_LINE_SPACING).len() && value == "{}"
             })
         {
             offset += line.len() + 1;
@@ -7781,10 +7895,10 @@ fn carry_djot_attributes_across_div_closers(source: &str) -> std::borrow::Cow<'_
         }
         let whole = visible
             && candidate
-                .is_some_and(|(end, _)| end == content.trim_end_matches([' ', '\t', '\r']).len());
+                .is_some_and(|(end, _)| end == content.trim_end_matches(DJOT_LINE_SPACING).len());
         if crossed
             && !closers.contains_key(&offset)
-            && !content.trim_matches([' ', '\t', '\r']).is_empty()
+            && !content.trim_matches(DJOT_LINE_SPACING).is_empty()
             && (!whole || depth != previous_depth)
         {
             let quote_prefix = cached_regex!(r"^(?:[ \t]*>(?:[ \t]|$))*")
@@ -7828,20 +7942,20 @@ fn carry_djot_attributes_across_div_closers(source: &str) -> std::borrow::Cow<'_
             if !crossed && depth > previous_depth {
                 pending.clear();
             }
-            pending.push((index, content.trim_end_matches([' ', '\t', '\r'])));
+            pending.push((index, content.trim_end_matches(DJOT_LINE_SPACING)));
             if depth > previous_depth {
                 residues.insert(index, prefix.trim_end());
             }
         } else if closers.contains_key(&offset) {
             crossed |= !pending.is_empty();
             closed_owner = owners.get(&offset).copied();
-        } else if !content.trim_matches([' ', '\t', '\r']).is_empty() {
+        } else if !content.trim_matches(DJOT_LINE_SPACING).is_empty() {
             pending.clear();
         }
         if !whole {
-            previous = content.trim_matches([' ', '\t', '\r']);
+            previous = content.trim_matches(DJOT_LINE_SPACING);
         }
-        previous_depth = if content.trim_matches([' ', '\t', '\r']).is_empty() {
+        previous_depth = if content.trim_matches(DJOT_LINE_SPACING).is_empty() {
             previous_depth.min(depth)
         } else {
             depth
@@ -7893,10 +8007,10 @@ fn carry_djot_attributes_across_quote_exits(source: &str) -> String {
         let indent = body.len() - body.trim_start_matches([' ', '\t']).len();
         let attributes = masks[n].as_bytes().get(prefix + indent) == Some(&b'{')
             && read_djot_word_attributes(body, indent)
-                .is_some_and(|(end, _)| end == body.trim_end().len());
+                .is_some_and(|(end, _)| end == body.trim_end_matches(DJOT_LINE_SPACING).len());
         let mut continued = false;
         let mut list_owned = false;
-        if !body.trim().is_empty() {
+        if !body.trim_matches(DJOT_LINE_SPACING).is_empty() {
             let held = columns.entry(depth).or_default();
             if marker.is_match(&body[indent..]) {
                 while held.last().is_some_and(|column| *column >= indent) {
@@ -7920,7 +8034,7 @@ fn carry_djot_attributes_across_quote_exits(source: &str) -> String {
             attributes,
             continued,
             list_owned,
-            body.trim().is_empty(),
+            body.trim_matches(DJOT_LINE_SPACING).is_empty(),
             depth > previous_depth,
         ));
         previous_depth = depth;
@@ -7978,7 +8092,9 @@ fn carry_djot_attributes_across_quote_exits(source: &str) -> String {
                         .entry(target)
                         .or_default()
                         .push(format!("{target_prefix}{}", &lines[n][prefix + indent..]));
-                    lines[n] = lines[n][..prefix].trim_end().to_owned();
+                    lines[n] = lines[n][..prefix]
+                        .trim_end_matches(DJOT_LINE_SPACING)
+                        .to_owned();
                 } else if depth <= destination {
                     following = Some(n);
                 }

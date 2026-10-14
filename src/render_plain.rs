@@ -129,7 +129,11 @@ fn render_plain_text_inner(
     SUPPRESS_AUTOMATIC_ABBREVIATION.with(|flag| flag.set(false));
     REFERENCED_LINKS
         .with(|set| *set.borrow_mut() = crate::render_markdown::referenced_link_labels(doc));
-    let out = render_blocks(&doc.children, 0);
+    let out: String =
+        crate::render_text::blocks_with_link_definitions_in_source_order(&doc.children)
+            .into_iter()
+            .map(|block| render_block(block, 0))
+            .collect();
     let footnotes = render_footnote_defs(doc);
     normalize(&format!("{out}{footnotes}"))
 }

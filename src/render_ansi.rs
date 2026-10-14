@@ -107,7 +107,11 @@ fn render_ansi_inner(
         crossref_index: crate::parse::crossref_index_for_document(doc, id_opts),
         link_depth: 0,
     };
-    let out = render_blocks(&doc.children, &mut ctx, 0);
+    let out: String =
+        crate::render_text::blocks_with_link_definitions_in_source_order(&doc.children)
+            .into_iter()
+            .map(|block| render_block(block, &mut ctx, 0))
+            .collect();
     let footnotes = render_footnote_defs(doc, &mut ctx);
     normalize(&format!("{out}{footnotes}"))
 }
@@ -176,11 +180,18 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
             {
                 return String::new();
             }
+            let mut emitted = definition.clone();
+            emitted.href = crate::escape::sanitize_destination(
+                &definition.href,
+                definition.pos.as_ref(),
+                crate::render_loss::DeniedSink::Destination,
+            )
+            .into_owned();
             format!(
                 "{}\n\n",
                 style(
                     &strip_terminal_controls(
-                        &crate::render_carve::render_link_reference_definition(definition)
+                        &crate::render_carve::render_link_reference_definition(&emitted)
                     ),
                     DIM
                 )

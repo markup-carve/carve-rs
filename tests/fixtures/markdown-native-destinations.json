@@ -1,0 +1,518 @@
+[
+  {
+    "source": "[a](/x()",
+    "html": "<p>[a](/x()</p>\n"
+  },
+  {
+    "source": "[a](/x( \"t\")",
+    "html": "<p><a href=\"/x(\" title=\"t\">a</a></p>\n"
+  },
+  {
+    "source": "[a](/x( 't')",
+    "html": "<p><a href=\"/x(\" title=\"t\">a</a></p>\n"
+  },
+  {
+    "source": "[a](/x( (t))",
+    "html": "<p><a href=\"/x(\" title=\"t\">a</a></p>\n"
+  },
+  {
+    "source": "[a](/x(()",
+    "html": "<p>[a](/x(()</p>\n"
+  },
+  {
+    "source": "[a](/x(( \"t\")",
+    "html": "<p><a href=\"/x((\" title=\"t\">a</a></p>\n"
+  },
+  {
+    "source": "[a](/x(( 't')",
+    "html": "<p><a href=\"/x((\" title=\"t\">a</a></p>\n"
+  },
+  {
+    "source": "[a](/x(( (t))",
+    "html": "<p><a href=\"/x((\" title=\"t\">a</a></p>\n"
+  },
+  {
+    "source": "[a](/x[a](/u)",
+    "html": "<p>[a](/x<a href=\"/u\">a</a></p>\n"
+  },
+  {
+    "source": "[a](/x[a](/u \"t\")",
+    "html": "<p><a href=\"/x%5Ba%5D(/u\" title=\"t\">a</a></p>\n"
+  },
+  {
+    "source": "[a](/x[a](/u 't')",
+    "html": "<p><a href=\"/x%5Ba%5D(/u\" title=\"t\">a</a></p>\n"
+  },
+  {
+    "source": "[a](/x[a](/u (t))",
+    "html": "<p><a href=\"/x%5Ba%5D(/u\" title=\"t\">a</a></p>\n"
+  },
+  {
+    "source": "[a](/x(a))",
+    "html": "<p><a href=\"/x(a)\">a</a></p>\n"
+  },
+  {
+    "source": "[a](/x(a) \"t\")",
+    "html": "<p><a href=\"/x(a)\" title=\"t\">a</a></p>\n"
+  },
+  {
+    "source": "[a](/x(a) 't')",
+    "html": "<p><a href=\"/x(a)\" title=\"t\">a</a></p>\n"
+  },
+  {
+    "source": "[a](/x(a) (t))",
+    "html": "<p><a href=\"/x(a)\" title=\"t\">a</a></p>\n"
+  },
+  {
+    "source": "[a](/x\\()",
+    "html": "<p><a href=\"/x(\">a</a></p>\n"
+  },
+  {
+    "source": "[a](/x\\( \"t\")",
+    "html": "<p><a href=\"/x(\" title=\"t\">a</a></p>\n"
+  },
+  {
+    "source": "[a](/x\\( 't')",
+    "html": "<p><a href=\"/x(\" title=\"t\">a</a></p>\n"
+  },
+  {
+    "source": "[a](/x\\( (t))",
+    "html": "<p><a href=\"/x(\" title=\"t\">a</a></p>\n"
+  },
+  {
+    "source": "[a](/x\\ )",
+    "html": "<p><a href=\"/x%5C\">a</a></p>\n"
+  },
+  {
+    "source": "[a](/x\\  \"t\")",
+    "html": "<p><a href=\"/x%5C\" title=\"t\">a</a></p>\n"
+  },
+  {
+    "source": "[a](/x\\  't')",
+    "html": "<p><a href=\"/x%5C\" title=\"t\">a</a></p>\n"
+  },
+  {
+    "source": "[a](/x\\  (t))",
+    "html": "<p><a href=\"/x%5C\" title=\"t\">a</a></p>\n"
+  },
+  {
+    "source": "![a](/x()",
+    "html": "<p>![a](/x()</p>\n"
+  },
+  {
+    "source": "![a](/x( \"t\")",
+    "html": "<p><img src=\"/x(\" alt=\"a\" title=\"t\" /></p>\n"
+  },
+  {
+    "source": "![a](/x( 't')",
+    "html": "<p><img src=\"/x(\" alt=\"a\" title=\"t\" /></p>\n"
+  },
+  {
+    "source": "![a](/x( (t))",
+    "html": "<p><img src=\"/x(\" alt=\"a\" title=\"t\" /></p>\n"
+  },
+  {
+    "source": "![a](/x(()",
+    "html": "<p>![a](/x(()</p>\n"
+  },
+  {
+    "source": "![a](/x(( \"t\")",
+    "html": "<p><img src=\"/x((\" alt=\"a\" title=\"t\" /></p>\n"
+  },
+  {
+    "source": "![a](/x(( 't')",
+    "html": "<p><img src=\"/x((\" alt=\"a\" title=\"t\" /></p>\n"
+  },
+  {
+    "source": "![a](/x(( (t))",
+    "html": "<p><img src=\"/x((\" alt=\"a\" title=\"t\" /></p>\n"
+  },
+  {
+    "source": "![a](/x[a](/u)",
+    "html": "<p>![a](/x<a href=\"/u\">a</a></p>\n"
+  },
+  {
+    "source": "![a](/x[a](/u \"t\")",
+    "html": "<p><img src=\"/x%5Ba%5D(/u\" alt=\"a\" title=\"t\" /></p>\n"
+  },
+  {
+    "source": "![a](/x[a](/u 't')",
+    "html": "<p><img src=\"/x%5Ba%5D(/u\" alt=\"a\" title=\"t\" /></p>\n"
+  },
+  {
+    "source": "![a](/x[a](/u (t))",
+    "html": "<p><img src=\"/x%5Ba%5D(/u\" alt=\"a\" title=\"t\" /></p>\n"
+  },
+  {
+    "source": "![a](/x(a))",
+    "html": "<p><img src=\"/x(a)\" alt=\"a\" /></p>\n"
+  },
+  {
+    "source": "![a](/x(a) \"t\")",
+    "html": "<p><img src=\"/x(a)\" alt=\"a\" title=\"t\" /></p>\n"
+  },
+  {
+    "source": "![a](/x(a) 't')",
+    "html": "<p><img src=\"/x(a)\" alt=\"a\" title=\"t\" /></p>\n"
+  },
+  {
+    "source": "![a](/x(a) (t))",
+    "html": "<p><img src=\"/x(a)\" alt=\"a\" title=\"t\" /></p>\n"
+  },
+  {
+    "source": "![a](/x\\()",
+    "html": "<p><img src=\"/x(\" alt=\"a\" /></p>\n"
+  },
+  {
+    "source": "![a](/x\\( \"t\")",
+    "html": "<p><img src=\"/x(\" alt=\"a\" title=\"t\" /></p>\n"
+  },
+  {
+    "source": "![a](/x\\( 't')",
+    "html": "<p><img src=\"/x(\" alt=\"a\" title=\"t\" /></p>\n"
+  },
+  {
+    "source": "![a](/x\\( (t))",
+    "html": "<p><img src=\"/x(\" alt=\"a\" title=\"t\" /></p>\n"
+  },
+  {
+    "source": "![a](/x\\ )",
+    "html": "<p><img src=\"/x%5C\" alt=\"a\" /></p>\n"
+  },
+  {
+    "source": "![a](/x\\  \"t\")",
+    "html": "<p><img src=\"/x%5C\" alt=\"a\" title=\"t\" /></p>\n"
+  },
+  {
+    "source": "![a](/x\\  't')",
+    "html": "<p><img src=\"/x%5C\" alt=\"a\" title=\"t\" /></p>\n"
+  },
+  {
+    "source": "![a](/x\\  (t))",
+    "html": "<p><img src=\"/x%5C\" alt=\"a\" title=\"t\" /></p>\n"
+  },
+  {
+    "source": "(see [docs](/guide), \"Setup\")",
+    "html": "<p>(see <a href=\"/guide\">docs</a>, &quot;Setup&quot;)</p>\n"
+  },
+  {
+    "source": "[a](/x)[b](/y \"t\")",
+    "html": "<p><a href=\"/x\">a</a><a href=\"/y\" title=\"t\">b</a></p>\n"
+  },
+  {
+    "source": "[a](/x(y)) \"t\")",
+    "html": "<p><a href=\"/x(y)\">a</a> &quot;t&quot;)</p>\n"
+  },
+  {
+    "source": "![a](/x), \"t\")",
+    "html": "<p><img src=\"/x\" alt=\"a\" />, &quot;t&quot;)</p>\n"
+  },
+  {
+    "source": "[a](/x( )",
+    "html": "<p><a href=\"/x(\">a</a></p>\n"
+  },
+  {
+    "source": "[a](/x(\n)",
+    "html": "<p><a href=\"/x(\">a</a></p>\n"
+  },
+  {
+    "source": "![a](/x( )",
+    "html": "<p><img src=\"/x(\" alt=\"a\" /></p>\n"
+  },
+  {
+    "source": "[a](/x\\ \"t\")",
+    "html": "<p><a href=\"/x%5C\" title=\"t\">a</a></p>\n"
+  },
+  {
+    "source": "[a](/x(a(b)c) \"t\")",
+    "html": "<p><a href=\"/x(a(b)c)\" title=\"t\">a</a></p>\n"
+  },
+  {
+    "source": "[a](/x((a) \"t\")",
+    "html": "<p><a href=\"/x((a)\" title=\"t\">a</a></p>\n"
+  },
+  {
+    "source": "[a](/x)[b](/y( \"t\")",
+    "html": "<p><a href=\"/x\">a</a><a href=\"/y(\" title=\"t\">b</a></p>\n"
+  },
+  {
+    "source": "![a [b](/x( \"t\")](/u)",
+    "html": "<p><img src=\"/u\" alt=\"a b\" /></p>\n"
+  },
+  {
+    "source": "`[a](/x( \"t\")`",
+    "html": "<p><code>[a](/x( &quot;t&quot;)</code></p>\n"
+  },
+  {
+    "source": "<span data-x=\"[a](/x( t)\">x</span>",
+    "html": "<p><span data-x=\"[a](/x( t)\">x</span></p>\n"
+  },
+  {
+    "source": "[a](/x&amp;( \"t\")",
+    "html": "<p><a href=\"/x&amp;(\" title=\"t\">a</a></p>\n"
+  },
+  {
+    "source": "[a](/x`code`( \"t\")",
+    "html": "<p><a href=\"/x%60code%60(\" title=\"t\">a</a></p>\n"
+  },
+  {
+    "source": "![a [b ![c](/x)](oops](/i)",
+    "html": "<p><img src=\"/i\" alt=\"a [b c](oops\" /></p>\n"
+  },
+  {
+    "source": "[a]( /x( \"t\")",
+    "html": "<p><a href=\"/x(\" title=\"t\">a</a></p>\n"
+  },
+  {
+    "source": "[a](\n/x( \"t\")",
+    "html": "<p><a href=\"/x(\" title=\"t\">a</a></p>\n"
+  },
+  {
+    "source": "![a]( /x( \"t\")",
+    "html": "<p><img src=\"/x(\" alt=\"a\" title=\"t\" /></p>\n"
+  },
+  {
+    "source": "![a](\n/x( \"t\")",
+    "html": "<p><img src=\"/x(\" alt=\"a\" title=\"t\" /></p>\n"
+  },
+  {
+    "source": "[a](/x\\)( \"t\")",
+    "html": "<p><a href=\"/x)(\" title=\"t\">a</a></p>\n"
+  },
+  {
+    "source": "[a](/x)[b](/y)",
+    "html": "<p><a href=\"/x\">a</a><a href=\"/y\">b</a></p>\n"
+  },
+  {
+    "source": "> [a](/x`c d`( \"t\")",
+    "html": "<blockquote>\n<p>[a](/x<code>c d</code>( &quot;t&quot;)</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> [a](/x`c d`)",
+    "html": "<blockquote>\n<p>[a](/x<code>c d</code>)</p>\n</blockquote>\n"
+  },
+  {
+    "source": "- [a](/x`c d`( \"t\")",
+    "html": "<ul>\n<li>[a](/x<code>c d</code>( &quot;t&quot;)</li>\n</ul>\n"
+  },
+  {
+    "source": "- [a](/x`c d`)",
+    "html": "<ul>\n<li>[a](/x<code>c d</code>)</li>\n</ul>\n"
+  },
+  {
+    "source": "> [a](/x`c\n> d`( \"t\")",
+    "html": "<blockquote>\n<p>[a](/x<code>c d</code>( &quot;t&quot;)</p>\n</blockquote>\n"
+  },
+  {
+    "source": "- [a](/x`c\n  d`( \"t\")",
+    "html": "<ul>\n<li>[a](/x<code>c d</code>( &quot;t&quot;)</li>\n</ul>\n"
+  },
+  {
+    "source": "[o [a](/x`c d`( \"t\") p](/u)",
+    "html": "<p><a href=\"/u\">o [a](/x<code>c d</code>( &quot;t&quot;) p</a></p>\n"
+  },
+  {
+    "source": "[o [a](/x`c d`) p](/u)",
+    "html": "<p><a href=\"/u\">o [a](/x<code>c d</code>) p</a></p>\n"
+  },
+  {
+    "source": "![a](/x`c d`( \"t\")",
+    "html": "<p>![a](/x<code>c d</code>( &quot;t&quot;)</p>\n"
+  },
+  {
+    "source": "> ![a](/x`c d`( \"t\")",
+    "html": "<blockquote>\n<p>![a](/x<code>c d</code>( &quot;t&quot;)</p>\n</blockquote>\n"
+  },
+  {
+    "source": "[o ![a](/x`c d`( \"t\") p](/u)",
+    "html": "<p><a href=\"/u\">o ![a](/x<code>c d</code>( &quot;t&quot;) p</a></p>\n"
+  },
+  {
+    "source": "> [o [a](/x`c d`( \"t\") p](/u)",
+    "html": "<blockquote>\n<p><a href=\"/u\">o [a](/x<code>c d</code>( &quot;t&quot;) p</a></p>\n</blockquote>\n"
+  },
+  {
+    "source": "[o [a](/x`)`) p](/u)",
+    "html": "<p>[o <a href=\"/x%60\">a</a>`) p](/u)</p>\n"
+  },
+  {
+    "source": "[o [a](/x \"t`\")`\") p](/u)",
+    "html": "<p>[o <a href=\"/x\" title=\"t`\">a</a>`&quot;) p](/u)</p>\n"
+  },
+  {
+    "source": "[o [a](/x<!--)-->) p](/u)",
+    "html": "<p>[o <a href=\"/x%3C!--\">a</a>--&gt;) p](/u)</p>\n"
+  },
+  {
+    "source": "[a](/x`c\\ d`( \"t\")",
+    "html": "<p>[a](/x<code>c\\ d</code>( &quot;t&quot;)</p>\n"
+  },
+  {
+    "source": "[o [a](/x`c\\ d`( \"t\") p](/u)",
+    "html": "<p><a href=\"/u\">o [a](/x<code>c\\ d</code>( &quot;t&quot;) p</a></p>\n"
+  },
+  {
+    "source": "> [o [a](/x`c\\ d`( \"t\") p](/u)",
+    "html": "<blockquote>\n<p><a href=\"/u\">o [a](/x<code>c\\ d</code>( &quot;t&quot;) p</a></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- [o [a](/x`c\\ d`( \"t\") p](/u)",
+    "html": "<ul>\n<li><a href=\"/u\">o [a](/x<code>c\\ d</code>( &quot;t&quot;) p</a></li>\n</ul>\n"
+  },
+  {
+    "source": "[o [a][r] p](/x`c`( \"t\")\n\n[r]: /r",
+    "html": "<p>[o <a href=\"/r\">a</a> p](/x<code>c</code>( &quot;t&quot;)</p>\n"
+  },
+  {
+    "source": "[o [a] p](/x`c`( \"t\")\n\n[a]: /a",
+    "html": "<p>[o <a href=\"/a\">a</a> p](/x<code>c</code>( &quot;t&quot;)</p>\n"
+  },
+  {
+    "source": "`[a](/x`)`",
+    "html": "<p><code>[a](/x</code>)`</p>\n"
+  },
+  {
+    "source": "[o `[a]` p](/x`c`( \"t\")",
+    "html": "<p><a href=\"/x%60c%60(\" title=\"t\">o <code>[a]</code> p</a></p>\n"
+  },
+  {
+    "source": "[a](<http://a`b>) `tail`",
+    "html": "<p><a href=\"http://a%60b\">a</a> <code>tail</code></p>\n"
+  },
+  {
+    "source": "[a](<\\\\>)",
+    "html": "<p><a href=\"%5C\">a</a></p>\n"
+  },
+  {
+    "source": "[a](<\\>>)",
+    "html": "<p><a href=\"%3E\">a</a></p>\n"
+  },
+  {
+    "source": "[a](<\\_>)",
+    "html": "<p><a href=\"_\">a</a></p>\n"
+  },
+  {
+    "source": "[a](<\\<>)",
+    "html": "<p><a href=\"%3C\">a</a></p>\n"
+  },
+  {
+    "source": "[a](<\\`>)",
+    "html": "<p><a href=\"%60\">a</a></p>\n"
+  },
+  {
+    "source": "[a](<😀>)",
+    "html": "<p><a href=\"%F0%9F%98%80\">a</a></p>\n"
+  },
+  {
+    "source": "[a](<a\\<b>)",
+    "html": "<p><a href=\"a%3Cb\">a</a></p>\n"
+  },
+  {
+    "source": "[r](/x`c d`[e]())\n\n[r]: /u",
+    "html": "<p><a href=\"/u\">r</a>(/x<code>c d</code><a href=\"\">e</a>)</p>\n",
+    "carveHtml": "<p><a href=\"/u\">r</a>(/x<code>c d</code>e)</p>\n",
+    "dropped": 1
+  },
+  {
+    "source": "![r](/x`c d`[e]())\n\n[r]: /u",
+    "html": "<p><img src=\"/u\" alt=\"r\" />(/x<code>c d</code><a href=\"\">e</a>)</p>\n",
+    "carveHtml": "<p><img src=\"/u\" alt=\"r\" />(/x<code>c d</code>e)</p>\n",
+    "dropped": 1
+  },
+  {
+    "source": "| h |\n|---|\n| [a](/x \"t`\") |",
+    "html": "<table>\n<thead>\n<tr>\n<th>h</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><a href=\"/x\" title=\"t`\">a</a></td>\n</tr>\n</tbody>\n</table>\n"
+  },
+  {
+    "source": "| [a](/x \"t`\") | `b` |\n|---|---|",
+    "html": "<table>\n<thead>\n<tr>\n<th><a href=\"/x\" title=\"t`\">a</a></th>\n<th><code>b</code></th>\n</tr>\n</thead>\n</table>\n"
+  },
+  {
+    "source": "![*r*](/y`c d`)\n\n[r]: /u",
+    "html": "<p>![<em>r</em>](/y<code>c d</code>)</p>\n"
+  },
+  {
+    "source": "![*r*](/y`c d`)\n\n[*r*]: /u",
+    "html": "<p><img src=\"/u\" alt=\"r\" />(/y<code>c d</code>)</p>\n"
+  },
+  {
+    "source": "![x [r]](/y`c d`)\n\n[r]: /u\n[x r]: /other",
+    "html": "<p>![x <a href=\"/u\">r</a>](/y<code>c d</code>)</p>\n"
+  },
+  {
+    "source": "![a [b](/x`c d`) e](/i)",
+    "html": "<p><img src=\"/i\" alt=\"a [b](/xc d) e\" /></p>\n"
+  },
+  {
+    "source": "[a](<a\\\nb>)",
+    "html": "<p><a href=\"a%5C%0Ab\">a</a></p>\n"
+  },
+  {
+    "source": "[a](<a\\\nb> \"t\")",
+    "html": "<p><a href=\"a%5C%0Ab\" title=\"t\">a</a></p>\n"
+  },
+  {
+    "source": "> [a](<a\\\n> b>)",
+    "html": "<blockquote>\n<p><a href=\"a%5C%0Ab\">a</a></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- [a](<a\\\n  b>)",
+    "html": "<ul>\n<li><a href=\"a%5C%0Ab\">a</a></li>\n</ul>\n"
+  },
+  {
+    "source": "![a](<a\\\nb>)",
+    "html": "<p><img src=\"a%5C%0Ab\" alt=\"a\" /></p>\n"
+  },
+  {
+    "source": "[o [a](<a\\\nb>) p](/u)",
+    "html": "<p>[o <a href=\"a%5C%0Ab\">a</a> p](/u)</p>\n"
+  },
+  {
+    "source": "- [a](<a\\\n  b>)\n- c",
+    "html": "<ul>\n<li><a href=\"a%5C%0Ab\">a</a></li>\n<li>c</li>\n</ul>\n"
+  },
+  {
+    "source": "[a](<a\\\nb>) `c\nd` tail\nlast",
+    "html": "<p><a href=\"a%5C%0Ab\">a</a> <code>c d</code> tail\nlast</p>\n"
+  },
+  {
+    "source": "[a](<a\\\nb>) [c](/x\n\"t\")",
+    "html": "<p><a href=\"a%5C%0Ab\">a</a> <a href=\"/x\" title=\"t\">c</a></p>\n"
+  },
+  {
+    "source": "[a](<a\\\n   b>)",
+    "html": "<p><a href=\"a%5C%0Ab\">a</a></p>\n"
+  },
+  {
+    "source": "[a](<a\\\n\tb>)",
+    "html": "<p><a href=\"a%5C%0Ab\">a</a></p>\n"
+  },
+  {
+    "source": "- [a](<a\\\n     b>)",
+    "html": "<ul>\n<li><a href=\"a%5C%0Ab\">a</a></li>\n</ul>\n"
+  },
+  {
+    "source": "> [a](<a\\\n   b>)",
+    "html": "<blockquote>\n<p><a href=\"a%5C%0A%20%20%20b\">a</a></p>\n</blockquote>\n"
+  },
+  {
+    "source": "> [a](<a\\\n>    b>)",
+    "html": "<blockquote>\n<p><a href=\"a%5C%0Ab\">a</a></p>\n</blockquote>\n"
+  },
+  {
+    "source": "> see https://example.com/some/long/path [a](<a\\\n   b>)",
+    "html": "<blockquote>\n<p>see <a href=\"https://example.com/some/long/path\">https://example.com/some/long/path</a> <a href=\"a%5C%0A%20%20%20b\">a</a></p>\n</blockquote>\n"
+  },
+  {
+    "source": "> x\nlazy https://example.com/long [a](<a\\\n>    b>)",
+    "html": "<blockquote>\n<p>x\nlazy <a href=\"https://example.com/long\">https://example.com/long</a> <a href=\"a%5C%0Ab\">a</a></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- - [a](<a\\\n   b>)",
+    "html": "<ul>\n<li>\n<ul>\n<li><a href=\"a%5C%0A%20b\">a</a></li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> > [a](<a\\\n>    b>)",
+    "html": "<blockquote>\n<blockquote>\n<p><a href=\"a%5C%0A%20%20%20b\">a</a></p>\n</blockquote>\n</blockquote>\n"
+  }
+]
