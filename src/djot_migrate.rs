@@ -10608,7 +10608,13 @@ fn close_djot_table_code(
                 })
                 .collect();
             let raw_code = normalized.iter().skip(1).any(|value| {
-                (block.is_match(value) || value.starts_with(['{', '>']) || value.starts_with(":::"))
+                (block.is_match(value)
+                    || item_kind == ":"
+                        && cached_regex!(r"^[ivxlcdmIVXLCDM]+[.)][ \t]")
+                            .unwrap()
+                            .is_match(value)
+                    || value.starts_with(['{', '>'])
+                    || value.starts_with(":::"))
                     && (!separator.is_match(value) || line.as_bytes().get(at) != Some(&b'|'))
             }) || (item_kind.starts_with("[^") && normalized.len() > 1);
             let quoted_payload = (code_depth > 0 && !raw_code).then(|| {
