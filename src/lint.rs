@@ -451,6 +451,32 @@ fn collect_table_span_marker_warnings(
     });
 }
 
+/// The byte start and text of 1-based `line`, breaking at CRLF, lone CR or LF
+/// as the parser does.
+fn source_line(source: &str, line: usize) -> Option<(usize, &str)> {
+    let bytes = source.as_bytes();
+    let mut start = 0;
+    let mut current = 1;
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] == b'\r' || bytes[at] == b'\n' {
+            if current == line {
+                return Some((start, &source[start..at]));
+            }
+            at += if bytes[at] == b'\r' && bytes.get(at + 1) == Some(&b'\n') {
+                2
+            } else {
+                1
+            };
+            start = at;
+            current += 1;
+        } else {
+            at += 1;
+        }
+    }
+    (current == line).then(|| (start, &source[start..]))
+}
+
 fn locate_marker_in_row(
     source: &str,
     row: &TableRow,
@@ -458,13 +484,7 @@ fn locate_marker_in_row(
     marker: char,
 ) -> Option<(usize, usize, usize)> {
     let line = row.pos.as_ref()?.start_line;
-    let line_text = source.split_inclusive('\n').nth(line.checked_sub(1)?)?;
-    let line_start = source
-        .split_inclusive('\n')
-        .take(line - 1)
-        .map(str::len)
-        .sum::<usize>();
-    let line_text = line_text.trim_end_matches(['\r', '\n']);
+    let (line_start, line_text) = source_line(source, line)?;
     let row_column = row.pos.as_ref()?.start_column;
     let row_at = line_text
         .char_indices()
