@@ -1,6 +1,8 @@
 use super::*;
 use crate::include_walk::{visit_inline_children, SubtreeVisitor};
 
+mod unicode_categories;
+
 #[derive(Default)]
 struct State {
     depth: usize,
@@ -165,11 +167,12 @@ pub(super) fn single(
         if open && !apostrophe {
             if alnum {
                 let rest = &text[i + 1..];
-                static LETTERS: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-                let end = LETTERS
-                    .get_or_init(|| regex::Regex::new(r"^\p{L}+").unwrap())
-                    .find(rest)
-                    .map_or(0, |word| word.end());
+                let end = rest
+                    .char_indices()
+                    .take_while(|&(_, c)| is_letter(c))
+                    .map(|(offset, c)| offset + c.len_utf8())
+                    .last()
+                    .unwrap_or(0);
                 let word = rest[..end].to_ascii_lowercase();
                 let mut tail = rest[end..].chars();
                 let quoted = tail.next() == Some('\'') && !tail.next().is_some_and(is_alnum);
@@ -204,13 +207,50 @@ pub(super) fn single(
     apostrophe || !open
 }
 
+fn in_ranges(c: char, ranges: &[(u32, u32)]) -> bool {
+    let value = c as u32;
+    ranges
+        .binary_search_by(|&(start, end)| {
+            if end < value {
+                std::cmp::Ordering::Less
+            } else if start > value {
+                std::cmp::Ordering::Greater
+            } else {
+                std::cmp::Ordering::Equal
+            }
+        })
+        .is_ok()
+}
+
+fn is_letter(c: char) -> bool {
+    if c.is_ascii() {
+        c.is_ascii_alphabetic()
+    } else {
+        in_ranges(c, &unicode_categories::LETTER)
+    }
+}
+
 fn is_alnum(c: char) -> bool {
     if c.is_ascii() {
-        return c.is_ascii_alphanumeric();
+        c.is_ascii_alphanumeric()
+    } else {
+        is_letter(c) || in_ranges(c, &unicode_categories::NUMBER)
     }
-    static ALNUM: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let mut buffer = [0; 4];
-    ALNUM
-        .get_or_init(|| regex::Regex::new(r"^[\p{L}\p{N}]$").unwrap())
-        .is_match(c.encode_utf8(&mut buffer))
+}
+
+#[cfg(test)]
+mod unicode_category_tests {
+    use super::{is_alnum, is_letter};
+
+    #[test]
+    fn categories_match_regex_for_every_unicode_scalar() {
+        let letter = regex::Regex::new(r"^\p{L}$").unwrap();
+        let alnum = regex::Regex::new(r"^[\p{L}\p{N}]$").unwrap();
+        for c in (0..=0x10ffff).filter_map(char::from_u32) {
+            let mut buffer = [0; 4];
+            let value = c.encode_utf8(&mut buffer);
+            assert_eq!(is_letter(c), letter.is_match(value), "U+{:04X}", c as u32);
+            assert_eq!(is_alnum(c), alnum.is_match(value), "U+{:04X}", c as u32);
+        }
+    }
 }

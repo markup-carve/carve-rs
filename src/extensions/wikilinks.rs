@@ -91,7 +91,7 @@ impl CarveExtension for Wikilinks {
     ) -> Option<InlineMatch> {
         let rest = text.get(pos..)?;
         let inner = rest.strip_prefix("[[")?;
-        let close_rel = inner.find("]]")?;
+        let close_rel = find_close(inner)?;
         let body = &inner[..close_rel];
 
         // The page part forbids `|` and `]` (matches carve-php); the optional
@@ -180,6 +180,21 @@ impl Wikilinks {
         }
         attrs
     }
+}
+
+/// Byte offset of the first unescaped `]]`; a backslash escapes the next
+/// character, so `\]` never opens the closer.
+fn find_close(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i + 1 < bytes.len() {
+        match bytes[i] {
+            b'\\' => i += 2,
+            b']' if bytes[i + 1] == b']' => return Some(i),
+            _ => i += 1,
+        }
+    }
+    None
 }
 
 /// Default URL generator: a URL-safe slug, matching carve-php's
