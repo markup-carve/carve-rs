@@ -1,0 +1,737 @@
+[
+  {
+    "source": "[a\u0000b][]\n\n[a�b]: wrong",
+    "html": "<p><a>a\u0000b</a></p>\n",
+    "image": false
+  },
+  {
+    "source": "> [a\u0000b][]\n\n[a�b]: wrong",
+    "html": "<blockquote>\n<p><a>a\u0000b</a></p>\n</blockquote>\n",
+    "image": false
+  },
+  {
+    "source": "- [a\u0000b][]\n\n[a�b]: wrong",
+    "html": "<ul>\n<li>\n<a>a\u0000b</a>\n</li>\n</ul>\n",
+    "image": false
+  },
+  {
+    "source": "[a\u0000b][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<p><a>a\u0000b</a></p>\n",
+    "image": false
+  },
+  {
+    "source": "> [a\u0000b][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<blockquote>\n<p><a>a\u0000b</a></p>\n</blockquote>\n",
+    "image": false
+  },
+  {
+    "source": "- [a\u0000b][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<ul>\n<li>\n<a>a\u0000b</a>\n</li>\n</ul>\n",
+    "image": false
+  },
+  {
+    "source": "![a\u0000b][]\n\n[a�b]: wrong",
+    "html": "<p><img></p>\n",
+    "image": true
+  },
+  {
+    "source": "> ![a\u0000b][]\n\n[a�b]: wrong",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "image": true
+  },
+  {
+    "source": "- ![a\u0000b][]\n\n[a�b]: wrong",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "image": true
+  },
+  {
+    "source": "![a\u0000b][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<p><img></p>\n",
+    "image": true
+  },
+  {
+    "source": "> ![a\u0000b][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "image": true
+  },
+  {
+    "source": "- ![a\u0000b][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "image": true
+  },
+  {
+    "source": "[_a_\u0000b][]\n\n[a�b]: wrong",
+    "html": "<p><a><em>a</em>\u0000b</a></p>\n",
+    "image": false
+  },
+  {
+    "source": "> [_a_\u0000b][]\n\n[a�b]: wrong",
+    "html": "<blockquote>\n<p><a><em>a</em>\u0000b</a></p>\n</blockquote>\n",
+    "image": false
+  },
+  {
+    "source": "- [_a_\u0000b][]\n\n[a�b]: wrong",
+    "html": "<ul>\n<li>\n<a><em>a</em>\u0000b</a>\n</li>\n</ul>\n",
+    "image": false
+  },
+  {
+    "source": "[_a_\u0000b][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<p><a><em>a</em>\u0000b</a></p>\n",
+    "image": false
+  },
+  {
+    "source": "> [_a_\u0000b][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<blockquote>\n<p><a><em>a</em>\u0000b</a></p>\n</blockquote>\n",
+    "image": false
+  },
+  {
+    "source": "- [_a_\u0000b][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<ul>\n<li>\n<a><em>a</em>\u0000b</a>\n</li>\n</ul>\n",
+    "image": false
+  },
+  {
+    "source": "![_a_\u0000b][]\n\n[a�b]: wrong",
+    "html": "<p><img></p>\n",
+    "image": true
+  },
+  {
+    "source": "> ![_a_\u0000b][]\n\n[a�b]: wrong",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "image": true
+  },
+  {
+    "source": "- ![_a_\u0000b][]\n\n[a�b]: wrong",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "image": true
+  },
+  {
+    "source": "![_a_\u0000b][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<p><img></p>\n",
+    "image": true
+  },
+  {
+    "source": "> ![_a_\u0000b][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "image": true
+  },
+  {
+    "source": "- ![_a_\u0000b][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "image": true
+  },
+  {
+    "source": "[`a\u0000b`][]\n\n[a�b]: wrong",
+    "html": "<p><a><code>a\u0000b</code></a></p>\n",
+    "image": false
+  },
+  {
+    "source": "> [`a\u0000b`][]\n\n[a�b]: wrong",
+    "html": "<blockquote>\n<p><a><code>a\u0000b</code></a></p>\n</blockquote>\n",
+    "image": false
+  },
+  {
+    "source": "- [`a\u0000b`][]\n\n[a�b]: wrong",
+    "html": "<ul>\n<li>\n<a><code>a\u0000b</code></a>\n</li>\n</ul>\n",
+    "image": false
+  },
+  {
+    "source": "[`a\u0000b`][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<p><a><code>a\u0000b</code></a></p>\n",
+    "image": false
+  },
+  {
+    "source": "> [`a\u0000b`][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<blockquote>\n<p><a><code>a\u0000b</code></a></p>\n</blockquote>\n",
+    "image": false
+  },
+  {
+    "source": "- [`a\u0000b`][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<ul>\n<li>\n<a><code>a\u0000b</code></a>\n</li>\n</ul>\n",
+    "image": false
+  },
+  {
+    "source": "![`a\u0000b`][]\n\n[a�b]: wrong",
+    "html": "<p><img></p>\n",
+    "image": true
+  },
+  {
+    "source": "> ![`a\u0000b`][]\n\n[a�b]: wrong",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "image": true
+  },
+  {
+    "source": "- ![`a\u0000b`][]\n\n[a�b]: wrong",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "image": true
+  },
+  {
+    "source": "![`a\u0000b`][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<p><img></p>\n",
+    "image": true
+  },
+  {
+    "source": "> ![`a\u0000b`][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "image": true
+  },
+  {
+    "source": "- ![`a\u0000b`][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "image": true
+  },
+  {
+    "source": "[a\u0000b{.x}][]\n\n[a�b]: wrong",
+    "html": "<p><a><span class=\"x\">a\u0000b</span></a></p>\n",
+    "image": false
+  },
+  {
+    "source": "> [a\u0000b{.x}][]\n\n[a�b]: wrong",
+    "html": "<blockquote>\n<p><a><span class=\"x\">a\u0000b</span></a></p>\n</blockquote>\n",
+    "image": false
+  },
+  {
+    "source": "- [a\u0000b{.x}][]\n\n[a�b]: wrong",
+    "html": "<ul>\n<li>\n<a><span class=\"x\">a\u0000b</span></a>\n</li>\n</ul>\n",
+    "image": false
+  },
+  {
+    "source": "[a\u0000b{.x}][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<p><a><span class=\"x\">a\u0000b</span></a></p>\n",
+    "image": false
+  },
+  {
+    "source": "> [a\u0000b{.x}][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<blockquote>\n<p><a><span class=\"x\">a\u0000b</span></a></p>\n</blockquote>\n",
+    "image": false
+  },
+  {
+    "source": "- [a\u0000b{.x}][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<ul>\n<li>\n<a><span class=\"x\">a\u0000b</span></a>\n</li>\n</ul>\n",
+    "image": false
+  },
+  {
+    "source": "![a\u0000b{.x}][]\n\n[a�b]: wrong",
+    "html": "<p><img></p>\n",
+    "image": true
+  },
+  {
+    "source": "> ![a\u0000b{.x}][]\n\n[a�b]: wrong",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "image": true
+  },
+  {
+    "source": "- ![a\u0000b{.x}][]\n\n[a�b]: wrong",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "image": true
+  },
+  {
+    "source": "![a\u0000b{.x}][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<p><img></p>\n",
+    "image": true
+  },
+  {
+    "source": "> ![a\u0000b{.x}][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "image": true
+  },
+  {
+    "source": "- ![a\u0000b{.x}][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "image": true
+  },
+  {
+    "source": "[a\u0000b{#id}][]\n\n[a�b]: wrong",
+    "html": "<p><a><span id=\"id\">a\u0000b</span></a></p>\n",
+    "image": false
+  },
+  {
+    "source": "> [a\u0000b{#id}][]\n\n[a�b]: wrong",
+    "html": "<blockquote>\n<p><a><span id=\"id\">a\u0000b</span></a></p>\n</blockquote>\n",
+    "image": false
+  },
+  {
+    "source": "- [a\u0000b{#id}][]\n\n[a�b]: wrong",
+    "html": "<ul>\n<li>\n<a><span id=\"id\">a\u0000b</span></a>\n</li>\n</ul>\n",
+    "image": false
+  },
+  {
+    "source": "[a\u0000b{#id}][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<p><a><span id=\"id\">a\u0000b</span></a></p>\n",
+    "image": false
+  },
+  {
+    "source": "> [a\u0000b{#id}][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<blockquote>\n<p><a><span id=\"id\">a\u0000b</span></a></p>\n</blockquote>\n",
+    "image": false
+  },
+  {
+    "source": "- [a\u0000b{#id}][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<ul>\n<li>\n<a><span id=\"id\">a\u0000b</span></a>\n</li>\n</ul>\n",
+    "image": false
+  },
+  {
+    "source": "![a\u0000b{#id}][]\n\n[a�b]: wrong",
+    "html": "<p><img></p>\n",
+    "image": true
+  },
+  {
+    "source": "> ![a\u0000b{#id}][]\n\n[a�b]: wrong",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "image": true
+  },
+  {
+    "source": "- ![a\u0000b{#id}][]\n\n[a�b]: wrong",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "image": true
+  },
+  {
+    "source": "![a\u0000b{#id}][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<p><img></p>\n",
+    "image": true
+  },
+  {
+    "source": "> ![a\u0000b{#id}][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "image": true
+  },
+  {
+    "source": "- ![a\u0000b{#id}][a\u0000b]\n\n[a�b]: wrong",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "image": true
+  },
+  {
+    "source": "[a\u0000b][]{#owned}\n\n[a�b]: wrong",
+    "html": "<p><a id=\"owned\">a\u0000b</a></p>\n",
+    "image": false,
+    "own": "{#owned}"
+  },
+  {
+    "source": "[a\u0000b][]{.owned}\n\n[a�b]: wrong",
+    "html": "<p><a class=\"owned\">a\u0000b</a></p>\n",
+    "image": false,
+    "own": "{.owned}"
+  },
+  {
+    "source": "[a\u0000b][]{title=\"owned\"}\n\n[a�b]: wrong",
+    "html": "<p><a title=\"owned\">a\u0000b</a></p>\n",
+    "image": false,
+    "own": "{title=\"owned\"}"
+  },
+  {
+    "source": "[a\u0000b][]{#owned}{.owned}\n\n[a�b]: wrong",
+    "html": "<p><a id=\"owned\" class=\"owned\">a\u0000b</a></p>\n",
+    "image": false,
+    "own": "{#owned}{.owned}"
+  },
+  {
+    "source": "[a\u0000b][a\u0000b]{#owned}\n\n[a�b]: wrong",
+    "html": "<p><a id=\"owned\">a\u0000b</a></p>\n",
+    "image": false,
+    "own": "{#owned}"
+  },
+  {
+    "source": "[a\u0000b][a\u0000b]{.owned}\n\n[a�b]: wrong",
+    "html": "<p><a class=\"owned\">a\u0000b</a></p>\n",
+    "image": false,
+    "own": "{.owned}"
+  },
+  {
+    "source": "[a\u0000b][a\u0000b]{title=\"owned\"}\n\n[a�b]: wrong",
+    "html": "<p><a title=\"owned\">a\u0000b</a></p>\n",
+    "image": false,
+    "own": "{title=\"owned\"}"
+  },
+  {
+    "source": "[a\u0000b][a\u0000b]{#owned}{.owned}\n\n[a�b]: wrong",
+    "html": "<p><a id=\"owned\" class=\"owned\">a\u0000b</a></p>\n",
+    "image": false,
+    "own": "{#owned}{.owned}"
+  },
+  {
+    "source": "![a\u0000b][]{#owned}\n\n[a�b]: wrong",
+    "html": "<p><img id=\"owned\"></p>\n",
+    "image": true,
+    "own": "{#owned}"
+  },
+  {
+    "source": "![a\u0000b][]{.owned}\n\n[a�b]: wrong",
+    "html": "<p><img class=\"owned\"></p>\n",
+    "image": true,
+    "own": "{.owned}"
+  },
+  {
+    "source": "![a\u0000b][]{title=\"owned\"}\n\n[a�b]: wrong",
+    "html": "<p><img title=\"owned\"></p>\n",
+    "image": true,
+    "own": "{title=\"owned\"}"
+  },
+  {
+    "source": "![a\u0000b][]{#owned}{.owned}\n\n[a�b]: wrong",
+    "html": "<p><img id=\"owned\" class=\"owned\"></p>\n",
+    "image": true,
+    "own": "{#owned}{.owned}"
+  },
+  {
+    "source": "![a\u0000b][a\u0000b]{#owned}\n\n[a�b]: wrong",
+    "html": "<p><img id=\"owned\"></p>\n",
+    "image": true,
+    "own": "{#owned}"
+  },
+  {
+    "source": "![a\u0000b][a\u0000b]{.owned}\n\n[a�b]: wrong",
+    "html": "<p><img class=\"owned\"></p>\n",
+    "image": true,
+    "own": "{.owned}"
+  },
+  {
+    "source": "![a\u0000b][a\u0000b]{title=\"owned\"}\n\n[a�b]: wrong",
+    "html": "<p><img title=\"owned\"></p>\n",
+    "image": true,
+    "own": "{title=\"owned\"}"
+  },
+  {
+    "source": "![a\u0000b][a\u0000b]{#owned}{.owned}\n\n[a�b]: wrong",
+    "html": "<p><img id=\"owned\" class=\"owned\"></p>\n",
+    "image": true,
+    "own": "{#owned}{.owned}"
+  },
+  {
+    "source": "# a\u0000b\n\n[a\u0000b][]\n\n[x]: y",
+    "html": "<section id=\"a\u0000b\">\n<h1>a\u0000b</h1>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n</section>\n",
+    "image": false,
+    "heading": true
+  },
+  {
+    "source": "# _a_\u0000b\n\n[a\u0000b][]\n\n[x]: y",
+    "html": "<section id=\"a\u0000b\">\n<h1><em>a</em>\u0000b</h1>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n</section>\n",
+    "image": false,
+    "heading": true
+  },
+  {
+    "source": "# `a\u0000b`\n\n[a\u0000b][]\n\n[x]: y",
+    "html": "<section id=\"a\u0000b\">\n<h1><code>a\u0000b</code></h1>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n</section>\n",
+    "image": false,
+    "heading": true
+  },
+  {
+    "source": "# a\u0000\n# b\n\n[a\u0000 b][]\n\n[x]: y",
+    "html": "<section id=\"a\u0000-b\">\n<h1>a\u0000\nb</h1>\n<p><a href=\"#a\u0000-b\">a\u0000 b</a></p>\n</section>\n",
+    "image": false,
+    "heading": true
+  },
+  {
+    "source": "~~~\nc\n~~~\n# a\u0000b\n\n[a\u0000b][]\n\n[x]: y",
+    "html": "<pre><code>c\n</code></pre>\n<section id=\"a\u0000b\">\n<h1>a\u0000b</h1>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n</section>\n",
+    "image": false,
+    "heading": true
+  },
+  {
+    "source": "---\n# a\u0000b\n\n[a\u0000b][]\n\n[x]: y",
+    "html": "<hr>\n<section id=\"a\u0000b\">\n<h1>a\u0000b</h1>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n</section>\n",
+    "image": false,
+    "heading": true
+  },
+  {
+    "source": "[z]: q\n# a\u0000b\n\n[a\u0000b][]\n\n[x]: y",
+    "html": "<section id=\"a\u0000b\">\n<h1>a\u0000b</h1>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n</section>\n",
+    "image": false,
+    "heading": true
+  },
+  {
+    "source": "[x [a\u0000b][] y](url)\n\n[a�b]: wrong",
+    "html": "<p><a href=\"url\">x <a>a\u0000b</a> y</a></p>\n",
+    "image": false,
+    "linked": true
+  },
+  {
+    "source": "[![a\u0000b][]](url)\n\n[a�b]: wrong",
+    "html": "<p><a href=\"url\"><img></a></p>\n",
+    "image": true,
+    "linked": true
+  },
+  {
+    "source": "[x [a\u0000b][a\u0000b] y](url)\n\n[a�b]: wrong",
+    "html": "<p><a href=\"url\">x <a>a\u0000b</a> y</a></p>\n",
+    "image": false,
+    "linked": true
+  },
+  {
+    "source": "[![a\u0000b][a\u0000b]](url)\n\n[a�b]: wrong",
+    "html": "<p><a href=\"url\"><img></a></p>\n",
+    "image": true,
+    "linked": true
+  },
+  {
+    "source": "[a\u0000b][]\n\n[a�b]: wrong   ",
+    "html": "<p><a>a\u0000b</a></p>\n<p>[a�b]: wrong</p>\n",
+    "image": false
+  },
+  {
+    "source": "![a\u0000b][]\n\n[a�b]: wrong   ",
+    "html": "<p><img></p>\n<p>[a�b]: wrong</p>\n",
+    "image": true
+  },
+  {
+    "source": "[a\u0000b][]\n\n[a�b]: wrong\t",
+    "html": "<p><a>a\u0000b</a></p>\n<p>[a�b]: wrong\t</p>\n",
+    "image": false
+  },
+  {
+    "source": "![a\u0000b][]\n\n[a�b]: wrong\t",
+    "html": "<p><img></p>\n<p>[a�b]: wrong\t</p>\n",
+    "image": true
+  },
+  {
+    "source": "[a][x\u0000<https://example.org>]\n\n[y]: z",
+    "html": "<p><a>a</a></p>\n",
+    "image": false,
+    "keyLiteral": true
+  },
+  {
+    "source": "![a][x\u0000<https://example.org>]\n\n[y]: z",
+    "html": "<p><img></p>\n",
+    "image": true,
+    "keyLiteral": true
+  },
+  {
+    "source": "[a][_x\u0000_]\n\n[y]: z",
+    "html": "<p><a>a</a></p>\n",
+    "image": false,
+    "keyLiteral": true
+  },
+  {
+    "source": "![a][_x\u0000_]\n\n[y]: z",
+    "html": "<p><img></p>\n",
+    "image": true,
+    "keyLiteral": true
+  },
+  {
+    "source": "[a][`x\u0000`]\n\n[y]: z",
+    "html": "<p><a>a</a></p>\n",
+    "image": false,
+    "keyLiteral": true
+  },
+  {
+    "source": "![a][`x\u0000`]\n\n[y]: z",
+    "html": "<p><img></p>\n",
+    "image": true,
+    "keyLiteral": true
+  },
+  {
+    "source": "[a][x\u0000%%keep%%]\n\n[y]: z",
+    "html": "<p><a>a</a></p>\n",
+    "image": false,
+    "keyLiteral": true
+  },
+  {
+    "source": "![a][x\u0000%%keep%%]\n\n[y]: z",
+    "html": "<p><img></p>\n",
+    "image": true,
+    "keyLiteral": true
+  },
+  {
+    "source": "[a][x\u0000{.c}]\n\n[y]: z",
+    "html": "<p><a>a</a></p>\n",
+    "image": false,
+    "keyLiteral": true
+  },
+  {
+    "source": "![a][x\u0000{.c}]\n\n[y]: z",
+    "html": "<p><img></p>\n",
+    "image": true,
+    "keyLiteral": true
+  },
+  {
+    "source": "[a][x\u0000\\*]\n\n[y]: z",
+    "html": "<p><a>a</a></p>\n",
+    "image": false,
+    "keyLiteral": true
+  },
+  {
+    "source": "![a][x\u0000\\*]\n\n[y]: z",
+    "html": "<p><img></p>\n",
+    "image": true,
+    "keyLiteral": true
+  },
+  {
+    "source": "> [a\u0000b][]{title=\"x\n> y\"}\n\n[a�b]: wrong",
+    "html": "<blockquote>\n<p><a title=\"x y\">a\u0000b</a></p>\n</blockquote>\n",
+    "image": false,
+    "quoteOwn": 1
+  },
+  {
+    "source": "> > [a\u0000b][]{title=\"x\n> > y\"}\n\n[a�b]: wrong",
+    "html": "<blockquote>\n<blockquote>\n<p><a title=\"x y\">a\u0000b</a></p>\n</blockquote>\n</blockquote>\n",
+    "image": false,
+    "quoteOwn": 2
+  },
+  {
+    "source": "- > [a\u0000b][]{title=\"x\n  > y\"}\n\n[a�b]: wrong",
+    "html": "<ul>\n<li>\n<blockquote>\n<a title=\"x y\">a\u0000b</a>\n</blockquote>\n</li>\n</ul>\n",
+    "image": false,
+    "quoteOwn": 1
+  },
+  {
+    "source": "> - [a\u0000b][]{title=\"x\n>   y\"}\n\n[a�b]: wrong",
+    "html": "<blockquote>\n<ul>\n<li>\n<a title=\"x y\">a\u0000b</a>\n</li>\n</ul>\n</blockquote>\n",
+    "image": false,
+    "quoteOwn": 1
+  },
+  {
+    "source": "[a\u0000b][]{title=\"x\n> y\"}\n\n[a�b]: wrong",
+    "html": "<p><a title=\"x &gt; y\">a\u0000b</a></p>\n",
+    "image": false,
+    "quoteOwn": 0
+  },
+  {
+    "source": "# a\u0000b\n\n[a\u0000b][] [a�b][] ![a�b][]\n\n[a�b]: replacement",
+    "html": "<section id=\"a\u0000b\">\n<h1>a\u0000b</h1>\n<p><a href=\"#a\u0000b\">a\u0000b</a> <a href=\"replacement\">a�b</a> <img alt=\"a�b\" src=\"replacement\"></p>\n</section>\n",
+    "image": false,
+    "heading": true,
+    "collision": true
+  },
+  {
+    "source": "# _a_\u0000b\n\n[a\u0000b][] [a�b][] ![a�b][]\n\n[a�b]: replacement",
+    "html": "<section id=\"a\u0000b\">\n<h1><em>a</em>\u0000b</h1>\n<p><a href=\"#a\u0000b\">a\u0000b</a> <a href=\"replacement\">a�b</a> <img alt=\"a�b\" src=\"replacement\"></p>\n</section>\n",
+    "image": false,
+    "heading": true,
+    "collision": true
+  },
+  {
+    "source": "# `a\u0000b`\n\n[a\u0000b][] [a�b][] ![a�b][]\n\n[a�b]: replacement",
+    "html": "<section id=\"a\u0000b\">\n<h1><code>a\u0000b</code></h1>\n<p><a href=\"#a\u0000b\">a\u0000b</a> <a href=\"replacement\">a�b</a> <img alt=\"a�b\" src=\"replacement\"></p>\n</section>\n",
+    "image": false,
+    "heading": true,
+    "collision": true
+  },
+  {
+    "source": "[![a�b][]][k]\n\n[a�b]: correct\n[k]: outer\n\n\u0000",
+    "html": "<p><a href=\"outer\"><img alt=\"a�b\" src=\"correct\"></a></p>\n<p>\u0000</p>\n",
+    "image": false,
+    "linked": true,
+    "resolvedNested": true
+  },
+  {
+    "source": "> [![a�b][]][k]\n\n[a�b]: correct\n[k]: outer\n\n\u0000",
+    "html": "<blockquote>\n<p><a href=\"outer\"><img alt=\"a�b\" src=\"correct\"></a></p>\n</blockquote>\n<p>\u0000</p>\n",
+    "image": false,
+    "linked": true,
+    "resolvedNested": true
+  },
+  {
+    "source": "- [![a�b][]][k]\n\n[a�b]: correct\n[k]: outer\n\n\u0000",
+    "html": "<ul>\n<li>\n<a href=\"outer\"><img alt=\"a�b\" src=\"correct\"></a>\n</li>\n</ul>\n<p>\u0000</p>\n",
+    "image": false,
+    "linked": true,
+    "resolvedNested": true
+  },
+  {
+    "source": "- > [![a�b][]][k]\n\n[a�b]: correct\n[k]: outer\n\n\u0000",
+    "html": "<ul>\n<li>\n<blockquote>\n<a href=\"outer\"><img alt=\"a�b\" src=\"correct\"></a>\n</blockquote>\n</li>\n</ul>\n<p>\u0000</p>\n",
+    "image": false,
+    "linked": true,
+    "resolvedNested": true
+  },
+  {
+    "source": "> - [![a�b][]][k]\n\n[a�b]: correct\n[k]: outer\n\n\u0000",
+    "html": "<blockquote>\n<ul>\n<li>\n<a href=\"outer\"><img alt=\"a�b\" src=\"correct\"></a>\n</li>\n</ul>\n</blockquote>\n<p>\u0000</p>\n",
+    "image": false,
+    "linked": true,
+    "resolvedNested": true
+  },
+  {
+    "source": "[[a\u0000b][] y][k]\n\n{.d}\n[k]: outer\n[a�b]: wrong",
+    "html": "<p><a href=\"outer\" class=\"d\"><a>a\u0000b</a> y</a></p>\n",
+    "image": false,
+    "linked": true
+  },
+  {
+    "source": "[![a\u0000b][]][missing]\n\n{.d}\n[k]: outer\n[a�b]: wrong",
+    "html": "<p><a><img></a></p>\n",
+    "image": false,
+    "linked": true
+  },
+  {
+    "source": "[![a�b][]][missing]\n\n[a�b]: correct\n\n\u0000",
+    "html": "<p><a><img alt=\"a�b\" src=\"correct\"></a></p>\n<p>\u0000</p>\n",
+    "image": false,
+    "noAlias": true
+  },
+  {
+    "source": "[[a�b][]][missing]\n\n[a�b]: correct\n\n\u0000",
+    "html": "<p><a><a href=\"correct\">a�b</a></a></p>\n<p>\u0000</p>\n",
+    "image": false,
+    "noAlias": true
+  },
+  {
+    "source": "[![x][a�b]][missing]\n\n[a�b]: correct\n\n\u0000",
+    "html": "<p><a><img alt=\"x\" src=\"correct\"></a></p>\n<p>\u0000</p>\n",
+    "image": false,
+    "noAlias": true
+  },
+  {
+    "source": "[a][b][`c`]\n\n[b]: /b\n[`c`]: /c",
+    "html": "<p><a href=\"/b\">a</a>[<code>c</code>]</p>\n",
+    "image": false,
+    "linked": true,
+    "noAlias": true,
+    "resolvedNested": true
+  },
+  {
+    "source": "[a][b][a�b]\n\n[b]: /b\n[a�b]: /c\n\n\u0000",
+    "html": "<p><a href=\"/b\">a</a>[a�b]</p>\n<p>\u0000</p>\n",
+    "image": false,
+    "linked": true,
+    "noAlias": false,
+    "resolvedNested": true
+  },
+  {
+    "source": "[a�b][]\n\n[a�b]: ok",
+    "html": "<p><a href=\"ok\">a�b</a></p>\n",
+    "image": false,
+    "linked": true,
+    "noAlias": true,
+    "resolvedNested": true
+  },
+  {
+    "source": "[x][a�b]\n\n[a\u0000b]: wrong",
+    "html": "<p><a>x</a></p>\n",
+    "image": false
+  },
+  {
+    "source": "![x][a�b]\n\n[a\u0000b]: wrong",
+    "html": "<p><img></p>\n",
+    "image": true
+  },
+  {
+    "source": "# x a�b\n\n[x ![a�b][]][]\n\n[a�b]: correct\n\n\u0000",
+    "html": "<section id=\"x-a�b\">\n<h1>x a�b</h1>\n<p><a href=\"#x-a�b\">x <img alt=\"a�b\" src=\"correct\"></a></p>\n<p>\u0000</p>\n</section>\n",
+    "image": false,
+    "heading": true,
+    "resolvedNested": true
+  },
+  {
+    "source": "# x a�b\n\n[x ![a�b][]][x a�b]\n\n[a�b]: correct\n\n\u0000",
+    "html": "<section id=\"x-a�b\">\n<h1>x a�b</h1>\n<p><a href=\"#x-a�b\">x <img alt=\"a�b\" src=\"correct\"></a></p>\n<p>\u0000</p>\n</section>\n",
+    "image": false,
+    "noAlias": true
+  },
+  {
+    "source": "# `x`",
+    "html": "<section id=\"x\">\n<h1><code>x</code></h1>\n</section>\n",
+    "image": false,
+    "emptyHeading": false
+  },
+  {
+    "source": "# {.x}",
+    "html": "<section id=\"s-1\">\n<h1></h1>\n</section>\n",
+    "image": false,
+    "emptyHeading": true
+  },
+  {
+    "source": "#`x`",
+    "html": "<p>#<code>x</code></p>\n",
+    "image": false,
+    "emptyHeading": false
+  }
+]

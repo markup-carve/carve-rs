@@ -2113,3 +2113,6 @@ mod djot_div_openers;
 
 #[path = "../djot_image_label_nuls.rs"]
 mod djot_image_label_nuls;
+
+#[path = "../djot_unresolved_nul_references.rs"]
+mod djot_unresolved_nul_references;

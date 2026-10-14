@@ -124,12 +124,15 @@ fn convert_djot_document(
     let div_openers = normalize_djot_div_openers(body);
     let table_attributes = escape_djot_table_attribute_boundaries(&div_openers);
     let body = table_attributes.as_ref();
+    let has_source_nuls = body.contains("\0U\0");
     let early_references = if body.lines().any(|line| {
         cached_regex!(r"^\[([^\]\n]*)\]:")
             .unwrap()
             .captures(&line[djot_content_start(line)..])
             .is_some_and(|caps| {
-                !caps[1].starts_with('^') && normalize::reference_key_needs_alias(&caps[1])
+                !caps[1].starts_with('^')
+                    && (normalize::reference_key_needs_alias(&caps[1])
+                        || has_source_nuls && caps[1].contains('�'))
             })
     }) {
         std::borrow::Cow::Owned(normalize::literal_reference_keys(body))

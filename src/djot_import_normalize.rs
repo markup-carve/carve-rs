@@ -3982,8 +3982,11 @@ fn references_impl(
     occupied.extend(uses.iter().map(|reference| reference.key.clone()));
     let mut serial = 0;
     let mut aliases = HashMap::new();
+    let has_source_nuls = source.contains("\0U\0");
     for key in &definition_keys {
-        if reference_key_needs_alias(key) && !aliases.contains_key(key) {
+        if (reference_key_needs_alias(key) || aliases_only && has_source_nuls && key.contains('�'))
+            && !aliases.contains_key(key)
+        {
             aliases.insert(
                 key.clone(),
                 next_reference_alias(&mut occupied, &mut serial),
@@ -3999,7 +4002,35 @@ fn references_impl(
                 }
             }
         }
+        let mut unresolved = Vec::new();
+        if has_source_nuls && aliases.keys().any(|key| key.contains('�')) {
+            let native = reference_definitions(source, &mask).0;
+            unresolved.extend(
+                uses.iter()
+                    .filter(|outer| {
+                        !native.contains_key(&outer.key)
+                            || !outer.reference.label.is_empty()
+                                && !definitions.contains_key(&outer.key)
+                    })
+                    .map(|outer| {
+                        (
+                            outer.reference.start,
+                            outer.reference.start + outer.reference.text.len() + 1,
+                        )
+                    }),
+            );
+            unresolved.sort_unstable_by_key(|range| range.0);
+            let mut end = 0;
+            for range in &mut unresolved {
+                end = end.max(range.1);
+                range.1 = end;
+            }
+        }
         for attributed in &uses {
+            let before = unresolved.partition_point(|range| range.0 < attributed.reference.start);
+            if before > 0 && unresolved[before - 1].1 >= attributed.end {
+                continue;
+            }
             if let Some(alias) = aliases.get(&attributed.key) {
                 let reference = &attributed.reference;
                 edits.push((
@@ -4264,8 +4295,8 @@ fn reference_definitions(source: &str, mask: &str) -> (HashMap<String, String>, 
             definition_lines.insert(n);
         }
         if let Some(heading) = heading
-            .captures(visible)
-            .filter(|_| boundary && !heading_lines.contains(&n))
+            .captures(content)
+            .filter(|_| visible.starts_with('#') && boundary && !heading_lines.contains(&n))
         {
             let mut text = content[heading.get(0).unwrap().end()..].to_owned();
             let marker = regex::Regex::new(&format!(r"^{}[ \t]+", &heading[1])).unwrap();
@@ -4589,6 +4620,7 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
             || definition_term(masks[n - 1]).is_some();
         if block_allowed
             && empty_heading.is_match(visible)
+            && reference_label(text.trim_start_matches('#').trim_start(), "").is_empty()
             && lines
                 .get(n + 1)
                 .map_or(true, |line| line.trim_matches([' ', '\t']).is_empty())
