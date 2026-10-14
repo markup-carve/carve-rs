@@ -129,7 +129,11 @@ fn render_plain_text_inner(
     SUPPRESS_AUTOMATIC_ABBREVIATION.with(|flag| flag.set(false));
     REFERENCED_LINKS
         .with(|set| *set.borrow_mut() = crate::render_markdown::referenced_link_labels(doc));
-    let out = render_blocks(&doc.children, 0);
+    let out: String =
+        crate::render_text::blocks_with_link_definitions_in_source_order(&doc.children)
+            .into_iter()
+            .map(|block| render_block(block, 0))
+            .collect();
     let footnotes = render_footnote_defs(doc);
     normalize(&format!("{out}{footnotes}"))
 }
@@ -213,7 +217,9 @@ pub(crate) fn flatten_cell_block_inlines_with(
             for cell in row.cells.iter().rev() {
                 match &cell.blocks {
                     Some(blocks) => push_blocks(pending, blocks),
-                    None => pending.push(Part::Inlines(&cell.children)),
+                    None => pending.push(Part::Inlines(crate::ast::visible_table_cell_children(
+                        &cell.children,
+                    ))),
                 }
             }
         }
@@ -609,7 +615,10 @@ fn render_table(node: &Table) -> String {
                 .iter()
                 .map(|cell| match &cell.blocks {
                     Some(blocks) => flatten_cell_blocks(blocks),
-                    None => trim_non_nbsp(&render_inlines(&cell.children)).to_string(),
+                    None => trim_non_nbsp(&render_inlines(
+                        crate::ast::visible_table_cell_children(&cell.children),
+                    ))
+                    .to_string(),
                 })
                 .collect::<Vec<_>>()
                 .join(" | "),

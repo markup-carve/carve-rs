@@ -2490,6 +2490,9 @@ fn write_inline_leaf(out: &mut String, node: &InlineNode) {
             if let Some(row) = n.row {
                 w.field("row", |out| write_usize(out, row));
             }
+            if let Some(col) = n.col {
+                w.field("col", |out| write_usize(out, col));
+            }
             write_pos_field(&mut w, &n.pos);
             w.finish();
         }
@@ -2625,6 +2628,9 @@ fn write_cell_wraps_field(w: &mut Writer<'_>, wraps: &Option<Vec<VerbatimCellWra
             if let Some(row) = wrap.row {
                 w.field("row", |out| write_usize(out, row));
             }
+            if let Some(col) = wrap.col {
+                w.field("col", |out| write_usize(out, col));
+            }
             w.finish();
         })
     });
@@ -2651,6 +2657,7 @@ fn decode_cell_wraps(
                 )?
                 .unwrap_or(1),
                 row: positive_usize(optional_usize(entry, "row")?, &format!("{context}.row"))?,
+                col: positive_usize(optional_usize(entry, "col")?, &format!("{context}.col"))?,
             })
         })
         .collect::<Result<Vec<_>, _>>()
@@ -3798,6 +3805,7 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
             )?
             .unwrap_or(1),
             row: positive_usize(optional_usize(obj, "row")?, "cell_wrap.row")?,
+            col: positive_usize(optional_usize(obj, "col")?, "cell_wrap.col")?,
             pos: optional_pos(obj, "cell_wrap")?,
         })),
         "hard_break" => Ok(InlineNode::HardBreak(Break {

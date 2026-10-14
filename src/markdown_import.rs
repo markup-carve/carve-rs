@@ -25,6 +25,12 @@ use pulldown_cmark::{
 use crate::ast::*;
 use crate::render_carve;
 
+#[cfg(test)]
+#[path = "markdown_native_destination_tests.rs"]
+mod native_destination_tests;
+#[path = "markdown_native_destinations.rs"]
+mod native_destinations;
+
 pub(crate) struct MarkdownImportLoss {
     pub message: String,
     pub line: Option<usize>,
@@ -897,7 +903,8 @@ fn markdown_to_ast_with_code_lines(
         .as_ref()
         .map_or(&[][..], |prepared| prepared.1.as_slice());
     let mut bare_url_at = 0;
-    let strikes = crate::markdown_strike::prepare(parser_source, options);
+    let (native_source, native_urls) = native_destinations::prepare(parser_source, options);
+    let strikes = crate::markdown_strike::prepare(&native_source, options);
     let mut reference = |link| strikes.reference(link);
     let mut parser =
         Parser::new_with_broken_link_callback(&strikes.text, options, Some(&mut reference))
@@ -923,6 +930,13 @@ fn markdown_to_ast_with_code_lines(
             continue;
         }
         let mut range = strikes.original_range(range);
+        if let Some(url) = native_urls.get(&range.start) {
+            if let Event::Start(Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. }) =
+                &mut event
+            {
+                *dest_url = url.clone().into();
+            }
+        }
         if let Some(literal) = crate::markdown_strike::literal_underscore(&source, &event, &range) {
             event = Event::Text(source[literal.clone()].into());
             range = literal;

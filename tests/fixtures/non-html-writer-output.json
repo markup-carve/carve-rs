@@ -1,0 +1,237 @@
+[
+  {
+    "slug": "108-security-hardening-12",
+    "target": "ansi",
+    "expected": "Text.\n\n\u001b[2m[x]: /u\u001b[0m\n\n\u001b[2m[y]: \u001b[0m\n"
+  },
+  {
+    "slug": "164-tight-list-item-keeps-trailing-text-after-a-block-bare",
+    "target": "markdown",
+    "expected": "- item\n  ```\n  c\n  ```\n  tail\n"
+  },
+  {
+    "slug": "193-a-collapsed-reference-is-matched-by-the-label-the-author-wrote-2",
+    "target": "ansi",
+    "expected": "\u001b[2m[bold]: /x\u001b[0m\n\nsee [*bold*][]\n"
+  },
+  {
+    "slug": "193-a-collapsed-reference-is-matched-by-the-label-the-author-wrote-2",
+    "target": "markdown",
+    "expected": "[bold]: /x\n\nsee [\\*bold\\*\\][\\]\n"
+  },
+  {
+    "slug": "193-a-collapsed-reference-is-matched-by-the-label-the-author-wrote-2",
+    "target": "plain",
+    "expected": "[bold]: /x\n\nsee [*bold*][]\n"
+  },
+  {
+    "slug": "266-a-reference-definition-is-anchored-at-end-of-line-14",
+    "target": "markdown",
+    "expected": "> text\n\n[a]: /u\n\nlazy\n"
+  },
+  {
+    "slug": "361-a-paragraph-opened-after-a-block-in-an-item-is-still-open-for-a-lazy-line-3",
+    "target": "markdown",
+    "expected": "- ```\n  c\n  ```\n  b\n  tail\n"
+  },
+  {
+    "slug": "374-a-collected-definition-closes-the-item-paragraph-2",
+    "target": "ansi",
+    "expected": "\u001b[33m1.\u001b[0m a\n\n\u001b[2m[r]: /u\u001b[0m\n\nmore tail\n"
+  },
+  {
+    "slug": "374-a-collected-definition-closes-the-item-paragraph-2",
+    "target": "markdown",
+    "expected": "1. a\n\n[r]: /u\n\nmore\ntail\n"
+  },
+  {
+    "slug": "374-a-collected-definition-closes-the-item-paragraph-2",
+    "target": "plain",
+    "expected": "1. a\n\n[r]: /u\n\nmore tail\n"
+  },
+  {
+    "slug": "374-a-collected-definition-closes-the-item-paragraph",
+    "target": "ansi",
+    "expected": "\u001b[36m•\u001b[0m a\n\n\u001b[2m[r]: /u\u001b[0m\n\nmore tail\n"
+  },
+  {
+    "slug": "374-a-collected-definition-closes-the-item-paragraph",
+    "target": "markdown",
+    "expected": "- a\n\n[r]: /u\n\nmore\ntail\n"
+  },
+  {
+    "slug": "374-a-collected-definition-closes-the-item-paragraph",
+    "target": "plain",
+    "expected": "- a\n\n[r]: /u\n\nmore tail\n"
+  },
+  {
+    "slug": "379-a-reference-definition-cannot-take-its-destination-from-the-next-line-3",
+    "target": "ansi",
+    "expected": "\u001b[36m•\u001b[0m \n\n\u001b[2m[d]: /u\u001b[0m\n\n:::\n"
+  },
+  {
+    "slug": "379-a-reference-definition-cannot-take-its-destination-from-the-next-line-3",
+    "target": "markdown",
+    "expected": "*\n\n[d]: /u\n\n:::\n"
+  },
+  {
+    "slug": "379-a-reference-definition-cannot-take-its-destination-from-the-next-line-3",
+    "target": "plain",
+    "expected": "- \n\n[d]: /u\n\n:::\n"
+  },
+  {
+    "slug": "381-a-resumed-lazy-run-belongs-to-the-innermost-marker-line-item-5",
+    "target": "ansi",
+    "expected": "\u001b[36m•\u001b[0m \u001b[36m•\u001b[0m\n\n\u001b[2m[d]: u\u001b[0m\n\n:\n"
+  },
+  {
+    "slug": "381-a-resumed-lazy-run-belongs-to-the-innermost-marker-line-item-5",
+    "target": "markdown",
+    "expected": "* *\n\n[d]: u\n\n:\n"
+  },
+  {
+    "slug": "381-a-resumed-lazy-run-belongs-to-the-innermost-marker-line-item-5",
+    "target": "plain",
+    "expected": "- -\n\n[d]: u\n\n:\n"
+  },
+  {
+    "slug": "381-a-resumed-lazy-run-belongs-to-the-innermost-marker-line-item-8",
+    "target": "ansi",
+    "expected": "\u001b[36m•\u001b[0m \u001b[36m•\u001b[0m\n\n\u001b[2m[d]: u\u001b[0m\n\n:\n"
+  },
+  {
+    "slug": "381-a-resumed-lazy-run-belongs-to-the-innermost-marker-line-item-8",
+    "target": "markdown",
+    "expected": "* *\n\n[d]: u\n\n:\n"
+  },
+  {
+    "slug": "381-a-resumed-lazy-run-belongs-to-the-innermost-marker-line-item-8",
+    "target": "plain",
+    "expected": "- -\n\n[d]: u\n\n:\n"
+  },
+  {
+    "slug": "382-a-marker-line-link-definition-is-collected-where-no-paragraph-is-open",
+    "target": "ansi",
+    "expected": "\u001b[2m[f]: t\u001b[0m\n\n\u001b[36m•\u001b[0m \n\n\u001b[4m\u001b[34mgo\u001b[0m\u001b[2m (u)\u001b[0m\n"
+  },
+  {
+    "slug": "382-a-marker-line-link-definition-is-collected-where-no-paragraph-is-open",
+    "target": "markdown",
+    "expected": "[f]: t\n\n*\n\n[go](u)\n"
+  },
+  {
+    "slug": "382-a-marker-line-link-definition-is-collected-where-no-paragraph-is-open",
+    "target": "plain",
+    "expected": "[f]: t\n\n- \n\ngo\n"
+  },
+  {
+    "slug": "444-an-opener-at-or-past-a-description-body-s-column-closes-its-paragraph-2",
+    "target": "ansi",
+    "expected": "\u001b[1m\u001b[33mterm\u001b[0m\n  definition\n\n\u001b[2m[r]: /url\u001b[0m\n\ntail\n"
+  },
+  {
+    "slug": "444-an-opener-at-or-past-a-description-body-s-column-closes-its-paragraph-2",
+    "target": "markdown",
+    "expected": "**term**\n\ndefinition\n\n[r]: /url\n\ntail\n"
+  },
+  {
+    "slug": "444-an-opener-at-or-past-a-description-body-s-column-closes-its-paragraph-2",
+    "target": "plain",
+    "expected": "term\n  definition\n\n[r]: /url\n\ntail\n"
+  },
+  {
+    "slug": "444-an-opener-at-or-past-a-description-body-s-column-closes-its-paragraph",
+    "target": "ansi",
+    "expected": "\u001b[1m\u001b[33mterm\u001b[0m\n  definition\n\n\u001b[2m[r]: /url\u001b[0m\n\ntail\n"
+  },
+  {
+    "slug": "444-an-opener-at-or-past-a-description-body-s-column-closes-its-paragraph",
+    "target": "markdown",
+    "expected": "**term**\n\ndefinition\n\n[r]: /url\n\ntail\n"
+  },
+  {
+    "slug": "444-an-opener-at-or-past-a-description-body-s-column-closes-its-paragraph",
+    "target": "plain",
+    "expected": "term\n  definition\n\n[r]: /url\n\ntail\n"
+  },
+  {
+    "slug": "553-a-below-column-line-continues-a-paragraph-only-where-one-is-open-13",
+    "target": "markdown",
+    "expected": "- a\n  - b\n    ```\n    ::: note\n    ```\n    text\n    lazy\n"
+  },
+  {
+    "slug": "553-a-below-column-line-continues-a-paragraph-only-where-one-is-open-3",
+    "target": "markdown",
+    "expected": "- a\n  - b\n    ***\n\nlazy\n"
+  },
+  {
+    "slug": "556-a-closed-block-leaves-no-frame-for-the-line-below-2",
+    "target": "markdown",
+    "expected": "- a\n  <code></code>\n  ***\n  ```\n  code\n  ```\n\nafter\n"
+  },
+  {
+    "slug": "556-a-closed-block-leaves-no-frame-for-the-line-below-3",
+    "target": "markdown",
+    "expected": "- a\n  <code></code>\n  ```\n  code\n  ```\n  more\n  after\n"
+  },
+  {
+    "slug": "75-list-nesting-and-looseness-6",
+    "target": "markdown",
+    "expected": "- ```\n  x\n  ```\n  after\n"
+  },
+  {
+    "slug": "82-blockquote-lazy-continuation-6",
+    "target": "ansi",
+    "expected": "\u001b[2m[f]: ~\u001b[0m\n\n/\n"
+  },
+  {
+    "slug": "82-blockquote-lazy-continuation-6",
+    "target": "markdown",
+    "expected": ">\n\n[f]: ~\n\n/\n"
+  },
+  {
+    "slug": "82-blockquote-lazy-continuation-6",
+    "target": "plain",
+    "expected": "\"\"\n\n[f]: ~\n\n/\n"
+  },
+  {
+    "slug": "108-security-hardening-12",
+    "target": "markdown",
+    "expected": "Text.\n\n[x]: /u\n\n[y]: <>\n"
+  },
+  {
+    "slug": "266-a-reference-definition-is-anchored-at-end-of-line-14",
+    "target": "plain",
+    "expected": "\"text\"\n\n[a]: /u {.c}\n\nlazy\n"
+  },
+  {
+    "slug": "266-a-reference-definition-is-anchored-at-end-of-line-14",
+    "target": "ansi",
+    "expected": "\u001b[36m\u001b[2m│\u001b[0m text\n\n\u001b[2m[a]: /u {.c}\u001b[0m\n\nlazy\n"
+  },
+  {
+    "slug": "326-a-column-0-line-after-a-container-s-last-block-when-that-block-left-no-paragraph-open-4",
+    "target": "markdown",
+    "expected": "- ---\n\ntail\n"
+  },
+  {
+    "slug": "363-a-task-item-s-checkbox-is-not-decided-by-its-first-block",
+    "target": "markdown",
+    "expected": "- [ ] > q\n- [x] # h\n- [ ] ---\n"
+  },
+  {
+    "slug": "535-a-marker-line-opaque-quote-keeps-overindented-markers-literal-33",
+    "target": "markdown",
+    "expected": "- > ---\n  >\n  > y\n"
+  },
+  {
+    "slug": "566-an-opener-past-a-hosted-container-s-column-opens-there-5",
+    "target": "markdown",
+    "expected": "- outer\n  - para\n  ---\n  ```\n  ```\n"
+  },
+  {
+    "slug": "108-security-hardening-12",
+    "target": "plain",
+    "expected": "Text.\n\n[x]: /u\n\n[y]:\n"
+  }
+]

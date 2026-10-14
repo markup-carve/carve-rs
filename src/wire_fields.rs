@@ -15,7 +15,7 @@ pub(crate) const WIRE_FIELDS: &[(&str, &[&str])] = &[
     ("block_extension", &["attrs", "fallback", "name", "payload", "pos", "type", "version"]),
     ("block_quote", &["attrs", "children", "fenced", "pos", "type"]),
     ("caption_number", &["attrs", "n", "pos", "type"]),
-    ("cell_wrap", &["line", "pos", "row", "type"]),
+    ("cell_wrap", &["col", "line", "pos", "row", "type"]),
     ("citation", &["key", "locator", "locatorLabel", "locatorValue", "mode", "number", "pos", "prefix", "suffix", "suppressAuthor", "type", "useIndex"]),
     ("citation_definition", &["attrs", "children", "key", "pos", "type"]),
     ("citation_group", &["attrs", "items", "mode", "pos", "raw", "type"]),

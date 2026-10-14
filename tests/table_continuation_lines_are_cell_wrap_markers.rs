@@ -10,6 +10,13 @@ fn rows(source: &str) -> Vec<serde_json::Value> {
     doc["children"][0]["rows"].as_array().unwrap().clone()
 }
 
+fn positioned_rows(source: &str) -> Vec<serde_json::Value> {
+    let options = carve::Options::default().with_positions(true);
+    let doc: serde_json::Value =
+        serde_json::from_str(&to_json(&carve::parse_with_options(source, &options))).unwrap();
+    doc["children"][0]["rows"].as_array().unwrap().clone()
+}
+
 fn shape(cell: &serde_json::Value) -> String {
     fn walk(node: &serde_json::Value, out: &mut Vec<String>) {
         match node["type"].as_str() {
@@ -37,6 +44,51 @@ fn shape(cell: &serde_json::Value) -> String {
 
 fn writes_back(source: &str) {
     assert_eq!(carve::to_carve(source), source, "{source:?}");
+}
+
+#[test]
+fn continuation_wrap_points_to_its_join_marker() {
+    let source = "| a | b |\n+ c | d |\n";
+    let rows = positioned_rows(source);
+    assert_eq!(
+        rows[0]["cells"][0]["children"][1]["pos"],
+        serde_json::json!({
+            "startLine": 2, "endLine": 2, "startColumn": 1, "endColumn": 2,
+            "startOffset": 10, "endOffset": 11
+        })
+    );
+}
+
+#[test]
+fn a_later_continuation_wrap_points_to_its_own_marker() {
+    let source = "| a | b |\n+ c | d |\n+ e | f |\n";
+    let rows = positioned_rows(source);
+    assert_eq!(
+        rows[0]["cells"][0]["children"][3]["pos"],
+        serde_json::json!({
+            "startLine": 3, "endLine": 3, "startColumn": 1, "endColumn": 2,
+            "startOffset": 20, "endOffset": 21
+        })
+    );
+}
+
+#[test]
+fn a_wrap_moved_to_an_earlier_row_has_no_source_span() {
+    let rows = positioned_rows("| a | b |\n| ^ | c |\n+ more | d |\n");
+    assert!(rows[0]["cells"][0]["children"][1].get("pos").is_none());
+    assert_eq!(rows[1]["cells"][1]["children"][1]["pos"]["startLine"], 3);
+}
+
+#[test]
+fn a_second_join_on_one_line_points_to_the_pipe() {
+    let rows = positioned_rows("| a | < |\n+ x | y |\n");
+    let children = rows[0]["cells"][0]["children"].as_array().unwrap();
+    let wraps: Vec<_> = children
+        .iter()
+        .filter(|child| child["type"] == "cell_wrap")
+        .collect();
+    assert_eq!(wraps[0]["pos"]["startColumn"], 1);
+    assert_eq!(wraps[1]["pos"]["startColumn"], 5);
 }
 
 #[test]

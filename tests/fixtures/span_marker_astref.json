@@ -1,0 +1,653 @@
+[
+ {
+  "s": "| a | < |\n+ x | y |\n",
+  "html": "<table>\n  <tbody>\n    <tr><td colspan=\"2\">a x y</td></tr>\n  </tbody>\n</table>",
+  "ast": {
+   "type": "document",
+   "children": [
+    {
+     "type": "table",
+     "rows": [
+      {
+       "type": "table_row",
+       "continuationLines": 1,
+       "cells": [
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [
+          {
+           "type": "text",
+           "value": "a"
+          },
+          {
+           "type": "cell_wrap",
+           "line": 1
+          },
+          {
+           "type": "text",
+           "value": "x"
+          },
+          {
+           "type": "cell_wrap",
+           "line": 1,
+           "col": 1
+          },
+          {
+           "type": "text",
+           "value": "y"
+          }
+         ],
+         "colspan": 2
+        },
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [],
+         "span": "colspan"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "fmt": "| a | < |\n+ x | y |\n"
+ },
+ {
+  "s": "| a | < |\n| ^ | ^ |\n+ x | y |\n",
+  "html": "<table>\n  <tbody>\n    <tr><td rowspan=\"2\" colspan=\"2\">a x y</td></tr>\n    <tr></tr>\n  </tbody>\n</table>",
+  "ast": {
+   "type": "document",
+   "children": [
+    {
+     "type": "table",
+     "rows": [
+      {
+       "type": "table_row",
+       "cells": [
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [
+          {
+           "type": "text",
+           "value": "a"
+          },
+          {
+           "type": "cell_wrap",
+           "line": 1,
+           "row": 1
+          },
+          {
+           "type": "text",
+           "value": "x"
+          },
+          {
+           "type": "cell_wrap",
+           "line": 1,
+           "row": 1,
+           "col": 1
+          },
+          {
+           "type": "text",
+           "value": "y"
+          }
+         ],
+         "colspan": 2,
+         "rowspan": 2
+        },
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [],
+         "span": "colspan"
+        }
+       ]
+      },
+      {
+       "type": "table_row",
+       "continuationLines": 1,
+       "cells": [
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [],
+         "span": "rowspan"
+        },
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [],
+         "span": "rowspan"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "fmt": "| a | < |\n| ^ | ^ |\n+ x | y |\n"
+ },
+ {
+  "s": "| a | b |\n| < | c |\n+ x | y |\n",
+  "html": "<table>\n  <tbody>\n    <tr><td>a</td><td>b</td></tr>\n    <tr><td>x</td><td>c y</td></tr>\n  </tbody>\n</table>",
+  "ast": {
+   "type": "document",
+   "children": [
+    {
+     "type": "table",
+     "rows": [
+      {
+       "type": "table_row",
+       "cells": [
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [
+          {
+           "type": "text",
+           "value": "a"
+          }
+         ]
+        },
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [
+          {
+           "type": "text",
+           "value": "b"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "table_row",
+       "continuationLines": 1,
+       "cells": [
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [
+          {
+           "type": "text",
+           "value": "x"
+          }
+         ],
+         "span": "colspan"
+        },
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [
+          {
+           "type": "text",
+           "value": "c"
+          },
+          {
+           "type": "cell_wrap",
+           "line": 1
+          },
+          {
+           "type": "text",
+           "value": "y"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "fmt": "| a | b |\n| < | c |\n+ x | y |\n"
+ },
+ {
+  "s": "| ^ | b |\n+ x | y |\n",
+  "html": "<table>\n  <tbody>\n    <tr><td>x</td><td>b y</td></tr>\n  </tbody>\n</table>",
+  "ast": {
+   "type": "document",
+   "children": [
+    {
+     "type": "table",
+     "rows": [
+      {
+       "type": "table_row",
+       "continuationLines": 1,
+       "cells": [
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [
+          {
+           "type": "text",
+           "value": "x"
+          }
+         ],
+         "span": "rowspan"
+        },
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [
+          {
+           "type": "text",
+           "value": "b"
+          },
+          {
+           "type": "cell_wrap",
+           "line": 1
+          },
+          {
+           "type": "text",
+           "value": "y"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "fmt": "| ^ | b |\n+ x | y |\n"
+ },
+ {
+  "s": "| a | < |\n| ^ | b |\n+ x | y |\n",
+  "html": "<table>\n  <tbody>\n    <tr><td colspan=\"2\">a</td></tr>\n    <tr><td>x</td><td>b y</td></tr>\n  </tbody>\n</table>",
+  "ast": {
+   "type": "document",
+   "children": [
+    {
+     "type": "table",
+     "rows": [
+      {
+       "type": "table_row",
+       "cells": [
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [
+          {
+           "type": "text",
+           "value": "a"
+          }
+         ],
+         "colspan": 2
+        },
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [],
+         "span": "colspan"
+        }
+       ]
+      },
+      {
+       "type": "table_row",
+       "continuationLines": 1,
+       "cells": [
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [
+          {
+           "type": "text",
+           "value": "x"
+          }
+         ],
+         "span": "rowspan"
+        },
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [
+          {
+           "type": "text",
+           "value": "b"
+          },
+          {
+           "type": "cell_wrap",
+           "line": 1
+          },
+          {
+           "type": "text",
+           "value": "y"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "fmt": "| a | < |\n| ^ | b |\n+ x | y |\n"
+ },
+ {
+  "s": "| a | b |\n| ^ | c |\n| < | d |\n+ x | y |\n",
+  "html": "<table>\n  <tbody>\n    <tr><td rowspan=\"2\">a</td><td>b</td></tr>\n    <tr><td>c</td></tr>\n    <tr><td>x</td><td>d y</td></tr>\n  </tbody>\n</table>",
+  "ast": {
+   "type": "document",
+   "children": [
+    {
+     "type": "table",
+     "rows": [
+      {
+       "type": "table_row",
+       "cells": [
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [
+          {
+           "type": "text",
+           "value": "a"
+          }
+         ],
+         "rowspan": 2
+        },
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [
+          {
+           "type": "text",
+           "value": "b"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "table_row",
+       "cells": [
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [],
+         "span": "rowspan"
+        },
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [
+          {
+           "type": "text",
+           "value": "c"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "table_row",
+       "continuationLines": 1,
+       "cells": [
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [
+          {
+           "type": "text",
+           "value": "x"
+          }
+         ],
+         "span": "colspan"
+        },
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [
+          {
+           "type": "text",
+           "value": "d"
+          },
+          {
+           "type": "cell_wrap",
+           "line": 1
+          },
+          {
+           "type": "text",
+           "value": "y"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "fmt": "| a | b |\n| ^ | c |\n| < | d |\n+ x | y |\n"
+ },
+ {
+  "s": "| ^ | < |\n+ x | y |\n",
+  "html": "<table>\n  <tbody>\n    <tr><td colspan=\"2\">x y</td></tr>\n  </tbody>\n</table>",
+  "ast": {
+   "type": "document",
+   "children": [
+    {
+     "type": "table",
+     "rows": [
+      {
+       "type": "table_row",
+       "continuationLines": 1,
+       "cells": [
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [
+          {
+           "type": "text",
+           "value": "x"
+          },
+          {
+           "type": "cell_wrap",
+           "line": 1,
+           "col": 1
+          },
+          {
+           "type": "text",
+           "value": "y"
+          }
+         ],
+         "span": "rowspan",
+         "colspan": 2
+        },
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [],
+         "span": "colspan"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "fmt": "| ^ | < |\n+ x | y |\n"
+ },
+ {
+  "s": "| ^ | < |\n+ | y |\n",
+  "html": "<table>\n  <tbody>\n    <tr><td colspan=\"2\">y</td></tr>\n  </tbody>\n</table>",
+  "ast": {
+   "type": "document",
+   "children": [
+    {
+     "type": "table",
+     "rows": [
+      {
+       "type": "table_row",
+       "continuationLines": 1,
+       "cells": [
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [
+          {
+           "type": "text",
+           "value": "y"
+          }
+         ],
+         "span": "rowspan",
+         "colspan": 2
+        },
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [],
+         "span": "colspan"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "fmt": "| ^ | < |\n+ y | |\n"
+ },
+ {
+  "s": "| a | b |\n| ^ | c |\n+ more | d |\n",
+  "html": "<table>\n  <tbody>\n    <tr><td rowspan=\"2\">a more</td><td>b</td></tr>\n    <tr><td>c d</td></tr>\n  </tbody>\n</table>",
+  "ast": {
+   "type": "document",
+   "children": [
+    {
+     "type": "table",
+     "rows": [
+      {
+       "type": "table_row",
+       "cells": [
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [
+          {
+           "type": "text",
+           "value": "a"
+          },
+          {
+           "type": "cell_wrap",
+           "line": 1,
+           "row": 1
+          },
+          {
+           "type": "text",
+           "value": "more"
+          }
+         ],
+         "rowspan": 2
+        },
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [
+          {
+           "type": "text",
+           "value": "b"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "table_row",
+       "continuationLines": 1,
+       "cells": [
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [],
+         "span": "rowspan"
+        },
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [
+          {
+           "type": "text",
+           "value": "c"
+          },
+          {
+           "type": "cell_wrap",
+           "line": 1
+          },
+          {
+           "type": "text",
+           "value": "d"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "fmt": "| a | b |\n| ^ | c |\n+ more | d |\n"
+ },
+ {
+  "s": "| *a | < |\n+ b* | y |\n",
+  "html": "<table>\n  <tbody>\n    <tr><td colspan=\"2\"><strong>a b</strong> y</td></tr>\n  </tbody>\n</table>",
+  "ast": {
+   "type": "document",
+   "children": [
+    {
+     "type": "table",
+     "rows": [
+      {
+       "type": "table_row",
+       "continuationLines": 1,
+       "cells": [
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [
+          {
+           "type": "strong",
+           "children": [
+            {
+             "type": "text",
+             "value": "a"
+            },
+            {
+             "type": "cell_wrap",
+             "line": 1
+            },
+            {
+             "type": "text",
+             "value": "b"
+            }
+           ]
+          },
+          {
+           "type": "cell_wrap",
+           "line": 1,
+           "col": 1
+          },
+          {
+           "type": "text",
+           "value": "y"
+          }
+         ],
+         "colspan": 2
+        },
+        {
+         "type": "table_cell",
+         "header": false,
+         "children": [],
+         "span": "colspan"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "fmt": "| *a | < |\n+ b* | y |\n"
+ }
+]

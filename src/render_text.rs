@@ -5,6 +5,88 @@ use std::collections::BTreeSet;
 /// The `(term, expansion)` pairs whose expansion this render will emit.
 pub(crate) type ConsumedAbbreviations = BTreeSet<(String, String)>;
 
+/// Link definitions are collected at document scope, so their place in
+/// `children` can be later than the line that supplied them. Non-HTML writers
+/// emit unused definitions at that authored position.
+pub(crate) fn blocks_with_link_definitions_in_source_order(
+    blocks: &[BlockNode],
+) -> Vec<&BlockNode> {
+    let ordinary: Vec<&BlockNode> = blocks
+        .iter()
+        .filter(
+            |block| !matches!(block, BlockNode::LinkReferenceDefinition(def) if def.pos.is_some()),
+        )
+        .collect();
+    let main_positions: Vec<(usize, usize)> = ordinary
+        .iter()
+        .enumerate()
+        .filter_map(|(index, block)| {
+            crate::ast_json::block_pos(block)
+                .filter(|pos| pos.file.is_none())
+                .map(|pos| (pos.start_offset, index))
+        })
+        .collect();
+    let mut slots: Vec<Vec<(usize, usize, &BlockNode)>> = vec![Vec::new(); ordinary.len() + 1];
+    let mut ordinary_seen = 0;
+    for (original_index, block) in blocks.iter().enumerate() {
+        let BlockNode::LinkReferenceDefinition(def) = block else {
+            ordinary_seen += 1;
+            continue;
+        };
+        let Some(pos) = def.pos.as_ref() else {
+            ordinary_seen += 1;
+            continue;
+        };
+        let slot = if pos.file.is_some() {
+            None
+        } else {
+            let before = main_positions
+                .iter()
+                .filter(|(offset, _)| *offset <= pos.start_offset)
+                .map(|(_, index)| *index)
+                .max();
+            let after = main_positions
+                .iter()
+                .filter(|(offset, _)| *offset > pos.start_offset)
+                .map(|(_, index)| *index)
+                .min();
+            match (before, after) {
+                (Some(left), Some(right)) if left < right && right == left + 1 => Some(right),
+                (None, Some(0)) => Some(0),
+                (Some(left), None) if left + 1 == ordinary.len() => Some(ordinary.len()),
+                _ => None,
+            }
+        };
+        slots[slot.unwrap_or(ordinary_seen)].push((
+            original_index,
+            if slot.is_some() {
+                pos.start_offset
+            } else {
+                usize::MAX
+            },
+            block,
+        ));
+    }
+    let mut ordered = Vec::with_capacity(blocks.len());
+    for (index, block) in ordinary.into_iter().enumerate() {
+        slots[index].sort_by_key(|(original, offset, _)| (*offset, *original));
+        ordered.extend(slots[index].drain(..).map(|(_, _, definition)| definition));
+        ordered.push(block);
+    }
+    slots
+        .last_mut()
+        .unwrap()
+        .sort_by_key(|(original, offset, _)| (*offset, *original));
+    ordered.extend(
+        slots
+            .last_mut()
+            .unwrap()
+            .drain(..)
+            .map(|(_, _, definition)| definition),
+    );
+    ordered
+}
+
 /// Which abbreviation DEFINITIONS the plain-text and terminal targets drop.
 ///
 /// PART 11 §10f splits the referenced definition by target: Markdown keeps the

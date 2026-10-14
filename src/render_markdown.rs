@@ -225,6 +225,7 @@ fn render_markdown_once(
         suppress_automatic_abbreviation: false,
         heading_slugs,
         list_depth: 0,
+        thematic_glued: false,
         in_footnote: false,
         footnote_allowed_lists: HashSet::new(),
         list_item_opening_list: None,
@@ -239,7 +240,11 @@ fn render_markdown_once(
         delimiter_ancestors: Vec::new(),
         rendered_children: HashMap::new(),
     };
-    let out = render_blocks(&doc.children, &mut ctx, 0);
+    let out: String =
+        crate::render_text::blocks_with_link_definitions_in_source_order(&doc.children)
+            .into_iter()
+            .map(|block| render_block(block, &mut ctx, 0))
+            .collect();
     let footnotes = render_footnote_defs(doc, &mut ctx);
     let body = normalize(&format!("{out}{footnotes}"));
     let body = INLINE_CARRIER_PATTERN.with(|pattern| {
@@ -381,6 +386,7 @@ struct MarkdownContext {
     /// document assigned it (PART 11 §11).
     heading_slugs: HashMap<String, String>,
     list_depth: usize,
+    thematic_glued: bool,
     in_footnote: bool,
     footnote_allowed_lists: HashSet<usize>,
     list_item_opening_list: Option<usize>,
@@ -613,14 +619,23 @@ fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) 
             {
                 return String::new();
             }
-            let destination = neutralize_char_refs(
-                &strip_control_chars(&definition.href)
-                    .replace('\\', "\\\\")
-                    .replace('(', "\\(")
-                    .replace(')', "\\)")
-                    .replace('<', "\\<")
-                    .replace('>', "\\>"),
+            let safe = crate::escape::sanitize_destination(
+                &definition.href,
+                definition.pos.as_ref(),
+                crate::render_loss::DeniedSink::Destination,
             );
+            let destination = if safe.is_empty() {
+                "<>".to_string()
+            } else {
+                neutralize_char_refs(
+                    &strip_control_chars(&safe)
+                        .replace('\\', "\\\\")
+                        .replace('(', "\\(")
+                        .replace(')', "\\)")
+                        .replace('<', "\\<")
+                        .replace('>', "\\>"),
+                )
+            };
             let title = definition
                 .title
                 .as_ref()
@@ -798,7 +813,12 @@ fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) 
             }
             out
         }
-        BlockNode::ThematicBreak(_) => "---\n\n".to_string(),
+        BlockNode::ThematicBreak(_) => if ctx.thematic_glued {
+            "***\n\n"
+        } else {
+            "---\n\n"
+        }
+        .to_string(),
         BlockNode::Table(table) => render_table(table, ctx),
         BlockNode::Admonition(admonition) => {
             if let Some(table) = list_table_as_table(admonition) {
@@ -1161,7 +1181,7 @@ fn render_list_item(
         return String::new();
     }
     let mut out = String::new();
-    for child in &item.children {
+    for (index, child) in item.children.iter().enumerate() {
         let outer_opening = ctx.list_item_opening_list;
         if out.is_empty() {
             ctx.list_item_opening_list = match child {
@@ -1169,13 +1189,25 @@ fn render_list_item(
                 _ => None,
             };
         }
+        let non_setext = tight
+            && matches!(opening_block(child), BlockNode::ThematicBreak(_))
+            && out.ends_with("\n\n");
+        let previous_thematic = std::mem::replace(&mut ctx.thematic_glued, non_setext);
         let rendered = render_block(child, ctx, depth);
+        ctx.thematic_glued = previous_thematic;
         ctx.list_item_opening_list = outer_opening;
         // Check the block that opens the rendered output through any div wrappers.
         let opener = opening_block(child);
         if tight
             && out.ends_with("\n\n")
-            && interrupts_a_paragraph(opener, &rendered)
+            && (interrupts_a_paragraph(opener, &rendered)
+                || matches!(opener, BlockNode::ThematicBreak(_))
+                || matches!(opener, BlockNode::Paragraph(_))
+                    && index > 0
+                    && matches!(
+                        closing_block(&item.children[index - 1]),
+                        BlockNode::CodeBlock(_)
+                    ))
             && !absorbs_below(&out, opener)
         {
             out.pop();
@@ -1319,18 +1351,36 @@ fn interrupts_a_paragraph(node: &BlockNode, rendered: &str) -> bool {
 
 /// The block whose own markup opens this child's Markdown output.
 ///
-/// A div with no label is written as its children alone, so the block that
-/// meets the text above is the first child of the outermost such wrapper, and
-/// `rendered` still begins with that block's own bytes. A LABEL is written
-/// ahead of the children as bold text, so a labelled div opens with itself.
+/// Unlabelled containers and line blocks write their first child's opener.
+/// A label or title writes text before that child and opens as its own block.
 fn opening_block(node: &BlockNode) -> &BlockNode {
     let mut node = node;
-    while let BlockNode::Div(div) = node {
-        if !div.label.as_deref().unwrap_or_default().is_empty() {
-            break;
-        }
-        match div.children.first() {
+    loop {
+        let children = match node {
+            BlockNode::Div(div) if div.label.as_deref().unwrap_or_default().is_empty() => {
+                &div.children
+            }
+            BlockNode::Admonition(admonition)
+                if admonition.label.as_deref().unwrap_or_default().is_empty()
+                    && admonition.title.as_ref().map_or(true, Vec::is_empty) =>
+            {
+                &admonition.children
+            }
+            BlockNode::LineBlock(line) => &line.children,
+            _ => break,
+        };
+        match children.first() {
             Some(first) => node = first,
+            None => break,
+        }
+    }
+    node
+}
+
+fn closing_block(mut node: &BlockNode) -> &BlockNode {
+    while let BlockNode::Div(div) = node {
+        match div.children.last() {
+            Some(last) => node = last,
             None => break,
         }
     }
@@ -1558,7 +1608,10 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
                     Some(blocks) => {
                         crate::render_plain::flatten_cell_block_inlines_with(blocks, true)
                     }
-                    None => crate::render_plain::flatten_cell_inlines(&cell.children, true),
+                    None => crate::render_plain::flatten_cell_inlines(
+                        crate::ast::visible_table_cell_children(&cell.children),
+                        true,
+                    ),
                 };
                 ctx.single_line_depth += 1;
                 let roundtrip = ctx.roundtrip;

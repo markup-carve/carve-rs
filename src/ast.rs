@@ -1367,16 +1367,30 @@ pub struct VerbatimCellWrap {
     pub offset: usize,
     pub line: usize,
     pub row: Option<usize>,
+    pub col: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CellWrap {
+    pub col: Option<usize>,
     /// The row's continuation line this part came from, counted from 1.
     pub line: usize,
     /// Rows down from the cell to the row holding that line, when the cell
     /// spans down to it.
     pub row: Option<usize>,
     pub pos: Option<Pos>,
+}
+
+/// The first wrap in a table cell records its source line but separates no
+/// visible content. Nested inline lists can start with a wrap that does
+/// separate content outside the nested node, so callers use this only for a
+/// table cell's own child list.
+pub(crate) fn visible_table_cell_children(children: &[InlineNode]) -> &[InlineNode] {
+    if matches!(children.first(), Some(InlineNode::CellWrap(_))) {
+        &children[1..]
+    } else {
+        children
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

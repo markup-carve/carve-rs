@@ -1,0 +1,513 @@
+[
+  {
+    "source": "![x\\*y\\*](u)",
+    "html": "<p><img alt=\"x*y*\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![x\\*y\\*](u)](u)",
+    "html": "<p><img alt=\"x*y*\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![x\\*y\\*](u)](u)](u)",
+    "html": "<p><img alt=\"x*y*\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![x\\*y\\*](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"x*y*\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "> ![![x\\*y\\*](v)](u)",
+    "html": "<blockquote>\n<p><img alt=\"x*y*\" src=\"u\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- ![![x\\*y\\*](v)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"x*y*\" src=\"u\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "![x\\_y\\_](u)",
+    "html": "<p><img alt=\"x_y_\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![x\\_y\\_](u)](u)",
+    "html": "<p><img alt=\"x_y_\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![x\\_y\\_](u)](u)](u)",
+    "html": "<p><img alt=\"x_y_\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![x\\_y\\_](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"x_y_\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "> ![![x\\_y\\_](v)](u)",
+    "html": "<blockquote>\n<p><img alt=\"x_y_\" src=\"u\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- ![![x\\_y\\_](v)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"x_y_\" src=\"u\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "![x\\^y\\^](u)",
+    "html": "<p><img alt=\"x^y^\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![x\\^y\\^](u)](u)",
+    "html": "<p><img alt=\"x^y^\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![x\\^y\\^](u)](u)](u)",
+    "html": "<p><img alt=\"x^y^\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![x\\^y\\^](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"x^y^\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "> ![![x\\^y\\^](v)](u)",
+    "html": "<blockquote>\n<p><img alt=\"x^y^\" src=\"u\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- ![![x\\^y\\^](v)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"x^y^\" src=\"u\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "![x\\~y\\~](u)",
+    "html": "<p><img alt=\"x~y~\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![x\\~y\\~](u)](u)",
+    "html": "<p><img alt=\"x~y~\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![x\\~y\\~](u)](u)](u)",
+    "html": "<p><img alt=\"x~y~\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![x\\~y\\~](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"x~y~\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "> ![![x\\~y\\~](v)](u)",
+    "html": "<blockquote>\n<p><img alt=\"x~y~\" src=\"u\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- ![![x\\~y\\~](v)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"x~y~\" src=\"u\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "![x\\{y\\}](u)",
+    "html": "<p><img alt=\"x{y}\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![x\\{y\\}](u)](u)",
+    "html": "<p><img alt=\"x{y}\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![x\\{y\\}](u)](u)](u)",
+    "html": "<p><img alt=\"x{y}\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![x\\{y\\}](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"x{y}\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "> ![![x\\{y\\}](v)](u)",
+    "html": "<blockquote>\n<p><img alt=\"x{y}\" src=\"u\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- ![![x\\{y\\}](v)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"x{y}\" src=\"u\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "![x\\`y\\`](u)",
+    "html": "<p><img alt=\"x`y`\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![x\\`y\\`](u)](u)",
+    "html": "<p><img alt=\"x`y`\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![x\\`y\\`](u)](u)](u)",
+    "html": "<p><img alt=\"x`y`\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![x\\`y\\`](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"x`y`\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "> ![![x\\`y\\`](v)](u)",
+    "html": "<blockquote>\n<p><img alt=\"x`y`\" src=\"u\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- ![![x\\`y\\`](v)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"x`y`\" src=\"u\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "![x\\$y](u)",
+    "html": "<p><img alt=\"x$y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![x\\$y](u)](u)",
+    "html": "<p><img alt=\"x$y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![x\\$y](u)](u)](u)",
+    "html": "<p><img alt=\"x$y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![x\\$y](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"x$y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "> ![![x\\$y](v)](u)",
+    "html": "<blockquote>\n<p><img alt=\"x$y\" src=\"u\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- ![![x\\$y](v)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"x$y\" src=\"u\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "![x\\!y](u)",
+    "html": "<p><img alt=\"x!y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![x\\!y](u)](u)",
+    "html": "<p><img alt=\"x!y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![x\\!y](u)](u)](u)",
+    "html": "<p><img alt=\"x!y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![x\\!y](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"x!y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "> ![![x\\!y](v)](u)",
+    "html": "<blockquote>\n<p><img alt=\"x!y\" src=\"u\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- ![![x\\!y](v)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"x!y\" src=\"u\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "![x\\[y\\]](u)",
+    "html": "<p><img alt=\"x[y]\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![x\\[y\\]](u)](u)",
+    "html": "<p><img alt=\"x[y]\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![x\\[y\\]](u)](u)](u)",
+    "html": "<p><img alt=\"x[y]\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![x\\[y\\]](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"x[y]\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "> ![![x\\[y\\]](v)](u)",
+    "html": "<blockquote>\n<p><img alt=\"x[y]\" src=\"u\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- ![![x\\[y\\]](v)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"x[y]\" src=\"u\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "![x\\\\y](u)",
+    "html": "<p><img alt=\"x\\y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![x\\\\y](u)](u)",
+    "html": "<p><img alt=\"x\\y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![x\\\\y](u)](u)](u)",
+    "html": "<p><img alt=\"x\\y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![x\\\\y](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"x\\y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "> ![![x\\\\y](v)](u)",
+    "html": "<blockquote>\n<p><img alt=\"x\\y\" src=\"u\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- ![![x\\\\y](v)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"x\\y\" src=\"u\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "![x\\<y\\>](u)",
+    "html": "<p><img alt=\"x&lt;y&gt;\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![x\\<y\\>](u)](u)",
+    "html": "<p><img alt=\"x&lt;y&gt;\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![x\\<y\\>](u)](u)](u)",
+    "html": "<p><img alt=\"x&lt;y&gt;\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![x\\<y\\>](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"x&lt;y&gt;\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "> ![![x\\<y\\>](v)](u)",
+    "html": "<blockquote>\n<p><img alt=\"x&lt;y&gt;\" src=\"u\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- ![![x\\<y\\>](v)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"x&lt;y&gt;\" src=\"u\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "![a\\:b](u)",
+    "html": "<p><img alt=\"a:b\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![a\\:b](u)](u)",
+    "html": "<p><img alt=\"a:b\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![a\\:b](u)](u)](u)",
+    "html": "<p><img alt=\"a:b\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![a\\:b](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"a:b\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "> ![![a\\:b](v)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a:b\" src=\"u\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- ![![a\\:b](v)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"a:b\" src=\"u\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "![*y*](u)",
+    "html": "<p><img alt=\"y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![*y*](u)](u)",
+    "html": "<p><img alt=\"y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![*y*](u)](u)](u)",
+    "html": "<p><img alt=\"y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![*y*](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "> ![![*y*](v)](u)",
+    "html": "<blockquote>\n<p><img alt=\"y\" src=\"u\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- ![![*y*](v)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"y\" src=\"u\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "![_y_](u)",
+    "html": "<p><img alt=\"y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![_y_](u)](u)",
+    "html": "<p><img alt=\"y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![_y_](u)](u)](u)",
+    "html": "<p><img alt=\"y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![_y_](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "> ![![_y_](v)](u)",
+    "html": "<blockquote>\n<p><img alt=\"y\" src=\"u\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- ![![_y_](v)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"y\" src=\"u\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "![~y~](u)",
+    "html": "<p><img alt=\"y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![~y~](u)](u)",
+    "html": "<p><img alt=\"y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![~y~](u)](u)](u)",
+    "html": "<p><img alt=\"y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![~y~](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "> ![![~y~](v)](u)",
+    "html": "<blockquote>\n<p><img alt=\"y\" src=\"u\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- ![![~y~](v)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"y\" src=\"u\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "![`*y*`](u)",
+    "html": "<p><img alt=\"*y*\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![`*y*`](u)](u)",
+    "html": "<p><img alt=\"*y*\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![`*y*`](u)](u)](u)",
+    "html": "<p><img alt=\"*y*\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![`*y*`](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"*y*\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "> ![![`*y*`](v)](u)",
+    "html": "<blockquote>\n<p><img alt=\"*y*\" src=\"u\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- ![![`*y*`](v)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"*y*\" src=\"u\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "![[y](v)](u)",
+    "html": "<p><img alt=\"y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![[y](v)](u)](u)",
+    "html": "<p><img alt=\"y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![[y](v)](u)](u)](u)",
+    "html": "<p><img alt=\"y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![[y](v)](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "> ![![[y](v)](v)](u)",
+    "html": "<blockquote>\n<p><img alt=\"y\" src=\"u\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- ![![[y](v)](v)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"y\" src=\"u\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "![ä\\*y\\*](u)",
+    "html": "<p><img alt=\"ä*y*\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![ä\\*y\\*](u)](u)",
+    "html": "<p><img alt=\"ä*y*\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![ä\\*y\\*](u)](u)](u)",
+    "html": "<p><img alt=\"ä*y*\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![ä\\*y\\*](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"ä*y*\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "> ![![ä\\*y\\*](v)](u)",
+    "html": "<blockquote>\n<p><img alt=\"ä*y*\" src=\"u\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- ![![ä\\*y\\*](v)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"ä*y*\" src=\"u\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "`![![x\\*y\\*](u)](u)`",
+    "html": "<p><code>![![x\\*y\\*](u)](u)</code></p>\n"
+  },
+  {
+    "source": "```\n![![x\\*y\\*](u)](u)\n```",
+    "html": "<pre><code>![![x\\*y\\*](u)](u)\n</code></pre>\n"
+  },
+  {
+    "source": "{% ![![x\\*y\\*](u)](u) %}",
+    "html": ""
+  },
+  {
+    "source": "![![x\\*y\\*](u) tail](v)",
+    "html": "<p><img alt=\"x*y* tail\" src=\"v\"></p>\n"
+  },
+  {
+    "source": "| ![![x\\|y](u)](v) |\n|---|\n",
+    "html": "<table>\n<tr>\n<th><img alt=\"x|y\" src=\"v\"></th>\n</tr>\n</table>\n",
+    "imageOnly": true
+  },
+  {
+    "source": "| ![![x\\*y\\*](u)](v) |\n|---|\n",
+    "html": "<table>\n<tr>\n<th><img alt=\"x*y*\" src=\"v\"></th>\n</tr>\n</table>\n",
+    "imageOnly": true
+  },
+  {
+    "source": "| ![![`x|y`](u)](v) |\n|---|\n",
+    "html": "<table>\n<tr>\n<th><img alt=\"x|y\" src=\"v\"></th>\n</tr>\n</table>\n",
+    "imageOnly": true
+  },
+  {
+    "source": "![a -- b...](u)",
+    "html": "<p><img alt=\"a -- b...\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![a -- b...](u)](u)",
+    "html": "<p><img alt=\"a -- b...\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![a -- b...](u)](u)](u)",
+    "html": "<p><img alt=\"a -- b...\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![a \\-\\- b\\.\\.\\.](u)",
+    "html": "<p><img alt=\"a -- b...\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![a \\-\\- b\\.\\.\\.](u)](u)",
+    "html": "<p><img alt=\"a -- b...\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![a \\-\\- b\\.\\.\\.](u)](u)](u)",
+    "html": "<p><img alt=\"a -- b...\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![a [b] -- c...](u)",
+    "html": "<p>![a <a href=\"u\">b] – c…</a></p>\n"
+  },
+  {
+    "source": "![![a [b] -- c...](u)](u)",
+    "html": "<p>![<img alt=\"a b] -- c...\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![a [b] -- c...](u)](u)](u)",
+    "html": "<p>![<img alt=\"a b] -- c...\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![\\!\\\"\\#\\$\\%\\&\\'\\(\\)\\*\\+\\,\\-\\.\\/\\:\\;\\<\\=\\>\\?\\@\\[\\\\\\]\\^\\_\\`\\{\\|\\}\\~](u)",
+    "html": "<p><img alt=\"!&quot;#$%&amp;'()*+,-./:;&lt;=&gt;?@[\\]^_`{|}~\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![\\!\\\"\\#\\$\\%\\&\\'\\(\\)\\*\\+\\,\\-\\.\\/\\:\\;\\<\\=\\>\\?\\@\\[\\\\\\]\\^\\_\\`\\{\\|\\}\\~](u)](u)",
+    "html": "<p><img alt=\"!&quot;#$%&amp;'()*+,-./:;&lt;=&gt;?@[\\]^_`{|}~\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![\\!\\\"\\#\\$\\%\\&\\'\\(\\)\\*\\+\\,\\-\\.\\/\\:\\;\\<\\=\\>\\?\\@\\[\\\\\\]\\^\\_\\`\\{\\|\\}\\~](u)](u)](u)",
+    "html": "<p><img alt=\"!&quot;#$%&amp;'()*+,-./:;&lt;=&gt;?@[\\]^_`{|}~\" src=\"u\"></p>\n"
+  }
+]

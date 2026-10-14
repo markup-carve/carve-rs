@@ -107,7 +107,11 @@ fn render_ansi_inner(
         crossref_index: crate::parse::crossref_index_for_document(doc, id_opts),
         link_depth: 0,
     };
-    let out = render_blocks(&doc.children, &mut ctx, 0);
+    let out: String =
+        crate::render_text::blocks_with_link_definitions_in_source_order(&doc.children)
+            .into_iter()
+            .map(|block| render_block(block, &mut ctx, 0))
+            .collect();
     let footnotes = render_footnote_defs(doc, &mut ctx);
     normalize(&format!("{out}{footnotes}"))
 }
@@ -176,11 +180,18 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
             {
                 return String::new();
             }
+            let mut emitted = definition.clone();
+            emitted.href = crate::escape::sanitize_destination(
+                &definition.href,
+                definition.pos.as_ref(),
+                crate::render_loss::DeniedSink::Destination,
+            )
+            .into_owned();
             format!(
                 "{}\n\n",
                 style(
                     &strip_terminal_controls(
-                        &crate::render_carve::render_link_reference_definition(definition)
+                        &crate::render_carve::render_link_reference_definition(&emitted)
                     ),
                     DIM
                 )
@@ -494,33 +505,36 @@ struct RenderedCell {
 }
 
 fn render_table(node: &Table, ctx: &mut AnsiContext) -> String {
-    let rows =
-        node.rows
-            .iter()
-            .map(|row| {
-                let row_is_header = row.cells.iter().all(|cell| cell.header);
-                row.cells
-                    .iter()
-                    .map(|cell| {
-                        let content = match &cell.blocks {
-                            Some(blocks) => trim_non_nbsp(&render_block_inlines(
-                                &crate::render_plain::flatten_cell_block_inlines(blocks),
-                                ctx,
-                            ))
-                            .to_string(),
-                            None => trim_non_nbsp(&render_block_inlines(&cell.children, ctx))
-                                .to_string(),
-                        };
-                        let plain = strip_ansi(&content);
-                        RenderedCell {
-                            content,
-                            plain,
-                            is_header: row_is_header,
-                        }
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
+    let rows = node
+        .rows
+        .iter()
+        .map(|row| {
+            let row_is_header = row.cells.iter().all(|cell| cell.header);
+            row.cells
+                .iter()
+                .map(|cell| {
+                    let content = match &cell.blocks {
+                        Some(blocks) => trim_non_nbsp(&render_block_inlines(
+                            &crate::render_plain::flatten_cell_block_inlines(blocks),
+                            ctx,
+                        ))
+                        .to_string(),
+                        None => trim_non_nbsp(&render_block_inlines(
+                            crate::ast::visible_table_cell_children(&cell.children),
+                            ctx,
+                        ))
+                        .to_string(),
+                    };
+                    let plain = strip_ansi(&content);
+                    RenderedCell {
+                        content,
+                        plain,
+                        is_header: row_is_header,
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
     let mut widths = Vec::<usize>::new();
     for row in &rows {
         for (i, cell) in row.iter().enumerate() {

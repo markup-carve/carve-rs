@@ -2116,3 +2116,16 @@ mod djot_image_label_nuls;
 
 #[path = "../djot_unresolved_nul_references.rs"]
 mod djot_unresolved_nul_references;
+#[path = "../span_marker_continuation_col.rs"]
+mod span_marker_continuation_col;
+
+#[path = "../djot_deep_escaped_images.rs"]
+mod djot_deep_escaped_images;
+
+#[path = "../djot_nested_literal_punctuation.rs"]
+mod djot_nested_literal_punctuation;
+#[path = "../djot_root_code_container_losses.rs"]
+mod djot_root_code_container_losses;
+
+#[path = "../djot_unicode_quote_attributes.rs"]
+mod djot_unicode_quote_attributes;

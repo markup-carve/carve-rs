@@ -45,6 +45,53 @@ fn tight_in_source(source: &str) -> bool {
 }
 
 #[test]
+fn closed_blocks_keep_the_seven_corpus_lists_tight() {
+    let cases = [
+        (
+            "164-tight-list-item-keeps-trailing-text-after-a-block-bare",
+            "- item\n  ```\n  c\n  ```\n  tail\n",
+        ),
+        (
+            "361-a-paragraph-opened-after-a-block-in-an-item-is-still-open-for-a-lazy-line-3",
+            "- ```\n  c\n  ```\n  b\n  tail\n",
+        ),
+        (
+            "553-a-below-column-line-continues-a-paragraph-only-where-one-is-open-13",
+            "- a\n  - b\n    ```\n    ::: note\n    ```\n    text\n    lazy\n",
+        ),
+        (
+            "553-a-below-column-line-continues-a-paragraph-only-where-one-is-open-3",
+            "- a\n  - b\n    ***\n\nlazy\n",
+        ),
+        (
+            "556-a-closed-block-leaves-no-frame-for-the-line-below-2",
+            "- a\n  <code></code>\n  ***\n  ```\n  code\n  ```\n\nafter\n",
+        ),
+        (
+            "556-a-closed-block-leaves-no-frame-for-the-line-below-3",
+            "- a\n  <code></code>\n  ```\n  code\n  ```\n  more\n  after\n",
+        ),
+        (
+            "75-list-nesting-and-looseness-6",
+            "- ```\n  x\n  ```\n  after\n",
+        ),
+    ];
+    for (slug, expected) in cases {
+        let source = std::fs::read_to_string(format!(
+            "{}/tests/spec/tests/corpus/{slug}.crv",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap();
+        let markdown = carve::to_markdown(&source);
+        assert_eq!(markdown, expected, "{slug}");
+        assert!(
+            first_list(&carve::markdown_import::markdown_to_ast(&markdown)).tight,
+            "{slug}"
+        );
+    }
+}
+
+#[test]
 fn a_nested_list_does_not_loosen_the_item_above_it() {
     assert_eq!(
         carve::to_markdown("- parent\n  - child\n"),
@@ -150,25 +197,33 @@ fn a_table_does_not_loosen_the_item_above_it() {
 }
 
 #[test]
-fn a_thematic_break_keeps_the_separator() {
-    // `---` under a paragraph line is a setext underline, so the break does not
-    // interrupt the paragraph - it turns it into a heading. The blank stays.
+fn a_thematic_break_uses_a_non_setext_marker() {
+    // `***` interrupts the paragraph without a blank line, so the item stays
+    // tight and the break cannot be read as a setext underline.
     let source = "- a\n  ---\n";
     let out = carve::to_markdown(source);
-    assert_eq!(out, "- a\n\n  ---\n");
+    assert_eq!(out, "- a\n  ***\n");
+    assert!(reads_back_tight(source));
     assert!(matches!(
         first_list(&carve::markdown_import::markdown_to_ast(&out)).items[0]
             .children
             .get(1),
         Some(BlockNode::ThematicBreak(_))
     ));
-    // Without the blank the same reader answers a heading, which is the reading
-    // the separator buys.
+    // Gluing the authored dashes instead would make a heading.
     let glued = carve::markdown_import::markdown_to_ast("- a\n  ---\n");
     assert!(matches!(
         first_list(&glued).items[0].children.first(),
         Some(BlockNode::Heading(_))
     ));
+}
+
+#[test]
+fn a_thematic_break_inside_a_transparent_div_cannot_become_setext() {
+    let source = "- a\n  :::\n  ---\n  :::\n";
+    let markdown = carve::to_markdown(source);
+    assert_eq!(markdown, "- a\n  ***\n");
+    assert!(reads_back_tight(source));
 }
 
 #[test]
@@ -243,7 +298,7 @@ fn a_quote_the_block_above_wrote_keeps_the_next_quote_separate() {
     // written tail is what sees it; the node kind above does not.
     let source = "- x\n+\n::: note\n> q\n:::\n+\n> r\n";
     let out = carve::to_markdown(source);
-    assert_eq!(out, "- x\n\n  > q\n\n  > r\n");
+    assert_eq!(out, "- x\n  > q\n\n  > r\n");
     assert_eq!(count_quotes(&reads_back_children(source)), 2);
 }
 
