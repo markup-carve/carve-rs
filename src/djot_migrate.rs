@@ -191,7 +191,8 @@ fn convert_djot_document(
         &carry_djot_attributes_across_div_closers(&caret_references),
     );
     let (literal_attributes, inherited) = escape_invalid_djot_attributes(&carried);
-    let attributes = normalize_djot_attribute_lines(&literal_attributes);
+    let attributes =
+        definition_term_table_boundaries(&normalize_djot_attribute_lines(&literal_attributes));
     let owned_references = fold_djot_references(&attributes);
     let fences = normalize_djot_fences(&owned_references);
     let empty_note = djot_placeholder_prefix(body, "\0DJOTEMPTYNOTE\0");
@@ -2989,6 +2990,47 @@ fn definition_term(line: &str) -> Option<(usize, usize)> {
         byte += 1;
     }
     (byte > whitespace || byte == bytes.len()).then_some((columns, byte))
+}
+
+fn definition_term_table_boundaries(source: &str) -> String {
+    if !source.contains(':') || !source.contains('|') {
+        return source.to_owned();
+    }
+    let mask = mask_code_and_destinations(source);
+    let boundaries: HashSet<usize> = djot_inline_boundaries_with_code_scopes(source, &mask, true)
+        .into_iter()
+        .collect();
+    let mut column = None;
+    let mut previous_blank = true;
+    let mut offset = 0;
+    let mut lines = Vec::new();
+    for (line, visible) in source.split('\n').zip(mask.split('\n')) {
+        let (indent, first) = leading_indent(line);
+        let blank = line.trim().is_empty();
+        if blank {
+            column = None;
+        }
+        if visible.as_bytes().get(first) == Some(&b':') {
+            if let Some((next, _)) = definition_term(line) {
+                if previous_blank
+                    || boundaries.contains(&offset)
+                    || column.is_some_and(|held| next <= held)
+                {
+                    column = Some(next);
+                }
+            }
+        } else if column.is_some_and(|held| indent <= held)
+            && visible.as_bytes().get(first) == Some(&b'|')
+            && line.trim_end().ends_with('|')
+        {
+            lines.push(String::new());
+            column = None;
+        }
+        lines.push(line.to_owned());
+        previous_blank = blank;
+        offset += line.len() + 1;
+    }
+    lines.join("\n")
 }
 
 fn finish_definition_frame(frame: DefinitionFrame, lines: &mut [String], empty_term: &str) {
