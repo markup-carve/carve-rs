@@ -148,6 +148,8 @@ impl BracedClosers {
             let mut arrows = HashMap::new();
             if !strikes.is_empty() {
                 let mut hosts = self.native_opaque.as_ref().unwrap_or(&self.opaque).clone();
+                // The `~>` separator may overlap a reference's closing `>`.
+                hosts.retain(|&at, _| !bytes[at..].starts_with(b"</#"));
                 for (&open, &(close, _)) in &ends {
                     hosts.insert(open, close + 2);
                 }
@@ -193,6 +195,8 @@ impl BracedClosers {
         }
         if self.substitution_hosts.is_none() {
             let mut hosts = self.native_opaque.as_ref().unwrap_or(&self.opaque).clone();
+            // The `~>` separator may overlap a reference's closing `>`.
+            hosts.retain(|&at, _| !bytes[at..].starts_with(b"</#"));
             let points = self.emphasis_pairs.as_ref().unwrap().points.clone();
             for at in points {
                 if bytes.get(at) != Some(&b'{') {
