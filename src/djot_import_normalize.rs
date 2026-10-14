@@ -3618,6 +3618,36 @@ fn projected_reference_text(text: &str, depth: usize) -> String {
     projected
 }
 
+fn image_reference_label(text: &str, depth: usize) -> String {
+    let projected = projected_reference_text(text, depth);
+    let attributes = image_label_attributes_for_losses(&projected);
+    let ranges = djot_simple_destination_ranges(&attributes).unwrap_or_else(|| {
+        let mask = mask_djot_forms_with_options(
+            &attributes,
+            true,
+            true,
+            None,
+            &[],
+            OpaqueOptions {
+                destinations: false,
+                ..OpaqueOptions::default()
+            },
+        );
+        djot_destination_ranges(&attributes, &mask)
+    });
+    let mut ranges: Vec<_> = ranges.into_iter().collect();
+    ranges.sort_unstable_by_key(|range| range.0);
+    let mut label = String::new();
+    let mut cursor = 0;
+    for (start, end) in ranges {
+        label.push_str(&attributes[cursor..start]);
+        label.push_str("(djot-label)");
+        cursor = end;
+    }
+    label.push_str(&attributes[cursor..]);
+    reference_label(&label, "")
+}
+
 fn cached_reference_label<'a>(
     text: &'a str,
     explicit: &str,
@@ -4832,6 +4862,7 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
     );
     let mut label_cache = HashMap::new();
     let mut image_loss_cache = HashMap::new();
+    let mut image_key_cache = HashMap::new();
     for reference in &references {
         let at = reference.start;
         if reference.text.starts_with('^') && reference.text.len() > 1 {
@@ -4843,8 +4874,16 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
             None
         } else {
             let key = if image && reference.label.is_empty() {
-                let projected = projected_reference_text(reference.text, reference.quote_depth);
-                definition_label(&image_label_loss_text(&projected, &mut image_loss_cache))
+                if reference.text.len() <= 256 {
+                    image_key_cache
+                        .entry((reference.text, reference.quote_depth))
+                        .or_insert_with(|| {
+                            image_reference_label(reference.text, reference.quote_depth)
+                        })
+                        .clone()
+                } else {
+                    image_reference_label(reference.text, reference.quote_depth)
+                }
             } else {
                 cached_reference_label(
                     reference.text,
@@ -5025,7 +5064,7 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
                 let image = start > 0 && bytes[start - 1] == b'!' && !is_escaped(bytes, start - 1);
                 let valid_form =
                     destinations.contains_key(&(i + 1)) || reference_starts.contains(&start);
-                if image && valid_form {
+                if image && valid_form && !(bytes.get(start + 1) == Some(&b'^') && i > start + 2) {
                     image_labels.push((start, i + 1));
                 }
                 if image && valid_form || bytes.get(start + 1) == Some(&b'^') && i > start + 2 {
