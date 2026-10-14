@@ -802,6 +802,7 @@ fn quoted_list_boundaries<'a>(
     let mut depth = 0;
     let mut boundary = String::new();
     let mut paragraph = false;
+    let mut definition_term_column = None;
     let mut previous_blank = true;
     let mut lists: Vec<(usize, usize, usize, usize, usize, usize)> = Vec::new();
     for (row_index, ((line, masked), fenced)) in source
@@ -877,6 +878,35 @@ fn quoted_list_boundaries<'a>(
         };
         let text = &remainder[raw_indent..];
         let visible = masked.get(prefix.len() + raw_indent..).unwrap_or("");
+
+        if has_definition_syntax {
+            if line.trim_matches([' ', '\t']).is_empty() {
+                definition_term_column = None;
+            } else if quote_depth == 0
+                && visible.starts_with(':')
+                && (!paragraph || definition_term_column.is_some())
+            {
+                if let Some((column, _)) = definition_term(line) {
+                    if !paragraph || definition_term_column.is_some_and(|held| column <= held) {
+                        definition_term_column = Some(column);
+                    }
+                }
+            } else if quote_depth > 0
+                && definition_term_column.is_some_and(|column| leading_indent(line).0 <= column)
+            {
+                paragraph = false;
+                definition_term_column = None;
+            } else if quote_depth == 0
+                && definition_term_column.is_some_and(|column| leading_indent(line).0 <= column)
+                && (marker.is_match(visible)
+                    || heading.is_match(visible)
+                    || thematic(visible)
+                    || visible.starts_with(":::")
+                    || visible.starts_with('|'))
+            {
+                definition_term_column = None;
+            }
+        }
 
         if let Some(caps) = cached_regex!(r"^\x00DJOTITEMATTR\x00(?:[0-9]+\x00)?(B?)[0-9]+\x00$")
             .unwrap()
@@ -2136,7 +2166,6 @@ fn blocks_with_slot_inner(
     let mut lists: Vec<List> = Vec::new();
     let mut definition_columns = Vec::new();
     let mut definition_div_columns = HashSet::new();
-    let mut definition_body = false;
     let mut divs: Vec<(usize, String, bool, Option<usize>, usize)> = Vec::new();
     let mut paragraph = false;
     let mut previous_blank = true;
@@ -2239,7 +2268,6 @@ fn blocks_with_slot_inner(
                 .is_some_and(|column| indent < *column);
             if outside_definition {
                 definition_columns.clear();
-                definition_body = false;
                 paragraph = false;
                 previous_blank = true;
             }
@@ -2302,20 +2330,17 @@ fn blocks_with_slot_inner(
                 }
             }
         }
-        if previous_blank
+        if (block || marker.is_match(visible))
             && definition_columns
                 .last()
-                .is_some_and(|column| indent >= *column)
+                .is_some_and(|column| indent + 2 <= *column)
         {
-            definition_body = true;
-        }
-        if (block || definition_body && marker.is_match(visible))
-            && definition_columns
+            while definition_columns
                 .last()
-                .is_some_and(|column| indent < *column)
-        {
-            definition_columns.clear();
-            definition_body = false;
+                .is_some_and(|column| indent + 2 <= *column)
+            {
+                definition_columns.pop();
+            }
             paragraph = false;
             in_heading = false;
         }
@@ -2552,7 +2577,7 @@ fn blocks_with_slot_inner(
             definition_columns.push(indent + 2);
             let content = definition_term(raw).unwrap().1;
             definition_div_columns.remove(&(indent + 2));
-            definition_body = cached_regex!(r"^:{3,}(?:[ \t]*[A-Za-z0-9_-]+)?[ \t]*$")
+            let definition_body = cached_regex!(r"^:{3,}(?:[ \t]*[A-Za-z0-9_-]+)?[ \t]*$")
                 .unwrap()
                 .is_match(&raw[content..]);
             if definition_body {
@@ -2569,7 +2594,7 @@ fn blocks_with_slot_inner(
         } else if previous_blank {
             while definition_columns
                 .last()
-                .is_some_and(|column| indent < *column)
+                .is_some_and(|column| indent + 1 < *column)
             {
                 definition_columns.pop();
             }
@@ -2974,6 +2999,7 @@ fn blocks_with_slot_inner(
             result.push(
                 if previous_blank
                     && lists.is_empty()
+                    && definition_columns.is_empty()
                     && outer_source.is_some_and(|source| indent <= source)
                 {
                     text.to_owned()
@@ -5153,10 +5179,14 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
         {
             findings.push((offset, "An empty Djot heading cannot be written in Carve."));
         }
-        if empty_description(&lines, &masks, n) {
+        if empty_description(&lines, &masks, n)
+            && !line
+                .find(':')
+                .is_some_and(|at| line[..at].trim().is_empty())
+        {
             findings.push((
                 offset,
-                "An empty definition description cannot be written in Carve.",
+                "An empty definition description is omitted during import.",
             ));
         }
         if rows[n] && text.len() >= 2 && separator(text) {
@@ -5473,7 +5503,7 @@ mod tests {
             ("[link][a and\nb]\n\n[a and\nb]: url\n", 1, "unresolved Djot reference"),
             ("[Link][]\n\n[link]: /url\n", 1, "unresolved Djot reference"),
             ("[[foo](bar)](baz)\n", 1, "nested inside another link"),
-            (": apple\n fruit\n\n  Paragraph one\n\n  Paragraph two\n\n  - sub\n  - list\n\n: orange\n", 11, "empty definition description"),
+            ("> : apple\n> fruit\n>\n>   Paragraph one\n>\n>   Paragraph two\n>\n>   - sub\n>   - list\n>\n> : orange\n", 11, "empty definition description"),
             ("|a|b|\n|:-|---:|\n|c|d|\n|cc|dd|\n|-:|:-:|\n|e|f|\n|g|h|\n", 5, "separator inside the table"),
             ("|--|--|\n", 1, "only separator rows"),
         ] {
@@ -5580,7 +5610,7 @@ mod tests {
         assert!(result.value.contains(":: apple\nfruit\n"));
         assert_eq!(
             migrate_djot(": apple\n fruit\n\n  Body\n\n  - sub\n  - list\n\n: orange\n").value,
-            "{loose}\n:: apple\nfruit\n\n:  Body\n\n   - sub\n   - list\n\n:: orange\n"
+            "{loose}\n:: apple\nfruit\n\n:  Body\n\n   - sub\n   - list\n\n:: orange\n:  %%\n"
         );
     }
 
@@ -5779,7 +5809,6 @@ mod tests {
     #[test]
     fn djot_empty_definition_losses_follow_container_content_and_source_lines() {
         for (source, line) in [
-            (": term\n", 1),
             ("> : term\n", 1),
             ("- : term\n", 1),
             ("intro\n\n> : term\n", 3),

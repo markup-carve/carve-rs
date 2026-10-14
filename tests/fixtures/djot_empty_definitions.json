@@ -1,0 +1,1210 @@
+[
+  {
+    "source": ": term",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: term",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: term",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\n  continuation",
+    "html": "<dl>\n<dt>term\ncontinuation</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\r\n  continuation",
+    "html": "<dl>\n<dt>term\ncontinuation</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: term\n  continuation",
+    "html": "<p>before</p>\n<dl>\n<dt>term\ncontinuation</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: term\r\n  continuation",
+    "html": "<p>before</p>\n<dl>\n<dt>term\ncontinuation</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\n: other",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n</dd>\n<dt>other</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\r\n: other",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n</dd>\n<dt>other</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: term\n: other",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n<dt>other</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: term\r\n: other",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n<dt>other</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\n\n: other",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n</dd>\n<dt>other</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\r\n\r\n: other",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n</dd>\n<dt>other</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: term\n\n: other",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n<dt>other</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: term\r\n\r\n: other",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n<dt>other</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\n\n  body",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\r\n\r\n  body",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: term\n\n  body",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: term\r\n\r\n  body",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\n\npara",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<p>para</p>\n"
+  },
+  {
+    "source": ": term\r\n\r\npara",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<p>para</p>\n"
+  },
+  {
+    "source": "before\n\n: term\n\npara",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<p>para</p>\n"
+  },
+  {
+    "source": "before\r\n\r\n: term\r\n\r\npara",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<p>para</p>\n"
+  },
+  {
+    "source": "{.x}\n: term",
+    "html": "<dl class=\"x\">\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "{.x}\r\n: term",
+    "html": "<dl class=\"x\">\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n{.x}\n: term",
+    "html": "<p>before</p>\n<dl class=\"x\">\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n{.x}\r\n: term",
+    "html": "<p>before</p>\n<dl class=\"x\">\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": *term*",
+    "html": "<dl>\n<dt><strong>term</strong></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": *term*",
+    "html": "<dl>\n<dt><strong>term</strong></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: *term*",
+    "html": "<p>before</p>\n<dl>\n<dt><strong>term</strong></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: *term*",
+    "html": "<p>before</p>\n<dl>\n<dt><strong>term</strong></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": `term`",
+    "html": "<dl>\n<dt><code>term</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": `term`",
+    "html": "<dl>\n<dt><code>term</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: `term`",
+    "html": "<p>before</p>\n<dl>\n<dt><code>term</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: `term`",
+    "html": "<p>before</p>\n<dl>\n<dt><code>term</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term{.x}",
+    "html": "<dl>\n<dt><span class=\"x\">term</span></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term{.x}",
+    "html": "<dl>\n<dt><span class=\"x\">term</span></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: term{.x}",
+    "html": "<p>before</p>\n<dl>\n<dt><span class=\"x\">term</span></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: term{.x}",
+    "html": "<p>before</p>\n<dl>\n<dt><span class=\"x\">term</span></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": {% comment %}",
+    "html": "<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": {% comment %}",
+    "html": "<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: {% comment %}",
+    "html": "<p>before</p>\n<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: {% comment %}",
+    "html": "<p>before</p>\n<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": {.x}",
+    "html": "<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": {.x}",
+    "html": "<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: {.x}",
+    "html": "<p>before</p>\n<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: {.x}",
+    "html": "<p>before</p>\n<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": {}",
+    "html": "<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": {}",
+    "html": "<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: {}",
+    "html": "<p>before</p>\n<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: {}",
+    "html": "<p>before</p>\n<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": ",
+    "html": "<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": ",
+    "html": "<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: ",
+    "html": "<p>before</p>\n<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: ",
+    "html": "<p>before</p>\n<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\n\n: other\n\n  body",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n</dd>\n<dt>other</dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\r\n\r\n: other\r\n\r\n  body",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n</dd>\n<dt>other</dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: term\n\n: other\n\n  body",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n<dt>other</dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: term\r\n\r\n: other\r\n\r\n  body",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n<dt>other</dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\n\n  : child",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n<dl>\n<dt>child</dt>\n<dd>\n</dd>\n</dl>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\r\n\r\n  : child",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n<dl>\n<dt>child</dt>\n<dd>\n</dd>\n</dl>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: term\n\n  : child",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n<dl>\n<dt>child</dt>\n<dd>\n</dd>\n</dl>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: term\r\n\r\n  : child",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n<dl>\n<dt>child</dt>\n<dd>\n</dd>\n</dl>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\n# heading",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<section id=\"heading\">\n<h1>heading</h1>\n</section>\n"
+  },
+  {
+    "source": ": term\r\n# heading",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<section id=\"heading\">\n<h1>heading</h1>\n</section>\n"
+  },
+  {
+    "source": "before\n\n: term\n# heading",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<section id=\"heading\">\n<h1>heading</h1>\n</section>\n"
+  },
+  {
+    "source": "before\r\n\r\n: term\r\n# heading",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<section id=\"heading\">\n<h1>heading</h1>\n</section>\n"
+  },
+  {
+    "source": "# heading\n: term",
+    "html": "<section id=\"heading\">\n<h1>heading</h1>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n</section>\n"
+  },
+  {
+    "source": "# heading\r\n: term",
+    "html": "<section id=\"heading\">\n<h1>heading</h1>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n</section>\n"
+  },
+  {
+    "source": "before\n\n# heading\n: term",
+    "html": "<p>before</p>\n<section id=\"heading\">\n<h1>heading</h1>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n</section>\n"
+  },
+  {
+    "source": "before\r\n\r\n# heading\r\n: term",
+    "html": "<p>before</p>\n<section id=\"heading\">\n<h1>heading</h1>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n</section>\n"
+  },
+  {
+    "source": ": term\n\n  ```\n  code\n  ```",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n<pre><code>code\n</code></pre>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\r\n\r\n  ```\r\n  code\r\n  ```",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n<pre><code>code\r\n</code></pre>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: term\n\n  ```\n  code\n  ```",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n<pre><code>code\n</code></pre>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: term\r\n\r\n  ```\r\n  code\r\n  ```",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n<pre><code>code\r\n</code></pre>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\n\n  body\n\n: other",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n<p>body</p>\n</dd>\n<dt>other</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\r\n\r\n  body\r\n\r\n: other",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n<p>body</p>\n</dd>\n<dt>other</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: term\n\n  body\n\n: other",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n<p>body</p>\n</dd>\n<dt>other</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: term\r\n\r\n  body\r\n\r\n: other",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n<p>body</p>\n</dd>\n<dt>other</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ":",
+    "html": "<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ":",
+    "html": "<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n:",
+    "html": "<p>before</p>\n<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n:",
+    "html": "<p>before</p>\n<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": apple\n fruit\n\n  Paragraph one\n\n  Paragraph two\n\n  - sub\n  - list\n\n: orange\n",
+    "html": "<dl>\n<dt>apple\nfruit</dt>\n<dd>\n<p>Paragraph one</p>\n<p>Paragraph two</p>\n<ul>\n<li>\nsub\n</li>\n<li>\nlist\n</li>\n</ul>\n</dd>\n<dt>orange</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": apple\r\n fruit\r\n\r\n  Paragraph one\r\n\r\n  Paragraph two\r\n\r\n  - sub\r\n  - list\r\n\r\n: orange\r\n",
+    "html": "<dl>\n<dt>apple\nfruit</dt>\n<dd>\n<p>Paragraph one</p>\n<p>Paragraph two</p>\n<ul>\n<li>\nsub\n</li>\n<li>\nlist\n</li>\n</ul>\n</dd>\n<dt>orange</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: apple\n fruit\n\n  Paragraph one\n\n  Paragraph two\n\n  - sub\n  - list\n\n: orange\n",
+    "html": "<p>before</p>\n<dl>\n<dt>apple\nfruit</dt>\n<dd>\n<p>Paragraph one</p>\n<p>Paragraph two</p>\n<ul>\n<li>\nsub\n</li>\n<li>\nlist\n</li>\n</ul>\n</dd>\n<dt>orange</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: apple\r\n fruit\r\n\r\n  Paragraph one\r\n\r\n  Paragraph two\r\n\r\n  - sub\r\n  - list\r\n\r\n: orange\r\n",
+    "html": "<p>before</p>\n<dl>\n<dt>apple\nfruit</dt>\n<dd>\n<p>Paragraph one</p>\n<p>Paragraph two</p>\n<ul>\n<li>\nsub\n</li>\n<li>\nlist\n</li>\n</ul>\n</dd>\n<dt>orange</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": apple\n fruit\n\n  Body\n\n: orange\n",
+    "html": "<dl>\n<dt>apple\nfruit</dt>\n<dd>\n<p>Body</p>\n</dd>\n<dt>orange</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": apple\r\n fruit\r\n\r\n  Body\r\n\r\n: orange\r\n",
+    "html": "<dl>\n<dt>apple\nfruit</dt>\n<dd>\n<p>Body</p>\n</dd>\n<dt>orange</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: apple\n fruit\n\n  Body\n\n: orange\n",
+    "html": "<p>before</p>\n<dl>\n<dt>apple\nfruit</dt>\n<dd>\n<p>Body</p>\n</dd>\n<dt>orange</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: apple\r\n fruit\r\n\r\n  Body\r\n\r\n: orange\r\n",
+    "html": "<p>before</p>\n<dl>\n<dt>apple\nfruit</dt>\n<dd>\n<p>Body</p>\n</dd>\n<dt>orange</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": apple\n  # heading",
+    "html": "<dl>\n<dt>apple\n# heading</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": apple\r\n  # heading",
+    "html": "<dl>\n<dt>apple\n# heading</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: apple\n  # heading",
+    "html": "<p>before</p>\n<dl>\n<dt>apple\n# heading</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: apple\r\n  # heading",
+    "html": "<p>before</p>\n<dl>\n<dt>apple\n# heading</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": apple\n  > quote",
+    "html": "<dl>\n<dt>apple\n&gt; quote</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": apple\r\n  > quote",
+    "html": "<dl>\n<dt>apple\n&gt; quote</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: apple\n  > quote",
+    "html": "<p>before</p>\n<dl>\n<dt>apple\n&gt; quote</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: apple\r\n  > quote",
+    "html": "<p>before</p>\n<dl>\n<dt>apple\n&gt; quote</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": apple\n  | row |",
+    "html": "<dl>\n<dt>apple\n| row |</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": apple\r\n  | row |",
+    "html": "<dl>\n<dt>apple\n| row |</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: apple\n  | row |",
+    "html": "<p>before</p>\n<dl>\n<dt>apple\n| row |</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: apple\r\n  | row |",
+    "html": "<p>before</p>\n<dl>\n<dt>apple\n| row |</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": apple\n  ::: div",
+    "html": "<dl>\n<dt>apple\n::: div</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": apple\r\n  ::: div",
+    "html": "<dl>\n<dt>apple\n::: div</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: apple\n  ::: div",
+    "html": "<p>before</p>\n<dl>\n<dt>apple\n::: div</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: apple\r\n  ::: div",
+    "html": "<p>before</p>\n<dl>\n<dt>apple\n::: div</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": Term\n***",
+    "html": "<dl>\n<dt>Term</dt>\n<dd>\n</dd>\n</dl>\n<hr>\n"
+  },
+  {
+    "source": ": Term\r\n***",
+    "html": "<dl>\n<dt>Term</dt>\n<dd>\n</dd>\n</dl>\n<hr>\n"
+  },
+  {
+    "source": "before\n\n: Term\n***",
+    "html": "<p>before</p>\n<dl>\n<dt>Term</dt>\n<dd>\n</dd>\n</dl>\n<hr>\n"
+  },
+  {
+    "source": "before\r\n\r\n: Term\r\n***",
+    "html": "<p>before</p>\n<dl>\n<dt>Term</dt>\n<dd>\n</dd>\n</dl>\n<hr>\n"
+  },
+  {
+    "source": ": Term\n---",
+    "html": "<dl>\n<dt>Term</dt>\n<dd>\n</dd>\n</dl>\n<hr>\n"
+  },
+  {
+    "source": ": Term\r\n---",
+    "html": "<dl>\n<dt>Term</dt>\n<dd>\n</dd>\n</dl>\n<hr>\n"
+  },
+  {
+    "source": "before\n\n: Term\n---",
+    "html": "<p>before</p>\n<dl>\n<dt>Term</dt>\n<dd>\n</dd>\n</dl>\n<hr>\n"
+  },
+  {
+    "source": "before\r\n\r\n: Term\r\n---",
+    "html": "<p>before</p>\n<dl>\n<dt>Term</dt>\n<dd>\n</dd>\n</dl>\n<hr>\n"
+  },
+  {
+    "source": ": Term\nMr. Smith",
+    "html": "<dl>\n<dt>Term\nMr. Smith</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": Term\r\nMr. Smith",
+    "html": "<dl>\n<dt>Term\nMr. Smith</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: Term\nMr. Smith",
+    "html": "<p>before</p>\n<dl>\n<dt>Term\nMr. Smith</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: Term\r\nMr. Smith",
+    "html": "<p>before</p>\n<dl>\n<dt>Term\nMr. Smith</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": Term\nDr. Smith",
+    "html": "<dl>\n<dt>Term\nDr. Smith</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": Term\r\nDr. Smith",
+    "html": "<dl>\n<dt>Term\nDr. Smith</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: Term\nDr. Smith",
+    "html": "<p>before</p>\n<dl>\n<dt>Term\nDr. Smith</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: Term\r\nDr. Smith",
+    "html": "<p>before</p>\n<dl>\n<dt>Term\nDr. Smith</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": Term\nNo. title",
+    "html": "<dl>\n<dt>Term\nNo. title</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": Term\r\nNo. title",
+    "html": "<dl>\n<dt>Term\nNo. title</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: Term\nNo. title",
+    "html": "<p>before</p>\n<dl>\n<dt>Term\nNo. title</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: Term\r\nNo. title",
+    "html": "<p>before</p>\n<dl>\n<dt>Term\nNo. title</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": Term\nFig. caption",
+    "html": "<dl>\n<dt>Term\nFig. caption</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": Term\r\nFig. caption",
+    "html": "<dl>\n<dt>Term\nFig. caption</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: Term\nFig. caption",
+    "html": "<p>before</p>\n<dl>\n<dt>Term\nFig. caption</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: Term\r\nFig. caption",
+    "html": "<p>before</p>\n<dl>\n<dt>Term\nFig. caption</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": Term\netc. text",
+    "html": "<dl>\n<dt>Term\netc. text</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": Term\r\netc. text",
+    "html": "<dl>\n<dt>Term\netc. text</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: Term\netc. text",
+    "html": "<p>before</p>\n<dl>\n<dt>Term\netc. text</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: Term\r\netc. text",
+    "html": "<p>before</p>\n<dl>\n<dt>Term\netc. text</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": Term\nCivil. text",
+    "html": "<dl>\n<dt>Term\nCivil. text</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": Term\r\nCivil. text",
+    "html": "<dl>\n<dt>Term\nCivil. text</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: Term\nCivil. text",
+    "html": "<p>before</p>\n<dl>\n<dt>Term\nCivil. text</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: Term\r\nCivil. text",
+    "html": "<p>before</p>\n<dl>\n<dt>Term\nCivil. text</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": Term\nE. coli",
+    "html": "<dl>\n<dt>Term</dt>\n<dd>\n</dd>\n</dl>\n<ol start=\"5\" type=\"A\">\n<li>\ncoli\n</li>\n</ol>\n"
+  },
+  {
+    "source": ": Term\r\nE. coli",
+    "html": "<dl>\n<dt>Term</dt>\n<dd>\n</dd>\n</dl>\n<ol start=\"5\" type=\"A\">\n<li>\ncoli\n</li>\n</ol>\n"
+  },
+  {
+    "source": "before\n\n: Term\nE. coli",
+    "html": "<p>before</p>\n<dl>\n<dt>Term</dt>\n<dd>\n</dd>\n</dl>\n<ol start=\"5\" type=\"A\">\n<li>\ncoli\n</li>\n</ol>\n"
+  },
+  {
+    "source": "before\r\n\r\n: Term\r\nE. coli",
+    "html": "<p>before</p>\n<dl>\n<dt>Term</dt>\n<dd>\n</dd>\n</dl>\n<ol start=\"5\" type=\"A\">\n<li>\ncoli\n</li>\n</ol>\n"
+  },
+  {
+    "source": ": Term\niv. x",
+    "html": "<dl>\n<dt>Term</dt>\n<dd>\n</dd>\n</dl>\n<ol start=\"4\" type=\"i\">\n<li>\nx\n</li>\n</ol>\n"
+  },
+  {
+    "source": ": Term\r\niv. x",
+    "html": "<dl>\n<dt>Term</dt>\n<dd>\n</dd>\n</dl>\n<ol start=\"4\" type=\"i\">\n<li>\nx\n</li>\n</ol>\n"
+  },
+  {
+    "source": "before\n\n: Term\niv. x",
+    "html": "<p>before</p>\n<dl>\n<dt>Term</dt>\n<dd>\n</dd>\n</dl>\n<ol start=\"4\" type=\"i\">\n<li>\nx\n</li>\n</ol>\n"
+  },
+  {
+    "source": "before\r\n\r\n: Term\r\niv. x",
+    "html": "<p>before</p>\n<dl>\n<dt>Term</dt>\n<dd>\n</dd>\n</dl>\n<ol start=\"4\" type=\"i\">\n<li>\nx\n</li>\n</ol>\n"
+  },
+  {
+    "source": ": Term\n(a) item",
+    "html": "<dl>\n<dt>Term</dt>\n<dd>\n</dd>\n</dl>\n<ol type=\"a\">\n<li>\nitem\n</li>\n</ol>\n"
+  },
+  {
+    "source": ": Term\r\n(a) item",
+    "html": "<dl>\n<dt>Term</dt>\n<dd>\n</dd>\n</dl>\n<ol type=\"a\">\n<li>\nitem\n</li>\n</ol>\n"
+  },
+  {
+    "source": "before\n\n: Term\n(a) item",
+    "html": "<p>before</p>\n<dl>\n<dt>Term</dt>\n<dd>\n</dd>\n</dl>\n<ol type=\"a\">\n<li>\nitem\n</li>\n</ol>\n"
+  },
+  {
+    "source": "before\r\n\r\n: Term\r\n(a) item",
+    "html": "<p>before</p>\n<dl>\n<dt>Term</dt>\n<dd>\n</dd>\n</dl>\n<ol type=\"a\">\n<li>\nitem\n</li>\n</ol>\n"
+  },
+  {
+    "source": ": outer\n\n  : inner\n  - x\n\n  more outer",
+    "html": "<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\n</dd>\n</dl>\n<ul>\n<li>\nx\n</li>\n</ul>\n<p>more outer</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": outer\r\n\r\n  : inner\r\n  - x\r\n\r\n  more outer",
+    "html": "<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\n</dd>\n</dl>\n<ul>\n<li>\nx\n</li>\n</ul>\n<p>more outer</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: outer\n\n  : inner\n  - x\n\n  more outer",
+    "html": "<p>before</p>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\n</dd>\n</dl>\n<ul>\n<li>\nx\n</li>\n</ul>\n<p>more outer</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: outer\r\n\r\n  : inner\r\n  - x\r\n\r\n  more outer",
+    "html": "<p>before</p>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\n</dd>\n</dl>\n<ul>\n<li>\nx\n</li>\n</ul>\n<p>more outer</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": outer\n\n  : inner\n  > q\n\n  more outer",
+    "html": "<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\n</dd>\n</dl>\n<blockquote>\n<p>q</p>\n</blockquote>\n<p>more outer</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": outer\r\n\r\n  : inner\r\n  > q\r\n\r\n  more outer",
+    "html": "<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\n</dd>\n</dl>\n<blockquote>\n<p>q</p>\n</blockquote>\n<p>more outer</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: outer\n\n  : inner\n  > q\n\n  more outer",
+    "html": "<p>before</p>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\n</dd>\n</dl>\n<blockquote>\n<p>q</p>\n</blockquote>\n<p>more outer</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: outer\r\n\r\n  : inner\r\n  > q\r\n\r\n  more outer",
+    "html": "<p>before</p>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\n</dd>\n</dl>\n<blockquote>\n<p>q</p>\n</blockquote>\n<p>more outer</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": outer\n\n  : inner\n  # h\n\n  more outer",
+    "html": "<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\n</dd>\n</dl>\n<h1 id=\"h\">h</h1>\n<p>more outer</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": outer\r\n\r\n  : inner\r\n  # h\r\n\r\n  more outer",
+    "html": "<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\n</dd>\n</dl>\n<h1 id=\"h\">h</h1>\n<p>more outer</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: outer\n\n  : inner\n  # h\n\n  more outer",
+    "html": "<p>before</p>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\n</dd>\n</dl>\n<h1 id=\"h\">h</h1>\n<p>more outer</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: outer\r\n\r\n  : inner\r\n  # h\r\n\r\n  more outer",
+    "html": "<p>before</p>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\n</dd>\n</dl>\n<h1 id=\"h\">h</h1>\n<p>more outer</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ":\n\n[r]: u\n[r][]",
+    "html": "<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n<p><a href=\"u\">r</a></p>\n"
+  },
+  {
+    "source": ":\r\n\r\n[r]: u\r\n[r][]",
+    "html": "<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n<p><a href=\"u\">r</a></p>\n"
+  },
+  {
+    "source": "before\n\n:\n\n[r]: u\n[r][]",
+    "html": "<p>before</p>\n<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n<p><a href=\"u\">r</a></p>\n"
+  },
+  {
+    "source": "before\r\n\r\n:\r\n\r\n[r]: u\r\n[r][]",
+    "html": "<p>before</p>\n<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n<p><a href=\"u\">r</a></p>\n"
+  },
+  {
+    "source": ": A\n  : B",
+    "html": "<dl>\n<dt>A\n: B</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": A\r\n  : B",
+    "html": "<dl>\n<dt>A\n: B</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: A\n  : B",
+    "html": "<p>before</p>\n<dl>\n<dt>A\n: B</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: A\r\n  : B",
+    "html": "<p>before</p>\n<dl>\n<dt>A\n: B</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": A\n  :",
+    "html": "<dl>\n<dt>A\n:</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": A\r\n  :",
+    "html": "<dl>\n<dt>A\n:</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: A\n  :",
+    "html": "<p>before</p>\n<dl>\n<dt>A\n:</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: A\r\n  :",
+    "html": "<p>before</p>\n<dl>\n<dt>A\n:</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": A\n  : B\n  more",
+    "html": "<dl>\n<dt>A\n: B\nmore</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": A\r\n  : B\r\n  more",
+    "html": "<dl>\n<dt>A\n: B\nmore</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: A\n  : B\n  more",
+    "html": "<p>before</p>\n<dl>\n<dt>A\n: B\nmore</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: A\r\n  : B\r\n  more",
+    "html": "<p>before</p>\n<dl>\n<dt>A\n: B\nmore</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": `A\n  : B`",
+    "html": "<dl>\n<dt><code>A\n: B</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": `A\r\n  : B`",
+    "html": "<dl>\n<dt><code>A\n: B</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: `A\n  : B`",
+    "html": "<p>before</p>\n<dl>\n<dt><code>A\n: B</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: `A\r\n  : B`",
+    "html": "<p>before</p>\n<dl>\n<dt><code>A\n: B</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": `A\n  : B`{.x}",
+    "html": "<dl>\n<dt><code class=\"x\">A\n: B</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": `A\r\n  : B`{.x}",
+    "html": "<dl>\n<dt><code class=\"x\">A\n: B</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: `A\n  : B`{.x}",
+    "html": "<p>before</p>\n<dl>\n<dt><code class=\"x\">A\n: B</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: `A\r\n  : B`{.x}",
+    "html": "<p>before</p>\n<dl>\n<dt><code class=\"x\">A\n: B</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": `A\n  Civil. text`",
+    "html": "<dl>\n<dt><code>A\nCivil. text</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": `A\r\n  Civil. text`",
+    "html": "<dl>\n<dt><code>A\nCivil. text</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: `A\n  Civil. text`",
+    "html": "<p>before</p>\n<dl>\n<dt><code>A\nCivil. text</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: `A\r\n  Civil. text`",
+    "html": "<p>before</p>\n<dl>\n<dt><code>A\nCivil. text</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": `A & <B>\n  : C`",
+    "html": "<dl>\n<dt><code>A &amp; &lt;B&gt;\n: C</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": `A & <B>\r\n  : C`",
+    "html": "<dl>\n<dt><code>A &amp; &lt;B&gt;\n: C</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: `A & <B>\n  : C`",
+    "html": "<p>before</p>\n<dl>\n<dt><code>A &amp; &lt;B&gt;\n: C</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: `A & <B>\r\n  : C`",
+    "html": "<p>before</p>\n<dl>\n<dt><code>A &amp; &lt;B&gt;\n: C</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": ```A\n  : B```",
+    "html": "<dl>\n<dt></dt>\n<dd>\n<pre><code class=\"language-A\">: B```</code></pre>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": ```A\r\n  : B```",
+    "html": "<dl>\n<dt></dt>\n<dd>\n<pre><code class=\"language-A\">: B```</code></pre>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: ```A\n  : B```",
+    "html": "<p>before</p>\n<dl>\n<dt></dt>\n<dd>\n<pre><code class=\"language-A\">: B```</code></pre>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: ```A\r\n  : B```",
+    "html": "<p>before</p>\n<dl>\n<dt></dt>\n<dd>\n<pre><code class=\"language-A\">: B```</code></pre>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": pre `A\n  : B` post",
+    "html": "<dl>\n<dt>pre <code>A\n: B</code> post</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": pre `A\r\n  : B` post",
+    "html": "<dl>\n<dt>pre <code>A\n: B</code> post</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: pre `A\n  : B` post",
+    "html": "<p>before</p>\n<dl>\n<dt>pre <code>A\n: B</code> post</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: pre `A\r\n  : B` post",
+    "html": "<p>before</p>\n<dl>\n<dt>pre <code>A\n: B</code> post</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term text\n  `code\n  : x`\n\n  body",
+    "html": "<dl>\n<dt>term text\n<code>code\n: x</code></dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term text\r\n  `code\r\n  : x`\r\n\r\n  body",
+    "html": "<dl>\n<dt>term text\n<code>code\n: x</code></dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: term text\n  `code\n  : x`\n\n  body",
+    "html": "<p>before</p>\n<dl>\n<dt>term text\n<code>code\n: x</code></dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: term text\r\n  `code\r\n  : x`\r\n\r\n  body",
+    "html": "<p>before</p>\n<dl>\n<dt>term text\n<code>code\n: x</code></dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term text\n  `code\n  : x`{.x #id key=\"v\"}\n\n  body",
+    "html": "<dl>\n<dt>term text\n<code class=\"x\" id=\"id\" key=\"v\">code\n: x</code></dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term text\r\n  `code\r\n  : x`{.x #id key=\"v\"}\r\n\r\n  body",
+    "html": "<dl>\n<dt>term text\n<code class=\"x\" id=\"id\" key=\"v\">code\n: x</code></dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: term text\n  `code\n  : x`{.x #id key=\"v\"}\n\n  body",
+    "html": "<p>before</p>\n<dl>\n<dt>term text\n<code class=\"x\" id=\"id\" key=\"v\">code\n: x</code></dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: term text\r\n  `code\r\n  : x`{.x #id key=\"v\"}\r\n\r\n  body",
+    "html": "<p>before</p>\n<dl>\n<dt>term text\n<code class=\"x\" id=\"id\" key=\"v\">code\n: x</code></dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": `A\n  : B`{.x}{#y}",
+    "html": "<dl>\n<dt><code class=\"x\" id=\"y\">A\n: B</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": `A\r\n  : B`{.x}{#y}",
+    "html": "<dl>\n<dt><code class=\"x\" id=\"y\">A\n: B</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: `A\n  : B`{.x}{#y}",
+    "html": "<p>before</p>\n<dl>\n<dt><code class=\"x\" id=\"y\">A\n: B</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: `A\r\n  : B`{.x}{#y}",
+    "html": "<p>before</p>\n<dl>\n<dt><code class=\"x\" id=\"y\">A\n: B</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": `A\n  : B`{.x}{key=\"v\" .y}",
+    "html": "<dl>\n<dt><code class=\"x y\" key=\"v\">A\n: B</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": `A\r\n  : B`{.x}{key=\"v\" .y}",
+    "html": "<dl>\n<dt><code class=\"x y\" key=\"v\">A\n: B</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: `A\n  : B`{.x}{key=\"v\" .y}",
+    "html": "<p>before</p>\n<dl>\n<dt><code class=\"x y\" key=\"v\">A\n: B</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: `A\r\n  : B`{.x}{key=\"v\" .y}",
+    "html": "<p>before</p>\n<dl>\n<dt><code class=\"x y\" key=\"v\">A\n: B</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": `A\n  : B`{.x}{class=\"y\" .z}",
+    "html": "<dl>\n<dt><code class=\"x y z\">A\n: B</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": `A\r\n  : B`{.x}{class=\"y\" .z}",
+    "html": "<dl>\n<dt><code class=\"x y z\">A\n: B</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: `A\n  : B`{.x}{class=\"y\" .z}",
+    "html": "<p>before</p>\n<dl>\n<dt><code class=\"x y z\">A\n: B</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: `A\r\n  : B`{.x}{class=\"y\" .z}",
+    "html": "<p>before</p>\n<dl>\n<dt><code class=\"x y z\">A\n: B</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": Term\n - x",
+    "html": "<dl>\n<dt>Term\n- x</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": Term\r\n - x",
+    "html": "<dl>\n<dt>Term\n- x</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: Term\n - x",
+    "html": "<p>before</p>\n<dl>\n<dt>Term\n- x</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: Term\r\n - x",
+    "html": "<p>before</p>\n<dl>\n<dt>Term\n- x</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": outer\n\n  : inner\n   - x",
+    "html": "<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner\n- x</dt>\n<dd>\n</dd>\n</dl>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": outer\r\n\r\n  : inner\r\n   - x",
+    "html": "<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner\n- x</dt>\n<dd>\n</dd>\n</dl>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: outer\n\n  : inner\n   - x",
+    "html": "<p>before</p>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner\n- x</dt>\n<dd>\n</dd>\n</dl>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: outer\r\n\r\n  : inner\r\n   - x",
+    "html": "<p>before</p>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner\n- x</dt>\n<dd>\n</dd>\n</dl>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": A\n  : B\n  > q",
+    "html": "<dl>\n<dt>A\n: B\n&gt; q</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": A\r\n  : B\r\n  > q",
+    "html": "<dl>\n<dt>A\n: B\n&gt; q</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: A\n  : B\n  > q",
+    "html": "<p>before</p>\n<dl>\n<dt>A\n: B\n&gt; q</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: A\r\n  : B\r\n  > q",
+    "html": "<p>before</p>\n<dl>\n<dt>A\n: B\n&gt; q</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\n> q",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<blockquote>\n<p>q</p>\n</blockquote>\n"
+  },
+  {
+    "source": ": term\r\n> q",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<blockquote>\n<p>q</p>\n</blockquote>\n"
+  },
+  {
+    "source": "before\n\n: term\n> q",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<blockquote>\n<p>q</p>\n</blockquote>\n"
+  },
+  {
+    "source": "before\r\n\r\n: term\r\n> q",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<blockquote>\n<p>q</p>\n</blockquote>\n"
+  },
+  {
+    "source": ": term\n- x",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<ul>\n<li>\nx\n</li>\n</ul>\n"
+  },
+  {
+    "source": ": term\r\n- x",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<ul>\n<li>\nx\n</li>\n</ul>\n"
+  },
+  {
+    "source": "before\n\n: term\n- x",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<ul>\n<li>\nx\n</li>\n</ul>\n"
+  },
+  {
+    "source": "before\r\n\r\n: term\r\n- x",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<ul>\n<li>\nx\n</li>\n</ul>\n"
+  },
+  {
+    "source": ": term\n1. x",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<ol>\n<li>\nx\n</li>\n</ol>\n"
+  },
+  {
+    "source": ": term\r\n1. x",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<ol>\n<li>\nx\n</li>\n</ol>\n"
+  },
+  {
+    "source": "before\n\n: term\n1. x",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<ol>\n<li>\nx\n</li>\n</ol>\n"
+  },
+  {
+    "source": "before\r\n\r\n: term\r\n1. x",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<ol>\n<li>\nx\n</li>\n</ol>\n"
+  },
+  {
+    "source": ": term\n| a |",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<table>\n<tr>\n<td>a</td>\n</tr>\n</table>\n"
+  },
+  {
+    "source": ": term\r\n| a |",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<table>\n<tr>\n<td>a</td>\n</tr>\n</table>\n"
+  },
+  {
+    "source": "before\n\n: term\n| a |",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<table>\n<tr>\n<td>a</td>\n</tr>\n</table>\n"
+  },
+  {
+    "source": "before\r\n\r\n: term\r\n| a |",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<table>\n<tr>\n<td>a</td>\n</tr>\n</table>\n"
+  },
+  {
+    "source": ": term\n```\ncode\n```",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<pre><code>code\n</code></pre>\n"
+  },
+  {
+    "source": ": term\r\n```\r\ncode\r\n```",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<pre><code>code\r\n</code></pre>\n"
+  },
+  {
+    "source": "before\n\n: term\n```\ncode\n```",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<pre><code>code\n</code></pre>\n"
+  },
+  {
+    "source": "before\r\n\r\n: term\r\n```\r\ncode\r\n```",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<pre><code>code\r\n</code></pre>\n"
+  },
+  {
+    "source": ": outer\n\n  : inner\n  ***\n\n  more outer",
+    "html": "<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\n</dd>\n</dl>\n<hr>\n<p>more outer</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": outer\r\n\r\n  : inner\r\n  ***\r\n\r\n  more outer",
+    "html": "<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\n</dd>\n</dl>\n<hr>\n<p>more outer</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: outer\n\n  : inner\n  ***\n\n  more outer",
+    "html": "<p>before</p>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\n</dd>\n</dl>\n<hr>\n<p>more outer</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: outer\r\n\r\n  : inner\r\n  ***\r\n\r\n  more outer",
+    "html": "<p>before</p>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\n</dd>\n</dl>\n<hr>\n<p>more outer</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": outer\n\n  : inner\n  ---\n\n  more outer",
+    "html": "<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\n</dd>\n</dl>\n<hr>\n<p>more outer</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": outer\r\n\r\n  : inner\r\n  ---\r\n\r\n  more outer",
+    "html": "<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\n</dd>\n</dl>\n<hr>\n<p>more outer</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: outer\n\n  : inner\n  ---\n\n  more outer",
+    "html": "<p>before</p>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\n</dd>\n</dl>\n<hr>\n<p>more outer</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: outer\r\n\r\n  : inner\r\n  ---\r\n\r\n  more outer",
+    "html": "<p>before</p>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\n</dd>\n</dl>\n<hr>\n<p>more outer</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\n# h\n| a |",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<section id=\"h\">\n<h1>h</h1>\n<table>\n<tr>\n<td>a</td>\n</tr>\n</table>\n</section>\n"
+  },
+  {
+    "source": ": term\r\n# h\r\n| a |",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<section id=\"h\">\n<h1>h</h1>\n<table>\n<tr>\n<td>a</td>\n</tr>\n</table>\n</section>\n"
+  },
+  {
+    "source": "before\n\n: term\n# h\n| a |",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<section id=\"h\">\n<h1>h</h1>\n<table>\n<tr>\n<td>a</td>\n</tr>\n</table>\n</section>\n"
+  },
+  {
+    "source": "before\r\n\r\n: term\r\n# h\r\n| a |",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<section id=\"h\">\n<h1>h</h1>\n<table>\n<tr>\n<td>a</td>\n</tr>\n</table>\n</section>\n"
+  },
+  {
+    "source": ": term\nmore\n```\ncode\n```",
+    "html": "<dl>\n<dt>term\nmore</dt>\n<dd>\n</dd>\n</dl>\n<pre><code>code\n</code></pre>\n"
+  },
+  {
+    "source": ": term\r\nmore\r\n```\r\ncode\r\n```",
+    "html": "<dl>\n<dt>term\nmore</dt>\n<dd>\n</dd>\n</dl>\n<pre><code>code\r\n</code></pre>\n"
+  },
+  {
+    "source": "before\n\n: term\nmore\n```\ncode\n```",
+    "html": "<p>before</p>\n<dl>\n<dt>term\nmore</dt>\n<dd>\n</dd>\n</dl>\n<pre><code>code\n</code></pre>\n"
+  },
+  {
+    "source": "before\r\n\r\n: term\r\nmore\r\n```\r\ncode\r\n```",
+    "html": "<p>before</p>\n<dl>\n<dt>term\nmore</dt>\n<dd>\n</dd>\n</dl>\n<pre><code>code\r\n</code></pre>\n"
+  },
+  {
+    "source": ": term\n| a \\|",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<p>| a |</p>\n"
+  },
+  {
+    "source": ": term\r\n| a \\|",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<p>| a |</p>\n"
+  },
+  {
+    "source": "before\n\n: term\n| a \\|",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<p>| a |</p>\n"
+  },
+  {
+    "source": "before\r\n\r\n: term\r\n| a \\|",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<p>| a |</p>\n"
+  },
+  {
+    "source": ": term\n\n  : inner\n | a |",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\n</dd>\n</dl>\n<table>\n<tr>\n<td>a</td>\n</tr>\n</table>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\r\n\r\n  : inner\r\n | a |",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\n</dd>\n</dl>\n<table>\n<tr>\n<td>a</td>\n</tr>\n</table>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: term\n\n  : inner\n | a |",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\n</dd>\n</dl>\n<table>\n<tr>\n<td>a</td>\n</tr>\n</table>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: term\r\n\r\n  : inner\r\n | a |",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\n</dd>\n</dl>\n<table>\n<tr>\n<td>a</td>\n</tr>\n</table>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\n\n body",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\r\n\r\n body",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: term\n\n body",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: term\r\n\r\n body",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\n\n : child",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n<dl>\n<dt>child</dt>\n<dd>\n</dd>\n</dl>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\r\n\r\n : child",
+    "html": "<dl>\n<dt>term</dt>\n<dd>\n<dl>\n<dt>child</dt>\n<dd>\n</dd>\n</dl>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\n\n: term\n\n : child",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n<dl>\n<dt>child</dt>\n<dd>\n</dd>\n</dl>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "before\r\n\r\n: term\r\n\r\n : child",
+    "html": "<p>before</p>\n<dl>\n<dt>term</dt>\n<dd>\n<dl>\n<dt>child</dt>\n<dd>\n</dd>\n</dl>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": `A\n```\nB`",
+    "html": "<dl>\n<dt><code>A</code></dt>\n<dd>\n</dd>\n</dl>\n<pre><code>B`</code></pre>\n"
+  },
+  {
+    "source": ": `A\r\n```\r\nB`",
+    "html": "<dl>\n<dt><code>A</code></dt>\n<dd>\n</dd>\n</dl>\n<pre><code>B`</code></pre>\n"
+  },
+  {
+    "source": ": $`A\n```\nB`",
+    "html": "<dl>\n<dt><span class=\"math inline\">\\(A\\)</span></dt>\n<dd>\n</dd>\n</dl>\n<pre><code>B`</code></pre>\n"
+  },
+  {
+    "source": ": $`A\r\n```\r\nB`",
+    "html": "<dl>\n<dt><span class=\"math inline\">\\(A\\)</span></dt>\n<dd>\n</dd>\n</dl>\n<pre><code>B`</code></pre>\n"
+  },
+  {
+    "source": ": `A\n```\nB`{=html}",
+    "html": "<dl>\n<dt><code>A</code></dt>\n<dd>\n</dd>\n</dl>\n<pre><code>B`{=html}</code></pre>\n"
+  },
+  {
+    "source": ": `A\r\n```\r\nB`{=html}",
+    "html": "<dl>\n<dt><code>A</code></dt>\n<dd>\n</dd>\n</dl>\n<pre><code>B`{=html}</code></pre>\n"
+  },
+  {
+    "source": ": [A](u\n```\nv)",
+    "html": "<dl>\n<dt>[A](u</dt>\n<dd>\n</dd>\n</dl>\n<pre><code>v)</code></pre>\n"
+  },
+  {
+    "source": ": [A](u\r\n```\r\nv)",
+    "html": "<dl>\n<dt>[A](u</dt>\n<dd>\n</dd>\n</dl>\n<pre><code>v)</code></pre>\n"
+  },
+  {
+    "source": ": term\n| a",
+    "html": "<dl>\n<dt>term\n| a</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\r\n| a",
+    "html": "<dl>\n<dt>term\n| a</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\n``` foo bar",
+    "html": "<dl>\n<dt>term\n<code> foo bar</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\r\n``` foo bar",
+    "html": "<dl>\n<dt>term\n<code> foo bar</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\n~~~ foo bar",
+    "html": "<dl>\n<dt>term\n~~~ foo bar</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\r\n~~~ foo bar",
+    "html": "<dl>\n<dt>term\n~~~ foo bar</dt>\n<dd>\n</dd>\n</dl>\n"
+  }
+]
