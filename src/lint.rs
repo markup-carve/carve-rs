@@ -405,7 +405,7 @@ fn collect_table_span_marker_warnings(
                     continue;
                 }
                 let (marker, reason) = match span {
-                    TableCellSpan::Rowspan if r == 0 =>
+                    TableCellSpan::Rowspan if r == 0 || c >= table.rows[r - 1].cells.len() =>
                         ('^', "There is no cell above it to extend."),
                     TableCellSpan::Rowspan =>
                         ('^', "Extending the cell above would cover another cell."),
@@ -465,21 +465,14 @@ fn locate_marker_in_row(
         .map(str::len)
         .sum::<usize>();
     let line_text = line_text.trim_end_matches(['\r', '\n']);
-    let pipes: Vec<usize> = line_text
-        .match_indices('|')
-        .filter(|(at, _)| {
-            line_text[..*at]
-                .bytes()
-                .rev()
-                .take_while(|&b| b == b'\\')
-                .count()
-                % 2
-                == 0
-        })
-        .map(|(at, _)| at)
-        .collect();
-    let from = *pipes.get(cell)? + 1;
-    let to = pipes.get(cell + 1).copied().unwrap_or(line_text.len());
+    let row_column = row.pos.as_ref()?.start_column;
+    let row_at = line_text
+        .char_indices()
+        .nth(row_column.checked_sub(1)?)
+        .map_or(line_text.len(), |(at, _)| at);
+    let (from, to) = crate::parse::lint_table_cell_ranges(&line_text[row_at..])
+        .get(cell)
+        .map(|&(from, to)| (row_at + from, row_at + to))?;
     let at = line_text.get(from..to)?.find(marker)? + from;
     Some((line, line_text[..at].chars().count() + 1, line_start + at))
 }
