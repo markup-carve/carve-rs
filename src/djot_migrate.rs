@@ -1459,6 +1459,14 @@ impl crate::include_walk::SubtreeVisitor for ImageAltChildText {
 
     fn inlines(&mut self, inlines: &mut Vec<crate::ast::InlineNode>) {
         for inline in inlines {
+            if let crate::ast::InlineNode::CriticDelete(value) = inline {
+                *inline = crate::ast::InlineNode::Span(crate::ast::Span {
+                    attrs: None,
+                    children: std::mem::take(&mut value.children),
+                    injected: false,
+                    pos: value.pos.take(),
+                });
+            }
             if matches!(
                 inline,
                 crate::ast::InlineNode::NonBreakingSpace(_) | crate::ast::InlineNode::Footnote(_)

@@ -1,0 +1,502 @@
+[
+  {
+    "source": "![a {-x-} b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "![a {-x-} b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "> ![a {-x-} b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "> ![a {-x-} b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "- ![a {-x-} b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "- ![a {-x-} b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "::: box\n![a {-x-} b](i)\n:::",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "::: box\r\n![a {-x-} b](i)\r\n:::",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "![a {-x -} b](i)",
+    "alt": "a x  b",
+    "trailingLoss": false
+  },
+  {
+    "source": "![a {-x -} b](i)",
+    "alt": "a x  b",
+    "trailingLoss": false
+  },
+  {
+    "source": "> ![a {-x -} b](i)",
+    "alt": "a x  b",
+    "trailingLoss": false
+  },
+  {
+    "source": "> ![a {-x -} b](i)",
+    "alt": "a x  b",
+    "trailingLoss": false
+  },
+  {
+    "source": "- ![a {-x -} b](i)",
+    "alt": "a x  b",
+    "trailingLoss": false
+  },
+  {
+    "source": "- ![a {-x -} b](i)",
+    "alt": "a x  b",
+    "trailingLoss": false
+  },
+  {
+    "source": "::: box\n![a {-x -} b](i)\n:::",
+    "alt": "a x  b",
+    "trailingLoss": false
+  },
+  {
+    "source": "::: box\r\n![a {-x -} b](i)\r\n:::",
+    "alt": "a x  b",
+    "trailingLoss": false
+  },
+  {
+    "source": "![a {-x -}\nb](i)",
+    "alt": "a x \nb",
+    "trailingLoss": true
+  },
+  {
+    "source": "![a {-x -}\r\nb](i)",
+    "alt": "a x \nb",
+    "trailingLoss": true
+  },
+  {
+    "source": "> ![a {-x -}\n> b](i)",
+    "alt": "a x \nb",
+    "trailingLoss": true
+  },
+  {
+    "source": "> ![a {-x -}\r\n> b](i)",
+    "alt": "a x \nb",
+    "trailingLoss": true
+  },
+  {
+    "source": "- ![a {-x -}\n  b](i)",
+    "alt": "a x \nb",
+    "trailingLoss": true
+  },
+  {
+    "source": "- ![a {-x -}\r\n  b](i)",
+    "alt": "a x \nb",
+    "trailingLoss": true
+  },
+  {
+    "source": "::: box\n![a {-x -}\nb](i)\n:::",
+    "alt": "a x \nb",
+    "trailingLoss": true
+  },
+  {
+    "source": "::: box\r\n![a {-x -}\r\nb](i)\r\n:::",
+    "alt": "a x \nb",
+    "trailingLoss": true
+  },
+  {
+    "source": "![a {-*x*-} b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "![a {-*x*-} b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "> ![a {-*x*-} b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "> ![a {-*x*-} b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "- ![a {-*x*-} b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "- ![a {-*x*-} b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "::: box\n![a {-*x*-} b](i)\n:::",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "::: box\r\n![a {-*x*-} b](i)\r\n:::",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "![a {-{+x+}-} b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "![a {-{+x+}-} b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "> ![a {-{+x+}-} b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "> ![a {-{+x+}-} b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "- ![a {-{+x+}-} b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "- ![a {-{+x+}-} b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "::: box\n![a {-{+x+}-} b](i)\n:::",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "::: box\r\n![a {-{+x+}-} b](i)\r\n:::",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "![a `{-x-}` b](i)",
+    "alt": "a {-x-} b",
+    "trailingLoss": false
+  },
+  {
+    "source": "![a `{-x-}` b](i)",
+    "alt": "a {-x-} b",
+    "trailingLoss": false
+  },
+  {
+    "source": "> ![a `{-x-}` b](i)",
+    "alt": "a {-x-} b",
+    "trailingLoss": false
+  },
+  {
+    "source": "> ![a `{-x-}` b](i)",
+    "alt": "a {-x-} b",
+    "trailingLoss": false
+  },
+  {
+    "source": "- ![a `{-x-}` b](i)",
+    "alt": "a {-x-} b",
+    "trailingLoss": false
+  },
+  {
+    "source": "- ![a `{-x-}` b](i)",
+    "alt": "a {-x-} b",
+    "trailingLoss": false
+  },
+  {
+    "source": "::: box\n![a `{-x-}` b](i)\n:::",
+    "alt": "a {-x-} b",
+    "trailingLoss": false
+  },
+  {
+    "source": "::: box\r\n![a `{-x-}` b](i)\r\n:::",
+    "alt": "a {-x-} b",
+    "trailingLoss": false
+  },
+  {
+    "source": "![a \\{-x-} b](i)",
+    "alt": "a {-x-} b",
+    "trailingLoss": false
+  },
+  {
+    "source": "![a \\{-x-} b](i)",
+    "alt": "a {-x-} b",
+    "trailingLoss": false
+  },
+  {
+    "source": "> ![a \\{-x-} b](i)",
+    "alt": "a {-x-} b",
+    "trailingLoss": false
+  },
+  {
+    "source": "> ![a \\{-x-} b](i)",
+    "alt": "a {-x-} b",
+    "trailingLoss": false
+  },
+  {
+    "source": "- ![a \\{-x-} b](i)",
+    "alt": "a {-x-} b",
+    "trailingLoss": false
+  },
+  {
+    "source": "- ![a \\{-x-} b](i)",
+    "alt": "a {-x-} b",
+    "trailingLoss": false
+  },
+  {
+    "source": "::: box\n![a \\{-x-} b](i)\n:::",
+    "alt": "a {-x-} b",
+    "trailingLoss": false
+  },
+  {
+    "source": "::: box\r\n![a \\{-x-} b](i)\r\n:::",
+    "alt": "a {-x-} b",
+    "trailingLoss": false
+  },
+  {
+    "source": "![a {-x\ny-} b](i)",
+    "alt": "a x\ny b",
+    "trailingLoss": false
+  },
+  {
+    "source": "![a {-x\r\ny-} b](i)",
+    "alt": "a x\ny b",
+    "trailingLoss": false
+  },
+  {
+    "source": "> ![a {-x\n> y-} b](i)",
+    "alt": "a x\ny b",
+    "trailingLoss": false
+  },
+  {
+    "source": "> ![a {-x\r\n> y-} b](i)",
+    "alt": "a x\ny b",
+    "trailingLoss": false
+  },
+  {
+    "source": "- ![a {-x\n  y-} b](i)",
+    "alt": "a x\ny b",
+    "trailingLoss": false
+  },
+  {
+    "source": "- ![a {-x\r\n  y-} b](i)",
+    "alt": "a x\ny b",
+    "trailingLoss": false
+  },
+  {
+    "source": "::: box\n![a {-x\ny-} b](i)\n:::",
+    "alt": "a x\ny b",
+    "trailingLoss": false
+  },
+  {
+    "source": "::: box\r\n![a {-x\r\ny-} b](i)\r\n:::",
+    "alt": "a x\ny b",
+    "trailingLoss": false
+  },
+  {
+    "source": "![a {-x-}{.d} b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "![a {-x-}{.d} b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "> ![a {-x-}{.d} b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "> ![a {-x-}{.d} b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "- ![a {-x-}{.d} b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "- ![a {-x-}{.d} b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "::: box\n![a {-x-}{.d} b](i)\n:::",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "::: box\r\n![a {-x-}{.d} b](i)\r\n:::",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "![a ![{-x-}](u) b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "![a ![{-x-}](u) b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "> ![a ![{-x-}](u) b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "> ![a ![{-x-}](u) b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "- ![a ![{-x-}](u) b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "- ![a ![{-x-}](u) b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "::: box\n![a ![{-x-}](u) b](i)\n:::",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "::: box\r\n![a ![{-x-}](u) b](i)\r\n:::",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "![a [{-x-}](u) b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "![a [{-x-}](u) b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "> ![a [{-x-}](u) b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "> ![a [{-x-}](u) b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "- ![a [{-x-}](u) b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "- ![a [{-x-}](u) b](i)",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "::: box\n![a [{-x-}](u) b](i)\n:::",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "::: box\r\n![a [{-x-}](u) b](i)\r\n:::",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "![a {-x-}\nb](i)",
+    "alt": "a x\nb",
+    "trailingLoss": false
+  },
+  {
+    "source": "![a {-x-}\r\nb](i)",
+    "alt": "a x\nb",
+    "trailingLoss": false
+  },
+  {
+    "source": "> ![a {-x-}\n> b](i)",
+    "alt": "a x\nb",
+    "trailingLoss": false
+  },
+  {
+    "source": "> ![a {-x-}\r\n> b](i)",
+    "alt": "a x\nb",
+    "trailingLoss": false
+  },
+  {
+    "source": "- ![a {-x-}\n  b](i)",
+    "alt": "a x\nb",
+    "trailingLoss": false
+  },
+  {
+    "source": "- ![a {-x-}\r\n  b](i)",
+    "alt": "a x\nb",
+    "trailingLoss": false
+  },
+  {
+    "source": "::: box\n![a {-x-}\nb](i)\n:::",
+    "alt": "a x\nb",
+    "trailingLoss": false
+  },
+  {
+    "source": "::: box\r\n![a {-x-}\r\nb](i)\r\n:::",
+    "alt": "a x\nb",
+    "trailingLoss": false
+  },
+  {
+    "source": "![{-x-}][]\n\n[x]: u",
+    "alt": "x",
+    "trailingLoss": false
+  },
+  {
+    "source": "![{-x-}][]\r\n\r\n[x]: u",
+    "alt": "x",
+    "trailingLoss": false
+  },
+  {
+    "source": "![a {-x-} b][]\n\n[a x b]: u",
+    "alt": "a x b",
+    "trailingLoss": false
+  },
+  {
+    "source": "![a {-x-} b][]\r\n\r\n[a x b]: u",
+    "alt": "a x b",
+    "trailingLoss": false
+  }
+]
