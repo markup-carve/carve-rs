@@ -43,7 +43,7 @@ which the published crate does not carry.
 
 - Djot import adds the space Carve needs after a compact or tab-separated DIV opener such as `:::x`, keeps a quote after a multiline attribute line, and keeps the checkbox on an empty task item (#2724, #2729, #2738).
 
-- Djot import keeps a DIV that opens a definition item in the definition body instead of reading it as the term (#2759).
+- Djot import keeps a DIV that opens a definition item in the definition body instead of reading it as the term, including when the definition holds a nested list (#2759, #2761).
 
 - Djot import keeps Unicode spacing (NBSP, NEL, em space, U+3000) in a quote as paragraph payload instead of ending the quote or moving its attributes (#2744).
 
@@ -180,6 +180,8 @@ which the published crate does not carry.
 - Table continuation lines are kept as `cell_wrap` markers and `cellWraps` offsets, so a continued table formats to itself (#2675, #2679).
 
 - Djot import scans structural prefixes once per line, and short inline words skip the full inline parser setup (#2401, #2508).
+
+- Lint reports a `^` or `<` table span marker that resolves to no span under `table-span-marker-blocked`, at the marker's own line and column (#2760).
 
 - An authored `{#id}` on a footnote reference replaces the generated `fnref` ID, and the backlink follows it. HTML import matches a backlink by its target (#2700).
 
