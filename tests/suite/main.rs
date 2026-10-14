@@ -1583,6 +1583,8 @@ mod table_row_counts;
 mod table_section_attributes;
 #[path = "../table_span_covers_caption.rs"]
 mod table_span_covers_caption;
+#[path = "../table_span_marker_blocked_lint.rs"]
+mod table_span_marker_blocked_lint;
 #[path = "../task_state_enumeration.rs"]
 mod task_state_enumeration;
 #[path = "../text_target_structure.rs"]

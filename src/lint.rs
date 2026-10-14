@@ -19,6 +19,7 @@ use crate::extension::Options;
 use crate::parse::parse_with_options;
 use crate::render::{semantic_span_order, semantic_value_target, EXTENDED_SEMANTIC_SPAN_ORDER};
 use crate::source_positions::CodepointLineStarts;
+use crate::table_spans::TableSpanPlan;
 
 /// One diagnostic: a silent degradation, located in the source the caller
 /// passed.
@@ -183,6 +184,10 @@ pub(crate) fn lint_with_recovery(source: &str, options: &Options<'_>) -> (Vec<Li
     collect_template_source_warning(source, &doc, &mut out);
     collect_unattached_block_attribute_warnings(source, &unattached, &to_byte, &mut out);
     collect_table_column_warnings(source, &mut out);
+    collect_table_span_marker_warnings(source, &doc.children, &to_byte, &mut out);
+    for body in doc.footnote_defs.values() {
+        collect_table_span_marker_warnings(source, body, &to_byte, &mut out);
+    }
     out.sort_by_key(|w| (w.start, w.end, w.rule));
     (out, recovered_metadata)
 }
@@ -375,6 +380,108 @@ fn collect_table_column_warnings(source: &str, out: &mut Vec<LintWarning>) {
         }
         line_start += line.len() + 1;
     }
+}
+
+fn collect_table_span_marker_warnings(
+    source: &str,
+    blocks: &[BlockNode],
+    to_byte: &dyn Fn(usize) -> usize,
+    out: &mut Vec<LintWarning>,
+) {
+    walk_all_blocks(blocks, &mut |block| {
+        let table = match block {
+            BlockNode::Table(table) => table,
+            BlockNode::Figure(figure) => match &*figure.target {
+                FigureTarget::Table(table) => table,
+                _ => return,
+            },
+            _ => return,
+        };
+        let plan = TableSpanPlan::new(table);
+        for (r, row) in table.rows.iter().enumerate() {
+            for (c, cell) in row.cells.iter().enumerate() {
+                let Some(span) = cell.span else { continue };
+                if plan.entry(r, c).skip {
+                    continue;
+                }
+                let (marker, reason) = match span {
+                    TableCellSpan::Rowspan if r == 0 =>
+                        ('^', "There is no cell above it to extend."),
+                    TableCellSpan::Rowspan =>
+                        ('^', "Extending the cell above would cover another cell."),
+                    TableCellSpan::Colspan if c == 0 =>
+                        ('<', "There is no cell to its left to widen."),
+                    TableCellSpan::Colspan =>
+                        ('<', "The cell to its left starts in an earlier row, so widening it would cover cells already placed."),
+                };
+                let located = cell
+                    .pos
+                    .as_ref()
+                    .and_then(|pos| {
+                        let start = to_byte(pos.start_offset);
+                        let end = to_byte(pos.end_offset).min(source.len());
+                        source
+                            .get(start..end)
+                            .and_then(|s| s.find(marker))
+                            .map(|at| {
+                                let marker_start = start + at;
+                                (
+                                    pos.start_line,
+                                    pos.start_column + source[start..marker_start].chars().count(),
+                                    marker_start,
+                                )
+                            })
+                    })
+                    .or_else(|| locate_marker_in_row(source, row, c, marker));
+                let Some((line, column, start)) = located else {
+                    continue;
+                };
+                out.push(LintWarning {
+                    line,
+                    column,
+                    start,
+                    end: start + marker.len_utf8(),
+                    rule: "table-span-marker-blocked",
+                    message: format!(
+                        "The \"{marker}\" span marker cannot extend a cell. {reason} It renders as a cell of its own; escape it as \"\\{marker}\" to keep the character as text, or remove it."
+                    ),
+                });
+            }
+        }
+    });
+}
+
+fn locate_marker_in_row(
+    source: &str,
+    row: &TableRow,
+    cell: usize,
+    marker: char,
+) -> Option<(usize, usize, usize)> {
+    let line = row.pos.as_ref()?.start_line;
+    let line_text = source.split_inclusive('\n').nth(line.checked_sub(1)?)?;
+    let line_start = source
+        .split_inclusive('\n')
+        .take(line - 1)
+        .map(str::len)
+        .sum::<usize>();
+    let line_text = line_text.trim_end_matches(['\r', '\n']);
+    let pipes: Vec<usize> = line_text
+        .match_indices('|')
+        .filter(|(at, _)| {
+            line_text[..*at]
+                .bytes()
+                .rev()
+                .take_while(|&b| b == b'\\')
+                .count()
+                % 2
+                == 0
+        })
+        .map(|(at, _)| at)
+        .collect();
+    let from = *pipes.get(cell)? + 1;
+    let to = pipes.get(cell + 1).copied().unwrap_or(line_text.len());
+    let at = line_text.get(from..to)?.find(marker)? + from;
+    Some((line, line_text[..at].chars().count() + 1, line_start + at))
 }
 
 /// PART 9 §15 A4: a floating `{…}` that ran out of blocks to attach to.
