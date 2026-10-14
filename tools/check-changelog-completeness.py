@@ -72,9 +72,11 @@ NOT_SHIPPED: list[re.Pattern[str]] = []
 EXEMPT_FILE = ".changelog-exempt"
 
 VERSION_TAG = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
-# A squash merge carries its pull request as a trailing `(#N)`, the only number
-# on the commit that can lead anywhere.
+# A squash merge carries its pull request as a trailing `(#N)`, a merge commit
+# as `Merge pull request #N from ...`. Both are read from the first-parent
+# history, so a merged branch's own commits are not counted on their own.
 PULL_REQUEST = re.compile(r"\(#(\d+)\)\s*$")
+MERGE_PULL_REQUEST = re.compile(r"^Merge pull request #(\d+) from \S+")
 # A qualified reference to ANOTHER repository is not a citation of this one, so
 # the owner is checked rather than grepping for a bare `#N`.
 REFERENCE = re.compile(r"(?:([A-Za-z0-9._-]+/[A-Za-z0-9._-]+))?#(\d+)\b")
@@ -114,11 +116,17 @@ def main() -> int:
     # What merged, and what of it touched shipped source.
     shipping: dict[str, str] = {}
     unattributed: list[tuple[str, str]] = []
-    for line in git("log", "--format=%H\x1f%s", rng).splitlines():
+    for line in git("log", "--first-parent", "--format=%H\x1f%s\x1f%b", "-z", rng).split("\0"):
         if not line:
             continue
-        sha, _, subject = line.partition("\x1f")
+        sha, _, rest = line.strip("\n").partition("\x1f")
+        subject, _, body = rest.partition("\x1f")
         if not touches_shipped(git, sha):
+            continue
+        if m := MERGE_PULL_REQUEST.match(subject):
+            # The merge's title is the first line of its body.
+            title = next((part.strip() for part in body.splitlines() if part.strip()), subject)
+            shipping.setdefault(m.group(1), title)
             continue
         m = PULL_REQUEST.search(subject)
         if not m:

@@ -59,6 +59,36 @@ class ChangelogCompletenessTests(unittest.TestCase):
             git("commit", "-qm", "Document fix")
             self.assertEqual(0, run()[0])
 
+    def test_a_pull_request_merged_with_a_merge_commit_is_asked_for_an_entry(self):
+        with tempfile.TemporaryDirectory(prefix="carve-changelog-test-") as directory:
+            root = Path(directory)
+
+            def git(*args):
+                return subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, text=True).stdout.strip()
+
+            git("init", "-q", "-b", "main")
+            git("config", "user.email", "test@example.invalid")
+            git("config", "user.name", "Test")
+            (root / "Cargo.toml").write_text('[package]\nversion = "0.1.7"\n')
+            (root / "CHANGELOG.md").write_text("## [Unreleased]\n\n## [0.1.7]\n\nReleased.\n")
+            git("add", ".")
+            git("commit", "-qm", "Release")
+            git("tag", "0.1.7")
+            git("checkout", "-qb", "wave")
+            (root / "src").mkdir()
+            (root / "src/lib.rs").write_text("pub fn fixed() {}\n")
+            git("add", ".")
+            git("commit", "-qm", "Fix the parser")
+            git("checkout", "-q", "main")
+            git("merge", "-q", "--no-ff", "wave", "-m", "Merge pull request #120 from o/wave\n\nFix a wave")
+
+            output = io.StringIO()
+            with patch("sys.argv", ["check", "--root", str(root), "--repo", "test/repo"]), patch.object(changelog, "closing_issues", return_value={}), contextlib.redirect_stdout(output):
+                status = changelog.main()
+            self.assertEqual(3, status)
+            self.assertIn("#120 is not cited in the Unreleased section", output.getvalue())
+            self.assertNotIn("Fix the parser", output.getvalue(), "the branch commit is not a pull request of its own")
+
 
 if __name__ == "__main__":
     unittest.main()
