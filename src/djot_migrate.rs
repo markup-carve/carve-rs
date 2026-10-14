@@ -48,6 +48,8 @@ mod emphasis;
 #[path = "djot_import_normalize.rs"]
 mod normalize;
 
+#[path = "djot_div_classes.rs"]
+mod div_classes;
 #[path = "djot_heading_targets.rs"]
 mod heading_targets;
 
@@ -501,6 +503,7 @@ fn convert_djot_document(
             }
         })
         .into_owned();
+    let converted = div_classes::normalize(&converted);
     stripped_definitions.restore(&if frontmatter.is_empty() {
         converted
     } else if converted.is_empty() {
@@ -3233,6 +3236,19 @@ fn normalize_djot_div_openers(source: &str) -> std::borrow::Cow<'_, str> {
             offset += line.len() + 1;
             let at = djot_content_start(line);
             let prefix = &line[..at];
+            if (line[at..].contains('{') || line[at..].contains('\\'))
+                && cached_regex!(r"^:{3,}[ \t]*(?:[A-Za-z0-9_-]|\\[_-])+")
+                    .unwrap()
+                    .is_match(&line[at..])
+                && !opener.is_match(&line[at..])
+            {
+                let mask = mask.get_or_insert_with(|| mask_code_and_destinations(source));
+                if mask.as_bytes().get(start + at) == Some(&b':') {
+                    changed = true;
+                    return std::borrow::Cow::Owned(format!("{prefix}\\{}", &line[at..]));
+                }
+                return std::borrow::Cow::Borrowed(line);
+            }
             if let Some(caps) = opener.captures(&line[at..]) {
                 if &caps[2] != " " {
                     let mask = mask.get_or_insert_with(|| mask_code_and_destinations(source));
