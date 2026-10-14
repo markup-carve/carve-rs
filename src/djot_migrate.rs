@@ -4772,6 +4772,8 @@ fn mask_djot_forms_with_options(
     String::from_utf8(mask).unwrap_or_else(|_| source.to_string())
 }
 
+type RawFormatCallback<'a> = &'a dyn Fn(usize, usize, &str);
+
 // All import scans share the same mask; code padding leaves ordinary code visible.
 #[derive(Clone, Copy)]
 struct OpaqueOptions<'a> {
@@ -4781,7 +4783,7 @@ struct OpaqueOptions<'a> {
     autolinks: bool,
     destinations: bool,
     attribute_values: bool,
-    on_raw_format: Option<&'a dyn Fn(usize, usize, &str)>,
+    on_raw_format: Option<RawFormatCallback<'a>>,
     on_fence_open: Option<&'a dyn Fn(usize)>,
 }
 
