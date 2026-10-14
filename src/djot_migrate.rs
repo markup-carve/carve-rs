@@ -2943,6 +2943,7 @@ struct DefinitionFrame {
     target: usize,
     body: bool,
     ready: bool,
+    term_end: usize,
 }
 
 fn leading_indent(line: &str) -> (usize, usize) {
@@ -2987,7 +2988,13 @@ fn definition_term(line: &str) -> Option<(usize, usize)> {
     while matches!(bytes.get(byte), Some(b' ' | b'\t')) {
         byte += 1;
     }
-    (byte > whitespace && byte < bytes.len()).then_some((columns, byte))
+    (byte > whitespace || byte == bytes.len()).then_some((columns, byte))
+}
+
+fn finish_definition_frame(frame: DefinitionFrame, lines: &mut [String], empty_term: &str) {
+    if !frame.body {
+        lines[frame.term_end].push_str(&format!("\n{}:  {empty_term}", " ".repeat(frame.target)));
+    }
 }
 
 /// Translate Djot's definition-item shape without canonicalizing unrelated
@@ -2998,7 +3005,11 @@ fn convert_definition_lists(source: &str, empty_term: &str) -> String {
     let masked_source = mask_code_and_destinations(source);
     let masked: Vec<&str> = masked_source.split('\n').collect();
     let mut stack: Vec<DefinitionFrame> = Vec::new();
+    let mut boundaries: Option<HashSet<usize>> = None;
+    let mut source_offset = 0;
     for index in 0..lines.len() {
+        let source_at = source_offset;
+        source_offset += lines[index].len() + 1;
         let raw_term = definition_term(&lines[index]);
         let raw_fence = raw_term.is_some_and(|(_, content)| {
             let payload = &lines[index][content..];
@@ -3013,9 +3024,7 @@ fn convert_definition_lists(source: &str, empty_term: &str) -> String {
         });
         let starts_definition_body = raw_fence || container_body;
         if let (Some((indent, _)), Some((raw_indent, content))) = (
-            if raw_fence
-                || raw_term.is_some_and(|(_, content)| lines[index][content..].starts_with('`'))
-            {
+            if masked[index].trim_start().starts_with(':') {
                 raw_term
             } else {
                 definition_term(masked[index])
@@ -3026,16 +3035,37 @@ fn convert_definition_lists(source: &str, empty_term: &str) -> String {
                 continue;
             }
             while stack.last().is_some_and(|frame| indent < frame.source) {
-                stack.pop();
+                finish_definition_frame(stack.pop().unwrap(), &mut lines, empty_term);
             }
             let top = stack.last().copied();
-            let may_start = top.is_some() || index == 0 || lines[index - 1].trim().is_empty();
+            let may_start = top.is_some()
+                || index == 0
+                || lines[index - 1].trim().is_empty()
+                || boundaries
+                    .get_or_insert_with(|| {
+                        djot_inline_boundaries_with_code_scopes(source, &masked_source, true)
+                            .into_iter()
+                            .collect()
+                    })
+                    .contains(&source_at);
             if may_start {
-                let term = lines[index][content..].to_owned();
+                let mut term = lines[index][content..].to_owned();
+                if term.trim().is_empty()
+                    || term.trim_start().starts_with('{')
+                        && cached_regex!(r"^(?:[ \t]|\{%%\})*$")
+                            .unwrap()
+                            .is_match(&normalize::image_label_attributes(&term))
+                {
+                    term = empty_term.to_owned();
+                }
                 if top.is_none() || top.is_some_and(|frame| indent == frame.source) {
                     let target = top.map_or(indent, |frame| frame.target);
                     let starts = top.is_none();
+                    if let Some(previous) = top {
+                        finish_definition_frame(previous, &mut lines, empty_term);
+                    }
                     if let Some(frame) = stack.last_mut() {
+                        frame.term_end = index;
                         frame.body = false;
                         frame.ready = false;
                     } else {
@@ -3044,6 +3074,7 @@ fn convert_definition_lists(source: &str, empty_term: &str) -> String {
                             target,
                             body: false,
                             ready: false,
+                            term_end: index,
                         });
                     }
                     lines[index] = format!(
@@ -3112,6 +3143,7 @@ fn convert_definition_lists(source: &str, empty_term: &str) -> String {
                         target,
                         body: starts_definition_body,
                         ready: starts_definition_body,
+                        term_end: index,
                     });
                     continue;
                 }
@@ -3135,16 +3167,33 @@ fn convert_definition_lists(source: &str, empty_term: &str) -> String {
             continue;
         }
         if !stack.last().is_some_and(|frame| frame.ready) {
-            lines[index] = format!(
-                "{}{}",
-                " ".repeat(stack.last().unwrap().target),
-                lines[index].trim_start()
-            );
-            continue;
+            let continuation = lines[index].trim_start();
+            let indent = leading_indent(&lines[index]).0;
+            let first = leading_indent(&lines[index]).1;
+            let visible = masked[index].as_bytes().get(first) == lines[index].as_bytes().get(first);
+            let marker = cached_regex!(r"^(?:#{1,6}(?:[ \t]|$)|>|\||:{3,}|[`~]{3,}|[-*+][ \t]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)][ \t]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\)[ \t])").unwrap().is_match(continuation) || cached_regex!(r"^(?:[*-][ \t]*){3,}$").unwrap().is_match(continuation);
+            if visible && indent <= stack.last().unwrap().source && marker {
+                while stack.last().is_some_and(|frame| frame.source >= indent) {
+                    finish_definition_frame(stack.pop().unwrap(), &mut lines, empty_term);
+                }
+                if stack.is_empty() {
+                    continue;
+                }
+            } else {
+                stack.last_mut().unwrap().term_end = index;
+                if !cached_regex!(r"^(?:[#>|{]|:{3,}|[`~]{3,}|[-*+] |(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)] )").unwrap().is_match(continuation) {
+                    let literal = if visible && !marker {
+                        cached_regex!(r"^([ivxlcdmIVXLCDM]+)([.)])([ \t])").unwrap().replace(continuation, "$1\\$2$3").into_owned()
+                    } else { continuation.to_owned() };
+                    let literal = if visible && (literal.starts_with(": ") || literal.starts_with(":\t") || literal == ":") { format!("\\{literal}") } else { literal };
+                    lines[index] = format!("{}{}", " ".repeat(stack.last().unwrap().target), literal);
+                }
+                continue;
+            }
         }
         let (indent, _) = leading_indent(&lines[index]);
         while stack.last().is_some_and(|frame| indent < frame.source + 2) {
-            stack.pop();
+            finish_definition_frame(stack.pop().unwrap(), &mut lines, empty_term);
         }
         let Some(frame) = stack.last_mut() else {
             continue;
@@ -3163,6 +3212,9 @@ fn convert_definition_lists(source: &str, empty_term: &str) -> String {
             )
         };
         frame.body = true;
+    }
+    while let Some(frame) = stack.pop() {
+        finish_definition_frame(frame, &mut lines, empty_term);
     }
     lines.join("\n")
 }
@@ -9220,7 +9272,8 @@ fn normalize_djot_footnotes(
 }
 
 fn has_djot_code_layout_candidates(source: &str) -> bool {
-    source.contains("\\|")
+    (source.contains('`') && cached_regex!(r"(?:^|\n)[ \t]*:(?:[ \t]|$)").unwrap().is_match(source))
+        || source.contains("\\|")
         || (source.contains('`') && cached_regex!(r"(?:^|\n)(?:[ \t]*>(?:[ \t]|$))*[ \t]*\[\^[^\]\n]+\]:").unwrap().is_match(source))
         || (source.contains('`') && cached_regex!(r"(?:^|\n)[ \t]*(?:(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]+(?:\[[ xX]\][ \t]+)?|\[\^[^\]\n]+\]:[ \t]*)*>").unwrap().is_match(source))
         || (source.contains("```")
@@ -10432,7 +10485,7 @@ fn close_djot_table_code(
             if only_closed
                 && (marker_has_tab
                     || (i > 0 && bytes[i - 1] == b'$' && !is_escaped(bytes, i - 1))
-                    || bytes.get(candidate + width) == Some(&b'{'))
+                    || bytes.get(candidate + width) == Some(&b'{') && item_kind != ":")
             {
                 i = candidate + width;
                 consumed = i;
@@ -10572,11 +10625,31 @@ fn close_djot_table_code(
             if let Some(quoted) = quoted_payload.as_deref() {
                 payload = quoted;
             }
+            let mut code_end = if closed { end + width } else { end };
+            let mut code_tag = "<code>".to_owned();
+            if raw_code && closed && bytes.get(code_end) == Some(&b'{') {
+                let mut parts = Vec::new();
+                while bytes.get(code_end) == Some(&b'{') {
+                    let Some((attr_end, attrs)) =
+                        read_djot_attributes(source, code_end, false, false)
+                    else {
+                        break;
+                    };
+                    parts.push(attrs[1..attrs.len() - 1].to_owned());
+                    code_end = attr_end;
+                }
+                if !parts.is_empty() {
+                    let html = crate::to_html(&format!("`X`{{{}}}", parts.join(" ")));
+                    if let Some(tag) = cached_regex!(r"<code\b[^>]*>").unwrap().find(&html) {
+                        code_tag = tag.as_str().to_owned();
+                    }
+                }
+            }
             let raw_payload = if raw_code {
                 if let Some(callback) = on_raw_code.as_mut() {
                     callback(i);
                 }
-                let mut html = String::from("<code>");
+                let mut html = code_tag;
                 for ch in normalized.join("\n").chars() {
                     if ch.is_ascii_punctuation() || ch == '\n' {
                         html.push_str(&format!("&#{};", ch as u32));
@@ -10622,7 +10695,7 @@ fn close_djot_table_code(
                 "{fence}{pad}{payload}{pad}{fence}{}",
                 if raw_code { "{=html}" } else { "" }
             ));
-            cursor = if closed { end + width } else { end };
+            cursor = code_end;
             consumed = cursor;
             if separate && !closed {
                 output.push('\n');

@@ -2574,6 +2574,20 @@ fn blocks_with_slot_inner(
                 definition_columns.pop();
             }
         }
+        if thematic(visible)
+            && thematic(text)
+            && definition_columns
+                .last()
+                .is_some_and(|column| indent + 2 <= *column)
+        {
+            while definition_columns
+                .last()
+                .is_some_and(|column| indent + 2 <= *column)
+            {
+                definition_columns.pop();
+            }
+            paragraph = false;
+        }
         if let Some(item) = marker
             .captures(visible)
             .and_then(|_| marker.captures(text))
@@ -5104,10 +5118,14 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
         {
             findings.push((offset, "An empty Djot heading cannot be written in Carve."));
         }
-        if empty_description(&lines, &masks, n) {
+        if empty_description(&lines, &masks, n)
+            && !line
+                .find(':')
+                .is_some_and(|at| line[..at].trim().is_empty())
+        {
             findings.push((
                 offset,
-                "An empty definition description cannot be written in Carve.",
+                "An empty definition description is omitted during import.",
             ));
         }
         if rows[n] && text.len() >= 2 && separator(text) {
@@ -5407,7 +5425,7 @@ mod tests {
             ("[link][a and\nb]\n\n[a and\nb]: url\n", 1, "unresolved Djot reference"),
             ("[Link][]\n\n[link]: /url\n", 1, "unresolved Djot reference"),
             ("[[foo](bar)](baz)\n", 1, "nested inside another link"),
-            (": apple\n fruit\n\n  Paragraph one\n\n  Paragraph two\n\n  - sub\n  - list\n\n: orange\n", 11, "empty definition description"),
+            ("> : apple\n> fruit\n>\n>   Paragraph one\n>\n>   Paragraph two\n>\n>   - sub\n>   - list\n>\n> : orange\n", 11, "empty definition description"),
             ("|a|b|\n|:-|---:|\n|c|d|\n|cc|dd|\n|-:|:-:|\n|e|f|\n|g|h|\n", 5, "separator inside the table"),
             ("|--|--|\n", 1, "only separator rows"),
         ] {
@@ -5514,7 +5532,7 @@ mod tests {
         assert!(result.value.contains(":: apple\nfruit\n"));
         assert_eq!(
             migrate_djot(": apple\n fruit\n\n  Body\n\n  - sub\n  - list\n\n: orange\n").value,
-            "{loose}\n:: apple\nfruit\n\n:  Body\n\n   - sub\n   - list\n\n:: orange\n"
+            "{loose}\n:: apple\nfruit\n\n:  Body\n\n   - sub\n   - list\n\n:: orange\n:  %%\n"
         );
     }
 
@@ -5713,7 +5731,6 @@ mod tests {
     #[test]
     fn djot_empty_definition_losses_follow_container_content_and_source_lines() {
         for (source, line) in [
-            (": term\n", 1),
             ("> : term\n", 1),
             ("- : term\n", 1),
             ("intro\n\n> : term\n", 3),
