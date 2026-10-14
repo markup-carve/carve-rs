@@ -11050,5 +11050,25 @@
   {
     "source": ": :::::\t\t\r\n  ~~~\r\n  _a_ *c*\r\n  ~~~",
     "html": "<dl>\n<dt></dt>\n<dd>\n<div>\n<pre><code>_a_ *c*\r\n</code></pre>\n</div>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "text\n: :::x\n- child\n\n> q",
+    "html": "<p>text\n: :::x\n- child</p>\n<blockquote>\n<p>q</p>\n</blockquote>\n"
+  },
+  {
+    "source": "- a\n\n: :::x\n  - b",
+    "html": "<ul>\n<li>\na\n</li>\n</ul>\n<dl>\n<dt></dt>\n<dd>\n<div class=\"x\">\n<ul>\n<li>\nb\n</li>\n</ul>\n</div>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": "(a) parent\n\n    : :::x\n      - child",
+    "html": "<ol type=\"a\">\n<li>\nparent\n<dl>\n<dt></dt>\n<dd>\n<div class=\"x\">\n<ul>\n<li>\nchild\n</li>\n</ul>\n</div>\n</dd>\n</dl>\n</li>\n</ol>\n"
+  },
+  {
+    "source": ":\t:::x\n  body",
+    "html": "<dl>\n<dt></dt>\n<dd>\n<div class=\"x\">\n<p>body</p>\n</div>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": :::1x\n  body",
+    "html": "<dl>\n<dt></dt>\n<dd>\n<div class=\"1x\">\n<p>body</p>\n</div>\n</dd>\n</dl>\n"
   }
 ]

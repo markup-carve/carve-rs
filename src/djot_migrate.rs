@@ -4808,12 +4808,8 @@ fn mask_djot_fences_with_open(
             };
             let attribute_boundary = can_normalize
                 && line_attributes.is_some_and(|(end, _)| end == content.trim_end().len());
-            let previous_line = source[..offset].split('\n').rev().nth(1).unwrap_or("");
-            let definition_div_boundary = (can_normalize
-                || cached_regex!(r"^[ \t]*:{1,2}[ \t]+\x00DJOTEMPTYTERM\x00")
-                    .unwrap()
-                    .is_match(previous_line))
-                && cached_regex!(r"^[ \t]*:[ \t]+:{3,}(?:[ \t]*[A-Za-z0-9_-]+)?[ \t]*\r?$")
+            let definition_div_boundary = can_normalize
+                && cached_regex!(r"^[ \t]*:[ \t]+:{3,}(?:[ \t]*[A-Za-z0-9_-]+)?[ \t]*$")
                     .unwrap()
                     .is_match(content);
             normalize_boundary = thematic_pattern.is_match(content.trim())
@@ -4911,6 +4907,20 @@ fn mask_djot_forms_with_options(
             .rev()
             .nth(1)
             .unwrap_or("");
+        if cached_regex!(r"^(?:[ \t]*>)*[ \t]*:[ \t]+:{3,}")
+            .unwrap()
+            .is_match(value.as_str())
+        {
+            let line_end = source[value.start()..]
+                .find('\n')
+                .map_or(source.len(), |end| value.start() + end);
+            if !cached_regex!(r"^(?:[ \t]*>)*[ \t]*:[ \t]+:{3,}(?:[ \t]*[A-Za-z0-9_-]+)?[ \t]*$")
+                .unwrap()
+                .is_match(&source[value.start()..line_end])
+            {
+                continue;
+            }
+        }
         if previous.trim().is_empty()
             || cached_regex!(r"^[ \t]*:{1,2}[ \t]+\x00DJOTEMPTYTERM\x00")
                 .unwrap()

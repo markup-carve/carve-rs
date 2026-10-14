@@ -1166,9 +1166,10 @@ fn quoted_list_boundaries<'a>(
                 || rows[row_index]
                 || heading.is_match(visible));
         } else if reference.is_match(text)
-            || cached_regex!(r"^:[ \t]+:{3,}(?:[ \t]*[A-Za-z0-9_-]+)?[ \t]*$")
-                .unwrap()
-                .is_match(visible)
+            || !paragraph
+                && cached_regex!(r"^:[ \t]+:{3,}(?:[ \t]*[A-Za-z0-9_-]+)?[ \t]*$")
+                    .unwrap()
+                    .is_match(visible)
             || heading.is_match(visible)
             || (!paragraph
                 && visible.starts_with('{')
@@ -2008,6 +2009,7 @@ fn blocks_with_slot_inner(
     let mut result: Vec<String> = Vec::new();
     let mut lists: Vec<List> = Vec::new();
     let mut definition_columns = Vec::new();
+    let mut definition_div_columns = HashSet::new();
     let mut definition_body = false;
     let mut divs: Vec<(usize, String, bool, Option<usize>, usize)> = Vec::new();
     let mut paragraph = false;
@@ -2423,10 +2425,15 @@ fn blocks_with_slot_inner(
             }
             definition_columns.push(indent + 2);
             let content = definition_term(raw).unwrap().1;
+            definition_div_columns.remove(&(indent + 2));
             definition_body = cached_regex!(r"^:{3,}(?:[ \t]*[A-Za-z0-9_-]+)?[ \t]*$")
                 .unwrap()
                 .is_match(&raw[content..]);
             if definition_body {
+                definition_div_columns.insert(indent + 2);
+                while lists.last().is_some_and(|list| indent <= list.source) {
+                    lists.pop();
+                }
                 result.push(display.clone());
                 paragraph = false;
                 in_heading = false;
@@ -2557,12 +2564,10 @@ fn blocks_with_slot_inner(
             let mut separate = false;
             if let Some(parent) = &top {
                 if nested {
-                    target = if definition_body
-                        && definition_columns
-                            .last()
-                            .is_some_and(|column| indent >= *column)
-                    {
-                        indent
+                    target = if definition_columns.last().is_some_and(|column| {
+                        indent >= *column && definition_div_columns.contains(column)
+                    }) {
+                        target_indent
                     } else {
                         parent.target_column
                     };
