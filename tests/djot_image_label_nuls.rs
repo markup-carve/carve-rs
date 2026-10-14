@@ -30,6 +30,13 @@ fn image_labels_restore_source_nuls_before_nested_child_parsing() {
     let mut failures = Vec::new();
     for row in controls.as_array().unwrap() {
         let source = row["source"].as_str().unwrap();
+        let report = carve::migrate_djot(source);
+        assert!(
+            report.report.diagnostics.iter().all(|item| item.message
+                != "An unresolved Djot image reference loses its image element."),
+            "{source:?}: {:?}",
+            report.report.diagnostics
+        );
         let converted = carve::djot_to_carve(source);
         let actual = images(&carve::to_html(&converted));
         let expected = images(row["html"].as_str().unwrap());
