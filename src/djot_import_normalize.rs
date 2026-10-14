@@ -1,6 +1,65 @@
 use super::*;
 use std::collections::HashMap;
 
+fn image_label_loss_text(text: &str, cache: &mut HashMap<String, String>) -> String {
+    if text.len() <= 256 {
+        if let Some(value) = cache.get(text) {
+            return value.clone();
+        }
+    }
+    let normalized = image_label_attributes_for_losses(text);
+    let value = djot_image_label_child_text(&normalized, &HashSet::new(), true, false, true);
+    if text.len() <= 256 {
+        cache.insert(text.to_owned(), value.clone());
+    }
+    value
+}
+
+fn image_label_trailing_whitespace_loss(text: &str, cache: &mut HashMap<String, String>) -> bool {
+    let label = image_label_attributes_for_losses(text);
+    let whitespace =
+        cached_regex!(r"([ \t]+)((?:(?:\{%%\}|\[\]\{\}|\{\}|[\]}`_*~^+=-])[ \t]*)*)(\n)").unwrap();
+    if !whitespace.is_match(&label) {
+        return false;
+    }
+    let projected = format!(
+        "{}\n{}",
+        label
+            .chars()
+            .filter(char::is_ascii_alphanumeric)
+            .collect::<String>(),
+        image_label_loss_text(&label, cache)
+    );
+    let reserved: HashSet<String> = cached_regex!(r"DJOTTRAILSPACE([0-9]+)Z")
+        .unwrap()
+        .captures_iter(&projected)
+        .map(|caps| caps[1].to_owned())
+        .collect();
+    let mut serial = 0;
+    while reserved.contains(&serial.to_string()) {
+        serial += 1;
+    }
+    let marker = format!("DJOTTRAILSPACE{serial}Z");
+    let mask = mask_code_and_destinations(&label);
+    let probe = whitespace.replace_all(&label, |caps: &regex::Captures<'_>| {
+        let at = caps.get(0).unwrap().start();
+        if at > 0
+            && mask.as_bytes().get(at - 1) == Some(&b'\\')
+            && !is_escaped(label.as_bytes(), at - 1)
+        {
+            return caps[0].to_owned();
+        }
+        format!("{}{}{}{}", &caps[1], marker, &caps[2], &caps[3])
+    });
+    let child = image_label_loss_text(&probe, cache).replace(&marker, "");
+    let trailing = cached_regex!(r"[ \t]+\n").unwrap();
+    let original = image_label_loss_text(&label, cache);
+    if trailing.replace_all(&child, "\n") != trailing.replace_all(&original, "\n") {
+        return trailing.is_match(&original);
+    }
+    trailing.is_match(&child)
+}
+
 fn starts_quote(text: &str) -> bool {
     text.starts_with('>')
         && text
@@ -3253,6 +3312,14 @@ fn label(text: &str) -> String {
 }
 
 pub(super) fn image_label_attributes(source: &str) -> String {
+    image_label_attributes_with_lines(source, false)
+}
+
+fn image_label_attributes_for_losses(source: &str) -> String {
+    image_label_attributes_with_lines(source, true)
+}
+
+fn image_label_attributes_with_lines(source: &str, flatten_attribute_lines: bool) -> String {
     let mut mask = mask_djot_forms_with_options(
         source,
         true,
@@ -3269,7 +3336,14 @@ pub(super) fn image_label_attributes(source: &str) -> String {
     for (start, _) in comments {
         mask[start] = source.as_bytes()[start];
     }
-    let framed = format!("DJOTALT {source}");
+    let framed = format!(
+        "DJOTALT {}",
+        if flatten_attribute_lines {
+            source.replace('\n', " ")
+        } else {
+            source.to_owned()
+        }
+    );
     let bytes = source.as_bytes();
     let mut result = String::new();
     let mut cursor = 0;
@@ -4756,6 +4830,7 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
             .map(|reference| (reference.end - reference.label.len() - 1, reference.end - 1)),
     );
     let mut label_cache = HashMap::new();
+    let mut image_loss_cache = HashMap::new();
     for reference in &references {
         let at = reference.start;
         if reference.text.starts_with('^') && reference.text.len() > 1 {
@@ -4792,12 +4867,16 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
             )),
             Some(_) if image && reference.text.contains('\n') => {
                 let projected = projected_reference_text(reference.text, reference.quote_depth);
-                let child =
-                    djot_image_label_child_text(&projected, &HashSet::new(), true, false, true);
+                let child = image_label_loss_text(&projected, &mut image_loss_cache);
                 if cached_regex!(r"\n[ \t]*\n").unwrap().is_match(&child) {
                     findings.push((
                         at,
                         "An image alternative text with a blank line cannot be spelled in Carve.",
+                    ));
+                } else if image_label_trailing_whitespace_loss(&projected, &mut image_loss_cache) {
+                    findings.push((
+                        at,
+                        "An image alternative text loses trailing spaces before a line break.",
                     ));
                 }
             }
@@ -4964,10 +5043,17 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
                     })
                 {
                     let projected = projected_reference_text(&source[start + 1..i], depth);
-                    let child =
-                        djot_image_label_child_text(&projected, &HashSet::new(), true, false, true);
+                    let child = image_label_loss_text(&projected, &mut image_loss_cache);
                     if cached_regex!(r"\n[ \t]*\n").unwrap().is_match(&child) {
                         findings.push((start, "An image alternative text with a blank line cannot be spelled in Carve."));
+                    } else if image_label_trailing_whitespace_loss(
+                        &projected,
+                        &mut image_loss_cache,
+                    ) {
+                        findings.push((
+                            start,
+                            "An image alternative text loses trailing spaces before a line break.",
+                        ));
                     }
                 }
                 if is_link && nested {

@@ -74,6 +74,7 @@ fidelity reports and participate in `--check-loss`.
 - [Command line](https://github.com/markup-carve/carve-rs/blob/main/docs/cli.md)
 - [Migration](https://github.com/markup-carve/carve-rs/blob/main/docs/migration.md)
 - [Migration reports](https://github.com/markup-carve/carve-rs/blob/main/docs/migration-result.md)
+- [Djot image alternative text](docs/djot-image-alt-fidelity.md): multiline values and export diagnostics.
 
 ## Extensions and security
 

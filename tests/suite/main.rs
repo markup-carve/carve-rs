@@ -2156,3 +2156,6 @@ mod djot_empty_nested_tasks;
 
 #[path = "../djot_generic_div_classes.rs"]
 mod djot_generic_div_classes;
+
+#[path = "../djot_image_alt_losses.rs"]
+mod djot_image_alt_losses;
