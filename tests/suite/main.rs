@@ -713,6 +713,8 @@ mod an_imported_container_comes_back_as_the_container;
 mod an_imported_element_keeps_its_key_order;
 #[path = "../an_imported_hard_break_drops_the_space_after_it.rs"]
 mod an_imported_hard_break_drops_the_space_after_it;
+#[path = "../an_include_target_that_is_not_a_regular_file_is_denied.rs"]
+mod an_include_target_that_is_not_a_regular_file_is_denied;
 #[path = "../an_included_child_is_read_with_the_callers_extensions.rs"]
 mod an_included_child_is_read_with_the_callers_extensions;
 #[path = "../an_indented_code_span_starts_at_its_backtick.rs"]

@@ -3095,14 +3095,15 @@ impl IncludeResolver for FileSystemResolver {
         // stand in for it: the budget charges a target only once its source is
         // in hand, so without a cap here one oversized file is read into
         // memory in full before expansion refuses it.
-        if let Some(limit) = self.max_file_bytes {
-            if std::fs::metadata(&real)
-                .map_err(|_| IncludeDenial::Denied)?
-                .len()
-                > limit
-            {
-                return Err(IncludeDenial::Denied);
-            }
+        // ONLY A REGULAR FILE IS READ: a FIFO reports length 0, passes the
+        // cap, and `read_to_string` then blocks until a writer opens it.
+        let metadata = std::fs::metadata(&real).map_err(|_| IncludeDenial::Denied)?;
+        if !metadata.is_file()
+            || self
+                .max_file_bytes
+                .is_some_and(|limit| metadata.len() > limit)
+        {
+            return Err(IncludeDenial::Denied);
         }
         // Read through the CANONICAL path: it holds no symlink components, so
         // the check that just passed describes the bytes actually read. A
