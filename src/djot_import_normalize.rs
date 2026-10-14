@@ -5534,6 +5534,8 @@ mod tests {
                 assert_eq!(loss.confidence, MigrationConfidence::Exact);
             }
         }
+        let resolved = migrate_djot("[link][]\n\n[link]:\n[link2]: url\n");
+        assert!(crate::to_html(&resolved.value).contains("<a href=\"\">link</a>"));
     }
 
     #[test]
@@ -6039,6 +6041,7 @@ mod tests {
             );
         }
         let resolved = migrate_djot("![a][]\n\n[a]:");
+        assert!(crate::to_html(&resolved.value).contains("<img src=\"\""));
         assert!(!resolved
             .report
             .diagnostics
