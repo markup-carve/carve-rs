@@ -23851,6 +23851,17 @@ impl InlineBounds<'_> {
                 hosts.insert(open, close + 1);
             }
         }
+        // A cross-reference resolves before braced spans (PART 8, E2a).
+        let mut from = 0;
+        while let Some(at) = find_seq(bytes, from, b"</#") {
+            match crossref_close(bytes, at, self) {
+                Some(close) => {
+                    hosts.insert(at, close + 1);
+                    from = close + 1;
+                }
+                None => from = at + 1,
+            }
+        }
         if !bytes.windows(2).any(|pair| pair == b"](") {
             return hosts;
         }
@@ -29568,6 +29579,7 @@ struct EmphasisMemo {
     last_brace: Option<Option<usize>>,
     last_comment_close: Option<Option<usize>>,
     bold_italic: Option<HashMap<Option<usize>, Vec<usize>>>,
+    atomic: Option<std::rc::Rc<[(usize, usize)]>>,
 }
 
 fn bold_italic_close(
@@ -29629,6 +29641,83 @@ fn cached_find_emphasis_close(
     close
 }
 
+/// Autolinks and cross-references outside code spans, as `[start, end)` pairs.
+/// PART 8 resolves them before links, so a `[` inside one opens no run.
+fn atomic_link_regions(bytes: &[u8], bounds: &InlineBounds<'_>) -> Vec<(usize, usize)> {
+    let mut regions = Vec::new();
+    let mut at = 0;
+    while at < bytes.len() {
+        match bytes[at] {
+            b'\\' => at += 2,
+            b'`' => {
+                let open_start = at;
+                while at < bytes.len() && bytes[at] == b'`' {
+                    at += 1;
+                }
+                let open_len = at - open_start;
+                let mut closed = false;
+                while at < bytes.len() {
+                    if bytes[at] != b'`' {
+                        at += 1;
+                        continue;
+                    }
+                    let close_start = at;
+                    while at < bytes.len() && bytes[at] == b'`' {
+                        at += 1;
+                    }
+                    if at - close_start == open_len {
+                        closed = true;
+                        break;
+                    }
+                }
+                if !closed {
+                    break;
+                }
+            }
+            b'<' if bounds.has_gt_from(at) => {
+                let end =
+                    crossref_close(bytes, at, bounds).or_else(|| scanned_autolink_end(bytes, at));
+                match end {
+                    Some(end) => {
+                        regions.push((at, end + 1));
+                        at = end + 1;
+                    }
+                    None => at += 1,
+                }
+            }
+            _ => at += 1,
+        }
+    }
+    regions
+}
+
+fn in_atomic_region(regions: &[(usize, usize)], pos: usize) -> bool {
+    let i = regions.partition_point(|&(_, end)| end <= pos);
+    regions.get(i).is_some_and(|&(start, _)| start < pos)
+}
+
+/// The bracket run holding `pos` for emphasis pairing: a run opened inside an
+/// autolink or cross-reference does not count, so its enclosing run answers.
+fn emphasis_run_at(
+    bounds: &InlineBounds<'_>,
+    regions: &[(usize, usize)],
+    pos: usize,
+) -> Option<usize> {
+    let mut run = bounds.bracket_run_at(pos);
+    while let Some(open) = run {
+        if !in_atomic_region(regions, open) {
+            break;
+        }
+        run = open
+            .checked_sub(1)
+            .and_then(|before| bounds.bracket_run_at(before));
+        if run == Some(open) {
+            return None;
+        }
+    }
+    run
+}
+
 #[allow(clippy::too_many_arguments)]
 fn find_emphasis_close(
     bytes: &[u8],
@@ -29641,7 +29730,11 @@ fn find_emphasis_close(
 ) -> Option<usize> {
     // The run the OPENER sits in. `from` is just past the delimiter, and a `[`
     // is never one, so the delimiter's own run is the run at `from`.
-    let opener_run = bounds.bracket_run_at(from);
+    let regions = memo
+        .atomic
+        .get_or_insert_with(|| atomic_link_regions(bytes, bounds).into())
+        .clone();
+    let opener_run = emphasis_run_at(bounds, &regions, from);
     let mut attached = HashMap::new();
     let mut j = from;
     while j < bytes.len() {
@@ -29664,7 +29757,7 @@ fn find_emphasis_close(
             && bounds
                 .openers
                 .get(j)
-                .is_some_and(|&open| open != NO_BRACKET_MATCH)
+                .is_some_and(|&open| open != NO_BRACKET_MATCH && !in_atomic_region(&regions, open))
         {
             let end = bounds.braced_closers(bytes).after_attributes(bytes, j + 1);
             if end > j + 1 {
@@ -29708,7 +29801,11 @@ fn find_emphasis_close(
         }
         // E2a: a link destination and an autolink are opaque too. A link
         // LABEL is not, and neither is a plain brace group.
-        if ch == b']' && bytes.get(j + 1) == Some(&b'(') && opens_a_link(bytes, j, bounds) {
+        if ch == b']'
+            && bytes.get(j + 1) == Some(&b'(')
+            && opens_a_link(bytes, j, bounds)
+            && !in_atomic_region(&regions, bounds.openers[j])
+        {
             if let Some(end) = link_destination_end(bytes, j + 1) {
                 j = bounds
                     .braced_closers(bytes)
@@ -29777,7 +29874,7 @@ fn find_emphasis_close(
             // is the two delimiters sharing one. Not whether a run is open at
             // all: a pair both of whose halves sit inside one still pairs, and a
             // run BETWEEN two halves has been popped by the time we get here.
-            if bounds.bracket_run_at(j) != opener_run {
+            if emphasis_run_at(bounds, &regions, j) != opener_run {
                 j += 1;
                 continue;
             }
