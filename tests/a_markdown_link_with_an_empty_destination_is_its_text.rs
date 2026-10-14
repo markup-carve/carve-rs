@@ -34,7 +34,7 @@ macro_rules! cases {
 cases! {
     link: "a [x]() b\n" => "a [x]() b\n",
     angle_brackets: "[z](<>)\n" => "[z]()\n",
-    whitespace_only: "[*s*](< >)\n" => "[/s/]()\n",
+    whitespace_only: "[*s*](< >)\n" => "[/s/](%20)\n",
     image: "![y]()\n" => "![y]()\n",
     link_with_a_title: "[q](<> \"t q\")\n" => "[q]( \"t q\")\n",
     image_with_a_title: "![a *b* `c` [d](u)](<> (paren))\n" => "![a b c d]( \"paren\")\n",
