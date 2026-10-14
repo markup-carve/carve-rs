@@ -1,0 +1,634 @@
+[
+  {
+    "source": "# a\u0000b\n\n[a\u0000b][a\u0000b]\n\n[x]: y",
+    "html": "<section id=\"a\u0000b\">\n<h1>a\u0000b</h1>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n</section>\n"
+  },
+  {
+    "source": "# a\u0000b\n\n![a\u0000b][]\n\n[x]: y",
+    "html": "<section id=\"a\u0000b\">\n<h1>a\u0000b</h1>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n</section>\n"
+  },
+  {
+    "source": "# a\u0000b\n\n![a\u0000b][a\u0000b]\n\n[x]: y",
+    "html": "<section id=\"a\u0000b\">\n<h1>a\u0000b</h1>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n</section>\n"
+  },
+  {
+    "source": "# _a_\u0000b\n\n[a\u0000b][a\u0000b]\n\n[x]: y",
+    "html": "<section id=\"a\u0000b\">\n<h1><em>a</em>\u0000b</h1>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n</section>\n"
+  },
+  {
+    "source": "# _a_\u0000b\n\n![a\u0000b][]\n\n[x]: y",
+    "html": "<section id=\"a\u0000b\">\n<h1><em>a</em>\u0000b</h1>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n</section>\n"
+  },
+  {
+    "source": "# _a_\u0000b\n\n![a\u0000b][a\u0000b]\n\n[x]: y",
+    "html": "<section id=\"a\u0000b\">\n<h1><em>a</em>\u0000b</h1>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n</section>\n"
+  },
+  {
+    "source": "# `a\u0000b`\n\n[a\u0000b][a\u0000b]\n\n[x]: y",
+    "html": "<section id=\"a\u0000b\">\n<h1><code>a\u0000b</code></h1>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n</section>\n"
+  },
+  {
+    "source": "# `a\u0000b`\n\n![a\u0000b][]\n\n[x]: y",
+    "html": "<section id=\"a\u0000b\">\n<h1><code>a\u0000b</code></h1>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n</section>\n"
+  },
+  {
+    "source": "# `a\u0000b`\n\n![a\u0000b][a\u0000b]\n\n[x]: y",
+    "html": "<section id=\"a\u0000b\">\n<h1><code>a\u0000b</code></h1>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n</section>\n"
+  },
+  {
+    "source": "# a\u0000\n# b\n\n[a\u0000 b][a\u0000 b]\n\n[x]: y",
+    "html": "<section id=\"a\u0000-b\">\n<h1>a\u0000\nb</h1>\n<p><a href=\"#a\u0000-b\">a\u0000 b</a></p>\n</section>\n"
+  },
+  {
+    "source": "# a\u0000\n# b\n\n![a\u0000 b][]\n\n[x]: y",
+    "html": "<section id=\"a\u0000-b\">\n<h1>a\u0000\nb</h1>\n<p><img alt=\"a\u0000 b\" src=\"#a\u0000-b\"></p>\n</section>\n"
+  },
+  {
+    "source": "# a\u0000\n# b\n\n![a\u0000 b][a\u0000 b]\n\n[x]: y",
+    "html": "<section id=\"a\u0000-b\">\n<h1>a\u0000\nb</h1>\n<p><img alt=\"a\u0000 b\" src=\"#a\u0000-b\"></p>\n</section>\n"
+  },
+  {
+    "source": "~~~\nc\n~~~\n# a\u0000b\n\n![a\u0000b][]\n\n[x]: y",
+    "html": "<pre><code>c\n</code></pre>\n<section id=\"a\u0000b\">\n<h1>a\u0000b</h1>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n</section>\n"
+  },
+  {
+    "source": ":::outer\nb\n:::\n# a\u0000b\n\n[a\u0000b][]\n\n[x]: y",
+    "html": "<div class=\"outer\">\n<p>b</p>\n</div>\n<section id=\"a\u0000b\">\n<h1>a\u0000b</h1>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n</section>\n"
+  },
+  {
+    "source": ":::outer\nb\n:::\n# a\u0000b\n\n![a\u0000b][]\n\n[x]: y",
+    "html": "<div class=\"outer\">\n<p>b</p>\n</div>\n<section id=\"a\u0000b\">\n<h1>a\u0000b</h1>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n</section>\n"
+  },
+  {
+    "source": "---\n# a\u0000b\n\n![a\u0000b][]\n\n[x]: y",
+    "html": "<hr>\n<section id=\"a\u0000b\">\n<h1>a\u0000b</h1>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n</section>\n"
+  },
+  {
+    "source": "[z]: q\n# a\u0000b\n\n![a\u0000b][]\n\n[x]: y",
+    "html": "<section id=\"a\u0000b\">\n<h1>a\u0000b</h1>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n</section>\n"
+  },
+  {
+    "source": "# a\u0000b\n\n[a\u0000b][]",
+    "html": "<section id=\"a\u0000b\">\n<h1>a\u0000b</h1>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n</section>\n"
+  },
+  {
+    "source": "# a\u0000b\n\n[a\u0000b][]\n\n[a�b]: replacement",
+    "html": "<section id=\"a\u0000b\">\n<h1>a\u0000b</h1>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n</section>\n"
+  },
+  {
+    "source": "# a\u0000b\n\n[a\u0000b][]\n\n[a\u0000b]: explicit",
+    "html": "<section id=\"a\u0000b\">\n<h1>a\u0000b</h1>\n<p><a href=\"explicit\">a\u0000b</a></p>\n</section>\n"
+  },
+  {
+    "source": "# a\u0000b\n\n![a\u0000b][]",
+    "html": "<section id=\"a\u0000b\">\n<h1>a\u0000b</h1>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n</section>\n"
+  },
+  {
+    "source": "# a\u0000b\n\n![a\u0000b][]\n\n[a�b]: replacement",
+    "html": "<section id=\"a\u0000b\">\n<h1>a\u0000b</h1>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n</section>\n"
+  },
+  {
+    "source": "# a\u0000b\n\n![a\u0000b][]\n\n[a\u0000b]: explicit",
+    "html": "<section id=\"a\u0000b\">\n<h1>a\u0000b</h1>\n<p><img alt=\"a\u0000b\" src=\"explicit\"></p>\n</section>\n"
+  },
+  {
+    "source": "# a\u0000b\n\n[a\u0000b][a\u0000b]",
+    "html": "<section id=\"a\u0000b\">\n<h1>a\u0000b</h1>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n</section>\n"
+  },
+  {
+    "source": "# a\u0000b\n\n[a\u0000b][a\u0000b]\n\n[a�b]: replacement",
+    "html": "<section id=\"a\u0000b\">\n<h1>a\u0000b</h1>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n</section>\n"
+  },
+  {
+    "source": "# a\u0000b\n\n[a\u0000b][a\u0000b]\n\n[a\u0000b]: explicit",
+    "html": "<section id=\"a\u0000b\">\n<h1>a\u0000b</h1>\n<p><a href=\"explicit\">a\u0000b</a></p>\n</section>\n"
+  },
+  {
+    "source": "# a\u0000b\n\n[a�b][]\n\n[a�b]: replacement",
+    "html": "<section id=\"a\u0000b\">\n<h1>a\u0000b</h1>\n<p><a href=\"replacement\">a�b</a></p>\n</section>\n"
+  },
+  {
+    "source": "> # a\u0000b\n\n[a\u0000b][]",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\">a\u0000b</h1>\n</blockquote>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "> # a\u0000b\n\n[a\u0000b][]\n\n[a�b]: replacement",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\">a\u0000b</h1>\n</blockquote>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "> # a\u0000b\n\n[a\u0000b][]\n\n[a\u0000b]: explicit",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\">a\u0000b</h1>\n</blockquote>\n<p><a href=\"explicit\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "> # a\u0000b\n\n![a\u0000b][]",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\">a\u0000b</h1>\n</blockquote>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n"
+  },
+  {
+    "source": "> # a\u0000b\n\n![a\u0000b][]\n\n[a�b]: replacement",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\">a\u0000b</h1>\n</blockquote>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n"
+  },
+  {
+    "source": "> # a\u0000b\n\n![a\u0000b][]\n\n[a\u0000b]: explicit",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\">a\u0000b</h1>\n</blockquote>\n<p><img alt=\"a\u0000b\" src=\"explicit\"></p>\n"
+  },
+  {
+    "source": "> # a\u0000b\n\n[a\u0000b][a\u0000b]",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\">a\u0000b</h1>\n</blockquote>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "> # a\u0000b\n\n[a\u0000b][a\u0000b]\n\n[a�b]: replacement",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\">a\u0000b</h1>\n</blockquote>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "> # a\u0000b\n\n[a\u0000b][a\u0000b]\n\n[a\u0000b]: explicit",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\">a\u0000b</h1>\n</blockquote>\n<p><a href=\"explicit\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "> # a\u0000b\n\n[a�b][]\n\n[a�b]: replacement",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\">a\u0000b</h1>\n</blockquote>\n<p><a href=\"replacement\">a�b</a></p>\n"
+  },
+  {
+    "source": "- # a\u0000b\n\n[a\u0000b][]",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\">a\u0000b</h1>\n</li>\n</ul>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "- # a\u0000b\n\n[a\u0000b][]\n\n[a�b]: replacement",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\">a\u0000b</h1>\n</li>\n</ul>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "- # a\u0000b\n\n[a\u0000b][]\n\n[a\u0000b]: explicit",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\">a\u0000b</h1>\n</li>\n</ul>\n<p><a href=\"explicit\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "- # a\u0000b\n\n![a\u0000b][]",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\">a\u0000b</h1>\n</li>\n</ul>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n"
+  },
+  {
+    "source": "- # a\u0000b\n\n![a\u0000b][]\n\n[a�b]: replacement",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\">a\u0000b</h1>\n</li>\n</ul>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n"
+  },
+  {
+    "source": "- # a\u0000b\n\n![a\u0000b][]\n\n[a\u0000b]: explicit",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\">a\u0000b</h1>\n</li>\n</ul>\n<p><img alt=\"a\u0000b\" src=\"explicit\"></p>\n"
+  },
+  {
+    "source": "- # a\u0000b\n\n[a\u0000b][a\u0000b]",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\">a\u0000b</h1>\n</li>\n</ul>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "- # a\u0000b\n\n[a\u0000b][a\u0000b]\n\n[a�b]: replacement",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\">a\u0000b</h1>\n</li>\n</ul>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "- # a\u0000b\n\n[a\u0000b][a\u0000b]\n\n[a\u0000b]: explicit",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\">a\u0000b</h1>\n</li>\n</ul>\n<p><a href=\"explicit\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "- # a\u0000b\n\n[a�b][]\n\n[a�b]: replacement",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\">a\u0000b</h1>\n</li>\n</ul>\n<p><a href=\"replacement\">a�b</a></p>\n"
+  },
+  {
+    "source": "# _a_\u0000b\n\n[a\u0000b][]",
+    "html": "<section id=\"a\u0000b\">\n<h1><em>a</em>\u0000b</h1>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n</section>\n"
+  },
+  {
+    "source": "# _a_\u0000b\n\n[a\u0000b][]\n\n[a�b]: replacement",
+    "html": "<section id=\"a\u0000b\">\n<h1><em>a</em>\u0000b</h1>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n</section>\n"
+  },
+  {
+    "source": "# _a_\u0000b\n\n[a\u0000b][]\n\n[a\u0000b]: explicit",
+    "html": "<section id=\"a\u0000b\">\n<h1><em>a</em>\u0000b</h1>\n<p><a href=\"explicit\">a\u0000b</a></p>\n</section>\n"
+  },
+  {
+    "source": "# _a_\u0000b\n\n![a\u0000b][]",
+    "html": "<section id=\"a\u0000b\">\n<h1><em>a</em>\u0000b</h1>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n</section>\n"
+  },
+  {
+    "source": "# _a_\u0000b\n\n![a\u0000b][]\n\n[a�b]: replacement",
+    "html": "<section id=\"a\u0000b\">\n<h1><em>a</em>\u0000b</h1>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n</section>\n"
+  },
+  {
+    "source": "# _a_\u0000b\n\n![a\u0000b][]\n\n[a\u0000b]: explicit",
+    "html": "<section id=\"a\u0000b\">\n<h1><em>a</em>\u0000b</h1>\n<p><img alt=\"a\u0000b\" src=\"explicit\"></p>\n</section>\n"
+  },
+  {
+    "source": "# _a_\u0000b\n\n[a\u0000b][a\u0000b]",
+    "html": "<section id=\"a\u0000b\">\n<h1><em>a</em>\u0000b</h1>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n</section>\n"
+  },
+  {
+    "source": "# _a_\u0000b\n\n[a\u0000b][a\u0000b]\n\n[a�b]: replacement",
+    "html": "<section id=\"a\u0000b\">\n<h1><em>a</em>\u0000b</h1>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n</section>\n"
+  },
+  {
+    "source": "# _a_\u0000b\n\n[a\u0000b][a\u0000b]\n\n[a\u0000b]: explicit",
+    "html": "<section id=\"a\u0000b\">\n<h1><em>a</em>\u0000b</h1>\n<p><a href=\"explicit\">a\u0000b</a></p>\n</section>\n"
+  },
+  {
+    "source": "# _a_\u0000b\n\n[a�b][]\n\n[a�b]: replacement",
+    "html": "<section id=\"a\u0000b\">\n<h1><em>a</em>\u0000b</h1>\n<p><a href=\"replacement\">a�b</a></p>\n</section>\n"
+  },
+  {
+    "source": "> # _a_\u0000b\n\n[a\u0000b][]",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\"><em>a</em>\u0000b</h1>\n</blockquote>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "> # _a_\u0000b\n\n[a\u0000b][]\n\n[a�b]: replacement",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\"><em>a</em>\u0000b</h1>\n</blockquote>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "> # _a_\u0000b\n\n[a\u0000b][]\n\n[a\u0000b]: explicit",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\"><em>a</em>\u0000b</h1>\n</blockquote>\n<p><a href=\"explicit\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "> # _a_\u0000b\n\n![a\u0000b][]",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\"><em>a</em>\u0000b</h1>\n</blockquote>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n"
+  },
+  {
+    "source": "> # _a_\u0000b\n\n![a\u0000b][]\n\n[a�b]: replacement",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\"><em>a</em>\u0000b</h1>\n</blockquote>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n"
+  },
+  {
+    "source": "> # _a_\u0000b\n\n![a\u0000b][]\n\n[a\u0000b]: explicit",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\"><em>a</em>\u0000b</h1>\n</blockquote>\n<p><img alt=\"a\u0000b\" src=\"explicit\"></p>\n"
+  },
+  {
+    "source": "> # _a_\u0000b\n\n[a\u0000b][a\u0000b]",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\"><em>a</em>\u0000b</h1>\n</blockquote>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "> # _a_\u0000b\n\n[a\u0000b][a\u0000b]\n\n[a�b]: replacement",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\"><em>a</em>\u0000b</h1>\n</blockquote>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "> # _a_\u0000b\n\n[a\u0000b][a\u0000b]\n\n[a\u0000b]: explicit",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\"><em>a</em>\u0000b</h1>\n</blockquote>\n<p><a href=\"explicit\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "> # _a_\u0000b\n\n[a�b][]\n\n[a�b]: replacement",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\"><em>a</em>\u0000b</h1>\n</blockquote>\n<p><a href=\"replacement\">a�b</a></p>\n"
+  },
+  {
+    "source": "- # _a_\u0000b\n\n[a\u0000b][]",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\"><em>a</em>\u0000b</h1>\n</li>\n</ul>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "- # _a_\u0000b\n\n[a\u0000b][]\n\n[a�b]: replacement",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\"><em>a</em>\u0000b</h1>\n</li>\n</ul>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "- # _a_\u0000b\n\n[a\u0000b][]\n\n[a\u0000b]: explicit",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\"><em>a</em>\u0000b</h1>\n</li>\n</ul>\n<p><a href=\"explicit\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "- # _a_\u0000b\n\n![a\u0000b][]",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\"><em>a</em>\u0000b</h1>\n</li>\n</ul>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n"
+  },
+  {
+    "source": "- # _a_\u0000b\n\n![a\u0000b][]\n\n[a�b]: replacement",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\"><em>a</em>\u0000b</h1>\n</li>\n</ul>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n"
+  },
+  {
+    "source": "- # _a_\u0000b\n\n![a\u0000b][]\n\n[a\u0000b]: explicit",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\"><em>a</em>\u0000b</h1>\n</li>\n</ul>\n<p><img alt=\"a\u0000b\" src=\"explicit\"></p>\n"
+  },
+  {
+    "source": "- # _a_\u0000b\n\n[a\u0000b][a\u0000b]",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\"><em>a</em>\u0000b</h1>\n</li>\n</ul>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "- # _a_\u0000b\n\n[a\u0000b][a\u0000b]\n\n[a�b]: replacement",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\"><em>a</em>\u0000b</h1>\n</li>\n</ul>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "- # _a_\u0000b\n\n[a\u0000b][a\u0000b]\n\n[a\u0000b]: explicit",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\"><em>a</em>\u0000b</h1>\n</li>\n</ul>\n<p><a href=\"explicit\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "- # _a_\u0000b\n\n[a�b][]\n\n[a�b]: replacement",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\"><em>a</em>\u0000b</h1>\n</li>\n</ul>\n<p><a href=\"replacement\">a�b</a></p>\n"
+  },
+  {
+    "source": "# `a\u0000b`\n\n[a\u0000b][]",
+    "html": "<section id=\"a\u0000b\">\n<h1><code>a\u0000b</code></h1>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n</section>\n"
+  },
+  {
+    "source": "# `a\u0000b`\n\n[a\u0000b][]\n\n[a�b]: replacement",
+    "html": "<section id=\"a\u0000b\">\n<h1><code>a\u0000b</code></h1>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n</section>\n"
+  },
+  {
+    "source": "# `a\u0000b`\n\n[a\u0000b][]\n\n[a\u0000b]: explicit",
+    "html": "<section id=\"a\u0000b\">\n<h1><code>a\u0000b</code></h1>\n<p><a href=\"explicit\">a\u0000b</a></p>\n</section>\n"
+  },
+  {
+    "source": "# `a\u0000b`\n\n![a\u0000b][]",
+    "html": "<section id=\"a\u0000b\">\n<h1><code>a\u0000b</code></h1>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n</section>\n"
+  },
+  {
+    "source": "# `a\u0000b`\n\n![a\u0000b][]\n\n[a�b]: replacement",
+    "html": "<section id=\"a\u0000b\">\n<h1><code>a\u0000b</code></h1>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n</section>\n"
+  },
+  {
+    "source": "# `a\u0000b`\n\n![a\u0000b][]\n\n[a\u0000b]: explicit",
+    "html": "<section id=\"a\u0000b\">\n<h1><code>a\u0000b</code></h1>\n<p><img alt=\"a\u0000b\" src=\"explicit\"></p>\n</section>\n"
+  },
+  {
+    "source": "# `a\u0000b`\n\n[a\u0000b][a\u0000b]",
+    "html": "<section id=\"a\u0000b\">\n<h1><code>a\u0000b</code></h1>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n</section>\n"
+  },
+  {
+    "source": "# `a\u0000b`\n\n[a\u0000b][a\u0000b]\n\n[a�b]: replacement",
+    "html": "<section id=\"a\u0000b\">\n<h1><code>a\u0000b</code></h1>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n</section>\n"
+  },
+  {
+    "source": "# `a\u0000b`\n\n[a\u0000b][a\u0000b]\n\n[a\u0000b]: explicit",
+    "html": "<section id=\"a\u0000b\">\n<h1><code>a\u0000b</code></h1>\n<p><a href=\"explicit\">a\u0000b</a></p>\n</section>\n"
+  },
+  {
+    "source": "# `a\u0000b`\n\n[a�b][]\n\n[a�b]: replacement",
+    "html": "<section id=\"a\u0000b\">\n<h1><code>a\u0000b</code></h1>\n<p><a href=\"replacement\">a�b</a></p>\n</section>\n"
+  },
+  {
+    "source": "> # `a\u0000b`\n\n[a\u0000b][]",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\"><code>a\u0000b</code></h1>\n</blockquote>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "> # `a\u0000b`\n\n[a\u0000b][]\n\n[a�b]: replacement",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\"><code>a\u0000b</code></h1>\n</blockquote>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "> # `a\u0000b`\n\n[a\u0000b][]\n\n[a\u0000b]: explicit",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\"><code>a\u0000b</code></h1>\n</blockquote>\n<p><a href=\"explicit\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "> # `a\u0000b`\n\n![a\u0000b][]",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\"><code>a\u0000b</code></h1>\n</blockquote>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n"
+  },
+  {
+    "source": "> # `a\u0000b`\n\n![a\u0000b][]\n\n[a�b]: replacement",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\"><code>a\u0000b</code></h1>\n</blockquote>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n"
+  },
+  {
+    "source": "> # `a\u0000b`\n\n![a\u0000b][]\n\n[a\u0000b]: explicit",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\"><code>a\u0000b</code></h1>\n</blockquote>\n<p><img alt=\"a\u0000b\" src=\"explicit\"></p>\n"
+  },
+  {
+    "source": "> # `a\u0000b`\n\n[a\u0000b][a\u0000b]",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\"><code>a\u0000b</code></h1>\n</blockquote>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "> # `a\u0000b`\n\n[a\u0000b][a\u0000b]\n\n[a�b]: replacement",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\"><code>a\u0000b</code></h1>\n</blockquote>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "> # `a\u0000b`\n\n[a\u0000b][a\u0000b]\n\n[a\u0000b]: explicit",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\"><code>a\u0000b</code></h1>\n</blockquote>\n<p><a href=\"explicit\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "> # `a\u0000b`\n\n[a�b][]\n\n[a�b]: replacement",
+    "html": "<blockquote>\n<h1 id=\"a\u0000b\"><code>a\u0000b</code></h1>\n</blockquote>\n<p><a href=\"replacement\">a�b</a></p>\n"
+  },
+  {
+    "source": "- # `a\u0000b`\n\n[a\u0000b][]",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\"><code>a\u0000b</code></h1>\n</li>\n</ul>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "- # `a\u0000b`\n\n[a\u0000b][]\n\n[a�b]: replacement",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\"><code>a\u0000b</code></h1>\n</li>\n</ul>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "- # `a\u0000b`\n\n[a\u0000b][]\n\n[a\u0000b]: explicit",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\"><code>a\u0000b</code></h1>\n</li>\n</ul>\n<p><a href=\"explicit\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "- # `a\u0000b`\n\n![a\u0000b][]",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\"><code>a\u0000b</code></h1>\n</li>\n</ul>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n"
+  },
+  {
+    "source": "- # `a\u0000b`\n\n![a\u0000b][]\n\n[a�b]: replacement",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\"><code>a\u0000b</code></h1>\n</li>\n</ul>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"></p>\n"
+  },
+  {
+    "source": "- # `a\u0000b`\n\n![a\u0000b][]\n\n[a\u0000b]: explicit",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\"><code>a\u0000b</code></h1>\n</li>\n</ul>\n<p><img alt=\"a\u0000b\" src=\"explicit\"></p>\n"
+  },
+  {
+    "source": "- # `a\u0000b`\n\n[a\u0000b][a\u0000b]",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\"><code>a\u0000b</code></h1>\n</li>\n</ul>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "- # `a\u0000b`\n\n[a\u0000b][a\u0000b]\n\n[a�b]: replacement",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\"><code>a\u0000b</code></h1>\n</li>\n</ul>\n<p><a href=\"#a\u0000b\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "- # `a\u0000b`\n\n[a\u0000b][a\u0000b]\n\n[a\u0000b]: explicit",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\"><code>a\u0000b</code></h1>\n</li>\n</ul>\n<p><a href=\"explicit\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "- # `a\u0000b`\n\n[a�b][]\n\n[a�b]: replacement",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000b\"><code>a\u0000b</code></h1>\n</li>\n</ul>\n<p><a href=\"replacement\">a�b</a></p>\n"
+  },
+  {
+    "source": "# a\u0000 b\n\n[a\u0000b][]\n\n[a\u0000b]: explicit",
+    "html": "<section id=\"a\u0000-b\">\n<h1>a\u0000 b</h1>\n<p><a href=\"explicit\">a\u0000b</a></p>\n</section>\n"
+  },
+  {
+    "source": "# a\u0000 b\n\n![a\u0000b][]\n\n[a\u0000b]: explicit",
+    "html": "<section id=\"a\u0000-b\">\n<h1>a\u0000 b</h1>\n<p><img alt=\"a\u0000b\" src=\"explicit\"></p>\n</section>\n"
+  },
+  {
+    "source": "# a\u0000 b\n\n[a\u0000b][a\u0000b]\n\n[a\u0000b]: explicit",
+    "html": "<section id=\"a\u0000-b\">\n<h1>a\u0000 b</h1>\n<p><a href=\"explicit\">a\u0000b</a></p>\n</section>\n"
+  },
+  {
+    "source": "# a\u0000 b\n\n[a�b][]\n\n[a�b]: replacement",
+    "html": "<section id=\"a\u0000-b\">\n<h1>a\u0000 b</h1>\n<p><a href=\"replacement\">a�b</a></p>\n</section>\n"
+  },
+  {
+    "source": "> # a\u0000 b\n\n[a\u0000b][]\n\n[a\u0000b]: explicit",
+    "html": "<blockquote>\n<h1 id=\"a\u0000-b\">a\u0000 b</h1>\n</blockquote>\n<p><a href=\"explicit\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "> # a\u0000 b\n\n![a\u0000b][]\n\n[a\u0000b]: explicit",
+    "html": "<blockquote>\n<h1 id=\"a\u0000-b\">a\u0000 b</h1>\n</blockquote>\n<p><img alt=\"a\u0000b\" src=\"explicit\"></p>\n"
+  },
+  {
+    "source": "> # a\u0000 b\n\n[a\u0000b][a\u0000b]\n\n[a\u0000b]: explicit",
+    "html": "<blockquote>\n<h1 id=\"a\u0000-b\">a\u0000 b</h1>\n</blockquote>\n<p><a href=\"explicit\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "> # a\u0000 b\n\n[a�b][]\n\n[a�b]: replacement",
+    "html": "<blockquote>\n<h1 id=\"a\u0000-b\">a\u0000 b</h1>\n</blockquote>\n<p><a href=\"replacement\">a�b</a></p>\n"
+  },
+  {
+    "source": "- # a\u0000 b\n\n[a\u0000b][]\n\n[a\u0000b]: explicit",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000-b\">a\u0000 b</h1>\n</li>\n</ul>\n<p><a href=\"explicit\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "- # a\u0000 b\n\n![a\u0000b][]\n\n[a\u0000b]: explicit",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000-b\">a\u0000 b</h1>\n</li>\n</ul>\n<p><img alt=\"a\u0000b\" src=\"explicit\"></p>\n"
+  },
+  {
+    "source": "- # a\u0000 b\n\n[a\u0000b][a\u0000b]\n\n[a\u0000b]: explicit",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000-b\">a\u0000 b</h1>\n</li>\n</ul>\n<p><a href=\"explicit\">a\u0000b</a></p>\n"
+  },
+  {
+    "source": "- # a\u0000 b\n\n[a�b][]\n\n[a�b]: replacement",
+    "html": "<ul>\n<li>\n<h1 id=\"a\u0000-b\">a\u0000 b</h1>\n</li>\n</ul>\n<p><a href=\"replacement\">a�b</a></p>\n"
+  },
+  {
+    "source": "# a\u0000b\n\n![a\u0000b][] [x][a\u0000b]",
+    "html": "<section id=\"a\u0000b\">\n<h1>a\u0000b</h1>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"> <a href=\"#a\u0000b\">x</a></p>\n</section>\n"
+  },
+  {
+    "source": "# a\u0000b\n\n![a\u0000b][] [x][a\u0000b]\n\n```\ntail",
+    "html": "<section id=\"a\u0000b\">\n<h1>a\u0000b</h1>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"> <a href=\"#a\u0000b\">x</a></p>\n<pre><code>tail</code></pre>\n</section>\n"
+  },
+  {
+    "source": "{#custom}\n# a\u0000b\n\n![a\u0000b][] [x][a\u0000b]",
+    "html": "<section id=\"custom\">\n<h1>a\u0000b</h1>\n<p><img alt=\"a\u0000b\" src=\"#custom\"> <a href=\"#custom\">x</a></p>\n</section>\n"
+  },
+  {
+    "source": "{#custom}\n# a\u0000b\n\n![a\u0000b][] [x][a\u0000b]\n\n```\ntail",
+    "html": "<section id=\"custom\">\n<h1>a\u0000b</h1>\n<p><img alt=\"a\u0000b\" src=\"#custom\"> <a href=\"#custom\">x</a></p>\n<pre><code>tail</code></pre>\n</section>\n"
+  },
+  {
+    "source": "# a\u0000b{#custom}\n\n![a\u0000b][] [x][a\u0000b]",
+    "html": "<section id=\"a\u0000b\">\n<h1><span id=\"custom\">a\u0000b</span></h1>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"> <a href=\"#a\u0000b\">x</a></p>\n</section>\n"
+  },
+  {
+    "source": "# a\u0000b{#custom}\n\n![a\u0000b][] [x][a\u0000b]\n\n```\ntail",
+    "html": "<section id=\"a\u0000b\">\n<h1><span id=\"custom\">a\u0000b</span></h1>\n<p><img alt=\"a\u0000b\" src=\"#a\u0000b\"> <a href=\"#a\u0000b\">x</a></p>\n<pre><code>tail</code></pre>\n</section>\n"
+  },
+  {
+    "source": "`a\u0000b # [x][k]`\n\n[k]: u",
+    "html": "<p><code>a\u0000b # [x][k]</code></p>\n"
+  },
+  {
+    "source": "# other\n\na\u0000b [x][k]\n\n[k]: u",
+    "html": "<section id=\"other\">\n<h1>other</h1>\n<p>a\u0000b <a href=\"u\">x</a></p>\n</section>\n"
+  },
+  {
+    "source": "# other\n\na\u0000b [x][k\\*]\n\n[k*]: u",
+    "html": "<section id=\"other\">\n<h1>other</h1>\n<p>a\u0000b <a href=\"u\">x</a></p>\n</section>\n"
+  },
+  {
+    "source": "# a\u0000b\n\n`[a\u0000b][]`",
+    "html": "<section id=\"a\u0000b\">\n<h1>a\u0000b</h1>\n<p><code>[a\u0000b][]</code></p>\n</section>\n"
+  },
+  {
+    "source": "# a\u0000b\n\n| ![a\u0000b][] |",
+    "html": "<section id=\"a\u0000b\">\n<h1>a\u0000b</h1>\n<table>\n<tr>\n<td><img alt=\"a\u0000b\" src=\"#a\u0000b\"></td>\n</tr>\n</table>\n</section>\n"
+  },
+  {
+    "source": "{id=\"a b\"}\n# H\u0000x\n\n[H\u0000x][]",
+    "html": "<section id=\"a b\">\n<h1>H\u0000x</h1>\n<p><a href=\"#a b\">H\u0000x</a></p>\n</section>\n"
+  },
+  {
+    "source": "> {#x}\n# H\u0000x\n\n[H\u0000x][]",
+    "html": "<blockquote>\n</blockquote>\n<section id=\"x\">\n<h1>H\u0000x</h1>\n<p><a href=\"#x\">H\u0000x</a></p>\n</section>\n"
+  },
+  {
+    "source": "> {#x}\n> # H\u0000x\n\n[H\u0000x][]",
+    "html": "<blockquote>\n<h1 id=\"x\">H\u0000x</h1>\n</blockquote>\n<p><a href=\"#x\">H\u0000x</a></p>\n"
+  },
+  {
+    "source": "- {#x}\n  # H\u0000x\n\n[H\u0000x][]",
+    "html": "<ul>\n<li>\n<h1 id=\"x\">H\u0000x</h1>\n</li>\n</ul>\n<p><a href=\"#x\">H\u0000x</a></p>\n"
+  },
+  {
+    "source": "{#x}\n- # H\u0000x\n\n[H\u0000x][]",
+    "html": "<ul id=\"x\">\n<li>\n<h1 id=\"H\u0000x\">H\u0000x</h1>\n</li>\n</ul>\n<p><a href=\"#H\u0000x\">H\u0000x</a></p>\n"
+  },
+  {
+    "source": "{#x}\n> # H\u0000x\n\n[H\u0000x][]",
+    "html": "<blockquote id=\"x\">\n<h1 id=\"H\u0000x\">H\u0000x</h1>\n</blockquote>\n<p><a href=\"#H\u0000x\">H\u0000x</a></p>\n"
+  },
+  {
+    "source": "{id=\"a\\-b\"}\n# H\u0000x\n\n[H\u0000x][]",
+    "html": "<section id=\"a-b\">\n<h1>H\u0000x</h1>\n<p><a href=\"#a-b\">H\u0000x</a></p>\n</section>\n"
+  },
+  {
+    "source": "{id=\"a(b)\"}\n# H\u0000x\n\n[H\u0000x][]",
+    "html": "<section id=\"a(b)\">\n<h1>H\u0000x</h1>\n<p><a href=\"#a(b)\">H\u0000x</a></p>\n</section>\n"
+  },
+  {
+    "source": "{#first}\n{#second}\n# H\u0000x\n\n[H\u0000x][]",
+    "html": "<section id=\"second\">\n<h1>H\u0000x</h1>\n<p><a href=\"#second\">H\u0000x</a></p>\n</section>\n"
+  },
+  {
+    "source": "# H\u0000x\n\n![![i][a\u0000]][H\u0000x]\n\n[a\u0000]: u\n[a�]: replacement",
+    "html": "<section id=\"H\u0000x\">\n<h1>H\u0000x</h1>\n<p><img alt=\"i\" src=\"#H\u0000x\"></p>\n</section>\n"
+  },
+  {
+    "source": "- a\n\n  {#x}\n# H\u0000x\n\n[H\u0000x][]",
+    "html": "<ul>\n<li>\n<p>a</p>\n</li>\n</ul>\n<section id=\"x\">\n<h1>H\u0000x</h1>\n<p><a href=\"#x\">H\u0000x</a></p>\n</section>\n"
+  },
+  {
+    "source": "# A, b\u0000\n\n[A, b\u0000][]",
+    "html": "<section id=\"A-b\u0000\">\n<h1>A, b\u0000</h1>\n<p><a href=\"#A-b\u0000\">A, b\u0000</a></p>\n</section>\n"
+  },
+  {
+    "source": "# A. b\u0000\n\n[A. b\u0000][]",
+    "html": "<section id=\"A-b\u0000\">\n<h1>A. b\u0000</h1>\n<p><a href=\"#A-b\u0000\">A. b\u0000</a></p>\n</section>\n"
+  },
+  {
+    "source": "# A! b\u0000\n\n[A! b\u0000][]",
+    "html": "<section id=\"A-b\u0000\">\n<h1>A! b\u0000</h1>\n<p><a href=\"#A-b\u0000\">A! b\u0000</a></p>\n</section>\n"
+  },
+  {
+    "source": "# A/ b\u0000\n\n[A/ b\u0000][]",
+    "html": "<section id=\"A-b\u0000\">\n<h1>A/ b\u0000</h1>\n<p><a href=\"#A-b\u0000\">A/ b\u0000</a></p>\n</section>\n"
+  },
+  {
+    "source": "# A(b)\u0000\n\n[A(b)\u0000][]",
+    "html": "<section id=\"A-b-\u0000\">\n<h1>A(b)\u0000</h1>\n<p><a href=\"#A-b-\u0000\">A(b)\u0000</a></p>\n</section>\n"
+  },
+  {
+    "source": "# A|b\u0000\n\n[A|b\u0000][]",
+    "html": "<section id=\"A-b\u0000\">\n<h1>A|b\u0000</h1>\n<p><a href=\"#A-b\u0000\">A|b\u0000</a></p>\n</section>\n"
+  },
+  {
+    "source": "# H\nHx\u0000\n\n[H Hx\u0000][]",
+    "html": "<section id=\"H-Hx\u0000\">\n<h1>H\nHx\u0000</h1>\n<p><a href=\"#H-Hx\u0000\">H Hx\u0000</a></p>\n</section>\n"
+  },
+  {
+    "source": "(1) # H\u0000x\n\n[H\u0000x][]",
+    "html": "<ol>\n<li>\n<h1 id=\"H\u0000x\">H\u0000x</h1>\n</li>\n</ol>\n<p><a href=\"#H\u0000x\">H\u0000x</a></p>\n"
+  },
+  {
+    "source": "| a |\n{.x}\n# H\u0000\n\n[H\u0000][]",
+    "html": "<table>\n<tr>\n<td>a</td>\n</tr>\n</table>\n<section id=\"H\u0000\">\n<h1 class=\"x\">H\u0000</h1>\n<p><a href=\"#H\u0000\">H\u0000</a></p>\n</section>\n"
+  },
+  {
+    "source": "# H\u0000\n\n[H\u0000][]\n\n{#H�}",
+    "html": "<section id=\"H\u0000\">\n<h1>H\u0000</h1>\n<p><a href=\"#H\u0000\">H\u0000</a></p>\n</section>\n"
+  },
+  {
+    "source": "# H\u0000\n\n[H\u0000][]\n\n`a{#H�}`",
+    "html": "<section id=\"H\u0000\">\n<h1>H\u0000</h1>\n<p><a href=\"#H\u0000\">H\u0000</a></p>\n<p><code>a{#H�}</code></p>\n</section>\n"
+  },
+  {
+    "source": "# H\u0000\n\n[H\u0000][]\n\n> {#H�}",
+    "html": "<section id=\"H\u0000\">\n<h1>H\u0000</h1>\n<p><a href=\"#H\u0000\">H\u0000</a></p>\n<blockquote>\n</blockquote>\n</section>\n"
+  },
+  {
+    "source": "{#custom\n .cls}\n# H\u0000x\n\n[H\u0000x][]",
+    "html": "<section id=\"custom\" class=\"cls\">\n<h1>H\u0000x</h1>\n<p><a href=\"#custom\">H\u0000x</a></p>\n</section>\n",
+    "destinationOnly": true
+  },
+  {
+    "source": "{#custom}\n{.cls}\n# H\u0000x\n\n[H\u0000x][]",
+    "html": "<section id=\"custom\" class=\"cls\">\n<h1>H\u0000x</h1>\n<p><a href=\"#custom\">H\u0000x</a></p>\n</section>\n",
+    "destinationOnly": true
+  },
+  {
+    "source": "{.cls}\n{#custom}\n# H\u0000x\n\n[H\u0000x][]",
+    "html": "<section class=\"cls\" id=\"custom\">\n<h1>H\u0000x</h1>\n<p><a href=\"#custom\">H\u0000x</a></p>\n</section>\n",
+    "destinationOnly": true
+  },
+  {
+    "source": "{.a\n x=\"y\"}\n{#custom\n .b}\n# H\u0000x\n\n[H\u0000x][]",
+    "html": "<section class=\"a b\" x=\"y\" id=\"custom\">\n<h1>H\u0000x</h1>\n<p><a href=\"#custom\">H\u0000x</a></p>\n</section>\n",
+    "destinationOnly": true
+  }
+]

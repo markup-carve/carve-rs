@@ -2129,3 +2129,6 @@ mod djot_root_code_container_losses;
 
 #[path = "../djot_unicode_quote_attributes.rs"]
 mod djot_unicode_quote_attributes;
+
+#[path = "../djot_nul_heading_references.rs"]
+mod djot_nul_heading_references;

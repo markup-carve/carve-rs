@@ -48,6 +48,9 @@ mod emphasis;
 #[path = "djot_import_normalize.rs"]
 mod normalize;
 
+#[path = "djot_heading_targets.rs"]
+mod heading_targets;
+
 use std::collections::{HashMap, HashSet};
 
 const DJOT_LINE_SPACING: [char; 3] = [' ', '\t', '\r'];
@@ -80,16 +83,21 @@ pub fn djot_to_carve(djot: &str) -> String {
 }
 
 pub(crate) fn djot_to_carve_prepared(stripped_definitions: &DjotFootnoteAttributeStrip) -> String {
-    djot_to_carve_prepared_with_quotes(stripped_definitions, false, false)
+    djot_to_carve_prepared_with_quotes(stripped_definitions, false, false, false)
 }
 
 fn djot_to_carve_prepared_with_quotes(
     stripped_definitions: &DjotFootnoteAttributeStrip,
     omit_quote_delimiters: bool,
     nul_shielded: bool,
+    skip_heading_targets: bool,
 ) -> String {
     if nul_shielded || !stripped_definitions.source.contains('\0') {
-        return convert_djot_document(stripped_definitions, omit_quote_delimiters);
+        return convert_djot_document(
+            stripped_definitions,
+            omit_quote_delimiters,
+            skip_heading_targets,
+        );
     }
     let token = "\0U\0";
     let pattern = cached_regex!(r"\x00DJOTNOTEATTR\x00([0-9]+)\x00").unwrap();
@@ -114,12 +122,14 @@ fn djot_to_carve_prepared_with_quotes(
         losses: stripped_definitions.losses.clone(),
         comments: stripped_definitions.comments.clone(),
     };
-    convert_djot_document(&protected, omit_quote_delimiters).replace(token, "\0")
+    convert_djot_document(&protected, omit_quote_delimiters, skip_heading_targets)
+        .replace(token, "\0")
 }
 
 fn convert_djot_document(
     stripped_definitions: &DjotFootnoteAttributeStrip,
     omit_quote_delimiters: bool,
+    skip_heading_targets: bool,
 ) -> String {
     let normalized = &stripped_definitions.source;
     let (frontmatter, separator, body) = split_frontmatter(normalized);
@@ -127,6 +137,26 @@ fn convert_djot_document(
     let table_attributes = escape_djot_table_attribute_boundaries(&div_openers);
     let body = table_attributes.as_ref();
     let has_source_nuls = body.contains("\0U\0");
+    let repaired_headings = if !skip_heading_targets
+        && has_source_nuls
+        && body.contains("][")
+        && !cached_regex!(
+            r"(?m)^[ \t]*(?:>[ \t]*)*(?:(?:[-*+]|[0-9A-Za-z]+[.)])[ \t]+)?\[\^[^\]\n]+\]:"
+        )
+        .unwrap()
+        .is_match(body)
+        && cached_regex!(r"(?m)^[ \t]*(?:>[ \t]*)*(?:(?:[-*+]|[0-9A-Za-z]+[.)])[ \t]+)?#{1,6}[ \t]")
+            .unwrap()
+            .is_match(body)
+    {
+        let baseline = convert_djot_document(stripped_definitions, omit_quote_delimiters, true);
+        let targets = heading_targets::from_carve(&baseline);
+        std::borrow::Cow::Owned(normalize::heading_reference_keys(body, &targets))
+    } else {
+        std::borrow::Cow::Borrowed(body)
+    };
+    let body = repaired_headings.as_ref();
+
     let early_references = if body.lines().any(|line| {
         cached_regex!(r"^\[([^\]\n]*)\]:")
             .unwrap()
@@ -663,6 +693,7 @@ fn djot_image_label_child_text(
         &strip_footnote_definition_attributes(&format!("DJOTALT {} DJOTEND", protected_label)),
         omit_quote_delimiters,
         nul_shielded,
+        true,
     );
     let native = if nul_shielded {
         native.replace("\0U\0", "\0")
@@ -7668,6 +7699,7 @@ fn normalize_djot_links(source: &str, inherited: &HashSet<String>) -> String {
                 &strip_footnote_definition_attributes(&format!(
                     "{definitions}DJOTALT {raw} DJOTEND"
                 )),
+                true,
                 true,
                 true,
             );

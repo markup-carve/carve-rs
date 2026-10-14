@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 
 fn images(html: &str) -> Vec<Value> {
     let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(html.to_owned());
-    let mut nodes: Vec<Handle> = vec![dom.document];
+    let mut nodes: Vec<Handle> = vec![dom.document.clone()];
     let mut values = Vec::new();
     while let Some(node) = nodes.pop() {
         if let NodeData::Element { name, attrs, .. } = &node.data {

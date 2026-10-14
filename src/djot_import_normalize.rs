@@ -3690,14 +3690,14 @@ fn reference_attribute_text(attrs: &[(String, Vec<String>)], table: bool) -> Str
 }
 
 pub(super) fn references(source: &str) -> String {
-    references_impl(source, None, false)
+    references_impl(source, None, false, None)
 }
 
 pub(super) fn caret_references(
     source: &str,
     accepted: &HashMap<usize, ReferenceDecision>,
 ) -> String {
-    references_impl(source, Some(accepted), false)
+    references_impl(source, Some(accepted), false, None)
 }
 
 pub(super) fn reference_key_needs_alias(key: &str) -> bool {
@@ -3706,13 +3706,18 @@ pub(super) fn reference_key_needs_alias(key: &str) -> bool {
 }
 
 pub(super) fn literal_reference_keys(source: &str) -> String {
-    references_impl(source, None, true)
+    references_impl(source, None, true, None)
+}
+
+pub(super) fn heading_reference_keys(source: &str, targets: &HashMap<String, String>) -> String {
+    references_impl(source, None, true, Some(targets))
 }
 
 fn references_impl(
     source: &str,
     accepted: Option<&HashMap<usize, ReferenceDecision>>,
     aliases_only: bool,
+    heading_targets: Option<&HashMap<String, String>>,
 ) -> String {
     let _paragraph_cache = ParagraphCacheScope::new(source);
     let definition = cached_regex!(r"(?m)^\[([^\]\n]+)\]:[ \t]*([^ \t\r\n]*)\r?$").unwrap();
@@ -3916,7 +3921,7 @@ fn references_impl(
             ),
         );
     }
-    if definitions.is_empty() {
+    if definitions.is_empty() && heading_targets.map_or(true, HashMap::is_empty) {
         return source.to_owned();
     }
     let mut seen_keys = HashSet::new();
@@ -4010,6 +4015,7 @@ fn references_impl(
     }
     if aliases_only {
         let mut edits = Vec::new();
+        let mut heading_edits = Vec::new();
         for (key, alias) in &aliases {
             for &(start, end) in definition_ranges.get(key).into_iter().flatten() {
                 if let Some(close) = source[start..end].find("]:") {
@@ -4046,6 +4052,23 @@ fn references_impl(
             if before > 0 && unresolved[before - 1].1 >= attributed.end {
                 continue;
             }
+            let heading_key = attributed.key.replace("\0U\0", "\0");
+            if heading_key.contains('\0') && !definitions.contains_key(&attributed.key) {
+                if let Some(target) = heading_targets.and_then(|targets| targets.get(&heading_key))
+                {
+                    let reference = &attributed.reference;
+                    let target = target
+                        .replace('\\', "\\\\")
+                        .replace('(', "\\(")
+                        .replace(')', "\\)");
+                    heading_edits.push((
+                        reference.end - reference.label.len() - 2,
+                        reference.end,
+                        format!("({target})"),
+                    ));
+                    continue;
+                }
+            }
             if let Some(alias) = aliases.get(&attributed.key) {
                 let reference = &attributed.reference;
                 edits.push((
@@ -4055,6 +4078,11 @@ fn references_impl(
                 ));
             }
         }
+        edits.extend(
+            heading_edits
+                .iter()
+                .map(|(start, end, text)| (*start, *end, text.as_str())),
+        );
         edits.sort_unstable_by_key(|edit| edit.0);
         let mut result = String::new();
         let mut cursor = 0;

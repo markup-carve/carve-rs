@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 
 fn elements(html: &str) -> Vec<Value> {
     let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(html.to_owned());
-    let mut nodes: Vec<(Handle, usize)> = vec![(dom.document, 0)];
+    let mut nodes: Vec<(Handle, usize)> = vec![(dom.document.clone(), 0)];
     let mut values = Vec::new();
     while let Some((node, depth)) = nodes.pop() {
         if let NodeData::Element { name, attrs, .. } = &node.data {
@@ -35,7 +35,7 @@ fn elements(html: &str) -> Vec<Value> {
 
 fn text(html: &str) -> String {
     let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(html.to_owned());
-    let mut nodes = vec![dom.document];
+    let mut nodes = vec![dom.document.clone()];
     let mut value = String::new();
     while let Some(node) = nodes.pop() {
         if let NodeData::Text { contents } = &node.data {
