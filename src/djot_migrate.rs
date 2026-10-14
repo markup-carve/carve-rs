@@ -4371,9 +4371,19 @@ type FenceLineCallback<'a> = &'a mut dyn FnMut(usize, &str);
 
 fn mask_djot_fences(
     source: &str,
+    on_fence_line: Option<FenceLineCallback<'_>>,
+    row_boundaries: &[bool],
+    strict: bool,
+) -> String {
+    mask_djot_fences_with_open(source, on_fence_line, row_boundaries, strict, None)
+}
+
+fn mask_djot_fences_with_open(
+    source: &str,
     mut on_fence_line: Option<FenceLineCallback<'_>>,
     row_boundaries: &[bool],
     strict: bool,
+    on_open: Option<&dyn Fn(usize)>,
 ) -> String {
     let mut mask = source.as_bytes().to_vec();
     let opener = cached_regex!(r"^([ \t]*)(?:(\[\^[^\]\n]+\]:[ \t]*|[-*+][ \t]+(?:\[[ xX]\][ \t]+)?|(?:(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\)|:)[ \t]+))?(`{3,}|~{3,})[ \t]*=?[A-Za-z0-9_+#.-]*[ \t]*$").unwrap();
@@ -4648,6 +4658,9 @@ fn mask_djot_fences(
                 let start = open.get(3).unwrap().start()
                     + prefix_len
                     + if nested_note { opening_at } else { 0 };
+                if let Some(on_open) = on_open {
+                    on_open(line_index);
+                }
                 fence = Some((open[3].as_bytes()[0], open[3].len(), 0, container, depth));
                 blank_out(&mut mask, offset + start, offset + line.len());
             }
@@ -4701,7 +4714,7 @@ fn mask_djot_forms_with_options(
     footnotes: bool,
     on_fence_line: Option<FenceLineCallback<'_>>,
     row_boundaries: &[bool],
-    options: OpaqueOptions,
+    options: OpaqueOptions<'_>,
 ) -> String {
     let bytes = source.as_bytes();
     let footnote_ends = if inline_forms && footnotes && source.contains("[^") {
@@ -4720,7 +4733,14 @@ fn mask_djot_forms_with_options(
         None
     };
 
-    let mut mask = mask_djot_fences(source, on_fence_line, row_boundaries, true).into_bytes();
+    let mut mask = mask_djot_fences_with_open(
+        source,
+        on_fence_line,
+        row_boundaries,
+        true,
+        options.on_fence_open,
+    )
+    .into_bytes();
 
     mask = mask_djot_opaque(&String::from_utf8(mask).unwrap(), options);
     if inline_forms && footnotes {
@@ -4754,16 +4774,18 @@ fn mask_djot_forms_with_options(
 
 // All import scans share the same mask; code padding leaves ordinary code visible.
 #[derive(Clone, Copy)]
-struct OpaqueOptions {
+struct OpaqueOptions<'a> {
     code: bool,
     raw_code: bool,
     unclosed_code: bool,
     autolinks: bool,
     destinations: bool,
     attribute_values: bool,
+    on_raw_format: Option<&'a dyn Fn(usize, usize, &str)>,
+    on_fence_open: Option<&'a dyn Fn(usize)>,
 }
 
-impl Default for OpaqueOptions {
+impl Default for OpaqueOptions<'_> {
     fn default() -> Self {
         Self {
             code: true,
@@ -4772,18 +4794,20 @@ impl Default for OpaqueOptions {
             autolinks: true,
             destinations: true,
             attribute_values: true,
+            on_raw_format: None,
+            on_fence_open: None,
         }
     }
 }
 
-fn mask_djot_opaque(source: &str, options: OpaqueOptions) -> Vec<u8> {
+fn mask_djot_opaque(source: &str, options: OpaqueOptions<'_>) -> Vec<u8> {
     let _paragraph_cache = ParagraphCacheScope::new(source);
     mask_djot_opaque_with_comments(source, options).0
 }
 
 fn mask_djot_opaque_with_comments(
     source: &str,
-    options: OpaqueOptions,
+    options: OpaqueOptions<'_>,
 ) -> (Vec<u8>, Vec<(usize, usize)>) {
     let reference_boundary =
         cached_regex!(r"^(?:#{1,6} |:{3,}|[`~]{3,}|\{|\[[^\]]+\]:|(?:[*-][ \t]*){3,}$)").unwrap();
@@ -4958,6 +4982,9 @@ fn mask_djot_opaque_with_comments(
         if let Some(close) = close {
             let end = close + width;
             let raw_end = raw_formats.get(&end).copied();
+            if let (Some(raw_end), Some(on_raw_format)) = (raw_end, options.on_raw_format) {
+                on_raw_format(at, raw_end, &source[end + 2..raw_end - 1]);
+            }
             let math = at > 0 && at < bytes.len() && bytes[at - 1] == b'$';
             if options.code || raw_end.is_some() && options.raw_code || math {
                 blank_out(&mut mask, at - usize::from(math), end);

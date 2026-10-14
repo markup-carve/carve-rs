@@ -1,0 +1,1106 @@
+[
+  {
+    "source": "`raw`{=ab}",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:12:11\"></p>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "> `raw`{=ab}",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"1:14:13\">\n<p data-startpos=\"1:3:2\" data-endpos=\"1:14:13\"></p>\n</blockquote>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "- `raw`{=ab}",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"1:14:13\">\n<li data-startpos=\"1:1:0\" data-endpos=\"1:14:13\">\n\n</li>\n</ul>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "- > `raw`{=ab}",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"1:16:15\">\n<li data-startpos=\"1:1:0\" data-endpos=\"1:16:15\">\n<blockquote data-startpos=\"1:3:2\" data-endpos=\"1:16:15\">\n\n</blockquote>\n</li>\n</ul>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "> - `raw`{=ab}",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"1:16:15\">\n<ul data-startpos=\"1:3:2\" data-endpos=\"1:16:15\">\n<li data-startpos=\"1:3:2\" data-endpos=\"1:16:15\">\n\n</li>\n</ul>\n</blockquote>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "# `raw`{=ab}",
+    "html": "<section id=\"raw\" data-startpos=\"1:1:0\" data-endpos=\"1:14:13\">\n<h1 data-startpos=\"1:1:0\" data-endpos=\"1:14:13\"></h1>\n</section>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "![a `raw`{=ab} c](img)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:24:23\"><img alt=\"a raw c\" src=\"img\" data-startpos=\"1:2:1\" data-endpos=\"1:23:22\"></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "[a `raw`{=ab} c](u)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:21:20\"><a href=\"u\" data-startpos=\"1:1:0\" data-endpos=\"1:20:19\">a  c</a></p>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "![a [`raw`{=ab}](u) c](img)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:29:28\"><img alt=\"a raw c\" src=\"img\" data-startpos=\"1:2:1\" data-endpos=\"1:28:27\"></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "```=ab\nraw\n```",
+    "html": "",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "> ```=ab\n> raw\n> ```",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"3:5:20\">\n</blockquote>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "- ```=ab\n  raw\n  ```",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"3:5:20\">\n<li data-startpos=\"1:1:0\" data-endpos=\"3:5:20\">\n</li>\n</ul>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "~~~=ab\nraw\n~~~",
+    "html": "",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "> ~~~=ab\n> raw\n> ~~~",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"3:5:20\">\n</blockquote>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "- ~~~=ab\n  raw\n  ~~~",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"3:5:20\">\n<li data-startpos=\"1:1:0\" data-endpos=\"3:5:20\">\n</li>\n</ul>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "`raw`{=}",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:10:9\"></p>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "> `raw`{=}",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"1:12:11\">\n<p data-startpos=\"1:3:2\" data-endpos=\"1:12:11\"></p>\n</blockquote>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "- `raw`{=}",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"1:12:11\">\n<li data-startpos=\"1:1:0\" data-endpos=\"1:12:11\">\n\n</li>\n</ul>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "- > `raw`{=}",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"1:14:13\">\n<li data-startpos=\"1:1:0\" data-endpos=\"1:14:13\">\n<blockquote data-startpos=\"1:3:2\" data-endpos=\"1:14:13\">\n\n</blockquote>\n</li>\n</ul>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "> - `raw`{=}",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"1:14:13\">\n<ul data-startpos=\"1:3:2\" data-endpos=\"1:14:13\">\n<li data-startpos=\"1:3:2\" data-endpos=\"1:14:13\">\n\n</li>\n</ul>\n</blockquote>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "# `raw`{=}",
+    "html": "<section id=\"raw\" data-startpos=\"1:1:0\" data-endpos=\"1:12:11\">\n<h1 data-startpos=\"1:1:0\" data-endpos=\"1:12:11\"></h1>\n</section>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "![a `raw`{=} c](img)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:22:21\"><img alt=\"a raw c\" src=\"img\" data-startpos=\"1:2:1\" data-endpos=\"1:21:20\"></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "[a `raw`{=} c](u)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:19:18\"><a href=\"u\" data-startpos=\"1:1:0\" data-endpos=\"1:18:17\">a  c</a></p>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "![a [`raw`{=}](u) c](img)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:27:26\"><img alt=\"a raw c\" src=\"img\" data-startpos=\"1:2:1\" data-endpos=\"1:26:25\"></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "```=\nraw\n```",
+    "html": "",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "> ```=\n> raw\n> ```",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"3:5:18\">\n</blockquote>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "- ```=\n  raw\n  ```",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"3:5:18\">\n<li data-startpos=\"1:1:0\" data-endpos=\"3:5:18\">\n</li>\n</ul>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "~~~=\nraw\n~~~",
+    "html": "",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "> ~~~=\n> raw\n> ~~~",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"3:5:18\">\n</blockquote>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "- ~~~=\n  raw\n  ~~~",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"3:5:18\">\n<li data-startpos=\"1:1:0\" data-endpos=\"3:5:18\">\n</li>\n</ul>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "`raw`{=a}",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:11:10\"></p>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "> `raw`{=a}",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"1:13:12\">\n<p data-startpos=\"1:3:2\" data-endpos=\"1:13:12\"></p>\n</blockquote>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "- `raw`{=a}",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"1:13:12\">\n<li data-startpos=\"1:1:0\" data-endpos=\"1:13:12\">\n\n</li>\n</ul>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "- > `raw`{=a}",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"1:15:14\">\n<li data-startpos=\"1:1:0\" data-endpos=\"1:15:14\">\n<blockquote data-startpos=\"1:3:2\" data-endpos=\"1:15:14\">\n\n</blockquote>\n</li>\n</ul>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "> - `raw`{=a}",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"1:15:14\">\n<ul data-startpos=\"1:3:2\" data-endpos=\"1:15:14\">\n<li data-startpos=\"1:3:2\" data-endpos=\"1:15:14\">\n\n</li>\n</ul>\n</blockquote>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "# `raw`{=a}",
+    "html": "<section id=\"raw\" data-startpos=\"1:1:0\" data-endpos=\"1:13:12\">\n<h1 data-startpos=\"1:1:0\" data-endpos=\"1:13:12\"></h1>\n</section>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "![a `raw`{=a} c](img)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:23:22\"><img alt=\"a raw c\" src=\"img\" data-startpos=\"1:2:1\" data-endpos=\"1:22:21\"></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "[a `raw`{=a} c](u)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:20:19\"><a href=\"u\" data-startpos=\"1:1:0\" data-endpos=\"1:19:18\">a  c</a></p>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "![a [`raw`{=a}](u) c](img)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:28:27\"><img alt=\"a raw c\" src=\"img\" data-startpos=\"1:2:1\" data-endpos=\"1:27:26\"></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "```=a\nraw\n```",
+    "html": "",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "> ```=a\n> raw\n> ```",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"3:5:19\">\n</blockquote>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "- ```=a\n  raw\n  ```",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"3:5:19\">\n<li data-startpos=\"1:1:0\" data-endpos=\"3:5:19\">\n</li>\n</ul>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "~~~=a\nraw\n~~~",
+    "html": "",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "> ~~~=a\n> raw\n> ~~~",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"3:5:19\">\n</blockquote>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "- ~~~=a\n  raw\n  ~~~",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"3:5:19\">\n<li data-startpos=\"1:1:0\" data-endpos=\"3:5:19\">\n</li>\n</ul>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "`raw`{=abc}",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:14:13\"></p>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "> `raw`{=abc}",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"1:16:15\">\n<p data-startpos=\"1:3:2\" data-endpos=\"1:16:15\"></p>\n</blockquote>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "- `raw`{=abc}",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"1:16:15\">\n<li data-startpos=\"1:1:0\" data-endpos=\"1:16:15\">\n\n</li>\n</ul>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "- > `raw`{=abc}",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"1:18:17\">\n<li data-startpos=\"1:1:0\" data-endpos=\"1:18:17\">\n<blockquote data-startpos=\"1:3:2\" data-endpos=\"1:18:17\">\n\n</blockquote>\n</li>\n</ul>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "> - `raw`{=abc}",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"1:18:17\">\n<ul data-startpos=\"1:3:2\" data-endpos=\"1:18:17\">\n<li data-startpos=\"1:3:2\" data-endpos=\"1:18:17\">\n\n</li>\n</ul>\n</blockquote>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "# `raw`{=abc}",
+    "html": "<section id=\"raw\" data-startpos=\"1:1:0\" data-endpos=\"1:16:15\">\n<h1 data-startpos=\"1:1:0\" data-endpos=\"1:16:15\"></h1>\n</section>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "![a `raw`{=abc} c](img)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:26:25\"><img alt=\"a raw c\" src=\"img\" data-startpos=\"1:2:1\" data-endpos=\"1:25:24\"></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "[a `raw`{=abc} c](u)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:23:22\"><a href=\"u\" data-startpos=\"1:1:0\" data-endpos=\"1:22:21\">a  c</a></p>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "![a [`raw`{=abc}](u) c](img)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:31:30\"><img alt=\"a raw c\" src=\"img\" data-startpos=\"1:2:1\" data-endpos=\"1:30:29\"></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "```=abc\nraw\n```",
+    "html": "",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "> ```=abc\n> raw\n> ```",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"3:5:22\">\n</blockquote>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "- ```=abc\n  raw\n  ```",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"3:5:22\">\n<li data-startpos=\"1:1:0\" data-endpos=\"3:5:22\">\n</li>\n</ul>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "~~~=abc\nraw\n~~~",
+    "html": "",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "> ~~~=abc\n> raw\n> ~~~",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"3:5:22\">\n</blockquote>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "- ~~~=abc\n  raw\n  ~~~",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"3:5:22\">\n<li data-startpos=\"1:1:0\" data-endpos=\"3:5:22\">\n</li>\n</ul>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "`raw`{=html}",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:13:12\">raw</p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "> `raw`{=html}",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"1:15:14\">\n<p data-startpos=\"1:3:2\" data-endpos=\"1:15:14\">raw</p>\n</blockquote>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "- `raw`{=html}",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"1:15:14\">\n<li data-startpos=\"1:1:0\" data-endpos=\"1:15:14\">\nraw\n</li>\n</ul>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "- > `raw`{=html}",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"1:17:16\">\n<li data-startpos=\"1:1:0\" data-endpos=\"1:17:16\">\n<blockquote data-startpos=\"1:3:2\" data-endpos=\"1:17:16\">\nraw\n</blockquote>\n</li>\n</ul>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "> - `raw`{=html}",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"1:17:16\">\n<ul data-startpos=\"1:3:2\" data-endpos=\"1:17:16\">\n<li data-startpos=\"1:3:2\" data-endpos=\"1:17:16\">\nraw\n</li>\n</ul>\n</blockquote>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "# `raw`{=html}",
+    "html": "<section id=\"raw\" data-startpos=\"1:1:0\" data-endpos=\"1:15:14\">\n<h1 data-startpos=\"1:1:0\" data-endpos=\"1:15:14\">raw</h1>\n</section>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "![a `raw`{=html} c](img)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:25:24\"><img alt=\"a raw c\" src=\"img\" data-startpos=\"1:2:1\" data-endpos=\"1:24:23\"></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "[a `raw`{=html} c](u)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:22:21\"><a href=\"u\" data-startpos=\"1:1:0\" data-endpos=\"1:21:20\">a raw c</a></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "![a [`raw`{=html}](u) c](img)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:30:29\"><img alt=\"a raw c\" src=\"img\" data-startpos=\"1:2:1\" data-endpos=\"1:29:28\"></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "```=html\nraw\n```",
+    "html": "raw\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "> ```=html\n> raw\n> ```",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"3:5:21\">\nraw\n</blockquote>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "- ```=html\n  raw\n  ```",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"3:5:21\">\n<li data-startpos=\"1:1:0\" data-endpos=\"3:5:21\">\nraw\n</li>\n</ul>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "~~~=html\nraw\n~~~",
+    "html": "raw\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "> ~~~=html\n> raw\n> ~~~",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"3:5:21\">\nraw\n</blockquote>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "- ~~~=html\n  raw\n  ~~~",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"3:5:21\">\n<li data-startpos=\"1:1:0\" data-endpos=\"3:5:21\">\nraw\n</li>\n</ul>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "`raw`{=latex}",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:14:13\"></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "> `raw`{=latex}",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"1:16:15\">\n<p data-startpos=\"1:3:2\" data-endpos=\"1:16:15\"></p>\n</blockquote>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "- `raw`{=latex}",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"1:16:15\">\n<li data-startpos=\"1:1:0\" data-endpos=\"1:16:15\">\n\n</li>\n</ul>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "- > `raw`{=latex}",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"1:18:17\">\n<li data-startpos=\"1:1:0\" data-endpos=\"1:18:17\">\n<blockquote data-startpos=\"1:3:2\" data-endpos=\"1:18:17\">\n\n</blockquote>\n</li>\n</ul>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "> - `raw`{=latex}",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"1:18:17\">\n<ul data-startpos=\"1:3:2\" data-endpos=\"1:18:17\">\n<li data-startpos=\"1:3:2\" data-endpos=\"1:18:17\">\n\n</li>\n</ul>\n</blockquote>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "# `raw`{=latex}",
+    "html": "<section id=\"raw\" data-startpos=\"1:1:0\" data-endpos=\"1:16:15\">\n<h1 data-startpos=\"1:1:0\" data-endpos=\"1:16:15\"></h1>\n</section>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "![a `raw`{=latex} c](img)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:26:25\"><img alt=\"a raw c\" src=\"img\" data-startpos=\"1:2:1\" data-endpos=\"1:25:24\"></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "[a `raw`{=latex} c](u)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:23:22\"><a href=\"u\" data-startpos=\"1:1:0\" data-endpos=\"1:22:21\">a  c</a></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "![a [`raw`{=latex}](u) c](img)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:31:30\"><img alt=\"a raw c\" src=\"img\" data-startpos=\"1:2:1\" data-endpos=\"1:30:29\"></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "```=latex\nraw\n```",
+    "html": "",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "> ```=latex\n> raw\n> ```",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"3:5:22\">\n</blockquote>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "- ```=latex\n  raw\n  ```",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"3:5:22\">\n<li data-startpos=\"1:1:0\" data-endpos=\"3:5:22\">\n</li>\n</ul>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "~~~=latex\nraw\n~~~",
+    "html": "",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "> ~~~=latex\n> raw\n> ~~~",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"3:5:22\">\n</blockquote>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "- ~~~=latex\n  raw\n  ~~~",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"3:5:22\">\n<li data-startpos=\"1:1:0\" data-endpos=\"3:5:22\">\n</li>\n</ul>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "`raw`{=a b}",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:12:11\"><code data-startpos=\"1:1:0\" data-endpos=\"1:5:4\">raw</code>{=a b}</p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "> `raw`{=a b}",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"1:14:13\">\n<p data-startpos=\"1:3:2\" data-endpos=\"1:14:13\"><code data-startpos=\"1:3:2\" data-endpos=\"1:7:6\">raw</code>{=a b}</p>\n</blockquote>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "- `raw`{=a b}",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"1:14:13\">\n<li data-startpos=\"1:1:0\" data-endpos=\"1:14:13\">\n<code data-startpos=\"1:3:2\" data-endpos=\"1:7:6\">raw</code>{=a b}\n</li>\n</ul>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "- > `raw`{=a b}",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"1:16:15\">\n<li data-startpos=\"1:1:0\" data-endpos=\"1:16:15\">\n<blockquote data-startpos=\"1:3:2\" data-endpos=\"1:16:15\">\n<code data-startpos=\"1:5:4\" data-endpos=\"1:9:8\">raw</code>{=a b}\n</blockquote>\n</li>\n</ul>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "> - `raw`{=a b}",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"1:16:15\">\n<ul data-startpos=\"1:3:2\" data-endpos=\"1:16:15\">\n<li data-startpos=\"1:3:2\" data-endpos=\"1:16:15\">\n<code data-startpos=\"1:5:4\" data-endpos=\"1:9:8\">raw</code>{=a b}\n</li>\n</ul>\n</blockquote>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "# `raw`{=a b}",
+    "html": "<section id=\"raw-a-b\" data-startpos=\"1:1:0\" data-endpos=\"1:14:13\">\n<h1 data-startpos=\"1:1:0\" data-endpos=\"1:14:13\"><code data-startpos=\"1:3:2\" data-endpos=\"1:7:6\">raw</code>{=a b}</h1>\n</section>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "![a `raw`{=a b} c](img)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:24:23\"><img alt=\"a raw{=a b} c\" src=\"img\" data-startpos=\"1:2:1\" data-endpos=\"1:23:22\"></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "[a `raw`{=a b} c](u)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:21:20\"><a href=\"u\" data-startpos=\"1:1:0\" data-endpos=\"1:20:19\">a <code data-startpos=\"1:4:3\" data-endpos=\"1:8:7\">raw</code>{=a b} c</a></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "![a [`raw`{=a b}](u) c](img)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:29:28\"><img alt=\"a raw{=a b} c\" src=\"img\" data-startpos=\"1:2:1\" data-endpos=\"1:28:27\"></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "```=a b\nraw\n```",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"3:4:15\"><code data-startpos=\"1:1:0\" data-endpos=\"3:3:14\">=a b\nraw\n</code></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "> ```=a b\n> raw\n> ```",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"3:6:21\">\n<p data-startpos=\"1:3:2\" data-endpos=\"3:6:21\"><code data-startpos=\"1:3:2\" data-endpos=\"3:5:20\">=a b\nraw\n</code></p>\n</blockquote>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "- ```=a b\n  raw\n  ```",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"3:6:21\">\n<li data-startpos=\"1:1:0\" data-endpos=\"3:6:21\">\n<code data-startpos=\"1:3:2\" data-endpos=\"3:5:20\">=a b\nraw\n</code>\n</li>\n</ul>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "~~~=a b\nraw\n~~~",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"3:4:15\">~~~=a b\nraw\n~~~</p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "> ~~~=a b\n> raw\n> ~~~",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"3:6:21\">\n<p data-startpos=\"1:3:2\" data-endpos=\"3:6:21\">~~~=a b\nraw\n~~~</p>\n</blockquote>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "- ~~~=a b\n  raw\n  ~~~",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"3:6:21\">\n<li data-startpos=\"1:1:0\" data-endpos=\"3:6:21\">\n~~~=a b\nraw\n~~~\n</li>\n</ul>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "`raw`{=a b}",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:12:11\"><code data-startpos=\"1:1:0\" data-endpos=\"1:5:4\">raw</code>{=a b}</p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "> `raw`{=a b}",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"1:14:13\">\n<p data-startpos=\"1:3:2\" data-endpos=\"1:14:13\"><code data-startpos=\"1:3:2\" data-endpos=\"1:7:6\">raw</code>{=a b}</p>\n</blockquote>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "- `raw`{=a b}",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"1:14:13\">\n<li data-startpos=\"1:1:0\" data-endpos=\"1:14:13\">\n<code data-startpos=\"1:3:2\" data-endpos=\"1:7:6\">raw</code>{=a b}\n</li>\n</ul>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "- > `raw`{=a b}",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"1:16:15\">\n<li data-startpos=\"1:1:0\" data-endpos=\"1:16:15\">\n<blockquote data-startpos=\"1:3:2\" data-endpos=\"1:16:15\">\n<code data-startpos=\"1:5:4\" data-endpos=\"1:9:8\">raw</code>{=a b}\n</blockquote>\n</li>\n</ul>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "> - `raw`{=a b}",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"1:16:15\">\n<ul data-startpos=\"1:3:2\" data-endpos=\"1:16:15\">\n<li data-startpos=\"1:3:2\" data-endpos=\"1:16:15\">\n<code data-startpos=\"1:5:4\" data-endpos=\"1:9:8\">raw</code>{=a b}\n</li>\n</ul>\n</blockquote>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "# `raw`{=a b}",
+    "html": "<section id=\"raw-a-b\" data-startpos=\"1:1:0\" data-endpos=\"1:14:13\">\n<h1 data-startpos=\"1:1:0\" data-endpos=\"1:14:13\"><code data-startpos=\"1:3:2\" data-endpos=\"1:7:6\">raw</code>{=a b}</h1>\n</section>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "![a `raw`{=a b} c](img)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:24:23\"><img alt=\"a raw{=a b} c\" src=\"img\" data-startpos=\"1:2:1\" data-endpos=\"1:23:22\"></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "[a `raw`{=a b} c](u)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:21:20\"><a href=\"u\" data-startpos=\"1:1:0\" data-endpos=\"1:20:19\">a <code data-startpos=\"1:4:3\" data-endpos=\"1:8:7\">raw</code>{=a b} c</a></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "![a [`raw`{=a b}](u) c](img)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:29:28\"><img alt=\"a raw{=a b} c\" src=\"img\" data-startpos=\"1:2:1\" data-endpos=\"1:28:27\"></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "```=a b\nraw\n```",
+    "html": "",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "> ```=a b\n> raw\n> ```",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"3:5:20\">\n</blockquote>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "- ```=a b\n  raw\n  ```",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"3:5:20\">\n<li data-startpos=\"1:1:0\" data-endpos=\"3:5:20\">\n</li>\n</ul>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "~~~=a b\nraw\n~~~",
+    "html": "",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "> ~~~=a b\n> raw\n> ~~~",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"3:5:20\">\n</blockquote>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "- ~~~=a b\n  raw\n  ~~~",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"3:5:20\">\n<li data-startpos=\"1:1:0\" data-endpos=\"3:5:20\">\n</li>\n</ul>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "`raw`{=a b}",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:12:11\"><code data-startpos=\"1:1:0\" data-endpos=\"1:5:4\">raw</code>{=a b}</p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "> `raw`{=a b}",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"1:14:13\">\n<p data-startpos=\"1:3:2\" data-endpos=\"1:14:13\"><code data-startpos=\"1:3:2\" data-endpos=\"1:7:6\">raw</code>{=a b}</p>\n</blockquote>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "- `raw`{=a b}",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"1:14:13\">\n<li data-startpos=\"1:1:0\" data-endpos=\"1:14:13\">\n<code data-startpos=\"1:3:2\" data-endpos=\"1:7:6\">raw</code>{=a b}\n</li>\n</ul>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "- > `raw`{=a b}",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"1:16:15\">\n<li data-startpos=\"1:1:0\" data-endpos=\"1:16:15\">\n<blockquote data-startpos=\"1:3:2\" data-endpos=\"1:16:15\">\n<code data-startpos=\"1:5:4\" data-endpos=\"1:9:8\">raw</code>{=a b}\n</blockquote>\n</li>\n</ul>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "> - `raw`{=a b}",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"1:16:15\">\n<ul data-startpos=\"1:3:2\" data-endpos=\"1:16:15\">\n<li data-startpos=\"1:3:2\" data-endpos=\"1:16:15\">\n<code data-startpos=\"1:5:4\" data-endpos=\"1:9:8\">raw</code>{=a b}\n</li>\n</ul>\n</blockquote>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "# `raw`{=a b}",
+    "html": "<section id=\"raw-a-b\" data-startpos=\"1:1:0\" data-endpos=\"1:14:13\">\n<h1 data-startpos=\"1:1:0\" data-endpos=\"1:14:13\"><code data-startpos=\"1:3:2\" data-endpos=\"1:7:6\">raw</code>{=a b}</h1>\n</section>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "![a `raw`{=a b} c](img)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:24:23\"><img alt=\"a raw{=a b} c\" src=\"img\" data-startpos=\"1:2:1\" data-endpos=\"1:23:22\"></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "[a `raw`{=a b} c](u)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:21:20\"><a href=\"u\" data-startpos=\"1:1:0\" data-endpos=\"1:20:19\">a <code data-startpos=\"1:4:3\" data-endpos=\"1:8:7\">raw</code>{=a b} c</a></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "![a [`raw`{=a b}](u) c](img)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:29:28\"><img alt=\"a raw{=a b} c\" src=\"img\" data-startpos=\"1:2:1\" data-endpos=\"1:28:27\"></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "```=a b\nraw\n```",
+    "html": "",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "> ```=a b\n> raw\n> ```",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"3:5:20\">\n</blockquote>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "- ```=a b\n  raw\n  ```",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"3:5:20\">\n<li data-startpos=\"1:1:0\" data-endpos=\"3:5:20\">\n</li>\n</ul>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "~~~=a b\nraw\n~~~",
+    "html": "",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "> ~~~=a b\n> raw\n> ~~~",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"3:5:20\">\n</blockquote>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "- ~~~=a b\n  raw\n  ~~~",
+    "html": "<ul data-startpos=\"1:1:0\" data-endpos=\"3:5:20\">\n<li data-startpos=\"1:1:0\" data-endpos=\"3:5:20\">\n</li>\n</ul>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "$`raw`{=ab}",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:13:12\"><span class=\"math inline\" data-startpos=\"1:1:0\" data-endpos=\"1:6:5\">\\(raw\\)</span>{=ab}</p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "$$`raw`{=ab}",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:14:13\"><span class=\"math display\" data-startpos=\"1:1:0\" data-endpos=\"1:7:6\">\\[raw\\]</span>{=ab}</p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "\\$`raw`{=ab}",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:14:13\">$</p>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "[x][`raw`{=ab}]",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:17:16\"><a data-startpos=\"1:1:0\" data-endpos=\"1:16:15\">x</a></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "[^`raw`{=ab}]",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:15:14\"><a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\" data-startpos=\"1:1:0\" data-endpos=\"1:14:13\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "[`raw`{=ab}]: u",
+    "html": "",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "[^n]: `raw`{=ab}\n\n[^n]",
+    "html": "<p data-startpos=\"3:1:19\" data-endpos=\"3:5:23\"><a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\" data-startpos=\"3:1:19\" data-endpos=\"3:4:22\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<p data-startpos=\"1:7:6\" data-endpos=\"2:0:17\"><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "``raw`{=ab}`",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:14:13\"><code data-startpos=\"1:1:0\" data-endpos=\"1:13:12\">raw`{=ab}`</code></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "`` `raw`{=ab} ``",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:18:17\"><code data-startpos=\"1:1:0\" data-endpos=\"1:17:16\">`raw`{=ab} </code></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "{% `raw`{=ab} %}",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:18:17\"> %}</p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "x{title=\"`raw`{=ab}\"}",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:23:22\"><span title=\"`raw`{=ab}\" data-startpos=\"1:1:0\" data-endpos=\"1:1:0\">x</span></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "[x](u`raw`{=ab})",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:18:17\"><a href=\"u`raw`{=ab}\" data-startpos=\"1:1:0\" data-endpos=\"1:17:16\">x</a></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "\\`raw`{=ab}",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:13:12\">`raw<code data-startpos=\"1:6:5\" data-endpos=\"1:12:11\">{=ab}</code></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "\\![a `raw`{=ab} c](img)",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:25:24\">!<a href=\"img\" data-startpos=\"1:3:2\" data-endpos=\"1:24:23\">a  c</a></p>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "text\n```=ab\nraw\n```",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"4:4:20\">text\n<code data-startpos=\"2:1:5\" data-endpos=\"4:3:19\">=ab\nraw\n</code></p>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "```txt\n```=ab\nraw\n```",
+    "html": "<pre data-startpos=\"1:1:0\" data-endpos=\"4:3:21\"><code class=\"language-txt\">```=ab\nraw\n</code></pre>\n",
+    "warn": false,
+    "lines": []
+  },
+  {
+    "source": "before\n\n`raw`{=ab}",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"2:0:6\">before</p>\n<p data-startpos=\"3:1:8\" data-endpos=\"3:12:19\"></p>\n",
+    "warn": true,
+    "lines": [
+      3
+    ]
+  },
+  {
+    "source": "`raw`{=ab}`raw`{=ab}",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:23:22\"></p>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "``raw``{=ab}",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:14:13\"></p>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "```raw```{=ab}",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"1:16:15\"></p>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "`raw\nvalue`{=ab}",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"2:13:17\"></p>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "```=ab\r\nraw\r\n```",
+    "html": "",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "before\n\n```=ab\nraw\n```",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"2:0:6\">before</p>\n",
+    "warn": true,
+    "lines": [
+      3
+    ]
+  },
+  {
+    "source": "> ```=ab\r\n> raw\r\n> ```",
+    "html": "<blockquote data-startpos=\"1:1:0\" data-endpos=\"3:5:22\">\n</blockquote>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "before\n\n> ```=ab\n> raw\n> ```",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"2:0:6\">before</p>\n<blockquote data-startpos=\"3:1:8\" data-endpos=\"5:5:28\">\n</blockquote>\n",
+    "warn": true,
+    "lines": [
+      3
+    ]
+  },
+  {
+    "source": "[^n]: `raw`{=ab}\r\n\r\n[^n]",
+    "html": "<p data-startpos=\"3:1:21\" data-endpos=\"3:5:25\"><a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\" data-startpos=\"3:1:21\" data-endpos=\"3:4:24\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<p data-startpos=\"1:7:6\" data-endpos=\"1:18:17\"><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n",
+    "warn": true,
+    "lines": [
+      1
+    ]
+  },
+  {
+    "source": "before\n\n[^n]: `raw`{=ab}\n\n[^n]",
+    "html": "<p data-startpos=\"1:1:0\" data-endpos=\"2:0:6\">before</p>\n<p data-startpos=\"5:1:27\" data-endpos=\"5:5:31\"><a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\" data-startpos=\"5:1:27\" data-endpos=\"5:4:30\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<p data-startpos=\"3:7:14\" data-endpos=\"4:0:25\"><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n",
+    "warn": true,
+    "lines": [
+      3
+    ]
+  }
+]

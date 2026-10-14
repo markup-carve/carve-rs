@@ -2116,3 +2116,6 @@ mod djot_image_label_nuls;
 
 #[path = "../djot_unresolved_nul_references.rs"]
 mod djot_unresolved_nul_references;
+
+#[path = "../djot_raw_format_nel_losses.rs"]
+mod djot_raw_format_nel_losses;

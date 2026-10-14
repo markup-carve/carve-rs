@@ -3473,9 +3473,12 @@ struct AttributedReferenceUse<'a> {
 }
 
 fn reference_mask(source: &str) -> String {
+    reference_mask_with_options(source, OpaqueOptions::default())
+}
+
+fn reference_mask_with_options(source: &str, options: OpaqueOptions<'_>) -> String {
     let mut mask =
-        mask_djot_forms_with_options(source, false, true, None, &[], OpaqueOptions::default())
-            .into_bytes();
+        mask_djot_forms_with_options(source, false, true, None, &[], options).into_bytes();
     let mut at = 0;
     while at < source.len() {
         if mask[at] == b'{' && !is_escaped(source.as_bytes(), at) {
@@ -4335,10 +4338,6 @@ fn reference_definitions(source: &str, mask: &str) -> (HashMap<String, String>, 
     (definitions, definition_lines)
 }
 
-fn loss_references(source: &str, mask: &str) -> HashMap<String, String> {
-    reference_definitions(source, mask).0
-}
-
 fn empty_description(lines: &[&str], masks: &[&str], n: usize) -> bool {
     let term_pattern = cached_regex!(r":[ \t]+$").unwrap();
     let item_pattern = cached_regex!(r"(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\))[ \t]+").unwrap();
@@ -4413,8 +4412,72 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
         .chain(front_separator.bytes())
         .filter(|b| *b == b'\n')
         .count();
-    let mask = reference_mask(source);
-    let mut findings: Vec<(usize, &'static str)> = Vec::new();
+    const RAW_FORMAT_MESSAGE: &str = "A Djot raw-format identifier containing U+0085 cannot be spelled in Carve; its raw-output behavior is lost.";
+    let mut raw_fence_lines = HashMap::new();
+    let mask_source = if source.contains('\u{0085}') {
+        let header = cached_regex!(r#"(`{3,}|~{3,})([ \t]*=)([^\x09-\x0d\x20\x{00a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}\x{feff}{}%"'`~\\]+)([ \t]*)$"#).unwrap();
+        let mut offset = 0;
+        let lines: Vec<_> = source
+            .split('\n')
+            .enumerate()
+            .map(|(n, line)| {
+                let replaced = header
+                    .replace(line, |caps: &regex::Captures<'_>| {
+                        if !caps[3].contains('\u{0085}') {
+                            return caps[0].to_owned();
+                        }
+                        raw_fence_lines.insert(n, offset);
+                        let format: String = caps[3]
+                            .bytes()
+                            .map(|byte| {
+                                if byte.is_ascii_alphanumeric() || b"_+#.-".contains(&byte) {
+                                    char::from(byte)
+                                } else {
+                                    'x'
+                                }
+                            })
+                            .collect();
+                        format!("{}{}{}{}", &caps[1], &caps[2], format, &caps[4])
+                    })
+                    .into_owned();
+                offset += line.len() + 1;
+                replaced
+            })
+            .collect();
+        std::borrow::Cow::Owned(lines.join("\n"))
+    } else {
+        std::borrow::Cow::Borrowed(source)
+    };
+    let raw_formats = std::cell::RefCell::new(Vec::new());
+    let raw_blocks = std::cell::RefCell::new(Vec::new());
+    let on_raw_format = |start: usize, end: usize, format: &str| {
+        if format.contains('\u{0085}')
+            && !(start > 0
+                && source.as_bytes()[start - 1] == b'$'
+                && !is_escaped(source.as_bytes(), start - 1))
+        {
+            raw_formats.borrow_mut().push((start, end));
+        }
+    };
+    let on_fence_open = |line: usize| {
+        if let Some(&offset) = raw_fence_lines.get(&line) {
+            raw_blocks.borrow_mut().push(offset);
+        }
+    };
+    let mask = reference_mask_with_options(
+        &mask_source,
+        OpaqueOptions {
+            on_raw_format: Some(&on_raw_format),
+            on_fence_open: Some(&on_fence_open),
+            ..OpaqueOptions::default()
+        },
+    );
+    let mut findings: Vec<(usize, &'static str)> = raw_blocks
+        .borrow()
+        .iter()
+        .map(|&at| (at, RAW_FORMAT_MESSAGE))
+        .collect();
+    let mut raw_ignored = Vec::new();
     if has_djot_code_layout_candidates(source) {
         let mut raw_code = Vec::new();
         let _ = close_djot_table_code(
@@ -4442,8 +4505,20 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
             "Emphasis exceeding the native nesting budget is flattened; its text is preserved.",
         )
     }));
-    let definitions = loss_references(source, &mask);
+    let (definitions, definition_lines) = reference_definitions(source, &mask);
+    let mut offset = 0;
+    for (n, line) in source.split('\n').enumerate() {
+        if definition_lines.contains(&n) {
+            raw_ignored.push((offset, offset + line.len()));
+        }
+        offset += line.len() + 1;
+    }
     let references = reference_uses(source, &mask);
+    raw_ignored.extend(
+        references
+            .iter()
+            .map(|reference| (reference.end - reference.label.len() - 1, reference.end - 1)),
+    );
     let mut label_cache = HashMap::new();
     for reference in &references {
         let at = reference.start;
@@ -4563,6 +4638,9 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
                 let image = start > 0 && bytes[start - 1] == b'!' && !is_escaped(bytes, start - 1);
                 let valid_form =
                     destinations.contains_key(&(i + 1)) || reference_starts.contains(&start);
+                if image && valid_form || bytes.get(start + 1) == Some(&b'^') && i > start + 2 {
+                    raw_ignored.push((start, i + 1));
+                }
                 let is_link = !image && bytes.get(start + 1) != Some(&b'^') && valid_form;
                 if bytes.get(start + 1) != Some(&b'^')
                     && destinations.get(&(i + 1)).is_some_and(|&end| {
@@ -4602,6 +4680,18 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
             }
         }
         i += 1;
+    }
+    raw_ignored.sort_unstable_by_key(|range| range.0);
+    let mut ignored_index = 0;
+    let mut ignored_end = 0;
+    for &(start, end) in raw_formats.borrow().iter() {
+        while ignored_index < raw_ignored.len() && raw_ignored[ignored_index].0 <= start {
+            ignored_end = ignored_end.max(raw_ignored[ignored_index].1);
+            ignored_index += 1;
+        }
+        if ignored_end < end {
+            findings.push((start, RAW_FORMAT_MESSAGE));
+        }
     }
     let lines: Vec<_> = source.split('\n').collect();
     let masks: Vec<_> = mask.split('\n').collect();
