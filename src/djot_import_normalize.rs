@@ -115,7 +115,7 @@ fn deep_quoted_item_attributes(
         r"^(?:[-*+][ \t]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)][ \t]|#{1,6}(?:[ \t]|$)|:{3,}|[`~]{3,}|\[(?:\^)?[^\]\n]*\]:)"
     )
     .unwrap();
-    let task = cached_regex!(r"^\[[ xX]\](?:[ \t]+|$)").unwrap();
+    let task = cached_regex!(r"^\[[ xX\-_>?]\](?:[ \t]+|$)").unwrap();
     let prefix_part = cached_regex!(r"^[ \t]*>(?:[ \t]|$)").unwrap();
     let mut frames: HashMap<usize, Vec<Frame>> = HashMap::new();
     let mut before: HashMap<usize, Vec<String>> = HashMap::new();
@@ -615,12 +615,12 @@ fn quoted_list_attribute_layout(
 }
 
 fn compact_djot_list_prefix(text: &str) -> std::borrow::Cow<'_, str> {
-    if !text.contains('0') && !text.contains('(') && !text.contains('\t') {
+    if !text.contains('0') && !text.contains('(') && !text.contains('\t') && !text.contains('[') {
         return std::borrow::Cow::Borrowed(text);
     }
     let marker = cached_regex!(r"^(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]+").unwrap();
     let quote = cached_regex!(r"^>(?:[ \t]|$)").unwrap();
-    let task = cached_regex!(r"^\[[ xX]\][ \t]+").unwrap();
+    let task = cached_regex!(r"^\[[ xX\-_>?]\](?:[ \t]+|$)").unwrap();
     let mut result = String::with_capacity(text.len());
     let mut at = 0;
     let mut changed = false;
@@ -664,10 +664,24 @@ fn compact_djot_list_prefix(text: &str) -> std::borrow::Cow<'_, str> {
         at += item.end();
         if matches!(prefix.as_bytes()[0], b'-' | b'*' | b'+') {
             if let Some(prefix) = task.find(&text[at..]) {
-                changed |= &prefix.as_str()[3..] != " ";
-                result.push_str(&prefix.as_str()[..3]);
-                result.push(' ');
+                let accepted = item.as_str().len() == 2
+                    && item.as_str().as_bytes()[1] == b' '
+                    && matches!(prefix.as_str().as_bytes()[1], b' ' | b'x' | b'X');
+                if accepted {
+                    changed |= prefix.as_str().len() > 3 && &prefix.as_str()[3..] != " ";
+                    result.push_str(&prefix.as_str()[..3]);
+                    if prefix.as_str().len() > 3 {
+                        result.push(' ');
+                    }
+                } else {
+                    changed = true;
+                    result.push('\\');
+                    result.push_str(prefix.as_str());
+                }
                 at += prefix.end();
+                if !accepted {
+                    break;
+                }
             }
         }
     }
@@ -688,7 +702,9 @@ fn quoted_list_boundaries<'a>(
     has_definition_syntax: bool,
     mut literal_quotes: Option<&mut HashMap<usize, usize>>,
 ) -> std::borrow::Cow<'a, str> {
-    if !source.contains('>') || !source.contains('\n') && !source.contains('\t') {
+    if !source.contains('>')
+        || !source.contains('\n') && !source.contains('\t') && !source.contains('[')
+    {
         return std::borrow::Cow::Borrowed(source);
     }
     let quote = cached_regex!(r"^(?:[ \t]*>(?:[ \t]|$))*").unwrap();
@@ -1058,7 +1074,13 @@ fn quoted_list_boundaries<'a>(
                 ));
             }
             item_target = lists.last().map(|&(_, _, _, _, target, _)| target);
-            let body_start = item.get(3).unwrap().start();
+            let body_start = if item.get(2).is_some()
+                && !matches!(item.get(1).unwrap().as_str(), "- " | "* " | "+ ")
+            {
+                item.get(1).unwrap().end()
+            } else {
+                item.get(3).unwrap().start()
+            };
             let mut quote_body = &text[body_start..];
             let mut nested_depth = 0;
             let mut nested_prefix = String::new();
@@ -1085,7 +1107,13 @@ fn quoted_list_boundaries<'a>(
                     column,
                     child.get(1).unwrap().as_str().len(),
                 ));
-                let child_body = child.get(3).unwrap().start();
+                let child_body = if child.get(2).is_some()
+                    && !matches!(child.get(1).unwrap().as_str(), "- " | "* " | "+ ")
+                {
+                    child.get(1).unwrap().end()
+                } else {
+                    child.get(3).unwrap().start()
+                };
                 if !embedded.is_match(&quote_body[child_body..]) {
                     break;
                 }
@@ -2033,7 +2061,9 @@ fn blocks_with_slot_inner(
             || marker.is_match(masked_visible))
             && marker.captures(text).is_some_and(|item| {
                 let mut body = &text[item.get(0).unwrap().end()..];
-                if matches!(item[1].as_bytes()[0], b'-' | b'*' | b'+') {
+                if matches!(item[1].as_bytes()[0], b'-' | b'*' | b'+')
+                    && item.get(2).unwrap().as_str() == " "
+                {
                     if let Some(task) = cached_regex!(r"^\[[ xX]\][ \t]+").unwrap().find(body) {
                         body = &body[task.end()..];
                     }
@@ -2474,6 +2504,7 @@ fn blocks_with_slot_inner(
                 djot_list_kind(&item[1])
             };
             if is_bullet
+                && item.get(2).unwrap().as_str() == " "
                 && cached_regex!(r"^\[[ xX]\][ \t]+")
                     .unwrap()
                     .is_match(&text[item.get(2).unwrap().end()..])
@@ -2525,7 +2556,9 @@ fn blocks_with_slot_inner(
             }
             let marker_end = item.get(2).unwrap().end();
             let marker_body = item.get(0).unwrap().end();
-            let payload_start = if matches!(item[1].as_bytes()[0], b'-' | b'*' | b'+') {
+            let payload_start = if matches!(item[1].as_bytes()[0], b'-' | b'*' | b'+')
+                && item.get(2).unwrap().as_str() == " "
+            {
                 cached_regex!(r"^\[[ xX]\][ \t]+")
                     .unwrap()
                     .find(&text[marker_body..])
