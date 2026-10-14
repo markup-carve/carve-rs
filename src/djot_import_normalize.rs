@@ -232,14 +232,18 @@ fn deep_quoted_item_attributes(
                 continue;
             }
             let item_text = text[item[0].len()..].trim_start_matches([' ', '\t']);
-            let item_text = task
-                .find(item_text)
-                .map_or(item_text, |task| &item_text[task.end()..]);
+            let native_task_marker = matches!(&item[0], "- " | "* " | "+ ");
+            let item_text = if native_task_marker {
+                task.find(item_text)
+                    .map_or(item_text, |task| &item_text[task.end()..])
+            } else {
+                item_text
+            };
             previous_paragraph = !item_text.is_empty()
                 && !block.is_match(item_text)
                 && !item_text.starts_with(['>', '|']);
             let mut kind = djot_list_kind(&item[1]);
-            if ["-", "*", "+"].contains(&&item[1]) && task.is_match(&text[item[0].len()..]) {
+            if native_task_marker && task.is_match(&text[item[0].len()..]) {
                 kind.push_str(":task");
             }
             if let Some(owner) = stack.last_mut().filter(|owner| indent > owner.column) {
@@ -615,12 +619,12 @@ fn quoted_list_attribute_layout(
 }
 
 fn compact_djot_list_prefix(text: &str) -> std::borrow::Cow<'_, str> {
-    if !text.contains('0') && !text.contains('(') && !text.contains('\t') {
+    if !text.contains('0') && !text.contains('(') && !text.contains('\t') && !text.contains('[') {
         return std::borrow::Cow::Borrowed(text);
     }
     let marker = cached_regex!(r"^(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]+").unwrap();
     let quote = cached_regex!(r"^>(?:[ \t]|$)").unwrap();
-    let task = cached_regex!(r"^\[[ xX]\][ \t]+").unwrap();
+    let task = cached_regex!(r"^\[[ xX\-_>?]\](?:[ \t]+|$)").unwrap();
     let mut result = String::with_capacity(text.len());
     let mut at = 0;
     let mut changed = false;
@@ -664,8 +668,24 @@ fn compact_djot_list_prefix(text: &str) -> std::borrow::Cow<'_, str> {
         at += item.end();
         if matches!(prefix.as_bytes()[0], b'-' | b'*' | b'+') {
             if let Some(prefix) = task.find(&text[at..]) {
-                result.push_str(prefix.as_str());
+                let accepted = item.as_str().len() == 2
+                    && item.as_str().as_bytes()[1] == b' '
+                    && matches!(prefix.as_str().as_bytes()[1], b' ' | b'x' | b'X');
+                if accepted {
+                    changed |= prefix.as_str().len() > 3 && &prefix.as_str()[3..] != " ";
+                    result.push_str(&prefix.as_str()[..3]);
+                    if prefix.as_str().len() > 3 {
+                        result.push(' ');
+                    }
+                } else {
+                    changed = true;
+                    result.push('\\');
+                    result.push_str(prefix.as_str());
+                }
                 at += prefix.end();
+                if !accepted {
+                    break;
+                }
             }
         }
     }
@@ -686,7 +706,9 @@ fn quoted_list_boundaries<'a>(
     has_definition_syntax: bool,
     mut literal_quotes: Option<&mut HashMap<usize, usize>>,
 ) -> std::borrow::Cow<'a, str> {
-    if !source.contains('>') || !source.contains('\n') {
+    if !source.contains('>')
+        || !source.contains('\n') && !source.contains('\t') && !source.contains('[')
+    {
         return std::borrow::Cow::Borrowed(source);
     }
     let quote = cached_regex!(r"^(?:[ \t]*>(?:[ \t]|$))*").unwrap();
@@ -1056,7 +1078,13 @@ fn quoted_list_boundaries<'a>(
                 ));
             }
             item_target = lists.last().map(|&(_, _, _, _, target, _)| target);
-            let body_start = item.get(3).unwrap().start();
+            let body_start = if item.get(2).is_some()
+                && !matches!(item.get(1).unwrap().as_str(), "- " | "* " | "+ ")
+            {
+                item.get(1).unwrap().end()
+            } else {
+                item.get(3).unwrap().start()
+            };
             let mut quote_body = &text[body_start..];
             let mut nested_depth = 0;
             let mut nested_prefix = String::new();
@@ -1083,7 +1111,13 @@ fn quoted_list_boundaries<'a>(
                     column,
                     child.get(1).unwrap().as_str().len(),
                 ));
-                let child_body = child.get(3).unwrap().start();
+                let child_body = if child.get(2).is_some()
+                    && !matches!(child.get(1).unwrap().as_str(), "- " | "* " | "+ ")
+                {
+                    child.get(1).unwrap().end()
+                } else {
+                    child.get(3).unwrap().start()
+                };
                 if !embedded.is_match(&quote_body[child_body..]) {
                     break;
                 }
@@ -1132,6 +1166,9 @@ fn quoted_list_boundaries<'a>(
                 || rows[row_index]
                 || heading.is_match(visible));
         } else if reference.is_match(text)
+            || cached_regex!(r"^:[ \t]+:{3,}(?:[ \t]*[A-Za-z0-9_-]+)?[ \t]*$")
+                .unwrap()
+                .is_match(visible)
             || heading.is_match(visible)
             || (!paragraph
                 && visible.starts_with('{')
@@ -2031,7 +2068,9 @@ fn blocks_with_slot_inner(
             || marker.is_match(masked_visible))
             && marker.captures(text).is_some_and(|item| {
                 let mut body = &text[item.get(0).unwrap().end()..];
-                if matches!(item[1].as_bytes()[0], b'-' | b'*' | b'+') {
+                if matches!(item[1].as_bytes()[0], b'-' | b'*' | b'+')
+                    && item.get(2).unwrap().as_str() == " "
+                {
                     if let Some(task) = cached_regex!(r"^\[[ xX]\][ \t]+").unwrap().find(body) {
                         body = &body[task.end()..];
                     }
@@ -2383,7 +2422,17 @@ fn blocks_with_slot_inner(
                 definition_columns.pop();
             }
             definition_columns.push(indent + 2);
-            definition_body = false;
+            let content = definition_term(raw).unwrap().1;
+            definition_body = cached_regex!(r"^:{3,}(?:[ \t]*[A-Za-z0-9_-]+)?[ \t]*$")
+                .unwrap()
+                .is_match(&raw[content..]);
+            if definition_body {
+                result.push(display.clone());
+                paragraph = false;
+                in_heading = false;
+                previous_blank = true;
+                continue;
+            }
         } else if previous_blank {
             while definition_columns
                 .last()
@@ -2472,6 +2521,7 @@ fn blocks_with_slot_inner(
                 djot_list_kind(&item[1])
             };
             if is_bullet
+                && item.get(2).unwrap().as_str() == " "
                 && cached_regex!(r"^\[[ xX]\][ \t]+")
                     .unwrap()
                     .is_match(&text[item.get(2).unwrap().end()..])
@@ -2507,7 +2557,15 @@ fn blocks_with_slot_inner(
             let mut separate = false;
             if let Some(parent) = &top {
                 if nested {
-                    target = parent.target_column;
+                    target = if definition_body
+                        && definition_columns
+                            .last()
+                            .is_some_and(|column| indent >= *column)
+                    {
+                        indent
+                    } else {
+                        parent.target_column
+                    };
                 } else {
                     target = parent.target;
                     written = parent.written;
@@ -2523,7 +2581,9 @@ fn blocks_with_slot_inner(
             }
             let marker_end = item.get(2).unwrap().end();
             let marker_body = item.get(0).unwrap().end();
-            let payload_start = if matches!(item[1].as_bytes()[0], b'-' | b'*' | b'+') {
+            let payload_start = if matches!(item[1].as_bytes()[0], b'-' | b'*' | b'+')
+                && item.get(2).unwrap().as_str() == " "
+            {
                 cached_regex!(r"^\[[ xX]\][ \t]+")
                     .unwrap()
                     .find(&text[marker_body..])
@@ -2649,6 +2709,9 @@ fn blocks_with_slot_inner(
                     }
                 }
                 paragraph = false;
+                in_heading = false;
+                previous_blank = true;
+                continue;
             } else if bare && divs.iter().any(|(open, _, _, _, _)| width >= *open) {
                 let boundary = if divs.iter().any(|(_, _, invalid, _, _)| *invalid) {
                     divs.iter()
@@ -2665,6 +2728,9 @@ fn blocks_with_slot_inner(
                     result.push(format!("{prefix}{}", ":".repeat(open)));
                 }
                 paragraph = false;
+                in_heading = false;
+                previous_blank = true;
+                continue;
             } else if paragraph {
                 result.push(format!("{}\\{text}", &raw[..indent_bytes]));
             } else {
@@ -2680,6 +2746,9 @@ fn blocks_with_slot_inner(
                 ));
                 result.push(display.clone());
                 paragraph = false;
+                in_heading = false;
+                previous_blank = true;
+                continue;
             }
         } else if paragraph
             && (heading.is_match(visible)

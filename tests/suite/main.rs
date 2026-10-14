@@ -2138,3 +2138,12 @@ mod djot_unicode_quote_attributes;
 
 #[path = "../djot_nul_heading_references.rs"]
 mod djot_nul_heading_references;
+
+#[path = "../djot_definition_div_openers.rs"]
+mod djot_definition_div_openers;
+
+#[path = "../djot_task_marker_tabs.rs"]
+mod djot_task_marker_tabs;
+
+#[path = "../djot_task_bullet_separators.rs"]
+mod djot_task_bullet_separators;
