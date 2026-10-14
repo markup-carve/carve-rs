@@ -3293,7 +3293,7 @@ fn convert_djot_block_markers_with(source: &str, only_empty: bool) -> String {
     let mut quote_depth = 0;
     let mut quote_exit_items = HashMap::new();
     let empty_marker = cached_regex!(
-        r"^(?:[-*+](?:[ \t]+\[[ xX]\])?|(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-zA-Z])[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]*$"
+        r"^(?:[-*+](?: \[[ xX]\])?|(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-zA-Z])[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]*$"
     )
     .unwrap();
     let full_marker = cached_regex!(
@@ -7003,6 +7003,16 @@ fn djot_inline_boundaries_with_div_closers(
                 0
             };
             let mut body = &trimmed[marker_width..];
+            if starts_item
+                && marker_width == 2
+                && trimmed.as_bytes()[1] == b' '
+                && matches!(trimmed.as_bytes()[0], b'-' | b'*' | b'+')
+            {
+                if let Some(task) = cached_regex!(r"^\[[ xX]\][ \t]+").unwrap().find(body) {
+                    body = &body[task.end()..];
+                }
+            }
+
             let padding = body.len() - body.trim_start_matches([' ', '\t']).len();
             body = &body[padding..];
             let nested_quote = scope_quote.find(body).unwrap().as_str();
@@ -9434,7 +9444,7 @@ fn djot_content_start(line: &str) -> usize {
             Some(marker) => {
                 at += marker.end();
                 let task = &bytes[at..];
-                if matches!(marker.as_str().as_bytes().first(), Some(b'-' | b'*' | b'+'))
+                if matches!(marker.as_str(), "- " | "* " | "+ ")
                     && task.len() >= 4
                     && task[0] == b'['
                     && matches!(task[1], b' ' | b'x' | b'X')
