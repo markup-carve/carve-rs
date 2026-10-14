@@ -14,6 +14,7 @@ which the published crate does not carry.
 ### Fixes
 
 - The `Wikilinks` extension no longer closes `[[` at a `]]` whose first bracket is escaped (`\]`), so `a [[x\]](u)` renders the core link instead of a wikilink (markup-carve/carve-js#3092).
+- An escaped include directive (`\{{ path }}`) stays literal: `render` and `flatten` no longer expand it, and `fmt` no longer adds a brace to `See \{{ a {{ path }}`. A directive that opens on the second of three braces (`{{{ path }}`) now expands, as it does in carve-js and carve-php (markup-carve/carve-js#3101).
 
 ## [0.1.9] - 2026-10-14
 

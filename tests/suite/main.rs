@@ -683,6 +683,8 @@ mod an_escalation_reaches_the_block_that_failed;
 mod an_escaped_attribute_block_escapes_what_opens_it;
 #[path = "../an_escaped_closing_pipe_is_an_escape.rs"]
 mod an_escaped_closing_pipe_is_an_escape;
+#[path = "../an_escaped_include_directive_stays_literal.rs"]
+mod an_escaped_include_directive_stays_literal;
 #[path = "../an_escaped_marker_ends_no_delimiter_run.rs"]
 mod an_escaped_marker_ends_no_delimiter_run;
 #[path = "../an_escaped_marker_leaves_the_next_run_spelled.rs"]

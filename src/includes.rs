@@ -744,8 +744,9 @@ fn find_directive(text: &str, from: usize) -> Option<(usize, usize)> {
         if let Some((end, _raw)) = match_directive_at(text, start) {
             return Some((start, end));
         }
-        // `{{` is ASCII, so this stays on a char boundary.
-        i = start + 2;
+        // One byte, not two: in `{{{ x }}` the directive opens on the second
+        // brace. `{` is ASCII, so this stays on a char boundary.
+        i = start + 1;
     }
     None
 }
@@ -776,6 +777,10 @@ pub(crate) fn split_run_directives(run: &[InlineNode]) -> Option<Vec<RunPiece>> 
     let mut at = 0usize;
     let mut cursor = 0usize;
     while let Some((start, end)) = find_directive(&full, cursor) {
+        if slicer.match_is_escaped(start, end) {
+            cursor = start + 1;
+            continue;
+        }
         if start > at {
             pieces.push(RunPiece::Nodes(slicer.slice(at, start)));
         }
@@ -2401,6 +2406,17 @@ impl<'a> RunSlicer<'a> {
         Self { run, ends }
     }
 
+    /// Whether a match over `[start, end)` opens or closes on a backslash
+    /// escape. An escaped brace is literal (CARVE-P7-004), so such a match is
+    /// no directive: `\{{ x }}` holds no `{{`.
+    fn match_is_escaped(&self, start: usize, end: usize) -> bool {
+        let escaped_at = |at: usize| {
+            let i = self.ends.partition_point(|e| *e <= at);
+            matches!(self.run.get(i), Some(InlineNode::EscapedText(_)))
+        };
+        escaped_at(start) || escaped_at(end - 1)
+    }
+
     /// The run nodes covering `[from, to)` of the reassembled text. Directive
     /// matches start with `{{` and end with `}}`, which the core always parses
     /// as text, so a boundary can only fall inside a text node; mention and tag
@@ -2435,14 +2451,22 @@ impl<'a> RunSlicer<'a> {
 
 fn expand_run(run: &[InlineNode], state: &mut State<'_>) -> Vec<InlineNode> {
     let full: String = run.iter().map(run_node_text).collect();
+    if !full.contains("{{") {
+        return run.to_vec();
+    }
+    let slicer = RunSlicer::new(run);
     let mut spans: Vec<(usize, usize, Vec<InlineNode>)> = Vec::new();
     let mut cursor = 0usize;
     while let Some(rel) = full[cursor..].find("{{") {
         let start = cursor + rel;
         let Some((end, raw)) = match_directive_at(&full, start) else {
-            cursor = start + 2;
+            cursor = start + 1;
             continue;
         };
+        if slicer.match_is_escaped(start, end) {
+            cursor = start + 1;
+            continue;
+        }
         cursor = end;
         let d = match parse_options(raw) {
             ParsedDirective::Ok(d) => d,
@@ -2495,7 +2519,6 @@ fn expand_run(run: &[InlineNode], state: &mut State<'_>) -> Vec<InlineNode> {
     if spans.is_empty() {
         return run.to_vec();
     }
-    let slicer = RunSlicer::new(run);
     let mut pieces: Vec<(InlineNode, bool)> = Vec::new();
     let mut at = 0usize;
     for (start, end, replacement) in spans {
