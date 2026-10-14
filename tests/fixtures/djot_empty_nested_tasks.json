@@ -1,0 +1,2974 @@
+[
+  {
+    "source": "- [ ]",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- [ ]\ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "- - [ ]",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* - [ ]",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. - [ ]",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) - [ ]",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] - [ ]",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - [ ]",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - [ ]\n> text",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> - - [ ]",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  - [ ]",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- outer\n\n  - [ ]\ntext",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "[^1]: - [ ]\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: - [ ]\ntext\n\nt[^1]",
+    "html": "<p>text</p>\n<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- [ ] ",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- [ ] \ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "- - [ ] ",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* - [ ] ",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. - [ ] ",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) - [ ] ",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] - [ ] ",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - [ ] ",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - [ ] \n> text",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> - - [ ] ",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  - [ ] ",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- outer\n\n  - [ ] \ntext",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "[^1]: - [ ] \n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: - [ ] \ntext\n\nt[^1]",
+    "html": "<p>text</p>\n<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- [ ]\t",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- [ ]\t\ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "- - [ ]\t",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* - [ ]\t",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. - [ ]\t",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) - [ ]\t",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] - [ ]\t",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - [ ]\t",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - [ ]\t\n> text",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> - - [ ]\t",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  - [ ]\t",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- outer\n\n  - [ ]\t\ntext",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "[^1]: - [ ]\t\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: - [ ]\t\ntext\n\nt[^1]",
+    "html": "<p>text</p>\n<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- [ ] {.c}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- - [ ] {.c}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* - [ ] {.c}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. - [ ] {.c}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) - [ ] {.c}",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] - [ ] {.c}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - [ ] {.c}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - - [ ] {.c}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  - [ ] {.c}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: - [ ] {.c}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- [x]",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- [x]\ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "- - [x]",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* - [x]",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. - [x]",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) - [x]",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] - [x]",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - [x]",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - [x]\n> text",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> - - [x]",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  - [x]",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- outer\n\n  - [x]\ntext",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "[^1]: - [x]\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: - [x]\ntext\n\nt[^1]",
+    "html": "<p>text</p>\n<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- [x] ",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- [x] \ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "- - [x] ",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* - [x] ",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. - [x] ",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) - [x] ",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] - [x] ",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - [x] ",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - [x] \n> text",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> - - [x] ",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  - [x] ",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- outer\n\n  - [x] \ntext",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "[^1]: - [x] \n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: - [x] \ntext\n\nt[^1]",
+    "html": "<p>text</p>\n<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- [x]\t",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- [x]\t\ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "- - [x]\t",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* - [x]\t",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. - [x]\t",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) - [x]\t",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] - [x]\t",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - [x]\t",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - [x]\t\n> text",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> - - [x]\t",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  - [x]\t",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- outer\n\n  - [x]\t\ntext",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "[^1]: - [x]\t\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: - [x]\t\ntext\n\nt[^1]",
+    "html": "<p>text</p>\n<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- [x] {.c}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- - [x] {.c}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* - [x] {.c}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. - [x] {.c}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) - [x] {.c}",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] - [x] {.c}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - [x] {.c}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - - [x] {.c}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  - [x] {.c}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: - [x] {.c}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- [X]",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- [X]\ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "- - [X]",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* - [X]",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. - [X]",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) - [X]",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] - [X]",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - [X]",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - [X]\n> text",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> - - [X]",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  - [X]",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- outer\n\n  - [X]\ntext",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "[^1]: - [X]\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: - [X]\ntext\n\nt[^1]",
+    "html": "<p>text</p>\n<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- [X] ",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- [X] \ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "- - [X] ",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* - [X] ",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. - [X] ",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) - [X] ",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] - [X] ",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - [X] ",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - [X] \n> text",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> - - [X] ",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  - [X] ",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- outer\n\n  - [X] \ntext",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "[^1]: - [X] \n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: - [X] \ntext\n\nt[^1]",
+    "html": "<p>text</p>\n<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- [X]\t",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- [X]\t\ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "- - [X]\t",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* - [X]\t",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. - [X]\t",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) - [X]\t",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] - [X]\t",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - [X]\t",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - [X]\t\n> text",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> - - [X]\t",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  - [X]\t",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- outer\n\n  - [X]\t\ntext",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "[^1]: - [X]\t\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: - [X]\t\ntext\n\nt[^1]",
+    "html": "<p>text</p>\n<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- [X] {.c}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- - [X] {.c}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* - [X] {.c}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. - [X] {.c}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) - [X] {.c}",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] - [X] {.c}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - [X] {.c}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - - [X] {.c}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  - [X] {.c}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: - [X] {.c}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "* [ ]",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* [ ]\ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "- * [ ]",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* * [ ]",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. * [ ]",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] * [ ]",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> * [ ]",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> * [ ]\n> text",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> - * [ ]",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  * [ ]",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- outer\n\n  * [ ]\ntext",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "* [ ] ",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* [ ] \ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "- * [ ] ",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* * [ ] ",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. * [ ] ",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] * [ ] ",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> * [ ] ",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> * [ ] \n> text",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> - * [ ] ",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  * [ ] ",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- outer\n\n  * [ ] \ntext",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "* [ ]\t",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* [ ]\t\ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "- * [ ]\t",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* * [ ]\t",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. * [ ]\t",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] * [ ]\t",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> * [ ]\t",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> * [ ]\t\n> text",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> - * [ ]\t",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  * [ ]\t",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- outer\n\n  * [ ]\t\ntext",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "* [ ] {.c}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- * [ ] {.c}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* * [ ] {.c}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. * [ ] {.c}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] * [ ] {.c}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> * [ ] {.c}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - * [ ] {.c}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  * [ ] {.c}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* [x]",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* [x]\ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "- * [x]",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* * [x]",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. * [x]",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] * [x]",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> * [x]",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> * [x]\n> text",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> - * [x]",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  * [x]",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- outer\n\n  * [x]\ntext",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "* [x] ",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* [x] \ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "- * [x] ",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* * [x] ",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. * [x] ",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] * [x] ",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> * [x] ",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> * [x] \n> text",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> - * [x] ",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  * [x] ",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- outer\n\n  * [x] \ntext",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "* [x]\t",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* [x]\t\ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "- * [x]\t",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* * [x]\t",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. * [x]\t",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] * [x]\t",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> * [x]\t",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> * [x]\t\n> text",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> - * [x]\t",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  * [x]\t",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- outer\n\n  * [x]\t\ntext",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "* [x] {.c}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- * [x] {.c}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* * [x] {.c}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. * [x] {.c}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] * [x] {.c}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> * [x] {.c}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - * [x] {.c}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  * [x] {.c}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* [X]",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* [X]\ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "- * [X]",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* * [X]",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. * [X]",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] * [X]",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> * [X]",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> * [X]\n> text",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> - * [X]",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  * [X]",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- outer\n\n  * [X]\ntext",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "* [X] ",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* [X] \ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "- * [X] ",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* * [X] ",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. * [X] ",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] * [X] ",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> * [X] ",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> * [X] \n> text",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> - * [X] ",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  * [X] ",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- outer\n\n  * [X] \ntext",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "* [X]\t",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* [X]\t\ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "- * [X]\t",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* * [X]\t",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. * [X]\t",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] * [X]\t",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> * [X]\t",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> * [X]\t\n> text",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> - * [X]\t",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  * [X]\t",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- outer\n\n  * [X]\t\ntext",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "* [X] {.c}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- * [X] {.c}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* * [X] {.c}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. * [X] {.c}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] * [X] {.c}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> * [X] {.c}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - * [X] {.c}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  * [X] {.c}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "+ [ ]",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "+ [ ]\ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "> + [ ]",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> + [ ]\n> text",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  + [ ]",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- outer\n\n  + [ ]\ntext",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "+ [ ] ",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "+ [ ] \ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "> + [ ] ",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> + [ ] \n> text",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  + [ ] ",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- outer\n\n  + [ ] \ntext",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "+ [ ]\t",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "+ [ ]\t\ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "> + [ ]\t",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> + [ ]\t\n> text",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  + [ ]\t",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- outer\n\n  + [ ]\t\ntext",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "+ [ ] {.c}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> + [ ] {.c}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  + [ ] {.c}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "+ [x]",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "+ [x]\ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "> + [x]",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> + [x]\n> text",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  + [x]",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- outer\n\n  + [x]\ntext",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "+ [x] ",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "+ [x] \ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "> + [x] ",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> + [x] \n> text",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  + [x] ",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- outer\n\n  + [x] \ntext",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "+ [x]\t",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "+ [x]\t\ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "> + [x]\t",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> + [x]\t\n> text",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  + [x]\t",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- outer\n\n  + [x]\t\ntext",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "+ [x] {.c}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> + [x] {.c}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  + [x] {.c}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "+ [X]",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "+ [X]\ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "> + [X]",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> + [X]\n> text",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  + [X]",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- outer\n\n  + [X]\ntext",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "+ [X] ",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "+ [X] \ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "> + [X] ",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> + [X] \n> text",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  + [X] ",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- outer\n\n  + [X] \ntext",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "+ [X]\t",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "+ [X]\t\ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "> + [X]\t",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> + [X]\t\n> text",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  + [X]\t",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- outer\n\n  + [X]\t\ntext",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "+ [X] {.c}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> + [X] {.c}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  + [X] {.c}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- a - [x]",
+    "html": "<ul>\n<li>\na - [x]\n</li>\n</ul>\n"
+  },
+  {
+    "source": "-  [x]",
+    "html": "<ul>\n<li>\n[x]\n</li>\n</ul>\n"
+  },
+  {
+    "source": "-\t[x]",
+    "html": "<ul>\n<li>\n[x]\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- - [-]",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n[-]\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "-  -\t[x]",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n[x]\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "```\n- - [x]\n```",
+    "html": "<pre><code>- - [x]\n</code></pre>\n"
+  },
+  {
+    "source": "`- - [x]`",
+    "html": "<p><code>- - [x]</code></p>\n"
+  },
+  {
+    "source": "paragraph\n- - [x]",
+    "html": "<p>paragraph\n- - [x]</p>\n"
+  },
+  {
+    "source": "- - [x]text",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n[x]text\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- [ ] {%c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- - [ ] {%c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* - [ ] {%c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. - [ ] {%c%}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) - [ ] {%c%}",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] - [ ] {%c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - [ ] {%c%}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - - [ ] {%c%}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  - [ ] {%c%}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: - [ ] {%c%}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- [ ] {.a %c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- - [ ] {.a %c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* - [ ] {.a %c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. - [ ] {.a %c%}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) - [ ] {.a %c%}",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] - [ ] {.a %c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - [ ] {.a %c%}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - - [ ] {.a %c%}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  - [ ] {.a %c%}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: - [ ] {.a %c%}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- [ ] {}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- - [ ] {}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* - [ ] {}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. - [ ] {}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) - [ ] {}",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] - [ ] {}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - [ ] {}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - - [ ] {}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  - [ ] {}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: - [ ] {}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- [x] {%c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- - [x] {%c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* - [x] {%c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. - [x] {%c%}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) - [x] {%c%}",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] - [x] {%c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - [x] {%c%}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - - [x] {%c%}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  - [x] {%c%}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: - [x] {%c%}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- [x] {.a %c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- - [x] {.a %c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* - [x] {.a %c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. - [x] {.a %c%}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) - [x] {.a %c%}",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] - [x] {.a %c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - [x] {.a %c%}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - - [x] {.a %c%}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  - [x] {.a %c%}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: - [x] {.a %c%}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- [x] {}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- - [x] {}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* - [x] {}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. - [x] {}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) - [x] {}",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] - [x] {}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - [x] {}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - - [x] {}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  - [x] {}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: - [x] {}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- [X] {%c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- - [X] {%c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* - [X] {%c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. - [X] {%c%}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) - [X] {%c%}",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] - [X] {%c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - [X] {%c%}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - - [X] {%c%}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  - [X] {%c%}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: - [X] {%c%}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- [X] {.a %c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- - [X] {.a %c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* - [X] {.a %c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. - [X] {.a %c%}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) - [X] {.a %c%}",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] - [X] {.a %c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - [X] {.a %c%}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - - [X] {.a %c%}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  - [X] {.a %c%}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: - [X] {.a %c%}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- [X] {}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- - [X] {}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* - [X] {}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. - [X] {}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) - [X] {}",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] - [X] {}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - [X] {}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - - [X] {}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  - [X] {}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: - [X] {}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: * [ ]\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: * [ ]\ntext\n\nt[^1]",
+    "html": "<p>text</p>\n<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: * [ ] \n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: * [ ] \ntext\n\nt[^1]",
+    "html": "<p>text</p>\n<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: * [ ]\t\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: * [ ]\t\ntext\n\nt[^1]",
+    "html": "<p>text</p>\n<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: * [ ] {.c}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "* [ ] {%c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- * [ ] {%c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* * [ ] {%c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. * [ ] {%c%}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] * [ ] {%c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> * [ ] {%c%}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - * [ ] {%c%}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  * [ ] {%c%}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: * [ ] {%c%}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "* [ ] {.a %c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- * [ ] {.a %c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* * [ ] {.a %c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. * [ ] {.a %c%}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] * [ ] {.a %c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> * [ ] {.a %c%}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - * [ ] {.a %c%}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  * [ ] {.a %c%}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: * [ ] {.a %c%}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "* [ ] {}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- * [ ] {}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* * [ ] {}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. * [ ] {}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] * [ ] {}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> * [ ] {}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - * [ ] {}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  * [ ] {}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: * [ ] {}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: * [x]\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: * [x]\ntext\n\nt[^1]",
+    "html": "<p>text</p>\n<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: * [x] \n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: * [x] \ntext\n\nt[^1]",
+    "html": "<p>text</p>\n<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: * [x]\t\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: * [x]\t\ntext\n\nt[^1]",
+    "html": "<p>text</p>\n<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: * [x] {.c}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "* [x] {%c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- * [x] {%c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* * [x] {%c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. * [x] {%c%}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] * [x] {%c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> * [x] {%c%}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - * [x] {%c%}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  * [x] {%c%}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: * [x] {%c%}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "* [x] {.a %c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- * [x] {.a %c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* * [x] {.a %c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. * [x] {.a %c%}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] * [x] {.a %c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> * [x] {.a %c%}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - * [x] {.a %c%}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  * [x] {.a %c%}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: * [x] {.a %c%}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "* [x] {}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- * [x] {}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* * [x] {}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. * [x] {}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] * [x] {}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> * [x] {}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - * [x] {}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  * [x] {}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: * [x] {}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: * [X]\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: * [X]\ntext\n\nt[^1]",
+    "html": "<p>text</p>\n<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: * [X] \n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: * [X] \ntext\n\nt[^1]",
+    "html": "<p>text</p>\n<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: * [X]\t\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: * [X]\t\ntext\n\nt[^1]",
+    "html": "<p>text</p>\n<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: * [X] {.c}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "* [X] {%c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- * [X] {%c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* * [X] {%c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. * [X] {%c%}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] * [X] {%c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> * [X] {%c%}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - * [X] {%c%}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  * [X] {%c%}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: * [X] {%c%}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "* [X] {.a %c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- * [X] {.a %c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* * [X] {.a %c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. * [X] {.a %c%}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] * [X] {.a %c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> * [X] {.a %c%}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - * [X] {.a %c%}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  * [X] {.a %c%}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: * [X] {.a %c%}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "* [X] {}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- * [X] {}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* * [X] {}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. * [X] {}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] * [X] {}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> * [X] {}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - * [X] {}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  * [X] {}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: * [X] {}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- + [ ]",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* + [ ]",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. + [ ]",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) + [ ]",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] + [ ]",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - + [ ]",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "[^1]: + [ ]\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: + [ ]\ntext\n\nt[^1]",
+    "html": "<p>text</p>\n<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- + [ ] ",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* + [ ] ",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. + [ ] ",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) + [ ] ",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] + [ ] ",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - + [ ] ",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "[^1]: + [ ] \n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: + [ ] \ntext\n\nt[^1]",
+    "html": "<p>text</p>\n<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- + [ ]\t",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* + [ ]\t",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. + [ ]\t",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) + [ ]\t",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] + [ ]\t",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - + [ ]\t",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "[^1]: + [ ]\t\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: + [ ]\t\ntext\n\nt[^1]",
+    "html": "<p>text</p>\n<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- + [ ] {.c}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* + [ ] {.c}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. + [ ] {.c}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) + [ ] {.c}",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] + [ ] {.c}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - + [ ] {.c}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "[^1]: + [ ] {.c}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "+ [ ] {%c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- + [ ] {%c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* + [ ] {%c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. + [ ] {%c%}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) + [ ] {%c%}",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] + [ ] {%c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> + [ ] {%c%}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - + [ ] {%c%}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  + [ ] {%c%}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: + [ ] {%c%}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "+ [ ] {.a %c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- + [ ] {.a %c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* + [ ] {.a %c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. + [ ] {.a %c%}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) + [ ] {.a %c%}",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] + [ ] {.a %c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> + [ ] {.a %c%}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - + [ ] {.a %c%}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  + [ ] {.a %c%}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: + [ ] {.a %c%}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "+ [ ] {}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- + [ ] {}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* + [ ] {}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. + [ ] {}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) + [ ] {}",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] + [ ] {}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> + [ ] {}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - + [ ] {}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  + [ ] {}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: + [ ] {}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- + [x]",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* + [x]",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. + [x]",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) + [x]",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] + [x]",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - + [x]",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "[^1]: + [x]\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: + [x]\ntext\n\nt[^1]",
+    "html": "<p>text</p>\n<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- + [x] ",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* + [x] ",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. + [x] ",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) + [x] ",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] + [x] ",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - + [x] ",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "[^1]: + [x] \n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: + [x] \ntext\n\nt[^1]",
+    "html": "<p>text</p>\n<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- + [x]\t",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* + [x]\t",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. + [x]\t",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) + [x]\t",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] + [x]\t",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - + [x]\t",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "[^1]: + [x]\t\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: + [x]\t\ntext\n\nt[^1]",
+    "html": "<p>text</p>\n<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- + [x] {.c}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* + [x] {.c}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. + [x] {.c}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) + [x] {.c}",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] + [x] {.c}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - + [x] {.c}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "[^1]: + [x] {.c}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "+ [x] {%c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- + [x] {%c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* + [x] {%c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. + [x] {%c%}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) + [x] {%c%}",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] + [x] {%c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> + [x] {%c%}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - + [x] {%c%}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  + [x] {%c%}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: + [x] {%c%}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "+ [x] {.a %c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- + [x] {.a %c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* + [x] {.a %c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. + [x] {.a %c%}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) + [x] {.a %c%}",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] + [x] {.a %c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> + [x] {.a %c%}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - + [x] {.a %c%}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  + [x] {.a %c%}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: + [x] {.a %c%}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "+ [x] {}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- + [x] {}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* + [x] {}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. + [x] {}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) + [x] {}",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] + [x] {}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> + [x] {}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - + [x] {}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  + [x] {}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: + [x] {}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- + [X]",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* + [X]",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. + [X]",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) + [X]",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] + [X]",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - + [X]",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "[^1]: + [X]\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: + [X]\ntext\n\nt[^1]",
+    "html": "<p>text</p>\n<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- + [X] ",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* + [X] ",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. + [X] ",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) + [X] ",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] + [X] ",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - + [X] ",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "[^1]: + [X] \n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: + [X] \ntext\n\nt[^1]",
+    "html": "<p>text</p>\n<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- + [X]\t",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* + [X]\t",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. + [X]\t",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) + [X]\t",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] + [X]\t",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - + [X]\t",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "[^1]: + [X]\t\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: + [X]\t\ntext\n\nt[^1]",
+    "html": "<p>text</p>\n<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- + [X] {.c}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* + [X] {.c}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. + [X] {.c}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) + [X] {.c}",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] + [X] {.c}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - + [X] {.c}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "[^1]: + [X] {.c}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "+ [X] {%c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- + [X] {%c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* + [X] {%c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. + [X] {%c%}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) + [X] {%c%}",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] + [X] {%c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> + [X] {%c%}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - + [X] {%c%}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  + [X] {%c%}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: + [X] {%c%}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "+ [X] {.a %c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- + [X] {.a %c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* + [X] {.a %c%}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. + [X] {.a %c%}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) + [X] {.a %c%}",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] + [X] {.a %c%}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> + [X] {.a %c%}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - + [X] {.a %c%}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  + [X] {.a %c%}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: + [X] {.a %c%}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "+ [X] {}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- + [X] {}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "* + [X] {}",
+    "html": "<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. + [X] {}",
+    "html": "<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "(a) + [X] {}",
+    "html": "<ol type=\"a\">\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- [x] + [X] {}",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> + [X] {}",
+    "html": "<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - + [X] {}",
+    "html": "<blockquote>\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- outer\n\n  + [X] {}",
+    "html": "<ul>\n<li>\nouter\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: + [X] {}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- [ ] {.t}\n  [a]: /x\n\n[l][a]\n",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"/x\" class=\"t\">l</a></p>\n"
+  },
+  {
+    "source": "[^1]: - * [ ]\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: * * [x]\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "[^1]: 1. * [X] {%c%}\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ol>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n</li>\n</ul>\n</li>\n</ol>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "x[^1]\n\n[^1]: * - [ ]\n  * b",
+    "html": "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n<li>\nb\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "x[^1]\n\n[^1]: * - [ ]\n  - b",
+    "html": "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul>\n<li>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n</li>\n</ul>\n<ul>\n<li>\nb\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "x[^1]\n\n[^1]: * [ ]\n  * [x] b",
+    "html": "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\nb\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- [ ] {.c}\n\n  para",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n<p>para</p>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- [ ] {.c}\n\n  - x",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n<ul>\n<li>\nx\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- [ ] {#i}\n\n  > q",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n<blockquote>\n<p>q</p>\n</blockquote>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- [ ] {.c}\n\n  para\n- b",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n<p>para</p>\n</li>\n</ul>\n<ul>\n<li>\nb\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: - [ ] {.c}\n\n  para\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p>para<a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- [ ] {.c}\n\ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "- [ ] {.c}\n\n- x",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<ul>\n<li>\nx\n</li>\n</ul>\n"
+  },
+  {
+    "source": "x[^a]\n\n[^a]: - [ ] {}\n\n    text",
+    "html": "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p>text<a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "x[^a]\n\n[^a]: - [ ] {%c%}\n\n      text",
+    "html": "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p>text<a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "x[^a]\n\n[^a]: - [ ] {.a}\n{.z}\ntext",
+    "html": "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<p class=\"a z\">text</p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  }
+]

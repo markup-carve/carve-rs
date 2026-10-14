@@ -181,7 +181,7 @@ which the published crate does not carry.
 
 - Djot import scans structural prefixes once per line, and short inline words skip the full inline parser setup (#2401, #2508).
 
-- Lint reports a `^` or `<` table span marker that resolves to no span under `table-span-marker-blocked`, at the marker's own line and column (#2760).
+- Lint reports a `^` or `<` table span marker that resolves to no span under `table-span-marker-blocked`, at the marker's own line and column. A marker under a shorter row reports that no cell is above it, and a pipe in a code span or a lone CR line break no longer hides the marker of a continued row (#2760, #2765).
 
 - An authored `{#id}` on a footnote reference replaces the generated `fnref` ID, and the backlink follows it. HTML import matches a backlink by its target (#2700).
 

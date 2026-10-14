@@ -619,7 +619,20 @@ fn quoted_list_attribute_layout(
 }
 
 fn compact_djot_list_prefix(text: &str) -> std::borrow::Cow<'_, str> {
-    if !text.contains('0') && !text.contains('(') && !text.contains('\t') && !text.contains('[') {
+    compact_djot_list_prefix_with_bullets(text, false)
+}
+
+fn compact_djot_list_prefix_with_bullets(
+    text: &str,
+    canonical_bullets: bool,
+) -> std::borrow::Cow<'_, str> {
+    if !canonical_bullets
+        && !text.contains('0')
+        && !text.contains('(')
+        && !text.contains('\t')
+        && !text.contains('[')
+        && !text.contains('+')
+    {
         return std::borrow::Cow::Borrowed(text);
     }
     let marker = cached_regex!(r"^(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]+").unwrap();
@@ -661,6 +674,10 @@ fn compact_djot_list_prefix(text: &str) -> std::borrow::Cow<'_, str> {
             result.push_str(&prefix[end..close]);
             result.push('.');
             result.push_str(&prefix[close + 1..].replace('\t', " "));
+            changed = true;
+        } else if prefix.starts_with('+') || canonical_bullets && prefix.starts_with(['-', '*']) {
+            result.push('-');
+            result.push_str(&prefix[1..].replace('\t', " "));
             changed = true;
         } else {
             result.push_str(&prefix[end..].replace('\t', " "));
@@ -1283,6 +1300,7 @@ struct NoteBuffer {
     label: String,
     body: Vec<String>,
     converted_body: Option<String>,
+    carry_task_attributes: bool,
     paragraph: bool,
     blank: bool,
     paragraph_depth: usize,
@@ -1296,10 +1314,37 @@ fn normalize_note_body(
     attribute_prefix: &str,
     item_attributes: &mut Vec<String>,
 ) -> Vec<String> {
-    let body = normalize_djot_fences(&note.body.join("\n"));
+    let mut body_lines = note.body.clone();
+    let mut returned = Vec::new();
+    if note.carry_task_attributes {
+        if let Some(first) = body_lines.first_mut() {
+            let (_, indent) = leading_indent(first);
+            if let Some(end) = empty_djot_task_tail_end(&first[indent..], true) {
+                returned.push(first[indent + end..].trim().to_owned());
+                first.truncate(indent + end);
+            }
+        }
+    }
+    let allow_attributes = body_lines
+        .get(1)
+        .map_or(true, |line| line.trim().is_empty());
+    if let Some(first) = body_lines.first_mut() {
+        let (_, indent) = leading_indent(first);
+        let text = &first[indent..];
+        if let Some(end) = empty_djot_task_tail_end(text, allow_attributes) {
+            let keep_star = text.starts_with("* ");
+            let mut compact =
+                compact_djot_list_prefix_with_bullets(text[..end].trim_end(), true).into_owned();
+            if keep_star {
+                compact.replace_range(..1, "*");
+            }
+            *first = format!("{}{compact}", &first[..indent]);
+        }
+    }
+    let body = normalize_djot_fences(&body_lines.join("\n"));
+    let body = convert_djot_block_markers_with(&body, true);
     let deep = deep_quoted_item_attributes(&body, attribute_prefix, item_attributes);
     let quoted = quoted_list_attribute_layout(&deep, attribute_prefix, item_attributes);
-    let mut returned = Vec::new();
     note.converted_body = Some(super::convert_djot_block_markers(&blocks_with_slot_inner(
         &quoted,
         None,
@@ -1322,6 +1367,7 @@ pub(super) fn note_blocks(
     if !source.contains("[^") {
         return blocks_with_slot(source, None, None, attribute_prefix, item_attributes);
     }
+    let lines: Vec<_> = source.split('\n').collect();
     let quote = cached_regex!(r"^(?:[ \t]*>(?:[ \t]|$))*").unwrap();
     let header = cached_regex!(r"^(\[\^[^\]\n]+\]:[ \t]*)(.*)$").unwrap();
     let first_header = cached_regex!(r"^\[\^[^\]\n]+\]:[ \t]*").unwrap();
@@ -1623,6 +1669,13 @@ pub(super) fn note_blocks(
             let quoted_item = quote
                 .find(body)
                 .is_some_and(|prefix| !prefix.is_empty() && item.is_match(&body[prefix.end()..]));
+            let empty_task = empty_djot_task_tail_end(
+                body,
+                lines
+                    .get(note_line_index + 1)
+                    .map_or(true, |line| line.trim().is_empty()),
+            )
+            .is_some();
             let first_padding = if item.is_match(body) || quoted_item {
                 caps[1].encode_utf16().count()
             } else if code.is_match(body) {
@@ -1630,13 +1683,21 @@ pub(super) fn note_blocks(
             } else {
                 0
             };
-            let body_paragraph = !body.is_empty() && !block.is_match(body) && !code.is_match(body);
+            let body_paragraph =
+                !empty_task && !body.is_empty() && !block.is_match(body) && !code.is_match(body);
             notes.push(NoteBuffer {
                 depth,
                 column: header_column,
                 label: caps[1].to_owned(),
                 body: vec![format!("{}{body}", " ".repeat(first_padding))],
                 converted_body: None,
+                carry_task_attributes: !empty_task
+                    && empty_djot_task_tail_end(body, true).is_some()
+                    && lines.get(note_line_index + 1).is_some_and(|line| {
+                        let text = &line[djot_content_start(line)..];
+                        read_djot_word_attributes(text, 0)
+                            .is_some_and(|(end, _)| text[end..].trim().is_empty())
+                    }),
                 item_column: item
                     .is_match(body)
                     .then_some(header_column + caps[1].encode_utf16().count()),
@@ -1645,8 +1706,9 @@ pub(super) fn note_blocks(
                         .bytes()
                         .filter(|&b| b == b'>')
                         .count(),
-                paragraph: body_paragraph || item.is_match(body) || starts_quote(body),
-                blank: !body_paragraph && !item.is_match(body) && !starts_quote(body),
+                paragraph: !empty_task
+                    && (body_paragraph || item.is_match(body) || starts_quote(body)),
+                blank: empty_task || !body_paragraph && !item.is_match(body) && !starts_quote(body),
                 slot,
             });
             let mut nested_body = body;
@@ -1697,6 +1759,7 @@ pub(super) fn note_blocks(
                         format!("{}{nested_body}", " ".repeat(child_padding))
                     }],
                     converted_body: None,
+                    carry_task_attributes: false,
                     item_column: child_item
                         .then_some(child_column + nested.as_str().encode_utf16().count()),
                     paragraph_depth: depth,
@@ -1801,11 +1864,15 @@ pub(super) fn note_blocks(
         }
         let converted = note.converted_body.as_ref().unwrap();
         let mut lines = converted.split('\n');
-        let mut definition = format!(
-            "{}{}",
-            note.label,
-            lines.next().unwrap_or("").trim_start_matches([' ', '\t'])
-        );
+        let first_line = lines.next().unwrap_or("").trim_start_matches([' ', '\t']);
+        let mut definition = if first_line.starts_with("* ")
+            && note.body.first().is_some_and(|line| {
+                empty_djot_task_tail_end(line.trim_start_matches([' ', '\t']), true).is_some()
+            }) {
+            format!("{}{empty_note}\n  {first_line}", note.label)
+        } else {
+            format!("{}{first_line}", note.label)
+        };
         for line in lines {
             definition.push('\n');
             if !line.is_empty() {
