@@ -115,7 +115,7 @@ fn deep_quoted_item_attributes(
         r"^(?:[-*+][ \t]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)][ \t]|#{1,6}(?:[ \t]|$)|:{3,}|[`~]{3,}|\[(?:\^)?[^\]\n]*\]:)"
     )
     .unwrap();
-    let task = cached_regex!(r"^\[[ xX\-_>?]\](?:[ \t]+|$)").unwrap();
+    let task = cached_regex!(r"^\[[ xX]\](?:[ \t]+|$)").unwrap();
     let prefix_part = cached_regex!(r"^[ \t]*>(?:[ \t]|$)").unwrap();
     let mut frames: HashMap<usize, Vec<Frame>> = HashMap::new();
     let mut before: HashMap<usize, Vec<String>> = HashMap::new();
@@ -232,14 +232,18 @@ fn deep_quoted_item_attributes(
                 continue;
             }
             let item_text = text[item[0].len()..].trim_start_matches([' ', '\t']);
-            let item_text = task
-                .find(item_text)
-                .map_or(item_text, |task| &item_text[task.end()..]);
+            let native_task_marker = matches!(&item[0], "- " | "* " | "+ ");
+            let item_text = if native_task_marker {
+                task.find(item_text)
+                    .map_or(item_text, |task| &item_text[task.end()..])
+            } else {
+                item_text
+            };
             previous_paragraph = !item_text.is_empty()
                 && !block.is_match(item_text)
                 && !item_text.starts_with(['>', '|']);
             let mut kind = djot_list_kind(&item[1]);
-            if ["-", "*", "+"].contains(&&item[1]) && task.is_match(&text[item[0].len()..]) {
+            if native_task_marker && task.is_match(&text[item[0].len()..]) {
                 kind.push_str(":task");
             }
             if let Some(owner) = stack.last_mut().filter(|owner| indent > owner.column) {

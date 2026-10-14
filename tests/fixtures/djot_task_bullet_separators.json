@@ -44026,5 +44026,25 @@
   {
     "source": "- [x]\t-\t[x]\tchild",
     "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n<ul>\n<li>\n[x]\tchild\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> > - [ ] a\n> >\n> >   {.m}\n> > - [-] b",
+    "html": "<blockquote>\n<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n<p>a</p>\n</li>\n</ul>\n<ul class=\"m\">\n<li>\n[-] b\n</li>\n</ul>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> > - [ ] a\n> >\n> >   {.m}\n> > - [?] b",
+    "html": "<blockquote>\n<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n<p>a</p>\n</li>\n</ul>\n<ul class=\"m\">\n<li>\n[?] b\n</li>\n</ul>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> > - [ ] a\n> >\n> >   {.m}\n> > -  [x] b",
+    "html": "<blockquote>\n<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n<p>a</p>\n</li>\n</ul>\n<ul class=\"m\">\n<li>\n[x] b\n</li>\n</ul>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> > - [ ] a\n> >\n> >   {.m}\n> > -\t[x] b",
+    "html": "<blockquote>\n<blockquote>\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n<p>a</p>\n</li>\n</ul>\n<ul class=\"m\">\n<li>\n[x] b\n</li>\n</ul>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> > -  [ ] a\n> >\n> >   {.m}\n> > -  [x] b",
+    "html": "<blockquote>\n<blockquote>\n<ul>\n<li>\n<p>[ ] a</p>\n</li>\n<li class=\"m\">\n<p>[x] b</p>\n</li>\n</ul>\n</blockquote>\n</blockquote>\n"
   }
 ]
