@@ -3833,14 +3833,6 @@ fn sanitize_md_url(url: &str, pos: Option<&Pos>, sink: DeniedSink) -> String {
     crate::escape::sanitize_destination(url, pos, sink).into_owned()
 }
 
-/// Encode a destination for the Markdown output, refusing a denied scheme.
-///
-/// The order is the whole point. This writer NORMALIZES the destination before
-/// it emits it - it drops control characters, and its consumer decodes character
-/// references - so the probe has to run on the normalized form. Probing the
-/// authored form and normalizing afterwards means the writer itself
-/// manufactures the live URL out of one the probe had already dismissed
-/// (`markup-carve/carve-rs#806`).
 fn markdown_angle_autolink(label: &str, href: &str, destination: &str) -> bool {
     if destination == label {
         if let Some((scheme, body)) = label.split_once(':') {
@@ -3883,6 +3875,14 @@ fn markdown_angle_autolink(label: &str, href: &str, destination: &str) -> bool {
         })
 }
 
+/// Encode a destination for the Markdown output, refusing a denied scheme.
+///
+/// The order is the whole point. This writer NORMALIZES the destination before
+/// it emits it - it drops control characters, and its consumer decodes character
+/// references - so the probe has to run on the normalized form. Probing the
+/// authored form and normalizing afterwards means the writer itself
+/// manufactures the live URL out of one the probe had already dismissed
+/// (`markup-carve/carve-rs#806`).
 fn encode_markdown_destination(url: &str, pos: Option<&Pos>, sink: DeniedSink) -> String {
     // 1. Strip first, probe second. The strip drops all of `\p{Cc}`, the probe
     //    skips only up to U+0020 plus whitespace, so `java<DEL>script:` and the

@@ -1589,7 +1589,7 @@ enum Frame {
         href: String,
         title: Option<String>,
         children: Vec<InlineNode>,
-        autolink: bool,
+        autolink: Option<(String, String)>,
         ref_label: Option<String>,
         raw_ref: Option<String>,
     },
@@ -2136,8 +2136,11 @@ impl Builder {
                     .then(|| title.to_string()),
                 children: Vec::new(),
                 autolink: matches!(link_type, LinkType::Autolink | LinkType::Email)
-                    && source.starts_with('<')
-                    && source.ends_with('>'),
+                    .then(|| source.strip_prefix('<')?.strip_suffix('>'))
+                    .flatten()
+                    .and_then(|text| {
+                        crate::parse::autolink_href(text).map(|href| (href, text.to_owned()))
+                    }),
                 ref_label: (!id.is_empty()
                     && matches!(
                         link_type,
@@ -2485,19 +2488,14 @@ impl Builder {
                 self.protected_empty_destination(children);
             }
             Frame::Link {
-                href,
+                autolink: Some((href, text)),
                 title,
-                children,
-                autolink: true,
                 ..
-            } if title.is_none() && matches!(children.as_slice(), [InlineNode::Text(_)]) => {
-                let InlineNode::Text(text) = &children[0] else {
-                    unreachable!()
-                };
+            } if title.is_none() => {
                 self.inline(InlineNode::AutoLink(AutoLink {
                     attrs: None,
                     href,
-                    text: text.value.clone(),
+                    text,
                     pos: None,
                 }));
             }

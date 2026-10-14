@@ -35,3 +35,19 @@ fn autolinks_fall_back_when_angle_spelling_changes_the_content() {
         assert_eq!(carve::to_markdown(source).trim_end(), expected, "{source}");
     }
 }
+
+#[test]
+fn markdown_autolinks_outside_carve_grammar_stay_links() {
+    for source in [
+        "<https://a.com/a\"b>",
+        "<https://a.com/{x}>",
+        "<https://a.com/`x`>",
+        "<https://a.com/a\\b>",
+    ] {
+        let carve_source = carve::markdown_to_carve(source);
+        assert!(
+            carve::to_html(&carve_source).contains("<a href="),
+            "{source}: {carve_source}"
+        );
+    }
+}

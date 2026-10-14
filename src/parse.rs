@@ -26312,13 +26312,7 @@ fn parse_autolink(text: &str, pos: usize, bounds: &InlineBounds<'_>) -> Option<(
     let rest = text.get(pos..)?;
     let close = autolink_closer(rest.as_bytes(), 0)?;
     let target = &rest[1..close];
-    let href = if is_url_autolink_target(target) {
-        target.to_string()
-    } else if is_email_autolink_target(target) {
-        format!("mailto:{target}")
-    } else {
-        return None;
-    };
+    let href = autolink_href(target)?;
     let mut attrs = None;
     let mut consumed = close + 1;
     let bytes = text.as_bytes();
@@ -26345,6 +26339,16 @@ fn parse_autolink(text: &str, pos: usize, bounds: &InlineBounds<'_>) -> Option<(
 /// Note `:` is deliberately NOT an email char.
 fn is_email_char(b: u8) -> bool {
     b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_' | b'+')
+}
+
+pub(crate) fn autolink_href(target: &str) -> Option<String> {
+    if is_url_autolink_target(target) {
+        Some(target.to_string())
+    } else if is_email_autolink_target(target) {
+        Some(format!("mailto:{target}"))
+    } else {
+        None
+    }
 }
 
 /// `email_autolink = {email_char}+ '@' {email_char}+ '.' {letter}+`.
