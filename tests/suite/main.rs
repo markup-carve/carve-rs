@@ -224,6 +224,8 @@ mod a_continuation_marker_attaches_only_a_flush_left_block;
 mod a_continuation_rows_open_run_spans_it;
 #[path = "../a_critic_mark_pairs_inside_one_bracket_run.rs"]
 mod a_critic_mark_pairs_inside_one_bracket_run;
+#[path = "../a_cross_reference_is_opaque_to_emphasis.rs"]
+mod a_cross_reference_is_opaque_to_emphasis;
 #[path = "../a_crossing_bracket_escape_is_decided_on_the_completed_run.rs"]
 mod a_crossing_bracket_escape_is_decided_on_the_completed_run;
 #[path = "../a_crossref_label_built_from_an_expansion_degrades_to_its_target.rs"]

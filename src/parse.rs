@@ -26499,34 +26499,8 @@ fn is_url_autolink_char(b: u8) -> bool {
 }
 
 fn parse_crossref(text: &str, pos: usize, bounds: &InlineBounds<'_>) -> Option<(CrossRef, usize)> {
-    // The target runs to the closing `>`; with no `>` ahead the scan could only
-    // walk to end-of-text and fail, so bail in O(1) (keeps `</#`×n linear).
-    if !bounds.has_gt_from(pos) {
-        return None;
-    }
-    let rest = text.get(pos..)?;
-    let inner = rest.strip_prefix("</#")?;
-    let start = pos + 3;
-    if bounds
-        .crossref_invalid_range
-        .get()
-        .is_some_and(|(from, to)| start >= from && start <= to)
-    {
-        return None;
-    }
-    let close = inner
-        .bytes()
-        .position(|b| matches!(b, b'>' | b' ' | b'\r' | b'\n'))?;
-    if inner.as_bytes()[close] != b'>' {
-        bounds
-            .crossref_invalid_range
-            .set(Some((start, start + close)));
-        return None;
-    }
-    let target = &inner[..close];
-    if target.is_empty() {
-        return None;
-    }
+    let close = crossref_close(text.as_bytes(), pos, bounds)?;
+    let target = text.get(pos + 3..close)?;
     Some((
         CrossRef {
             target: target.to_string(),
@@ -26535,8 +26509,35 @@ fn parse_crossref(text: &str, pos: usize, bounds: &InlineBounds<'_>) -> Option<(
             href: None,
             pos: None,
         },
-        close + 4,
+        close + 1 - pos,
     ))
+}
+
+/// The `>` closing the cross-reference `</#id>` at `pos`, or `None`.
+fn crossref_close(bytes: &[u8], pos: usize, bounds: &InlineBounds<'_>) -> Option<usize> {
+    // The target runs to the closing `>`; with no `>` ahead the scan could only
+    // walk to end-of-text and fail, so bail in O(1) (keeps `</#`×n linear).
+    if !bounds.has_gt_from(pos) || !bytes.get(pos..)?.starts_with(b"</#") {
+        return None;
+    }
+    let start = pos + 3;
+    if bounds
+        .crossref_invalid_range
+        .get()
+        .is_some_and(|(from, to)| start >= from && start <= to)
+    {
+        return None;
+    }
+    let close = bytes[start..]
+        .iter()
+        .position(|&b| matches!(b, b'>' | b' ' | b'\r' | b'\n'))?;
+    if bytes[start + close] != b'>' {
+        bounds
+            .crossref_invalid_range
+            .set(Some((start, start + close)));
+        return None;
+    }
+    (close > 0).then_some(start + close)
 }
 
 /// O(1) lookup of the matching `]` for the `[` at `start` using a precomputed
@@ -29716,6 +29717,11 @@ fn find_emphasis_close(
             }
         }
         if ch == b'<' && bounds.has_gt_from(j) {
+            // A cross-reference ranks with autolinks (PART 8 item 3).
+            if let Some(end) = crossref_close(bytes, j, bounds) {
+                j = end + 1;
+                continue;
+            }
             if let Some(end) = scanned_autolink_end(bytes, j) {
                 j = bounds
                     .braced_closers(bytes)
