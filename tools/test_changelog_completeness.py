@@ -59,6 +59,43 @@ class ChangelogCompletenessTests(unittest.TestCase):
             git("commit", "-qm", "Document fix")
             self.assertEqual(0, run()[0])
 
+    def test_a_merge_commit_pull_request_counts_and_its_branch_commits_do_not(self):
+        with tempfile.TemporaryDirectory(prefix="carve-changelog-test-") as directory:
+            root = Path(directory)
+
+            def git(*args):
+                return subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, text=True).stdout.strip()
+
+            git("init", "-q", "-b", "main")
+            git("config", "user.email", "test@example.invalid")
+            git("config", "user.name", "Test")
+            (root / "Cargo.toml").write_text('[package]\nversion = "0.1.7"\n')
+            (root / "CHANGELOG.md").write_text("## [Unreleased]\n\n## [0.1.7]\n\nReleased.\n")
+            (root / "src").mkdir()
+            (root / "src/lib.rs").write_text("pub fn a() {}\n")
+            git("add", ".")
+            git("commit", "-qm", "Release")
+            git("tag", "0.1.7")
+            git("switch", "-qc", "fix/branch")
+            (root / "src/lib.rs").write_text("pub fn b() {}\n")
+            git("commit", "-qam", "Work on the branch")
+            git("switch", "-q", "main")
+            git("merge", "-q", "--no-ff", "fix/branch", "-m", "Merge pull request #100 from test/fix/branch")
+
+            def run():
+                output = io.StringIO()
+                with patch("sys.argv", ["check", "--root", str(root), "--repo", "test/repo"]), patch.object(changelog, "closing_issues", return_value={}), contextlib.redirect_stdout(output):
+                    status = changelog.main()
+                return status, output.getvalue()
+
+            status, output = run()
+            self.assertEqual(3, status, output)
+            self.assertIn("#100 is not cited in the Unreleased section", output)
+            self.assertNotIn("Work on the branch", output, "a merged branch's own commit is not a separate change")
+            (root / "CHANGELOG.md").write_text("## [Unreleased]\n\nFix (#100).\n\n## [0.1.7]\n\nReleased.\n")
+            git("commit", "-qam", "Document fix")
+            self.assertEqual(0, run()[0])
+
 
 if __name__ == "__main__":
     unittest.main()
