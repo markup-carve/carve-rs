@@ -944,22 +944,19 @@ fn markdown_to_ast_with_code_lines(
                 event = Event::SoftBreak;
             }
         }
-        match &event {
-            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) => {
-                let word = info
-                    .trim_matches([' ', '\t'])
-                    .split([' ', '\t'])
-                    .next()
-                    .unwrap_or("");
-                if !word.is_empty() && fence_language(info).is_none() {
-                    builder.losses.push(MarkdownImportLoss {
-                        message: format!("Dropped code-block language {word:?}; Carve cannot spell this language token."),
-                        line: Some(builder.current_line),
-                        kind: MarkdownLossKind::Unspellable,
-                    });
-                }
+        if let Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) = &event {
+            let word = info
+                .trim_matches([' ', '\t'])
+                .split([' ', '\t'])
+                .next()
+                .unwrap_or("");
+            if !word.is_empty() && fence_language(info).is_none() {
+                builder.losses.push(MarkdownImportLoss {
+                    message: format!("Dropped code-block language {word:?}; Carve cannot spell this language token."),
+                    line: Some(builder.current_line),
+                    kind: MarkdownLossKind::Unspellable,
+                });
             }
-            _ => {}
         }
         let empty_title = match &event {
             Event::Start(
@@ -1133,6 +1130,7 @@ fn markdown_to_ast_with_code_lines(
         return Err(crate::RenderDepthError::new("carve", crate::MAX_RENDER_DEPTH).into());
     }
     let mut used_definitions = BTreeMap::new();
+    let mut definition_losses = Vec::new();
     for id in &used_reference_ids {
         let Some(def) = parser.reference_definitions().get(id.as_str()) else {
             continue;
@@ -1143,6 +1141,20 @@ fn markdown_to_ast_with_code_lines(
             .and_then(|line| line.split_once("]:"))
             .map_or(id.as_str(), |(label, _)| label);
         if !crate::parse::reference_label_has_definition_spelling(label) {
+            continue;
+        }
+        if def.dest.is_empty() && def.title.is_some() {
+            definition_losses.push(MarkdownImportLoss {
+                message: "An empty reference definition with a title was inlined".to_owned(),
+                line: Some(
+                    source[..def.span.start]
+                        .bytes()
+                        .filter(|byte| *byte == b'\n')
+                        .count()
+                        + 1,
+                ),
+                kind: MarkdownLossKind::Unspellable,
+            });
             continue;
         }
         used_definitions
@@ -1157,27 +1169,14 @@ fn markdown_to_ast_with_code_lines(
     }
     let needs_email_walk = builder.needs_email_walk;
     let (mut document, mut losses, locations) = builder.finish();
-    for (offset, definition) in &used_definitions {
-        if definition.href.is_empty() && definition.title.is_some() {
-            losses.push(MarkdownImportLoss {
-                message: "An empty reference definition cannot retain its title".to_owned(),
-                line: Some(
-                    source[..*offset]
-                        .bytes()
-                        .filter(|byte| *byte == b'\n')
-                        .count()
-                        + 1,
-                ),
-                kind: MarkdownLossKind::Unspellable,
-            });
-        }
-    }
+    losses.extend(definition_losses);
     document.children.extend(
         used_definitions
             .into_values()
             .map(BlockNode::LinkReferenceDefinition),
     );
     normalize_imported_reference_links(&mut document);
+    crate::ast_json::hydrate_resolved_empty_references(&mut document);
     if needs_email_walk {
         crate::markdown_gfm_autolinks::link_email_text(&mut document);
     }

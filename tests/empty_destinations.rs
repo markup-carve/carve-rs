@@ -1,4 +1,7 @@
-use carve::{from_json, lint_carve, parse, render_html, to_carve, to_html, to_json, to_markdown};
+use carve::{
+    from_json, lint_carve, markdown_to_ast, parse, render_html, to_carve, to_html, to_json,
+    to_markdown,
+};
 
 #[test]
 fn inline_empty_destinations_are_nodes_and_canonicalize() {
@@ -79,18 +82,18 @@ fn foreign_imports_keep_explicit_empty_destinations() {
             .unwrap()
             .value
             .trim(),
-        "[t](%20%09)"
+        "[t]()"
     );
     assert_eq!(
         carve::html_to_carve("<img src=\" \t\" alt=\"a\">", &options)
             .unwrap()
             .value
             .trim(),
-        "![a](%20%09)"
+        "![a]()"
     );
     assert_eq!(
         carve::markdown_to_carve("[t][r]\n\n[r]: <> \"T\"\n").trim(),
-        "[t][r]\n\n[r]:"
+        "[t]( \"T\")"
     );
 }
 
@@ -109,4 +112,27 @@ fn empty_definition_writer_reports_each_discarded_field() {
         .collect();
     assert!(fields.contains(&"title"));
     assert!(fields.contains(&"attrs"));
+}
+
+#[test]
+fn foreign_ast_imports_resolve_empty_references() {
+    let document = markdown_to_ast("[t][r] and ![a][r]\n\n[r]: <>");
+    assert_eq!(
+        render_html(&document).unwrap().trim(),
+        "<p><a href=\"\">t</a> and <img src=\"\" alt=\"a\"></p>"
+    );
+
+    let options = carve::HtmlImportOptions::default();
+    let link =
+        carve::html_to_ast("<p><a href=\"\" data-carve-ref=\"r\">t</a></p>", &options).unwrap();
+    assert_eq!(
+        render_html(&link.value).unwrap().trim(),
+        "<p><a href=\"\">t</a></p>"
+    );
+    let image =
+        carve::html_to_ast("<img src=\"\" alt=\"a\" data-carve-ref=\"r\">", &options).unwrap();
+    assert_eq!(
+        render_html(&image.value).unwrap().trim(),
+        "<img src=\"\" alt=\"a\">"
+    );
 }

@@ -1311,6 +1311,12 @@ impl<'a> Importer<'a> {
             _ => None,
         }
     }
+    fn destination_attr(handle: &Handle, wanted: &str) -> String {
+        Self::attr(handle, wanted)
+            .unwrap_or_default()
+            .trim_matches(|character: char| character.is_ascii_whitespace())
+            .to_owned()
+    }
     fn text(handle: &Handle) -> String {
         match &handle.data {
             NodeData::Text { contents } => contents.borrow().to_string(),
@@ -6986,13 +6992,13 @@ impl<'a> Importer<'a> {
             // whose text happens to equal the destination.
             "a" if Self::reads_autolink(h) => InlineNode::AutoLink(AutoLink {
                 attrs,
-                href: Self::attr(h, "href").unwrap_or_default(),
+                href: Self::destination_attr(h, "href"),
                 text: Self::text(h),
                 pos: None,
             }),
             "a" => InlineNode::Link(Link {
                 attrs,
-                href: Self::attr(h, "href").unwrap_or_default(),
+                href: Self::destination_attr(h, "href"),
                 title: Self::attr(h, "title"),
                 children,
                 // PART 10 §13a `data-carve-ref`: the label the reference
@@ -7000,7 +7006,7 @@ impl<'a> Importer<'a> {
                 // use site and the definition line is gone.
                 ref_label: self.reference_label(
                     h,
-                    &Self::attr(h, "href").unwrap_or_default(),
+                    &Self::destination_attr(h, "href"),
                     Self::attr(h, "title"),
                     path,
                 ),
@@ -7012,13 +7018,13 @@ impl<'a> Importer<'a> {
             }),
             "img" => InlineNode::Image(Image {
                 attrs,
-                src: Self::attr(h, "src").unwrap_or_default(),
+                src: Self::destination_attr(h, "src"),
                 alt: Self::attr(h, "alt").unwrap_or_default(),
                 title: Self::attr(h, "title"),
                 // PART 10 §13a `data-carve-ref`, as on the anchor above.
                 ref_label: self.reference_label(
                     h,
-                    &Self::attr(h, "src").unwrap_or_default(),
+                    &Self::destination_attr(h, "src"),
                     Self::attr(h, "title"),
                     path,
                 ),
@@ -9982,6 +9988,7 @@ the image is written as a block";
     for_each_inline_run(&mut document.children, &mut |nodes, _| {
         strip_span_marks(nodes)
     });
+    crate::ast_json::hydrate_resolved_empty_references(&mut document);
     Ok(HtmlImportResult {
         value: document,
         report: HtmlImportReport {

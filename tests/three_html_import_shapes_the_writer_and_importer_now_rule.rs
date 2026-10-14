@@ -165,20 +165,18 @@ fn an_element_naming_no_destination_comes_back_as_its_content() {
     assert!(round_trips(html));
 }
 
-/// THE RULE IS OVER THE DESTINATION, not over the reason it is missing: an
-/// absent attribute and a present-but-empty one are one shape. EMPTY is read
-/// the way an HTML URL attribute is read - zero length once leading and
-/// trailing ASCII whitespace is stripped.
+/// Present whitespace-only destinations become empty native nodes after
+/// HTML URL trimming. A missing attribute still unwraps.
 #[test]
-fn absent_and_whitespace_only_destinations_unwrap() {
+fn absent_and_whitespace_only_destinations_follow_presence() {
+    assert_eq!(to_carve("<p><a>t</a></p>"), "t\n");
     for html in [
-        "<p><a>t</a></p>",
+        "<p><a href=\"\">t</a></p>",
         "<p><a href=\"   \">t</a></p>",
         "<p><a href=\"\n\t \">t</a></p>",
     ] {
-        assert_eq!(to_carve(html), "t\n", "{html}");
+        assert_eq!(to_carve(html), "[t]()\n", "{html}");
     }
-    assert_eq!(to_carve("<p><a href=\"\">t</a></p>"), "[t]()\n");
 }
 
 /// AN IMAGE'S CONTENT IS ITS ALTERNATIVE TEXT - what every target with no image

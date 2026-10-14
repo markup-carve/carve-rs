@@ -560,7 +560,7 @@ pub fn from_json(input: &str) -> Result<Document, AstJsonError> {
 
 /// The wire keeps the reference label and the empty destination, but has no
 /// separate resolved bit. Rebuild that bit from the document's definitions.
-fn hydrate_resolved_empty_references(doc: &mut Document) {
+pub(crate) fn hydrate_resolved_empty_references(doc: &mut Document) {
     use crate::include_walk::{visit_block_children, visit_inline_children, SubtreeVisitor};
     use std::collections::HashSet;
 
