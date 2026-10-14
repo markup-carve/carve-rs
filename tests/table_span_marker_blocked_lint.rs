@@ -80,3 +80,19 @@ fn continuation_fallback_uses_byte_offsets_with_crlf() {
         (2, 3, start, start + 1)
     );
 }
+
+#[test]
+fn continuation_fallback_splits_lone_cr_lines() {
+    for source in [
+        "| a | b |\r| < | c |\r+ x | y |\r",
+        "| a | b |\r| < | c |\r",
+    ] {
+        let warning = findings(source).pop().expect("blocked marker");
+        let start = source.find('<').unwrap();
+        assert_eq!(
+            (warning.line, warning.column, warning.start, warning.end),
+            (2, 3, start, start + 1),
+            "{source:?}"
+        );
+    }
+}
