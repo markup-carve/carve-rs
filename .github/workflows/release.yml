@@ -39,7 +39,9 @@ jobs:
     timeout-minutes: 30
     permissions:
       id-token: write # OIDC for crates.io Trusted Publishing
-      contents: read
+      # write, not read: a draft release is invisible to a read-only token, and the
+      # notes gate has to read the draft before the tag exists.
+      contents: write
     env:
       # First publish of a brand-new crate cannot use OIDC Trusted Publishing
       # (no crate yet = no trusted-publisher config to point at). Set a
