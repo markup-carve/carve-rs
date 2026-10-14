@@ -2176,3 +2176,6 @@ mod djot_empty_definitions;
 
 #[path = "../djot_definition_boundaries.rs"]
 mod djot_definition_boundaries;
+
+#[path = "../djot_container_definitions.rs"]
+mod djot_container_definitions;

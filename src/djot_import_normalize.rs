@@ -5182,7 +5182,7 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
         if empty_description(&lines, &masks, n)
             && !line
                 .find(':')
-                .is_some_and(|at| line[..at].trim().is_empty())
+                .is_some_and(|at| cached_regex!(r"^(?:[ \t]*(?:(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]+)+|(?:>[ \t]*)*(?:(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]+)*|[ \t]*)$").unwrap().is_match(&line[..at]))
         {
             findings.push((
                 offset,
@@ -5498,23 +5498,50 @@ mod tests {
     fn djot_unspellable_structures_name_losses_on_source_lines() {
         for (source, line, message) in [
             ("##\n", 1, "empty Djot heading"),
-            ("[link][]\n\n[link]:\n[link2]: url\n", 1, "empty destination"),
+            (
+                "[link][]\n\n[link]:\n[link2]: url\n",
+                1,
+                "empty destination",
+            ),
             ("[link][a and\nb]\n", 1, "unresolved Djot reference"),
-            ("[link][a and\nb]\n\n[a and\nb]: url\n", 1, "unresolved Djot reference"),
+            (
+                "[link][a and\nb]\n\n[a and\nb]: url\n",
+                1,
+                "unresolved Djot reference",
+            ),
             ("[Link][]\n\n[link]: /url\n", 1, "unresolved Djot reference"),
             ("[[foo](bar)](baz)\n", 1, "nested inside another link"),
-            ("> : apple\n> fruit\n>\n>   Paragraph one\n>\n>   Paragraph two\n>\n>   - sub\n>   - list\n>\n> : orange\n", 11, "empty definition description"),
-            ("|a|b|\n|:-|---:|\n|c|d|\n|cc|dd|\n|-:|:-:|\n|e|f|\n|g|h|\n", 5, "separator inside the table"),
+            (
+                "|a|b|\n|:-|---:|\n|c|d|\n|cc|dd|\n|-:|:-:|\n|e|f|\n|g|h|\n",
+                5,
+                "separator inside the table",
+            ),
             ("|--|--|\n", 1, "only separator rows"),
         ] {
             // Heading folding removes a source line before the loss location.
-            for (prefix, shift) in [("", 0), ("# Heading\nlazy continuation\n\n", 3),
+            for (prefix, shift) in [
+                ("", 0),
+                ("# Heading\nlazy continuation\n\n", 3),
                 ("# Heading\r\nlazy continuation\r\n\r\n", 3),
-                ("---\ntext: *****a*****\n---\n\n", 4)] {
+                ("---\ntext: *****a*****\n---\n\n", 4),
+            ] {
                 let result = migrate_djot(&format!("{prefix}{source}"));
-                assert!(result.report.diagnostics.iter().any(|d| d.code == "fidelity-unverified"));
-                let loss = result.report.diagnostics.iter().find(|d| d.code == "structure-unspellable" && d.message.contains(message)).unwrap_or_else(|| panic!("{source:?}: {:?}", result.report.diagnostics));
-                assert_eq!(loss.path.as_deref(), Some(format!("line:{}", line + shift).as_str()), "{source:?}");
+                assert!(result
+                    .report
+                    .diagnostics
+                    .iter()
+                    .any(|d| d.code == "fidelity-unverified"));
+                let loss = result
+                    .report
+                    .diagnostics
+                    .iter()
+                    .find(|d| d.code == "structure-unspellable" && d.message.contains(message))
+                    .unwrap_or_else(|| panic!("{source:?}: {:?}", result.report.diagnostics));
+                assert_eq!(
+                    loss.path.as_deref(),
+                    Some(format!("line:{}", line + shift).as_str()),
+                    "{source:?}"
+                );
                 assert_eq!(loss.severity, HtmlImportSeverity::Warning);
                 assert_eq!(loss.fidelity, MigrationFidelity::Dropped);
                 assert_eq!(loss.confidence, MigrationConfidence::Exact);
@@ -5825,6 +5852,19 @@ mod tests {
             ("> : term\n> - sibling\n>\n>   body\n", 1),
         ] {
             let losses = super::losses(source);
+            if source != "- > : term\n" {
+                assert!(
+                    !losses
+                        .iter()
+                        .any(|d| d.message.contains("empty definition description")),
+                    "{source:?}"
+                );
+                assert!(
+                    crate::to_html(&crate::djot_to_carve(source)).contains("<dd>"),
+                    "{source:?}"
+                );
+                continue;
+            }
             let loss = losses
                 .iter()
                 .find(|d| d.message.contains("empty definition description"))
