@@ -410,14 +410,14 @@
   {
     "source": "[r](/x`c d`[e]())\n\n[r]: /u",
     "html": "<p><a href=\"/u\">r</a>(/x<code>c d</code><a href=\"\">e</a>)</p>\n",
-    "carveHtml": "<p><a href=\"/u\">r</a>(/x<code>c d</code>e)</p>\n",
-    "dropped": 1
+    "carveHtml": "<p><a href=\"/u\">r</a>(/x<code>c d</code><a href=\"\">e</a>)</p>\n",
+    "dropped": 0
   },
   {
     "source": "![r](/x`c d`[e]())\n\n[r]: /u",
     "html": "<p><img src=\"/u\" alt=\"r\" />(/x<code>c d</code><a href=\"\">e</a>)</p>\n",
-    "carveHtml": "<p><img src=\"/u\" alt=\"r\" />(/x<code>c d</code>e)</p>\n",
-    "dropped": 1
+    "carveHtml": "<p><img src=\"/u\" alt=\"r\" />(/x<code>c d</code><a href=\"\">e</a>)</p>\n",
+    "dropped": 0
   },
   {
     "source": "| h |\n|---|\n| [a](/x \"t`\") |",

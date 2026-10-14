@@ -566,13 +566,15 @@ fn references_refuse_literal_definitions_and_unrepresented_inherited_attributes(
                 definition = serde_json::json!({"type":"line_block","children":[definition]});
             }
             let document = carve::from_json(&serde_json::json!({"type":"document","srcByteLength":0,"children":[{"type":"paragraph","children":[node]},definition]}).to_string()).unwrap();
-            assert!(
-                matches!(
-                    carve::render_carve(&document),
-                    Err(carve::RenderCarveError::SourceUnspellable(_))
-                ),
-                "{image} {kind}"
-            );
+            let result = carve::render_carve(&document);
+            if kind == "empty" {
+                assert!(result.is_ok(), "{image} {kind}: {result:?}");
+            } else {
+                assert!(
+                    matches!(result, Err(carve::RenderCarveError::SourceUnspellable(_))),
+                    "{image} {kind}"
+                );
+            }
         }
     }
 }

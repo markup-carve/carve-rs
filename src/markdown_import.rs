@@ -3448,8 +3448,8 @@ mod destination_encoding_tests {
     #[test]
     fn destinations_keep_uri_encoding_and_email_schemes() {
         for (source, expected) in [
-            ("[x](< >)", "<p>x</p>"),
-            ("![y](< >)", "<p>y</p>"),
+            ("[x](< >)", "<p><a href=\"\">x</a></p>"),
+            ("![y](< >)", "<img src=\"\" alt=\"y\">"),
             ("[x](a%zz)", "<p><a href=\"a%zz\">x</a></p>"),
             ("[x](mailto:a@b.example)", "<p><a href=\"mailto:a@b.example\">x</a></p>"),
             ("<foo@bar.example.com>", "<p><a href=\"mailto:foo@bar.example.com\">foo@bar.example.com</a></p>"),
