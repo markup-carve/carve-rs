@@ -2309,13 +2309,18 @@ fn blocks_with_slot_inner(
         {
             definition_body = true;
         }
-        if (block || definition_body && marker.is_match(visible))
+        if (block || marker.is_match(visible))
             && definition_columns
                 .last()
                 .is_some_and(|column| indent < *column)
         {
-            definition_columns.clear();
-            definition_body = false;
+            while definition_columns
+                .last()
+                .is_some_and(|column| indent < *column)
+            {
+                definition_columns.pop();
+            }
+            definition_body = !definition_columns.is_empty();
             paragraph = false;
             in_heading = false;
         }
@@ -2573,20 +2578,6 @@ fn blocks_with_slot_inner(
             {
                 definition_columns.pop();
             }
-        }
-        if thematic(visible)
-            && thematic(text)
-            && definition_columns
-                .last()
-                .is_some_and(|column| indent + 2 <= *column)
-        {
-            while definition_columns
-                .last()
-                .is_some_and(|column| indent + 2 <= *column)
-            {
-                definition_columns.pop();
-            }
-            paragraph = false;
         }
         if let Some(item) = marker
             .captures(visible)
