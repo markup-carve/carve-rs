@@ -887,7 +887,9 @@ fn quoted_list_boundaries<'a>(
                 && (!paragraph || definition_term_column.is_some())
             {
                 if let Some((column, _)) = definition_term(line) {
-                    definition_term_column = Some(column);
+                    if !paragraph || definition_term_column.is_some_and(|held| column <= held) {
+                        definition_term_column = Some(column);
+                    }
                 }
             } else if quote_depth > 0
                 && definition_term_column.is_some_and(|column| leading_indent(line).0 <= column)
@@ -2338,14 +2340,21 @@ fn blocks_with_slot_inner(
             definition_body = true;
         }
         if (block || marker.is_match(visible))
-            && definition_columns
-                .last()
-                .is_some_and(|column| indent < *column)
+            && definition_columns.last().is_some_and(|column| {
+                if definition_body {
+                    indent < *column
+                } else {
+                    indent + 2 <= *column
+                }
+            })
         {
-            while definition_columns
-                .last()
-                .is_some_and(|column| indent < *column)
-            {
+            while definition_columns.last().is_some_and(|column| {
+                if definition_body {
+                    indent < *column
+                } else {
+                    indent + 2 <= *column
+                }
+            }) {
                 definition_columns.pop();
             }
             definition_body = !definition_columns.is_empty();
