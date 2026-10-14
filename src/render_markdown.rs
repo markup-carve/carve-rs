@@ -313,7 +313,7 @@ pub(crate) fn referenced_link_labels(doc: &Document) -> HashSet<String> {
         fn inlines(&mut self, inlines: &mut Vec<InlineNode>) {
             for inline in inlines {
                 if let InlineNode::Link(link) = inline {
-                    if !link.href.is_empty() {
+                    if !crate::parse::is_unresolved_reference(link) {
                         if let Some(label) = &link.ref_label {
                             self.0.insert(crate::parse::label_key(label));
                         }
@@ -323,7 +323,7 @@ pub(crate) fn referenced_link_labels(doc: &Document) -> HashSet<String> {
             }
         }
         fn image(&mut self, image: &mut Image) {
-            if !image.src.is_empty() {
+            if !crate::parse::is_unresolved_image(image) {
                 if let Some(label) = &image.ref_label {
                     self.0.insert(crate::parse::label_key(label));
                 }
@@ -2668,7 +2668,9 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
         }
     };
     match node {
-        InlineNode::Link(link) if ctx.link_depth == 0 && !link.href.is_empty() => {
+        InlineNode::Link(link)
+            if ctx.link_depth == 0 && !crate::parse::is_unresolved_reference(link) =>
+        {
             let attrs = attributes(&link.attrs);
             if attrs == "{}" {
                 body
@@ -2676,7 +2678,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                 format!("{body}{}", inline_carrier_line(&attrs))
             }
         }
-        InlineNode::Image(image) if !image.src.is_empty() => {
+        InlineNode::Image(image) if !crate::parse::is_unresolved_image(image) => {
             let attrs = attributes(&image.attrs);
             if attrs == "{}" {
                 body
@@ -3136,7 +3138,7 @@ fn render_inline_body(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize
 }
 
 fn render_link(node: &Link, ctx: &mut MarkdownContext, depth: usize) -> String {
-    if node.ref_label.is_some() && node.href.is_empty() {
+    if crate::parse::is_unresolved_reference(node) {
         return escape_text(&strip_controls(node.raw_ref.as_deref().unwrap_or_default()));
     }
     ctx.link_depth += 1;
@@ -3189,8 +3191,11 @@ fn render_link(node: &Link, ctx: &mut MarkdownContext, depth: usize) -> String {
             format!("[{text}]({destination})")
         }
     } else {
-        let href =
+        let mut href =
             encode_markdown_destination(&node.href, node.pos.as_ref(), DeniedSink::Destination);
+        if node.href.is_empty() {
+            href = "<>".to_owned();
+        }
         if let Some(title) = node.title.as_ref().or_else(|| {
             node.attrs
                 .as_ref()
@@ -3207,10 +3212,14 @@ fn render_link(node: &Link, ctx: &mut MarkdownContext, depth: usize) -> String {
 }
 
 fn render_image(node: &Image) -> String {
-    if node.ref_label.is_some() && node.src.is_empty() {
+    if crate::parse::is_unresolved_image(node) {
         return escape_text(&strip_controls(node.raw_ref.as_deref().unwrap_or_default()));
     }
-    let src = encode_markdown_destination(&node.src, node.pos.as_ref(), DeniedSink::ImageSource);
+    let mut src =
+        encode_markdown_destination(&node.src, node.pos.as_ref(), DeniedSink::ImageSource);
+    if node.src.is_empty() {
+        src = "<>".to_owned();
+    }
     let alt = escape_md_label(&strip_controls(&node.alt));
     if let Some(title) = node.title.as_ref().or_else(|| {
         node.attrs

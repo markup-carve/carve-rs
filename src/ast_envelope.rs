@@ -24,7 +24,7 @@ use crate::ast_json::{from_json, parse_value, try_to_json, value_to_json, AstJso
 /// versioned for authors, this is versioned for readers of a tree. A major bump
 /// removes, renames or reinterprets a field or a meaning; a minor bump adds a
 /// field or a node type.
-pub const AST_CONTRACT_VERSION: &str = "1.1";
+pub const AST_CONTRACT_VERSION: &str = "2.0";
 
 /// The vocabulary an envelope with no `vocabulary` is written in.
 pub const CORE_AST_VOCABULARY: &str = "https://markup-carve.org/ast/core";

@@ -2774,13 +2774,13 @@ fn reduce_frame_probe_links(source: String, options: &Options<'_>) -> String {
 }
 
 fn source_may_contain_link_definition(source: &str) -> bool {
-    if !source.contains("]: ") {
+    if !source.contains("]:") {
         return false;
     }
     source
         .lines()
         .rev()
-        .filter(|line| line.contains("]: "))
+        .filter(|line| line.contains("]:"))
         .any(|line| {
             let mut rest = trim_ascii_start(line);
             loop {
@@ -4278,7 +4278,7 @@ fn extract_link_defs_with_guard_full(
         // See the footnote pass: the probe stays inside the filter so the shared
         // budget is spent only on lines that parsed as a definition.
         let mut unaffordable = false;
-        if let Some((label_part, target_part, mut def)) = parse_link_def_line_with_value(def_line)
+        if let Some((label_part, _target_part, mut def)) = parse_link_def_line_with_value(def_line)
             .filter(|_| {
                 let folds = marker_line_may_be_lazy(line)
                     && guard.as_mut().is_some_and(|budget| {
@@ -4293,11 +4293,7 @@ fn extract_link_defs_with_guard_full(
                 !(folds || unaffordable || folded_into_term.folded.contains(&line_index))
             })
         {
-            // A reference definition needs a non-empty destination (carve-js
-            // `RE_LINK_DEF` requires `(\S+)` after the colon). An empty target
-            // (`[r]:` + only whitespace) is NOT a definition -- the line stays
-            // literal text. (corpus 34-reference-link-9)
-            if label_part.starts_with('@') || target_part.trim().is_empty() {
+            if label_part.starts_with('@') {
                 body.push(std::borrow::Cow::Borrowed(line));
                 continue;
             }
@@ -4574,11 +4570,28 @@ fn parse_link_def_line(line: &str) -> Option<(&str, &str)> {
 }
 
 fn parse_link_def_line_with_value(line: &str) -> Option<(&str, &str, LinkDef)> {
-    let (label, target) = line.strip_prefix('[').and_then(|s| s.split_once("]: "))?;
+    let (label, tail) = line.strip_prefix('[').and_then(|s| s.split_once("]:"))?;
     let first = label.chars().next()?;
-    if first == '@' || label.contains(']') {
+    if first == '@'
+        || (first == '^' && (label.len() > 1 || tail.bytes().all(|b| matches!(b, b' ' | b'\t'))))
+        || label.contains(']')
+    {
         return None;
     }
+    if tail.bytes().all(|b| matches!(b, b' ' | b'\t')) {
+        return Some((
+            label,
+            tail,
+            LinkDef {
+                raw_label: None,
+                href: String::new(),
+                title: None,
+                attrs: None,
+                line: None,
+            },
+        ));
+    }
+    let target = tail.strip_prefix(' ')?;
     // THE PRODUCTION IS ANCHORED AT END OF LINE (PART 7, carve#911):
     //
     //     reference_definition = '[', reference_label, ']', ':', space,
@@ -25543,6 +25556,7 @@ fn parse_reference_link(
         from_crossref: false,
         from_heading_reference: false,
         pos: None,
+        resolved_empty_reference: false,
     };
     resolve_active_link(&mut link);
     Some((link, after - start))
@@ -25936,6 +25950,7 @@ fn parse_image_at(bytes: &[u8], start: usize, bounds: &InlineBounds<'_>) -> Opti
             title,
             ref_label: None,
             raw_ref: None,
+            resolved_empty_reference: false,
             pos: None,
         },
         after - start,
@@ -25992,6 +26007,7 @@ fn parse_reference_image(
         title: None,
         ref_label: Some(ref_label),
         raw_ref: Some(std::str::from_utf8(&bytes[start..after]).ok()?.to_string()),
+        resolved_empty_reference: false,
         pos: None,
     };
     resolve_active_image(&mut image);
@@ -26046,6 +26062,7 @@ fn parse_inline_link_with_options(
             ),
             ref_label: None,
             raw_ref: None,
+            resolved_empty_reference: false,
             from_crossref: false,
             from_heading_reference: false,
             pos: None,
@@ -27118,9 +27135,6 @@ fn read_link_target(
         } else {
             scan_balanced_destination(bytes, start)?
         };
-    if href.is_empty() {
-        return None;
-    }
     let title_at = if bytes.get(i) == Some(&b' ') {
         i + 1
     } else {
@@ -27154,6 +27168,11 @@ fn read_link_target(
     }
     // Nothing sits between the destination or the title and the `)`: the
     // production has no slot for whitespace there.
+    if href.is_empty() {
+        while matches!(bytes.get(i).copied(), Some(b' ' | b'\t')) {
+            i += 1;
+        }
+    }
     if bytes.get(i) != Some(&b')') {
         return None;
     }
@@ -28252,8 +28271,8 @@ fn promote_block_images(
 /// PART 12 §3a keeps `ref` and `raw_ref` on a RESOLVED reference as well, so the
 /// presence of a label stopped answering this on its own - a resolved reference
 /// image stopped promoting to a figure (carve#597).
-fn is_unresolved_image(image: &Image) -> bool {
-    image.ref_label.is_some() && image.src.is_empty()
+pub(crate) fn is_unresolved_image(image: &Image) -> bool {
+    image.ref_label.is_some() && image.src.is_empty() && !image.resolved_empty_reference
 }
 
 pub(crate) fn is_collapsed_reference(link: &Link) -> bool {
@@ -28969,7 +28988,7 @@ pub(crate) fn unwrap_nested_anchors(children: &[InlineNode]) -> std::borrow::Cow
 /// has to reach the same answer `render_link` does about the same node, and two
 /// spellings of that are two things to keep in step (PART 9R R2).
 pub(crate) fn is_unresolved_reference(link: &Link) -> bool {
-    link.ref_label.is_some() && link.href.is_empty()
+    link.ref_label.is_some() && link.href.is_empty() && !link.resolved_empty_reference
 }
 
 fn holds_nested_anchor(nodes: &[InlineNode]) -> bool {

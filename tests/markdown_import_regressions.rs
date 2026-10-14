@@ -249,15 +249,8 @@ fn markdown_boundary_losses_name_the_source_line_without_changing_output() {
     for (source, line) in [
         ("``` f&ouml;&ouml;\nfoo\n```\n", 1),
         ("````;\n````\n", 1),
-        ("[foo]: <>\n\n[foo]\n", 3),
-        ("[link]()\n", 1),
-        ("[link](<>)\n", 1),
-        ("[]()\n", 1),
-        ("[foo]()\n\n[foo]: /url1\n", 1),
         ("before\n\n> ```föö\n> x\n> ```\n", 3),
         ("before\n\n- ```föö\n  x\n  ```\n", 3),
-        ("before\n\n![alt](<> \"title\")\n", 3),
-        ("before\n\nfirst\n[link]()\n", 4),
     ] {
         let result = migrate_markdown(source);
         assert_eq!(result.value, markdown_to_carve(source));
@@ -301,20 +294,18 @@ fn valid_markdown_constructs_do_not_report_boundary_losses() {
 }
 
 #[test]
-fn boundary_loss_lines_include_typed_frontmatter() {
+fn empty_destinations_after_typed_frontmatter_have_no_structure_loss() {
     for source in [
         "---toml\na = 1\nb = 2\n---\n\n[link]()\n",
         "---toml\r\na = 1\r\nb = 2\r\n---\r\n\r\n[link]()\r\n",
         "---toml\ra = 1\rb = 2\r---\r\r[link]()\r",
     ] {
         let result = migrate_markdown(source);
-        let loss = result
+        assert!(!result
             .report
             .diagnostics
             .iter()
-            .find(|row| row.code == "structure-unspellable")
-            .unwrap();
-        assert_eq!(loss.path.as_deref(), Some("line:6"));
+            .any(|row| row.code == "structure-unspellable"));
     }
 }
 
@@ -338,8 +329,8 @@ fn nested_image_content_does_not_claim_retained_link_titles() {
 }
 
 #[test]
-fn empty_destination_inside_raw_html_wrappers_names_its_loss() {
-    assert!(migrate_markdown("<span>[x](<> \"t\")</span>")
+fn empty_destination_inside_raw_html_wrappers_is_native() {
+    assert!(!migrate_markdown("<span>[x](<> \"t\")</span>")
         .report
         .diagnostics
         .iter()

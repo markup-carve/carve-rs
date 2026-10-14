@@ -759,7 +759,7 @@ fn render_inline(node: &InlineNode, depth: usize) -> String {
         },
         InlineNode::Code(code) => strip_controls(&code.value),
         InlineNode::Link(link) => {
-            if link.ref_label.is_some() && link.href.is_empty() {
+            if crate::parse::is_unresolved_reference(link) {
                 strip_controls(link.raw_ref.as_deref().unwrap_or_default())
             } else {
                 // Render the label through the anchor-unwrapping view.
@@ -911,7 +911,7 @@ fn render_inline(node: &InlineNode, depth: usize) -> String {
 }
 
 fn render_image(image: &Image) -> String {
-    if image.ref_label.is_some() && image.src.is_empty() {
+    if crate::parse::is_unresolved_image(image) {
         strip_controls(image.raw_ref.as_deref().unwrap_or_default())
     } else {
         strip_controls(&image.alt)

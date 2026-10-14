@@ -257,7 +257,7 @@ fn collect_inlines(nodes: &[InlineNode], suppressed: bool, out: &mut ConsumedAbb
                 // `*[HTML]: Long Form` with `[HTML][missing]` as the only
                 // occurrence dropped the definition line and printed
                 // `[HTML][missing]`, with "Long Form" in neither place.
-                if l.ref_label.is_some() && l.href.is_empty() {
+                if crate::parse::is_unresolved_reference(l) {
                     continue;
                 }
                 collect_inlines(&l.children, suppressed, out);

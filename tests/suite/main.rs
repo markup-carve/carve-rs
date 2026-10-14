@@ -490,6 +490,8 @@ mod a_raw_span_ending_a_line_in_whitespace_is_degraded;
 mod a_tab_closer_below_a_raised_fence_closes_it;
 #[path = "../an_authored_footnote_reference_id_replaces_the_generated_one.rs"]
 mod an_authored_footnote_reference_id_replaces_the_generated_one;
+#[path = "../empty_destinations.rs"]
+mod empty_destinations;
 #[path = "../roundtrip_import_consumes_an_invalid_span_carrier.rs"]
 mod roundtrip_import_consumes_an_invalid_span_carrier;
 #[path = "../table_continuation_lines_are_cell_wrap_markers.rs"]

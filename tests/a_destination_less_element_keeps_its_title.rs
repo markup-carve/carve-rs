@@ -22,12 +22,12 @@ macro_rules! cases {
 }
 
 cases! {
-    a_link: "<p><a href=\"\" title=\"t q\">q</a></p>" => "[q]{title=\"t q\"}\n",
+    a_link: "<p><a href=\"\" title=\"t q\">q</a></p>" => "[q]( \"t q\")\n",
     a_link_with_no_href: "<p><a title=\"t\">q</a></p>" => "[q]{title=t}\n",
-    a_link_with_an_id: "<p><a href=\"\" title=\"t q\" id=\"k\">q</a></p>" => "[q]{#k title=\"t q\"}\n",
-    an_image: "<p><img src=\"\" alt=\"a b\" title=\"paren\"></p>" => "[a b]{title=paren}\n",
-    an_image_with_no_alt: "<p><img src=\"\" title=\"t\"></p>" => "[]{title=t}\n",
-    an_empty_title: "<p><a href=\"\" title=\"\">q</a></p>" => "[q]{title}\n",
+    a_link_with_an_id: "<p><a href=\"\" title=\"t q\" id=\"k\">q</a></p>" => "[q]( \"t q\"){#k}\n",
+    an_image: "<p><img src=\"\" alt=\"a b\" title=\"paren\"></p>" => "![a b]( \"paren\")\n",
+    an_image_with_no_alt: "<p><img src=\"\" title=\"t\"></p>" => "![]( \"t\")\n",
+    an_empty_title: "<p><a href=\"\" title=\"\">q</a></p>" => "[q]( \"\")\n",
 }
 
 /// Control: a link that names a destination keeps its title in the slot.
@@ -42,14 +42,11 @@ fn a_link_with_a_destination_keeps_its_title() {
 /// Control: with no title the element still comes back as its bare content.
 #[test]
 fn no_title_leaves_the_content_bare() {
-    assert_eq!(imported("<p><a href=\"\">q</a></p>").0, "q\n");
+    assert_eq!(imported("<p><a href=\"\">q</a></p>").0, "[q]()\n");
 }
 
 /// The unwrap is still reported, and the title is no longer a silent loss.
 #[test]
 fn the_unwrap_is_the_only_row() {
-    assert_eq!(
-        imported("<p><a href=\"\" title=\"t\">q</a></p>").1,
-        vec![HtmlImportDiagnosticCode::ElementUnwrapped]
-    );
+    assert_eq!(imported("<p><a href=\"\" title=\"t\">q</a></p>").1, vec![]);
 }

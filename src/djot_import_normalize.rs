@@ -4921,14 +4921,6 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
             definitions.get(&key)
         };
         match destination {
-            Some(destination) if destination.is_empty() => findings.push((
-                at,
-                if image {
-                    "An image with an empty destination cannot be written in Carve."
-                } else {
-                    "A link with an empty destination cannot be written in Carve."
-                },
-            )),
             None => findings.push((
                 at,
                 if image {

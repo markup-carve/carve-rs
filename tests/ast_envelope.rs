@@ -23,8 +23,8 @@ fn tree() -> String {
 fn encode_wraps_the_tree_without_moving_it() {
     let doc = parse("# Title\n\nBody.\n");
     let wrapped = to_ast_envelope_json(&doc, &AstEnvelopeOptions::default()).unwrap();
-    assert!(wrapped.starts_with("{\"astVersion\":\"1.1\","));
-    assert_eq!(AST_CONTRACT_VERSION, "1.1");
+    assert!(wrapped.starts_with("{\"astVersion\":\"2.0\","));
+    assert_eq!(AST_CONTRACT_VERSION, "2.0");
     assert!(wrapped.contains(&format!("\"document\":{}", to_json(&doc))));
     assert!(!wrapped.contains("\"vocabulary\""));
     assert!(!wrapped.contains("\"extensions\""));
@@ -61,16 +61,16 @@ fn round_trip_returns_the_same_tree() {
 
 #[test]
 fn a_higher_major_is_refused_by_version_not_by_the_schema() {
-    let payload = envelope(&tree(), &[("astVersion", "\"2.0\"")]);
+    let payload = envelope(&tree(), &[("astVersion", "\"3.0\"")]);
     let error = from_ast_envelope_json(&payload, &AstEnvelopeReaderOptions::default()).unwrap_err();
     match &error {
         AstEnvelopeError::Version { found, implemented } => {
-            assert_eq!(found, "2.0");
+            assert_eq!(found, "3.0");
             assert_eq!(implemented, AST_CONTRACT_VERSION);
         }
         other => panic!("expected a version error, got {other:?}"),
     }
-    assert!(error.to_string().contains("2.0"));
+    assert!(error.to_string().contains("3.0"));
     assert!(error.to_string().contains(AST_CONTRACT_VERSION));
 }
 
@@ -80,16 +80,16 @@ fn a_higher_minor_is_refused_too() {
     // schema is closed, so a 1.1 tree reaching a 1.0 reader would be refused on
     // ingest anyway - "a higher minor is accepted" was a tolerance that never
     // existed (markup-carve/carve#2894).
-    let payload = envelope(&tree(), &[("astVersion", "\"1.7\"")]);
+    let payload = envelope(&tree(), &[("astVersion", "\"2.1\"")]);
     let error = from_ast_envelope_json(&payload, &AstEnvelopeReaderOptions::default()).unwrap_err();
     match &error {
         AstEnvelopeError::Version { found, implemented } => {
-            assert_eq!(found, "1.7");
+            assert_eq!(found, "2.1");
             assert_eq!(implemented, AST_CONTRACT_VERSION);
         }
         other => panic!("expected a version error, got {other:?}"),
     }
-    assert!(error.to_string().contains("1.7"));
+    assert!(error.to_string().contains("2.1"));
     assert!(error.to_string().contains(AST_CONTRACT_VERSION));
 }
 
@@ -248,7 +248,7 @@ fn a_missing_document_is_a_shape_failure() {
 
 #[test]
 fn an_envelope_failure_is_not_a_decode_failure() {
-    let payload = envelope(&tree(), &[("astVersion", "\"2.0\"")]);
+    let payload = envelope(&tree(), &[("astVersion", "\"3.0\"")]);
     let error = from_ast_envelope_json(&payload, &AstEnvelopeReaderOptions::default()).unwrap_err();
     // The four envelope failures are each their own variant, and none of them
     // is the codec's error - which is what lets a caller tell "I predate this

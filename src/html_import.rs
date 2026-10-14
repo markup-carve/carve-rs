@@ -7008,6 +7008,7 @@ impl<'a> Importer<'a> {
                 from_crossref: false,
                 from_heading_reference: false,
                 pos: None,
+                resolved_empty_reference: false,
             }),
             "img" => InlineNode::Image(Image {
                 attrs,
@@ -7023,6 +7024,7 @@ impl<'a> Importer<'a> {
                 ),
                 raw_ref: None,
                 pos: None,
+                resolved_empty_reference: false,
             }),
             "br" => {
                 // A hard break has NO ATTRIBUTE SLOT: `Break` carries only a
@@ -8657,10 +8659,7 @@ fn single_char(value: &str) -> Option<char> {
 }
 
 fn names_no_destination(value: Option<&str>) -> bool {
-    match value {
-        None => true,
-        Some(v) => v.trim_matches(|c: char| c.is_ascii_whitespace()).is_empty(),
-    }
+    value.is_none()
 }
 
 /// What an unwrapped element leaves behind: the span where an attribute

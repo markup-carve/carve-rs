@@ -145,6 +145,28 @@ pub fn conversion_diagnostics(
                 let ty = object.get("type").and_then(Value::as_str);
                 let mut losses = Vec::new();
                 match ty {
+                    Some("link_reference_definition")
+                        if object.get("href").and_then(Value::as_str) == Some("") =>
+                    {
+                        if object.contains_key("title") {
+                            losses.push((
+                                ConversionDiagnosticCode::FieldUnspellable,
+                                Some("title"),
+                                "An empty reference definition cannot carry a title",
+                            ));
+                        }
+                        if object
+                            .get("attrs")
+                            .and_then(Value::as_object)
+                            .is_some_and(|attrs| !attrs.is_empty())
+                        {
+                            losses.push((
+                                ConversionDiagnosticCode::FieldUnspellable,
+                                Some("attrs"),
+                                "An empty reference definition cannot carry attributes",
+                            ));
+                        }
+                    }
                     Some("hard_break") if in_table_cell => losses.push((
                         ConversionDiagnosticCode::StructureUnspellable,
                         None,

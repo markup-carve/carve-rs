@@ -136,6 +136,7 @@ impl CarveExtension for HeadingReference {
             // of those and must not claim to be.
             from_heading_reference: false,
             pos: None,
+            resolved_empty_reference: false,
         };
 
         Some(InlineMatch {

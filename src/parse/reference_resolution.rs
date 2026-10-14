@@ -185,6 +185,7 @@ pub(super) fn resolve_active_image(image: &mut Image) {
 
 fn apply_link_def(link: &mut Link, def: &LinkDef) {
     link.href.clone_from(&def.href);
+    link.resolved_empty_reference = def.href.is_empty();
     link.title.clone_from(&def.title);
     if let Some(def_attrs) = &def.attrs {
         let own = link.attrs.take();
@@ -198,6 +199,7 @@ fn apply_link_def(link: &mut Link, def: &LinkDef) {
 
 fn apply_image_def(image: &mut Image, def: &LinkDef) {
     image.src.clone_from(&def.href);
+    image.resolved_empty_reference = def.href.is_empty();
     image.title.clone_from(&def.title);
     if let Some(def_attrs) = &def.attrs {
         let own = image.attrs.take();
@@ -240,7 +242,7 @@ impl crate::include_walk::SubtreeVisitor for ReferenceResolver<'_> {
         resolve_reference_links_inline(nodes, self.defs, self.heading_index);
     }
     fn image(&mut self, image: &mut Image) {
-        if !image.src.is_empty() {
+        if !image.src.is_empty() || image.resolved_empty_reference {
             return;
         }
         if let Some(label) = &image.ref_label {
@@ -283,7 +285,7 @@ fn resolve_reference_links_inline(
                 // is what §3a forbids - it discarded the fact that the
                 // author wrote a reference, and it did so only on the HTML
                 // path, so one document had two shapes (carve#486).
-                if !l.href.is_empty() {
+                if !l.href.is_empty() || l.resolved_empty_reference {
                     // Explicit definitions are resolved while the inline is
                     // built. A late walk may still be needed for a different
                     // collapsed heading reference in the same document; do

@@ -409,6 +409,7 @@ fn rewrite_links_inlines(
                         from_crossref: true,
                         from_heading_reference: false,
                         pos: c.pos.clone(),
+                        resolved_empty_reference: false,
                     });
                 }
             }
