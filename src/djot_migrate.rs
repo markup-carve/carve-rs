@@ -3189,7 +3189,7 @@ fn definition_term_block_boundaries(source: &str) -> String {
         if visible.as_bytes().get(first) == Some(&b':') {
             if let Some((next, _)) = definition_term(line) {
                 if previous_blank
-                    || boundaries.contains(&offset)
+                    || (column.is_none() && boundaries.contains(&offset))
                     || column.is_some_and(|held| next <= held)
                 {
                     column = Some(next);
@@ -3200,7 +3200,23 @@ fn definition_term_block_boundaries(source: &str) -> String {
                 visible.as_bytes().get(first) == Some(&b'|') && line.trim_end().ends_with('|');
             let code = fence.is_match(&line[first..]);
             if pipe || code {
-                lines.push(String::new());
+                let mut at = lines.len();
+                while at > 0 {
+                    let prior: &String = &lines[at - 1];
+                    let (prior_indent, first) = leading_indent(prior);
+                    let attrs = if prior.as_bytes().get(first) == Some(&b'{') {
+                        read_djot_word_attributes(prior, first)
+                    } else {
+                        None
+                    };
+                    if prior_indent > indent
+                        || !attrs.is_some_and(|(end, _)| prior[end..].trim().is_empty())
+                    {
+                        break;
+                    }
+                    at -= 1;
+                }
+                lines.insert(at, String::new());
                 column = None;
             } else if cached_regex!(r"^(?:#{1,6}(?:[ \t]|$)|>|:{3,}|[-*+][ \t]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)][ \t]|(?:[*-][ \t]*){3,}$)").unwrap().is_match(&visible[first..]) {
                 column = None;
@@ -3420,6 +3436,16 @@ fn convert_definition_lists(source: &str, empty_term: &str) -> String {
                 }
             } else {
                 stack.last_mut().unwrap().term_end = index;
+                if visible
+                    && marker
+                    && indent > stack.last().unwrap().source
+                    && cached_regex!(r"^(?:[-*+][ \t]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)][ \t]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\)[ \t])").unwrap().is_match(continuation)
+                {
+                    let literal = cached_regex!(r"^([-*+])").unwrap().replace(continuation, "\\$1");
+                    let literal = cached_regex!(r"^([0-9A-Za-z]+)([.)])([ \t])").unwrap().replace(&literal, "$1\\$2$3");
+                    lines[index] = cached_regex!(r"^\(").unwrap().replace(&literal, "\\(").into_owned();
+                    continue;
+                }
                 if !cached_regex!(r"^(?:[#>|{]|:{3,}|[`~]{3,}|[-*+] |(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)] )").unwrap().is_match(continuation) {
                     let literal = if visible && !marker {
                         cached_regex!(r"^([ivxlcdmIVXLCDM]+)([.)])([ \t])").unwrap().replace(continuation, "$1\\$2$3").into_owned()

@@ -2171,3 +2171,6 @@ mod djot_image_reference_keys;
 
 #[path = "../djot_empty_definitions.rs"]
 mod djot_empty_definitions;
+
+#[path = "../djot_definition_boundaries.rs"]
+mod djot_definition_boundaries;
