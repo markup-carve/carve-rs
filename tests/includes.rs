@@ -90,7 +90,10 @@ fn grandchild_heading_clamp_keeps_the_grandchild_file() {
 #[test]
 fn warnings_in_merged_child_footnotes_keep_the_child_file() {
     let source = "Root.\n\n{{ child }}\n";
-    let resolver = MapResolver::new(&[("child", "x[^a]\n\n[^a]: z {{ gone }}\n")]);
+    let resolver = MapResolver::new(&[
+        ("child", "x[^a]\n\n[^a]: {{ ok }} then {{ gone }}\n"),
+        ("ok", "yes"),
+    ]);
     let doc = parse_with_options(source, &Options::default().with_positions(true));
     let options = IncludeOptions::new()
         .with_source_path("root.crv")
@@ -101,13 +104,25 @@ fn warnings_in_merged_child_footnotes_keep_the_child_file() {
         .iter()
         .filter(|w| w.rule == "include-unresolved")
         .collect();
-    assert!(!warnings.is_empty());
+    assert_eq!(warnings.len(), 1);
     for warning in warnings {
         assert_eq!(
             (warning.file.as_deref(), warning.line, warning.column),
-            (Some("child"), 3, 9)
+            (Some("child"), 3, 21)
         );
     }
+    assert_eq!(resolver.calls.borrow().as_slice(), ["child", "ok", "gone"]);
+}
+
+#[test]
+fn root_footnote_directives_still_expand_once() {
+    let source = "Root[^a].\n\n[^a]: {{ child }}\n";
+    let resolver = MapResolver::new(&[("child", "Included.")]);
+    let options = IncludeOptions::new().with_resolver(&resolver);
+    let result = expand_includes(parse(source), source, &options);
+    assert!(result.warnings.is_empty());
+    assert!(render_html(&result.doc).unwrap().contains("Included."));
+    assert_eq!(resolver.calls.borrow().as_slice(), ["child"]);
 }
 
 #[test]

@@ -2448,6 +2448,27 @@ struct RunSlicer<'a> {
     ends: Vec<usize>,
 }
 
+fn advance_line_column(mut line: usize, mut column: usize, text: &str) -> (usize, usize) {
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\r' => {
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                line += 1;
+                column = 1;
+            }
+            '\n' => {
+                line += 1;
+                column = 1;
+            }
+            _ => column += 1,
+        }
+    }
+    (line, column)
+}
+
 impl<'a> RunSlicer<'a> {
     fn new(run: &'a [InlineNode]) -> Self {
         let mut end = 0usize;
@@ -2471,9 +2492,10 @@ impl<'a> RunSlicer<'a> {
         let pos = text.pos.as_ref()?;
         let node_start = if i == 0 { 0 } else { self.ends[i - 1] };
         let prefix = text.value.get(..at - node_start)?;
+        let (line, column) = advance_line_column(pos.start_line, pos.start_column, prefix);
         Some(WarningLocation {
-            line: pos.start_line,
-            column: pos.start_column + prefix.chars().count(),
+            line,
+            column,
             file: pos.file.as_ref().map(|file| file.as_str().to_string()),
         })
     }
@@ -2511,9 +2533,20 @@ impl<'a> RunSlicer<'a> {
             if lo == 0 && hi == value.value.len() {
                 out.push(node.clone());
             } else if lo < hi {
+                let mut pos = value.pos.clone();
+                if let Some(pos) = pos.as_mut() {
+                    let prefix = &value.value[..lo];
+                    let through = &value.value[..hi];
+                    (pos.end_line, pos.end_column) =
+                        advance_line_column(pos.start_line, pos.start_column, through);
+                    (pos.start_line, pos.start_column) =
+                        advance_line_column(pos.start_line, pos.start_column, prefix);
+                    pos.end_offset = pos.start_offset + through.chars().count();
+                    pos.start_offset += prefix.chars().count();
+                }
                 out.push(InlineNode::Text(crate::ast::Text {
                     value: value.value[lo..hi].to_string(),
-                    pos: value.pos.clone(),
+                    pos,
                 }));
             }
         }
@@ -2970,6 +3003,10 @@ pub(crate) fn expand_includes_with_extensions(
     // "{{" at all cannot hold a directive in any position, so the AST walk is
     // skipped outright. Directive-free documents stay at parse cost.
     if options.resolver.is_some() && source.contains("{{") {
+        // Child footnotes are expanded while their child is active. Revisit
+        // only root definitions here, so merged child directives are not
+        // resolved again after their text and positions have been coalesced.
+        let root_footnotes: HashSet<String> = doc.footnote_defs.keys().cloned().collect();
         // Parent explicit ids are claimed FIRST (I5: parent before child), so
         // an included duplicate is the one renamed - even against a parent
         // heading that appears after the include site.
@@ -2990,7 +3027,10 @@ pub(crate) fn expand_includes_with_extensions(
             .expect("footnote stack push/pop are balanced");
         // Each footnote body is its own container, with no preceding heading.
         state.footnotes.push(BTreeMap::new());
-        for body in defs.values_mut() {
+        for (label, body) in &mut defs {
+            if !root_footnotes.contains(label) {
+                continue;
+            }
             state.context_level = 0;
             expand_blocks(body, &mut state);
         }
