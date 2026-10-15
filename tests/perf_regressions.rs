@@ -1034,6 +1034,40 @@ fn flat_unclosed_autolinks_parse_in_near_linear_time() {
     assert_bounded_scan(flat_unclosed_autolink, "flat-unclosed-autolink");
 }
 
+/// Cross-references holding a `]` inside open labels (CARVE-P3-001).
+fn crossrefs_in_open_labels(n: usize) -> String {
+    "[a </#x]> ".repeat(n) + " ](u)"
+}
+
+/// `[</#x`×n: unclosed cross-reference openers inside labels.
+fn unclosed_crossrefs_in_labels(n: usize) -> String {
+    "[</#x".repeat(n) + "](u)"
+}
+
+/// Substitutions whose only arrow ends an autolink or a cross-reference (E2a).
+fn atomic_arrows_in_one_substitution(n: usize) -> String {
+    "{~a ".to_owned() + &"<https://x~>y </#x~> ".repeat(n) + " ~}"
+}
+
+/// Insertions whose closer sits inside a delimited comment (E2a).
+fn delimited_comments_holding_closers(n: usize) -> String {
+    "{+a {%x+}%} ".repeat(n) + " +}"
+}
+
+#[test]
+fn atomic_skips_parse_in_near_linear_time() {
+    assert_near_linear(crossrefs_in_open_labels, "crossrefs-in-open-labels");
+    assert_near_linear(unclosed_crossrefs_in_labels, "unclosed-crossrefs-in-labels");
+    assert_near_linear(
+        atomic_arrows_in_one_substitution,
+        "atomic-arrows-in-one-substitution",
+    );
+    assert_near_linear(
+        delimited_comments_holding_closers,
+        "delimited-comments-holding-closers",
+    );
+}
+
 #[test]
 fn bounded_attribute_and_critic_scans_preserve_output() {
     // Closed constructs still render exactly as before the bound was added.

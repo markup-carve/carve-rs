@@ -62,9 +62,10 @@ fn an_escaped_cross_reference_hides_nothing() {
 }
 
 #[test]
-fn a_substitution_separator_overlapping_a_reference_still_splits() {
+fn a_substitution_separator_overlapping_a_reference_is_no_arrow() {
+    // Ruled 2026-10-15 (markup-carve/carve#3244): the reference is atomic.
     assert_eq!(
         html("{~a </#x~>y> b~}\n"),
-        "<p><del>a &lt;/<span class=\"tag\"><strong>#x</strong></span></del><ins>y&gt; b</ins></p>"
+        "<p><s>a &lt;/#x~&gt;y&gt; b</s></p>"
     );
 }

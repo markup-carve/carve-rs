@@ -10,6 +10,8 @@
 #[path = "../raw_payload_termination.rs"]
 mod raw_payload_termination;
 
+#[path = "../an_autolink_a_cross_reference_or_a_comment_is_atomic.rs"]
+mod an_autolink_a_cross_reference_or_a_comment_is_atomic;
 #[path = "../an_autolink_or_cross_reference_is_atomic_to_brackets_and_braces.rs"]
 mod an_autolink_or_cross_reference_is_atomic_to_brackets_and_braces;
 #[path = "../an_explicit_heading_id_carrier_overrides_the_slug_heuristic.rs"]

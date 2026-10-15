@@ -1659,8 +1659,10 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // Spec 347ee0ec adds section 603's four documents. Three round trip
     // strictly; row 4 nests an italic in an italic, which a ProseMirror mark
     // cannot hold, so its emphasis reports a degradation.
-    const STRICT: usize = 1940;
-    const LOSSY: usize = 617;
+    // The atomic cross-reference ruling (markup-carve/carve#3244) turns section
+    // 598 row 5 into a strikethrough, which round trips strictly.
+    const STRICT: usize = 1941;
+    const LOSSY: usize = 616;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in

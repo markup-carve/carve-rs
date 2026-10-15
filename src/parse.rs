@@ -23980,6 +23980,34 @@ impl InlineBounds<'_> {
                 None => from = at + 1,
             }
         }
+        // An editorial or delimited comment is opaque (E2a, ruled 2026-10-15), so
+        // a closer inside it is comment text.
+        let last_brace = bytes.iter().rposition(|&byte| byte == b'}');
+        for marker in *b"#%" {
+            let closer = [marker, b'}'];
+            let mut from = 0;
+            while let Some(at) = find_seq(bytes, from, &[b'{', marker]) {
+                // `{#id}` glued to what it decorates is an attribute block, not a comment.
+                if decorated_braced_opener(bytes, at)
+                    || (marker == b'#'
+                        && at > 0
+                        && !bytes[at - 1].is_ascii_whitespace()
+                        && read_attrs_at(bytes, at, last_brace).is_some())
+                {
+                    from = at + 1;
+                    continue;
+                }
+                let Some(close) = find_seq(bytes, at + 2, &closer) else {
+                    break;
+                };
+                if marker == b'#' && close == at + 2 {
+                    from = at + 1;
+                    continue;
+                }
+                hosts.entry(at).or_insert(close + 2);
+                from = close + 2;
+            }
+        }
         if !bytes.windows(2).any(|pair| pair == b"](") {
             return hosts;
         }
@@ -26794,6 +26822,9 @@ fn read_bracketed(bytes: &[u8], start: usize) -> Option<(String, usize)> {
             b'{' if skip_editorial_comment(bytes, i).is_some() => {
                 i = skip_editorial_comment(bytes, i)?;
             }
+            b'<' if scanned_crossref_end(bytes, i).is_some() => {
+                i = scanned_crossref_end(bytes, i)?;
+            }
             b'<' if scanned_autolink_end(bytes, i).is_some() => {
                 i = scanned_autolink_end(bytes, i)? + 1;
             }
@@ -26842,6 +26873,47 @@ fn skip_editorial_comment(bytes: &[u8], start: usize) -> Option<usize> {
     None
 }
 
+/// The byte after the `>` of the cross-reference `</#id>` at `open`, for the
+/// bracket scans, which skip its body (CARVE-P3-001).
+fn scanned_crossref_end(bytes: &[u8], open: usize) -> Option<usize> {
+    if !bytes.get(open..)?.starts_with(b"</#") || bytes.get(open + 3) == Some(&b'>') {
+        return None;
+    }
+    let start = open + 3;
+    let close = bytes[start..]
+        .iter()
+        .position(|&b| matches!(b, b'>' | b' ' | b'\r' | b'\n'))?;
+    (bytes[start + close] == b'>').then_some(start + close + 1)
+}
+
+/// [`scanned_crossref_end`] for a one-pass scan: every `</#` inside one id run
+/// ends at the same byte, so a run of unclosed openers is read once.
+#[derive(Default)]
+struct CrossrefScan {
+    run: Cell<Option<(usize, usize)>>,
+}
+
+impl CrossrefScan {
+    fn end(&self, bytes: &[u8], open: usize) -> Option<usize> {
+        if !bytes.get(open..)?.starts_with(b"</#") || bytes.get(open + 3) == Some(&b'>') {
+            return None;
+        }
+        let start = open + 3;
+        let stop = match self.run.get() {
+            Some((from, stop)) if start >= from && start <= stop => stop,
+            _ => {
+                let stop = bytes[start..]
+                    .iter()
+                    .position(|&b| matches!(b, b'>' | b' ' | b'\r' | b'\n'))
+                    .map_or(bytes.len(), |at| start + at);
+                self.run.set(Some((start, stop)));
+                stop
+            }
+        };
+        (bytes.get(stop) == Some(&b'>')).then_some(stop + 1)
+    }
+}
+
 /// Sentinel in a bracket-match table meaning "this `[` has no matching `]`".
 const NO_BRACKET_MATCH: usize = usize::MAX;
 
@@ -26887,6 +26959,9 @@ pub(crate) fn structural_bracket_offsets(source: &str) -> Option<Vec<usize>> {
             }
             b'{' if skip_editorial_comment(bytes, i).is_some() => {
                 i = skip_editorial_comment(bytes, i).unwrap();
+            }
+            b'<' if scanned_crossref_end(bytes, i).is_some() => {
+                i = scanned_crossref_end(bytes, i).unwrap();
             }
             b'<' if scanned_autolink_end(bytes, i).is_some() => {
                 i = scanned_autolink_end(bytes, i).unwrap() + 1;
@@ -26957,11 +27032,29 @@ fn compute_bracket_matches(bytes: &[u8]) -> (Vec<usize>, Vec<usize>) {
             None
         }
     };
+    // A delimited comment hides its brackets too, except in an image alt, a
+    // literal slot where `{%` opens nothing (CARVE-P3-001).
+    let last_percent_close = bytes.windows(2).rposition(|w| w == b"%}");
+    let delimited_end = |at: usize, in_alt: bool| -> Option<usize> {
+        if in_alt
+            || bytes.get(at + 1) != Some(&b'%')
+            || decorated_braced_opener(bytes, at)
+            || !last_percent_close.is_some_and(|close| close >= at + 2)
+        {
+            return None;
+        }
+        find_seq(bytes, at + 2, b"%}").map(|close| close + 2)
+    };
+    let crossref_end = CrossrefScan::default();
     // Closed verbatim spans the pass skipped, as (content start, end).
     let mut spans: Vec<(usize, usize)> = Vec::new();
     let mut stack: Vec<usize> = Vec::new();
+    // Per open bracket, whether it is (inside) an image alt.
+    let mut alt: Vec<bool> = Vec::new();
+    let mut last_bang = usize::MAX;
     let mut i = 0;
     while i < bytes.len() {
+        let in_alt = alt.last().copied().unwrap_or(false);
         match bytes[i] {
             b'\\' if i + 1 < bytes.len() => {
                 fill_run(&mut run_at, &stack, i, i + 2);
@@ -26976,11 +27069,22 @@ fn compute_bracket_matches(bytes: &[u8]) -> (Vec<usize>, Vec<usize>) {
                 (len, None) => {
                     fill_run(&mut run_at, &stack, i, i + len);
                     stack.clear();
+                    alt.clear();
                     i += len;
                 }
             },
             b'{' if comment_end(i).is_some() => {
                 let end = comment_end(i).unwrap_or(i + 1);
+                fill_run(&mut run_at, &stack, i, end);
+                i = end;
+            }
+            b'{' if delimited_end(i, in_alt).is_some() => {
+                let end = delimited_end(i, in_alt).unwrap_or(i + 1);
+                fill_run(&mut run_at, &stack, i, end);
+                i = end;
+            }
+            b'<' if crossref_end.end(bytes, i).is_some() => {
+                let end = crossref_end.end(bytes, i).unwrap_or(i + 1);
                 fill_run(&mut run_at, &stack, i, end);
                 i = end;
             }
@@ -26992,16 +27096,21 @@ fn compute_bracket_matches(bytes: &[u8]) -> (Vec<usize>, Vec<usize>) {
             b'[' => {
                 run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
                 stack.push(i);
+                alt.push(in_alt || (i > 0 && last_bang == i - 1));
                 i += 1;
             }
             b']' => {
                 if let Some(open) = stack.pop() {
                     matches[open] = i;
                 }
+                alt.pop();
                 run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
                 i += 1;
             }
-            _ => {
+            byte => {
+                if byte == b'!' {
+                    last_bang = i;
+                }
                 run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
                 i += 1;
             }
@@ -27009,10 +27118,17 @@ fn compute_bracket_matches(bytes: &[u8]) -> (Vec<usize>, Vec<usize>) {
     }
     let mut budget = BRACKET_RESCAN_BUDGET * bytes.len() + 64;
     let mut scan_from = |open: usize| -> Option<usize> {
-        let mut depth = 0usize;
+        let escapes = bytes[..open.saturating_sub(1)]
+            .iter()
+            .rev()
+            .take_while(|&&b| b == b'\\')
+            .count();
+        let mut alt = vec![open > 0 && bytes[open - 1] == b'!' && escapes % 2 == 0];
+        let mut bang = usize::MAX;
         let mut i = open + 1;
         while i < bytes.len() {
             budget = budget.checked_sub(1)?;
+            let in_alt = alt.last().copied().unwrap_or(false);
             match bytes[i] {
                 b'\\' if i + 1 < bytes.len() => i += 2,
                 b'`' => {
@@ -27025,21 +27141,38 @@ fn compute_bracket_matches(bytes: &[u8]) -> (Vec<usize>, Vec<usize>) {
                     budget = budget.checked_sub(end - i)?;
                     i = end;
                 }
+                b'{' if delimited_end(i, in_alt).is_some() => {
+                    let end = delimited_end(i, in_alt)?;
+                    budget = budget.checked_sub(end - i)?;
+                    i = end;
+                }
+                b'<' if crossref_end.end(bytes, i).is_some() => {
+                    let end = crossref_end.end(bytes, i)?;
+                    budget = budget.checked_sub(end - i)?;
+                    i = end;
+                }
                 b'<' if scanned_autolink_end(bytes, i).is_some() => {
                     let end = scanned_autolink_end(bytes, i)? + 1;
                     budget = budget.checked_sub(end - i)?;
                     i = end;
                 }
                 b'[' => {
-                    depth += 1;
+                    alt.push(in_alt || (i > 0 && bang == i - 1));
                     i += 1;
                 }
-                b']' if depth > 0 => {
-                    depth -= 1;
+                b']' => {
+                    alt.pop();
+                    if alt.is_empty() {
+                        return Some(i);
+                    }
                     i += 1;
                 }
-                b']' => return Some(i),
-                _ => i += 1,
+                byte => {
+                    if byte == b'!' {
+                        bang = i;
+                    }
+                    i += 1;
+                }
             }
         }
         None
