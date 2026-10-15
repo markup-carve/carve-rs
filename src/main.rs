@@ -1623,12 +1623,22 @@ fn run_fmt(
             eprintln!("carve fmt: stdin cannot be mixed with file paths");
             return ExitCode::FAILURE;
         }
-        let source = match std::fs::read_to_string(path) {
-            Ok(source) => source,
+        let bytes = match std::fs::read(path) {
+            Ok(bytes) => bytes,
             Err(err) => {
                 eprintln!("carve fmt: cannot read {path}: {err}");
                 return ExitCode::FAILURE;
             }
+        };
+        // Printing replaces ill-formed input like every other read; --write and
+        // --check refuse it so a file is never rewritten with U+FFFD.
+        let source = match String::from_utf8(bytes) {
+            Ok(source) => source,
+            Err(_) if write || check => {
+                eprintln!("carve fmt: cannot read {path}: stream did not contain valid UTF-8");
+                return ExitCode::FAILURE;
+            }
+            Err(err) => String::from_utf8_lossy(err.as_bytes()).into_owned(),
         };
         let formatted = match format_carve(&source, stamp, migrate) {
             Ok(formatted) => formatted,
