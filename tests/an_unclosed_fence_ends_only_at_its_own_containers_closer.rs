@@ -26,6 +26,20 @@ const CASES: &[(&str, &str)] = &[
     ("::: note\n``` =html\n<b>\n::::\n:::\nafter\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <b>\n::::\n</aside>\n<p>after</p>"),
     // an open paragraph keeps the fence as text
     ("::: note\ntext\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <p>text\n<code>\ncode</code></p>\n  <div>\n    <div>\n      <p>after <strong>b</strong></p>\n    </div>\n  </div>\n</aside>"),
+    // corpus 597-5, after a comment line
+    ("::: note\n%% c\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <pre><code>code\n::::\n</code></pre>\n</aside>\n<p>after <strong>b</strong></p>"),
+    // after a comment-only quote
+    ("::: note\n> %% c\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <blockquote>\n\n  </blockquote>\n  <pre><code>code\n::::\n</code></pre>\n</aside>\n<p>after <strong>b</strong></p>"),
+    // after a comment-only item
+    ("::: note\n- %% c\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <ul>\n    <li></li>\n  </ul>\n  <pre><code>code\n::::\n</code></pre>\n</aside>\n<p>after <strong>b</strong></p>"),
+    // after a comment-only bare-dot item
+    ("::: note\n. %% c\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <ol>\n    <li></li>\n  </ol>\n  <pre><code>code\n::::\n</code></pre>\n</aside>\n<p>after <strong>b</strong></p>"),
+    // after a comment-only item with attributes
+    ("::: note\n3.{.c} %% c\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <ol start=\"3\">\n    <li class=\"c\"></li>\n  </ol>\n  <pre><code>code\n::::\n</code></pre>\n</aside>\n<p>after <strong>b</strong></p>"),
+    // an open quote paragraph keeps the fence as text
+    ("::: note\n> quote\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <blockquote><p>quote\n<code>\ncode</code></p></blockquote>\n  <div>\n    <div>\n      <p>after <strong>b</strong></p>\n    </div>\n  </div>\n</aside>"),
+    // an open item paragraph keeps the fence as text
+    ("::: note\n- item\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <ul>\n    <li>item\n<code>\ncode</code></li>\n  </ul>\n  <div>\n    <div>\n      <p>after <strong>b</strong></p>\n    </div>\n  </div>\n</aside>"),
     // an indented run is no fence
     ("::: note\n  ```\n  code\n  ::::\n:::\nafter\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <p><code>\ncode\n::::</code></p>\n</aside>\n<p>after</p>"),
 ];

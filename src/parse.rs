@@ -10224,7 +10224,21 @@ fn opens_colon_body_paragraph(line: &str) -> bool {
         return false;
     }
     let first = t.as_bytes()[0];
-    !(matches!(first, b'-' | b'*' | b'_') && t.len() >= 3 && t.bytes().all(|b| b == first))
+    if matches!(first, b'-' | b'*' | b'_') && t.len() >= 3 && t.bytes().all(|b| b == first) {
+        return false;
+    }
+    // A quote or item opens a paragraph only when its content would.
+    if let Some(rest) = t.strip_prefix('>') {
+        return match rest.as_bytes().first() {
+            None => false,
+            Some(b' ' | b'\t') => opens_colon_body_paragraph(&rest[1..]),
+            Some(_) => true,
+        };
+    }
+    match detect_list_marker_full(t) {
+        Some(item) => opens_colon_body_paragraph(item.content),
+        None => true,
+    }
 }
 
 fn is_invalid_colon_fence_opener_text(line: &str) -> bool {
