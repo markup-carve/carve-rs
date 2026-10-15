@@ -101,7 +101,7 @@ fn every_library_filesystem_call_is_accounted_for() {
         ),
         (
             "includes.rs",
-            "let source = std::fs::read_to_string(&real).map_err(|_| IncludeDenial::Denied)?;",
+            "let bytes = std::fs::read(&real).map_err(|_| IncludeDenial::Denied)?;",
         ),
         // `lexical_real`, also gated on `fs`: containment for a path not there.
         ("includes.rs", "match std::fs::canonicalize(&prefix) {"),
