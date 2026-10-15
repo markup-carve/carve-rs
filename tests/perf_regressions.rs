@@ -242,7 +242,7 @@ fn nested_destination_slots_in_one_run_scale_near_linearly() {
     // Each `]` closing a nested run reads the slot after it; unclosed slots
     // must not rescan to the end of the line.
     assert_near_linear(
-        |n| format!("[a {}b]", "[x](/u ".repeat(n)),
+        |n| format!("[a {}b]\n", "[x](/u ".repeat(n)),
         "nested destination slots",
     );
     assert_near_linear(
