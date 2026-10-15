@@ -901,7 +901,30 @@ fn markdown_to_ast_with_code_lines(
     let mut parser =
         Parser::new_with_broken_link_callback(&strikes.text, options, Some(&mut reference))
             .into_offset_iter();
+    fn push_text_after_entity_lt(builder: &mut Builder, pending: &mut u8, mut value: &str) {
+        loop {
+            if value.is_empty() {
+                break;
+            }
+            if *pending == 1 && value.starts_with('/') {
+                builder.text("/");
+                value = &value[1..];
+                *pending = 2;
+            } else if *pending == 2 && value.starts_with('#') {
+                builder.inline(InlineNode::escaped_text("#"));
+                value = &value[1..];
+                *pending = 0;
+            } else {
+                *pending = 0;
+                break;
+            }
+        }
+        if !value.is_empty() {
+            builder.text(value);
+        }
+    }
     let mut used_reference_ids = BTreeSet::new();
+    let mut entity_lt_prefix = 0;
     while let Some((mut event, range)) = parser.next() {
         if let Event::Start(Tag::Link { id, link_type, .. }) = &event {
             if !id.is_empty()
@@ -1089,6 +1112,20 @@ fn markdown_to_ast_with_code_lines(
             text_end = Some(range.end);
         }
         if matches!(&event, Event::Text(_)) {
+            if builder.frames.iter().any(|frame| {
+                matches!(
+                    frame,
+                    Frame::CodeBlock { .. }
+                        | Frame::Metadata(_)
+                        | Frame::HtmlCode { .. }
+                        | Frame::Image { .. }
+                        | Frame::RawHtml(_)
+                )
+            }) {
+                entity_lt_prefix = 0;
+                builder.push(event, &source[range], empty_title);
+                continue;
+            }
             while bare_urls
                 .get(bare_url_at)
                 .is_some_and(|link| link.end <= range.start)
@@ -1105,8 +1142,13 @@ fn markdown_to_ast_with_code_lines(
                     .filter(|link| link.start >= cursor && link.end <= range.end)
                 {
                     if cursor < link.start {
-                        builder.text(&source[cursor..link.start]);
+                        push_text_after_entity_lt(
+                            &mut builder,
+                            &mut entity_lt_prefix,
+                            &source[cursor..link.start],
+                        );
                     }
+                    entity_lt_prefix = 0;
                     let label = if link.table {
                         std::borrow::Cow::Owned(source[link.start..link.end].replace("\\|", "|"))
                     } else {
@@ -1117,27 +1159,36 @@ fn markdown_to_ast_with_code_lines(
                     bare_url_at += 1;
                 }
                 if cursor < range.end {
-                    builder.text(&source[cursor..range.end]);
+                    push_text_after_entity_lt(
+                        &mut builder,
+                        &mut entity_lt_prefix,
+                        &source[cursor..range.end],
+                    );
                 }
             } else {
                 if let Event::Text(text) = &event {
                     let raw = &source[range.clone()];
+                    if text.as_ref() == "<" && raw.starts_with('&') {
+                        builder.inline(InlineNode::escaped_text("<"));
+                        entity_lt_prefix = 1;
+                        continue;
+                    }
                     if range.start > 0
                         && source.as_bytes()[range.start - 1] == b'\\'
                         && raw.starts_with("</#")
                         && text.starts_with("</#")
-                        && crate::parse::CrossrefScan::default()
-                            .end(text.as_bytes(), 0)
-                            .is_some()
                     {
+                        entity_lt_prefix = 0;
                         builder.inline(InlineNode::escaped_text("<"));
                         builder.text(&text[1..]);
                         continue;
                     }
+                    push_text_after_entity_lt(&mut builder, &mut entity_lt_prefix, text);
+                    continue;
                 }
-                builder.push(event, &source[range], empty_title);
             }
         } else {
+            entity_lt_prefix = 0;
             builder.push(event, &source[range], empty_title);
         }
         if builder.over_depth {
@@ -3293,6 +3344,37 @@ mod tests {
             .diagnostics
             .iter()
             .all(|d| d.code != "frontmatter-synthesized"));
+    }
+
+    #[test]
+    fn markdown_literal_crossrefs_stay_text() {
+        for source in [
+            "# id\n\n&lt;/#id>\n",
+            "# id\n\n**&lt;/#id>**\n",
+            "# id\n\n&#60;/#id>\n",
+            "# id\n\n&lt;&#47;#id>\n",
+            "# id\n\n&lt;/&#35;id>\n",
+            "# id\n\n&lt;\\/#id>\n",
+            "# id\n\n&lt;/#id> https://x.com\n",
+        ] {
+            let written = markdown_to_carve(source);
+            let html = crate::to_html(&written);
+            assert!(
+                !html.contains("href=\"#id\""),
+                "{source:?} became {written:?}"
+            );
+            assert!(
+                html.contains("&lt;/#id&gt;"),
+                "{source:?} became {written:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn html_code_entity_stays_native_code() {
+        let source = "Use <code>&lt;div&gt;</code> here.\n";
+        let written = markdown_to_carve(source);
+        assert_eq!(written, "Use `<div>` here.\n");
     }
 
     #[test]
