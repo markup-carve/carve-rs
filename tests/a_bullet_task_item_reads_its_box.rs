@@ -86,7 +86,7 @@ fn a_shortcut_reference_link_that_is_not_a_task_marker_still_reads_as_a_link() {
     // ordinary shortcut references changes, and without this the fix could have
     // taken the reference reading away from every label.
     let (carve, html) = imported("- see [x] there\n\n[x]: /u\n");
-    assert_eq!(carve, "- see [x](/u) there\n");
+    assert_eq!(carve, "- see [x][] there\n\n[x]: /u\n");
     assert!(html.contains(r#"<a href="/u">x</a>"#), "{html}");
     assert!(!html.contains("checkbox"), "{html}");
 }

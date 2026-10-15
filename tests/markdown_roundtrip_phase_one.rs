@@ -259,7 +259,7 @@ fn a_definition_a_link_consumed_retains_reference_source() {
     let imported = migrate_markdown("[ref]: https://example.org \"Title\"\n\nSee [ref].");
     assert_eq!(
         imported.value,
-        "See [ref](https://example.org \"Title\").\n"
+        "See [ref][].\n\n[ref]: https://example.org \"Title\"\n"
     );
 
     let imported = migrate_markdown("[ref]: /u\n[unused]: /v\n\nSee [REF][] and ![x][ref].\n");
