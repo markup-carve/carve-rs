@@ -226,6 +226,7 @@ pub(crate) fn reaches_list_nesting_cap(doc: &Document) -> bool {
             return true;
         }
         push_block_children(block, depth, &mut blocks, &mut inlines);
+        inlines.clear();
     }
     false
 }
