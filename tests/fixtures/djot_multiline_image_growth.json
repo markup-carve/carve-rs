@@ -1,0 +1,1030 @@
+[
+  {
+    "source": "![x\n![x\nz](u)](u)",
+    "html": "<p><img alt=\"x\nx\nz\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![x\r\n![x\r\nz](u)](u)",
+    "html": "<p><img alt=\"x\nx\nz\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![x\n> ![x\n> z](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"x\nx\nz\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![x\r\n> ![x\r\n> z](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"x\nx\nz\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![x\n  ![x\n  z](u)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"x\nx\nz\" src=\"u\">\n</li>\n</ul>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![x\r\n  ![x\r\n  z](u)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"x\nx\nz\" src=\"u\">\n</li>\n</ul>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n![x\n![x\nz](u)](u)\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"x\nx\nz\" src=\"u\"></p>\n</div>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n![x\r\n![x\r\nz](u)](u)\r\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"x\nx\nz\" src=\"u\"></p>\n</div>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![x\n![x\n![x\n![x\nz](u)](u)](u)](u)",
+    "html": "<p><img alt=\"x\nx\nx\nx\nz\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![x\r\n![x\r\n![x\r\n![x\r\nz](u)](u)](u)](u)",
+    "html": "<p><img alt=\"x\nx\nx\nx\nz\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![x\n> ![x\n> ![x\n> ![x\n> z](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"x\nx\nx\nx\nz\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![x\r\n> ![x\r\n> ![x\r\n> ![x\r\n> z](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"x\nx\nx\nx\nz\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![x\n  ![x\n  ![x\n  ![x\n  z](u)](u)](u)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"x\nx\nx\nx\nz\" src=\"u\">\n</li>\n</ul>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![x\r\n  ![x\r\n  ![x\r\n  ![x\r\n  z](u)](u)](u)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"x\nx\nx\nx\nz\" src=\"u\">\n</li>\n</ul>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n![x\n![x\n![x\n![x\nz](u)](u)](u)](u)\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"x\nx\nx\nx\nz\" src=\"u\"></p>\n</div>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n![x\r\n![x\r\n![x\r\n![x\r\nz](u)](u)](u)](u)\r\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"x\nx\nx\nx\nz\" src=\"u\"></p>\n</div>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![A 1\n![A 1\nz](u)](u)",
+    "html": "<p><img alt=\"A 1\nA 1\nz\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![A 1\r\n![A 1\r\nz](u)](u)",
+    "html": "<p><img alt=\"A 1\nA 1\nz\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![A 1\n> ![A 1\n> z](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"A 1\nA 1\nz\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![A 1\r\n> ![A 1\r\n> z](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"A 1\nA 1\nz\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![A 1\n  ![A 1\n  z](u)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"A 1\nA 1\nz\" src=\"u\">\n</li>\n</ul>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![A 1\r\n  ![A 1\r\n  z](u)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"A 1\nA 1\nz\" src=\"u\">\n</li>\n</ul>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n![A 1\n![A 1\nz](u)](u)\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"A 1\nA 1\nz\" src=\"u\"></p>\n</div>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n![A 1\r\n![A 1\r\nz](u)](u)\r\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"A 1\nA 1\nz\" src=\"u\"></p>\n</div>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![A 1\n![A 1\n![A 1\n![A 1\nz](u)](u)](u)](u)",
+    "html": "<p><img alt=\"A 1\nA 1\nA 1\nA 1\nz\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![A 1\r\n![A 1\r\n![A 1\r\n![A 1\r\nz](u)](u)](u)](u)",
+    "html": "<p><img alt=\"A 1\nA 1\nA 1\nA 1\nz\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![A 1\n> ![A 1\n> ![A 1\n> ![A 1\n> z](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"A 1\nA 1\nA 1\nA 1\nz\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![A 1\r\n> ![A 1\r\n> ![A 1\r\n> ![A 1\r\n> z](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"A 1\nA 1\nA 1\nA 1\nz\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![A 1\n  ![A 1\n  ![A 1\n  ![A 1\n  z](u)](u)](u)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"A 1\nA 1\nA 1\nA 1\nz\" src=\"u\">\n</li>\n</ul>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![A 1\r\n  ![A 1\r\n  ![A 1\r\n  ![A 1\r\n  z](u)](u)](u)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"A 1\nA 1\nA 1\nA 1\nz\" src=\"u\">\n</li>\n</ul>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n![A 1\n![A 1\n![A 1\n![A 1\nz](u)](u)](u)](u)\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"A 1\nA 1\nA 1\nA 1\nz\" src=\"u\"></p>\n</div>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n![A 1\r\n![A 1\r\n![A 1\r\n![A 1\r\nz](u)](u)](u)](u)\r\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"A 1\nA 1\nA 1\nA 1\nz\" src=\"u\"></p>\n</div>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![x\t\n![x\t\nz](u)](u)",
+    "html": "<p><img src=\"u\" alt=\"x\nx\nz\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![x\t\r\n![x\t\r\nz](u)](u)",
+    "html": "<p><img src=\"u\" alt=\"x\nx\nz\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> ![x\t\n> ![x\t\n> z](u)](u)",
+    "html": "<blockquote><p><img src=\"u\" alt=\"x\nx\nz\"></p></blockquote>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> ![x\t\r\n> ![x\t\r\n> z](u)](u)",
+    "html": "<blockquote><p><img src=\"u\" alt=\"x\nx\nz\"></p></blockquote>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "- ![x\t\n  ![x\t\n  z](u)](u)",
+    "html": "<ul>\n  <li><img src=\"u\" alt=\"x\nx\nz\"></li>\n</ul>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "- ![x\t\r\n  ![x\t\r\n  z](u)](u)",
+    "html": "<ul>\n  <li><img src=\"u\" alt=\"x\nx\nz\"></li>\n</ul>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "::: box\n![x\t\n![x\t\nz](u)](u)\n:::",
+    "html": "<div class=\"box\">\n  <p><img src=\"u\" alt=\"x\nx\nz\"></p>\n</div>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "::: box\r\n![x\t\r\n![x\t\r\nz](u)](u)\r\n:::",
+    "html": "<div class=\"box\">\n  <p><img src=\"u\" alt=\"x\nx\nz\"></p>\n</div>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![x\t\n![x\t\n![x\t\n![x\t\nz](u)](u)](u)](u)",
+    "html": "<p><img src=\"u\" alt=\"x\nx\nx\nx\nz\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![x\t\r\n![x\t\r\n![x\t\r\n![x\t\r\nz](u)](u)](u)](u)",
+    "html": "<p><img src=\"u\" alt=\"x\nx\nx\nx\nz\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> ![x\t\n> ![x\t\n> ![x\t\n> ![x\t\n> z](u)](u)](u)](u)",
+    "html": "<blockquote><p><img src=\"u\" alt=\"x\nx\nx\nx\nz\"></p></blockquote>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> ![x\t\r\n> ![x\t\r\n> ![x\t\r\n> ![x\t\r\n> z](u)](u)](u)](u)",
+    "html": "<blockquote><p><img src=\"u\" alt=\"x\nx\nx\nx\nz\"></p></blockquote>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "- ![x\t\n  ![x\t\n  ![x\t\n  ![x\t\n  z](u)](u)](u)](u)",
+    "html": "<ul>\n  <li><img src=\"u\" alt=\"x\nx\nx\nx\nz\"></li>\n</ul>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "- ![x\t\r\n  ![x\t\r\n  ![x\t\r\n  ![x\t\r\n  z](u)](u)](u)](u)",
+    "html": "<ul>\n  <li><img src=\"u\" alt=\"x\nx\nx\nx\nz\"></li>\n</ul>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "::: box\n![x\t\n![x\t\n![x\t\n![x\t\nz](u)](u)](u)](u)\n:::",
+    "html": "<div class=\"box\">\n  <p><img src=\"u\" alt=\"x\nx\nx\nx\nz\"></p>\n</div>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "::: box\r\n![x\t\r\n![x\t\r\n![x\t\r\n![x\t\r\nz](u)](u)](u)](u)\r\n:::",
+    "html": "<div class=\"box\">\n  <p><img src=\"u\" alt=\"x\nx\nx\nx\nz\"></p>\n</div>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![x \n![x \nz](u)](u)",
+    "html": "<p><img src=\"u\" alt=\"x\nx\nz\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![x \r\n![x \r\nz](u)](u)",
+    "html": "<p><img src=\"u\" alt=\"x\nx\nz\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> ![x \n> ![x \n> z](u)](u)",
+    "html": "<blockquote><p><img src=\"u\" alt=\"x\nx\nz\"></p></blockquote>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> ![x \r\n> ![x \r\n> z](u)](u)",
+    "html": "<blockquote><p><img src=\"u\" alt=\"x\nx\nz\"></p></blockquote>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "- ![x \n  ![x \n  z](u)](u)",
+    "html": "<ul>\n  <li><img src=\"u\" alt=\"x\nx\nz\"></li>\n</ul>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "- ![x \r\n  ![x \r\n  z](u)](u)",
+    "html": "<ul>\n  <li><img src=\"u\" alt=\"x\nx\nz\"></li>\n</ul>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "::: box\n![x \n![x \nz](u)](u)\n:::",
+    "html": "<div class=\"box\">\n  <p><img src=\"u\" alt=\"x\nx\nz\"></p>\n</div>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "::: box\r\n![x \r\n![x \r\nz](u)](u)\r\n:::",
+    "html": "<div class=\"box\">\n  <p><img src=\"u\" alt=\"x\nx\nz\"></p>\n</div>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![x \n![x \n![x \n![x \nz](u)](u)](u)](u)",
+    "html": "<p><img src=\"u\" alt=\"x\nx\nx\nx\nz\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![x \r\n![x \r\n![x \r\n![x \r\nz](u)](u)](u)](u)",
+    "html": "<p><img src=\"u\" alt=\"x\nx\nx\nx\nz\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> ![x \n> ![x \n> ![x \n> ![x \n> z](u)](u)](u)](u)",
+    "html": "<blockquote><p><img src=\"u\" alt=\"x\nx\nx\nx\nz\"></p></blockquote>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> ![x \r\n> ![x \r\n> ![x \r\n> ![x \r\n> z](u)](u)](u)](u)",
+    "html": "<blockquote><p><img src=\"u\" alt=\"x\nx\nx\nx\nz\"></p></blockquote>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "- ![x \n  ![x \n  ![x \n  ![x \n  z](u)](u)](u)](u)",
+    "html": "<ul>\n  <li><img src=\"u\" alt=\"x\nx\nx\nx\nz\"></li>\n</ul>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "- ![x \r\n  ![x \r\n  ![x \r\n  ![x \r\n  z](u)](u)](u)](u)",
+    "html": "<ul>\n  <li><img src=\"u\" alt=\"x\nx\nx\nx\nz\"></li>\n</ul>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "::: box\n![x \n![x \n![x \n![x \nz](u)](u)](u)](u)\n:::",
+    "html": "<div class=\"box\">\n  <p><img src=\"u\" alt=\"x\nx\nx\nx\nz\"></p>\n</div>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "::: box\r\n![x \r\n![x \r\n![x \r\n![x \r\nz](u)](u)](u)](u)\r\n:::",
+    "html": "<div class=\"box\">\n  <p><img src=\"u\" alt=\"x\nx\nx\nx\nz\"></p>\n</div>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![\n![\nz](u)](u)",
+    "html": "<p><img src=\"u\" alt=\"\nz\"></p>",
+    "losses": [
+      "An image alternative text with a blank line cannot be spelled in Carve."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![\r\n![\r\nz](u)](u)",
+    "html": "<p><img src=\"u\" alt=\"\nz\"></p>",
+    "losses": [
+      "An image alternative text with a blank line cannot be spelled in Carve."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> ![\n> ![\n> z](u)](u)",
+    "html": "<blockquote><p><img src=\"u\" alt=\"\nz\"></p></blockquote>",
+    "losses": [
+      "An image alternative text with a blank line cannot be spelled in Carve."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> ![\r\n> ![\r\n> z](u)](u)",
+    "html": "<blockquote><p><img src=\"u\" alt=\"\nz\"></p></blockquote>",
+    "losses": [
+      "An image alternative text with a blank line cannot be spelled in Carve."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "- ![\n  ![\n  z](u)](u)",
+    "html": "<ul>\n  <li><img src=\"u\" alt=\"\nz\"></li>\n</ul>",
+    "losses": [
+      "An image alternative text with a blank line cannot be spelled in Carve."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "- ![\r\n  ![\r\n  z](u)](u)",
+    "html": "<ul>\n  <li><img src=\"u\" alt=\"\nz\"></li>\n</ul>",
+    "losses": [
+      "An image alternative text with a blank line cannot be spelled in Carve."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "::: box\n![\n![\nz](u)](u)\n:::",
+    "html": "<div class=\"box\">\n  <p><img src=\"u\" alt=\"\nz\"></p>\n</div>",
+    "losses": [
+      "An image alternative text with a blank line cannot be spelled in Carve."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "::: box\r\n![\r\n![\r\nz](u)](u)\r\n:::",
+    "html": "<div class=\"box\">\n  <p><img src=\"u\" alt=\"\nz\"></p>\n</div>",
+    "losses": [
+      "An image alternative text with a blank line cannot be spelled in Carve."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![\n![\n![\n![\nz](u)](u)](u)](u)",
+    "html": "<p><img src=\"u\" alt=\"\nz\"></p>",
+    "losses": [
+      "An image alternative text with a blank line cannot be spelled in Carve.",
+      "An image alternative text with a blank line cannot be spelled in Carve.",
+      "An image alternative text with a blank line cannot be spelled in Carve."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![\r\n![\r\n![\r\n![\r\nz](u)](u)](u)](u)",
+    "html": "<p><img src=\"u\" alt=\"\nz\"></p>",
+    "losses": [
+      "An image alternative text with a blank line cannot be spelled in Carve.",
+      "An image alternative text with a blank line cannot be spelled in Carve.",
+      "An image alternative text with a blank line cannot be spelled in Carve."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> ![\n> ![\n> ![\n> ![\n> z](u)](u)](u)](u)",
+    "html": "<blockquote><p><img src=\"u\" alt=\"\nz\"></p></blockquote>",
+    "losses": [
+      "An image alternative text with a blank line cannot be spelled in Carve.",
+      "An image alternative text with a blank line cannot be spelled in Carve.",
+      "An image alternative text with a blank line cannot be spelled in Carve."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> ![\r\n> ![\r\n> ![\r\n> ![\r\n> z](u)](u)](u)](u)",
+    "html": "<blockquote><p><img src=\"u\" alt=\"\nz\"></p></blockquote>",
+    "losses": [
+      "An image alternative text with a blank line cannot be spelled in Carve.",
+      "An image alternative text with a blank line cannot be spelled in Carve.",
+      "An image alternative text with a blank line cannot be spelled in Carve."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "- ![\n  ![\n  ![\n  ![\n  z](u)](u)](u)](u)",
+    "html": "<ul>\n  <li><img src=\"u\" alt=\"\nz\"></li>\n</ul>",
+    "losses": [
+      "An image alternative text with a blank line cannot be spelled in Carve.",
+      "An image alternative text with a blank line cannot be spelled in Carve.",
+      "An image alternative text with a blank line cannot be spelled in Carve."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "- ![\r\n  ![\r\n  ![\r\n  ![\r\n  z](u)](u)](u)](u)",
+    "html": "<ul>\n  <li><img src=\"u\" alt=\"\nz\"></li>\n</ul>",
+    "losses": [
+      "An image alternative text with a blank line cannot be spelled in Carve.",
+      "An image alternative text with a blank line cannot be spelled in Carve.",
+      "An image alternative text with a blank line cannot be spelled in Carve."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "::: box\n![\n![\n![\n![\nz](u)](u)](u)](u)\n:::",
+    "html": "<div class=\"box\">\n  <p><img src=\"u\" alt=\"\nz\"></p>\n</div>",
+    "losses": [
+      "An image alternative text with a blank line cannot be spelled in Carve.",
+      "An image alternative text with a blank line cannot be spelled in Carve.",
+      "An image alternative text with a blank line cannot be spelled in Carve."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "::: box\r\n![\r\n![\r\n![\r\n![\r\nz](u)](u)](u)](u)\r\n:::",
+    "html": "<div class=\"box\">\n  <p><img src=\"u\" alt=\"\nz\"></p>\n</div>",
+    "losses": [
+      "An image alternative text with a blank line cannot be spelled in Carve.",
+      "An image alternative text with a blank line cannot be spelled in Carve.",
+      "An image alternative text with a blank line cannot be spelled in Carve."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![x\n\n![x\n\nz](u)](u)",
+    "html": "<p>![x</p>\n<p>![x</p>\n<p>z](u)](u)</p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![x\r\n\r\n![x\r\n\r\nz](u)](u)",
+    "html": "<p>![x</p>\n<p>![x</p>\n<p>z](u)](u)</p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![x\n> \n> ![x\n> \n> z](u)](u)",
+    "html": "<blockquote>\n<p>![x</p>\n<p>![x</p>\n<p>z](u)](u)</p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![x\r\n> \r\n> ![x\r\n> \r\n> z](u)](u)",
+    "html": "<blockquote>\n<p>![x</p>\n<p>![x</p>\n<p>z](u)](u)</p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![x\n  \n  ![x\n  \n  z](u)](u)",
+    "html": "<ul>\n<li>\n<p>![x</p>\n<p>![x</p>\n<p>z](u)](u)</p>\n</li>\n</ul>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![x\r\n  \r\n  ![x\r\n  \r\n  z](u)](u)",
+    "html": "<ul>\n<li>\n<p>![x</p>\n<p>![x</p>\n<p>z](u)](u)</p>\n</li>\n</ul>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n![x\n\n![x\n\nz](u)](u)\n:::",
+    "html": "<div class=\"box\">\n<p>![x</p>\n<p>![x</p>\n<p>z](u)](u)</p>\n</div>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n![x\r\n\r\n![x\r\n\r\nz](u)](u)\r\n:::",
+    "html": "<div class=\"box\">\n<p>![x</p>\n<p>![x</p>\n<p>z](u)](u)</p>\n</div>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![x\n\n![x\n\n![x\n\n![x\n\nz](u)](u)](u)](u)",
+    "html": "<p>![x</p>\n<p>![x</p>\n<p>![x</p>\n<p>![x</p>\n<p>z](u)](u)](u)](u)</p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![x\r\n\r\n![x\r\n\r\n![x\r\n\r\n![x\r\n\r\nz](u)](u)](u)](u)",
+    "html": "<p>![x</p>\n<p>![x</p>\n<p>![x</p>\n<p>![x</p>\n<p>z](u)](u)](u)](u)</p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![x\n> \n> ![x\n> \n> ![x\n> \n> ![x\n> \n> z](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p>![x</p>\n<p>![x</p>\n<p>![x</p>\n<p>![x</p>\n<p>z](u)](u)](u)](u)</p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![x\r\n> \r\n> ![x\r\n> \r\n> ![x\r\n> \r\n> ![x\r\n> \r\n> z](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p>![x</p>\n<p>![x</p>\n<p>![x</p>\n<p>![x</p>\n<p>z](u)](u)](u)](u)</p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![x\n  \n  ![x\n  \n  ![x\n  \n  ![x\n  \n  z](u)](u)](u)](u)",
+    "html": "<ul>\n<li>\n<p>![x</p>\n<p>![x</p>\n<p>![x</p>\n<p>![x</p>\n<p>z](u)](u)](u)](u)</p>\n</li>\n</ul>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![x\r\n  \r\n  ![x\r\n  \r\n  ![x\r\n  \r\n  ![x\r\n  \r\n  z](u)](u)](u)](u)",
+    "html": "<ul>\n<li>\n<p>![x</p>\n<p>![x</p>\n<p>![x</p>\n<p>![x</p>\n<p>z](u)](u)](u)](u)</p>\n</li>\n</ul>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n![x\n\n![x\n\n![x\n\n![x\n\nz](u)](u)](u)](u)\n:::",
+    "html": "<div class=\"box\">\n<p>![x</p>\n<p>![x</p>\n<p>![x</p>\n<p>![x</p>\n<p>z](u)](u)](u)](u)</p>\n</div>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n![x\r\n\r\n![x\r\n\r\n![x\r\n\r\n![x\r\n\r\nz](u)](u)](u)](u)\r\n:::",
+    "html": "<div class=\"box\">\n<p>![x</p>\n<p>![x</p>\n<p>![x</p>\n<p>![x</p>\n<p>z](u)](u)](u)](u)</p>\n</div>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![*x*\n![*x*\nz](u)](u)",
+    "html": "<p><img alt=\"x\nx\nz\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![*x*\r\n![*x*\r\nz](u)](u)",
+    "html": "<p><img alt=\"x\nx\nz\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![*x*\n> ![*x*\n> z](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"x\nx\nz\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![*x*\r\n> ![*x*\r\n> z](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"x\nx\nz\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![*x*\n  ![*x*\n  z](u)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"x\nx\nz\" src=\"u\">\n</li>\n</ul>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![*x*\r\n  ![*x*\r\n  z](u)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"x\nx\nz\" src=\"u\">\n</li>\n</ul>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n![*x*\n![*x*\nz](u)](u)\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"x\nx\nz\" src=\"u\"></p>\n</div>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n![*x*\r\n![*x*\r\nz](u)](u)\r\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"x\nx\nz\" src=\"u\"></p>\n</div>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![*x*\n![*x*\n![*x*\n![*x*\nz](u)](u)](u)](u)",
+    "html": "<p><img alt=\"x\nx\nx\nx\nz\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![*x*\r\n![*x*\r\n![*x*\r\n![*x*\r\nz](u)](u)](u)](u)",
+    "html": "<p><img alt=\"x\nx\nx\nx\nz\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![*x*\n> ![*x*\n> ![*x*\n> ![*x*\n> z](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"x\nx\nx\nx\nz\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![*x*\r\n> ![*x*\r\n> ![*x*\r\n> ![*x*\r\n> z](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"x\nx\nx\nx\nz\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![*x*\n  ![*x*\n  ![*x*\n  ![*x*\n  z](u)](u)](u)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"x\nx\nx\nx\nz\" src=\"u\">\n</li>\n</ul>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![*x*\r\n  ![*x*\r\n  ![*x*\r\n  ![*x*\r\n  z](u)](u)](u)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"x\nx\nx\nx\nz\" src=\"u\">\n</li>\n</ul>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n![*x*\n![*x*\n![*x*\n![*x*\nz](u)](u)](u)](u)\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"x\nx\nx\nx\nz\" src=\"u\"></p>\n</div>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n![*x*\r\n![*x*\r\n![*x*\r\n![*x*\r\nz](u)](u)](u)](u)\r\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"x\nx\nx\nx\nz\" src=\"u\"></p>\n</div>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![`x`\n![`x`\nz](u)](u)",
+    "html": "<p><img alt=\"x\nx\nz\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![`x`\r\n![`x`\r\nz](u)](u)",
+    "html": "<p><img alt=\"x\nx\nz\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![`x`\n> ![`x`\n> z](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"x\nx\nz\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![`x`\r\n> ![`x`\r\n> z](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"x\nx\nz\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![`x`\n  ![`x`\n  z](u)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"x\nx\nz\" src=\"u\">\n</li>\n</ul>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![`x`\r\n  ![`x`\r\n  z](u)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"x\nx\nz\" src=\"u\">\n</li>\n</ul>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n![`x`\n![`x`\nz](u)](u)\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"x\nx\nz\" src=\"u\"></p>\n</div>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n![`x`\r\n![`x`\r\nz](u)](u)\r\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"x\nx\nz\" src=\"u\"></p>\n</div>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![`x`\n![`x`\n![`x`\n![`x`\nz](u)](u)](u)](u)",
+    "html": "<p><img alt=\"x\nx\nx\nx\nz\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![`x`\r\n![`x`\r\n![`x`\r\n![`x`\r\nz](u)](u)](u)](u)",
+    "html": "<p><img alt=\"x\nx\nx\nx\nz\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![`x`\n> ![`x`\n> ![`x`\n> ![`x`\n> z](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"x\nx\nx\nx\nz\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![`x`\r\n> ![`x`\r\n> ![`x`\r\n> ![`x`\r\n> z](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"x\nx\nx\nx\nz\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![`x`\n  ![`x`\n  ![`x`\n  ![`x`\n  z](u)](u)](u)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"x\nx\nx\nx\nz\" src=\"u\">\n</li>\n</ul>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![`x`\r\n  ![`x`\r\n  ![`x`\r\n  ![`x`\r\n  z](u)](u)](u)](u)",
+    "html": "<ul>\n<li>\n<img alt=\"x\nx\nx\nx\nz\" src=\"u\">\n</li>\n</ul>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n![`x`\n![`x`\n![`x`\n![`x`\nz](u)](u)](u)](u)\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"x\nx\nx\nx\nz\" src=\"u\"></p>\n</div>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n![`x`\r\n![`x`\r\n![`x`\r\n![`x`\r\nz](u)](u)](u)](u)\r\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"x\nx\nx\nx\nz\" src=\"u\"></p>\n</div>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![w \n![a\n![a\n![a\n![a\nz](u)](u)](u)](u)](u)",
+    "html": "<p><img src=\"u\" alt=\"w\na\na\na\na\nz\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![w \r\n![a\r\n![a\r\n![a\r\n![a\r\nz](u)](u)](u)](u)](u)",
+    "html": "<p><img src=\"u\" alt=\"w\na\na\na\na\nz\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![w ![a\n![a\n![a\n![a\nz](u)](u)](u)](u) z](outer)",
+    "html": "<p><img alt=\"w a\na\na\na\nz z\" src=\"outer\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![w ![a\r\n![a\r\n![a\r\n![a\r\nz](u)](u)](u)](u) z](outer)",
+    "html": "<p><img alt=\"w a\na\na\na\nz z\" src=\"outer\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![w ![a\n![a\n![a\n![a\nz](u)](u)](u)](u)",
+    "html": "<p>![w <img alt=\"a\na\na\na\nz\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![w ![a\r\n![a\r\n![a\r\n![a\r\nz](u)](u)](u)](u)",
+    "html": "<p>![w <img alt=\"a\na\na\na\nz\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![x ![a\n![b](u)](v) y](w)",
+    "html": "<p><img alt=\"x a\nb y\" src=\"w\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![x ![a\r\n![b](u)](v) y](w)",
+    "html": "<p><img alt=\"x a\nb y\" src=\"w\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![a\n![](u)\nb](v)",
+    "html": "<p><img src=\"v\" alt=\"a\nb\"></p>",
+    "losses": [
+      "An image alternative text with a blank line cannot be spelled in Carve."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![a\r\n![](u)\r\nb](v)",
+    "html": "<p><img src=\"v\" alt=\"a\nb\"></p>",
+    "losses": [
+      "An image alternative text with a blank line cannot be spelled in Carve."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![a ![b ](u)\nc](v)",
+    "html": "<p><img src=\"v\" alt=\"a b\nc\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![a ![b ](u)\r\nc](v)",
+    "html": "<p><img src=\"v\" alt=\"a b\nc\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  }
+]

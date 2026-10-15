@@ -128,6 +128,116 @@ fn djot_to_carve_prepared_with_quotes(
         .replace(token, "\0")
 }
 
+fn collapse_plain_nested_image_chains(source: &str) -> std::borrow::Cow<'_, str> {
+    use std::borrow::Cow;
+    if !source.contains("![") || !source.contains('\n') {
+        return Cow::Borrowed(source);
+    }
+    let mut mask = mask_code_and_destinations(source).into_bytes();
+    if source.contains("]:") {
+        let mut accepted = HashMap::new();
+        fold_djot_references_with_decisions(source, Some(&mut accepted));
+        let mut covered = None;
+        let mut offset = 0;
+        for (n, line) in source.split('\n').enumerate() {
+            if let Some(decision) = accepted.get(&n) {
+                covered = Some(covered.map_or(decision.end, |end: usize| end.max(decision.end)));
+            }
+            if covered.is_some_and(|end| n <= end) {
+                mask[offset..offset + line.len()].fill(b' ');
+            }
+            offset += line.len() + 1;
+        }
+    }
+    let bytes = source.as_bytes();
+    let mut result = String::new();
+    let mut copied = 0;
+    let mut start = 0;
+    while start < bytes.len() {
+        if bytes.get(start..start + 2) != Some(b"![")
+            || mask[start] != b'!'
+            || is_escaped(bytes, start)
+        {
+            start += 1;
+            continue;
+        }
+        let mut at = start;
+        let mut first_safe = 0;
+        let mut previous = 0;
+        let mut non_space = 0;
+        let mut labels = Vec::new();
+        let mut positions = Vec::new();
+        while bytes.get(at..at + 2) == Some(b"![") && mask[at] == b'!' {
+            positions.push(at);
+            at += 2;
+            let begin = at;
+            while at < bytes.len()
+                && (bytes[at].is_ascii_alphanumeric() || b" \t\n".contains(&bytes[at]))
+            {
+                let ch = bytes[at];
+                at += 1;
+                if ch == b'\n' && (non_space == b'\n' || matches!(previous, b' ' | b'\t')) {
+                    first_safe = labels.len() + 1;
+                }
+                if !matches!(ch, b' ' | b'\t') {
+                    non_space = ch;
+                }
+                previous = ch;
+            }
+            labels.push(&source[begin..at]);
+            if bytes.get(at..at + 2) != Some(b"![") {
+                break;
+            }
+        }
+        if labels.len() < 2 || bytes.get(at) != Some(&b']') {
+            start = start.max(at.saturating_sub(1)) + 1;
+            continue;
+        }
+        let mut targets = Vec::new();
+        let mut ends = Vec::new();
+        for _ in 0..labels.len() {
+            if bytes.get(at..at + 2) != Some(b"](") {
+                break;
+            }
+            at += 2;
+            let begin = at;
+            while at < bytes.len()
+                && !bytes[at].is_ascii_whitespace()
+                && !b"()[]<>\\\0".contains(&bytes[at])
+            {
+                at += 1;
+            }
+            if at == begin || bytes.get(at) != Some(&b')') {
+                break;
+            }
+            targets.push(&source[begin..at]);
+            at += 1;
+            ends.push(at);
+        }
+        let first = first_safe.max(labels.len() - targets.len());
+        let count = labels.len() - first;
+        if count < 2 {
+            start = start.max(at.saturating_sub(1)) + 1;
+            continue;
+        }
+        result.push_str(&source[copied..positions[first]]);
+        result.push_str("![");
+        for label in &labels[first..] {
+            result.push_str(label);
+        }
+        result.push_str("](");
+        result.push_str(targets[count - 1]);
+        result.push(')');
+        copied = ends[count - 1];
+        start = copied;
+    }
+    if copied == 0 {
+        return Cow::Borrowed(source);
+    }
+    result.push_str(&source[copied..]);
+    Cow::Owned(result)
+}
+
 fn convert_djot_document(
     stripped_definitions: &DjotFootnoteAttributeStrip,
     omit_quote_delimiters: bool,
@@ -135,7 +245,8 @@ fn convert_djot_document(
 ) -> String {
     let normalized = &stripped_definitions.source;
     let (frontmatter, separator, body) = split_frontmatter(normalized);
-    let div_openers = normalize_djot_div_openers(body);
+    let collapsed = collapse_plain_nested_image_chains(body);
+    let div_openers = normalize_djot_div_openers(&collapsed);
     let table_attributes = escape_djot_table_attribute_boundaries(&div_openers);
     let body = table_attributes.as_ref();
     let has_source_nuls = body.contains("\0U\0");
@@ -12036,5 +12147,17 @@ mod placeholder_namespace_tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod plain_image_growth_tests {
+    #[test]
+    fn reference_destinations_remain_opaque() {
+        let source = "[t][r]\n\n[r]:\n  ![a\n  ![b](x)](y)";
+        assert_eq!(
+            super::collapse_plain_nested_image_chains(source).as_ref(),
+            source
+        );
     }
 }

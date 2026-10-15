@@ -18,7 +18,7 @@ fn image_label_loss_text(text: &str, cache: &mut HashMap<String, String>) -> Str
 fn image_label_trailing_whitespace_loss(text: &str, cache: &mut HashMap<String, String>) -> bool {
     let label = image_label_attributes_for_losses(text);
     let whitespace =
-        cached_regex!(r"([ \t]+)((?:(?:\{%%\}|\[\]\{\}|\{\}|[\]}`_*~^+=-])[ \t]*)*)(\n)").unwrap();
+        cached_regex!(r"([ \t]+)((?:(?:\]\([^()\r\n]*\)|\]\[[^\]\r\n]*\]|\{%%\}|\[\]\{\}|\{\}|[\]}`_*~^+=-])[ \t]*)*)(\n)").unwrap();
     if !whitespace.is_match(&label) {
         return false;
     }
@@ -5063,7 +5063,7 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
     let boundaries = djot_inline_boundaries(source, &mask);
     let mut boundary = 0;
     // Track label brackets separately from destination parentheses.
-    let mut brackets: Vec<(usize, bool, usize)> = Vec::new();
+    let mut brackets: Vec<(usize, bool, usize, bool, u8)> = Vec::new();
     let bytes = source.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
@@ -5074,6 +5074,19 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
             brackets.clear();
             boundary += 1;
         }
+        if let Some(parent) = brackets.last_mut() {
+            let ch = bytes[i];
+            if !matches!(ch, b'[' | b']') && !(ch == b'!' && bytes.get(i + 1) == Some(&b'[')) {
+                if mask.as_bytes()[i] != ch
+                    || is_escaped(bytes, i)
+                    || !(ch.is_ascii_alphanumeric() || b" \t\n".contains(&ch))
+                    || ch == b'\n' && !parent.4.is_ascii_alphanumeric()
+                {
+                    parent.3 = false;
+                }
+                parent.4 = ch;
+            }
+        }
         if mask.as_bytes()[i] != bytes[i] {
             i += 1;
             continue;
@@ -5083,10 +5096,15 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
             continue;
         }
         if bytes[i] == b'[' {
-            brackets.push((i, false, quote_depths[source_line]));
+            if let Some(parent) = brackets.last_mut() {
+                if i == 0 || bytes[i - 1] != b'!' || is_escaped(bytes, i - 1) {
+                    parent.3 = false;
+                }
+            }
+            brackets.push((i, false, quote_depths[source_line], true, 0));
         }
         if bytes[i] == b']' {
-            if let Some((start, nested, depth)) = brackets.pop() {
+            if let Some((start, nested, depth, plain, last)) = brackets.pop() {
                 let image = start > 0 && bytes[start - 1] == b'!' && !is_escaped(bytes, start - 1);
                 let valid_form =
                     destinations.contains_key(&(i + 1)) || reference_starts.contains(&start);
@@ -5112,6 +5130,7 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
                     ));
                 }
                 if image
+                    && !plain
                     && source[start + 1..i].contains('\n')
                     && destinations.get(&(i + 1)).is_some_and(|&end| {
                         !djot_destination_lines(&source[i + 2..end - 1], depth).is_empty()
@@ -5137,6 +5156,25 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
                 if is_link || nested && !(image && valid_form) {
                     if let Some(parent) = brackets.last_mut() {
                         parent.1 = true;
+                    }
+                }
+                if let Some(parent) = brackets.last_mut() {
+                    if !image
+                        || !plain
+                        || bytes.get(start + 1) == Some(&b'^')
+                        || !destinations.get(&(i + 1)).is_some_and(|&end| {
+                            !djot_destination_lines(&source[i + 2..end - 1], depth).is_empty()
+                        })
+                    {
+                        parent.3 = false;
+                    }
+                    if last != 0 {
+                        parent.4 = last;
+                    }
+                }
+                if bytes.get(start + 1) != Some(&b'^') {
+                    if let Some(&end) = destinations.get(&(i + 1)) {
+                        i = end - 1;
                     }
                 }
             }

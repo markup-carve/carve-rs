@@ -2187,3 +2187,6 @@ mod djot_image_deletion;
 
 #[path = "../djot_definition_interruptions.rs"]
 mod djot_definition_interruptions;
+
+#[path = "../djot_multiline_image_growth.rs"]
+mod djot_multiline_image_growth;
