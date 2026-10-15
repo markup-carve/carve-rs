@@ -2202,3 +2202,6 @@ mod djot_quoted_image_growth;
 
 #[path = "../djot_definition_container_ownership.rs"]
 mod djot_definition_container_ownership;
+
+#[path = "../djot_opaque_reference_targets.rs"]
+mod djot_opaque_reference_targets;
