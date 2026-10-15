@@ -68,9 +68,9 @@ const MIN_BUDGET: usize = 1024 * 1024;
 /// Every failure mode in spec I7 produces one of these and leaves the offending
 /// directive LITERAL; inclusion never silently drops a directive.
 ///
-/// Positions are 1-based, in the file attributed by [`Self::file`]. Without
-/// positions on the parsed document they default to line 1, column 1, as in
-/// carve-js. Full position remapping (spec I4) is out of scope in every engine.
+/// Positions are 1-based, in the file attributed by [`Self::file`]. A warning
+/// with no positioned node defaults to line 1, column 1, as in carve-js. Full
+/// position remapping (spec I4) is out of scope in every engine.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IncludeWarning {
     /// Line where the reported directive or node starts.
@@ -823,6 +823,21 @@ fn is_directive_shaped(text: &str) -> bool {
 // Expansion state
 // ---------------------------------------------------------------------------
 
+#[derive(Clone)]
+struct WarningLocation {
+    line: usize,
+    column: usize,
+    file: Option<String>,
+}
+
+fn warning_location(pos: Option<&crate::Pos>) -> Option<WarningLocation> {
+    pos.map(|p| WarningLocation {
+        line: p.start_line,
+        column: p.start_column,
+        file: p.file.as_ref().map(|file| file.as_str().to_string()),
+    })
+}
+
 struct State<'a> {
     opts: &'a IncludeOptions<'a>,
     /// Extensions each child is parsed with.
@@ -838,7 +853,7 @@ struct State<'a> {
     /// Rules already represented in `warnings`, so a cap never hides a class.
     seen_rules: std::collections::BTreeSet<String>,
     /// Position of the directive currently being expanded.
-    warning_position: Option<(usize, usize)>,
+    warning_position: Option<WarningLocation>,
     /// Whether the PARENT document carries source positions, and therefore
     /// whether each child is parsed with them.
     ///
@@ -903,7 +918,7 @@ struct State<'a> {
 }
 
 impl State<'_> {
-    fn at<T>(&mut self, position: Option<(usize, usize)>, f: impl FnOnce(&mut Self) -> T) -> T {
+    fn at<T>(&mut self, position: Option<WarningLocation>, f: impl FnOnce(&mut Self) -> T) -> T {
         let previous = std::mem::replace(&mut self.warning_position, position);
         let result = f(self);
         self.warning_position = previous;
@@ -912,21 +927,22 @@ impl State<'_> {
 
     fn warn(&mut self, rule: &str, message: String) {
         let file = self.file.clone();
-        self.warn_with_position(rule, message, file, self.warning_position);
+        self.warn_with_position(rule, message, file, self.warning_position.clone());
     }
 
-    fn warn_for(&mut self, rule: &str, message: String, file: Option<String>) {
-        self.warn_with_position(rule, message, file, None);
+    fn warn_for_at(
+        &mut self,
+        rule: &str,
+        message: String,
+        file: Option<String>,
+        pos: Option<&crate::Pos>,
+    ) {
+        self.warn_with_position(rule, message, file, warning_location(pos));
     }
 
     fn warn_at(&mut self, rule: &str, message: String, pos: Option<&crate::Pos>) {
         let file = self.file.clone();
-        self.warn_with_position(
-            rule,
-            message,
-            file,
-            pos.map(|p| (p.start_line, p.start_column)),
-        );
+        self.warn_with_position(rule, message, file, warning_location(pos));
     }
 
     fn warn_with_position(
@@ -934,7 +950,7 @@ impl State<'_> {
         rule: &str,
         message: String,
         file: Option<String>,
-        position: Option<(usize, usize)>,
+        position: Option<WarningLocation>,
     ) {
         // A rule not yet represented is always kept, so a capped report still
         // shows every distinct failure class; only repeats of a class already
@@ -945,11 +961,11 @@ impl State<'_> {
         }
         self.seen_rules.insert(rule.to_string());
         self.warnings.push(IncludeWarning {
-            line: position.map_or(1, |p| p.0),
-            column: position.map_or(1, |p| p.1),
+            line: position.as_ref().map_or(1, |p| p.line),
+            column: position.as_ref().map_or(1, |p| p.column),
             rule: rule.to_string(),
             message,
-            file,
+            file: position.and_then(|p| p.file).or(file),
         });
     }
 
@@ -1007,9 +1023,11 @@ impl State<'_> {
         let placeholder = format!("{RENAME_MARK}{}{RENAME_MARK}", self.pending_renames.len());
         self.reserve_id(&placeholder, owner);
         let before = self.warnings.len();
-        self.warn(
+        self.warn_with_position(
             "include-id-rename",
             format!("Id \"{id}\" was renamed to \"{placeholder}\"."),
+            self.file.clone(),
+            None,
         );
         self.pending_renames.push(PendingRename {
             placeholder: placeholder.clone(),
@@ -1848,10 +1866,11 @@ fn merge_footnotes(
             label.clone()
         };
         if final_label != label {
-            state.warn_for(
+            state.warn_for_at(
                 "include-footnote-rename",
                 format!("Footnote label \"{label}\" was renamed to \"{final_label}\"."),
                 child_file.clone(),
+                body.first().and_then(crate::ast_json::block_pos),
             );
             rename.insert(label.clone(), final_label.clone());
         }
@@ -2444,7 +2463,7 @@ impl<'a> RunSlicer<'a> {
 
     /// Location of a directive opener within this reassembled run. Braces
     /// always start in a text node, even when options span tags or mentions.
-    fn position(&self, at: usize) -> Option<(usize, usize)> {
+    fn position(&self, at: usize) -> Option<WarningLocation> {
         let i = self.ends.partition_point(|end| *end <= at);
         let InlineNode::Text(text) = self.run.get(i)? else {
             return None;
@@ -2452,7 +2471,11 @@ impl<'a> RunSlicer<'a> {
         let pos = text.pos.as_ref()?;
         let node_start = if i == 0 { 0 } else { self.ends[i - 1] };
         let prefix = text.value.get(..at - node_start)?;
-        Some((pos.start_line, pos.start_column + prefix.chars().count()))
+        Some(WarningLocation {
+            line: pos.start_line,
+            column: pos.start_column + prefix.chars().count(),
+            file: pos.file.as_ref().map(|file| file.as_str().to_string()),
+        })
     }
 
     /// Whether a match over `[start, end)` opens or closes on a backslash

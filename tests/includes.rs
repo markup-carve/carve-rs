@@ -70,6 +70,65 @@ fn included_heading_clamp_uses_the_heading_position() {
 }
 
 #[test]
+fn grandchild_heading_clamp_keeps_the_grandchild_file() {
+    let source = "{{ child @shift:5 }}\n";
+    let resolver = MapResolver::new(&[("child", "{{ grand }}\n"), ("grand", "Body.\n\n## Deep\n")]);
+    let doc = parse_with_options(source, &Options::default().with_positions(true));
+    let options = IncludeOptions::new().with_resolver(&resolver);
+    let result = expand_includes(doc, source, &options);
+    let warning = result
+        .warnings
+        .iter()
+        .find(|w| w.rule == "include-heading-clamp")
+        .expect("heading clamp warning");
+    assert_eq!(
+        (warning.file.as_deref(), warning.line, warning.column),
+        (Some("grand"), 3, 1)
+    );
+}
+
+#[test]
+fn warnings_in_merged_child_footnotes_keep_the_child_file() {
+    let source = "Root.\n\n{{ child }}\n";
+    let resolver = MapResolver::new(&[("child", "x[^a]\n\n[^a]: z {{ gone }}\n")]);
+    let doc = parse_with_options(source, &Options::default().with_positions(true));
+    let options = IncludeOptions::new()
+        .with_source_path("root.crv")
+        .with_resolver(&resolver);
+    let result = expand_includes(doc, source, &options);
+    let warnings: Vec<_> = result
+        .warnings
+        .iter()
+        .filter(|w| w.rule == "include-unresolved")
+        .collect();
+    assert!(!warnings.is_empty());
+    for warning in warnings {
+        assert_eq!(
+            (warning.file.as_deref(), warning.line, warning.column),
+            (Some("child"), 3, 9)
+        );
+    }
+}
+
+#[test]
+fn footnote_rename_locates_the_child_definition() {
+    let source = "Root[^a].\n\n[^a]: one\n\n{{ child }}\n";
+    let resolver = MapResolver::new(&[("child", "Child[^a].\n\n[^a]: two\n")]);
+    let doc = parse_with_options(source, &Options::default().with_positions(true));
+    let options = IncludeOptions::new().with_resolver(&resolver);
+    let result = expand_includes(doc, source, &options);
+    let warning = result
+        .warnings
+        .iter()
+        .find(|w| w.rule == "include-footnote-rename")
+        .expect("footnote rename warning");
+    assert_eq!(
+        (warning.file.as_deref(), warning.line, warning.column),
+        (Some("child"), 3, 7)
+    );
+}
+
+#[test]
 fn include_warnings_without_positions_match_the_js_fallback() {
     let source = "Before.\n\n{{ missing }}\n";
     let resolver = MapResolver::new(&[]);
