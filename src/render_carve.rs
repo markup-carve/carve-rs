@@ -5424,7 +5424,9 @@ fn render_emphasis(
     next_char: char,
 ) -> String {
     // A leading `*` would form the combined bold-italic opener.
-    let reads_as_bold_italic = delim == "/" && content.starts_with('*');
+    let reads_as_bold_italic = delim == "/"
+        && content.starts_with('*')
+        && !crate::parse::followed_by_grapheme_extender(content.as_bytes(), 1);
     let needs_forced = is_word_boundary(prev_char)
         || is_word_boundary(next_char)
         || crate::parse::followed_by_grapheme_extender(

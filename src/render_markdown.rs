@@ -2399,6 +2399,23 @@ fn reflank_runs(nodes: &[InlineNode], parts: &mut [String], ctx: &MarkdownContex
             .chars()
             .next()
             .or_else(|| neighbour_after(parts, i));
+        // An italic around a single strong node joins into a triple-star run.
+        // Check the content beyond all three stars against the neighbours.
+        if delimiter == "*"
+            && ctx.delimiter_ancestors.is_empty()
+            && matches!(&nodes[i], InlineNode::Emphasis(emphasis)
+                if emphasis.kind == EmphasisKind::Italic
+                    && emphasis.children.len() == 1
+                    && matches!(&emphasis.children[0], InlineNode::Emphasis(child)
+                        if child.kind == EmphasisKind::Strong))
+            && piece.core.starts_with("**")
+            && piece.core.ends_with("**")
+        {
+            let inner = &piece.core[2..piece.core.len() - 2];
+            if flanks(inner.chars().next(), before) && flanks(inner.chars().next_back(), after) {
+                continue;
+            }
+        }
         if flanks(piece.core.chars().next(), before)
             && flanks(piece.core.chars().next_back(), after)
         {

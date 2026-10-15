@@ -30,6 +30,26 @@ fn a_combined_bold_italic_keeps_its_bare_spelling() {
 }
 
 #[test]
+fn a_variation_selector_after_a_star_keeps_bare_italic() {
+    assert_eq!(carve("{/*️a*/}\n"), "/*️a*/\n");
+    assert!(round_trips("{/*️a*/}\n"));
+}
+
+#[test]
+fn a_combined_markdown_run_inside_a_word_keeps_its_stars() {
+    assert_eq!(carve::to_markdown("a{/*y*/}b\n"), "a***y***b\n");
+    assert_eq!(carve::to_markdown("a{/*.y.*/}b\n"), "a<em>**.y.**</em>b\n");
+    assert_eq!(
+        carve::to_markdown("{/{/{*x*}/}b/}\n"),
+        "*<em>**x**</em>b*\n"
+    );
+    assert_eq!(
+        carve::to_markdown("{~{/{*x*}/}b~}\n"),
+        "~~<em>**x**</em>b~~\n"
+    );
+}
+
+#[test]
 fn a_strong_wrapping_an_italic_is_untouched() {
     assert_eq!(carve("{*{/x/}*}\n"), "*/x/*\n");
     assert!(round_trips("{*{/x/}*}\n"));
