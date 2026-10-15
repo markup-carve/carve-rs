@@ -37,6 +37,14 @@ which the published crate does not carry.
 
 - `FileSystemResolver` reads only regular files: a FIFO, device or directory inside the root is denied instead of opened, so an include naming a FIFO no longer blocks the caller (#2786).
 
+- A nested link's destination is content of the label around it, so a `]` inside it closes nothing: `![a [x](/u]) b](/i)` is one image, and `[a [x](/u]) b]{.c}` a span holding the link (#2837, markup-carve/carve-js#3180).
+
+- A `=` after an autolink or cross-reference opens a highlight: the closing `>` is part of that construct and forms no `>=`, so `carve fmt` no longer turns a highlight between two autolinks into text (#2837).
+
+- A line holding many `[x](/u ` attempts no longer parses in quadratic time: a destination scan stops at the first space that no title follows (#2837).
+
+- Markdown and HTML import write an unresolved cross-reference back verbatim instead of escaping its `#`, so it stays a cross-reference (#2838, markup-carve/carve-php#3492).
+
 - The `Wikilinks` extension no longer closes `[[` at a `]]` whose first bracket is escaped, so `a [[x\]](u)` renders the core link (#2775).
 
 - `render_carve` refuses a list nested past the nesting cap with `RenderCarveError::SourceUnspellable` instead of searching for minutes and writing source that reads back as a different document (#2794).
@@ -61,7 +69,7 @@ which the published crate does not carry.
 
 ### Improvements
 
-- `carve migrate --from markdown --directory SOURCE --output TARGET` converts a Markdown tree, copies other regular files, skips symlinks and writes `migration-report.json`. It refuses an existing target and two inputs that map to one output, and removes its staging directory when a conversion fails (#2824, #2832).
+- `carve migrate --from markdown --directory SOURCE --output TARGET` converts a Markdown tree, copies other regular files, skips symlinks and writes `migration-report.json`. Local links to converted files are rewritten to `.crv` where the target resolves; unresolved ones are listed in the report and put the file under review. It refuses an existing target, two inputs that map to one output and an entry that changed after the walk, and removes its staging directory when a conversion fails (#2824, #2832, #2834, #2836).
 
 - Markdown output keeps the angle form `<https://x>` for a URL or email autolink where the same Markdown autolink reads back (#2778, markup-carve/carve#3196).
 

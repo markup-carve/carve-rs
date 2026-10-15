@@ -13,6 +13,8 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    "an-autolink-a-cross-reference-or-a-comment-is-atomic-to-every-outside-delimiter",
+    "an-unclosed-fence-under-an-open-paragraph-in-a-container-opens-nothing",
     "a-delimiter-that-is-part-of-a-larger-character-is-text",
     "the-combined-bold-italic-token-does-not-open-or-close-inside-a-word",
     "inside-an-unclosed-fence-only-the-innermost-container-s-closer-is-structural",
@@ -919,11 +921,7 @@ fn expected_corpus_size() -> usize {
 /// Empty is the normal end state: the pin catching up is what retires an entry,
 /// and the `assert_ne!` in `check_pair` is what forces the deletion rather than
 /// leaving a declaration that no longer declares anything.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[(
-    "598-editorial-markup-closes-outside-a-cross-reference-or-a-bracket-run-5",
-    "PART 9 E2a (ruled 2026-10-15): a cross-reference is atomic, so the `~>` ending it is no arrow",
-    "<p><s>a &lt;/#x~&gt;y&gt; b</s></p>",
-)];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 
 /// Pairs this engine renders differently from the pinned corpus because it has
 /// not reached the rule yet - the mirror of [`AHEAD_OF_PIN`].

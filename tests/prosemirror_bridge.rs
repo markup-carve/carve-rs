@@ -1661,8 +1661,10 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // cannot hold, so its emphasis reports a degradation.
     // The atomic cross-reference ruling (markup-carve/carve#3244) turns section
     // 598 row 5 into a strikethrough, which round trips strictly.
-    const STRICT: usize = 1941;
-    const LOSSY: usize = 616;
+    // Spec 88e7dab0 adds 21 documents (section 597 rows 5 to 8, sections 604
+    // and 605): 17 round trip strictly and 4 report a degradation.
+    const STRICT: usize = 1958;
+    const LOSSY: usize = 620;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in
