@@ -52,6 +52,8 @@ mod normalize;
 mod div_classes;
 #[path = "djot_heading_targets.rs"]
 mod heading_targets;
+#[path = "djot_tight_definition_descriptions.rs"]
+mod tight_definition_descriptions;
 
 use std::collections::{HashMap, HashSet};
 
@@ -763,7 +765,7 @@ fn convert_djot_document(
             }
         })
         .into_owned();
-    let converted = div_classes::normalize(&converted);
+    let converted = tight_definition_descriptions::normalize(&div_classes::normalize(&converted));
     stripped_definitions.restore(&if frontmatter.is_empty() {
         converted
     } else if converted.is_empty() {
@@ -3145,14 +3147,10 @@ fn fold_heading_continuations(source: &str) -> String {
     let masks: Vec<_> = masked.split('\n').collect();
     let lines: Vec<_> = source.split('\n').collect();
     let mut result = Vec::new();
+    let mut definition_hosts = HashMap::new();
     let mut i = 0;
     while i < lines.len() {
         let line = lines[i];
-        if !line.contains('#') {
-            result.push(line.to_owned());
-            i += 1;
-            continue;
-        }
         let (mut at, mut depth, mut column) = (0, 0, 0);
         while let Some(token) = container.captures(&line[at..]) {
             at += token.get(0).unwrap().len();
@@ -3171,6 +3169,23 @@ fn fold_heading_continuations(source: &str) -> String {
                 }
             }
         }
+        definition_hosts.retain(|held, _| *held <= depth);
+        if depth > 0
+            && column > 0
+            && cached_regex!(r"^:(?:[ \t]|$)")
+                .unwrap()
+                .is_match(&line[at..])
+            && masks[i].as_bytes().get(at) == Some(&b':')
+        {
+            definition_hosts.insert(depth, column);
+        } else if column > 0 {
+            definition_hosts.remove(&depth);
+        }
+        if !line.contains('#') {
+            result.push(line.to_owned());
+            i += 1;
+            continue;
+        }
         let Some(heading) = heading_re.captures(&line[at..]) else {
             result.push(line.to_owned());
             i += 1;
@@ -3181,7 +3196,12 @@ fn fold_heading_continuations(source: &str) -> String {
             i += 1;
             continue;
         }
-        let first_line = if depth > 0 && column == 0 {
+        let first_line = if depth > 0
+            && column == 0
+            && !definition_hosts
+                .get(&depth)
+                .is_some_and(|held| heading[1].len() >= *held)
+        {
             format!("{}{}", &line[..at], &line[at + heading[1].len()..])
         } else {
             column += heading[1].len();
@@ -3542,7 +3562,7 @@ fn convert_definition_lists_at(source: &str, empty_term: &str, depth: usize) -> 
 }
 
 fn convert_unquoted_definition_lists(source: &str, empty_term: &str, depth: usize) -> String {
-    let gate = cached_regex!(r"(?m)^[ \t]*(?:(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})\))[ \t]+)+:").unwrap();
+    let gate = cached_regex!(r"(?m)^[ \t]*(?:(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})\))[ \t]+)+[:{]").unwrap();
     if !gate.is_match(source) {
         return convert_root_definition_lists(source, empty_term);
     }
@@ -3552,7 +3572,10 @@ fn convert_unquoted_definition_lists(source: &str, empty_term: &str, depth: usiz
     let boundaries: HashSet<usize> = djot_inline_boundaries_with_code_scopes(source, &mask, true)
         .into_iter()
         .collect();
-    let item = cached_regex!(r"^([ \t]*(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})\))[ \t]+)((?:(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})\))[ \t]+)*:(?:[ \t].*|$))$").unwrap();
+    let item = cached_regex!(r"^([ \t]*)(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})\))[ \t]+").unwrap();
+    let heads = cached_regex!(r"^[ \t]*(?:(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})\))[ \t]+)+").unwrap();
+    let term_tail = cached_regex!(r"^(?:(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})\))[ \t]+)*:(?:[ \t]|$)").unwrap();
+    let markers = cached_regex!(r"(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})\))[ \t]+").unwrap();
     let block = cached_regex!(r"^(?:[-*+][ \t]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})[.)][ \t]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})\)[ \t]|#{1,6}(?:[ \t]|$)|>|:{3,}|[`~]{3,}|\|)").unwrap();
     let mut result = Vec::new();
     let mut offset = 0;
@@ -3563,8 +3586,36 @@ fn convert_unquoted_definition_lists(source: &str, empty_term: &str, depth: usiz
         let source_at = offset;
         offset += line.len() + 1;
         let accepted = item.captures(line).filter(|capture| {
-            masks[at].as_bytes().get(capture[1].len()) == line.as_bytes().get(capture[1].len())
-                && (at == 0 || boundaries.contains(&source_at))
+            if masks[at].as_bytes().get(capture[1].len()) != line.as_bytes().get(capture[1].len())
+                || (at != 0
+                    && !boundaries.contains(&source_at)
+                    && !cached_regex!(r"^[ \t]*\{loose\}[ \t]*$")
+                        .unwrap()
+                        .is_match(lines[at - 1]))
+            {
+                return false;
+            }
+            let prefix_len = capture.get(0).unwrap().len();
+            if term_tail.is_match(&line[prefix_len..]) {
+                return true;
+            }
+            let Some(prefix) = heads.find(line) else {
+                return false;
+            };
+            let Some(last) = markers
+                .find_iter(prefix.as_str())
+                .nth(1)
+                .and_then(|second| markers.find_iter(prefix.as_str()).last().or(Some(second)))
+            else {
+                return false;
+            };
+            read_djot_word_attributes(line, prefix.end()).is_some_and(|(end, _)| end == line.len())
+                && lines.get(at + 1).is_some_and(|next| {
+                    cached_regex!(r"^[ \t]*:(?:[ \t]|$)")
+                        .unwrap()
+                        .is_match(next)
+                        && leading_indent(next).0 > last.start()
+                })
         });
         let Some(accepted) = accepted else {
             at += 1;
@@ -3576,7 +3627,7 @@ fn convert_unquoted_definition_lists(source: &str, empty_term: &str, depth: usiz
                 empty_term,
             ));
         }
-        let prefix = &accepted[1];
+        let prefix = accepted.get(0).unwrap().as_str();
         let column = leading_indent(prefix).0
             + prefix
                 .trim_start_matches([' ', '\t'])
@@ -3639,6 +3690,20 @@ fn convert_unquoted_definition_lists(source: &str, empty_term: &str, depth: usiz
                 removed.extend(index + 1..end);
             }
         }
+        if end < lines.len()
+            && leading_indent(lines[end]).0 == leading_indent(&accepted[1]).0
+            && cached_regex!(r"^(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\))[ \t]")
+                .unwrap()
+                .is_match(lines[end].trim_start_matches([' ', '\t']))
+        {
+            let mut tail = converted.len();
+            while tail > 0 && converted[tail - 1].trim_matches([' ', '\t']).is_empty() {
+                tail -= 1;
+            }
+            if tail > 0 && converted[tail - 1] == empty {
+                removed.extend(tail..converted.len());
+            }
+        }
         let mut written = vec![format!("{prefix}{empty_term}")];
         for (index, value) in converted.iter().enumerate() {
             if !removed.contains(&index) {
@@ -3661,6 +3726,7 @@ fn convert_unquoted_definition_lists(source: &str, empty_term: &str, depth: usiz
 fn convert_root_definition_lists(source: &str, empty_term: &str) -> String {
     let _paragraph_cache = ParagraphCacheScope::new(source);
     let mut lines: Vec<String> = source.split('\n').map(str::to_owned).collect();
+    let mut removed_blanks = HashSet::new();
     let masked_source = mask_code_and_destinations(source);
     let masked: Vec<&str> = masked_source.split('\n').collect();
     let fence_starts = std::cell::RefCell::new(HashSet::new());
@@ -3892,6 +3958,15 @@ fn convert_root_definition_lists(source: &str, empty_term: &str) -> String {
         let Some(frame) = stack.last_mut() else {
             continue;
         };
+        if !frame.body && frame.source > 0 {
+            let mut blank = index;
+            while blank > frame.term_end + 1
+                && lines[blank - 1].trim_matches([' ', '\t']).is_empty()
+            {
+                blank -= 1;
+                removed_blanks.insert(blank);
+            }
+        }
         let payload =
             lines[index][bytes_through_columns(&lines[index], frame.source + 2)..].to_owned();
         let extra = indent.saturating_sub(frame.source + 2);
@@ -3910,7 +3985,12 @@ fn convert_root_definition_lists(source: &str, empty_term: &str) -> String {
     while let Some(frame) = stack.pop() {
         finish_definition_frame(frame, &mut lines, empty_term);
     }
-    lines.join("\n")
+    lines
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, line)| (!removed_blanks.contains(&index)).then_some(line))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn quote_prefix_len(line: &str) -> usize {
@@ -5491,6 +5571,11 @@ fn mask_djot_fences_with_open(
                         column,
                         owning_indent,
                     ));
+                }
+                if let Some(prefix) = cached_regex!(r"^[ \t]*(?:(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})\))[ \t]+){2,}:").unwrap().find(view) {
+                    let head = &view[..prefix.end() - 1];
+                    let last = cached_regex!(r"(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})\))[ \t]+").unwrap().find_iter(head).last().unwrap();
+                    stack.push((last.start(), native_marker.replace_all(head, "$1.$2").len(), last.start()));
                 }
                 if level < depth {
                     let after = view
