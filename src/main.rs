@@ -1,6 +1,7 @@
 //! `carve` CLI — reads Carve source from a file or stdin, writes the rendered
 //! output (HTML by default, or Markdown / plain text / ANSI / Carve) to stdout.
 
+use carve::CarveExtension;
 use std::io::{self, Read, Write};
 use std::process::ExitCode;
 
@@ -14,8 +15,6 @@ fn read_stdin_lossy(out: &mut String) -> io::Result<()> {
 fn read_path_lossy(path: &str) -> io::Result<String> {
     std::fs::read(path).map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
 }
-
-use carve::CarveExtension;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
@@ -1624,7 +1623,7 @@ fn run_fmt(
             eprintln!("carve fmt: stdin cannot be mixed with file paths");
             return ExitCode::FAILURE;
         }
-        let source = match read_path_lossy(path) {
+        let source = match std::fs::read_to_string(path) {
             Ok(source) => source,
             Err(err) => {
                 eprintln!("carve fmt: cannot read {path}: {err}");

@@ -37,3 +37,23 @@ fn ill_formed_file_is_replaced_before_parsing() {
     );
     assert_eq!(String::from_utf8(output.stdout).unwrap(), EXPECTED);
 }
+
+#[test]
+fn fmt_refuses_to_rewrite_ill_formed_file() {
+    let path = std::env::temp_dir().join(format!(
+        "carve-ill-formed-fmt-{}-{}.crv",
+        std::process::id(),
+        line!()
+    ));
+    std::fs::write(&path, SOURCE).unwrap();
+    for mode in ["--check", "--write"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_carve"))
+            .args(["fmt", mode])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(!output.status.success(), "{mode}");
+        assert_eq!(std::fs::read(&path).unwrap(), SOURCE, "{mode}");
+    }
+    std::fs::remove_file(path).unwrap();
+}

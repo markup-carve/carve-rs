@@ -14,6 +14,7 @@ fn a_decorated_delimiter_is_text() {
         ),
         ("{*️⃣abc*}", "<p>{*️⃣abc*}</p>"),
         ("/*️a*/", "<p><em>*️a*</em></p>"),
+        ("/*a*/́ b*/", "<p><strong><em>a*/́ b</em></strong></p>"),
     ] {
         assert_eq!(render_html(&parse(source)).unwrap(), expected, "{source}");
     }

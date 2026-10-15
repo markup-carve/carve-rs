@@ -27319,7 +27319,16 @@ fn followed_by_grapheme_extender(bytes: &[u8], at: usize) -> bool {
     static EXTENDER: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let pattern = EXTENDER
         .get_or_init(|| regex::Regex::new(r"\A[\p{Mn}\p{Me}\u{FE00}-\u{FE0F}\u{200D}]").unwrap());
-    std::str::from_utf8(&bytes[at..]).is_ok_and(|tail| pattern.is_match(tail))
+    let width = match bytes[at] {
+        0xC0..=0xDF => 2,
+        0xE0..=0xEF => 3,
+        0xF0..=0xF7 => 4,
+        _ => return false,
+    };
+    bytes
+        .get(at..at + width)
+        .and_then(|first| std::str::from_utf8(first).ok())
+        .is_some_and(|first| pattern.is_match(first))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -29753,7 +29762,11 @@ fn bold_italic_close(
     let closers = memo.bold_italic.get_or_insert_with(|| {
         let mut index: HashMap<Option<usize>, Vec<usize>> = HashMap::new();
         for (close, pair) in bytes.windows(2).enumerate() {
-            if pair == b"*/" && close > 0 && !is_carve_ws(bytes[close - 1]) {
+            if pair == b"*/"
+                && close > 0
+                && !is_carve_ws(bytes[close - 1])
+                && !followed_by_grapheme_extender(bytes, close + 2)
+            {
                 index
                     .entry(bounds.bracket_run_at(close))
                     .or_default()
