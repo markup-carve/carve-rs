@@ -43,8 +43,6 @@ which the published crate does not carry.
 
 - A line holding many `[x](/u ` attempts no longer parses in quadratic time: a destination scan stops at the first space that no title follows (#2837).
 
-- Markdown and HTML import write an unresolved cross-reference back verbatim instead of escaping its `#`, so it stays a cross-reference (#2838, markup-carve/carve-php#3492).
-
 - The `Wikilinks` extension no longer closes `[[` at a `]]` whose first bracket is escaped, so `a [[x\]](u)` renders the core link (#2775).
 
 - `render_carve` refuses a list nested past the nesting cap with `RenderCarveError::SourceUnspellable` instead of searching for minutes and writing source that reads back as a different document (#2794).
