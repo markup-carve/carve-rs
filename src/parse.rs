@@ -27312,6 +27312,16 @@ fn is_carve_ws(b: u8) -> bool {
     matches!(b, b' ' | b'\t' | b'\n' | b'\r')
 }
 
+fn followed_by_grapheme_extender(bytes: &[u8], at: usize) -> bool {
+    if !bytes.get(at).is_some_and(|byte| !byte.is_ascii()) {
+        return false;
+    }
+    static EXTENDER: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let pattern = EXTENDER
+        .get_or_init(|| regex::Regex::new(r"\A[\p{Mn}\p{Me}\u{FE00}-\u{FE0F}\u{200D}]").unwrap());
+    std::str::from_utf8(&bytes[at..]).is_ok_and(|tail| pattern.is_match(tail))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn match_emphasis(
     bytes: &[u8],
@@ -27334,7 +27344,9 @@ fn match_emphasis(
     if c == b'/' && bytes.get(i + 1) == Some(&b'*') {
         let start = i + 2;
         // Opener guard: the first content byte must exist and not be whitespace.
-        if bytes.get(start).is_some_and(|b| !is_carve_ws(*b)) {
+        if bytes.get(start).is_some_and(|b| !is_carve_ws(*b))
+            && !followed_by_grapheme_extender(bytes, start)
+        {
             let opener_run = bounds.bracket_run_at(i);
             if let Some(close) = bold_italic_close(bytes, start, opener_run, no_close, bounds) {
                 if NESTING_DEPTH.with(|depth| depth.get() >= MAX_NESTING_DEPTH) {
@@ -27386,7 +27398,7 @@ fn match_emphasis(
     }
     // Opener: next char must exist and not be whitespace (CARVE-P3-013) or delim
     let after = bytes.get(i + 1).copied()?;
-    if is_carve_ws(after) || after == delim {
+    if is_carve_ws(after) || after == delim || followed_by_grapheme_extender(bytes, i + 1) {
         return None;
     }
     // A `=` that is part of a multi-char smart-typography operator is consumed
@@ -29527,6 +29539,9 @@ fn parse_forced_emphasis(
         return None;
     }
     let content_start = i + 2;
+    if followed_by_grapheme_extender(bytes, content_start) {
+        return None;
+    }
     let word_close = if options.extensions.is_empty() {
         let end = bytes[content_start..]
             .iter()
@@ -30038,7 +30053,7 @@ fn find_emphasis_close(
             // operator exclusion applies only to the OPENER (the corpus-pinned
             // `a => b` case).
             if let Some(&next) = bytes.get(j + 1) {
-                if next.is_ascii_alphanumeric() {
+                if next.is_ascii_alphanumeric() || followed_by_grapheme_extender(bytes, j + 1) {
                     j += 1;
                     continue;
                 }

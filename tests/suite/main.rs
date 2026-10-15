@@ -889,6 +889,8 @@ mod cell_text_align_in_every_mode;
 mod checked_ast_operations;
 #[path = "../citations.rs"]
 mod citations;
+#[path = "../cli_ill_formed_input.rs"]
+mod cli_ill_formed_input;
 #[path = "../cli_includes.rs"]
 mod cli_includes;
 #[path = "../cli_lint.rs"]
@@ -959,6 +961,8 @@ mod container_scoped_content_columns;
 mod corpus;
 #[path = "../plain_unused_definition_denied.rs"]
 mod plain_unused_definition_denied;
+#[path = "../whole_grapheme_delimiters.rs"]
+mod whole_grapheme_delimiters;
 
 #[path = "../corpus_canonical_form.rs"]
 mod corpus_canonical_form;

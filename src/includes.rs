@@ -3208,7 +3208,7 @@ impl IncludeResolver for FileSystemResolver {
         // in hand, so without a cap here one oversized file is read into
         // memory in full before expansion refuses it.
         // ONLY A REGULAR FILE IS READ: a FIFO reports length 0, passes the
-        // cap, and `read_to_string` then blocks until a writer opens it.
+        // cap, and reading it then blocks until a writer opens it.
         let metadata = std::fs::metadata(&real).map_err(|_| IncludeDenial::Denied)?;
         if !metadata.is_file()
             || self
@@ -3222,7 +3222,8 @@ impl IncludeResolver for FileSystemResolver {
         // residual TOCTOU window remains if a directory component is swapped
         // between the two syscalls, which is why this resolver is for trusted
         // trees only.
-        let source = std::fs::read_to_string(&real).map_err(|_| IncludeDenial::Denied)?;
+        let bytes = std::fs::read(&real).map_err(|_| IncludeDenial::Denied)?;
+        let source = String::from_utf8_lossy(&bytes).into_owned();
         Ok(IncludeResolved::with_id(
             source,
             real.to_string_lossy().into_owned(),

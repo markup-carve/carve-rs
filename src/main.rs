@@ -4,6 +4,17 @@
 use std::io::{self, Read, Write};
 use std::process::ExitCode;
 
+fn read_stdin_lossy(out: &mut String) -> io::Result<()> {
+    let mut bytes = Vec::new();
+    io::stdin().read_to_end(&mut bytes)?;
+    *out = String::from_utf8_lossy(&bytes).into_owned();
+    Ok(())
+}
+
+fn read_path_lossy(path: &str) -> io::Result<String> {
+    std::fs::read(path).map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+}
+
 use carve::CarveExtension;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -477,13 +488,13 @@ fn main() -> ExitCode {
     let source = match input_paths.first().map(String::as_str) {
         None | Some("-") => {
             let mut buf = String::new();
-            if let Err(err) = io::stdin().read_to_string(&mut buf) {
+            if let Err(err) = read_stdin_lossy(&mut buf) {
                 eprintln!("carve: cannot read stdin: {err}");
                 return ExitCode::FAILURE;
             }
             buf
         }
-        Some(path) => match std::fs::read_to_string(path) {
+        Some(path) => match read_path_lossy(path) {
             Ok(s) => s,
             Err(err) => {
                 eprintln!("carve: cannot read {path}: {err}");
@@ -936,12 +947,12 @@ fn run_migrate(args: &[String]) -> ExitCode {
     let source = match input {
         None | Some("-") => {
             let mut s = String::new();
-            if io::stdin().read_to_string(&mut s).is_err() {
+            if read_stdin_lossy(&mut s).is_err() {
                 return ExitCode::from(2);
             }
             s
         }
-        Some(path) => match std::fs::read_to_string(path) {
+        Some(path) => match read_path_lossy(path) {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("carve migrate: cannot read {path}: {e}");
@@ -1075,7 +1086,7 @@ fn run_merge(args: &[String]) -> ExitCode {
     }
     let mut documents = Vec::new();
     for path in paths {
-        let source = match std::fs::read_to_string(path) {
+        let source = match read_path_lossy(path) {
             Ok(source) => source,
             Err(error) => {
                 eprintln!("carve merge: cannot read {path}: {error}");
@@ -1426,7 +1437,7 @@ fn run_lint_paths(paths: &[&str], enable_extensions: bool, enable_citations: boo
 
     if paths.is_empty() || paths == ["-"] {
         let mut buf = String::new();
-        if let Err(err) = io::stdin().read_to_string(&mut buf) {
+        if let Err(err) = read_stdin_lossy(&mut buf) {
             eprintln!("carve lint: cannot read stdin: {err}");
             return ExitCode::from(2);
         }
@@ -1435,7 +1446,7 @@ fn run_lint_paths(paths: &[&str], enable_extensions: bool, enable_citations: boo
         for path in paths {
             if *path == "-" {
                 let mut buf = String::new();
-                if let Err(err) = io::stdin().read_to_string(&mut buf) {
+                if let Err(err) = read_stdin_lossy(&mut buf) {
                     eprintln!("carve lint: cannot read stdin: {err}");
                     unreadable = true;
                     continue;
@@ -1443,7 +1454,7 @@ fn run_lint_paths(paths: &[&str], enable_extensions: bool, enable_citations: boo
                 lint_source(&buf, "<stdin>");
                 continue;
             }
-            match std::fs::read_to_string(path) {
+            match read_path_lossy(path) {
                 Ok(source) => lint_source(&source, path),
                 Err(err) => {
                     // Reported and skipped rather than fatal, so one bad path in
@@ -1490,7 +1501,7 @@ fn run_lint_paths(paths: &[&str], enable_extensions: bool, enable_citations: boo
 #[cfg(feature = "fs")]
 fn run_flatten(path: Option<&str>, include_root: Option<&str>) -> ExitCode {
     let (source, source_path) = match path {
-        Some(path) if path != "-" => match std::fs::read_to_string(path) {
+        Some(path) if path != "-" => match read_path_lossy(path) {
             Ok(source) => (source, Some(path.to_string())),
             Err(err) => {
                 eprintln!("carve flatten: cannot read {path}: {err}");
@@ -1499,7 +1510,7 @@ fn run_flatten(path: Option<&str>, include_root: Option<&str>) -> ExitCode {
         },
         _ => {
             let mut source = String::new();
-            if let Err(err) = io::stdin().read_to_string(&mut source) {
+            if let Err(err) = read_stdin_lossy(&mut source) {
                 eprintln!("carve flatten: cannot read stdin: {err}");
                 return ExitCode::FAILURE;
             }
@@ -1593,7 +1604,7 @@ fn run_fmt(
             return ExitCode::FAILURE;
         }
         let mut source = String::new();
-        if let Err(err) = io::stdin().read_to_string(&mut source) {
+        if let Err(err) = read_stdin_lossy(&mut source) {
             eprintln!("carve fmt: cannot read stdin: {err}");
             return ExitCode::FAILURE;
         }
@@ -1613,7 +1624,7 @@ fn run_fmt(
             eprintln!("carve fmt: stdin cannot be mixed with file paths");
             return ExitCode::FAILURE;
         }
-        let source = match std::fs::read_to_string(path) {
+        let source = match read_path_lossy(path) {
             Ok(source) => source,
             Err(err) => {
                 eprintln!("carve fmt: cannot read {path}: {err}");

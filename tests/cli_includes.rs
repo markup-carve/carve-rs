@@ -299,6 +299,20 @@ fn included_content_is_subject_to_the_same_sanitization_as_typed_content() {
     );
 }
 
+#[test]
+fn ill_formed_included_bytes_are_replaced_before_parsing() {
+    let tmp = TempDir::new("ill-formed");
+    let main = tmp.write("main.crv", "{{ child.crv }}\n");
+    fs::write(tmp.path().join("child.crv"), b"a\xed\xa0\x80b\n").unwrap();
+    let out = run(&[main.to_str().unwrap()], None);
+    assert!(out.success, "{}", out.stderr);
+    assert!(
+        out.stdout.contains("a\u{fffd}\u{fffd}\u{fffd}b"),
+        "{}",
+        out.stdout
+    );
+}
+
 // ---------------------------------------------------------------------------
 // `carve flatten` (the deliberate opposite of `carve fmt`)
 // ---------------------------------------------------------------------------
