@@ -68,11 +68,15 @@ const MIN_BUDGET: usize = 1024 * 1024;
 /// Every failure mode in spec I7 produces one of these and leaves the offending
 /// directive LITERAL; inclusion never silently drops a directive.
 ///
-/// Unlike carve-js this carries no line/column: the Rust AST does not retain
-/// source positions, so no position is reported rather than a fabricated one.
-/// Full position remapping (spec I4) is out of scope in every engine.
+/// Positions are 1-based, in the file attributed by [`Self::file`]. Without
+/// positions on the parsed document they default to line 1, column 1, as in
+/// carve-js. Full position remapping (spec I4) is out of scope in every engine.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IncludeWarning {
+    /// Line where the reported directive or node starts.
+    pub line: usize,
+    /// Column where the reported directive or node starts.
+    pub column: usize,
     /// Stable rule id, e.g. `"include-cycle"`.
     pub rule: String,
     /// Human-readable explanation.
@@ -833,6 +837,8 @@ struct State<'a> {
     suppressed_warnings: usize,
     /// Rules already represented in `warnings`, so a cap never hides a class.
     seen_rules: std::collections::BTreeSet<String>,
+    /// Position of the directive currently being expanded.
+    warning_position: Option<(usize, usize)>,
     /// Whether the PARENT document carries source positions, and therefore
     /// whether each child is parsed with them.
     ///
@@ -897,12 +903,39 @@ struct State<'a> {
 }
 
 impl State<'_> {
+    fn at<T>(&mut self, position: Option<(usize, usize)>, f: impl FnOnce(&mut Self) -> T) -> T {
+        let previous = std::mem::replace(&mut self.warning_position, position);
+        let result = f(self);
+        self.warning_position = previous;
+        result
+    }
+
     fn warn(&mut self, rule: &str, message: String) {
         let file = self.file.clone();
-        self.warn_for(rule, message, file);
+        self.warn_with_position(rule, message, file, self.warning_position);
     }
 
     fn warn_for(&mut self, rule: &str, message: String, file: Option<String>) {
+        self.warn_with_position(rule, message, file, None);
+    }
+
+    fn warn_at(&mut self, rule: &str, message: String, pos: Option<&crate::Pos>) {
+        let file = self.file.clone();
+        self.warn_with_position(
+            rule,
+            message,
+            file,
+            pos.map(|p| (p.start_line, p.start_column)),
+        );
+    }
+
+    fn warn_with_position(
+        &mut self,
+        rule: &str,
+        message: String,
+        file: Option<String>,
+        position: Option<(usize, usize)>,
+    ) {
         // A rule not yet represented is always kept, so a capped report still
         // shows every distinct failure class; only repeats of a class already
         // shown are counted instead of stored.
@@ -912,6 +945,8 @@ impl State<'_> {
         }
         self.seen_rules.insert(rule.to_string());
         self.warnings.push(IncludeWarning {
+            line: position.map_or(1, |p| p.0),
+            column: position.map_or(1, |p| p.1),
             rule: rule.to_string(),
             message,
             file,
@@ -1298,9 +1333,10 @@ fn shift_blocks(blocks: &mut [BlockNode], shift: i32, state: &mut State<'_>) {
             let clamped = shifted.clamp(1, 6);
             if clamped != shifted {
                 // The heading is KEPT, never dropped (I8).
-                state.warn(
+                state.warn_at(
                     "include-heading-clamp",
                     format!("Included heading level {shifted} was clamped to {clamped}."),
+                    h.pos.as_ref(),
                 );
             }
             h.level = clamped as u8;
@@ -2406,6 +2442,19 @@ impl<'a> RunSlicer<'a> {
         Self { run, ends }
     }
 
+    /// Location of a directive opener within this reassembled run. Braces
+    /// always start in a text node, even when options span tags or mentions.
+    fn position(&self, at: usize) -> Option<(usize, usize)> {
+        let i = self.ends.partition_point(|end| *end <= at);
+        let InlineNode::Text(text) = self.run.get(i)? else {
+            return None;
+        };
+        let pos = text.pos.as_ref()?;
+        let node_start = if i == 0 { 0 } else { self.ends[i - 1] };
+        let prefix = text.value.get(..at - node_start)?;
+        Some((pos.start_line, pos.start_column + prefix.chars().count()))
+    }
+
     /// Whether a match over `[start, end)` opens or closes on a backslash
     /// escape. An escaped brace is literal (CARVE-P7-004), so such a match is
     /// no directive: `\{{ x }}` holds no `{{`.
@@ -2468,50 +2517,53 @@ fn expand_run(run: &[InlineNode], state: &mut State<'_>) -> Vec<InlineNode> {
             continue;
         }
         cursor = end;
-        let d = match parse_options(raw) {
-            ParsedDirective::Ok(d) => d,
-            ParsedDirective::BadOption(part) => {
-                state.warn(
-                    "include-unknown-option",
-                    format!("Unknown include option \"{part}\"."),
-                );
-                continue;
-            }
-            ParsedDirective::DuplicateSection(part) => {
-                state.warn(
-                    "include-selection-conflict",
-                    format!("Include directive cannot name two sections: \"{part}\"."),
-                );
-                continue;
-            }
-            ParsedDirective::NotADirective => continue,
-        };
-        let Some(replacement) = with_child(&d, state, true, |expanded, state| {
-            let mut children = expanded.children;
-            // I2: resolved content in INLINE position must parse to inline-only
-            // content - a single paragraph, or nothing.
-            let inline_only = match children.len() {
-                0 => true,
-                1 => matches!(children[0], BlockNode::Paragraph(_)),
-                _ => false,
+        let replacement = state.at(slicer.position(start), |state| {
+            let d = match parse_options(raw) {
+                ParsedDirective::Ok(d) => d,
+                ParsedDirective::BadOption(part) => {
+                    state.warn(
+                        "include-unknown-option",
+                        format!("Unknown include option \"{part}\"."),
+                    );
+                    return None;
+                }
+                ParsedDirective::DuplicateSection(part) => {
+                    state.warn(
+                        "include-selection-conflict",
+                        format!("Include directive cannot name two sections: \"{part}\"."),
+                    );
+                    return None;
+                }
+                ParsedDirective::NotADirective => return None,
             };
-            if !inline_only {
-                state.warn(
-                    "include-block-in-inline",
-                    format!("Inline include \"{}\" resolved to block content.", d.path),
-                );
-                return None;
-            }
-            // Merge BEFORE lifting the paragraph's inlines out: a footnote-label
-            // rename rewrites the references inside `children`, so taking them
-            // first would rename the definition while leaving the spliced
-            // reference pointing at the label the parent kept.
-            merge_footnotes(expanded.footnotes, &mut children, state, expanded.file);
-            Some(match children.first_mut() {
-                Some(BlockNode::Paragraph(p)) => std::mem::take(&mut p.children),
-                _ => Vec::new(),
+            with_child(&d, state, true, |expanded, state| {
+                let mut children = expanded.children;
+                // I2: resolved content in INLINE position must parse to inline-only
+                // content - a single paragraph, or nothing.
+                let inline_only = match children.len() {
+                    0 => true,
+                    1 => matches!(children[0], BlockNode::Paragraph(_)),
+                    _ => false,
+                };
+                if !inline_only {
+                    state.warn(
+                        "include-block-in-inline",
+                        format!("Inline include \"{}\" resolved to block content.", d.path),
+                    );
+                    return None;
+                }
+                // Merge BEFORE lifting the paragraph's inlines out: a footnote-label
+                // rename rewrites the references inside `children`, so taking them
+                // first would rename the definition while leaving the spliced
+                // reference pointing at the label the parent kept.
+                merge_footnotes(expanded.footnotes, &mut children, state, expanded.file);
+                Some(match children.first_mut() {
+                    Some(BlockNode::Paragraph(p)) => std::mem::take(&mut p.children),
+                    _ => Vec::new(),
+                })
             })
-        }) else {
+        });
+        let Some(replacement) = replacement else {
             continue;
         };
         spans.push((start, end, replacement));
@@ -2669,45 +2721,52 @@ fn directive_source(nodes: &[InlineNode]) -> Option<String> {
 fn expand_paragraph(block: &mut Paragraph, state: &mut State<'_>) -> Option<Vec<BlockNode>> {
     if let Some(source) = directive_source(&block.children) {
         let parsed = parse_full_directive(&source);
+        let position = RunSlicer::new(&block.children).position(0);
         match parsed {
             ParsedDirective::Ok(d) => {
-                // I7: on any rejection this yields None and the original inline
-                // nodes stay, rendering exactly as the core does with no
-                // resolver - and `with_child` releases what the child claimed.
-                // The paragraph is replaced by what it includes, so its id is
-                // given back while the child claims; left literal, it keeps it.
-                let held = block
-                    .attrs
-                    .as_ref()
-                    .and_then(|a| a.id.clone())
-                    .filter(|id| state.id_owner(id) == Some(state.owner));
-                if let Some(id) = &held {
-                    state.release_id(id);
-                }
-                let merged = with_child(&d, state, false, |expanded, state| {
-                    let mut children = expanded.children;
-                    merge_footnotes(expanded.footnotes, &mut children, state, expanded.file);
-                    Some(children)
+                return state.at(position, |state| {
+                    // I7: on any rejection this yields None and the original inline
+                    // nodes stay, rendering exactly as the core does with no
+                    // resolver - and `with_child` releases what the child claimed.
+                    // The paragraph is replaced by what it includes, so its id is
+                    // given back while the child claims; left literal, it keeps it.
+                    let held = block
+                        .attrs
+                        .as_ref()
+                        .and_then(|a| a.id.clone())
+                        .filter(|id| state.id_owner(id) == Some(state.owner));
+                    if let Some(id) = &held {
+                        state.release_id(id);
+                    }
+                    let merged = with_child(&d, state, false, |expanded, state| {
+                        let mut children = expanded.children;
+                        merge_footnotes(expanded.footnotes, &mut children, state, expanded.file);
+                        Some(children)
+                    });
+                    if let (None, Some(id)) = (&merged, &held) {
+                        let owner = state.owner;
+                        state.reserve_id(id, owner);
+                    }
+                    merged
                 });
-                if let (None, Some(id)) = (&merged, &held) {
-                    let owner = state.owner;
-                    state.reserve_id(id, owner);
-                }
-                return merged;
             }
             ParsedDirective::BadOption(part) => {
-                state.warn(
-                    "include-unknown-option",
-                    format!("Unknown include option \"{part}\"."),
-                );
-                return None;
+                return state.at(position, |state| {
+                    state.warn(
+                        "include-unknown-option",
+                        format!("Unknown include option \"{part}\"."),
+                    );
+                    None
+                });
             }
             ParsedDirective::DuplicateSection(part) => {
-                state.warn(
-                    "include-selection-conflict",
-                    format!("Include directive cannot name two sections: \"{part}\"."),
-                );
-                return None;
+                return state.at(position, |state| {
+                    state.warn(
+                        "include-selection-conflict",
+                        format!("Include directive cannot name two sections: \"{part}\"."),
+                    );
+                    None
+                });
             }
             ParsedDirective::NotADirective => {
                 // A whole-paragraph directive that failed to parse was already
@@ -2868,6 +2927,7 @@ pub(crate) fn expand_includes_with_extensions(
         max_warnings: options.max_warnings.unwrap_or(DEFAULT_MAX_WARNINGS),
         suppressed_warnings: 0,
         seen_rules: std::collections::BTreeSet::new(),
+        warning_position: None,
         track_positions: doc_carries_positions(&doc),
         spent: None,
         stack: options.source_path.clone().into_iter().collect(),

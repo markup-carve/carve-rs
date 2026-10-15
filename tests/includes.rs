@@ -20,6 +20,64 @@ use carve::{
 #[cfg(feature = "fs")]
 use carve::FileSystemResolver;
 
+#[test]
+fn include_warnings_locate_block_and_inline_directives() {
+    let source = "{{ missing }}\n\n😀 Ahead {{ gone }}.\n";
+    let resolver = MapResolver::new(&[]);
+    let doc = parse_with_options(source, &Options::default().with_positions(true));
+    let options = IncludeOptions::new().with_resolver(&resolver);
+    let result = expand_includes(doc, source, &options);
+    let locations: Vec<_> = result
+        .warnings
+        .iter()
+        .map(|w| (w.rule.as_str(), w.line, w.column))
+        .collect();
+    assert_eq!(
+        locations,
+        vec![("include-unresolved", 1, 1), ("include-unresolved", 3, 9)]
+    );
+}
+
+#[test]
+fn include_warnings_use_the_child_file_position_and_skip_inert_code() {
+    let source = "```\n{{ missing }}\n```\n\n{{ child }}\n";
+    let resolver = MapResolver::new(&[("child", "Intro.\n\n{{ missing }}\n")]);
+    let doc = parse_with_options(source, &Options::default().with_positions(true));
+    let options = IncludeOptions::new()
+        .with_source_path("root.crv")
+        .with_resolver(&resolver);
+    let result = expand_includes(doc, source, &options);
+    let warning = &result.warnings[0];
+    assert_eq!(warning.rule, "include-unresolved");
+    assert_eq!((warning.line, warning.column), (3, 1));
+    assert_eq!(warning.file.as_deref(), Some("child"));
+}
+
+#[test]
+fn included_heading_clamp_uses_the_heading_position() {
+    let source = "{{ child @shift:5 }}\n";
+    let resolver = MapResolver::new(&[("child", "Body.\n\n## Deep\n")]);
+    let doc = parse_with_options(source, &Options::default().with_positions(true));
+    let options = IncludeOptions::new().with_resolver(&resolver);
+    let result = expand_includes(doc, source, &options);
+    let warning = result
+        .warnings
+        .iter()
+        .find(|w| w.rule == "include-heading-clamp")
+        .expect("heading clamp warning");
+    assert_eq!((warning.line, warning.column), (3, 1));
+    assert_eq!(warning.file.as_deref(), Some("child"));
+}
+
+#[test]
+fn include_warnings_without_positions_match_the_js_fallback() {
+    let source = "Before.\n\n{{ missing }}\n";
+    let resolver = MapResolver::new(&[]);
+    let options = IncludeOptions::new().with_resolver(&resolver);
+    let result = expand_includes(parse(source), source, &options);
+    assert_eq!((result.warnings[0].line, result.warnings[0].column), (1, 1));
+}
+
 struct MapResolver {
     files: HashMap<String, String>,
     /// Records every path handed to the resolver, so a shielded directive can
