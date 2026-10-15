@@ -2,7 +2,367 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use html5ever::tendril::TendrilSink;
+use markup5ever_rcdom::{NodeData, RcDom};
 use serde_json::{json, Value};
+
+fn decode_url(value: &str) -> Option<String> {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            let hex = bytes.get(index + 1..index + 3)?;
+            if !hex.iter().all(u8::is_ascii_hexdigit) {
+                return None;
+            }
+            let digits = std::str::from_utf8(hex).ok()?;
+            decoded.push(u8::from_str_radix(digits, 16).ok()?);
+            index += 3;
+        } else {
+            decoded.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8(decoded).ok()
+}
+
+fn mapped_path(source: &str, path: &str) -> Option<String> {
+    let mut parts: Vec<&str> = source.split('/').collect();
+    parts.pop();
+    for part in path.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop()?;
+            }
+            _ => parts.push(part),
+        }
+    }
+    Some(parts.join("/"))
+}
+
+fn html_ids(html: String) -> HashSet<String> {
+    let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(html);
+    let mut ids = HashSet::new();
+    let mut pending = vec![dom.document.clone()];
+    while let Some(node) = pending.pop() {
+        for child in node.children.borrow().iter() {
+            if let NodeData::Element { name, attrs, .. } = &child.data {
+                for attr in attrs.borrow().iter() {
+                    if &*attr.name.local == "id"
+                        || (&*attr.name.local == "name" && &*name.local == "a")
+                    {
+                        ids.insert(attr.value.to_string());
+                    }
+                }
+            }
+            pending.push(child.clone());
+        }
+    }
+    ids
+}
+
+fn normalize_html_url(value: &str) -> String {
+    value
+        .trim_matches(|ch| ch <= '\u{20}')
+        .chars()
+        .filter(|ch| !matches!(ch, '\t' | '\n' | '\r'))
+        .collect()
+}
+
+fn srcset_urls(value: &str) -> Vec<String> {
+    let bytes = value.as_bytes();
+    let mut urls = Vec::new();
+    let mut index = 0;
+    let space = |byte| matches!(byte, b' ' | b'\t' | b'\n' | b'\r' | b'\x0c');
+    while index < bytes.len() {
+        while index < bytes.len() && (space(bytes[index]) || bytes[index] == b',') {
+            index += 1;
+        }
+        let start = index;
+        while index < bytes.len() && !space(bytes[index]) {
+            index += 1;
+        }
+        let raw = &value[start..index];
+        let url = raw.trim_end_matches(',');
+        if !url.is_empty() {
+            urls.push(normalize_html_url(url));
+        }
+        if raw.ends_with(',') {
+            continue;
+        }
+        let mut in_parentheses = false;
+        while index < bytes.len() {
+            let byte = bytes[index];
+            index += 1;
+            if byte == b'(' {
+                in_parentheses = true;
+            } else if byte == b')' {
+                in_parentheses = false;
+            } else if byte == b',' && !in_parentheses {
+                break;
+            }
+        }
+    }
+    urls
+}
+
+fn html_urls(html: &str) -> Vec<(String, bool)> {
+    let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(html);
+    let mut urls = Vec::new();
+    let mut pending = vec![dom.document.clone()];
+    while let Some(node) = pending.pop() {
+        for child in node.children.borrow().iter() {
+            if let NodeData::Element { name, attrs, .. } = &child.data {
+                for attr in attrs.borrow().iter() {
+                    let key = &*attr.name.local;
+                    let tag = &*name.local;
+                    if key == "srcset" || key == "imagesrcset" {
+                        let value = attr.value.to_string();
+                        if value.to_ascii_lowercase().contains("data:") {
+                            urls.push((value, true));
+                        } else {
+                            for target in srcset_urls(&value) {
+                                urls.push((target, false));
+                            }
+                        }
+                    } else if key == "href"
+                        || key == "src"
+                        || key == "poster"
+                        || (key == "data" && tag == "object")
+                        || (key == "action" && tag == "form")
+                        || (key == "formaction" && (tag == "button" || tag == "input"))
+                    {
+                        urls.push((normalize_html_url(&attr.value), false));
+                    }
+                }
+            }
+            pending.push(child.clone());
+        }
+    }
+    urls
+}
+
+fn inspect_link(
+    destination: &str,
+    source: &str,
+    outputs: &HashSet<String>,
+    ids: &std::collections::HashMap<String, HashSet<String>>,
+) -> Option<(String, Value)> {
+    if destination.starts_with("//")
+        || destination.split(':').next().is_some_and(|prefix| {
+            prefix
+                .as_bytes()
+                .first()
+                .is_some_and(u8::is_ascii_alphabetic)
+                && prefix
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"+.-".contains(&b))
+                && destination.contains(':')
+        })
+    {
+        return None;
+    }
+    if destination.starts_with('/') {
+        return Some((
+            destination.to_string(),
+            json!({"target": destination, "status": "unresolved", "reason": "site-root path needs route mapping"}),
+        ));
+    }
+    let (before_fragment, raw_fragment) = destination
+        .split_once('#')
+        .map_or((destination, None), |(before, fragment)| {
+            (before, Some(fragment))
+        });
+    let (raw_path, query) = before_fragment
+        .split_once('?')
+        .map_or((before_fragment, ""), |(path, _)| {
+            (path, &before_fragment[path.len()..])
+        });
+    let failure = |reason: &str| {
+        (
+            destination.to_string(),
+            json!({"target": destination, "status": "unresolved", "reason": reason}),
+        )
+    };
+    let Some(path) = decode_url(raw_path) else {
+        return Some(failure("invalid URL encoding"));
+    };
+    let Some(fragment) = raw_fragment.map(decode_url).unwrap_or(Some(String::new())) else {
+        return Some(failure("invalid URL encoding"));
+    };
+    let Some(target) = (if path.is_empty() {
+        Some(source.to_string())
+    } else {
+        mapped_path(source, &path)
+    }) else {
+        return Some(failure("outside source directory"));
+    };
+    let mapped = if target.to_ascii_lowercase().ends_with(".markdown") {
+        format!("{}.crv", &target[..target.len() - 9])
+    } else if target.to_ascii_lowercase().ends_with(".md") {
+        format!("{}.crv", &target[..target.len() - 3])
+    } else {
+        target.clone()
+    };
+    if !outputs.contains(&mapped) {
+        return Some(failure("target missing from output"));
+    }
+    if !fragment.is_empty() && !ids.contains_key(&mapped) {
+        return Some(failure("asset fragment needs site check"));
+    }
+    if !fragment.is_empty() && !ids.get(&mapped).is_some_and(|ids| ids.contains(&fragment)) {
+        return Some(failure("fragment missing from target"));
+    }
+    if mapped != target
+        && !path.is_empty()
+        && !raw_path.to_ascii_lowercase().ends_with(".md")
+        && !raw_path.to_ascii_lowercase().ends_with(".markdown")
+    {
+        return Some(failure("encoded extension needs manual rewrite"));
+    }
+    let new_path = if mapped == target || path.is_empty() {
+        raw_path.to_string()
+    } else if raw_path.to_ascii_lowercase().ends_with(".markdown") {
+        format!("{}.crv", &raw_path[..raw_path.len() - 9])
+    } else {
+        format!("{}.crv", &raw_path[..raw_path.len() - 3])
+    };
+    let href = format!(
+        "{new_path}{query}{}",
+        raw_fragment.map_or(String::new(), |fragment| format!("#{fragment}"))
+    );
+    let status = if href == destination {
+        "valid"
+    } else {
+        "rewritten"
+    };
+    Some((href, json!({"target": destination, "status": status})))
+}
+
+fn check_value(
+    value: &mut Value,
+    source: &str,
+    outputs: &HashSet<String>,
+    ids: &std::collections::HashMap<String, HashSet<String>>,
+    links: &mut Vec<Value>,
+    changed: &mut bool,
+) {
+    match value {
+        Value::Object(object) => {
+            if matches!(
+                object.get("type").and_then(Value::as_str),
+                Some("raw_inline" | "raw_block")
+            ) && object.get("format").and_then(Value::as_str) == Some("html")
+            {
+                if let Some(content) = object.get("content").and_then(Value::as_str) {
+                    for (destination, manual) in html_urls(content) {
+                        if manual {
+                            links.push(json!({"target": destination, "status": "unresolved", "reason": "raw HTML srcset needs manual review"}));
+                            continue;
+                        }
+                        if let Some((_, mut check)) =
+                            inspect_link(&destination, source, outputs, ids)
+                        {
+                            if check["status"] == "rewritten" {
+                                check = json!({"target": destination, "status": "unresolved", "reason": "raw HTML link needs manual rewrite"});
+                            }
+                            links.push(check);
+                        }
+                    }
+                }
+            }
+            let key = match object.get("type").and_then(Value::as_str) {
+                Some("link") => Some("href"),
+                Some("image") => Some("src"),
+                _ => None,
+            };
+            if let Some(key) = key {
+                if let Some(destination) = object
+                    .get(key)
+                    .and_then(Value::as_str)
+                    .filter(|href| !href.is_empty())
+                {
+                    if let Some((href, mut check)) = inspect_link(destination, source, outputs, ids)
+                    {
+                        if href != destination && object.get("ref").is_some() {
+                            check = json!({"target": destination, "status": "unresolved", "reason": "reference link needs manual rewrite"});
+                        } else if href != destination {
+                            object.insert(key.to_string(), Value::String(href));
+                            *changed = true;
+                        }
+                        links.push(check);
+                    }
+                }
+            }
+            for (key, child) in object.iter_mut() {
+                if key != "attrs" && key != "position" {
+                    check_value(child, source, outputs, ids, links, changed);
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                check_value(item, source, outputs, ids, links, changed);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn check_links(
+    temporary: &Path,
+    files: &mut [Value],
+    assets: &[String],
+) -> Result<HashSet<String>, String> {
+    let outputs: HashSet<String> = files
+        .iter()
+        .filter_map(|file| file["output"].as_str().map(str::to_string))
+        .chain(assets.iter().cloned())
+        .collect();
+    let mut ids = std::collections::HashMap::new();
+    for file in files.iter() {
+        let output = file["output"].as_str().ok_or("invalid output name")?;
+        let text = fs::read_to_string(temporary.join(output)).map_err(|e| e.to_string())?;
+        ids.insert(output.to_string(), html_ids(carve::to_html(&text)));
+    }
+    let mut broken = HashSet::new();
+    for file in files.iter_mut() {
+        let source = file["source"]
+            .as_str()
+            .ok_or("invalid source name")?
+            .to_string();
+        let output = file["output"]
+            .as_str()
+            .ok_or("invalid output name")?
+            .to_string();
+        let path = temporary.join(&output);
+        let original = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        let mut document = serde_json::from_str::<Value>(&carve::to_json(&carve::parse(&original)))
+            .map_err(|e| e.to_string())?;
+        let mut links = Vec::new();
+        let mut changed = false;
+        check_value(
+            &mut document,
+            &source,
+            &outputs,
+            &ids,
+            &mut links,
+            &mut changed,
+        );
+        if links.iter().any(|link| link["status"] == "unresolved") {
+            broken.insert(source);
+        }
+        file["links"] = json!(links);
+        if changed {
+            let document = carve::from_json(&document.to_string()).map_err(|e| e.to_string())?;
+            let written = carve::render_carve(&document).map_err(|e| e.to_string())?;
+            fs::write(path, written).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(broken)
+}
 
 #[derive(Clone, Copy)]
 enum Kind {
@@ -186,6 +546,14 @@ pub fn run(source: &str, output: &str, check_loss: bool) -> Result<u8, String> {
                 files.push(json!({"source": source_name, "output": destination_name, "diagnostics": diagnostics}));
             }
         }
+        let broken = check_links(&temporary, &mut files, &assets)?;
+        for file in &files {
+            let source = file["source"].as_str().ok_or("invalid source name")?;
+            if broken.contains(source) && !review.iter().any(|item| item == source) {
+                review.push(source.to_string());
+            }
+        }
+        review.sort();
         let counts = (files.len(), assets.len(), review.len(), skipped.len());
         let report = json!({"schemaVersion": 1, "sourceFormat": "markdown", "files": files, "assets": assets, "skipped": skipped, "review": review});
         fs::write(
@@ -351,6 +719,141 @@ mod tests {
             fs::read_to_string(output.join("x.mar\u{212A}down")).unwrap(),
             "asset"
         );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn checks_links_and_rewrites_only_verified_targets() {
+        let root = std::env::temp_dir().join(format!(
+            "carve-links-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let source = root.join("source");
+        fs::create_dir_all(source.join("chapters")).unwrap();
+        fs::write(source.join("index.md"), "# Home\n\n[good](chapters/intro.md#Intro) [self](#Home) [query](?view=1) [encoded](chapters/a%23b.md#A) [bad](chapters/intro.md#intro) [gone](missing.md) [route](/docs/intro) ![image](lost.png) [asset](manual.pdf#page=2)\n").unwrap();
+        fs::write(source.join("chapters/a#b.md"), "# A\n").unwrap();
+        fs::write(source.join("manual.pdf"), "pdf").unwrap();
+        fs::write(
+            source.join("chapters/intro.md"),
+            "# Intro\n\n[home](../index.md#Home)\n",
+        )
+        .unwrap();
+        let output = root.join("output");
+        assert_eq!(
+            run(source.to_str().unwrap(), output.to_str().unwrap(), true).unwrap(),
+            1
+        );
+        assert!(fs::read_to_string(output.join("index.crv"))
+            .unwrap()
+            .contains("(chapters/intro.crv#Intro)"));
+        assert!(fs::read_to_string(output.join("index.crv"))
+            .unwrap()
+            .contains("(chapters/a%23b.crv#A)"));
+        assert!(fs::read_to_string(output.join("chapters/intro.crv"))
+            .unwrap()
+            .contains("(../index.crv#Home)"));
+        let report: serde_json::Value =
+            serde_json::from_slice(&fs::read(output.join("migration-report.json")).unwrap())
+                .unwrap();
+        assert_eq!(report["review"], serde_json::json!(["index.md"]));
+        let links = report["files"][2]["links"].as_array().unwrap();
+        assert!(links
+            .iter()
+            .any(|link| link["target"] == "#Home" && link["status"] == "valid"));
+        assert!(links
+            .iter()
+            .any(|link| link["target"] == "?view=1" && link["status"] == "valid"));
+        assert!(links
+            .iter()
+            .any(|link| link["target"] == "manual.pdf#page=2"
+                && link["reason"] == "asset fragment needs site check"));
+        assert!(links
+            .iter()
+            .any(|link| link["target"] == "lost.png" && link["status"] == "unresolved"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn data_id_is_not_a_fragment_target() {
+        let root = std::env::temp_dir().join(format!(
+            "carve-link-id-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let source = root.join("source");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(
+            source.join("page.md"),
+            "# Page\n\n[false anchor](other.md#shadow) [false code](other.md#ghost) [legacy](other.md#legacy)\n\n<a href=\" other.md \">raw</a>\n\n<img src=\" chart.png \" srcset=\"missing-responsive.png 2x, chart,v2.png 1x\">\n\n<link rel=\"preload\" as=\"image\" imagesrcset=\"chart,v2.png 2x\">\n\n<video poster=\"missing-poster.png\"></video>\n",
+        )
+        .unwrap();
+        fs::write(source.join("chart.png"), "png").unwrap();
+        fs::write(source.join("chart,v2.png"), "png").unwrap();
+        fs::write(
+            source.join("other.md"),
+            "# Other\n\n<div data-id=\"shadow\">Text</div>\n\n`id=\"ghost\"`\n\n<a name=\"legacy\"></a>\n",
+        )
+        .unwrap();
+        let output = root.join("output");
+        run(source.to_str().unwrap(), output.to_str().unwrap(), false).unwrap();
+        let report: serde_json::Value =
+            serde_json::from_slice(&fs::read(output.join("migration-report.json")).unwrap())
+                .unwrap();
+        let page = report["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|file| file["source"] == "page.md")
+            .unwrap();
+        assert!(page["links"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|link| link["target"] == "other.md#shadow"
+                && link["reason"] == "fragment missing from target"));
+        assert!(page["links"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|link| link["target"] == "other.md#ghost"
+                && link["reason"] == "fragment missing from target"));
+        assert!(page["links"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|link| link["target"] == "other.md#legacy" && link["status"] == "rewritten"));
+        assert!(page["links"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|link| link["target"] == "other.md"
+                && link["reason"] == "raw HTML link needs manual rewrite"));
+        let links = page["links"].as_array().unwrap();
+        assert!(links
+            .iter()
+            .any(|link| link["target"] == "chart.png" && link["status"] == "valid"));
+        assert_eq!(
+            links
+                .iter()
+                .filter(|link| link["target"] == "chart,v2.png" && link["status"] == "valid")
+                .count(),
+            2
+        );
+        assert!(links
+            .iter()
+            .any(|link| link["target"] == "missing-responsive.png"
+                && link["reason"] == "target missing from output"));
+        assert!(links
+            .iter()
+            .any(|link| link["target"] == "missing-poster.png"
+                && link["reason"] == "target missing from output"));
         fs::remove_dir_all(root).unwrap();
     }
 }

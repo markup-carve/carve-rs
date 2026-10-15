@@ -1786,11 +1786,13 @@ fn print_usage() {
          carve migrate --from FORMAT [options] [file]\n                              \
          convert html, markdown (md), djot or bbcode to Carve.\n                              \
          Folder: --from markdown --directory SOURCE --output TARGET.\n                              \
+         Folder mode checks local links and copies assets.\n                              \
          --mode/--adapter/--list-table apply to html (--list-table\n                              \
          writes a table whose cells hold blocks as ::: list-table);\n                              \
          --report/--check-loss\n                              \
          apply to all importers and fail closed when fidelity is unknown\n                              \
-         (exit 1 only when --check-loss finds loss, 2 on a\n                              \
+         (exit 1 when --check-loss finds loss, unresolved links\n                              \
+         or skipped entries; 2 on a\n                              \
          usage error or an unreadable file)\n  \
          carve -h                    show this help\n  \
          carve -V, --version         print the version\n\n\
