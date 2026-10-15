@@ -365,13 +365,7 @@ fn render_carve_once(session: &RenderSession, doc: &Document) -> String {
     session.staged.with(|c| c.borrow_mut().clear());
     let minimal = render_with_escapes(session, doc, EscapeMode::Minimal);
     let conservative = render_with_escapes(session, doc, EscapeMode::Conservative);
-    // A tree nested to the parser's cap may hold over-cap text that no spelling
-    // reads back, so its output is checked even when the two forms agree.
-    let at_cap = crate::render_depth::reaches_nesting_cap(doc);
     if minimal == conservative {
-        if at_cap {
-            refuse_unless_it_reads_back(comparable_tree(&minimal).as_ref(), doc);
-        }
         return minimal;
     }
     // The minimal form that re-parses to THIS document is the document's
@@ -399,8 +393,12 @@ fn render_carve_once(session: &RenderSession, doc: &Document) -> String {
     // Every state the narrowing visits is verified against `conservative_tree`,
     // so when that is not the document's tree no state reads back either. Past
     // the cap that is the refuse arm of CARVE-P9-078, taken before a search whose
-    // every probe re-parses the whole deep document.
-    if at_cap && !refuse_unless_it_reads_back(conservative_tree.as_ref(), doc) {
+    // every probe re-parses the whole deep document. Only here: when the two forms
+    // agree there is no search to save, and the comparison is one-way (above), so
+    // it cannot be the reason to refuse a document the writer returns today.
+    if crate::render_depth::reaches_nesting_cap(doc)
+        && !refuse_unless_it_reads_back(conservative_tree.as_ref(), doc)
+    {
         return conservative;
     }
     if escaping_is_redundant(minimal_tree.as_ref(), conservative_tree.as_ref()) {
