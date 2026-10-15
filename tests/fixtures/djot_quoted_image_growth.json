@@ -1764,5 +1764,73 @@
     "html": "<p>&gt;&gt;&gt; <img alt=\"a--\n&gt;&gt;&gt; a--\n&gt;&gt;&gt; a--\n&gt;&gt;&gt; a--\n&gt;&gt;&gt; x\" src=\"u\"></p>\n",
     "losses": [],
     "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a\n![\n> b](u)](v)",
+    "html": "<blockquote><p><img src=\"v\" alt=\"a\nb\"></p></blockquote>",
+    "losses": [
+      "An image alternative text with a blank line cannot be spelled in Carve."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "x\n>![a\n![b](u)](v)",
+    "html": "<p>x\n&gt;<img alt=\"a\nb\" src=\"v\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![x :![a:\nb](u)](v)",
+    "html": "<p><img alt=\"x :a:\nb\" src=\"v\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![x :smile:\nb](u)",
+    "html": "<p><img src=\"u\" alt=\"x\nb\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![x\n![:a:\nb](u)](v)",
+    "html": "<p><img src=\"v\" alt=\"x\nb\"></p>",
+    "losses": [
+      "An image alternative text with a blank line cannot be spelled in Carve."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> ![  :a:\n> z](u)",
+    "html": "<blockquote><p><img src=\"u\" alt=\"\nz\"></p></blockquote>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "[a\\é](u)",
+    "html": "<p><a href=\"u\">a\\é</a></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![\\é\nb](u)",
+    "html": "<p><img alt=\"\\é\nb\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[a\\🙂](u)",
+    "html": "<p><a href=\"u\">a\\🙂</a></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![\\🙂\nb](u)",
+    "html": "<p><img alt=\"\\🙂\nb\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
   }
 ]

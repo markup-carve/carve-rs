@@ -5107,7 +5107,7 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
                     && parent.2 > 0
                     && quote_depths.get(source_line + 1) == Some(&parent.2)
                 {
-                    if let Some(prefix) = cached_regex!(r"^(?:[ \t]*>[ \t]?)+")
+                    if let Some(prefix) = cached_regex!(r"^(?:[ \t]*>[ \t])+")
                         .unwrap()
                         .find(&source[i + 1..])
                     {
@@ -5125,7 +5125,10 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
             continue;
         }
         if bytes[i] == b'\\' {
-            i += 2;
+            i += 1;
+            if i < bytes.len() {
+                i += source[i..].chars().next().unwrap().len_utf8();
+            }
             continue;
         }
         if bytes[i] == b'[' {

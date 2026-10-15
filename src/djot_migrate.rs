@@ -132,7 +132,7 @@ fn djot_to_carve_prepared_with_quotes(
 
 fn plain_image_character(ch: char) -> bool {
     ch.is_ascii_alphanumeric()
-        || " ,;:?/=&@\t\n".contains(ch)
+        || " ,;?/=&@\t\n".contains(ch)
         || !ch.is_ascii() && {
             let mut buffer = [0; 4];
             cached_regex!(r"^[\p{L}\p{N}\p{M}]$")
@@ -162,7 +162,7 @@ fn collapse_plain_nested_image_chains(source: &str) -> std::borrow::Cow<'_, str>
             offset += line.len() + 1;
         }
     }
-    let quote_pattern = cached_regex!(r"^(?:[ \t]*>[ \t]?)+").unwrap();
+    let quote_pattern = cached_regex!(r"^(?:[ \t]*>[ \t])+").unwrap();
     let mut line_offset = 0;
     let quote_lines: Vec<_> = source
         .split('\n')
@@ -210,16 +210,17 @@ fn collapse_plain_nested_image_chains(source: &str) -> std::borrow::Cow<'_, str>
             let begin = at;
             while at < bytes.len() {
                 let ch = source[at..].chars().next().unwrap();
-                if !plain_image_character(ch)
-                    || ch == ':' && (at == begin || matches!(non_space, '\0' | '\n'))
+                if !plain_image_character(ch) {
+                    break;
+                }
+                if ch == '\n'
+                    && !quote_prefix.is_empty()
+                    && !source[at + ch.len_utf8()..].starts_with(quote_prefix)
                 {
                     break;
                 }
                 at += ch.len_utf8();
                 if ch == '\n' && !quote_prefix.is_empty() {
-                    if !source[at..].starts_with(quote_prefix) {
-                        break;
-                    }
                     at += quote_prefix.len();
                 }
                 if ch == '\n' && (non_space == '\n' || matches!(previous, ' ' | '\t')) {
