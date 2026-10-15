@@ -26804,6 +26804,35 @@ pub(crate) fn raw_bracket_run_closes(text: &str) -> bool {
     read_bracketed(wrapped.as_bytes(), 0).is_some_and(|(_, after)| after == wrapped.len())
 }
 
+/// The end (exclusive) of a complete destination slot opening at `open`, read
+/// after a `]` that closes a NESTED run: the grammar's `nested` and
+/// `altNested` take `"[" ... "]" destSlot?`, so the slot is content of the run
+/// around it and a `]` inside it closes nothing (CARVE-P3-001). The scan is
+/// charged to `budget`; once it runs out no slot is skipped, which keeps a
+/// chain of nested slots linear.
+fn nested_destination_slot_end(bytes: &[u8], open: usize, budget: &mut usize) -> Option<usize> {
+    if bytes.get(open) != Some(&b'(') || *budget == 0 {
+        return None;
+    }
+    let limit = bytes
+        .len()
+        .min(open.saturating_add(*budget).saturating_add(1));
+    match link_destination_end(&bytes[..limit], open) {
+        Some(close) => {
+            *budget = budget.saturating_sub(close + 1 - open);
+            Some(close + 1)
+        }
+        None => {
+            *budget = if limit < bytes.len() {
+                0
+            } else {
+                budget.saturating_sub(limit - open)
+            };
+            None
+        }
+    }
+}
+
 fn read_bracketed(bytes: &[u8], start: usize) -> Option<(String, usize)> {
     if bytes.get(start) != Some(&b'[') {
         return None;
@@ -26814,6 +26843,7 @@ fn read_bracketed(bytes: &[u8], start: usize) -> Option<(String, usize)> {
     // An image alt is a literal slot, so a `{%` there opens no comment.
     let in_alt = start > 0 && bytes[start - 1] == b'!';
     let last_percent_close = bytes.windows(2).rposition(|w| w == b"%}");
+    let mut slot_budget = BRACKET_RESCAN_BUDGET * bytes.len() + 64;
     while i < bytes.len() {
         match bytes[i] {
             b'{' if !in_alt
@@ -26844,7 +26874,7 @@ fn read_bracketed(bytes: &[u8], start: usize) -> Option<(String, usize)> {
             }
             b']' if depth > 0 => {
                 depth -= 1;
-                i += 1;
+                i = nested_destination_slot_end(bytes, i + 1, &mut slot_budget).unwrap_or(i + 1);
             }
             b']' => {
                 let text = std::str::from_utf8(&bytes[content_start..i])
@@ -27062,6 +27092,7 @@ fn compute_bracket_matches(bytes: &[u8]) -> (Vec<usize>, Vec<usize>) {
     // Per open bracket, whether it is (inside) an image alt.
     let mut alt: Vec<bool> = Vec::new();
     let mut last_bang = usize::MAX;
+    let mut slot_budget = BRACKET_RESCAN_BUDGET * bytes.len() + 64;
     let mut i = 0;
     while i < bytes.len() {
         let in_alt = alt.last().copied().unwrap_or(false);
@@ -27116,6 +27147,12 @@ fn compute_bracket_matches(bytes: &[u8]) -> (Vec<usize>, Vec<usize>) {
                 alt.pop();
                 run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
                 i += 1;
+                if !stack.is_empty() {
+                    if let Some(end) = nested_destination_slot_end(bytes, i, &mut slot_budget) {
+                        fill_run(&mut run_at, &stack, i, end);
+                        i = end;
+                    }
+                }
             }
             byte => {
                 if byte == b'!' {
@@ -27176,6 +27213,11 @@ fn compute_bracket_matches(bytes: &[u8]) -> (Vec<usize>, Vec<usize>) {
                         return Some(i);
                     }
                     i += 1;
+                    let mut slot_budget = budget;
+                    if let Some(end) = nested_destination_slot_end(bytes, i, &mut slot_budget) {
+                        i = end;
+                    }
+                    budget = slot_budget;
                 }
                 byte => {
                     if byte == b'!' {
@@ -27604,7 +27646,17 @@ fn match_emphasis(
             return None;
         }
         if i > 0 && matches!(bytes[i - 1], b'<' | b'>' | b'!') {
-            return None;
+            // The `>` that closes an autolink or cross-reference is atomic to
+            // it, so it forms no `>=` with the `=` after it.
+            let closes_atomic = bytes[i - 1] == b'>'
+                && no_close
+                    .atomic
+                    .get_or_insert_with(|| atomic_link_regions(bytes, bounds).into())
+                    .binary_search_by_key(&i, |&(_, end)| end)
+                    .is_ok();
+            if !closes_atomic {
+                return None;
+            }
         }
     }
     if i > 0 {
@@ -30297,7 +30349,6 @@ fn link_destination_end(bytes: &[u8], open: usize) -> Option<usize> {
     }
     let mut depth = 1usize;
     let mut quote = 0u8;
-    let mut space_outside_title = false;
     let mut i = open + 1;
     while i < bytes.len() {
         let b = bytes[i];
@@ -30321,12 +30372,13 @@ fn link_destination_end(bytes: &[u8], open: usize) -> Option<usize> {
             b')' => {
                 depth -= 1;
                 if depth == 0 {
-                    return (!space_outside_title).then_some(i);
+                    return Some(i);
                 }
             }
-            // The one space a title may sit behind.
+            // The one space a title may sit behind; any other space means no
+            // destination, so stop rather than scan on.
             b' ' | b'\t' if !matches!(bytes.get(i + 1), Some(b'"') | Some(b'\'')) => {
-                space_outside_title = true;
+                return None;
             }
             _ => {}
         }

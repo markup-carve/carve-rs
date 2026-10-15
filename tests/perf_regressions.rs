@@ -238,6 +238,20 @@ fn wide_table_row_colspan_render_is_linear() {
 }
 
 #[test]
+fn nested_destination_slots_in_one_run_scale_near_linearly() {
+    // Each `]` closing a nested run reads the slot after it; unclosed slots
+    // must not rescan to the end of the line.
+    assert_near_linear(
+        |n| format!("[a {}b]", "[x](/u ".repeat(n)),
+        "nested destination slots",
+    );
+    assert_near_linear(
+        |n| format!("{}{}", "[x [y](".repeat(n), ")]".repeat(n)),
+        "chained nested slots",
+    );
+}
+
+#[test]
 fn merged_table_rows_and_their_carets_scale_near_linearly() {
     assert_near_linear_at(
         |n| format!("| A |{}\n|{}\n", " < |".repeat(n), " ^ |".repeat(n + 1)),
