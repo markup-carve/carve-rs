@@ -26929,12 +26929,12 @@ fn scanned_crossref_end(bytes: &[u8], open: usize) -> Option<usize> {
 /// [`scanned_crossref_end`] for a one-pass scan: every `</#` inside one id run
 /// ends at the same byte, so a run of unclosed openers is read once.
 #[derive(Default)]
-struct CrossrefScan {
+pub(crate) struct CrossrefScan {
     run: Cell<Option<(usize, usize)>>,
 }
 
 impl CrossrefScan {
-    fn end(&self, bytes: &[u8], open: usize) -> Option<usize> {
+    pub(crate) fn end(&self, bytes: &[u8], open: usize) -> Option<usize> {
         if !bytes.get(open..)?.starts_with(b"</#") || bytes.get(open + 3) == Some(&b'>') {
             return None;
         }

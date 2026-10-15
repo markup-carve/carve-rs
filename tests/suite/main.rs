@@ -719,6 +719,8 @@ mod an_import_moves_edge_space_out_and_reads_linear_mathml;
 mod an_imported_cell_and_term_drop_their_edge_space;
 #[path = "../an_imported_container_comes_back_as_the_container.rs"]
 mod an_imported_container_comes_back_as_the_container;
+#[path = "../an_imported_cross_reference_stays_atomic.rs"]
+mod an_imported_cross_reference_stays_atomic;
 #[path = "../an_imported_element_keeps_its_key_order.rs"]
 mod an_imported_element_keeps_its_key_order;
 #[path = "../an_imported_hard_break_drops_the_space_after_it.rs"]

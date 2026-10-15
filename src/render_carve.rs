@@ -6946,7 +6946,22 @@ fn escape_text(
     let mut previous = previous_boundary;
     let mut bracket_ordinal = 0;
     let mut after_paired_closer = paired_closer_carry.get();
+    let crossrefs = crate::parse::CrossrefScan::default();
     while let Some((offset, ch)) = chars.next() {
+        if ch == '<' {
+            if let Some(end) = crossrefs.end(text.as_bytes(), offset) {
+                out.push_str(&text[offset..end]);
+                while chars.peek().is_some_and(|&(at, _)| at < end) {
+                    if matches!(chars.next(), Some((_, '[' | ']'))) {
+                        bracket_ordinal += 1;
+                    }
+                }
+                previous = '>';
+                at_line_start = false;
+                after_paired_closer = false;
+                continue;
+            }
+        }
         // A CONTROL CHARACTER IS CONTENT, and the writer has to write it back.
         // This dropped 61 codepoints - every C0 control but tab/newline/return,
         // DEL, and the whole C1 block - none of which the parser or the HTML
