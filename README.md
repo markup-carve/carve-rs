@@ -71,6 +71,13 @@ The `carve` CLI renders documents, formats source, exports the serialized AST,
 and imports HTML, Markdown, Djot, and BBCode. Importers emit structured
 fidelity reports and participate in `--check-loss`.
 
+```sh
+carve migrate --from markdown --directory docs --output docs-carve --check-loss
+```
+
+Folder migration copies assets and writes `docs-carve/migration-report.json`
+with files that need review.
+
 - [Command line](https://github.com/markup-carve/carve-rs/blob/main/docs/cli.md)
 - [Migration](https://github.com/markup-carve/carve-rs/blob/main/docs/migration.md)
 - [Migration reports](https://github.com/markup-carve/carve-rs/blob/main/docs/migration-result.md)

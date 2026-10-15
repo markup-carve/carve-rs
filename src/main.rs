@@ -4,6 +4,7 @@
 use carve::CarveExtension;
 use std::io::{self, Read, Write};
 use std::process::ExitCode;
+mod migrate_directory;
 
 fn read_stdin_lossy(out: &mut String) -> io::Result<()> {
     let mut bytes = Vec::new();
@@ -869,11 +870,15 @@ fn main() -> ExitCode {
 fn run_migrate(args: &[String]) -> ExitCode {
     let mut mode = carve::HtmlImportMode::Safe;
     let mut adapter = carve::HtmlImportAdapter::Generic;
+    let mut mode_set = false;
+    let mut adapter_set = false;
     let mut report_path: Option<&str> = None;
     let mut check_loss = false;
     let mut list_table = false;
     let mut input: Option<&str> = None;
     let mut from: Option<String> = None;
+    let mut directory: Option<String> = None;
+    let mut output: Option<String> = None;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -884,6 +889,7 @@ fn run_migrate(args: &[String]) -> ExitCode {
             // Both flags read the SAME vocabulary the report writes back out,
             // so a mode the CLI takes is always a mode the schema admits.
             "--mode" => {
+                mode_set = true;
                 i += 1;
                 mode = match args.get(i).map(String::as_str) {
                     Some(value) => match carve::HtmlImportMode::from_name(value) {
@@ -900,6 +906,7 @@ fn run_migrate(args: &[String]) -> ExitCode {
                 };
             }
             "--adapter" => {
+                adapter_set = true;
                 i += 1;
                 adapter = match args.get(i).map(String::as_str) {
                     Some(value) => match carve::HtmlImportAdapter::from_name(value) {
@@ -918,6 +925,22 @@ fn run_migrate(args: &[String]) -> ExitCode {
             "--report" => {
                 i += 1;
                 report_path = args.get(i).map(String::as_str);
+            }
+            "--directory" => {
+                i += 1;
+                directory = args.get(i).cloned();
+                if directory.is_none() {
+                    eprintln!("carve migrate: --directory requires a value");
+                    return ExitCode::from(2);
+                }
+            }
+            "--output" => {
+                i += 1;
+                output = args.get(i).cloned();
+                if output.is_none() {
+                    eprintln!("carve migrate: --output requires a value");
+                    return ExitCode::from(2);
+                }
             }
             "--check-loss" => check_loss = true,
             "--list-table" => list_table = true,
@@ -949,6 +972,31 @@ fn run_migrate(args: &[String]) -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    if directory.is_some() || output.is_some() {
+        if !matches!(from.as_str(), "markdown" | "md")
+            || directory.is_none()
+            || output.is_none()
+            || input.is_some()
+            || report_path.is_some()
+            || list_table
+            || mode_set
+            || adapter_set
+        {
+            eprintln!("carve migrate: folder mode requires --from markdown --directory SOURCE --output TARGET; single-file options are not allowed");
+            return ExitCode::from(2);
+        }
+        return match migrate_directory::run(
+            directory.as_deref().unwrap(),
+            output.as_deref().unwrap(),
+            check_loss,
+        ) {
+            Ok(code) => ExitCode::from(code),
+            Err(error) => {
+                eprintln!("carve migrate: {error}");
+                ExitCode::from(2)
+            }
+        };
+    }
     let source = match input {
         None | Some("-") => {
             let mut s = String::new();
@@ -1733,6 +1781,7 @@ fn print_usage() {
                                      merge independent structural edits\n  \
          carve migrate --from FORMAT [options] [file]\n                              \
          convert html, markdown (md), djot or bbcode to Carve.\n                              \
+         Folder: --from markdown --directory SOURCE --output TARGET.\n                              \
          --mode/--adapter/--list-table apply to html (--list-table\n                              \
          writes a table whose cells hold blocks as ::: list-table);\n                              \
          --report/--check-loss\n                              \
