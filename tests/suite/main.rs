@@ -531,6 +531,8 @@ mod a_span_contributes_its_text_to_a_heading_id;
 mod a_span_label_that_opens_a_note_reference_is_escaped;
 #[path = "../a_split_scheme_does_not_defeat_a_link_policy.rs"]
 mod a_split_scheme_does_not_defeat_a_link_policy;
+#[path = "../a_strong_around_an_italic_flanks_as_one_triple_star_run.rs"]
+mod a_strong_around_an_italic_flanks_as_one_triple_star_run;
 #[path = "../a_structural_attribute_leads_the_authors_own.rs"]
 mod a_structural_attribute_leads_the_authors_own;
 #[path = "../a_structural_base_class_merges_whole_author_entries.rs"]
