@@ -130,6 +130,17 @@ fn djot_to_carve_prepared_with_quotes(
         .replace(token, "\0")
 }
 
+fn plain_image_character(ch: char) -> bool {
+    ch.is_ascii_alphanumeric()
+        || " ,;?/=&@\t\n".contains(ch)
+        || !ch.is_ascii() && {
+            let mut buffer = [0; 4];
+            cached_regex!(r"^[\p{L}\p{N}\p{M}]$")
+                .unwrap()
+                .is_match(ch.encode_utf8(&mut buffer))
+        }
+}
+
 fn collapse_plain_nested_image_chains(source: &str) -> std::borrow::Cow<'_, str> {
     use std::borrow::Cow;
     if !source.contains("![") || !source.contains('\n') {
@@ -151,6 +162,22 @@ fn collapse_plain_nested_image_chains(source: &str) -> std::borrow::Cow<'_, str>
             offset += line.len() + 1;
         }
     }
+    let quote_pattern = cached_regex!(r"^(?:[ \t]*>[ \t])+").unwrap();
+    let mut line_offset = 0;
+    let quote_lines: Vec<_> = source
+        .split('\n')
+        .map(|line| {
+            let start = line_offset;
+            line_offset += line.len() + 1;
+            (
+                start,
+                quote_pattern
+                    .find(line)
+                    .map_or("", |prefix| prefix.as_str()),
+            )
+        })
+        .collect();
+    let mut source_line = 0;
     let bytes = source.as_bytes();
     let mut result = String::new();
     let mut copied = 0;
@@ -163,30 +190,52 @@ fn collapse_plain_nested_image_chains(source: &str) -> std::borrow::Cow<'_, str>
             start += 1;
             continue;
         }
+        while quote_lines
+            .get(source_line + 1)
+            .is_some_and(|(at, _)| *at <= start)
+        {
+            source_line += 1;
+        }
+        let quote_prefix = quote_lines[source_line].1;
+        let quote_break = format!("\n{quote_prefix}");
         let mut at = start;
         let mut first_safe = 0;
-        let mut previous = 0;
-        let mut non_space = 0;
+        let mut previous = '\0';
+        let mut non_space = '\0';
         let mut labels = Vec::new();
         let mut positions = Vec::new();
         while bytes.get(at..at + 2) == Some(b"![") && mask[at] == b'!' {
             positions.push(at);
             at += 2;
             let begin = at;
-            while at < bytes.len()
-                && (bytes[at].is_ascii_alphanumeric() || b" \t\n".contains(&bytes[at]))
-            {
-                let ch = bytes[at];
-                at += 1;
-                if ch == b'\n' && (non_space == b'\n' || matches!(previous, b' ' | b'\t')) {
+            while at < bytes.len() {
+                let ch = source[at..].chars().next().unwrap();
+                if !plain_image_character(ch) {
+                    break;
+                }
+                if ch == '\n'
+                    && !quote_prefix.is_empty()
+                    && !source[at + ch.len_utf8()..].starts_with(quote_prefix)
+                {
+                    break;
+                }
+                at += ch.len_utf8();
+                if ch == '\n' && !quote_prefix.is_empty() {
+                    at += quote_prefix.len();
+                }
+                if ch == '\n' && (non_space == '\n' || matches!(previous, ' ' | '\t')) {
                     first_safe = labels.len() + 1;
                 }
-                if !matches!(ch, b' ' | b'\t') {
+                if !matches!(ch, ' ' | '\t') {
                     non_space = ch;
                 }
                 previous = ch;
             }
-            labels.push(&source[begin..at]);
+            labels.push(if quote_prefix.is_empty() {
+                Cow::Borrowed(&source[begin..at])
+            } else {
+                Cow::Owned(source[begin..at].replace(&quote_break, "\n"))
+            });
             if bytes.get(at..at + 2) != Some(b"![") {
                 break;
             }
@@ -224,9 +273,8 @@ fn collapse_plain_nested_image_chains(source: &str) -> std::borrow::Cow<'_, str>
         }
         result.push_str(&source[copied..positions[first]]);
         result.push_str("![");
-        for label in &labels[first..] {
-            result.push_str(label);
-        }
+        let label: String = labels[first..].iter().map(|label| label.as_ref()).collect();
+        result.push_str(&label.replace('\n', &quote_break));
         result.push_str("](");
         result.push_str(targets[count - 1]);
         result.push(')');

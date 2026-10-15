@@ -5074,7 +5074,7 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
     let boundaries = djot_inline_boundaries(source, &mask);
     let mut boundary = 0;
     // Track label brackets separately from destination parentheses.
-    let mut brackets: Vec<(usize, bool, usize, bool, u8)> = Vec::new();
+    let mut brackets: Vec<(usize, bool, usize, bool, char)> = Vec::new();
     let bytes = source.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
@@ -5086,16 +5086,38 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
             boundary += 1;
         }
         if let Some(parent) = brackets.last_mut() {
-            let ch = bytes[i];
-            if !matches!(ch, b'[' | b']') && !(ch == b'!' && bytes.get(i + 1) == Some(&b'[')) {
-                if mask.as_bytes()[i] != ch
+            let ch = source[i..].chars().next().unwrap();
+            if !matches!(ch, '[' | ']') && !(ch == '!' && bytes.get(i + 1) == Some(&b'[')) {
+                if mask.as_bytes().get(i..i + ch.len_utf8()) != bytes.get(i..i + ch.len_utf8())
                     || is_escaped(bytes, i)
-                    || !(ch.is_ascii_alphanumeric() || b" \t\n".contains(&ch))
-                    || ch == b'\n' && !parent.4.is_ascii_alphanumeric()
+                    || !plain_image_character(ch)
+                    || ch == '\n'
+                        && (!plain_image_character(parent.4)
+                            || matches!(parent.4, ' ' | '\t' | '\n'))
                 {
                     parent.3 = false;
                 }
                 parent.4 = ch;
+                if ch.len_utf8() > 1 {
+                    i += ch.len_utf8();
+                    continue;
+                }
+                if ch == '\n'
+                    && parent.3
+                    && parent.2 > 0
+                    && quote_depths.get(source_line + 1) == Some(&parent.2)
+                {
+                    if let Some(prefix) = cached_regex!(r"^(?:[ \t]*>[ \t])+")
+                        .unwrap()
+                        .find(&source[i + 1..])
+                    {
+                        if prefix.as_str().bytes().filter(|byte| *byte == b'>').count() == parent.2
+                        {
+                            i += prefix.len() + 1;
+                            continue;
+                        }
+                    }
+                }
             }
         }
         if mask.as_bytes()[i] != bytes[i] {
@@ -5103,7 +5125,10 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
             continue;
         }
         if bytes[i] == b'\\' {
-            i += 2;
+            i += 1;
+            if i < bytes.len() {
+                i += source[i..].chars().next().unwrap().len_utf8();
+            }
             continue;
         }
         if bytes[i] == b'[' {
@@ -5112,7 +5137,7 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
                     parent.3 = false;
                 }
             }
-            brackets.push((i, false, quote_depths[source_line], true, 0));
+            brackets.push((i, false, quote_depths[source_line], true, '\0'));
         }
         if bytes[i] == b']' {
             if let Some((start, nested, depth, plain, last)) = brackets.pop() {
@@ -5179,7 +5204,7 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
                     {
                         parent.3 = false;
                     }
-                    if last != 0 {
+                    if last != '\0' {
                         parent.4 = last;
                     }
                 }
