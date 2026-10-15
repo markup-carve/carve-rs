@@ -2888,17 +2888,9 @@ fn render_definition_list(
     ctx: &mut CarveContext,
 ) -> String {
     let mut out: Vec<String> = Vec::new();
-    // NO SEPARATING BLANK between entries. This used to emit one before the next
-    // term whenever the previous body spanned more than its own `: ` line, to
-    // stop a following flush-left `::` from folding into the earlier `<dd>` when
-    // that body ended in a nested closed code fence (carve-rs#1559, corpus
-    // 455-4). markup-carve/carve#1970 ruled that shape reads as TWO entries with
-    // no blank - the oracle, carve-js and carve-php all read it that way - and
-    // the parser now agrees (a nested lead fence closed by an indented closer
-    // releases its ownership, so the term below opens a new entry). With the
-    // absorption gone the blank was a workaround for a bug that no longer
-    // exists, and dropping it converges this writer's `carve` output with the
-    // other engines.
+    // No separating blank: markup-carve/carve#1970 ruled this as two entries,
+    // matching the other engines. The old blank worked around carve-rs#1559;
+    // a nested lead fence closed by an indented closer now releases ownership.
     let list = items.as_ptr() as usize;
     for (index, item) in items.iter().enumerate() {
         let escape_window::Visit::Render(recorded) = escape_window::visit(session, list, index)
