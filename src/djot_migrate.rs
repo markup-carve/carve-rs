@@ -130,6 +130,31 @@ fn djot_to_carve_prepared_with_quotes(
         .replace(token, "\0")
 }
 
+fn mask_djot_reference_definitions<'a>(source: &str, mask: &'a str) -> std::borrow::Cow<'a, str> {
+    use std::borrow::Cow;
+    if !source.contains("]:") {
+        return Cow::Borrowed(mask);
+    }
+    let mut accepted = HashMap::new();
+    fold_djot_references_with_decisions(source, Some(&mut accepted));
+    if accepted.is_empty() {
+        return Cow::Borrowed(mask);
+    }
+    let mut result = mask.as_bytes().to_vec();
+    let mut covered = None;
+    let mut offset = 0;
+    for (line, value) in source.split('\n').enumerate() {
+        if let Some(decision) = accepted.get(&line) {
+            covered = Some(covered.map_or(decision.end, |end: usize| end.max(decision.end)));
+        }
+        if covered.is_some_and(|end| line <= end) {
+            result[offset..offset + value.len()].fill(b' ');
+        }
+        offset += value.len() + 1;
+    }
+    Cow::Owned(String::from_utf8(result).expect("Reference masks preserve UTF-8"))
+}
+
 fn plain_image_character(ch: char) -> bool {
     ch.is_ascii_alphanumeric()
         || " ,;?/=&@\t\n".contains(ch)
@@ -146,22 +171,9 @@ fn collapse_plain_nested_image_chains(source: &str) -> std::borrow::Cow<'_, str>
     if !source.contains("![") || !source.contains('\n') {
         return Cow::Borrowed(source);
     }
-    let mut mask = mask_code_and_destinations(source).into_bytes();
-    if source.contains("]:") {
-        let mut accepted = HashMap::new();
-        fold_djot_references_with_decisions(source, Some(&mut accepted));
-        let mut covered = None;
-        let mut offset = 0;
-        for (n, line) in source.split('\n').enumerate() {
-            if let Some(decision) = accepted.get(&n) {
-                covered = Some(covered.map_or(decision.end, |end: usize| end.max(decision.end)));
-            }
-            if covered.is_some_and(|end| n <= end) {
-                mask[offset..offset + line.len()].fill(b' ');
-            }
-            offset += line.len() + 1;
-        }
-    }
+    let mask_source = mask_code_and_destinations(source);
+    let mask = mask_djot_reference_definitions(source, &mask_source);
+    let mask = mask.as_bytes();
     let quote_pattern = cached_regex!(r"^(?:[ \t]*>[ \t])+").unwrap();
     let mut line_offset = 0;
     let quote_lines: Vec<_> = source
@@ -8361,6 +8373,7 @@ fn normalize_djot_links(source: &str, inherited: &HashSet<String>) -> String {
             ..OpaqueOptions::default()
         },
     );
+    let mask = mask_djot_reference_definitions(source, &mask);
     let rows = djot_table_rows(source, &mask);
     let bytes = source.as_bytes();
     let angles: HashMap<_, _> = cached_regex!(r"<[^<>\s]+>")

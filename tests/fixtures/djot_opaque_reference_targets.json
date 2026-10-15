@@ -1,0 +1,2522 @@
+[
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]: ![a![b](x)](y)",
+    "html": "<p><a href=\"![a![b](x)](y)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a![b](x)](y)",
+    "html": "<p><a href=\"![a![b](x)](y)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]:\n  ![a\n  ![b](x)](y)",
+    "html": "<p><a href=\"![a![b](x)](y)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  ![a\r\n  ![b](x)](y)",
+    "html": "<p><a href=\"![a![b](x)](y)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\n> \n> [direct](v)\n> \n> [r]: ![a![b](x)](y)",
+    "html": "<blockquote>\n<p><a href=\"![a![b](x)](y)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: ![a![b](x)](y)",
+    "html": "<blockquote>\n<p><a href=\"![a![b](x)](y)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\n  \n  [direct](v)\n  \n  [r]: ![a![b](x)](y)",
+    "html": "<ul>\n<li>\n<p><a href=\"![a![b](x)](y)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: ![a![b](x)](y)",
+    "html": "<ul>\n<li>\n<p><a href=\"![a![b](x)](y)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n[t][r]\n\n[direct](v)\n\n[r]: ![a![b](x)](y)\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"![a![b](x)](y)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a![b](x)](y)\r\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"![a![b](x)](y)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\nparagraph\n[r]: ![a![b](x)](y)",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: <img src=\"y\" alt=\"ab\"></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "[t][r]\r\n\r\nparagraph\r\n[r]: ![a![b](x)](y)",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: <img src=\"y\" alt=\"ab\"></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n[t][r]\n\n[direct](v)\n\n[r]: ![a![b](x)](y)\n```",
+    "html": "<pre><code>[t][r]\n\n[direct](v)\n\n[r]: ![a![b](x)](y)\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a![b](x)](y)\r\n```",
+    "html": "<pre><code>[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a![b](x)](y)\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]: ![a![b](x)](y)",
+    "html": "<p><img alt=\"t\" src=\"![a![b](x)](y)\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a![b](x)](y)",
+    "html": "<p><img alt=\"t\" src=\"![a![b](x)](y)\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]:\n  ![a\n  ![b](x)](y)",
+    "html": "<p><img alt=\"t\" src=\"![a![b](x)](y)\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  ![a\r\n  ![b](x)](y)",
+    "html": "<p><img alt=\"t\" src=\"![a![b](x)](y)\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\n> \n> [direct](v)\n> \n> [r]: ![a![b](x)](y)",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"![a![b](x)](y)\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: ![a![b](x)](y)",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"![a![b](x)](y)\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\n  \n  [direct](v)\n  \n  [r]: ![a![b](x)](y)",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"![a![b](x)](y)\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: ![a![b](x)](y)",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"![a![b](x)](y)\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n![t][r]\n\n[direct](v)\n\n[r]: ![a![b](x)](y)\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"![a![b](x)](y)\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a![b](x)](y)\r\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"![a![b](x)](y)\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\nparagraph\n[r]: ![a![b](x)](y)",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: <img src=\"y\" alt=\"ab\"></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![t][r]\r\n\r\nparagraph\r\n[r]: ![a![b](x)](y)",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: <img src=\"y\" alt=\"ab\"></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n![t][r]\n\n[direct](v)\n\n[r]: ![a![b](x)](y)\n```",
+    "html": "<pre><code>![t][r]\n\n[direct](v)\n\n[r]: ![a![b](x)](y)\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a![b](x)](y)\r\n```",
+    "html": "<pre><code>![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a![b](x)](y)\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]: [a[b](x)](y)",
+    "html": "<p><a href=\"[a[b](x)](y)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: [a[b](x)](y)",
+    "html": "<p><a href=\"[a[b](x)](y)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]:\n  [a[b](x)](y)",
+    "html": "<p><a href=\"[a[b](x)](y)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 1,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  [a[b](x)](y)",
+    "html": "<p><a href=\"[a[b](x)](y)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 1,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\n> \n> [direct](v)\n> \n> [r]: [a[b](x)](y)",
+    "html": "<blockquote>\n<p><a href=\"[a[b](x)](y)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: [a[b](x)](y)",
+    "html": "<blockquote>\n<p><a href=\"[a[b](x)](y)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\n  \n  [direct](v)\n  \n  [r]: [a[b](x)](y)",
+    "html": "<ul>\n<li>\n<p><a href=\"[a[b](x)](y)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: [a[b](x)](y)",
+    "html": "<ul>\n<li>\n<p><a href=\"[a[b](x)](y)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n[t][r]\n\n[direct](v)\n\n[r]: [a[b](x)](y)\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"[a[b](x)](y)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: [a[b](x)](y)\r\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"[a[b](x)](y)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\nparagraph\n[r]: [a[b](x)](y)",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: <a href=\"y\">ab</a></p>",
+    "lossCount": 2,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "[t][r]\r\n\r\nparagraph\r\n[r]: [a[b](x)](y)",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: <a href=\"y\">ab</a></p>",
+    "lossCount": 2,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n[t][r]\n\n[direct](v)\n\n[r]: [a[b](x)](y)\n```",
+    "html": "<pre><code>[t][r]\n\n[direct](v)\n\n[r]: [a[b](x)](y)\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: [a[b](x)](y)\r\n```",
+    "html": "<pre><code>[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: [a[b](x)](y)\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]: [a[b](x)](y)",
+    "html": "<p><img alt=\"t\" src=\"[a[b](x)](y)\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: [a[b](x)](y)",
+    "html": "<p><img alt=\"t\" src=\"[a[b](x)](y)\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]:\n  [a[b](x)](y)",
+    "html": "<p><img alt=\"t\" src=\"[a[b](x)](y)\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 1,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  [a[b](x)](y)",
+    "html": "<p><img alt=\"t\" src=\"[a[b](x)](y)\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 1,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\n> \n> [direct](v)\n> \n> [r]: [a[b](x)](y)",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"[a[b](x)](y)\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: [a[b](x)](y)",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"[a[b](x)](y)\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\n  \n  [direct](v)\n  \n  [r]: [a[b](x)](y)",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"[a[b](x)](y)\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: [a[b](x)](y)",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"[a[b](x)](y)\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n![t][r]\n\n[direct](v)\n\n[r]: [a[b](x)](y)\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"[a[b](x)](y)\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: [a[b](x)](y)\r\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"[a[b](x)](y)\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\nparagraph\n[r]: [a[b](x)](y)",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: <a href=\"y\">ab</a></p>",
+    "lossCount": 2,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![t][r]\r\n\r\nparagraph\r\n[r]: [a[b](x)](y)",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: <a href=\"y\">ab</a></p>",
+    "lossCount": 2,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n![t][r]\n\n[direct](v)\n\n[r]: [a[b](x)](y)\n```",
+    "html": "<pre><code>![t][r]\n\n[direct](v)\n\n[r]: [a[b](x)](y)\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: [a[b](x)](y)\r\n```",
+    "html": "<pre><code>![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: [a[b](x)](y)\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]: ![a](x)",
+    "html": "<p><a href=\"![a](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a](x)",
+    "html": "<p><a href=\"![a](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]:\n  ![a](x)",
+    "html": "<p><a href=\"![a](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  ![a](x)",
+    "html": "<p><a href=\"![a](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\n> \n> [direct](v)\n> \n> [r]: ![a](x)",
+    "html": "<blockquote>\n<p><a href=\"![a](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: ![a](x)",
+    "html": "<blockquote>\n<p><a href=\"![a](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\n  \n  [direct](v)\n  \n  [r]: ![a](x)",
+    "html": "<ul>\n<li>\n<p><a href=\"![a](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: ![a](x)",
+    "html": "<ul>\n<li>\n<p><a href=\"![a](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n[t][r]\n\n[direct](v)\n\n[r]: ![a](x)\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"![a](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a](x)\r\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"![a](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\nparagraph\n[r]: ![a](x)",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: <img src=\"x\" alt=\"a\"></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "[t][r]\r\n\r\nparagraph\r\n[r]: ![a](x)",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: <img src=\"x\" alt=\"a\"></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n[t][r]\n\n[direct](v)\n\n[r]: ![a](x)\n```",
+    "html": "<pre><code>[t][r]\n\n[direct](v)\n\n[r]: ![a](x)\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a](x)\r\n```",
+    "html": "<pre><code>[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a](x)\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]: ![a](x)",
+    "html": "<p><img alt=\"t\" src=\"![a](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a](x)",
+    "html": "<p><img alt=\"t\" src=\"![a](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]:\n  ![a](x)",
+    "html": "<p><img alt=\"t\" src=\"![a](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  ![a](x)",
+    "html": "<p><img alt=\"t\" src=\"![a](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\n> \n> [direct](v)\n> \n> [r]: ![a](x)",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"![a](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: ![a](x)",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"![a](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\n  \n  [direct](v)\n  \n  [r]: ![a](x)",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"![a](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: ![a](x)",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"![a](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n![t][r]\n\n[direct](v)\n\n[r]: ![a](x)\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"![a](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a](x)\r\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"![a](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\nparagraph\n[r]: ![a](x)",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: <img src=\"x\" alt=\"a\"></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![t][r]\r\n\r\nparagraph\r\n[r]: ![a](x)",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: <img src=\"x\" alt=\"a\"></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n![t][r]\n\n[direct](v)\n\n[r]: ![a](x)\n```",
+    "html": "<pre><code>![t][r]\n\n[direct](v)\n\n[r]: ![a](x)\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a](x)\r\n```",
+    "html": "<pre><code>![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a](x)\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]: [a](x)",
+    "html": "<p><a href=\"[a](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: [a](x)",
+    "html": "<p><a href=\"[a](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]:\n  [a](x)",
+    "html": "<p><a href=\"[a](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  [a](x)",
+    "html": "<p><a href=\"[a](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\n> \n> [direct](v)\n> \n> [r]: [a](x)",
+    "html": "<blockquote>\n<p><a href=\"[a](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: [a](x)",
+    "html": "<blockquote>\n<p><a href=\"[a](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\n  \n  [direct](v)\n  \n  [r]: [a](x)",
+    "html": "<ul>\n<li>\n<p><a href=\"[a](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: [a](x)",
+    "html": "<ul>\n<li>\n<p><a href=\"[a](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n[t][r]\n\n[direct](v)\n\n[r]: [a](x)\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"[a](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: [a](x)\r\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"[a](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\nparagraph\n[r]: [a](x)",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: <a href=\"x\">a</a></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "[t][r]\r\n\r\nparagraph\r\n[r]: [a](x)",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: <a href=\"x\">a</a></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n[t][r]\n\n[direct](v)\n\n[r]: [a](x)\n```",
+    "html": "<pre><code>[t][r]\n\n[direct](v)\n\n[r]: [a](x)\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: [a](x)\r\n```",
+    "html": "<pre><code>[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: [a](x)\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]: [a](x)",
+    "html": "<p><img alt=\"t\" src=\"[a](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: [a](x)",
+    "html": "<p><img alt=\"t\" src=\"[a](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]:\n  [a](x)",
+    "html": "<p><img alt=\"t\" src=\"[a](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  [a](x)",
+    "html": "<p><img alt=\"t\" src=\"[a](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\n> \n> [direct](v)\n> \n> [r]: [a](x)",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"[a](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: [a](x)",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"[a](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\n  \n  [direct](v)\n  \n  [r]: [a](x)",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"[a](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: [a](x)",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"[a](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n![t][r]\n\n[direct](v)\n\n[r]: [a](x)\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"[a](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: [a](x)\r\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"[a](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\nparagraph\n[r]: [a](x)",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: <a href=\"x\">a</a></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![t][r]\r\n\r\nparagraph\r\n[r]: [a](x)",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: <a href=\"x\">a</a></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n![t][r]\n\n[direct](v)\n\n[r]: [a](x)\n```",
+    "html": "<pre><code>![t][r]\n\n[direct](v)\n\n[r]: [a](x)\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: [a](x)\r\n```",
+    "html": "<pre><code>![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: [a](x)\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]: ![a][r]",
+    "html": "<p><a href=\"![a][r]\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a][r]",
+    "html": "<p><a href=\"![a][r]\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]:\n  ![a][r]",
+    "html": "<p><a href=\"![a][r]\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  ![a][r]",
+    "html": "<p><a href=\"![a][r]\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\n> \n> [direct](v)\n> \n> [r]: ![a][r]",
+    "html": "<blockquote>\n<p><a href=\"![a][r]\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: ![a][r]",
+    "html": "<blockquote>\n<p><a href=\"![a][r]\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\n  \n  [direct](v)\n  \n  [r]: ![a][r]",
+    "html": "<ul>\n<li>\n<p><a href=\"![a][r]\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: ![a][r]",
+    "html": "<ul>\n<li>\n<p><a href=\"![a][r]\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n[t][r]\n\n[direct](v)\n\n[r]: ![a][r]\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"![a][r]\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a][r]\r\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"![a][r]\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\nparagraph\n[r]: ![a][r]",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: ![a][r]</p>",
+    "lossCount": 2,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "[t][r]\r\n\r\nparagraph\r\n[r]: ![a][r]",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: ![a][r]</p>",
+    "lossCount": 2,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n[t][r]\n\n[direct](v)\n\n[r]: ![a][r]\n```",
+    "html": "<pre><code>[t][r]\n\n[direct](v)\n\n[r]: ![a][r]\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a][r]\r\n```",
+    "html": "<pre><code>[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a][r]\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]: ![a][r]",
+    "html": "<p><img alt=\"t\" src=\"![a][r]\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a][r]",
+    "html": "<p><img alt=\"t\" src=\"![a][r]\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]:\n  ![a][r]",
+    "html": "<p><img alt=\"t\" src=\"![a][r]\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  ![a][r]",
+    "html": "<p><img alt=\"t\" src=\"![a][r]\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\n> \n> [direct](v)\n> \n> [r]: ![a][r]",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"![a][r]\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: ![a][r]",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"![a][r]\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\n  \n  [direct](v)\n  \n  [r]: ![a][r]",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"![a][r]\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: ![a][r]",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"![a][r]\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n![t][r]\n\n[direct](v)\n\n[r]: ![a][r]\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"![a][r]\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a][r]\r\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"![a][r]\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\nparagraph\n[r]: ![a][r]",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: ![a][r]</p>",
+    "lossCount": 2,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![t][r]\r\n\r\nparagraph\r\n[r]: ![a][r]",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: ![a][r]</p>",
+    "lossCount": 2,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n![t][r]\n\n[direct](v)\n\n[r]: ![a][r]\n```",
+    "html": "<pre><code>![t][r]\n\n[direct](v)\n\n[r]: ![a][r]\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a][r]\r\n```",
+    "html": "<pre><code>![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a][r]\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]: *a*",
+    "html": "<p><a href=\"*a*\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: *a*",
+    "html": "<p><a href=\"*a*\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]:\n  *a*",
+    "html": "<p><a href=\"*a*\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  *a*",
+    "html": "<p><a href=\"*a*\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\n> \n> [direct](v)\n> \n> [r]: *a*",
+    "html": "<blockquote>\n<p><a href=\"*a*\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: *a*",
+    "html": "<blockquote>\n<p><a href=\"*a*\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\n  \n  [direct](v)\n  \n  [r]: *a*",
+    "html": "<ul>\n<li>\n<p><a href=\"*a*\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: *a*",
+    "html": "<ul>\n<li>\n<p><a href=\"*a*\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n[t][r]\n\n[direct](v)\n\n[r]: *a*\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"*a*\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: *a*\r\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"*a*\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\nparagraph\n[r]: *a*",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: <strong>a</strong></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "[t][r]\r\n\r\nparagraph\r\n[r]: *a*",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: <strong>a</strong></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n[t][r]\n\n[direct](v)\n\n[r]: *a*\n```",
+    "html": "<pre><code>[t][r]\n\n[direct](v)\n\n[r]: *a*\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: *a*\r\n```",
+    "html": "<pre><code>[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: *a*\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]: *a*",
+    "html": "<p><img alt=\"t\" src=\"*a*\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: *a*",
+    "html": "<p><img alt=\"t\" src=\"*a*\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]:\n  *a*",
+    "html": "<p><img alt=\"t\" src=\"*a*\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  *a*",
+    "html": "<p><img alt=\"t\" src=\"*a*\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\n> \n> [direct](v)\n> \n> [r]: *a*",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"*a*\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: *a*",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"*a*\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\n  \n  [direct](v)\n  \n  [r]: *a*",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"*a*\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: *a*",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"*a*\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n![t][r]\n\n[direct](v)\n\n[r]: *a*\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"*a*\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: *a*\r\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"*a*\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\nparagraph\n[r]: *a*",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: <strong>a</strong></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![t][r]\r\n\r\nparagraph\r\n[r]: *a*",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: <strong>a</strong></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n![t][r]\n\n[direct](v)\n\n[r]: *a*\n```",
+    "html": "<pre><code>![t][r]\n\n[direct](v)\n\n[r]: *a*\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: *a*\r\n```",
+    "html": "<pre><code>![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: *a*\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]: `a`",
+    "html": "<p><a href=\"`a`\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: `a`",
+    "html": "<p><a href=\"`a`\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]:\n  `a`",
+    "html": "<p><a href=\"`a`\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  `a`",
+    "html": "<p><a href=\"`a`\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\n> \n> [direct](v)\n> \n> [r]: `a`",
+    "html": "<blockquote>\n<p><a href=\"`a`\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: `a`",
+    "html": "<blockquote>\n<p><a href=\"`a`\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\n  \n  [direct](v)\n  \n  [r]: `a`",
+    "html": "<ul>\n<li>\n<p><a href=\"`a`\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: `a`",
+    "html": "<ul>\n<li>\n<p><a href=\"`a`\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n[t][r]\n\n[direct](v)\n\n[r]: `a`\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"`a`\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: `a`\r\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"`a`\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\nparagraph\n[r]: `a`",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: <code>a</code></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "[t][r]\r\n\r\nparagraph\r\n[r]: `a`",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: <code>a</code></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n[t][r]\n\n[direct](v)\n\n[r]: `a`\n```",
+    "html": "<pre><code>[t][r]\n\n[direct](v)\n\n[r]: `a`\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: `a`\r\n```",
+    "html": "<pre><code>[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: `a`\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]: `a`",
+    "html": "<p><img alt=\"t\" src=\"`a`\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: `a`",
+    "html": "<p><img alt=\"t\" src=\"`a`\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]:\n  `a`",
+    "html": "<p><img alt=\"t\" src=\"`a`\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  `a`",
+    "html": "<p><img alt=\"t\" src=\"`a`\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\n> \n> [direct](v)\n> \n> [r]: `a`",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"`a`\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: `a`",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"`a`\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\n  \n  [direct](v)\n  \n  [r]: `a`",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"`a`\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: `a`",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"`a`\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n![t][r]\n\n[direct](v)\n\n[r]: `a`\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"`a`\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: `a`\r\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"`a`\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\nparagraph\n[r]: `a`",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: <code>a</code></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![t][r]\r\n\r\nparagraph\r\n[r]: `a`",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: <code>a</code></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n![t][r]\n\n[direct](v)\n\n[r]: `a`\n```",
+    "html": "<pre><code>![t][r]\n\n[direct](v)\n\n[r]: `a`\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: `a`\r\n```",
+    "html": "<pre><code>![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: `a`\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]: https://example.test/![a![b](x)](y)?q=✓",
+    "html": "<p><a href=\"https://example.test/![a![b](x)](y)?q=✓\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: https://example.test/![a![b](x)](y)?q=✓",
+    "html": "<p><a href=\"https://example.test/![a![b](x)](y)?q=✓\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]:\n  https://example.test/\n  ![a\n  ![b](x)](y)?q=✓",
+    "html": "<p><a href=\"https://example.test/![a![b](x)](y)?q=✓\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  https://example.test/\r\n  ![a\r\n  ![b](x)](y)?q=✓",
+    "html": "<p><a href=\"https://example.test/![a![b](x)](y)?q=✓\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\n> \n> [direct](v)\n> \n> [r]: https://example.test/![a![b](x)](y)?q=✓",
+    "html": "<blockquote>\n<p><a href=\"https://example.test/![a![b](x)](y)?q=✓\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: https://example.test/![a![b](x)](y)?q=✓",
+    "html": "<blockquote>\n<p><a href=\"https://example.test/![a![b](x)](y)?q=✓\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\n  \n  [direct](v)\n  \n  [r]: https://example.test/![a![b](x)](y)?q=✓",
+    "html": "<ul>\n<li>\n<p><a href=\"https://example.test/![a![b](x)](y)?q=✓\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: https://example.test/![a![b](x)](y)?q=✓",
+    "html": "<ul>\n<li>\n<p><a href=\"https://example.test/![a![b](x)](y)?q=✓\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n[t][r]\n\n[direct](v)\n\n[r]: https://example.test/![a![b](x)](y)?q=✓\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"https://example.test/![a![b](x)](y)?q=✓\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: https://example.test/![a![b](x)](y)?q=✓\r\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"https://example.test/![a![b](x)](y)?q=✓\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\nparagraph\n[r]: https://example.test/![a![b](x)](y)?q=✓",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: https://example.test/<img src=\"y\" alt=\"ab\">?q=✓</p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "[t][r]\r\n\r\nparagraph\r\n[r]: https://example.test/![a![b](x)](y)?q=✓",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: https://example.test/<img src=\"y\" alt=\"ab\">?q=✓</p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n[t][r]\n\n[direct](v)\n\n[r]: https://example.test/![a![b](x)](y)?q=✓\n```",
+    "html": "<pre><code>[t][r]\n\n[direct](v)\n\n[r]: https://example.test/![a![b](x)](y)?q=✓\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: https://example.test/![a![b](x)](y)?q=✓\r\n```",
+    "html": "<pre><code>[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: https://example.test/![a![b](x)](y)?q=✓\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]: https://example.test/![a![b](x)](y)?q=✓",
+    "html": "<p><img alt=\"t\" src=\"https://example.test/![a![b](x)](y)?q=✓\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: https://example.test/![a![b](x)](y)?q=✓",
+    "html": "<p><img alt=\"t\" src=\"https://example.test/![a![b](x)](y)?q=✓\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]:\n  https://example.test/\n  ![a\n  ![b](x)](y)?q=✓",
+    "html": "<p><img alt=\"t\" src=\"https://example.test/![a![b](x)](y)?q=✓\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  https://example.test/\r\n  ![a\r\n  ![b](x)](y)?q=✓",
+    "html": "<p><img alt=\"t\" src=\"https://example.test/![a![b](x)](y)?q=✓\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\n> \n> [direct](v)\n> \n> [r]: https://example.test/![a![b](x)](y)?q=✓",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"https://example.test/![a![b](x)](y)?q=✓\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: https://example.test/![a![b](x)](y)?q=✓",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"https://example.test/![a![b](x)](y)?q=✓\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\n  \n  [direct](v)\n  \n  [r]: https://example.test/![a![b](x)](y)?q=✓",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"https://example.test/![a![b](x)](y)?q=✓\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: https://example.test/![a![b](x)](y)?q=✓",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"https://example.test/![a![b](x)](y)?q=✓\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n![t][r]\n\n[direct](v)\n\n[r]: https://example.test/![a![b](x)](y)?q=✓\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"https://example.test/![a![b](x)](y)?q=✓\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: https://example.test/![a![b](x)](y)?q=✓\r\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"https://example.test/![a![b](x)](y)?q=✓\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\nparagraph\n[r]: https://example.test/![a![b](x)](y)?q=✓",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: https://example.test/<img src=\"y\" alt=\"ab\">?q=✓</p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![t][r]\r\n\r\nparagraph\r\n[r]: https://example.test/![a![b](x)](y)?q=✓",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: https://example.test/<img src=\"y\" alt=\"ab\">?q=✓</p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n![t][r]\n\n[direct](v)\n\n[r]: https://example.test/![a![b](x)](y)?q=✓\n```",
+    "html": "<pre><code>![t][r]\n\n[direct](v)\n\n[r]: https://example.test/![a![b](x)](y)?q=✓\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: https://example.test/![a![b](x)](y)?q=✓\r\n```",
+    "html": "<pre><code>![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: https://example.test/![a![b](x)](y)?q=✓\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]: é/日本語/🙂?x=%255B&y=0",
+    "html": "<p><a href=\"é/日本語/🙂?x=%255B&amp;y=0\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: é/日本語/🙂?x=%255B&y=0",
+    "html": "<p><a href=\"é/日本語/🙂?x=%255B&amp;y=0\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]:\n  é/日本語/🙂?x=%255B&y=0",
+    "html": "<p><a href=\"é/日本語/🙂?x=%255B&amp;y=0\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  é/日本語/🙂?x=%255B&y=0",
+    "html": "<p><a href=\"é/日本語/🙂?x=%255B&amp;y=0\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\n> \n> [direct](v)\n> \n> [r]: é/日本語/🙂?x=%255B&y=0",
+    "html": "<blockquote>\n<p><a href=\"é/日本語/🙂?x=%255B&amp;y=0\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: é/日本語/🙂?x=%255B&y=0",
+    "html": "<blockquote>\n<p><a href=\"é/日本語/🙂?x=%255B&amp;y=0\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\n  \n  [direct](v)\n  \n  [r]: é/日本語/🙂?x=%255B&y=0",
+    "html": "<ul>\n<li>\n<p><a href=\"é/日本語/🙂?x=%255B&amp;y=0\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: é/日本語/🙂?x=%255B&y=0",
+    "html": "<ul>\n<li>\n<p><a href=\"é/日本語/🙂?x=%255B&amp;y=0\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n[t][r]\n\n[direct](v)\n\n[r]: é/日本語/🙂?x=%255B&y=0\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"é/日本語/🙂?x=%255B&amp;y=0\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: é/日本語/🙂?x=%255B&y=0\r\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"é/日本語/🙂?x=%255B&amp;y=0\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\nparagraph\n[r]: é/日本語/🙂?x=%255B&y=0",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: é/日本語/🙂?x=%255B&amp;y=0</p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "[t][r]\r\n\r\nparagraph\r\n[r]: é/日本語/🙂?x=%255B&y=0",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: é/日本語/🙂?x=%255B&amp;y=0</p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n[t][r]\n\n[direct](v)\n\n[r]: é/日本語/🙂?x=%255B&y=0\n```",
+    "html": "<pre><code>[t][r]\n\n[direct](v)\n\n[r]: é/日本語/🙂?x=%255B&amp;y=0\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: é/日本語/🙂?x=%255B&y=0\r\n```",
+    "html": "<pre><code>[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: é/日本語/🙂?x=%255B&amp;y=0\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]: é/日本語/🙂?x=%255B&y=0",
+    "html": "<p><img alt=\"t\" src=\"é/日本語/🙂?x=%255B&amp;y=0\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: é/日本語/🙂?x=%255B&y=0",
+    "html": "<p><img alt=\"t\" src=\"é/日本語/🙂?x=%255B&amp;y=0\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]:\n  é/日本語/🙂?x=%255B&y=0",
+    "html": "<p><img alt=\"t\" src=\"é/日本語/🙂?x=%255B&amp;y=0\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  é/日本語/🙂?x=%255B&y=0",
+    "html": "<p><img alt=\"t\" src=\"é/日本語/🙂?x=%255B&amp;y=0\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\n> \n> [direct](v)\n> \n> [r]: é/日本語/🙂?x=%255B&y=0",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"é/日本語/🙂?x=%255B&amp;y=0\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: é/日本語/🙂?x=%255B&y=0",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"é/日本語/🙂?x=%255B&amp;y=0\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\n  \n  [direct](v)\n  \n  [r]: é/日本語/🙂?x=%255B&y=0",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"é/日本語/🙂?x=%255B&amp;y=0\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: é/日本語/🙂?x=%255B&y=0",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"é/日本語/🙂?x=%255B&amp;y=0\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n![t][r]\n\n[direct](v)\n\n[r]: é/日本語/🙂?x=%255B&y=0\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"é/日本語/🙂?x=%255B&amp;y=0\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: é/日本語/🙂?x=%255B&y=0\r\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"é/日本語/🙂?x=%255B&amp;y=0\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\nparagraph\n[r]: é/日本語/🙂?x=%255B&y=0",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: é/日本語/🙂?x=%255B&amp;y=0</p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![t][r]\r\n\r\nparagraph\r\n[r]: é/日本語/🙂?x=%255B&y=0",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: é/日本語/🙂?x=%255B&amp;y=0</p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n![t][r]\n\n[direct](v)\n\n[r]: é/日本語/🙂?x=%255B&y=0\n```",
+    "html": "<pre><code>![t][r]\n\n[direct](v)\n\n[r]: é/日本語/🙂?x=%255B&amp;y=0\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: é/日本語/🙂?x=%255B&y=0\r\n```",
+    "html": "<pre><code>![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: é/日本語/🙂?x=%255B&amp;y=0\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]: a{.x}",
+    "html": "<p><a href=\"a{.x}\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: a{.x}",
+    "html": "<p><a href=\"a{.x}\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]:\n  a{.x}",
+    "html": "<p><a href=\"a{.x}\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  a{.x}",
+    "html": "<p><a href=\"a{.x}\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\n> \n> [direct](v)\n> \n> [r]: a{.x}",
+    "html": "<blockquote>\n<p><a href=\"a{.x}\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: a{.x}",
+    "html": "<blockquote>\n<p><a href=\"a{.x}\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\n  \n  [direct](v)\n  \n  [r]: a{.x}",
+    "html": "<ul>\n<li>\n<p><a href=\"a{.x}\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: a{.x}",
+    "html": "<ul>\n<li>\n<p><a href=\"a{.x}\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n[t][r]\n\n[direct](v)\n\n[r]: a{.x}\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"a{.x}\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: a{.x}\r\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"a{.x}\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\nparagraph\n[r]: a{.x}",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: <span class=\"x\">a</span></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "[t][r]\r\n\r\nparagraph\r\n[r]: a{.x}",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: <span class=\"x\">a</span></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n[t][r]\n\n[direct](v)\n\n[r]: a{.x}\n```",
+    "html": "<pre><code>[t][r]\n\n[direct](v)\n\n[r]: a{.x}\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: a{.x}\r\n```",
+    "html": "<pre><code>[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: a{.x}\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]: a{.x}",
+    "html": "<p><img alt=\"t\" src=\"a{.x}\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: a{.x}",
+    "html": "<p><img alt=\"t\" src=\"a{.x}\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]:\n  a{.x}",
+    "html": "<p><img alt=\"t\" src=\"a{.x}\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  a{.x}",
+    "html": "<p><img alt=\"t\" src=\"a{.x}\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\n> \n> [direct](v)\n> \n> [r]: a{.x}",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"a{.x}\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: a{.x}",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"a{.x}\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\n  \n  [direct](v)\n  \n  [r]: a{.x}",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"a{.x}\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: a{.x}",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"a{.x}\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n![t][r]\n\n[direct](v)\n\n[r]: a{.x}\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"a{.x}\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: a{.x}\r\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"a{.x}\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\nparagraph\n[r]: a{.x}",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: <span class=\"x\">a</span></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![t][r]\r\n\r\nparagraph\r\n[r]: a{.x}",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: <span class=\"x\">a</span></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n![t][r]\n\n[direct](v)\n\n[r]: a{.x}\n```",
+    "html": "<pre><code>![t][r]\n\n[direct](v)\n\n[r]: a{.x}\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: a{.x}\r\n```",
+    "html": "<pre><code>![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: a{.x}\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]: a\\*b",
+    "html": "<p><a href=\"a\\*b\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: a\\*b",
+    "html": "<p><a href=\"a\\*b\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]:\n  a\\*b",
+    "html": "<p><a href=\"a\\*b\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  a\\*b",
+    "html": "<p><a href=\"a\\*b\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\n> \n> [direct](v)\n> \n> [r]: a\\*b",
+    "html": "<blockquote>\n<p><a href=\"a\\*b\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: a\\*b",
+    "html": "<blockquote>\n<p><a href=\"a\\*b\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\n  \n  [direct](v)\n  \n  [r]: a\\*b",
+    "html": "<ul>\n<li>\n<p><a href=\"a\\*b\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: a\\*b",
+    "html": "<ul>\n<li>\n<p><a href=\"a\\*b\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n[t][r]\n\n[direct](v)\n\n[r]: a\\*b\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"a\\*b\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: a\\*b\r\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"a\\*b\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\nparagraph\n[r]: a\\*b",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: a*b</p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "[t][r]\r\n\r\nparagraph\r\n[r]: a\\*b",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: a*b</p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n[t][r]\n\n[direct](v)\n\n[r]: a\\*b\n```",
+    "html": "<pre><code>[t][r]\n\n[direct](v)\n\n[r]: a\\*b\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: a\\*b\r\n```",
+    "html": "<pre><code>[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: a\\*b\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]: a\\*b",
+    "html": "<p><img alt=\"t\" src=\"a\\*b\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: a\\*b",
+    "html": "<p><img alt=\"t\" src=\"a\\*b\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]:\n  a\\*b",
+    "html": "<p><img alt=\"t\" src=\"a\\*b\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  a\\*b",
+    "html": "<p><img alt=\"t\" src=\"a\\*b\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\n> \n> [direct](v)\n> \n> [r]: a\\*b",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"a\\*b\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: a\\*b",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"a\\*b\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\n  \n  [direct](v)\n  \n  [r]: a\\*b",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"a\\*b\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: a\\*b",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"a\\*b\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n![t][r]\n\n[direct](v)\n\n[r]: a\\*b\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"a\\*b\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: a\\*b\r\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"a\\*b\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\nparagraph\n[r]: a\\*b",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: a*b</p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![t][r]\r\n\r\nparagraph\r\n[r]: a\\*b",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: a*b</p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n![t][r]\n\n[direct](v)\n\n[r]: a\\*b\n```",
+    "html": "<pre><code>![t][r]\n\n[direct](v)\n\n[r]: a\\*b\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: a\\*b\r\n```",
+    "html": "<pre><code>![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: a\\*b\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]: [a^b](x)",
+    "html": "<p><a href=\"[a^b](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: [a^b](x)",
+    "html": "<p><a href=\"[a^b](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]:\n  [a^b](x)",
+    "html": "<p><a href=\"[a^b](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  [a^b](x)",
+    "html": "<p><a href=\"[a^b](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\n> \n> [direct](v)\n> \n> [r]: [a^b](x)",
+    "html": "<blockquote>\n<p><a href=\"[a^b](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: [a^b](x)",
+    "html": "<blockquote>\n<p><a href=\"[a^b](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\n  \n  [direct](v)\n  \n  [r]: [a^b](x)",
+    "html": "<ul>\n<li>\n<p><a href=\"[a^b](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: [a^b](x)",
+    "html": "<ul>\n<li>\n<p><a href=\"[a^b](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n[t][r]\n\n[direct](v)\n\n[r]: [a^b](x)\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"[a^b](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: [a^b](x)\r\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"[a^b](x)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\nparagraph\n[r]: [a^b](x)",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: <a href=\"x\">a^b</a></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "[t][r]\r\n\r\nparagraph\r\n[r]: [a^b](x)",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: <a href=\"x\">a^b</a></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n[t][r]\n\n[direct](v)\n\n[r]: [a^b](x)\n```",
+    "html": "<pre><code>[t][r]\n\n[direct](v)\n\n[r]: [a^b](x)\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: [a^b](x)\r\n```",
+    "html": "<pre><code>[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: [a^b](x)\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]: [a^b](x)",
+    "html": "<p><img alt=\"t\" src=\"[a^b](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: [a^b](x)",
+    "html": "<p><img alt=\"t\" src=\"[a^b](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]:\n  [a^b](x)",
+    "html": "<p><img alt=\"t\" src=\"[a^b](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  [a^b](x)",
+    "html": "<p><img alt=\"t\" src=\"[a^b](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\n> \n> [direct](v)\n> \n> [r]: [a^b](x)",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"[a^b](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: [a^b](x)",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"[a^b](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\n  \n  [direct](v)\n  \n  [r]: [a^b](x)",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"[a^b](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: [a^b](x)",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"[a^b](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n![t][r]\n\n[direct](v)\n\n[r]: [a^b](x)\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"[a^b](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: [a^b](x)\r\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"[a^b](x)\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\nparagraph\n[r]: [a^b](x)",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: <a href=\"x\">a^b</a></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![t][r]\r\n\r\nparagraph\r\n[r]: [a^b](x)",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: <a href=\"x\">a^b</a></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n![t][r]\n\n[direct](v)\n\n[r]: [a^b](x)\n```",
+    "html": "<pre><code>![t][r]\n\n[direct](v)\n\n[r]: [a^b](x)\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: [a^b](x)\r\n```",
+    "html": "<pre><code>![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: [a^b](x)\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]: plain/path",
+    "html": "<p><a href=\"plain/path\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: plain/path",
+    "html": "<p><a href=\"plain/path\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]:\n  plain/path",
+    "html": "<p><a href=\"plain/path\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  plain/path",
+    "html": "<p><a href=\"plain/path\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\n> \n> [direct](v)\n> \n> [r]: plain/path",
+    "html": "<blockquote>\n<p><a href=\"plain/path\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: plain/path",
+    "html": "<blockquote>\n<p><a href=\"plain/path\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\n  \n  [direct](v)\n  \n  [r]: plain/path",
+    "html": "<ul>\n<li>\n<p><a href=\"plain/path\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: plain/path",
+    "html": "<ul>\n<li>\n<p><a href=\"plain/path\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n[t][r]\n\n[direct](v)\n\n[r]: plain/path\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"plain/path\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: plain/path\r\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"plain/path\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\nparagraph\n[r]: plain/path",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: plain/path</p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "[t][r]\r\n\r\nparagraph\r\n[r]: plain/path",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: plain/path</p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n[t][r]\n\n[direct](v)\n\n[r]: plain/path\n```",
+    "html": "<pre><code>[t][r]\n\n[direct](v)\n\n[r]: plain/path\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: plain/path\r\n```",
+    "html": "<pre><code>[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: plain/path\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]: plain/path",
+    "html": "<p><img alt=\"t\" src=\"plain/path\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: plain/path",
+    "html": "<p><img alt=\"t\" src=\"plain/path\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]:\n  plain/path",
+    "html": "<p><img alt=\"t\" src=\"plain/path\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  plain/path",
+    "html": "<p><img alt=\"t\" src=\"plain/path\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\n> \n> [direct](v)\n> \n> [r]: plain/path",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"plain/path\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: plain/path",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"plain/path\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\n  \n  [direct](v)\n  \n  [r]: plain/path",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"plain/path\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: plain/path",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"plain/path\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n![t][r]\n\n[direct](v)\n\n[r]: plain/path\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"plain/path\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: plain/path\r\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"plain/path\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\nparagraph\n[r]: plain/path",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: plain/path</p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![t][r]\r\n\r\nparagraph\r\n[r]: plain/path",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: plain/path</p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n![t][r]\n\n[direct](v)\n\n[r]: plain/path\n```",
+    "html": "<pre><code>![t][r]\n\n[direct](v)\n\n[r]: plain/path\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: plain/path\r\n```",
+    "html": "<pre><code>![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: plain/path\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]: x|![a![b](u)](v)",
+    "html": "<p><a href=\"x|![a![b](u)](v)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: x|![a![b](u)](v)",
+    "html": "<p><a href=\"x|![a![b](u)](v)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]:\n  x|\n  ![a\n  ![b](u)](v)",
+    "html": "<p><a href=\"x|![a![b](u)](v)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  x|\r\n  ![a\r\n  ![b](u)](v)",
+    "html": "<p><a href=\"x|![a![b](u)](v)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\n> \n> [direct](v)\n> \n> [r]: x|![a![b](u)](v)",
+    "html": "<blockquote>\n<p><a href=\"x|![a![b](u)](v)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> [t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: x|![a![b](u)](v)",
+    "html": "<blockquote>\n<p><a href=\"x|![a![b](u)](v)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\n  \n  [direct](v)\n  \n  [r]: x|![a![b](u)](v)",
+    "html": "<ul>\n<li>\n<p><a href=\"x|![a![b](u)](v)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- [t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: x|![a![b](u)](v)",
+    "html": "<ul>\n<li>\n<p><a href=\"x|![a![b](u)](v)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n[t][r]\n\n[direct](v)\n\n[r]: x|![a![b](u)](v)\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"x|![a![b](u)](v)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: x|![a![b](u)](v)\r\n:::",
+    "html": "<div class=\"box\">\n<p><a href=\"x|![a![b](u)](v)\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\nparagraph\n[r]: x|![a![b](u)](v)",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: x|<img src=\"v\" alt=\"ab\"></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "[t][r]\r\n\r\nparagraph\r\n[r]: x|![a![b](u)](v)",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: x|<img src=\"v\" alt=\"ab\"></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n[t][r]\n\n[direct](v)\n\n[r]: x|![a![b](u)](v)\n```",
+    "html": "<pre><code>[t][r]\n\n[direct](v)\n\n[r]: x|![a![b](u)](v)\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: x|![a![b](u)](v)\r\n```",
+    "html": "<pre><code>[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: x|![a![b](u)](v)\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]: x|![a![b](u)](v)",
+    "html": "<p><img alt=\"t\" src=\"x|![a![b](u)](v)\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: x|![a![b](u)](v)",
+    "html": "<p><img alt=\"t\" src=\"x|![a![b](u)](v)\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]:\n  x|\n  ![a\n  ![b](u)](v)",
+    "html": "<p><img alt=\"t\" src=\"x|![a![b](u)](v)\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  x|\r\n  ![a\r\n  ![b](u)](v)",
+    "html": "<p><img alt=\"t\" src=\"x|![a![b](u)](v)\"></p>\n<p><a href=\"v\">direct</a></p>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\n> \n> [direct](v)\n> \n> [r]: x|![a![b](u)](v)",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"x|![a![b](u)](v)\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: x|![a![b](u)](v)",
+    "html": "<blockquote>\n<p><img alt=\"t\" src=\"x|![a![b](u)](v)\"></p>\n<p><a href=\"v\">direct</a></p>\n</blockquote>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\n  \n  [direct](v)\n  \n  [r]: x|![a![b](u)](v)",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"x|![a![b](u)](v)\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "- ![t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: x|![a![b](u)](v)",
+    "html": "<ul>\n<li>\n<p><img alt=\"t\" src=\"x|![a![b](u)](v)\"></p>\n<p><a href=\"v\">direct</a></p>\n</li>\n</ul>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\n![t][r]\n\n[direct](v)\n\n[r]: x|![a![b](u)](v)\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"x|![a![b](u)](v)\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "::: box\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: x|![a![b](u)](v)\r\n:::",
+    "html": "<div class=\"box\">\n<p><img alt=\"t\" src=\"x|![a![b](u)](v)\"></p>\n<p><a href=\"v\">direct</a></p>\n</div>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\nparagraph\n[r]: x|![a![b](u)](v)",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: x|<img src=\"v\" alt=\"ab\"></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![t][r]\r\n\r\nparagraph\r\n[r]: x|![a![b](u)](v)",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: x|<img src=\"v\" alt=\"ab\"></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n![t][r]\n\n[direct](v)\n\n[r]: x|![a![b](u)](v)\n```",
+    "html": "<pre><code>![t][r]\n\n[direct](v)\n\n[r]: x|![a![b](u)](v)\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: x|![a![b](u)](v)\r\n```",
+    "html": "<pre><code>![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: x|![a![b](u)](v)\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]: ![a ![b](x)](y)",
+    "html": "<p>[t][r]</p>\n<p><a href=\"v\">direct</a></p>\n<p>[r]: <img src=\"y\" alt=\"a b\"></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a ![b](x)](y)",
+    "html": "<p>[t][r]</p>\n<p><a href=\"v\">direct</a></p>\n<p>[r]: <img src=\"y\" alt=\"a b\"></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "[t][r]\n\n[direct](v)\n\n[r]:\n  ![a \n  ![b](x)](y)",
+    "html": "<p><a href=\"\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n<p><img src=\"y\" alt=\"a\nb\"></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  ![a \r\n  ![b](x)](y)",
+    "html": "<p><a href=\"\">t</a></p>\n<p><a href=\"v\">direct</a></p>\n<p><img src=\"y\" alt=\"a\nb\"></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> [t][r]\n> \n> [direct](v)\n> \n> [r]: ![a ![b](x)](y)",
+    "html": "<blockquote>\n  <p>[t][r]</p>\n  <p><a href=\"v\">direct</a></p>\n  <p>[r]: <img src=\"y\" alt=\"a b\"></p>\n</blockquote>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> [t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: ![a ![b](x)](y)",
+    "html": "<blockquote>\n  <p>[t][r]</p>\n  <p><a href=\"v\">direct</a></p>\n  <p>[r]: <img src=\"y\" alt=\"a b\"></p>\n</blockquote>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "- [t][r]\n  \n  [direct](v)\n  \n  [r]: ![a ![b](x)](y)",
+    "html": "<ul>\n  <li><p>[t][r]</p>\n    <p><a href=\"v\">direct</a></p>\n    <p>[r]: <img src=\"y\" alt=\"a b\"></p>\n  </li>\n</ul>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "- [t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: ![a ![b](x)](y)",
+    "html": "<ul>\n  <li><p>[t][r]</p>\n    <p><a href=\"v\">direct</a></p>\n    <p>[r]: <img src=\"y\" alt=\"a b\"></p>\n  </li>\n</ul>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "::: box\n[t][r]\n\n[direct](v)\n\n[r]: ![a ![b](x)](y)\n:::",
+    "html": "<div class=\"box\">\n  <p>[t][r]</p>\n  <p><a href=\"v\">direct</a></p>\n  <p>[r]: <img src=\"y\" alt=\"a b\"></p>\n</div>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "::: box\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a ![b](x)](y)\r\n:::",
+    "html": "<div class=\"box\">\n  <p>[t][r]</p>\n  <p><a href=\"v\">direct</a></p>\n  <p>[r]: <img src=\"y\" alt=\"a b\"></p>\n</div>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "[t][r]\n\nparagraph\n[r]: ![a ![b](x)](y)",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: <img src=\"y\" alt=\"a b\"></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "[t][r]\r\n\r\nparagraph\r\n[r]: ![a ![b](x)](y)",
+    "html": "<p>[t][r]</p>\n<p>paragraph\n[r]: <img src=\"y\" alt=\"a b\"></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n[t][r]\n\n[direct](v)\n\n[r]: ![a ![b](x)](y)\n```",
+    "html": "<pre><code>[t][r]\n\n[direct](v)\n\n[r]: ![a ![b](x)](y)\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a ![b](x)](y)\r\n```",
+    "html": "<pre><code>[t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a ![b](x)](y)\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]: ![a ![b](x)](y)",
+    "html": "<p>![t][r]</p>\n<p><a href=\"v\">direct</a></p>\n<p>[r]: <img src=\"y\" alt=\"a b\"></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a ![b](x)](y)",
+    "html": "<p>![t][r]</p>\n<p><a href=\"v\">direct</a></p>\n<p>[r]: <img src=\"y\" alt=\"a b\"></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![t][r]\n\n[direct](v)\n\n[r]:\n  ![a \n  ![b](x)](y)",
+    "html": "<p><img src=\"\" alt=\"t\"></p>\n<p><a href=\"v\">direct</a></p>\n<p><img src=\"y\" alt=\"a\nb\"></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]:\r\n  ![a \r\n  ![b](x)](y)",
+    "html": "<p><img src=\"\" alt=\"t\"></p>\n<p><a href=\"v\">direct</a></p>\n<p><img src=\"y\" alt=\"a\nb\"></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> ![t][r]\n> \n> [direct](v)\n> \n> [r]: ![a ![b](x)](y)",
+    "html": "<blockquote>\n  <p>![t][r]</p>\n  <p><a href=\"v\">direct</a></p>\n  <p>[r]: <img src=\"y\" alt=\"a b\"></p>\n</blockquote>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> ![t][r]\r\n> \r\n> [direct](v)\r\n> \r\n> [r]: ![a ![b](x)](y)",
+    "html": "<blockquote>\n  <p>![t][r]</p>\n  <p><a href=\"v\">direct</a></p>\n  <p>[r]: <img src=\"y\" alt=\"a b\"></p>\n</blockquote>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "- ![t][r]\n  \n  [direct](v)\n  \n  [r]: ![a ![b](x)](y)",
+    "html": "<ul>\n  <li><p>![t][r]</p>\n    <p><a href=\"v\">direct</a></p>\n    <p>[r]: <img src=\"y\" alt=\"a b\"></p>\n  </li>\n</ul>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "- ![t][r]\r\n  \r\n  [direct](v)\r\n  \r\n  [r]: ![a ![b](x)](y)",
+    "html": "<ul>\n  <li><p>![t][r]</p>\n    <p><a href=\"v\">direct</a></p>\n    <p>[r]: <img src=\"y\" alt=\"a b\"></p>\n  </li>\n</ul>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "::: box\n![t][r]\n\n[direct](v)\n\n[r]: ![a ![b](x)](y)\n:::",
+    "html": "<div class=\"box\">\n  <p>![t][r]</p>\n  <p><a href=\"v\">direct</a></p>\n  <p>[r]: <img src=\"y\" alt=\"a b\"></p>\n</div>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "::: box\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a ![b](x)](y)\r\n:::",
+    "html": "<div class=\"box\">\n  <p>![t][r]</p>\n  <p><a href=\"v\">direct</a></p>\n  <p>[r]: <img src=\"y\" alt=\"a b\"></p>\n</div>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![t][r]\n\nparagraph\n[r]: ![a ![b](x)](y)",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: <img src=\"y\" alt=\"a b\"></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![t][r]\r\n\r\nparagraph\r\n[r]: ![a ![b](x)](y)",
+    "html": "<p>![t][r]</p>\n<p>paragraph\n[r]: <img src=\"y\" alt=\"a b\"></p>",
+    "lossCount": 1,
+    "nativeEquivalent": false
+  },
+  {
+    "source": "```\n![t][r]\n\n[direct](v)\n\n[r]: ![a ![b](x)](y)\n```",
+    "html": "<pre><code>![t][r]\n\n[direct](v)\n\n[r]: ![a ![b](x)](y)\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  },
+  {
+    "source": "```\r\n![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a ![b](x)](y)\r\n```",
+    "html": "<pre><code>![t][r]\r\n\r\n[direct](v)\r\n\r\n[r]: ![a ![b](x)](y)\r\n</code></pre>\n",
+    "lossCount": 0,
+    "nativeEquivalent": true
+  }
+]
