@@ -26811,8 +26811,18 @@ fn read_bracketed(bytes: &[u8], start: usize) -> Option<(String, usize)> {
     let mut i = start + 1;
     let content_start = i;
     let mut depth = 0usize;
+    // An image alt is a literal slot, so a `{%` there opens no comment.
+    let in_alt = start > 0 && bytes[start - 1] == b'!';
+    let last_percent_close = bytes.windows(2).rposition(|w| w == b"%}");
     while i < bytes.len() {
         match bytes[i] {
+            b'{' if !in_alt
+                && bytes.get(i + 1) == Some(&b'%')
+                && !decorated_braced_opener(bytes, i)
+                && last_percent_close.is_some_and(|close| close >= i + 2) =>
+            {
+                i = find_seq(bytes, i + 2, b"%}")? + 2;
+            }
             b'\\' if i + 1 < bytes.len() => i += 2,
             b'`' => {
                 // An unclosed verbatim span is opaque to end of text, so no `]`

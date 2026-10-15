@@ -113,3 +113,8 @@ fn a_cross_reference_stays_whole_against_an_arrow_before_more_text() {
         "<p><s>a &lt;/#x~&gt;y&gt; b</s></p>"
     );
 }
+
+#[test]
+fn an_inline_note_holds_a_delimited_comment() {
+    assert!(html("^[a {%x]%} b]").contains("<p>a  b<a href=\"#fnref1\""));
+}
