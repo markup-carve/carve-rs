@@ -48,3 +48,25 @@ fn cross_references_in_imported_text_render_like_the_original() {
         assert_eq!(to_html(&from_html), to_html(source));
     }
 }
+
+#[test]
+fn escaped_cross_reference_spelling_stays_literal() {
+    for source in ["\\</#id>\n", "x \\</#id> y\n"] {
+        for roundtrip in [false, true] {
+            let options = Options::default().with_roundtrip(roundtrip);
+            let markdown = to_markdown_with_options(source, &options);
+            let imported = markdown_to_carve(&markdown);
+            assert_eq!(
+                to_html(&imported),
+                to_html(source),
+                "Markdown: {markdown:?}, Carve: {imported:?}"
+            );
+
+            let html = to_html_with_options(source, &options);
+            let imported = html_to_carve(&html, &HtmlImportOptions::default())
+                .expect("HTML import")
+                .value;
+            assert_eq!(to_html(&imported), to_html(source), "HTML: {html:?}");
+        }
+    }
+}

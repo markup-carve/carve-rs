@@ -3942,7 +3942,51 @@ fn render_nodes_with_verbatim(
         let is_text = matches!(node, InlineNode::Text(_)) && !verbatim.contains(&idx);
         ctx.paired_closer_carry.set(carried && is_text);
         ctx.rendered_verbatim_tail = false;
-        let rendered = if layout_space {
+        let escaped_crossref_tail = idx.checked_sub(1).is_some_and(
+            |previous| matches!(&nodes[previous], InlineNode::EscapedText(t) if t.value == "<"),
+        );
+        let rendered = if escaped_crossref_tail
+            && matches!(node, InlineNode::Text(t) if t.value.starts_with("/#"))
+        {
+            let InlineNode::Text(t) = node else {
+                unreachable!()
+            };
+            let candidate = format!("<{}", t.value);
+            if let Some(end) = crate::parse::CrossrefScan::default().end(candidate.as_bytes(), 0) {
+                let tail_end = end - 1;
+                let remainder = InlineNode::text(&t.value[tail_end..]);
+                let suffix = if tail_end < t.value.len() {
+                    render_inline(
+                        session,
+                        &remainder,
+                        ctx,
+                        '>',
+                        next,
+                        caption_can_open,
+                        opens_a_note,
+                        opens_verbatim,
+                        opens_bracket,
+                        idx + 1 == nodes.len(),
+                    )
+                } else {
+                    String::new()
+                };
+                format!("{}{}", &t.value[..tail_end], suffix)
+            } else {
+                render_inline(
+                    session,
+                    node,
+                    ctx,
+                    prev,
+                    next,
+                    caption_can_open,
+                    opens_a_note,
+                    opens_verbatim,
+                    opens_bracket,
+                    idx + 1 == nodes.len(),
+                )
+            }
+        } else if layout_space {
             note_inserted(session, S_STAGED_SPACE);
             staged_space(session).to_string()
         } else if verbatim.contains(&idx) {

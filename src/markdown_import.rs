@@ -1120,6 +1120,21 @@ fn markdown_to_ast_with_code_lines(
                     builder.text(&source[cursor..range.end]);
                 }
             } else {
+                if let Event::Text(text) = &event {
+                    let raw = &source[range.clone()];
+                    if range.start > 0
+                        && source.as_bytes()[range.start - 1] == b'\\'
+                        && raw.starts_with("</#")
+                        && text.starts_with("</#")
+                        && crate::parse::CrossrefScan::default()
+                            .end(text.as_bytes(), 0)
+                            .is_some()
+                    {
+                        builder.inline(InlineNode::escaped_text("<"));
+                        builder.text(&text[1..]);
+                        continue;
+                    }
+                }
                 builder.push(event, &source[range], empty_title);
             }
         } else {
