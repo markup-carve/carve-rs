@@ -2196,3 +2196,6 @@ mod djot_definition_interruptions;
 
 #[path = "../djot_multiline_image_growth.rs"]
 mod djot_multiline_image_growth;
+
+#[path = "../djot_quoted_image_growth.rs"]
+mod djot_quoted_image_growth;

@@ -1,0 +1,1768 @@
+[
+  {
+    "source": "![a\n![a\nx](u)](u)",
+    "html": "<p><img alt=\"a\na\nx\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a\n> ![a\n> x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a\na\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a\n> > ![a\n> > x](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"a\na\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![a\n![a\n![a\n![a\nx](u)](u)](u)](u)",
+    "html": "<p><img alt=\"a\na\na\na\nx\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a\n> ![a\n> ![a\n> ![a\n> x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a\na\na\na\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a\n> > ![a\n> > ![a\n> > ![a\n> > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"a\na\na\na\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![a\n![a\n![a\n![a\n![a\n![a\n![a\n![a\nx](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"a\na\na\na\na\na\na\na\nx\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a\n> ![a\n> ![a\n> ![a\n> ![a\n> ![a\n> ![a\n> ![a\n> x](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a\na\na\na\na\na\na\na\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a\n> > ![a\n> > ![a\n> > ![a\n> > ![a\n> > ![a\n> > ![a\n> > ![a\n> > x](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"a\na\na\na\na\na\na\na\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![日本語,\n![日本語,\nx](u)](u)",
+    "html": "<p><img alt=\"日本語,\n日本語,\nx\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![日本語,\n> ![日本語,\n> x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"日本語,\n日本語,\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![日本語,\n> > ![日本語,\n> > x](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"日本語,\n日本語,\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![日本語,\n![日本語,\n![日本語,\n![日本語,\nx](u)](u)](u)](u)",
+    "html": "<p><img alt=\"日本語,\n日本語,\n日本語,\n日本語,\nx\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![日本語,\n> ![日本語,\n> ![日本語,\n> ![日本語,\n> x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"日本語,\n日本語,\n日本語,\n日本語,\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![日本語,\n> > ![日本語,\n> > ![日本語,\n> > ![日本語,\n> > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"日本語,\n日本語,\n日本語,\n日本語,\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![日本語,\n![日本語,\n![日本語,\n![日本語,\n![日本語,\n![日本語,\n![日本語,\n![日本語,\nx](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"日本語,\n日本語,\n日本語,\n日本語,\n日本語,\n日本語,\n日本語,\n日本語,\nx\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![日本語,\n> ![日本語,\n> ![日本語,\n> ![日本語,\n> ![日本語,\n> ![日本語,\n> ![日本語,\n> ![日本語,\n> x](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"日本語,\n日本語,\n日本語,\n日本語,\n日本語,\n日本語,\n日本語,\n日本語,\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![日本語,\n> > ![日本語,\n> > ![日本語,\n> > ![日本語,\n> > ![日本語,\n> > ![日本語,\n> > ![日本語,\n> > ![日本語,\n> > x](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"日本語,\n日本語,\n日本語,\n日本語,\n日本語,\n日本語,\n日本語,\n日本語,\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![𐐀?\n![𐐀?\nx](u)](u)",
+    "html": "<p><img alt=\"𐐀?\n𐐀?\nx\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![𐐀?\n> ![𐐀?\n> x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"𐐀?\n𐐀?\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![𐐀?\n> > ![𐐀?\n> > x](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"𐐀?\n𐐀?\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![𐐀?\n![𐐀?\n![𐐀?\n![𐐀?\nx](u)](u)](u)](u)",
+    "html": "<p><img alt=\"𐐀?\n𐐀?\n𐐀?\n𐐀?\nx\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![𐐀?\n> ![𐐀?\n> ![𐐀?\n> ![𐐀?\n> x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"𐐀?\n𐐀?\n𐐀?\n𐐀?\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![𐐀?\n> > ![𐐀?\n> > ![𐐀?\n> > ![𐐀?\n> > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"𐐀?\n𐐀?\n𐐀?\n𐐀?\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![𐐀?\n![𐐀?\n![𐐀?\n![𐐀?\n![𐐀?\n![𐐀?\n![𐐀?\n![𐐀?\nx](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"𐐀?\n𐐀?\n𐐀?\n𐐀?\n𐐀?\n𐐀?\n𐐀?\n𐐀?\nx\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![𐐀?\n> ![𐐀?\n> ![𐐀?\n> ![𐐀?\n> ![𐐀?\n> ![𐐀?\n> ![𐐀?\n> ![𐐀?\n> x](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"𐐀?\n𐐀?\n𐐀?\n𐐀?\n𐐀?\n𐐀?\n𐐀?\n𐐀?\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![𐐀?\n> > ![𐐀?\n> > ![𐐀?\n> > ![𐐀?\n> > ![𐐀?\n> > ![𐐀?\n> > ![𐐀?\n> > ![𐐀?\n> > x](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"𐐀?\n𐐀?\n𐐀?\n𐐀?\n𐐀?\n𐐀?\n𐐀?\n𐐀?\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![a,;:?/=&@\n![a,;:?/=&@\nx](u)](u)",
+    "html": "<p><img alt=\"a,;:?/=&amp;@\na,;:?/=&amp;@\nx\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a,;:?/=&@\n> ![a,;:?/=&@\n> x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a,;:?/=&amp;@\na,;:?/=&amp;@\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a,;:?/=&@\n> > ![a,;:?/=&@\n> > x](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"a,;:?/=&amp;@\na,;:?/=&amp;@\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![a,;:?/=&@\n![a,;:?/=&@\n![a,;:?/=&@\n![a,;:?/=&@\nx](u)](u)](u)](u)",
+    "html": "<p><img alt=\"a,;:?/=&amp;@\na,;:?/=&amp;@\na,;:?/=&amp;@\na,;:?/=&amp;@\nx\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a,;:?/=&@\n> ![a,;:?/=&@\n> ![a,;:?/=&@\n> ![a,;:?/=&@\n> x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a,;:?/=&amp;@\na,;:?/=&amp;@\na,;:?/=&amp;@\na,;:?/=&amp;@\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a,;:?/=&@\n> > ![a,;:?/=&@\n> > ![a,;:?/=&@\n> > ![a,;:?/=&@\n> > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"a,;:?/=&amp;@\na,;:?/=&amp;@\na,;:?/=&amp;@\na,;:?/=&amp;@\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![a,;:?/=&@\n![a,;:?/=&@\n![a,;:?/=&@\n![a,;:?/=&@\n![a,;:?/=&@\n![a,;:?/=&@\n![a,;:?/=&@\n![a,;:?/=&@\nx](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"a,;:?/=&amp;@\na,;:?/=&amp;@\na,;:?/=&amp;@\na,;:?/=&amp;@\na,;:?/=&amp;@\na,;:?/=&amp;@\na,;:?/=&amp;@\na,;:?/=&amp;@\nx\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a,;:?/=&@\n> ![a,;:?/=&@\n> ![a,;:?/=&@\n> ![a,;:?/=&@\n> ![a,;:?/=&@\n> ![a,;:?/=&@\n> ![a,;:?/=&@\n> ![a,;:?/=&@\n> x](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a,;:?/=&amp;@\na,;:?/=&amp;@\na,;:?/=&amp;@\na,;:?/=&amp;@\na,;:?/=&amp;@\na,;:?/=&amp;@\na,;:?/=&amp;@\na,;:?/=&amp;@\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a,;:?/=&@\n> > ![a,;:?/=&@\n> > ![a,;:?/=&@\n> > ![a,;:?/=&@\n> > ![a,;:?/=&@\n> > ![a,;:?/=&@\n> > ![a,;:?/=&@\n> > ![a,;:?/=&@\n> > x](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"a,;:?/=&amp;@\na,;:?/=&amp;@\na,;:?/=&amp;@\na,;:?/=&amp;@\na,;:?/=&amp;@\na,;:?/=&amp;@\na,;:?/=&amp;@\na,;:?/=&amp;@\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![a \n![a \nx](u)](u)",
+    "html": "<p><img src=\"u\" alt=\"a\na\nx\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> ![a \n> ![a \n> x](u)](u)",
+    "html": "<blockquote><p><img src=\"u\" alt=\"a\na\nx\"></p></blockquote>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> > ![a \n> > ![a \n> > x](u)](u)",
+    "html": "<blockquote>\n  <blockquote><p><img src=\"u\" alt=\"a\na\nx\"></p></blockquote>\n</blockquote>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![a \n![a \n![a \n![a \nx](u)](u)](u)](u)",
+    "html": "<p><img src=\"u\" alt=\"a\na\na\na\nx\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> ![a \n> ![a \n> ![a \n> ![a \n> x](u)](u)](u)](u)",
+    "html": "<blockquote><p><img src=\"u\" alt=\"a\na\na\na\nx\"></p></blockquote>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> > ![a \n> > ![a \n> > ![a \n> > ![a \n> > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n  <blockquote><p><img src=\"u\" alt=\"a\na\na\na\nx\"></p></blockquote>\n</blockquote>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![a \n![a \n![a \n![a \n![a \n![a \n![a \n![a \nx](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img src=\"u\" alt=\"a\na\na\na\na\na\na\na\nx\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> ![a \n> ![a \n> ![a \n> ![a \n> ![a \n> ![a \n> ![a \n> ![a \n> x](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<blockquote><p><img src=\"u\" alt=\"a\na\na\na\na\na\na\na\nx\"></p></blockquote>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> > ![a \n> > ![a \n> > ![a \n> > ![a \n> > ![a \n> > ![a \n> > ![a \n> > ![a \n> > x](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<blockquote>\n  <blockquote><p><img src=\"u\" alt=\"a\na\na\na\na\na\na\na\nx\"></p></blockquote>\n</blockquote>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![a\t\n![a\t\nx](u)](u)",
+    "html": "<p><img src=\"u\" alt=\"a\na\nx\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> ![a\t\n> ![a\t\n> x](u)](u)",
+    "html": "<blockquote><p><img src=\"u\" alt=\"a\na\nx\"></p></blockquote>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> > ![a\t\n> > ![a\t\n> > x](u)](u)",
+    "html": "<blockquote>\n  <blockquote><p><img src=\"u\" alt=\"a\na\nx\"></p></blockquote>\n</blockquote>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![a\t\n![a\t\n![a\t\n![a\t\nx](u)](u)](u)](u)",
+    "html": "<p><img src=\"u\" alt=\"a\na\na\na\nx\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> ![a\t\n> ![a\t\n> ![a\t\n> ![a\t\n> x](u)](u)](u)](u)",
+    "html": "<blockquote><p><img src=\"u\" alt=\"a\na\na\na\nx\"></p></blockquote>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> > ![a\t\n> > ![a\t\n> > ![a\t\n> > ![a\t\n> > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n  <blockquote><p><img src=\"u\" alt=\"a\na\na\na\nx\"></p></blockquote>\n</blockquote>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![a\t\n![a\t\n![a\t\n![a\t\n![a\t\n![a\t\n![a\t\n![a\t\nx](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img src=\"u\" alt=\"a\na\na\na\na\na\na\na\nx\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> ![a\t\n> ![a\t\n> ![a\t\n> ![a\t\n> ![a\t\n> ![a\t\n> ![a\t\n> ![a\t\n> x](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<blockquote><p><img src=\"u\" alt=\"a\na\na\na\na\na\na\na\nx\"></p></blockquote>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "> > ![a\t\n> > ![a\t\n> > ![a\t\n> > ![a\t\n> > ![a\t\n> > ![a\t\n> > ![a\t\n> > ![a\t\n> > x](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<blockquote>\n  <blockquote><p><img src=\"u\" alt=\"a\na\na\na\na\na\na\na\nx\"></p></blockquote>\n</blockquote>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": "![a\n\n![a\n\nx](u)](u)",
+    "html": "<p>![a</p>\n<p>![a</p>\n<p>x](u)](u)</p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a\n> \n> ![a\n> \n> x](u)](u)",
+    "html": "<blockquote>\n<p>![a</p>\n<p>![a</p>\n<p>x](u)](u)</p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a\n> > \n> > ![a\n> > \n> > x](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p>![a</p>\n<p>![a</p>\n<p>x](u)](u)</p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![a\n\n![a\n\n![a\n\n![a\n\nx](u)](u)](u)](u)",
+    "html": "<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>x](u)](u)](u)](u)</p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a\n> \n> ![a\n> \n> ![a\n> \n> ![a\n> \n> x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>x](u)](u)](u)](u)</p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a\n> > \n> > ![a\n> > \n> > ![a\n> > \n> > ![a\n> > \n> > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>x](u)](u)](u)](u)</p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![a\n\n![a\n\n![a\n\n![a\n\n![a\n\n![a\n\n![a\n\n![a\n\nx](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>x](u)](u)](u)](u)](u)](u)](u)](u)</p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a\n> \n> ![a\n> \n> ![a\n> \n> ![a\n> \n> ![a\n> \n> ![a\n> \n> ![a\n> \n> ![a\n> \n> x](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>x](u)](u)](u)](u)](u)](u)](u)](u)</p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a\n> > \n> > ![a\n> > \n> > ![a\n> > \n> > ![a\n> > \n> > ![a\n> > \n> > ![a\n> > \n> > ![a\n> > \n> > ![a\n> > \n> > x](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>x](u)](u)](u)](u)](u)](u)](u)](u)</p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![a--\n![a--\nx](u)](u)",
+    "html": "<p><img alt=\"a--\na--\nx\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a--\n> ![a--\n> x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a--\na--\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a--\n> > ![a--\n> > x](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"a--\na--\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![a--\n![a--\n![a--\n![a--\nx](u)](u)](u)](u)",
+    "html": "<p><img alt=\"a--\na--\na--\na--\nx\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a--\n> ![a--\n> ![a--\n> ![a--\n> x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a--\na--\na--\na--\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a--\n> > ![a--\n> > ![a--\n> > ![a--\n> > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"a--\na--\na--\na--\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![a--\n![a--\n![a--\n![a--\n![a--\n![a--\n![a--\n![a--\nx](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"a--\na--\na--\na--\na--\na--\na--\na--\nx\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a--\n> ![a--\n> ![a--\n> ![a--\n> ![a--\n> ![a--\n> ![a--\n> ![a--\n> x](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a--\na--\na--\na--\na--\na--\na--\na--\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a--\n> > ![a--\n> > ![a--\n> > ![a--\n> > ![a--\n> > ![a--\n> > ![a--\n> > ![a--\n> > x](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"a--\na--\na--\na--\na--\na--\na--\na--\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![a...\n![a...\nx](u)](u)",
+    "html": "<p><img alt=\"a...\na...\nx\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a...\n> ![a...\n> x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a...\na...\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a...\n> > ![a...\n> > x](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"a...\na...\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![a...\n![a...\n![a...\n![a...\nx](u)](u)](u)](u)",
+    "html": "<p><img alt=\"a...\na...\na...\na...\nx\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a...\n> ![a...\n> ![a...\n> ![a...\n> x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a...\na...\na...\na...\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a...\n> > ![a...\n> > ![a...\n> > ![a...\n> > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"a...\na...\na...\na...\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![a...\n![a...\n![a...\n![a...\n![a...\n![a...\n![a...\n![a...\nx](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"a...\na...\na...\na...\na...\na...\na...\na...\nx\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a...\n> ![a...\n> ![a...\n> ![a...\n> ![a...\n> ![a...\n> ![a...\n> ![a...\n> x](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a...\na...\na...\na...\na...\na...\na...\na...\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a...\n> > ![a...\n> > ![a...\n> > ![a...\n> > ![a...\n> > ![a...\n> > ![a...\n> > ![a...\n> > x](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"a...\na...\na...\na...\na...\na...\na...\na...\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![a_\n![a_\nx](u)](u)",
+    "html": "<p><img alt=\"a_\na_\nx\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a_\n> ![a_\n> x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a_\na_\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a_\n> > ![a_\n> > x](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"a_\na_\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![a_\n![a_\n![a_\n![a_\nx](u)](u)](u)](u)",
+    "html": "<p><img alt=\"a_\na_\na_\na_\nx\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a_\n> ![a_\n> ![a_\n> ![a_\n> x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a_\na_\na_\na_\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a_\n> > ![a_\n> > ![a_\n> > ![a_\n> > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"a_\na_\na_\na_\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![a_\n![a_\n![a_\n![a_\n![a_\n![a_\n![a_\n![a_\nx](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"a_\na_\na_\na_\na_\na_\na_\na_\nx\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a_\n> ![a_\n> ![a_\n> ![a_\n> ![a_\n> ![a_\n> ![a_\n> ![a_\n> x](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a_\na_\na_\na_\na_\na_\na_\na_\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a_\n> > ![a_\n> > ![a_\n> > ![a_\n> > ![a_\n> > ![a_\n> > ![a_\n> > ![a_\n> > x](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"a_\na_\na_\na_\na_\na_\na_\na_\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![a`\n![a`\nx](u)](u)",
+    "html": "<p><img alt=\"a\n![a\nx\" src=\"u\">](u)</p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a`\n> ![a`\n> x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a\n![a\nx\" src=\"u\">](u)</p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a`\n> > ![a`\n> > x](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"a\n![a\nx\" src=\"u\">](u)</p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![a`\n![a`\n![a`\n![a`\nx](u)](u)](u)](u)",
+    "html": "<p><img alt=\"a\n![a\na\n![a\nx\" src=\"u\">](u)](u)</p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a`\n> ![a`\n> ![a`\n> ![a`\n> x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a\n![a\na\n![a\nx\" src=\"u\">](u)](u)</p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a`\n> > ![a`\n> > ![a`\n> > ![a`\n> > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"a\n![a\na\n![a\nx\" src=\"u\">](u)](u)</p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![a`\n![a`\n![a`\n![a`\n![a`\n![a`\n![a`\n![a`\nx](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"a\n![a\na\n![a\na\n![a\na\n![a\nx\" src=\"u\">](u)](u)](u)](u)</p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a`\n> ![a`\n> ![a`\n> ![a`\n> ![a`\n> ![a`\n> ![a`\n> ![a`\n> x](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a\n![a\na\n![a\na\n![a\na\n![a\nx\" src=\"u\">](u)](u)](u)](u)</p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a`\n> > ![a`\n> > ![a`\n> > ![a`\n> > ![a`\n> > ![a`\n> > ![a`\n> > ![a`\n> > x](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"a\n![a\na\n![a\na\n![a\na\n![a\nx\" src=\"u\">](u)](u)](u)](u)</p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![a\\\n![a\\\nx](u)](u)",
+    "html": "<p><img alt=\"a\na\nx\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a\\\n> ![a\\\n> x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a\na\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a\\\n> > ![a\\\n> > x](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"a\na\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![a\\\n![a\\\n![a\\\n![a\\\nx](u)](u)](u)](u)",
+    "html": "<p><img alt=\"a\na\na\na\nx\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a\\\n> ![a\\\n> ![a\\\n> ![a\\\n> x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a\na\na\na\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a\\\n> > ![a\\\n> > ![a\\\n> > ![a\\\n> > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"a\na\na\na\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "![a\\\n![a\\\n![a\\\n![a\\\n![a\\\n![a\\\n![a\\\n![a\\\nx](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"a\na\na\na\na\na\na\na\nx\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a\\\n> ![a\\\n> ![a\\\n> ![a\\\n> ![a\\\n> ![a\\\n> ![a\\\n> ![a\\\n> x](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a\na\na\na\na\na\na\na\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a\\\n> > ![a\\\n> > ![a\\\n> > ![a\\\n> > ![a\\\n> > ![a\\\n> > ![a\\\n> > ![a\\\n> > x](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"a\na\na\na\na\na\na\na\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">![: term\n>![: term\n>x](u)](u)",
+    "html": "<p>&gt;<img alt=\": term\n&gt;: term\n&gt;x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![: term\n> ![: term\n> x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\": term\n: term\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![: term\n> > ![: term\n> > x](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\": term\n: term\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">\t![: term\n>\t![: term\n>\tx](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\": term\n: term\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": " > ![: term\n > ![: term\n > x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\": term\n: term\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">> ![: term\n>> ![: term\n>> x](u)](u)",
+    "html": "<p>&gt;&gt; <img alt=\": term\n&gt;&gt; : term\n&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">>> ![: term\n>>> ![: term\n>>> x](u)](u)",
+    "html": "<p>&gt;&gt;&gt; <img alt=\": term\n&gt;&gt;&gt; : term\n&gt;&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">![: term\n>![: term\n>![: term\n>![: term\n>x](u)](u)](u)](u)",
+    "html": "<p>&gt;<img alt=\": term\n&gt;: term\n&gt;: term\n&gt;: term\n&gt;x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![: term\n> ![: term\n> ![: term\n> ![: term\n> x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\": term\n: term\n: term\n: term\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![: term\n> > ![: term\n> > ![: term\n> > ![: term\n> > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\": term\n: term\n: term\n: term\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">\t![: term\n>\t![: term\n>\t![: term\n>\t![: term\n>\tx](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\": term\n: term\n: term\n: term\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": " > ![: term\n > ![: term\n > ![: term\n > ![: term\n > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\": term\n: term\n: term\n: term\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">> ![: term\n>> ![: term\n>> ![: term\n>> ![: term\n>> x](u)](u)](u)](u)",
+    "html": "<p>&gt;&gt; <img alt=\": term\n&gt;&gt; : term\n&gt;&gt; : term\n&gt;&gt; : term\n&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">>> ![: term\n>>> ![: term\n>>> ![: term\n>>> ![: term\n>>> x](u)](u)](u)](u)",
+    "html": "<p>&gt;&gt;&gt; <img alt=\": term\n&gt;&gt;&gt; : term\n&gt;&gt;&gt; : term\n&gt;&gt;&gt; : term\n&gt;&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">![/\n>![/\n>x](u)](u)",
+    "html": "<p>&gt;<img alt=\"/\n&gt;/\n&gt;x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![/\n> ![/\n> x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"/\n/\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![/\n> > ![/\n> > x](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"/\n/\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">\t![/\n>\t![/\n>\tx](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"/\n/\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": " > ![/\n > ![/\n > x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"/\n/\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">> ![/\n>> ![/\n>> x](u)](u)",
+    "html": "<p>&gt;&gt; <img alt=\"/\n&gt;&gt; /\n&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">>> ![/\n>>> ![/\n>>> x](u)](u)",
+    "html": "<p>&gt;&gt;&gt; <img alt=\"/\n&gt;&gt;&gt; /\n&gt;&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">![/\n>![/\n>![/\n>![/\n>x](u)](u)](u)](u)",
+    "html": "<p>&gt;<img alt=\"/\n&gt;/\n&gt;/\n&gt;/\n&gt;x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![/\n> ![/\n> ![/\n> ![/\n> x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"/\n/\n/\n/\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![/\n> > ![/\n> > ![/\n> > ![/\n> > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"/\n/\n/\n/\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">\t![/\n>\t![/\n>\t![/\n>\t![/\n>\tx](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"/\n/\n/\n/\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": " > ![/\n > ![/\n > ![/\n > ![/\n > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"/\n/\n/\n/\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">> ![/\n>> ![/\n>> ![/\n>> ![/\n>> x](u)](u)](u)](u)",
+    "html": "<p>&gt;&gt; <img alt=\"/\n&gt;&gt; /\n&gt;&gt; /\n&gt;&gt; /\n&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">>> ![/\n>>> ![/\n>>> ![/\n>>> ![/\n>>> x](u)](u)](u)](u)",
+    "html": "<p>&gt;&gt;&gt; <img alt=\"/\n&gt;&gt;&gt; /\n&gt;&gt;&gt; /\n&gt;&gt;&gt; /\n&gt;&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">![&copy;\n>![&copy;\n>x](u)](u)",
+    "html": "<p>&gt;<img alt=\"&amp;copy;\n&gt;&amp;copy;\n&gt;x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![&copy;\n> ![&copy;\n> x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"&amp;copy;\n&amp;copy;\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![&copy;\n> > ![&copy;\n> > x](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"&amp;copy;\n&amp;copy;\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">\t![&copy;\n>\t![&copy;\n>\tx](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"&amp;copy;\n&amp;copy;\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": " > ![&copy;\n > ![&copy;\n > x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"&amp;copy;\n&amp;copy;\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">> ![&copy;\n>> ![&copy;\n>> x](u)](u)",
+    "html": "<p>&gt;&gt; <img alt=\"&amp;copy;\n&gt;&gt; &amp;copy;\n&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">>> ![&copy;\n>>> ![&copy;\n>>> x](u)](u)",
+    "html": "<p>&gt;&gt;&gt; <img alt=\"&amp;copy;\n&gt;&gt;&gt; &amp;copy;\n&gt;&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">![&copy;\n>![&copy;\n>![&copy;\n>![&copy;\n>x](u)](u)](u)](u)",
+    "html": "<p>&gt;<img alt=\"&amp;copy;\n&gt;&amp;copy;\n&gt;&amp;copy;\n&gt;&amp;copy;\n&gt;x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![&copy;\n> ![&copy;\n> ![&copy;\n> ![&copy;\n> x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"&amp;copy;\n&amp;copy;\n&amp;copy;\n&amp;copy;\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![&copy;\n> > ![&copy;\n> > ![&copy;\n> > ![&copy;\n> > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"&amp;copy;\n&amp;copy;\n&amp;copy;\n&amp;copy;\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">\t![&copy;\n>\t![&copy;\n>\t![&copy;\n>\t![&copy;\n>\tx](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"&amp;copy;\n&amp;copy;\n&amp;copy;\n&amp;copy;\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": " > ![&copy;\n > ![&copy;\n > ![&copy;\n > ![&copy;\n > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"&amp;copy;\n&amp;copy;\n&amp;copy;\n&amp;copy;\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">> ![&copy;\n>> ![&copy;\n>> ![&copy;\n>> ![&copy;\n>> x](u)](u)](u)](u)",
+    "html": "<p>&gt;&gt; <img alt=\"&amp;copy;\n&gt;&gt; &amp;copy;\n&gt;&gt; &amp;copy;\n&gt;&gt; &amp;copy;\n&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">>> ![&copy;\n>>> ![&copy;\n>>> ![&copy;\n>>> ![&copy;\n>>> x](u)](u)](u)](u)",
+    "html": "<p>&gt;&gt;&gt; <img alt=\"&amp;copy;\n&gt;&gt;&gt; &amp;copy;\n&gt;&gt;&gt; &amp;copy;\n&gt;&gt;&gt; &amp;copy;\n&gt;&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">![==\n>![==\n>x](u)](u)",
+    "html": "<p>&gt;<img alt=\"==\n&gt;==\n&gt;x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![==\n> ![==\n> x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"==\n==\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![==\n> > ![==\n> > x](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"==\n==\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">\t![==\n>\t![==\n>\tx](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"==\n==\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": " > ![==\n > ![==\n > x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"==\n==\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">> ![==\n>> ![==\n>> x](u)](u)",
+    "html": "<p>&gt;&gt; <img alt=\"==\n&gt;&gt; ==\n&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">>> ![==\n>>> ![==\n>>> x](u)](u)",
+    "html": "<p>&gt;&gt;&gt; <img alt=\"==\n&gt;&gt;&gt; ==\n&gt;&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">![==\n>![==\n>![==\n>![==\n>x](u)](u)](u)](u)",
+    "html": "<p>&gt;<img alt=\"==\n&gt;==\n&gt;==\n&gt;==\n&gt;x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![==\n> ![==\n> ![==\n> ![==\n> x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"==\n==\n==\n==\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![==\n> > ![==\n> > ![==\n> > ![==\n> > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"==\n==\n==\n==\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">\t![==\n>\t![==\n>\t![==\n>\t![==\n>\tx](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"==\n==\n==\n==\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": " > ![==\n > ![==\n > ![==\n > ![==\n > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"==\n==\n==\n==\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">> ![==\n>> ![==\n>> ![==\n>> ![==\n>> x](u)](u)](u)](u)",
+    "html": "<p>&gt;&gt; <img alt=\"==\n&gt;&gt; ==\n&gt;&gt; ==\n&gt;&gt; ==\n&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">>> ![==\n>>> ![==\n>>> ![==\n>>> ![==\n>>> x](u)](u)](u)](u)",
+    "html": "<p>&gt;&gt;&gt; <img alt=\"==\n&gt;&gt;&gt; ==\n&gt;&gt;&gt; ==\n&gt;&gt;&gt; ==\n&gt;&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">![;?/@\n>![;?/@\n>x](u)](u)",
+    "html": "<p>&gt;<img alt=\";?/@\n&gt;;?/@\n&gt;x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![;?/@\n> ![;?/@\n> x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\";?/@\n;?/@\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![;?/@\n> > ![;?/@\n> > x](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\";?/@\n;?/@\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">\t![;?/@\n>\t![;?/@\n>\tx](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\";?/@\n;?/@\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": " > ![;?/@\n > ![;?/@\n > x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\";?/@\n;?/@\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">> ![;?/@\n>> ![;?/@\n>> x](u)](u)",
+    "html": "<p>&gt;&gt; <img alt=\";?/@\n&gt;&gt; ;?/@\n&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">>> ![;?/@\n>>> ![;?/@\n>>> x](u)](u)",
+    "html": "<p>&gt;&gt;&gt; <img alt=\";?/@\n&gt;&gt;&gt; ;?/@\n&gt;&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">![;?/@\n>![;?/@\n>![;?/@\n>![;?/@\n>x](u)](u)](u)](u)",
+    "html": "<p>&gt;<img alt=\";?/@\n&gt;;?/@\n&gt;;?/@\n&gt;;?/@\n&gt;x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![;?/@\n> ![;?/@\n> ![;?/@\n> ![;?/@\n> x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\";?/@\n;?/@\n;?/@\n;?/@\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![;?/@\n> > ![;?/@\n> > ![;?/@\n> > ![;?/@\n> > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\";?/@\n;?/@\n;?/@\n;?/@\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">\t![;?/@\n>\t![;?/@\n>\t![;?/@\n>\t![;?/@\n>\tx](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\";?/@\n;?/@\n;?/@\n;?/@\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": " > ![;?/@\n > ![;?/@\n > ![;?/@\n > ![;?/@\n > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\";?/@\n;?/@\n;?/@\n;?/@\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">> ![;?/@\n>> ![;?/@\n>> ![;?/@\n>> ![;?/@\n>> x](u)](u)](u)](u)",
+    "html": "<p>&gt;&gt; <img alt=\";?/@\n&gt;&gt; ;?/@\n&gt;&gt; ;?/@\n&gt;&gt; ;?/@\n&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">>> ![;?/@\n>>> ![;?/@\n>>> ![;?/@\n>>> ![;?/@\n>>> x](u)](u)](u)](u)",
+    "html": "<p>&gt;&gt;&gt; <img alt=\";?/@\n&gt;&gt;&gt; ;?/@\n&gt;&gt;&gt; ;?/@\n&gt;&gt;&gt; ;?/@\n&gt;&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">![a@b\n>![a@b\n>x](u)](u)",
+    "html": "<p>&gt;<img alt=\"a@b\n&gt;a@b\n&gt;x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a@b\n> ![a@b\n> x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a@b\na@b\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a@b\n> > ![a@b\n> > x](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"a@b\na@b\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">\t![a@b\n>\t![a@b\n>\tx](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a@b\na@b\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": " > ![a@b\n > ![a@b\n > x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a@b\na@b\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">> ![a@b\n>> ![a@b\n>> x](u)](u)",
+    "html": "<p>&gt;&gt; <img alt=\"a@b\n&gt;&gt; a@b\n&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">>> ![a@b\n>>> ![a@b\n>>> x](u)](u)",
+    "html": "<p>&gt;&gt;&gt; <img alt=\"a@b\n&gt;&gt;&gt; a@b\n&gt;&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">![a@b\n>![a@b\n>![a@b\n>![a@b\n>x](u)](u)](u)](u)",
+    "html": "<p>&gt;<img alt=\"a@b\n&gt;a@b\n&gt;a@b\n&gt;a@b\n&gt;x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a@b\n> ![a@b\n> ![a@b\n> ![a@b\n> x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a@b\na@b\na@b\na@b\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a@b\n> > ![a@b\n> > ![a@b\n> > ![a@b\n> > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"a@b\na@b\na@b\na@b\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">\t![a@b\n>\t![a@b\n>\t![a@b\n>\t![a@b\n>\tx](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a@b\na@b\na@b\na@b\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": " > ![a@b\n > ![a@b\n > ![a@b\n > ![a@b\n > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a@b\na@b\na@b\na@b\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">> ![a@b\n>> ![a@b\n>> ![a@b\n>> ![a@b\n>> x](u)](u)](u)](u)",
+    "html": "<p>&gt;&gt; <img alt=\"a@b\n&gt;&gt; a@b\n&gt;&gt; a@b\n&gt;&gt; a@b\n&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">>> ![a@b\n>>> ![a@b\n>>> ![a@b\n>>> ![a@b\n>>> x](u)](u)](u)](u)",
+    "html": "<p>&gt;&gt;&gt; <img alt=\"a@b\n&gt;&gt;&gt; a@b\n&gt;&gt;&gt; a@b\n&gt;&gt;&gt; a@b\n&gt;&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">![́a\n>![́a\n>x](u)](u)",
+    "html": "<p>&gt;<img alt=\"́a\n&gt;́a\n&gt;x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![́a\n> ![́a\n> x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"́a\ńa\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![́a\n> > ![́a\n> > x](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"́a\ńa\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">\t![́a\n>\t![́a\n>\tx](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"́a\ńa\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": " > ![́a\n > ![́a\n > x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"́a\ńa\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">> ![́a\n>> ![́a\n>> x](u)](u)",
+    "html": "<p>&gt;&gt; <img alt=\"́a\n&gt;&gt; ́a\n&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">>> ![́a\n>>> ![́a\n>>> x](u)](u)",
+    "html": "<p>&gt;&gt;&gt; <img alt=\"́a\n&gt;&gt;&gt; ́a\n&gt;&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">![́a\n>![́a\n>![́a\n>![́a\n>x](u)](u)](u)](u)",
+    "html": "<p>&gt;<img alt=\"́a\n&gt;́a\n&gt;́a\n&gt;́a\n&gt;x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![́a\n> ![́a\n> ![́a\n> ![́a\n> x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"́a\ńa\ńa\ńa\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![́a\n> > ![́a\n> > ![́a\n> > ![́a\n> > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"́a\ńa\ńa\ńa\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">\t![́a\n>\t![́a\n>\t![́a\n>\t![́a\n>\tx](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"́a\ńa\ńa\ńa\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": " > ![́a\n > ![́a\n > ![́a\n > ![́a\n > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"́a\ńa\ńa\ńa\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">> ![́a\n>> ![́a\n>> ![́a\n>> ![́a\n>> x](u)](u)](u)](u)",
+    "html": "<p>&gt;&gt; <img alt=\"́a\n&gt;&gt; ́a\n&gt;&gt; ́a\n&gt;&gt; ́a\n&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">>> ![́a\n>>> ![́a\n>>> ![́a\n>>> ![́a\n>>> x](u)](u)](u)](u)",
+    "html": "<p>&gt;&gt;&gt; <img alt=\"́a\n&gt;&gt;&gt; ́a\n&gt;&gt;&gt; ́a\n&gt;&gt;&gt; ́a\n&gt;&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">![१२\n>![१२\n>x](u)](u)",
+    "html": "<p>&gt;<img alt=\"१२\n&gt;१२\n&gt;x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![१२\n> ![१२\n> x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"१२\n१२\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![१२\n> > ![१२\n> > x](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"१२\n१२\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">\t![१२\n>\t![१२\n>\tx](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"१२\n१२\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": " > ![१२\n > ![१२\n > x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"१२\n१२\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">> ![१२\n>> ![१२\n>> x](u)](u)",
+    "html": "<p>&gt;&gt; <img alt=\"१२\n&gt;&gt; १२\n&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">>> ![१२\n>>> ![१२\n>>> x](u)](u)",
+    "html": "<p>&gt;&gt;&gt; <img alt=\"१२\n&gt;&gt;&gt; १२\n&gt;&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">![१२\n>![१२\n>![१२\n>![१२\n>x](u)](u)](u)](u)",
+    "html": "<p>&gt;<img alt=\"१२\n&gt;१२\n&gt;१२\n&gt;१२\n&gt;x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![१२\n> ![१२\n> ![१२\n> ![१२\n> x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"१२\n१२\n१२\n१२\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![१२\n> > ![१२\n> > ![१२\n> > ![१२\n> > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"१२\n१२\n१२\n१२\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">\t![१२\n>\t![१२\n>\t![१२\n>\t![१२\n>\tx](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"१२\n१२\n१२\n१२\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": " > ![१२\n > ![१२\n > ![१२\n > ![१२\n > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"१२\n१२\n१२\n१२\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">> ![१२\n>> ![१२\n>> ![१२\n>> ![१२\n>> x](u)](u)](u)](u)",
+    "html": "<p>&gt;&gt; <img alt=\"१२\n&gt;&gt; १२\n&gt;&gt; १२\n&gt;&gt; १२\n&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">>> ![१२\n>>> ![१२\n>>> ![१२\n>>> ![१२\n>>> x](u)](u)](u)](u)",
+    "html": "<p>&gt;&gt;&gt; <img alt=\"१२\n&gt;&gt;&gt; १२\n&gt;&gt;&gt; १२\n&gt;&gt;&gt; १२\n&gt;&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">![𐐀𐐨\n>![𐐀𐐨\n>x](u)](u)",
+    "html": "<p>&gt;<img alt=\"𐐀𐐨\n&gt;𐐀𐐨\n&gt;x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![𐐀𐐨\n> ![𐐀𐐨\n> x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"𐐀𐐨\n𐐀𐐨\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![𐐀𐐨\n> > ![𐐀𐐨\n> > x](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"𐐀𐐨\n𐐀𐐨\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">\t![𐐀𐐨\n>\t![𐐀𐐨\n>\tx](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"𐐀𐐨\n𐐀𐐨\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": " > ![𐐀𐐨\n > ![𐐀𐐨\n > x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"𐐀𐐨\n𐐀𐐨\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">> ![𐐀𐐨\n>> ![𐐀𐐨\n>> x](u)](u)",
+    "html": "<p>&gt;&gt; <img alt=\"𐐀𐐨\n&gt;&gt; 𐐀𐐨\n&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">>> ![𐐀𐐨\n>>> ![𐐀𐐨\n>>> x](u)](u)",
+    "html": "<p>&gt;&gt;&gt; <img alt=\"𐐀𐐨\n&gt;&gt;&gt; 𐐀𐐨\n&gt;&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">![𐐀𐐨\n>![𐐀𐐨\n>![𐐀𐐨\n>![𐐀𐐨\n>x](u)](u)](u)](u)",
+    "html": "<p>&gt;<img alt=\"𐐀𐐨\n&gt;𐐀𐐨\n&gt;𐐀𐐨\n&gt;𐐀𐐨\n&gt;x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![𐐀𐐨\n> ![𐐀𐐨\n> ![𐐀𐐨\n> ![𐐀𐐨\n> x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"𐐀𐐨\n𐐀𐐨\n𐐀𐐨\n𐐀𐐨\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![𐐀𐐨\n> > ![𐐀𐐨\n> > ![𐐀𐐨\n> > ![𐐀𐐨\n> > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p><img alt=\"𐐀𐐨\n𐐀𐐨\n𐐀𐐨\n𐐀𐐨\nx\" src=\"u\"></p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">\t![𐐀𐐨\n>\t![𐐀𐐨\n>\t![𐐀𐐨\n>\t![𐐀𐐨\n>\tx](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"𐐀𐐨\n𐐀𐐨\n𐐀𐐨\n𐐀𐐨\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": " > ![𐐀𐐨\n > ![𐐀𐐨\n > ![𐐀𐐨\n > ![𐐀𐐨\n > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"𐐀𐐨\n𐐀𐐨\n𐐀𐐨\n𐐀𐐨\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">> ![𐐀𐐨\n>> ![𐐀𐐨\n>> ![𐐀𐐨\n>> ![𐐀𐐨\n>> x](u)](u)](u)](u)",
+    "html": "<p>&gt;&gt; <img alt=\"𐐀𐐨\n&gt;&gt; 𐐀𐐨\n&gt;&gt; 𐐀𐐨\n&gt;&gt; 𐐀𐐨\n&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">>> ![𐐀𐐨\n>>> ![𐐀𐐨\n>>> ![𐐀𐐨\n>>> ![𐐀𐐨\n>>> x](u)](u)](u)](u)",
+    "html": "<p>&gt;&gt;&gt; <img alt=\"𐐀𐐨\n&gt;&gt;&gt; 𐐀𐐨\n&gt;&gt;&gt; 𐐀𐐨\n&gt;&gt;&gt; 𐐀𐐨\n&gt;&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">![a\t\n>![a\t\n>x](u)](u)",
+    "html": "<p>&gt;<img src=\"u\" alt=\"a\n&gt;a\n&gt;x\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": ">\t![a\t\n>\t![a\t\n>\tx](u)](u)",
+    "html": "<blockquote><p><img src=\"u\" alt=\"a\na\nx\"></p></blockquote>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": " > ![a\t\n > ![a\t\n > x](u)](u)",
+    "html": "<blockquote><p><img src=\"u\" alt=\"a\na\nx\"></p></blockquote>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": ">> ![a\t\n>> ![a\t\n>> x](u)](u)",
+    "html": "<p>&gt;&gt; <img src=\"u\" alt=\"a\n&gt;&gt; a\n&gt;&gt; x\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": ">>> ![a\t\n>>> ![a\t\n>>> x](u)](u)",
+    "html": "<p>&gt;&gt;&gt; <img src=\"u\" alt=\"a\n&gt;&gt;&gt; a\n&gt;&gt;&gt; x\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": ">![a\t\n>![a\t\n>![a\t\n>![a\t\n>x](u)](u)](u)](u)",
+    "html": "<p>&gt;<img src=\"u\" alt=\"a\n&gt;a\n&gt;a\n&gt;a\n&gt;x\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": ">\t![a\t\n>\t![a\t\n>\t![a\t\n>\t![a\t\n>\tx](u)](u)](u)](u)",
+    "html": "<blockquote><p><img src=\"u\" alt=\"a\na\na\na\nx\"></p></blockquote>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": " > ![a\t\n > ![a\t\n > ![a\t\n > ![a\t\n > x](u)](u)](u)](u)",
+    "html": "<blockquote><p><img src=\"u\" alt=\"a\na\na\na\nx\"></p></blockquote>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": ">> ![a\t\n>> ![a\t\n>> ![a\t\n>> ![a\t\n>> x](u)](u)](u)](u)",
+    "html": "<p>&gt;&gt; <img src=\"u\" alt=\"a\n&gt;&gt; a\n&gt;&gt; a\n&gt;&gt; a\n&gt;&gt; x\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": ">>> ![a\t\n>>> ![a\t\n>>> ![a\t\n>>> ![a\t\n>>> x](u)](u)](u)](u)",
+    "html": "<p>&gt;&gt;&gt; <img src=\"u\" alt=\"a\n&gt;&gt;&gt; a\n&gt;&gt;&gt; a\n&gt;&gt;&gt; a\n&gt;&gt;&gt; x\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": ">![a\n>\n>\n>![a\n>\n>\n>x](u)](u)",
+    "html": "<p>&gt;<img alt=\"a\n&gt;\n&gt;\n&gt;a\n&gt;\n&gt;\n&gt;x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a\n> \n> \n> ![a\n> \n> \n> x](u)](u)",
+    "html": "<blockquote>\n<p>![a</p>\n<p>![a</p>\n<p>x](u)](u)</p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a\n> > \n> > \n> > ![a\n> > \n> > \n> > x](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p>![a</p>\n<p>![a</p>\n<p>x](u)](u)</p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">\t![a\n>\t\n>\t\n>\t![a\n>\t\n>\t\n>\tx](u)](u)",
+    "html": "<blockquote>\n<p>![a</p>\n<p>![a</p>\n<p>x](u)](u)</p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": " > ![a\n > \n > \n > ![a\n > \n > \n > x](u)](u)",
+    "html": "<blockquote>\n<p>![a</p>\n<p>![a</p>\n<p>x](u)](u)</p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">> ![a\n>> \n>> \n>> ![a\n>> \n>> \n>> x](u)](u)",
+    "html": "<p>&gt;&gt; <img src=\"u\" alt=\"a\n&gt;&gt;\n&gt;&gt;\n&gt;&gt; a\n&gt;&gt;\n&gt;&gt;\n&gt;&gt; x\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": ">>> ![a\n>>> \n>>> \n>>> ![a\n>>> \n>>> \n>>> x](u)](u)",
+    "html": "<p>&gt;&gt;&gt; <img src=\"u\" alt=\"a\n&gt;&gt;&gt;\n&gt;&gt;&gt;\n&gt;&gt;&gt; a\n&gt;&gt;&gt;\n&gt;&gt;&gt;\n&gt;&gt;&gt; x\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": ">![a\n>\n>\n>![a\n>\n>\n>![a\n>\n>\n>![a\n>\n>\n>x](u)](u)](u)](u)",
+    "html": "<p>&gt;<img alt=\"a\n&gt;\n&gt;\n&gt;a\n&gt;\n&gt;\n&gt;a\n&gt;\n&gt;\n&gt;a\n&gt;\n&gt;\n&gt;x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> ![a\n> \n> \n> ![a\n> \n> \n> ![a\n> \n> \n> ![a\n> \n> \n> x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>x](u)](u)](u)](u)</p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": "> > ![a\n> > \n> > \n> > ![a\n> > \n> > \n> > ![a\n> > \n> > \n> > ![a\n> > \n> > \n> > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<blockquote>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>x](u)](u)](u)](u)</p>\n</blockquote>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">\t![a\n>\t\n>\t\n>\t![a\n>\t\n>\t\n>\t![a\n>\t\n>\t\n>\t![a\n>\t\n>\t\n>\tx](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>x](u)](u)](u)](u)</p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": " > ![a\n > \n > \n > ![a\n > \n > \n > ![a\n > \n > \n > ![a\n > \n > \n > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>![a</p>\n<p>x](u)](u)](u)](u)</p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">> ![a\n>> \n>> \n>> ![a\n>> \n>> \n>> ![a\n>> \n>> \n>> ![a\n>> \n>> \n>> x](u)](u)](u)](u)",
+    "html": "<p>&gt;&gt; <img src=\"u\" alt=\"a\n&gt;&gt;\n&gt;&gt;\n&gt;&gt; a\n&gt;&gt;\n&gt;&gt;\n&gt;&gt; a\n&gt;&gt;\n&gt;&gt;\n&gt;&gt; a\n&gt;&gt;\n&gt;&gt;\n&gt;&gt; x\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": ">>> ![a\n>>> \n>>> \n>>> ![a\n>>> \n>>> \n>>> ![a\n>>> \n>>> \n>>> ![a\n>>> \n>>> \n>>> x](u)](u)](u)](u)",
+    "html": "<p>&gt;&gt;&gt; <img src=\"u\" alt=\"a\n&gt;&gt;&gt;\n&gt;&gt;&gt;\n&gt;&gt;&gt; a\n&gt;&gt;&gt;\n&gt;&gt;&gt;\n&gt;&gt;&gt; a\n&gt;&gt;&gt;\n&gt;&gt;&gt;\n&gt;&gt;&gt; a\n&gt;&gt;&gt;\n&gt;&gt;&gt;\n&gt;&gt;&gt; x\"></p>",
+    "losses": [
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break.",
+      "An image alternative text loses trailing spaces before a line break."
+    ],
+    "nativeEquivalent": false
+  },
+  {
+    "source": ">![a--\n>![a--\n>x](u)](u)",
+    "html": "<p>&gt;<img alt=\"a--\n&gt;a--\n&gt;x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">\t![a--\n>\t![a--\n>\tx](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a--\na--\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": " > ![a--\n > ![a--\n > x](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a--\na--\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">> ![a--\n>> ![a--\n>> x](u)](u)",
+    "html": "<p>&gt;&gt; <img alt=\"a--\n&gt;&gt; a--\n&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">>> ![a--\n>>> ![a--\n>>> x](u)](u)",
+    "html": "<p>&gt;&gt;&gt; <img alt=\"a--\n&gt;&gt;&gt; a--\n&gt;&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">![a--\n>![a--\n>![a--\n>![a--\n>x](u)](u)](u)](u)",
+    "html": "<p>&gt;<img alt=\"a--\n&gt;a--\n&gt;a--\n&gt;a--\n&gt;x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">\t![a--\n>\t![a--\n>\t![a--\n>\t![a--\n>\tx](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a--\na--\na--\na--\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": " > ![a--\n > ![a--\n > ![a--\n > ![a--\n > x](u)](u)](u)](u)",
+    "html": "<blockquote>\n<p><img alt=\"a--\na--\na--\na--\nx\" src=\"u\"></p>\n</blockquote>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">> ![a--\n>> ![a--\n>> ![a--\n>> ![a--\n>> x](u)](u)](u)](u)",
+    "html": "<p>&gt;&gt; <img alt=\"a--\n&gt;&gt; a--\n&gt;&gt; a--\n&gt;&gt; a--\n&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  },
+  {
+    "source": ">>> ![a--\n>>> ![a--\n>>> ![a--\n>>> ![a--\n>>> x](u)](u)](u)](u)",
+    "html": "<p>&gt;&gt;&gt; <img alt=\"a--\n&gt;&gt;&gt; a--\n&gt;&gt;&gt; a--\n&gt;&gt;&gt; a--\n&gt;&gt;&gt; x\" src=\"u\"></p>\n",
+    "losses": [],
+    "nativeEquivalent": true
+  }
+]
