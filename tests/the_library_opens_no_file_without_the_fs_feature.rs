@@ -14,27 +14,25 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-/// Every shipped library file. `main.rs` is excluded on purpose: the CLI reads
-/// the document named on its own command line, which is its job and has nothing
-/// to do with inclusion.
+/// Every shipped library file. The binary's `main.rs` and its folder-migration
+/// module are excluded: CLI file access is outside the library's `fs` promise.
 fn library_sources() -> Vec<PathBuf> {
-    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+    fn walk(dir: &Path, root: &Path, out: &mut Vec<PathBuf>) {
         for entry in std::fs::read_dir(dir).expect("src is readable") {
             let path = entry.expect("entry is readable").path();
             if path.is_dir() {
-                walk(&path, out);
+                walk(&path, root, out);
             } else if path.extension().and_then(|e| e.to_str()) == Some("rs")
-                && path.file_name().and_then(|n| n.to_str()) != Some("main.rs")
+                && path != root.join("main.rs")
+                && path != root.join("migrate_directory.rs")
             {
                 out.push(path);
             }
         }
     }
     let mut out = Vec::new();
-    walk(
-        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src"),
-        &mut out,
-    );
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
+    walk(&root, &root, &mut out);
     out.sort();
     out
 }
@@ -113,6 +111,10 @@ fn every_library_filesystem_call_is_accounted_for() {
     for path in library_sources() {
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
         let source = std::fs::read_to_string(&path).expect("source is readable");
+        assert!(
+            !source.contains("migrate_directory"),
+            "CLI filesystem module must stay outside the library"
+        );
         for line in shipped_lines(&source) {
             if opens_a_file(line) {
                 found.insert((name.clone(), line.trim().to_string()));
