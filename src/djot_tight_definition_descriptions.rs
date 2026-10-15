@@ -190,7 +190,17 @@ pub(super) fn normalize(source: &str) -> String {
                     layout.edits.push(Edit {
                         start: at,
                         end: at,
-                        value: format!("{{loose}}\n{prefix}"),
+                        value: format!(
+                            "{{loose}}\n{}",
+                            prefix
+                                .chars()
+                                .map(|ch| if matches!(ch, ' ' | '\t' | '>') {
+                                    ch
+                                } else {
+                                    ' '
+                                })
+                                .collect::<String>()
+                        ),
                     });
                 }
             }
