@@ -1651,7 +1651,9 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // Spec 32125a78 adds corpus 108-12, a strict round trip.
     // The move to spec a2fd9afc adds 15 documents: six strict and nine
     // reported lossy. Corpus 594 contributes five blocked-marker tables.
-    const STRICT: usize = 1898;
+    // Spec c6ae329e adds section 597's four documents. All four round trip
+    // strictly.
+    const STRICT: usize = 1902;
     const LOSSY: usize = 615;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);

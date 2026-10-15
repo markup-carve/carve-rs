@@ -351,6 +351,8 @@ fn render_carve_unguarded(session: &RenderSession, doc: &Document) -> String {
         }
     }
     session.sentinels.with(|s| *s.borrow_mut() = next);
+    // The retry decides whether the final spelling is writable.
+    crate::render_carve_error::clear_unspellable();
     render_carve_once(session, doc)
 }
 
@@ -366,6 +368,10 @@ fn render_carve_once(session: &RenderSession, doc: &Document) -> String {
     let minimal = render_with_escapes(session, doc, EscapeMode::Minimal);
     let conservative = render_with_escapes(session, doc, EscapeMode::Conservative);
     if minimal == conservative {
+        // Equal spellings can still lose an over-cap list marker on readback.
+        if crate::render_depth::reaches_list_nesting_cap(doc) {
+            refuse_unless_it_reads_back(comparable_tree(&minimal).as_ref(), doc);
+        }
         return minimal;
     }
     // The minimal form that re-parses to THIS document is the document's
@@ -393,10 +399,9 @@ fn render_carve_once(session: &RenderSession, doc: &Document) -> String {
     // Every state the narrowing visits is verified against `conservative_tree`,
     // so when that is not the document's tree no state reads back either. Past
     // the cap that is the refuse arm of CARVE-P9-078, taken before a search whose
-    // every probe re-parses the whole deep document. Only here: when the two forms
-    // agree there is no search to save, and the comparison is one-way (above), so
-    // it cannot be the reason to refuse a document the writer returns today.
-    if crate::render_depth::reaches_nesting_cap(doc)
+    // every probe re-parses the whole deep document. The equal-forms return
+    // checks readback separately above.
+    if crate::render_depth::reaches_list_nesting_cap(doc)
         && !refuse_unless_it_reads_back(conservative_tree.as_ref(), doc)
     {
         return conservative;

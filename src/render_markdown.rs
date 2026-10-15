@@ -1600,10 +1600,20 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
         }
     };
     for row in &node.rows {
+        if header.is_some()
+            && row
+                .cells
+                .iter()
+                .all(|cell| cell.header || cell.span.is_some())
+            && row.cells.iter().any(|cell| cell.header)
+        {
+            crate::render_loss::record_table_header_row(row.pos.as_ref());
+        }
         let cells = row
             .cells
             .iter()
             .map(|cell| {
+                crate::render_loss::record_table_span(cell);
                 let inlines = match &cell.blocks {
                     Some(blocks) => {
                         crate::render_plain::flatten_cell_block_inlines_with(blocks, true)

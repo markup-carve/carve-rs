@@ -86,6 +86,60 @@ fn same(
     }
 }
 
+fn merged_text_run(nodes: &[Json]) -> Option<Json> {
+    if !nodes.iter().all(|node| {
+        node.as_object()
+            .and_then(|node| node.get("type"))
+            .is_some_and(Json::is_string)
+    }) {
+        return None;
+    }
+    // Only inline runs need joining; skipping block arrays avoids cloning the whole tree per level.
+    if !nodes.iter().any(|node| {
+        matches!(
+            node.get("type").and_then(Json::as_str),
+            Some("text" | "soft_break")
+        )
+    }) {
+        return None;
+    }
+    let mut out = Vec::new();
+    let mut first: Option<Map<String, Json>> = None;
+    let mut run = String::new();
+    let flush = |out: &mut Vec<Json>, first: &mut Option<Map<String, Json>>, run: &mut String| {
+        if let Some(mut node) = first.take() {
+            node.insert("value".into(), Json::String(std::mem::take(run)));
+            out.push(Json::Object(node));
+        }
+    };
+    for node in nodes {
+        let object = node.as_object().unwrap();
+        match object.get("type").and_then(Json::as_str) {
+            Some("soft_break") => {
+                // A break after inline markup still renders as a space, so it starts a run.
+                if first.is_none() {
+                    let mut text = Map::new();
+                    text.insert("type".into(), Json::String("text".into()));
+                    first = Some(text);
+                }
+                run.push(' ');
+            }
+            Some("text") if object.get("value").is_some_and(Json::is_string) => {
+                if first.is_none() {
+                    first = Some(object.clone());
+                }
+                run.push_str(object.get("value").and_then(Json::as_str).unwrap());
+            }
+            _ => {
+                flush(&mut out, &mut first, &mut run);
+                out.push(node.clone());
+            }
+        }
+    }
+    flush(&mut out, &mut first, &mut run);
+    Some(Json::Array(out))
+}
+
 fn pointer(path: &MergePath) -> String {
     let mut pointer = String::new();
     for segment in &path.segments {
@@ -559,6 +613,28 @@ fn merge_value(
     conflicts: &mut Vec<MergeConflict>,
     resolver: &mut Resolver<'_>,
 ) -> Result<Option<Json>, AstJsonError> {
+    if let (true, Some(Json::Array(base)), Some(Json::Array(ours)), Some(Json::Array(theirs))) =
+        (path.strip_metadata, base, ours, theirs)
+    {
+        if let (Some(base_run), Some(ours_run), Some(theirs_run)) = (
+            merged_text_run(base),
+            merged_text_run(ours),
+            merged_text_run(theirs),
+        ) {
+            let base_run = clean(&base_run, path.strip_metadata);
+            let ours_run = clean(&ours_run, path.strip_metadata);
+            let theirs_run = clean(&theirs_run, path.strip_metadata);
+            if ours_run == theirs_run {
+                return Ok(Some(Json::Array(ours.clone())));
+            }
+            if ours_run == base_run {
+                return Ok(Some(Json::Array(theirs.clone())));
+            }
+            if theirs_run == base_run {
+                return Ok(Some(Json::Array(ours.clone())));
+            }
+        }
+    }
     if same(ours, theirs, path, fingerprints) {
         return Ok(ours.cloned());
     }

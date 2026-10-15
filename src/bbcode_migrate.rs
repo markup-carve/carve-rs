@@ -802,32 +802,77 @@ fn take_named(remaining: &mut String, name: &str) -> Option<String> {
     Some(value)
 }
 
+/// phpBB stores `time` as Unix seconds; 9 to 11 digits is that, a shorter number a clock value.
+fn unix_seconds_date(value: &str) -> Option<String> {
+    if !(9..=11).contains(&value.len()) || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let days = value.parse::<i64>().ok()? / 86_400 + 719_468;
+    let era = days.div_euclid(146_097);
+    let day_of_era = days.rem_euclid(146_097);
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_parameter = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_parameter + 2) / 5 + 1;
+    let month = month_parameter + if month_parameter < 10 { 3 } else { -9 };
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    Some(format!("{year:04}-{month:02}-{day:02}"))
+}
+
 fn format_attribution(source: &str) -> String {
     let mut remaining = source.trim().to_string();
+    let mut id = None;
     let leading_id = re(r#"^["']([0-9]+)["']"#);
-    let id = if let Some(caps) = leading_id.captures(&remaining) {
-        let value = caps[1].to_string();
+    if let Some(caps) = leading_id.captures(&remaining) {
+        id = Some(caps[1].to_string());
         remaining = remaining[caps.get(0).expect("leading id").end()..]
             .trim()
             .to_string();
-        Some(value)
     } else {
-        let named = re(r#"(?i)\bid=["']?([0-9]+)["']?"#);
-        let value = named.captures(&remaining).map(|caps| caps[1].to_string());
-        remaining = named.replace(&remaining, "").into_owned();
-        value
-    };
+        let named = re(r#"(?i)\b(?:post_id|id)=["']?([0-9]+)["']?"#);
+        if let Some(caps) = named.captures(&remaining) {
+            id = Some(caps[1].to_string());
+            remaining = named.replacen(&remaining, 1, "").into_owned();
+        }
+    }
     let name = take_named(&mut remaining, "name");
-    let date = take_named(&mut remaining, "date");
-    let time = take_named(&mut remaining, "time");
-    let fallback = remaining.trim();
-    let mut output = name.unwrap_or_else(|| fallback.to_string());
-    let datetime = match (date, time) {
-        (Some(date), Some(time)) => Some(format!("{date} {time}")),
-        (Some(date), None) => Some(date),
-        (None, Some(time)) => Some(time),
-        (None, None) => None,
-    };
+    let mut datetime = take_named(&mut remaining, "date");
+    let time = re(r#"(?i)\btime=(?:["']([^"']+)["']|([0-9]+)(?:\s|$))"#);
+    if let Some(caps) = time.captures(&remaining) {
+        let value = caps
+            .get(1)
+            .or_else(|| caps.get(2))
+            .expect("time value")
+            .as_str()
+            .to_string();
+        datetime = Some(match unix_seconds_date(&value) {
+            Some(date) => date,
+            None => match datetime {
+                Some(date) => format!("{date} {value}"),
+                None => value,
+            },
+        });
+        remaining = time.replacen(&remaining, 1, " ").into_owned();
+    }
+    remaining = re(r#"(?i)\buser_id=(?:"[^"]*"|'[^']*'|\S+)"#)
+        .replace_all(&remaining, "")
+        .into_owned();
+    let mut fallback = remaining.trim();
+    if fallback.len() >= 2
+        && ((fallback.starts_with('"') && fallback.ends_with('"'))
+            || (fallback.starts_with('\'') && fallback.ends_with('\'')))
+    {
+        fallback = &fallback[1..fallback.len() - 1];
+    }
+    let mut fallback = fallback.to_string();
+    if id.is_none() {
+        if let Some(caps) = re(r"^(.+);([0-9]+)$").captures(&fallback) {
+            id = Some(caps[2].to_string());
+            fallback = caps[1].to_string();
+        }
+    }
+    let mut output = name.unwrap_or(fallback);
     if let Some(datetime) = datetime {
         output.push_str(&format!(" ({datetime})"));
     }
@@ -1096,5 +1141,41 @@ mod tests {
             bbcode_to_carve("literal *stars* and @name").unwrap(),
             "literal \\*stars* and \\@name\n"
         );
+    }
+
+    #[test]
+    fn quote_attribution_metadata() {
+        for (source, caption) in [
+            ("[quote=\"alice\"]x[/quote]", "^ alice"),
+            ("[quote='carol']x[/quote]", "^ carol"),
+            ("[quote=\"Jane Doe\"]x[/quote]", "^ Jane Doe"),
+            ("[QUOTE=bob;123]x[/QUOTE]", "^ bob #123"),
+            ("[QUOTE=\"bob;123\"]x[/QUOTE]", "^ bob #123"),
+            (
+                "[quote=\"alice\" post_id=12 time=1700000000 user_id=3]x[/quote]",
+                "^ alice (2023-11-14) #12",
+            ),
+            (
+                "[quote=alice post_id=\"12\" time=\"1700000000\" user_id=\"3\"]x[/quote]",
+                "^ alice (2023-11-14) #12",
+            ),
+            (
+                "[quote=alice date=\"2024-01-01\" time=\"12\"]x[/quote]",
+                "^ alice (2024-01-01 12)",
+            ),
+            (
+                "[quote=alice time=170000000]x[/quote]",
+                "^ alice (1975-05-22)",
+            ),
+            (
+                "[quote=alice time=17000000000]x[/quote]",
+                "^ alice (2508-09-16)",
+            ),
+            ("[quote=\"a]x[/quote]", "^ \"a"),
+            ("[quote=\"a']x[/quote]", "^ \"a'"),
+        ] {
+            let expected = format!("> x\n{caption}\n");
+            assert_eq!(bbcode_to_carve(source).unwrap(), expected, "{source}");
+        }
     }
 }

@@ -30,6 +30,74 @@ fn reports_same_leaf_edits() {
 }
 
 #[test]
+fn merges_a_paragraph_rewrap_with_a_word_edit() {
+    let base = parse("The quick brown fox jumps over the lazy dog and keeps running far away.\n");
+    let ours = parse("The quick brown fox jumps over the lazy dog\nand keeps running far away.\n");
+    let theirs = parse("The quick red fox jumps over the lazy dog and keeps running far away.\n");
+    let MergeResult::Merged(merged) = merge_ast(&base, &ours, &theirs).unwrap() else {
+        panic!("unexpected conflict")
+    };
+    assert_eq!(
+        carve::render_carve(&merged).unwrap(),
+        carve::render_carve(&theirs).unwrap()
+    );
+}
+
+#[test]
+fn merges_a_paragraph_rewrap_with_an_unchanged_side() {
+    let base = parse("The quick brown fox jumps over the lazy dog and keeps running far away.\n");
+    let ours = parse("The quick brown fox jumps over the lazy dog\nand keeps running far away.\n");
+    let MergeResult::Merged(merged) = merge_ast(&base, &ours, &base).unwrap() else {
+        panic!("unexpected conflict")
+    };
+    assert_eq!(
+        carve::render_carve(&merged).unwrap(),
+        carve::render_carve(&ours).unwrap()
+    );
+}
+
+#[test]
+fn keeps_a_soft_break_after_inline_markup_when_the_other_side_rewraps() {
+    let base = parse("An *emphasis*\nthen text and a long tail of words here.\n");
+    let ours = parse("An *emphasis*\nthen text and a long tail\nof words here.\n");
+    let theirs = parse("An *emphasis*\nthen text and a short tail of words here.\n");
+    let MergeResult::Merged(merged) = merge_ast(&base, &ours, &theirs).unwrap() else {
+        panic!("unexpected conflict")
+    };
+    assert!(carve::render_carve(&merged)
+        .unwrap()
+        .contains("*emphasis*\nthen text and a short tail"));
+}
+
+#[test]
+fn keeps_that_soft_break_whichever_side_is_selected() {
+    let base = parse("An *emphasis*\nthen the old tail of words here.\n");
+    let edited = parse("An *emphasis*\nthen the new tail of words here.\n");
+    let rewrapped = parse("An *emphasis*\nthen the new tail\nof words here.\n");
+    for theirs in [&edited, &base] {
+        let MergeResult::Merged(merged) = merge_ast(&base, &rewrapped, theirs).unwrap() else {
+            panic!("unexpected conflict")
+        };
+        assert!(carve::render_carve(&merged)
+            .unwrap()
+            .contains("*emphasis*\nthen the new tail"));
+    }
+}
+
+#[test]
+fn conflicts_on_two_different_edits_to_rewrapped_text() {
+    let base = parse("The quick brown fox jumps over the lazy dog and keeps running far away.\n");
+    let ours = parse("The quick blue fox jumps over the lazy dog\nand keeps running far away.\n");
+    let theirs = parse("The quick red fox jumps over the lazy dog and keeps running far away.\n");
+    let MergeResult::Conflicts(conflicts) = merge_ast(&base, &ours, &theirs).unwrap() else {
+        panic!("expected conflict")
+    };
+    assert!(conflicts
+        .iter()
+        .any(|item| item.reason == MergeConflictReason::BothChanged));
+}
+
+#[test]
 fn combines_insertions_at_distinct_anchors() {
     let base = parse("A.\n\nB.\n");
     let ours = parse("Before.\n\nA.\n\nB.\n");
@@ -180,4 +248,21 @@ fn escapes_attribute_keys_in_nested_conflict_paths() {
         conflict.path.ends_with("/keyValues/a~1b~0c")
             && conflict.reason == MergeConflictReason::BothChanged
     }));
+}
+
+#[test]
+fn removing_a_soft_break_after_a_link_is_a_change() {
+    let base = parse("A [word](u)\nnext and the old tail.\n");
+    let ours = parse("A [word](u)next and the old tail.\n");
+    let theirs = parse("A [word](u)\nnext and the new tail.\n");
+    match merge_ast(&base, &ours, &theirs).unwrap() {
+        MergeResult::Merged(merged) => {
+            let rendered = carve::render_carve(&merged).unwrap();
+            assert!(
+                rendered.contains("[word](u)next"),
+                "lost ours' change: {rendered}"
+            );
+        }
+        MergeResult::Conflicts(_) => {}
+    }
 }

@@ -50,6 +50,8 @@ pub struct RenderLoss {
     pub delim: Option<char>,
     /// The delimiter written instead, for `list-delimiter-changed`.
     pub emitted_delim: Option<char>,
+    pub colspan: Option<usize>,
+    pub rowspan: Option<usize>,
     pub target: RenderTarget,
     pub node_type: RawNodeType,
     pub pos: Option<Pos>,
@@ -142,6 +144,63 @@ impl LossCheckpoint {
     }
 }
 
+pub(crate) fn record_table_span(cell: &crate::ast::TableCell) {
+    let colspan = cell.colspan.filter(|count| *count > 1);
+    let rowspan = cell.rowspan.filter(|count| *count > 1);
+    if colspan.is_none() && rowspan.is_none() {
+        return;
+    }
+    COLLECTOR.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let Some(c) = slot.as_mut() else { return };
+        c.total += 1;
+        *c.totals_by_code.entry("table-span-flattened").or_default() += 1;
+        if c.losses.len() < c.max {
+            c.losses.push(RenderLoss {
+                code: "table-span-flattened",
+                format: None,
+                attribute: None,
+                style: None,
+                delim: None,
+                emitted_delim: None,
+                colspan,
+                rowspan,
+                target: c.target,
+                node_type: RawNodeType::Block,
+                pos: cell.pos.clone(),
+                message: "Flattened a spanning table cell into separate cells".to_string(),
+            });
+        }
+    });
+}
+
+pub(crate) fn record_table_header_row(pos: Option<&Pos>) {
+    COLLECTOR.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let Some(c) = slot.as_mut() else { return };
+        c.total += 1;
+        *c.totals_by_code
+            .entry("table-header-row-demoted")
+            .or_default() += 1;
+        if c.losses.len() < c.max {
+            c.losses.push(RenderLoss {
+                code: "table-header-row-demoted",
+                format: None,
+                attribute: None,
+                style: None,
+                delim: None,
+                emitted_delim: None,
+                colspan: None,
+                rowspan: None,
+                target: c.target,
+                node_type: RawNodeType::Block,
+                pos: pos.cloned(),
+                message: "Wrote a later header row as a body row".to_string(),
+            });
+        }
+    });
+}
+
 pub(crate) fn record_raw_drop(format: &str, node_type: RawNodeType, pos: Option<Pos>) {
     COLLECTOR.with(|slot| {
         let mut slot = slot.borrow_mut();
@@ -155,6 +214,8 @@ pub(crate) fn record_raw_drop(format: &str, node_type: RawNodeType, pos: Option<
                 style: None,
                 delim: None,
                 emitted_delim: None,
+                colspan: None,
+                rowspan: None,
                 format: Some(format.to_string()),
                 target: c.target,
                 node_type,
@@ -212,6 +273,8 @@ pub(crate) fn record_destination_denied(pos: Option<&Pos>, sink: DeniedSink) {
                 style: None,
                 delim: None,
                 emitted_delim: None,
+                colspan: None,
+                rowspan: None,
                 format: None,
                 target: c.target,
                 node_type: RawNodeType::Inline,
@@ -248,6 +311,8 @@ pub(crate) fn record_carrier_collision(
                 style: None,
                 delim: None,
                 emitted_delim: None,
+                colspan: None,
+                rowspan: None,
                 format: None,
                 target: c.target,
                 node_type,
@@ -273,6 +338,8 @@ pub(crate) fn record_ruby_flattened(ruby: &Ruby) {
                 style: None,
                 delim: None,
                 emitted_delim: None,
+                colspan: None,
+                rowspan: None,
                 format: None,
                 target: c.target,
                 node_type: RawNodeType::Inline,
@@ -300,6 +367,8 @@ pub(crate) fn record_editorial_comment_flattened(pos: Option<&Pos>) {
                 style: None,
                 delim: None,
                 emitted_delim: None,
+                colspan: None,
+                rowspan: None,
                 format: None,
                 target: c.target,
                 node_type: RawNodeType::Inline,
@@ -325,6 +394,8 @@ pub(crate) fn record_definition_list_flattened(pos: Option<&Pos>) {
                 style: None,
                 delim: None,
                 emitted_delim: None,
+                colspan: None,
+                rowspan: None,
                 format: None,
                 target: c.target,
                 node_type: RawNodeType::Block,
@@ -354,6 +425,8 @@ pub(crate) fn record_list_style_dropped(style: OrderedListType, pos: Option<&Pos
                 style: Some(style),
                 delim: None,
                 emitted_delim: None,
+                colspan: None,
+                rowspan: None,
                 format: None,
                 target: c.target,
                 node_type: RawNodeType::Block,
@@ -458,6 +531,8 @@ pub(crate) fn record_list_delimiter_changed(delim: char, emitted: char, pos: Opt
                 style: None,
                 delim: Some(delim),
                 emitted_delim: Some(emitted),
+                colspan: None,
+                rowspan: None,
                 format: None,
                 target: c.target,
                 node_type: RawNodeType::Block,

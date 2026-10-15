@@ -613,12 +613,15 @@ fn render_table(node: &Table) -> String {
         out.push_str(
             &row.cells
                 .iter()
-                .map(|cell| match &cell.blocks {
-                    Some(blocks) => flatten_cell_blocks(blocks),
-                    None => trim_non_nbsp(&render_inlines(
-                        crate::ast::visible_table_cell_children(&cell.children),
-                    ))
-                    .to_string(),
+                .map(|cell| {
+                    crate::render_loss::record_table_span(cell);
+                    match &cell.blocks {
+                        Some(blocks) => flatten_cell_blocks(blocks),
+                        None => trim_non_nbsp(&render_inlines(
+                            crate::ast::visible_table_cell_children(&cell.children),
+                        ))
+                        .to_string(),
+                    }
                 })
                 .collect::<Vec<_>>()
                 .join(" | "),

@@ -128,6 +128,10 @@ pub(crate) fn take_nested_same_kind() -> Vec<usize> {
     NESTED_SAME_KIND.with(|cell| std::mem::take(&mut *cell.borrow_mut()))
 }
 
+pub(crate) fn clear_unspellable() {
+    UNSPELLABLE.with(|cell| cell.set(None));
+}
+
 pub(crate) fn record_unspellable(node_type: &'static str, reason: &'static str) {
     UNSPELLABLE.with(|cell| {
         if cell.get().is_none() {

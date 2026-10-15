@@ -8853,6 +8853,8 @@ fn parse_blocks(
     let Some(_depth) = DepthGuard::enter() else {
         return over_cap_paragraph(cur, options);
     };
+    #[cfg(test)]
+    BLOCK_SEQUENCE_PARSES.with(|count| count.set(count.get() + 1));
     let mut out = Vec::new();
     let mut pending_attrs: Box<Option<Attrs>> = Box::new(None);
     let mut pending_attr_slots = None;
@@ -10205,6 +10207,26 @@ fn exact_colon_fence_len(line: &str) -> Option<usize> {
     }
 }
 
+/// Whether a paragraph is open after this colon-body line, for the §10 I4
+/// gate on an unclosed fence. Blank, colon, comment, heading and thematic-break
+/// lines leave none open.
+fn opens_colon_body_paragraph(line: &str) -> bool {
+    let t = trim_ascii_end(trim_ascii_start(line));
+    if t.is_empty()
+        || t.starts_with("%%")
+        || exact_colon_fence_len(t).is_some()
+        || detect_container_open(t).is_some()
+    {
+        return false;
+    }
+    let hashes = t.bytes().take_while(|b| *b == b'#').count();
+    if (1..=6).contains(&hashes) && matches!(t.as_bytes().get(hashes), None | Some(b' ' | b'\t')) {
+        return false;
+    }
+    let first = t.as_bytes()[0];
+    !(matches!(first, b'-' | b'*' | b'_') && t.len() >= 3 && t.bytes().all(|b| b == first))
+}
+
 fn is_invalid_colon_fence_opener_text(line: &str) -> bool {
     let trimmed = trim_ascii_start(line);
     let fence_len = trimmed.bytes().take_while(|b| *b == b':').count();
@@ -10280,9 +10302,10 @@ fn skip_opaque_span_into(inner: &mut LineBuffer, cur: &mut LineCursor<'_>) -> bo
     };
     if let Some(open) = detect_fence_open(line) {
         // A closer is required whether or not a paragraph is open. Only a fence
-        // that closes is opaque; an unterminated one would otherwise consume the
-        // container's own `:::` as content and run to the end of the document,
-        // dragging every following block inside (carve#515, carve-rs#458).
+        // that closes is opaque here; an unterminated one would otherwise consume
+        // the container's own `:::` as content and run to the end of the
+        // document, dragging every following block inside (carve#515,
+        // carve-rs#458). The caller ends an unterminated one at that closer.
         //
         // The comment-fence branch below has always required its closer. This
         // one asked only when a paragraph was open, so the rule held for a fence
@@ -10368,8 +10391,11 @@ fn collect_indexed_colon_body(
     let mut origins = vec![None];
     let mut boundaries = Vec::new();
     let mut cacheable = true;
+    let mut paragraph_open = false;
     while cur.peek().is_some() {
         let top = *stack.last().unwrap();
+        let paragraph_was_open = paragraph_open;
+        paragraph_open = opens_colon_body_paragraph(cur.peek().unwrap());
         // A CLOSER OF AN OPEN CONTAINER IS NOT ABSORBABLE. §12's absorption is
         // about a paragraph swallowing a would-be OPENER; the container this
         // line closes was opened BEFORE the malformed fence was ever read, so
@@ -10390,9 +10416,26 @@ fn collect_indexed_colon_body(
             continue;
         }
         if skip_opaque_span_into(&mut inner, cur) {
+            paragraph_open = false;
             continue;
         }
         let line = cur.peek().unwrap();
+        // An unclosed fence is code up to the innermost container's own closer;
+        // every other colon line before it is content (A CLOSER IS REQUIRED,
+        // carve#3201). Under an open paragraph it is text (§10 I4).
+        if !paragraph_was_open && detect_fence_open(line).is_some() {
+            push_current_line(&mut inner, cur);
+            cur.consume();
+            while let Some(next) = cur.peek() {
+                if exact_colon_fence_len(next) == Some(top) {
+                    break;
+                }
+                push_current_line(&mut inner, cur);
+                cur.consume();
+            }
+            paragraph_open = false;
+            continue;
+        }
         if !line.starts_with([' ', '\t']) {
             if stack.len() < MAX_NESTING_DEPTH {
                 if let Some(len) = detect_container_open(line)
@@ -10471,9 +10514,12 @@ fn find_colon_fence_end(
     // quadratic, as tests/perf_regressions.rs caught.
     let mut stack = vec![fence_len];
     let mut idx = start + 1;
+    let mut paragraph_open = false;
     while idx < lines.len() {
         let line = lines.at(idx);
         let top = *stack.last().unwrap();
+        let paragraph_was_open = paragraph_open;
+        paragraph_open = !literal && opens_colon_body_paragraph(line);
         if exact_colon_fence_len(line) == Some(top) {
             stack.pop();
             idx += 1;
@@ -10487,10 +10533,11 @@ fn find_colon_fence_end(
         } else {
             line
         }) {
-            // Same rule as `skip_opaque_span_into`, which walks this body for
-            // real: only a fence that closes is opaque (carve#515). This copy
-            // used to accept an unterminated one whenever no paragraph was
-            // open, so the two walks disagreed about where the container ends.
+            // Same rule as `collect_indexed_colon_body`, which walks this body
+            // for real: a fence that closes is opaque to every colon line, and
+            // an unclosed one is code up to the innermost container's own
+            // closer (carve#515, carve#3201). The two walks must agree about
+            // where the container ends.
             //
             // The index makes the `any` below skip-able. Without it this scan
             // runs from every opener to the end of the input, which is
@@ -10529,6 +10576,15 @@ fn find_colon_fence_end(
                         break;
                     }
                 }
+                paragraph_open = false;
+                continue;
+            }
+            if !literal && !paragraph_was_open {
+                idx += 1;
+                while idx < lines.len() && exact_colon_fence_len(lines.at(idx)) != Some(top) {
+                    idx += 1;
+                }
+                paragraph_open = false;
                 continue;
             }
         }
@@ -10543,6 +10599,7 @@ fn find_colon_fence_end(
                             .any(|line| line.starts_with(LAZY))
                     {
                         idx = close + 1;
+                        paragraph_open = false;
                         continue;
                     }
                 }
@@ -13497,7 +13554,7 @@ fn parse_list(
     // from, and that path leaves a paragraph - which is exactly why that path has
     // to SAY so rather than inherit: an item after a marker-line heading read the
     // heading's answer and refused a lazy line of its own (carve-rs#2120).
-    let mut item_paragraph_open = true;
+    let mut item_paragraph_open = ParagraphOpen::Known(true);
     // A fence line the lead paragraph absorbed because no closer is written in
     // the item still opens a SPAN that runs to the item's end, so every later
     // blank in the item is interior to it and loosens nothing (§17; the
@@ -13588,10 +13645,10 @@ fn parse_list(
         }
         let Some(marker) = detect_list_marker_full(line) else {
             let indent = indent_columns(line);
-            if !item_paragraph_open
-                && indent < content_col
+            if indent < content_col
                 && is_line_comment_any_column(line)
                 && !line.starts_with(LAZY)
+                && !item_paragraph_open.get()
             {
                 break;
             }
@@ -13762,13 +13819,14 @@ fn parse_list(
                     // waiting for `parse_item_chunk` would drop the attributes
                     // before they can be carried across that boundary.
                     rebase_overindented_blocks(&mut nested, false, options);
-                    let nested_leaves_paragraph_open = nested_ends_with_open_paragraph_rebased(
-                        &nested,
-                        last_consumed_line_below_column(cur, content_col),
-                        last_consumed_line_below_column(cur, content_col),
-                        options,
-                    );
-                    item_paragraph_open = nested_leaves_paragraph_open;
+                    // Deferred: the probe re-parses the whole collected body, and
+                    // the body's own sub-lists probe theirs, so an eager probe here
+                    // parsed a ladder's body twice per level.
+                    let probed = nested.clone();
+                    let below = last_consumed_line_below_column(cur, content_col);
+                    item_paragraph_open = ParagraphOpen::deferred(move || {
+                        nested_ends_with_open_paragraph_rebased(&probed, below, below, options)
+                    });
                     let mut split_stack: Vec<(Attrs, Option<Pos>)> = Vec::new();
                     while let Some(split) = split_trailing_attrs(&mut nested) {
                         split_stack.push(split);
@@ -13857,11 +13915,10 @@ fn parse_list(
                         }
                     }
                     place_item_chunk(deferred, last_item, nested_children, carried);
-                    if !item_paragraph_open
-                        && cur.peek().is_some_and(|line| {
-                            let indent = indent_columns(line);
-                            indent > base_indent && indent < content_col
-                        })
+                    if cur.peek().is_some_and(|line| {
+                        let indent = indent_columns(line);
+                        indent > base_indent && indent < content_col
+                    }) && !item_paragraph_open.get()
                     {
                         break;
                     }
@@ -13892,7 +13949,7 @@ fn parse_list(
             let fence_body_is_verbatim_here = item_open_fence.is_some() && indent < content_col;
             if !pending_blank
                 && !fence_body_is_verbatim_here
-                && item_paragraph_open
+                && item_paragraph_open.get()
                 && flush_comment_keeps_the_item_open(cur, line)
             {
                 // A collected definition at this container's column zero is
@@ -13948,7 +14005,7 @@ fn parse_list(
             if (item_open_fence.is_some()
                 || last_item_bare_continuation
                 || last_item_marker_attr_only
-                || !item_paragraph_open)
+                || !item_paragraph_open.get())
                 && marker.indent < content_col
             {
                 break;
@@ -14029,12 +14086,13 @@ fn parse_list(
                     .peek()
                     .is_some_and(|line| !is_blank_line(line) && indent_columns(line) < content_col)
                 {
-                    item_paragraph_open = nested_ends_with_open_paragraph_rebased(
-                        &nested,
-                        last_consumed_line_below_column(cur, content_col),
-                        last_consumed_line_below_column(cur, content_col),
-                        options,
-                    );
+                    item_paragraph_open =
+                        ParagraphOpen::Known(nested_ends_with_open_paragraph_rebased(
+                            &nested,
+                            last_consumed_line_below_column(cur, content_col),
+                            last_consumed_line_below_column(cur, content_col),
+                            options,
+                        ));
                 }
                 let nested_children = item_body(deferred, last_item, nested, held, false, options);
                 // The blank BEFORE this sub-list is consumed by it and must not
@@ -14587,7 +14645,8 @@ fn parse_list(
                 }
             }
             if detect_container_open(inner_lead).is_some() {
-                item_paragraph_open = body_ends_with_open_paragraph(&stream.source, options);
+                item_paragraph_open =
+                    ParagraphOpen::Known(body_ends_with_open_paragraph(&stream.source, options));
             }
             let children = item_body(deferred, items.len(), stream, None, false, options);
             items.push(ListItem {
@@ -14755,10 +14814,14 @@ fn parse_list(
             }
             // A heading, a fence or a table on the marker line leaves the item
             // holding no paragraph - see `item_paragraph_open`.
-            item_paragraph_open = !literal_comment_handoff && !definition_comment_handoff && {
+            item_paragraph_open = if literal_comment_handoff || definition_comment_handoff {
+                ParagraphOpen::Known(false)
+            } else {
                 let mut rebased = stream.clone();
                 rebase_overindented_blocks(&mut rebased, false, options);
-                body_ends_with_open_paragraph(&rebased.source, options)
+                ParagraphOpen::deferred(move || {
+                    body_ends_with_open_paragraph(&rebased.source, options)
+                })
             };
             let children = item_body(deferred, items.len(), stream, None, false, options);
             items.push(ListItem {
@@ -14807,12 +14870,11 @@ fn parse_list(
             {
                 break;
             }
-            if !item_paragraph_open
-                && cur.peek().is_some_and(|line| {
-                    trim_ascii(line) == "+"
-                        && indent_columns(line) > base_indent
-                        && indent_columns(line) < content_col
-                })
+            if cur.peek().is_some_and(|line| {
+                trim_ascii(line) == "+"
+                    && indent_columns(line) > base_indent
+                    && indent_columns(line) < content_col
+            }) && !item_paragraph_open.get()
             {
                 break;
             }
@@ -15054,7 +15116,7 @@ fn parse_list(
             }
         }
         // This path's item IS a paragraph, so S4 has a paragraph for a lazy line.
-        item_paragraph_open = true;
+        item_paragraph_open = ParagraphOpen::Known(true);
         items.push(ListItem {
             attrs: item_attrs,
             checked: marker.checked,
@@ -15709,6 +15771,8 @@ fn trailing_marker_line_content(body: &str) -> Option<String> {
 #[cfg(test)]
 thread_local! {
     static PARAGRAPH_BODY_PROBES: Cell<usize> = const { Cell::new(0) };
+    /// Calls into `parse_blocks`, the nested parse every container body takes.
+    static BLOCK_SEQUENCE_PARSES: Cell<usize> = const { Cell::new(0) };
 }
 
 /// PART 1 S4's one question, asked of a container's WHOLE body: does the last
@@ -15770,6 +15834,33 @@ fn body_ends_with_open_paragraph(body: &str, options: &Options<'_>) -> bool {
     PARAGRAPH_BODY_PROBES.with(|count| count.set(count.get() + 1));
     let blocks = probe_blocks(body, options);
     block_ends_with_open_paragraph(blocks.last(), colon_fences_left_open(body), false)
+}
+
+/// Whether a list item still holds an open paragraph, probed only when a later
+/// line asks.
+///
+/// The probe re-parses the item's collected body, and a sub-list in that body
+/// probes its own body inside the probe, so answering it for every item parsed
+/// a nested ladder's body twice per level: 2^depth parses. Most items are
+/// followed by nothing that asks - a sibling marker at the list's column, a
+/// blank line, the end of the source - and those never pay for it.
+enum ParagraphOpen<'a> {
+    Known(bool),
+    Deferred(Option<Box<dyn FnOnce() -> bool + 'a>>),
+}
+
+impl<'a> ParagraphOpen<'a> {
+    fn deferred(probe: impl FnOnce() -> bool + 'a) -> Self {
+        Self::Deferred(Some(Box::new(probe)))
+    }
+
+    fn get(&mut self) -> bool {
+        if let Self::Deferred(probe) = self {
+            let value = probe.take().is_some_and(|probe| probe());
+            *self = Self::Known(value);
+        }
+        matches!(self, Self::Known(true))
+    }
 }
 
 /// Whether the collected nested block ends in an OPEN paragraph -- i.e. its
@@ -32755,6 +32846,67 @@ mod term_marker_probe_work_tests {
                  {separator:?}",
                 source.len()
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod ladder_body_reparses {
+    //! COUNTED guard on a list ladder whose items hold quotes or containers.
+    //!
+    //! Each item asked whether its body ends in an open paragraph by re-parsing
+    //! the body, and a sub-list inside that body asked the same of its own body
+    //! inside the probe, so every level parsed what was below it twice: 30
+    //! levels took 0.5 s and 40 levels 44 s. The answer is now probed only when
+    //! a later line needs it.
+    use super::*;
+
+    /// `depth` levels alternating a list item with a quote (`> q` and a blank
+    /// quote line) or with a `::: note` container.
+    fn ladder(shape: &str, depth: usize) -> String {
+        let mut out = String::new();
+        let mut indent = String::new();
+        let mut closers = Vec::new();
+        for i in 0..depth {
+            if i % 2 == 1 && shape == "quote" {
+                out += &format!("{indent}> q{i}\n{indent}>\n");
+                indent += "> ";
+            } else if i % 2 == 1 {
+                let fence = ":".repeat(3 + (depth - i).div_ceil(2));
+                out += &format!("{indent}{fence} note\n");
+                closers.push(format!("{indent}{fence}"));
+            } else {
+                out += &format!("{indent}- item {i}\n");
+                indent += "  ";
+            }
+        }
+        while let Some(closer) = closers.pop() {
+            out += &closer;
+            out.push('\n');
+        }
+        out
+    }
+
+    fn parses(source: &str) -> usize {
+        BLOCK_SEQUENCE_PARSES.with(|count| count.set(0));
+        let html = crate::to_html(source);
+        assert!(html.contains("item"), "{html}");
+        BLOCK_SEQUENCE_PARSES.with(Cell::get)
+    }
+
+    /// Doubling the depth may cost a few times the parses, since each level
+    /// re-reads what is below it; doubling them per level is what this catches.
+    #[test]
+    fn doubling_a_ladder_keeps_its_body_parses_polynomial() {
+        for shape in ["quote", "container"] {
+            for tail in ["", "lazy tail\n"] {
+                let short = parses(&(ladder(shape, 16) + tail));
+                let long = parses(&(ladder(shape, 32) + tail));
+                assert!(
+                    long <= 5 * short,
+                    "{shape} {tail:?}: {short} body parses at 16 levels, {long} at 32"
+                );
+            }
         }
     }
 }

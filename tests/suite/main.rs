@@ -14,6 +14,8 @@ mod raw_payload_termination;
 mod an_autolink_or_cross_reference_is_atomic_to_brackets_and_braces;
 #[path = "../an_explicit_heading_id_carrier_overrides_the_slug_heuristic.rs"]
 mod an_explicit_heading_id_carrier_overrides_the_slug_heuristic;
+#[path = "../an_unclosed_fence_ends_only_at_its_own_containers_closer.rs"]
+mod an_unclosed_fence_ends_only_at_its_own_containers_closer;
 #[path = "../footnote_container_paragraph_breaks.rs"]
 mod footnote_container_paragraph_breaks;
 
@@ -1595,6 +1597,8 @@ mod table_row_counts;
 mod table_section_attributes;
 #[path = "../table_span_covers_caption.rs"]
 mod table_span_covers_caption;
+#[path = "../table_span_loss.rs"]
+mod table_span_loss;
 #[path = "../table_span_marker_blocked_lint.rs"]
 mod table_span_marker_blocked_lint;
 #[path = "../task_state_enumeration.rs"]
@@ -2192,3 +2196,6 @@ mod djot_definition_interruptions;
 
 #[path = "../djot_multiline_image_growth.rs"]
 mod djot_multiline_image_growth;
+
+#[path = "../djot_definition_container_ownership.rs"]
+mod djot_definition_container_ownership;

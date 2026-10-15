@@ -114,6 +114,41 @@ fn forum_quote_metadata_becomes_a_carve_attribution() {
 }
 
 #[test]
+fn forum_quote_attribution_variants() {
+    for (source, expected) in [
+        ("[quote=\"alice\"]x[/quote]", "> x\n^ alice\n"),
+        ("[quote='carol']x[/quote]", "> x\n^ carol\n"),
+        ("[quote=\"Jane Doe\"]x[/quote]", "> x\n^ Jane Doe\n"),
+        ("[quote=\"\"]x[/quote]", "> x\n"),
+        ("[quote=\"]x[/quote]", "> x\n^ \"\n"),
+        ("[QUOTE=bob;123]x[/QUOTE]", "> x\n^ bob #123\n"),
+        ("[QUOTE=\"bob;123\"]x[/QUOTE]", "> x\n^ bob #123\n"),
+        (
+            "[quote=\"alice\" post_id=12 time=1700000000 user_id=3]x[/quote]",
+            "> x\n^ alice (2023-11-14) #12\n",
+        ),
+        (
+            "[quote=\"alice\" post_id=12 time=\"1700000000\" user_id=3]x[/quote]",
+            "> x\n^ alice (2023-11-14) #12\n",
+        ),
+        (
+            "[quote=name=\"Alice\" date=\"2024-01-01\" time=\"12\"]x[/quote]",
+            "> x\n^ Alice (2024-01-01 12)\n",
+        ),
+        (
+            "[quote=name=\"Alice\" time=\"999999999\"]x[/quote]",
+            "> x\n^ Alice (2001-09-09)\n",
+        ),
+        (
+            "[quote=name=\"Alice\" time=\"17000000000\"]x[/quote]",
+            "> x\n^ Alice (2508-09-16)\n",
+        ),
+    ] {
+        assert_eq!(bbcode_to_carve(source).unwrap(), expected, "{source}");
+    }
+}
+
+#[test]
 fn a_post_that_occupies_every_sentinel_is_refused() {
     let source: String = (0xe001..=0xf8fe).filter_map(char::from_u32).collect();
     assert_eq!(

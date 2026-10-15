@@ -268,12 +268,16 @@ fn main() -> ExitCode {
                 Some("definition-list-flattened") => {
                     allowed_render_losses.push("definition-list-flattened")
                 }
+                Some("table-span-flattened") => allowed_render_losses.push("table-span-flattened"),
+                Some("table-header-row-demoted") => {
+                    allowed_render_losses.push("table-header-row-demoted")
+                }
                 Some("list-style-dropped") => allowed_render_losses.push("list-style-dropped"),
                 Some("list-delimiter-changed") => {
                     allowed_render_losses.push("list-delimiter-changed")
                 }
                 _ => {
-                    eprintln!("carve: --allow-loss expects raw-format-dropped, ruby-flattened, editorial-comment-flattened, carrier-attribute-dropped, definition-list-flattened, list-style-dropped or list-delimiter-changed");
+                    eprintln!("carve: --allow-loss expects raw-format-dropped, ruby-flattened, editorial-comment-flattened, carrier-attribute-dropped, definition-list-flattened, list-style-dropped, list-delimiter-changed, table-span-flattened or table-header-row-demoted");
                     return ExitCode::from(2);
                 }
             },
@@ -1191,9 +1195,11 @@ fn render_loss_json(losses: &[carve::RenderLoss], total: usize, truncated: bool)
         let style_field = loss.style.map(|style| format!(",\"style\":{}", json_string(style))).unwrap_or_default();
         let delim_field = loss.delim.map(|delim| format!(",\"delim\":{}", json_string(&delim.to_string()))).unwrap_or_default();
         let emitted_field = loss.emitted_delim.map(|delim| format!(",\"emittedDelim\":{}", json_string(&delim.to_string()))).unwrap_or_default();
+        let colspan_field = loss.colspan.map(|count| format!(",\"colspan\":{count}")).unwrap_or_default();
+        let rowspan_field = loss.rowspan.map(|count| format!(",\"rowspan\":{count}")).unwrap_or_default();
         let format_field = loss.format.as_ref().map(|format| format!(",\"format\":{}", json_string(format))).unwrap_or_default();
         format!(
-            "{{\"code\":{}{format_field}{attribute_field}{style_field}{delim_field}{emitted_field},\"target\":{},\"nodeType\":{},\"message\":{}{pos}}}",
+            "{{\"code\":{}{format_field}{attribute_field}{style_field}{delim_field}{emitted_field}{colspan_field}{rowspan_field},\"target\":{},\"nodeType\":{},\"message\":{}{pos}}}",
             json_string(loss.code), json_string(loss.target.as_str()),
             json_string(loss.node_type.as_str()), json_string(&loss.message),
         )
@@ -1755,7 +1761,8 @@ fn print_usage() {
          --allow-loss CODE          accept raw-format-dropped, ruby-flattened,\n                              \
          editorial-comment-flattened, carrier-attribute-dropped\n                              \
          definition-list-flattened, list-style-dropped,\n                              \
-         or list-delimiter-changed\n  \
+         list-delimiter-changed, table-span-flattened,\n                              \
+         or table-header-row-demoted\n  \
          --max-render-losses N       bound detailed losses (default 100)\n\n\
          --include-root DIR          containment root for {{ path }} includes.\n                              \
          Defaults to the input file's directory; pass this to widen\n                              \
