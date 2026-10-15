@@ -154,30 +154,28 @@ fn a_colon_that_closes_no_shortcode_stays_bare() {
 // 3. An anchor or image with no destination.
 // ---------------------------------------------------------------------------
 
-/// Carve has NO spelling for an empty destination: `[t]()` and `![t]()` are
-/// literal text. So the importer builds no link or image node and writes what
-/// the element's content and its SURVIVING attributes would produce without it
-/// - the span where an attribute survives, the bare content where none does.
+/// An explicit empty URL remains a link or image; a missing URL unwraps.
 #[test]
 fn an_element_naming_no_destination_comes_back_as_its_content() {
     let html = "<p><a href=\"\">click here</a> and <a id=\"k\">a named one</a></p>\n<img src=\"\" alt=\"logo\">";
-    assert_eq!(to_carve(html), "click here and [a named one]{#k}\n\nlogo\n");
+    assert_eq!(
+        to_carve(html),
+        "[click here]() and [a named one]{#k}\n\n![logo]()\n"
+    );
     assert!(round_trips(html));
 }
 
-/// THE RULE IS OVER THE DESTINATION, not over the reason it is missing: an
-/// absent attribute and a present-but-empty one are one shape. EMPTY is read
-/// the way an HTML URL attribute is read - zero length once leading and
-/// trailing ASCII whitespace is stripped.
+/// Present whitespace-only destinations become empty native nodes after
+/// HTML URL trimming. A missing attribute still unwraps.
 #[test]
-fn absent_empty_and_blank_are_one_shape() {
+fn absent_and_whitespace_only_destinations_follow_presence() {
+    assert_eq!(to_carve("<p><a>t</a></p>"), "t\n");
     for html in [
-        "<p><a>t</a></p>",
         "<p><a href=\"\">t</a></p>",
         "<p><a href=\"   \">t</a></p>",
         "<p><a href=\"\n\t \">t</a></p>",
     ] {
-        assert_eq!(to_carve(html), "t\n", "{html}");
+        assert_eq!(to_carve(html), "[t]()\n", "{html}");
     }
 }
 
@@ -185,30 +183,19 @@ fn absent_empty_and_blank_are_one_shape() {
 /// shows for it, and what a browser shows for one it cannot load.
 #[test]
 fn an_images_content_is_its_alternative_text() {
-    assert_eq!(to_carve("<p><img src=\"\" alt=\"logo\"></p>"), "logo\n");
-    assert_eq!(to_carve("<p>a<img src=\"\">b</p>"), "ab\n");
+    assert_eq!(
+        to_carve("<p><img src=\"\" alt=\"logo\"></p>"),
+        "![logo]()\n"
+    );
+    assert_eq!(to_carve("<p>a<img src=\"\">b</p>"), "a![]()b\n");
 }
 
-/// The unwrap is LOSSY and this page requires a lossy decision to be
-/// observable. It is not the bare `<div>`'s case, where nothing was lost
-/// because nothing was carried: an anchor has a slot for a destination and this
-/// one is standing empty.
+/// Explicit empty URLs have a native spelling, so import has no unwrap loss.
 #[test]
 fn each_unwrapped_element_is_reported() {
     assert_eq!(
         diagnostics("<p><a href=\"\">t</a><img src=\"\" alt=\"l\"></p>"),
-        vec![
-            (
-                "element-unwrapped".to_string(),
-                "Unwrapped <a> with no destination".to_string(),
-                "info".to_string(),
-            ),
-            (
-                "element-unwrapped".to_string(),
-                "Unwrapped <img> with no source".to_string(),
-                "info".to_string(),
-            ),
-        ]
+        vec![]
     );
 }
 
@@ -221,9 +208,8 @@ fn each_unwrapped_element_is_reported() {
 #[test]
 fn a_blanked_destination_is_never_rebuilt() {
     let written = to_carve("<p><a href=\"\" title=\"javascript:alert(1)\">click</a></p>");
-    assert_eq!(written, "[click]{title=javascript:alert(1)}\n");
-    assert!(!written.contains("]("));
-    assert!(!carve::to_html(&written).contains("href"));
+    assert_eq!(written, "[click]( \"javascript:alert(1)\")\n");
+    assert!(carve::to_html(&written).contains("href=\"\""));
 }
 
 /// BOUND: A DESTINATION THAT IS MERELY UNUSUAL IS NOT EMPTY, and is kept. The

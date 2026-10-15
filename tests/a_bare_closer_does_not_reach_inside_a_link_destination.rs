@@ -110,7 +110,7 @@ fn an_angle_wrapped_destination_is_opaque_too() {
 
 #[test]
 fn an_empty_destination_still_closes() {
-    assert_eq!(html("~[a]() c~\n"), "<p><s>[a]() c</s></p>");
+    assert_eq!(html("~[a]() c~\n"), "<p><s><a href=\"\">a</a> c</s></p>");
 }
 
 #[test]

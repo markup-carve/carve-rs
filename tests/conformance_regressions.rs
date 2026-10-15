@@ -59,8 +59,8 @@ fn empty_unquoted_attribute_value_rejects_whole_block() {
 }
 
 #[test]
-fn empty_link_destination_stays_literal() {
-    assert_eq!(html("[]( )"), "<p>[]( )</p>");
+fn empty_link_destination_is_a_link() {
+    assert_eq!(html("[]( )"), "<p><a href=\"\"></a></p>");
 }
 
 #[test]
@@ -692,14 +692,12 @@ fn inline_extension_name_content_and_class_merge() {
     );
 }
 
-/// Reference definitions: an empty destination is not a definition (the line
-/// stays literal, corpus 34-reference-link-9), and a backslash-escaped quote
-/// inside the title is unescaped (corpus 34-reference-link-7).
+/// Empty reference definitions are consumed; escaped quotes in titles remain
+/// decoded.
 #[test]
 fn reference_definition_empty_destination_and_escaped_title() {
-    // `[r]:` with only trailing whitespace is not a definition.
-    assert_eq!(html("[r]:"), "<p>[r]:</p>");
-    assert_eq!(html("[r]:   "), "<p>[r]:</p>");
+    assert_eq!(html("[r]:"), "");
+    assert_eq!(html("[r]:   "), "");
     // A real definition with an escaped quote in the title.
     assert_eq!(
         html("[x][y]\n\n[y]: /u \"a\\\"b\\\"c\""),

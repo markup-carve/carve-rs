@@ -88,6 +88,7 @@ The in-document reference rules:
 | --- | --- |
 | `broken-crossref` | a `</#id>` cross-reference with no matching heading or numbered caption id; it renders as literal text. When the id exists on an element a cross-reference cannot reach (a paragraph, a span, an uncaptioned table), the message names that element and suggests `[text](#id)`. Ids match case-sensitively; a case-only miss names the real id |
 | `unresolved-reference-link` | a `[text][label]` or `[text][]` reference link, or a `![alt][label]` or `![alt][]` reference image, with no matching definition (or, for the link form `[text][]`, heading; an image never falls back to a heading). Labels match case-sensitively; a case-only miss names the real label or heading text |
+| `empty-reference-definition` | a bare `[label]:` definition, which resolves the label to an empty destination |
 | `broken-fragment-link` | a `[text](#id)` link, inline or through a reference definition, whose fragment matches no id in the rendered HTML |
 
 `broken-fragment-link` reads ids off the rendered output, so heading slugs,

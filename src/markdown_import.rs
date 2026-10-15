@@ -91,7 +91,7 @@ pub(crate) struct FrontmatterNotice {
 
 pub(crate) fn markdown_destination(destination: &str, email: bool) -> String {
     if is_empty_destination(destination) {
-        return destination.to_string();
+        return String::new();
     }
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
     let mut encoded = String::with_capacity(destination.len());
@@ -124,21 +124,9 @@ pub(crate) fn literal_bare_link(label: &str, prefix: &str) -> InlineNode {
         children: vec![InlineNode::text(label)],
         ref_label: None,
         raw_ref: None,
+        resolved_empty_reference: false,
         from_crossref: false,
         from_heading_reference: false,
-        pos: None,
-    })
-}
-
-/// The title of a link or image with no destination, which has no slot left to
-/// carry it, kept on a span the way the HTML importer keeps it (carve-rs#1738).
-fn titled_span(title: String, children: Vec<InlineNode>) -> InlineNode {
-    let mut attrs = Attrs::default();
-    attrs.key_values.insert("title".to_string(), title);
-    InlineNode::Span(Span {
-        attrs: Some(attrs),
-        children,
-        injected: false,
         pos: None,
     })
 }
@@ -156,9 +144,7 @@ fn fence_language(info: &str) -> Option<&str> {
 }
 
 fn is_empty_destination(destination: &str) -> bool {
-    destination
-        .trim_matches(|c: char| c.is_ascii_whitespace())
-        .is_empty()
+    destination.is_empty()
 }
 
 /// Convert Markdown to Carve. Use [`try_markdown_to_carve`] to handle a writer
@@ -956,40 +942,19 @@ fn markdown_to_ast_with_code_lines(
                 event = Event::SoftBreak;
             }
         }
-        match &event {
-            Event::Start(Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. })
-                if is_empty_destination(dest_url)
-                    && !builder
-                        .frames
-                        .iter()
-                        .any(|frame| matches!(frame, Frame::Image { .. })) =>
-            {
-                let image = matches!(&event, Event::Start(Tag::Image { .. }));
+        if let Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) = &event {
+            let word = info
+                .trim_matches([' ', '\t'])
+                .split([' ', '\t'])
+                .next()
+                .unwrap_or("");
+            if !word.is_empty() && fence_language(info).is_none() {
                 builder.losses.push(MarkdownImportLoss {
-                    message: if image {
-                        "Dropped an image with an empty destination; retained its alt text and title."
-                    } else {
-                        "Dropped a link with an empty destination; retained its label and title."
-                    }.to_owned(),
+                    message: format!("Dropped code-block language {word:?}; Carve cannot spell this language token."),
                     line: Some(builder.current_line),
                     kind: MarkdownLossKind::Unspellable,
                 });
             }
-            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) => {
-                let word = info
-                    .trim_matches([' ', '\t'])
-                    .split([' ', '\t'])
-                    .next()
-                    .unwrap_or("");
-                if !word.is_empty() && fence_language(info).is_none() {
-                    builder.losses.push(MarkdownImportLoss {
-                        message: format!("Dropped code-block language {word:?}; Carve cannot spell this language token."),
-                        line: Some(builder.current_line),
-                        kind: MarkdownLossKind::Unspellable,
-                    });
-                }
-            }
-            _ => {}
         }
         let empty_title = match &event {
             Event::Start(
@@ -1163,6 +1128,7 @@ fn markdown_to_ast_with_code_lines(
         return Err(crate::RenderDepthError::new("carve", crate::MAX_RENDER_DEPTH).into());
     }
     let mut used_definitions = BTreeMap::new();
+    let mut definition_losses = Vec::new();
     for id in &used_reference_ids {
         let Some(def) = parser.reference_definitions().get(id.as_str()) else {
             continue;
@@ -1172,7 +1138,21 @@ fn markdown_to_ast_with_code_lines(
             .and_then(|line| line.strip_prefix('['))
             .and_then(|line| line.split_once("]:"))
             .map_or(id.as_str(), |(label, _)| label);
-        if def.dest.is_empty() || !crate::parse::reference_label_has_definition_spelling(label) {
+        if !crate::parse::reference_label_has_definition_spelling(label) {
+            continue;
+        }
+        if def.dest.is_empty() && def.title.is_some() {
+            definition_losses.push(MarkdownImportLoss {
+                message: "An empty reference definition with a title was inlined".to_owned(),
+                line: Some(
+                    source[..def.span.start]
+                        .bytes()
+                        .filter(|byte| *byte == b'\n')
+                        .count()
+                        + 1,
+                ),
+                kind: MarkdownLossKind::Unspellable,
+            });
             continue;
         }
         used_definitions
@@ -1186,13 +1166,15 @@ fn markdown_to_ast_with_code_lines(
             });
     }
     let needs_email_walk = builder.needs_email_walk;
-    let (mut document, losses, locations) = builder.finish();
+    let (mut document, mut losses, locations) = builder.finish();
+    losses.extend(definition_losses);
     document.children.extend(
         used_definitions
             .into_values()
             .map(BlockNode::LinkReferenceDefinition),
     );
     normalize_imported_reference_links(&mut document);
+    crate::ast_json::hydrate_resolved_empty_references(&mut document);
     if needs_email_walk {
         crate::markdown_gfm_autolinks::link_email_text(&mut document);
     }
@@ -2132,8 +2114,7 @@ impl Builder {
                 id,
             } => Frame::Link {
                 href: markdown_destination(&dest_url, link_type == LinkType::Email),
-                title: (!title.is_empty() || (empty_title && !is_empty_destination(&dest_url)))
-                    .then(|| title.to_string()),
+                title: (!title.is_empty() || empty_title).then(|| title.to_string()),
                 children: Vec::new(),
                 autolink: matches!(link_type, LinkType::Autolink | LinkType::Email)
                     .then(|| source.strip_prefix('<')?.strip_suffix('>'))
@@ -2164,8 +2145,7 @@ impl Builder {
                 dest_url, title, ..
             } => Frame::Image {
                 src: markdown_destination(&dest_url, false),
-                title: (!title.is_empty() || (empty_title && !is_empty_destination(&dest_url)))
-                    .then(|| title.to_string()),
+                title: (!title.is_empty() || empty_title).then(|| title.to_string()),
                 alt: String::new(),
             },
             Tag::Table(alignments) => Frame::Table {
@@ -2464,30 +2444,6 @@ impl Builder {
                 pos: None,
             })),
             Frame::Link {
-                href,
-                title,
-                children,
-                ..
-            } if is_empty_destination(&href) => {
-                let children = match title {
-                    Some(title) => vec![titled_span(title, children)],
-                    None => children,
-                };
-                self.protected_empty_destination(children);
-            }
-            Frame::Image { src, title, alt } if is_empty_destination(&src) => {
-                let children = if alt.is_empty() {
-                    Vec::new()
-                } else {
-                    vec![InlineNode::text(alt)]
-                };
-                let children = match title {
-                    Some(title) => vec![titled_span(title, children)],
-                    None => children,
-                };
-                self.protected_empty_destination(children);
-            }
-            Frame::Link {
                 autolink: Some((href, text)),
                 title,
                 ..
@@ -2513,6 +2469,7 @@ impl Builder {
                 children,
                 ref_label,
                 raw_ref,
+                resolved_empty_reference: false,
                 from_crossref: false,
                 from_heading_reference: false,
                 pos: None,
@@ -2524,6 +2481,7 @@ impl Builder {
                 title,
                 ref_label: None,
                 raw_ref: None,
+                resolved_empty_reference: false,
                 pos: None,
             })),
             Frame::Table { rows, .. } if !rows.is_empty() => self.block(BlockNode::Table(Table {
@@ -2650,43 +2608,6 @@ impl Builder {
         match children.pop() {
             Some(InlineNode::CriticDelete(delete)) => Some(delete.children),
             _ => None,
-        }
-    }
-
-    fn protected_empty_destination(&mut self, children: Vec<InlineNode>) {
-        let has_previous = match self.frames.last() {
-            Some(Frame::Paragraph(previous))
-            | Some(Frame::Heading(_, previous))
-            | Some(Frame::Emphasis(_, previous))
-            | Some(Frame::TableCell(previous))
-            | Some(Frame::HtmlEmphasis {
-                children: previous, ..
-            })
-            | Some(Frame::HtmlCode {
-                children: previous, ..
-            })
-            | Some(Frame::HtmlInsert {
-                children: previous, ..
-            })
-            | Some(Frame::HtmlDelete {
-                children: previous, ..
-            })
-            | Some(Frame::Link {
-                children: previous, ..
-            })
-            | Some(Frame::ListItem {
-                pending: previous, ..
-            }) => !previous.is_empty(),
-            _ => false,
-        };
-        if !children.is_empty() || has_previous {
-            self.needs_email_walk = true;
-            self.inline(InlineNode::Span(Span {
-                attrs: None,
-                children,
-                injected: true,
-                pos: None,
-            }));
         }
     }
 
@@ -3525,8 +3446,8 @@ mod destination_encoding_tests {
     #[test]
     fn destinations_keep_uri_encoding_and_email_schemes() {
         for (source, expected) in [
-            ("[x](< >)", "<p>x</p>"),
-            ("![y](< >)", "<p>y</p>"),
+            ("[x](< >)", "<p><a href=\"%20\">x</a></p>"),
+            ("![y](< >)", "<img src=\"%20\" alt=\"y\">"),
             ("[x](a%zz)", "<p><a href=\"a%zz\">x</a></p>"),
             ("[x](mailto:a@b.example)", "<p><a href=\"mailto:a@b.example\">x</a></p>"),
             ("<foo@bar.example.com>", "<p><a href=\"mailto:foo@bar.example.com\">foo@bar.example.com</a></p>"),

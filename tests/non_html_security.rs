@@ -80,6 +80,7 @@ fn markdown_percent_encodes_destination_breakouts() {
                 ref_label: None,
                 raw_ref: None,
                 pos: None,
+                resolved_empty_reference: false,
             })],
         })],
     };
@@ -214,6 +215,7 @@ fn markdown_escapes_image_alt_label_metacharacters() {
                 ref_label: None,
                 raw_ref: None,
                 pos: None,
+                resolved_empty_reference: false,
             })],
         })],
     })
@@ -285,6 +287,7 @@ fn markdown_emits_control_bytes_from_author_leaf_fields_and_still_refuses_del_an
                         from_crossref: false,
                         from_heading_reference: false,
                         pos: None,
+                        resolved_empty_reference: false,
                     }),
                     carve::InlineNode::Image(carve::Image {
                         attrs: None,
@@ -294,6 +297,7 @@ fn markdown_emits_control_bytes_from_author_leaf_fields_and_still_refuses_del_an
                         ref_label: None,
                         raw_ref: None,
                         pos: None,
+                        resolved_empty_reference: false,
                     }),
                     carve::InlineNode::Abbreviation(carve::Abbreviation {
                         abbr: format!("abbr{c}"),
@@ -425,6 +429,7 @@ fn the_terminal_target_strips_control_bytes_from_every_author_leaf_field() {
                 ref_label: None,
                 raw_ref: None,
                 pos: None,
+                resolved_empty_reference: false,
             }),
             carve::BlockNode::Paragraph(carve::Paragraph {
                 pos: None,
@@ -440,6 +445,7 @@ fn the_terminal_target_strips_control_bytes_from_every_author_leaf_field() {
                         ref_label: None,
                         raw_ref: None,
                         pos: None,
+                        resolved_empty_reference: false,
                     }),
                     carve::InlineNode::Abbreviation(carve::Abbreviation {
                         abbr: format!("abbr{c}"),

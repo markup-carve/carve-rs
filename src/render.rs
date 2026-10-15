@@ -3634,7 +3634,7 @@ fn render_image(
     options: &Options<'_>,
     node_type: crate::render_loss::RawNodeType,
 ) {
-    if img.ref_label.is_some() && img.src.is_empty() {
+    if crate::parse::is_unresolved_image(img) {
         // Same PART 10 SS2 nbsp fold as the link literal above.
         write_escaped_text_nbsp(out, img.raw_ref.as_deref().unwrap_or_default());
         return;
@@ -4626,7 +4626,7 @@ fn render_emphasis(out: &mut String, e: &Emphasis, options: &Options<'_>, state:
 }
 
 fn render_link(out: &mut String, l: &Link, options: &Options<'_>, state: &mut RenderState) {
-    if l.ref_label.is_some() && l.href.is_empty() {
+    if crate::parse::is_unresolved_reference(l) {
         // The literal source is text content (PART 10 SS2), so it gets the
         // same nbsp fold every other text node does, not a bare `& < >` pass.
         write_escaped_text_nbsp(out, l.raw_ref.as_deref().unwrap_or_default());

@@ -651,6 +651,8 @@ const IMPLEMENTED: &[&str] = &[
     // underscore pair in text is escaped where the emitted line would pair it
     // (carve-rs#1659, PART 11 section 8a M1b).
     "a-bare-closer-does-not-reach-inside-a-braced-inline",
+    "a-bare-closer-does-not-reach-inside-a-cross-reference",
+    "an-autolink-or-a-cross-reference-is-atomic-to-brackets-and-braces",
     "a-bare-closer-does-not-reach-inside-a-link-destination",
     "a-block-that-opens-a-tight-item-is-written-on-the-marker-line",
     "an-underscore-pair-in-text-is-escaped-where-the-line-would-pair-it",

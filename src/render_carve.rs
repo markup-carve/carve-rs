@@ -1096,8 +1096,7 @@ fn reference_targets(doc: &Document) -> HashMap<String, (String, Option<String>,
         .iter()
         .filter_map(|node| match node {
             BlockNode::LinkReferenceDefinition(def)
-                if !def.href.is_empty()
-                    && crate::parse::reference_label_has_definition_spelling(&def.label) =>
+                if crate::parse::reference_label_has_definition_spelling(&def.label) =>
             {
                 Some((
                     crate::parse::label_key(&def.label),
@@ -1861,7 +1860,7 @@ fn hosts_caption(block: &BlockNode) -> bool {
         BlockNode::FigureGroup(group) => group.caption.is_none(),
         BlockNode::Paragraph(paragraph) if paragraph.children.len() == 1 => {
             match &paragraph.children[0] {
-                InlineNode::Image(image) => !image.src.is_empty(),
+                InlineNode::Image(image) => !crate::parse::is_unresolved_image(image),
                 InlineNode::Math(math) => math.display,
                 _ => false,
             }
@@ -4105,7 +4104,7 @@ fn render_nodes_with_verbatim(
 
 fn inline_hosts_caption(node: &InlineNode) -> bool {
     match node {
-        InlineNode::Image(image) => !image.src.is_empty(),
+        InlineNode::Image(image) => !crate::parse::is_unresolved_image(image),
         InlineNode::Math(math) => math.display,
         _ => false,
     }
@@ -7881,6 +7880,9 @@ mod raw_html_fence_tests {
 }
 
 pub(crate) fn render_link_reference_definition(def: &LinkReferenceDefinition) -> String {
+    if def.href.is_empty() {
+        return format!("[{}]:", def.label);
+    }
     // PART 12 §10 gave this a node precisely so the writer can put the
     // line back. Before that there was nowhere to write it from, which is
     // why every resolved reference was INLINED instead (carve-rs#631).

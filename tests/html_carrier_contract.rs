@@ -550,8 +550,8 @@ fn reference_definition_validation_and_note_precedence_match_the_reader() {
 #[test]
 fn references_refuse_literal_definitions_and_unrepresented_inherited_attributes() {
     for image in [false, true] {
-        for kind in ["literal", "attrs", "empty"] {
-            let href = if kind == "empty" { "" } else { "/u" };
+        for kind in ["literal", "attrs", "empty", "empty-attrs", "empty-title"] {
+            let href = if kind.starts_with("empty") { "" } else { "/u" };
             let node = if image {
                 serde_json::json!({"type":"image","src":href,"alt":"t","ref":"x"})
             } else {
@@ -559,20 +559,25 @@ fn references_refuse_literal_definitions_and_unrepresented_inherited_attributes(
             };
             let mut definition =
                 serde_json::json!({"type":"link_reference_definition","label":"x","href":href});
-            if kind == "attrs" {
+            if kind == "attrs" || kind == "empty-attrs" {
                 definition["attrs"] = serde_json::json!({"classes":["c"]});
+            }
+            if kind == "empty-title" {
+                definition["title"] = serde_json::json!("caption");
             }
             if kind == "literal" {
                 definition = serde_json::json!({"type":"line_block","children":[definition]});
             }
             let document = carve::from_json(&serde_json::json!({"type":"document","srcByteLength":0,"children":[{"type":"paragraph","children":[node]},definition]}).to_string()).unwrap();
-            assert!(
-                matches!(
-                    carve::render_carve(&document),
-                    Err(carve::RenderCarveError::SourceUnspellable(_))
-                ),
-                "{image} {kind}"
-            );
+            let result = carve::render_carve(&document);
+            if kind == "empty" {
+                assert!(result.is_ok(), "{image} {kind}: {result:?}");
+            } else {
+                assert!(
+                    matches!(result, Err(carve::RenderCarveError::SourceUnspellable(_))),
+                    "{image} {kind}"
+                );
+            }
         }
     }
 }

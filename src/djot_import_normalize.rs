@@ -4921,14 +4921,6 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
             definitions.get(&key)
         };
         match destination {
-            Some(destination) if destination.is_empty() => findings.push((
-                at,
-                if image {
-                    "An image with an empty destination cannot be written in Carve."
-                } else {
-                    "A link with an empty destination cannot be written in Carve."
-                },
-            )),
             None => findings.push((
                 at,
                 if image {
@@ -5536,11 +5528,6 @@ mod tests {
     fn djot_unspellable_structures_name_losses_on_source_lines() {
         for (source, line, message) in [
             ("##\n", 1, "empty Djot heading"),
-            (
-                "[link][]\n\n[link]:\n[link2]: url\n",
-                1,
-                "empty destination",
-            ),
             ("[link][a and\nb]\n", 1, "unresolved Djot reference"),
             (
                 "[link][a and\nb]\n\n[a and\nb]: url\n",
@@ -5585,6 +5572,8 @@ mod tests {
                 assert_eq!(loss.confidence, MigrationConfidence::Exact);
             }
         }
+        let resolved = migrate_djot("[link][]\n\n[link]:\n[link2]: url\n");
+        assert!(crate::to_html(&resolved.value).contains("<a href=\"\">link</a>"));
     }
 
     #[test]
@@ -6076,15 +6065,27 @@ mod tests {
 
     #[test]
     fn missing_image_destinations_have_exact_losses() {
-        for source in ["![a]()", "![a][missing]", "![a][]\n\n[a]:"] {
+        for source in ["![a]()", "![a][missing]"] {
             let report = migrate_djot(source);
-            assert!(report
-                .report
-                .diagnostics
-                .iter()
-                .any(|diagnostic| diagnostic.code == "structure-unspellable"
-                    && diagnostic.message.contains("image")));
+            assert!(
+                report
+                    .report
+                    .diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic.code == "structure-unspellable"
+                        && diagnostic.message.contains("image")),
+                "{source:?}: {:?}",
+                report.report.diagnostics
+            );
         }
+        let resolved = migrate_djot("![a][]\n\n[a]:");
+        assert!(crate::to_html(&resolved.value).contains("<img src=\"\""));
+        assert!(!resolved
+            .report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "structure-unspellable"
+                && diagnostic.message.contains("image")));
         let report = migrate_djot("[a]( )");
         assert!(!report
             .report

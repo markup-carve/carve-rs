@@ -27,6 +27,16 @@ pub(super) fn collect(
     let mut ignored = BTreeSet::new();
     while let Some((block, depth)) = blocks.pop() {
         match block {
+            BlockNode::LinkReferenceDefinition(def) if def.href.is_empty() => report(
+                def.pos.clone(),
+                "empty-reference-definition",
+                format!(
+                    "Reference definition [{}] has an empty destination.",
+                    def.label
+                ),
+                to_byte,
+                out,
+            ),
             BlockNode::Heading(heading) => headings.push(heading),
             BlockNode::CodeBlock(code) => ignore(code.pos.clone(), &mut ignored),
             BlockNode::RawBlock(raw) => ignore(raw.pos.clone(), &mut ignored),
@@ -107,7 +117,7 @@ pub(super) fn collect(
                     out,
                 );
             }
-            InlineNode::Link(link) if link.ref_label.is_some() && link.href.is_empty() => {
+            InlineNode::Link(link) if crate::parse::is_unresolved_reference(link) => {
                 let case_only = targets.reference(link);
                 let message = if case_only.is_empty() {
                     "Reference link has no matching definition or heading.".into()
@@ -126,7 +136,7 @@ pub(super) fn collect(
                     out,
                 );
             }
-            InlineNode::Image(image) if image.ref_label.is_some() && image.src.is_empty() => {
+            InlineNode::Image(image) if crate::parse::is_unresolved_image(image) => {
                 let label = image.ref_label.as_deref().unwrap_or_default();
                 let case_only = targets.image_reference(label);
                 let raw = image.raw_ref.as_deref().unwrap_or_default();
@@ -410,7 +420,7 @@ pub(super) fn case_only_edits(
                     _ => None,
                 }
             }
-            InlineNode::Link(link) if link.ref_label.is_some() && link.href.is_empty() => {
+            InlineNode::Link(link) if crate::parse::is_unresolved_reference(link) => {
                 let label = link.ref_label.as_deref().unwrap_or_default();
                 let raw = link.raw_ref.clone().unwrap_or_default();
                 // `raw_ref` may end in a trailing attribute block, which stays.
@@ -447,7 +457,7 @@ pub(super) fn case_only_edits(
             }
             // A multiline label misses for a reason other than case.
             InlineNode::Image(image)
-                if image.src.is_empty()
+                if crate::parse::is_unresolved_image(image)
                     && image
                         .ref_label
                         .as_deref()

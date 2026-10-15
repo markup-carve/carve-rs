@@ -1040,7 +1040,7 @@ pub struct AbbreviationDef {
 pub struct LinkReferenceDefinition {
     /// The label as the AUTHOR wrote it, before any folding.
     pub label: String,
-    /// Present and non-empty: a definition with an empty destination is not one.
+    /// Present even when the authored definition has an empty destination.
     pub href: String,
     pub title: Option<String>,
     /// A trailing attribute block on the definition line (§15 A2b).
@@ -1544,6 +1544,9 @@ pub struct Link {
     pub children: Vec<InlineNode>,
     pub ref_label: Option<String>,
     pub raw_ref: Option<String>,
+    /// True when a reference resolves to a definition with an empty destination.
+    /// Rebuilt from definitions after AST JSON decode; never written to the wire.
+    pub resolved_empty_reference: bool,
     /// Set when this `Link` was produced from a `</#id>` cross-reference (not an
     /// ordinary `[text](url)` link or an implicit `[label][]` reference).
     /// Non-rendered metadata - every renderer ignores it; it lets a render-stage
@@ -1582,6 +1585,9 @@ pub struct Image {
     /// `![alt](src)` image.
     pub ref_label: Option<String>,
     pub raw_ref: Option<String>,
+    /// True when a reference resolves to a definition with an empty destination.
+    /// Rebuilt from definitions after AST JSON decode; never written to the wire.
+    pub resolved_empty_reference: bool,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }

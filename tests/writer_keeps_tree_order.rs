@@ -139,7 +139,7 @@ fn a_main_file_definition_before_an_include_keeps_its_source_place() {
 fn ansi_blanks_a_denied_definition_destination() {
     let source = "Text.\n\n[y]: javascript:alert(3)\n";
     let output = carve::to_ansi(source);
-    assert!(output.contains("[y]: "), "{output:?}");
+    assert!(output.contains("[y]:"), "{output:?}");
     assert!(!output.contains("javascript:"), "{output:?}");
 }
 

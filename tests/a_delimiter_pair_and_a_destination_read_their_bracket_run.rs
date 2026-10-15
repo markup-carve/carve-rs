@@ -38,7 +38,7 @@ fn issue_2174_an_angle_wrapped_destination_is_opaque() {
 #[test]
 fn issue_2174_a_destination_that_cannot_be_one_is_still_transparent() {
     assert_eq!(html("~[a](<b ~>) c\n"), "<p>~[a](&lt;b ~&gt;) c</p>");
-    assert_eq!(html("~[a]() c~\n"), "<p><s>[a]() c</s></p>");
+    assert_eq!(html("~[a]() c~\n"), "<p><s><a href=\"\">a</a> c</s></p>");
     assert_eq!(html("[a](<b>) c\n"), "<p><a href=\"&lt;b&gt;\">a</a> c</p>");
 }
 

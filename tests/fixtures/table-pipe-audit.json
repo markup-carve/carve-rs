@@ -4884,10 +4884,10 @@
     "name": "empty-title-distinguishes-destination-3",
     "source": "[a](<> \"\")",
     "contains": [
-      "<p>a</p>"
+      "<p><a href=\"\" title=\"\">a</a></p>"
     ],
     "excludes": [
-      "title="
+      "href=\"/url\""
     ]
   },
   {
@@ -4895,10 +4895,10 @@
     "name": "empty-title-distinguishes-destination-4",
     "source": "[a][r]\n\n[r]: <> \"\"",
     "contains": [
-      "<p>a</p>"
+      "<p><a href=\"\" title=\"\">a</a></p>"
     ],
     "excludes": [
-      "title="
+      "href=\"/url\""
     ]
   },
   {

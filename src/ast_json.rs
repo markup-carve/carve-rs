@@ -552,9 +552,63 @@ pub fn from_json(input: &str) -> Result<Document, AstJsonError> {
 
     clear_unbacked_footnote_numbers(&mut doc);
     renumber_captions(&mut doc);
+    hydrate_resolved_empty_references(&mut doc);
     promote_ingested_block_images(&mut doc);
 
     Ok(doc)
+}
+
+/// The wire keeps the reference label and the empty destination, but has no
+/// separate resolved bit. Rebuild that bit from the document's definitions.
+pub(crate) fn hydrate_resolved_empty_references(doc: &mut Document) {
+    use crate::include_walk::{visit_block_children, visit_inline_children, SubtreeVisitor};
+    use std::collections::HashSet;
+
+    let mut definitions = HashSet::new();
+    for block in &doc.children {
+        if let BlockNode::LinkReferenceDefinition(def) = block {
+            if def.href.is_empty()
+                && crate::parse::reference_label_has_definition_spelling(&def.label)
+            {
+                definitions.insert(crate::parse::label_key(&def.label));
+            }
+        }
+    }
+    if definitions.is_empty() {
+        return;
+    }
+    struct Hydrate<'a>(&'a HashSet<String>);
+    impl SubtreeVisitor for Hydrate<'_> {
+        fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
+            for block in blocks {
+                visit_block_children(block, self);
+            }
+        }
+        fn inlines(&mut self, nodes: &mut Vec<InlineNode>) {
+            for node in nodes {
+                if let InlineNode::Link(link) = node {
+                    link.resolved_empty_reference = link.href.is_empty()
+                        && link
+                            .ref_label
+                            .as_ref()
+                            .is_some_and(|label| self.0.contains(&crate::parse::label_key(label)));
+                }
+                visit_inline_children(node, self);
+            }
+        }
+        fn image(&mut self, image: &mut Image) {
+            image.resolved_empty_reference = image.src.is_empty()
+                && image
+                    .ref_label
+                    .as_ref()
+                    .is_some_and(|label| self.0.contains(&crate::parse::label_key(label)));
+        }
+    }
+    let mut hydrate = Hydrate(&definitions);
+    hydrate.blocks(&mut doc.children);
+    for blocks in doc.footnote_defs.values_mut() {
+        hydrate.blocks(blocks);
+    }
 }
 
 /// Preserve a published result; compute it only for legacy payloads that omit it.
@@ -569,7 +623,7 @@ fn promote_ingested_block_images(doc: &mut Document) {
             if let BlockNode::Paragraph(p) = block {
                 if !p.block_image {
                     p.block_image = p.children.len() == 1
-                        && matches!(&p.children[0], InlineNode::Image(img) if !img.src.is_empty());
+                        && matches!(&p.children[0], InlineNode::Image(img) if !crate::parse::is_unresolved_image(img));
                 }
             }
             match block {
@@ -3603,6 +3657,7 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
             from_crossref: false,
             from_heading_reference: false,
             pos: optional_pos(obj, "link")?,
+            resolved_empty_reference: false,
         })),
         "image" => Ok(InlineNode::Image(decode_image(obj)?)),
         "span" => Ok(InlineNode::Span(Span {
@@ -3853,6 +3908,7 @@ fn decode_image(obj: &Map<String, Json>) -> Result<Image, AstJsonError> {
         ref_label: optional_string(obj, "ref")?.map(str::to_string),
         raw_ref: optional_string(obj, "rawRef")?.map(str::to_string),
         pos: optional_pos(obj, "image")?,
+        resolved_empty_reference: false,
     })
 }
 

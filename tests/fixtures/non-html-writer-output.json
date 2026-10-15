@@ -2,7 +2,7 @@
   {
     "slug": "108-security-hardening-12",
     "target": "ansi",
-    "expected": "Text.\n\n\u001b[2m[x]: /u\u001b[0m\n\n\u001b[2m[y]: \u001b[0m\n"
+    "expected": "Text.\n\n\u001b[2m[x]: /u\u001b[0m\n\n\u001b[2m[y]:\u001b[0m\n"
   },
   {
     "slug": "164-tight-list-item-keeps-trailing-text-after-a-block-bare",
