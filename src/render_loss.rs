@@ -175,16 +175,38 @@ pub(crate) fn record_table_span(cell: &crate::ast::TableCell) {
 }
 
 pub(crate) fn record_table_header_row(pos: Option<&Pos>) {
+    record_table_header_loss(
+        "table-header-row-demoted",
+        "Wrote a later header row as a body row",
+        pos,
+    );
+}
+
+pub(crate) fn record_table_header_row_hoisted(pos: Option<&Pos>) {
+    record_table_header_loss(
+        "table-header-row-hoisted",
+        "Moved a header row above earlier body rows",
+        pos,
+    );
+}
+
+pub(crate) fn record_table_header_cell(pos: Option<&Pos>) {
+    record_table_header_loss(
+        "table-header-cell-demoted",
+        "Wrote a header cell as a body cell",
+        pos,
+    );
+}
+
+fn record_table_header_loss(code: &'static str, message: &str, pos: Option<&Pos>) {
     COLLECTOR.with(|slot| {
         let mut slot = slot.borrow_mut();
         let Some(c) = slot.as_mut() else { return };
         c.total += 1;
-        *c.totals_by_code
-            .entry("table-header-row-demoted")
-            .or_default() += 1;
+        *c.totals_by_code.entry(code).or_default() += 1;
         if c.losses.len() < c.max {
             c.losses.push(RenderLoss {
-                code: "table-header-row-demoted",
+                code,
                 format: None,
                 attribute: None,
                 style: None,
@@ -195,7 +217,7 @@ pub(crate) fn record_table_header_row(pos: Option<&Pos>) {
                 target: c.target,
                 node_type: RawNodeType::Block,
                 pos: pos.cloned(),
-                message: "Wrote a later header row as a body row".to_string(),
+                message: message.to_string(),
             });
         }
     });

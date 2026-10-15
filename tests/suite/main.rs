@@ -1589,6 +1589,8 @@ mod table_column_lint;
 mod table_gfm_separator;
 #[path = "../table_head_row_continuations.rs"]
 mod table_head_row_continuations;
+#[path = "../table_header_hoist_loss.rs"]
+mod table_header_hoist_loss;
 #[path = "../table_header_rowspan.rs"]
 mod table_header_rowspan;
 #[path = "../table_orphan_span.rs"]
