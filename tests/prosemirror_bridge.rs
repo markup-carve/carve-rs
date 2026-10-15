@@ -1656,8 +1656,11 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // Spec 071b9154 adds 36 corpus documents across sections 598 to 602.
     // Thirty-five round trip strictly. Section 598 row 5 reports the existing
     // substitution degradation and accounts for the one new lossy document.
-    const STRICT: usize = 1937;
-    const LOSSY: usize = 616;
+    // Spec 347ee0ec adds section 603's four documents. Three round trip
+    // strictly; row 4 nests an italic in an italic, which a ProseMirror mark
+    // cannot hold, so its emphasis reports a degradation.
+    const STRICT: usize = 1940;
+    const LOSSY: usize = 617;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in
