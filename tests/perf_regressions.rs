@@ -795,19 +795,21 @@ fn flat_unclosed_emphasis_openers_preserve_output() {
 
 #[test]
 fn deeply_nested_balanced_links_preserve_output() {
-    // The bracket-match precompute must not change parse output. For this
-    // pathological `[[[...x]()...]` shape the inline links all carry an empty
-    // destination and nest, so the "links never nest" pass unwraps them down to
-    // plain literal text (no anchors) - exactly as before the optimization.
-    let n = 50;
-    let html = carve::to_html(&nested_links(n));
-    assert_eq!(html.matches("<a href=").count(), 0, "{html}");
-    assert!(html.contains('x'), "inner text must survive: {html}");
-    // A genuine link with a destination still renders as an anchor.
-    assert_eq!(
-        carve::to_html("[text](https://example.com)"),
-        "<p><a href=\"https://example.com\">text</a></p>"
-    );
+    // Parsing 50 nested links needs the same larger stack as the timing check.
+    on_big_stack(|| {
+        // Guard the bracket-match precompute's output. CARVE-P3-024 makes each
+        // empty destination an explicit link. The core spec's "Links never nest"
+        // rule turns inner links into text, leaving one outer anchor
+        // (tests/spec/resources/examples/core.md).
+        let n = 50;
+        let html = carve::to_html(&nested_links(n));
+        assert_eq!(html, "<p><a href=\"\">x</a></p>");
+        // A genuine link with a destination still renders as an anchor.
+        assert_eq!(
+            carve::to_html("[text](https://example.com)"),
+            "<p><a href=\"https://example.com\">text</a></p>"
+        );
+    });
 }
 
 // ---------------------------------------------------------------------------
