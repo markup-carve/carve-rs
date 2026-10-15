@@ -26776,6 +26776,9 @@ fn read_bracketed(bytes: &[u8], start: usize) -> Option<(String, usize)> {
             b'{' if skip_editorial_comment(bytes, i).is_some() => {
                 i = skip_editorial_comment(bytes, i)?;
             }
+            b'<' if scanned_autolink_end(bytes, i).is_some() => {
+                i = scanned_autolink_end(bytes, i)? + 1;
+            }
             b'[' => {
                 depth += 1;
                 i += 1;
@@ -26864,6 +26867,9 @@ pub(crate) fn structural_bracket_offsets(source: &str) -> Option<Vec<usize>> {
             b'{' if skip_editorial_comment(bytes, i).is_some() => {
                 i = skip_editorial_comment(bytes, i).unwrap();
             }
+            b'<' if scanned_autolink_end(bytes, i).is_some() => {
+                i = scanned_autolink_end(bytes, i).unwrap() + 1;
+            }
             b'{' if matches!(bytes.get(i + 1), Some(b'#' | b'%')) => return None,
             b'[' | b']' => {
                 offsets.push(i);
@@ -26877,8 +26883,8 @@ pub(crate) fn structural_bracket_offsets(source: &str) -> Option<Vec<usize>> {
 
 /// Precompute the matching `]` index for every `[` in `bytes`, giving the
 /// answer `read_bracketed` gives scanning from that `[` (CARVE-P3-001): backslash
-/// escapes skip two bytes, and a verbatim span or an editorial comment hides
-/// its brackets.
+/// escapes skip two bytes, and a verbatim span, editorial comment or autolink
+/// hides its brackets.
 ///
 /// One pass answers every `[` outside a closed verbatim span. A backtick run
 /// with no closer ends only the labels opened before it, so a `[` after a run
@@ -26953,6 +26959,11 @@ fn compute_bracket_matches(bytes: &[u8]) -> (Vec<usize>, Vec<usize>) {
                 fill_run(&mut run_at, &stack, i, end);
                 i = end;
             }
+            b'<' if scanned_autolink_end(bytes, i).is_some() => {
+                let end = scanned_autolink_end(bytes, i).unwrap_or(i);
+                fill_run(&mut run_at, &stack, i, end + 1);
+                i = end + 1;
+            }
             b'[' => {
                 run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
                 stack.push(i);
@@ -26989,6 +27000,11 @@ fn compute_bracket_matches(bytes: &[u8]) -> (Vec<usize>, Vec<usize>) {
                     budget = budget.checked_sub(end - i)?;
                     i = end;
                 }
+                b'<' if scanned_autolink_end(bytes, i).is_some() => {
+                    let end = scanned_autolink_end(bytes, i)? + 1;
+                    budget = budget.checked_sub(end - i)?;
+                    i = end;
+                }
                 b'[' => {
                     depth += 1;
                     i += 1;
@@ -27015,6 +27031,26 @@ fn compute_bracket_matches(bytes: &[u8]) -> (Vec<usize>, Vec<usize>) {
     // A position past the last byte is outside every run, which is what the
     // `bytes.len()` slot already holds.
     (matches, run_at)
+}
+
+#[cfg(test)]
+mod autolink_bracket_scan_tests {
+    use super::*;
+
+    #[test]
+    fn an_autolink_body_is_opaque_to_the_bracket_scan() {
+        let source = "[a <https://x]> b](u)";
+        let (matches, _) = compute_bracket_matches(source.as_bytes());
+        assert_eq!(matches[0], source.rfind(']').unwrap());
+        assert_eq!(
+            read_bracketed(b"[a <https://x]> b]", 0),
+            Some(("a <https://x]> b".to_owned(), 18))
+        );
+        assert_eq!(
+            crate::to_html(source).trim(),
+            "<p><a href=\"u\">a https://x] b</a></p>"
+        );
+    }
 }
 
 /// Mark `[from, to)` as held by the run on top of `stack`, for the byte ranges the
