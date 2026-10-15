@@ -793,6 +793,8 @@ mod an_untyped_wire_record_is_closed_too;
 mod ansi_cjk_width;
 #[path = "../ansi_destination_denylist.rs"]
 mod ansi_destination_denylist;
+#[path = "../ansi_empty_destination_has_no_suffix.rs"]
+mod ansi_empty_destination_has_no_suffix;
 #[path = "../ansi_ragged_table.rs"]
 mod ansi_ragged_table;
 #[path = "../ansi_smart_typography_mode.rs"]
