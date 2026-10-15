@@ -861,6 +861,7 @@ const IMPLEMENTED: &[&str] = &[
     "an-autolink-is-opaque-to-the-bracket-scan",
     "editorial-markup-closes-outside-a-cross-reference-or-a-bracket-run",
     "the-combined-bold-italic-token-does-not-open-after-an-underscore-or-a-slash",
+    "the-combined-bold-italic-token-does-not-open-inside-an-open-bare-italic-or-bold",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
