@@ -11,16 +11,63 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
-### Fixes
+## [0.1.10] - 2026-10-16
 
-- A `]` inside an autolink no longer closes a link, image or span label opened before it: the bracket scan skips the autolink body, so `[a <https://x]> b](u)` is one link (CARVE-P3-001, markup-carve/carve#3204, markup-carve/carve-js#3120).
-- `FileSystemResolver` reads only regular files: a FIFO, device or directory inside the root is denied instead of opened, so an include naming a FIFO no longer blocks the caller (markup-carve/carve-js#3108).
-- A list whose items hold block quotes or containers no longer parses in exponential time: each item re-parsed its whole body to ask whether it ends in an open paragraph, so 40 levels took 44 s. The probe now runs only when a later line needs the answer.
-- A cross-reference `</#id>` is opaque to emphasis like an autolink: an earlier bare `/` no longer pairs with the slash inside it (markup-carve/carve-js#3100).
-- A `[` inside an autolink or cross-reference no longer opens a bracket run for emphasis pairing, and a braced closer inside a cross-reference no longer closes the span opened before it (markup-carve/carve-js#3105).
-- Inside an unclosed code fence in a `:::` container, only the innermost container's own closer ends the fence. A colon line of any other width is code; it used to open a nested container, so the host never closed and the rest of the document became code (markup-carve/carve#3201).
-- The `Wikilinks` extension no longer closes `[[` at a `]]` whose first bracket is escaped (`\]`), so `a [[x\]](u)` renders the core link instead of a wikilink (markup-carve/carve-js#3092).
-- An escaped include directive (`\{{ path }}`) stays literal: `render` and `flatten` no longer expand it, and `fmt` no longer adds a brace to `See \{{ a {{ path }}`. A directive that opens on the second of three braces (`{{{ path }}`) now expands, as it does in carve-js and carve-php (markup-carve/carve-js#3101).
+### Breaking
+
+- Empty link destinations are real links: `[text]()` and `![alt]()` parse as a link and an image with an empty URL, and a bare `[r]:` line is an empty reference definition. Escape the opening bracket to keep such text literal. AST JSON carries contract version `2.0`, so 0.1.9 readers refuse trees written by this release, and `Link` and `Image` gain a `resolved_empty_reference` field that struct literals have to set (#2789, markup-carve/carve#2878).
+
+- New render loss codes. Markdown, plain text and ANSI output report `table-span-flattened` for each merged table cell; Markdown reports `table-header-row-demoted`, `table-header-row-hoisted` and `table-header-cell-demoted` when it rewrites a header row or cell. `--allow-loss` accepts all four, and a gate that fails on unknown codes has to list them (#2800, #2819, markup-carve/carve#3202).
+
+- `IncludeWarning` carries 1-based `line` and `column` fields pointing at the directive, heading or footnote that caused it, so code that builds one with a struct literal has to set them (#2808).
+
+- The CLI replaces ill-formed UTF-8 in a document read from a file or stdin with U+FFFD instead of refusing it, for render, lint, `fmt`, flatten, merge and migrate. `fmt --write` and `fmt --check` still refuse to rewrite such a file, and an included file holding ill-formed bytes is refused with a warning. Check the encoding yourself if a pipeline relied on the refusal (#2810, #2820, #2832, markup-carve/carve#3212).
+
+### Fixed
+
+- Autolinks, cross-references and comments are atomic to the constructs around them: a `]` or `[` inside one no longer closes or opens a link, image, span or inline-note label, a cross-reference no longer pairs its `/` with an earlier one, a `~>` that ends one is no substitution arrow, and a braced closer inside one no longer closes the span opened before it (#2779, #2783, #2809, #2831, markup-carve/carve#3204, markup-carve/carve#3244).
+
+- An emphasis, editorial or braced delimiter followed by a combining mark, a spacing mark, a variation selector or a keycap stays text, including the combined `/*...*/` token, and the writer forces the spelling where a bare one would not read back (#2810, #2812, #2816, #2817, markup-carve/carve#3209, markup-carve/carve#3217).
+
+- Inside an unclosed code fence in a `:::` container, only the innermost container's own closer ends the fence, also after a quote or list item that holds only a comment. A colon line of any other width is code; it used to open a nested container, so the rest of the document became code (#2797, #2827, markup-carve/carve#3201).
+
+- A list whose items hold block quotes or containers no longer parses in exponential time: 40 levels took 44 s (#2796).
+
+- An escaped include directive (`\{{ path }}`) stays literal in `render` and `flatten`, and `fmt` no longer adds a brace to `See \{{ a {{ path }}`. A directive that opens on the second of three braces (`{{{ path }}`) now expands, as in carve-js and carve-php (#2780).
+
+- `FileSystemResolver` reads only regular files: a FIFO, device or directory inside the root is denied instead of opened, so an include naming a FIFO no longer blocks the caller (#2786).
+
+- The `Wikilinks` extension no longer closes `[[` at a `]]` whose first bracket is escaped, so `a [[x\]](u)` renders the core link (#2775).
+
+- `render_carve` refuses a list nested past the nesting cap with `RenderCarveError::SourceUnspellable` instead of searching for minutes and writing source that reads back as a different document (#2794).
+
+- Markdown output writes a strong around a single italic as one `***` run before a non-ASCII letter (`x ***a***é y`) instead of falling back to inline HTML, and keeps a joined `***` run when an italic wraps a strong inside a word (#2817, #2828).
+
+- ANSI output prints no ` ()` suffix after a link whose destination is empty (#2811).
+
+- `carve merge` treats a rewrapped paragraph as unchanged, and a soft break right after inline markup counts as a space, so removing it is still a change (#2805).
+
+- Djot import keeps definition lists intact: empty root definitions, definitions in quotes and list items, block interruptions in terms, attributes before a following table or fence, literal list markers in terms, container ownership and tight descriptions (#2782, #2785, #2788, #2790, #2801).
+
+- Djot import keeps image alternatives and references: collapsed references across multiline labels, deletion text in alternatives, and reference URL data such as `![a![b](x)](y)`, which it used to rewrite as nested images. A blank line or trailing space dropped from an alternative is reported at its source line (#2776, #2784, #2791, #2806).
+
+- Djot import keeps empty nested task items such as `- - [ ]`, generic DIV classes such as `-x` or `toc`, and leaves an unresolved reference containing NUL literal instead of pointing it at a sanitized heading (#2764, #2769, #2772).
+
+- Markdown import reads an angle autolink as a Carve autolink, keeps the encoded URL of an autolink whose address holds `[` or `]`, and imports a resolved shortcut reference `[foo]` as the collapsed reference `[foo][]` with its definition, as carve-js and carve-php do (#2778, #2803, #2825, markup-carve/carve#3241).
+
+- `carve migrate --from markdown` no longer exits 2 on a reference definition whose title wraps; the uses of such a definition become inline links (#2823).
+
+- BBCode import reads forum quote attributions: quoted names, phpBB `post_id` and Unix `time`, and vBulletin `name;id` (#2802).
+
+### Improvements
+
+- `carve migrate --from markdown --directory SOURCE --output TARGET` converts a Markdown tree, copies other regular files, skips symlinks and writes `migration-report.json`. It refuses an existing target and two inputs that map to one output, and removes its staging directory when a conversion fails (#2824, #2832).
+
+- Markdown output keeps the angle form `<https://x>` for a URL or email autolink where the same Markdown autolink reads back (#2778, markup-carve/carve#3196).
+
+- Djot image chains with plain, quoted or Unicode labels convert without reparsing each nested label (#2793, #2804).
+
+- Smart quote direction no longer builds a regex, which shrinks a render-only build without default features by about 40% (#2774).
 
 ## [0.1.9] - 2026-10-14
 
@@ -676,6 +723,8 @@ references and external fragment links need manual review. See the
   (markup-carve/carve-rs#1572, markup-carve/carve#1970). `carve fmt` no longer inserts a separating blank
   before that item, converging its `carve` output with carve-js and carve-php.
 
+[0.1.10]: https://github.com/markup-carve/carve-rs/compare/0.1.9...0.1.10
+[0.1.9]: https://github.com/markup-carve/carve-rs/compare/0.1.8...0.1.9
 [0.1.8]: https://github.com/markup-carve/carve-rs/compare/0.1.7...0.1.8
 [0.1.7]: https://github.com/markup-carve/carve-rs/compare/0.1.6...0.1.7
 [0.1.6]: https://github.com/markup-carve/carve-rs/compare/0.1.5...0.1.6

@@ -31,3 +31,4 @@
 2545: docs only; documents the roundtrip carriers #2471 and #2526 already describe.
 2552: reverts a regression #2526 introduced in this unreleased window (dollar math on Markdown import); no release ever read dollars as math.
 2685: fixes a timing regression #2679 introduced in this unreleased window (cell wrap lookup); no release had it.
+2829: comments only in src/render_carve.rs and src/sentinel_run.rs; no behavior changed.
