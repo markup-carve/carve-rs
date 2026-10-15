@@ -10205,6 +10205,26 @@ fn exact_colon_fence_len(line: &str) -> Option<usize> {
     }
 }
 
+/// Whether a paragraph is open after this colon-body line, for the §10 I4
+/// gate on an unclosed fence. Blank, colon, comment, heading and thematic-break
+/// lines leave none open.
+fn opens_colon_body_paragraph(line: &str) -> bool {
+    let t = trim_ascii_end(trim_ascii_start(line));
+    if t.is_empty()
+        || t.starts_with("%%")
+        || exact_colon_fence_len(t).is_some()
+        || detect_container_open(t).is_some()
+    {
+        return false;
+    }
+    let hashes = t.bytes().take_while(|b| *b == b'#').count();
+    if (1..=6).contains(&hashes) && matches!(t.as_bytes().get(hashes), None | Some(b' ' | b'\t')) {
+        return false;
+    }
+    let first = t.as_bytes()[0];
+    !(matches!(first, b'-' | b'*' | b'_') && t.len() >= 3 && t.bytes().all(|b| b == first))
+}
+
 fn is_invalid_colon_fence_opener_text(line: &str) -> bool {
     let trimmed = trim_ascii_start(line);
     let fence_len = trimmed.bytes().take_while(|b| *b == b':').count();
@@ -10280,9 +10300,10 @@ fn skip_opaque_span_into(inner: &mut LineBuffer, cur: &mut LineCursor<'_>) -> bo
     };
     if let Some(open) = detect_fence_open(line) {
         // A closer is required whether or not a paragraph is open. Only a fence
-        // that closes is opaque; an unterminated one would otherwise consume the
-        // container's own `:::` as content and run to the end of the document,
-        // dragging every following block inside (carve#515, carve-rs#458).
+        // that closes is opaque here; an unterminated one would otherwise consume
+        // the container's own `:::` as content and run to the end of the
+        // document, dragging every following block inside (carve#515,
+        // carve-rs#458). The caller ends an unterminated one at that closer.
         //
         // The comment-fence branch below has always required its closer. This
         // one asked only when a paragraph was open, so the rule held for a fence
@@ -10368,8 +10389,11 @@ fn collect_indexed_colon_body(
     let mut origins = vec![None];
     let mut boundaries = Vec::new();
     let mut cacheable = true;
+    let mut paragraph_open = false;
     while cur.peek().is_some() {
         let top = *stack.last().unwrap();
+        let paragraph_was_open = paragraph_open;
+        paragraph_open = opens_colon_body_paragraph(cur.peek().unwrap());
         // A CLOSER OF AN OPEN CONTAINER IS NOT ABSORBABLE. §12's absorption is
         // about a paragraph swallowing a would-be OPENER; the container this
         // line closes was opened BEFORE the malformed fence was ever read, so
@@ -10390,9 +10414,26 @@ fn collect_indexed_colon_body(
             continue;
         }
         if skip_opaque_span_into(&mut inner, cur) {
+            paragraph_open = false;
             continue;
         }
         let line = cur.peek().unwrap();
+        // An unclosed fence is code up to the innermost container's own closer;
+        // every other colon line before it is content (A CLOSER IS REQUIRED,
+        // carve#3201). Under an open paragraph it is text (§10 I4).
+        if !paragraph_was_open && detect_fence_open(line).is_some() {
+            push_current_line(&mut inner, cur);
+            cur.consume();
+            while let Some(next) = cur.peek() {
+                if exact_colon_fence_len(next) == Some(top) {
+                    break;
+                }
+                push_current_line(&mut inner, cur);
+                cur.consume();
+            }
+            paragraph_open = false;
+            continue;
+        }
         if !line.starts_with([' ', '\t']) {
             if stack.len() < MAX_NESTING_DEPTH {
                 if let Some(len) = detect_container_open(line)
@@ -10471,9 +10512,12 @@ fn find_colon_fence_end(
     // quadratic, as tests/perf_regressions.rs caught.
     let mut stack = vec![fence_len];
     let mut idx = start + 1;
+    let mut paragraph_open = false;
     while idx < lines.len() {
         let line = lines.at(idx);
         let top = *stack.last().unwrap();
+        let paragraph_was_open = paragraph_open;
+        paragraph_open = !literal && opens_colon_body_paragraph(line);
         if exact_colon_fence_len(line) == Some(top) {
             stack.pop();
             idx += 1;
@@ -10487,10 +10531,11 @@ fn find_colon_fence_end(
         } else {
             line
         }) {
-            // Same rule as `skip_opaque_span_into`, which walks this body for
-            // real: only a fence that closes is opaque (carve#515). This copy
-            // used to accept an unterminated one whenever no paragraph was
-            // open, so the two walks disagreed about where the container ends.
+            // Same rule as `collect_indexed_colon_body`, which walks this body
+            // for real: a fence that closes is opaque to every colon line, and
+            // an unclosed one is code up to the innermost container's own
+            // closer (carve#515, carve#3201). The two walks must agree about
+            // where the container ends.
             //
             // The index makes the `any` below skip-able. Without it this scan
             // runs from every opener to the end of the input, which is
@@ -10529,6 +10574,15 @@ fn find_colon_fence_end(
                         break;
                     }
                 }
+                paragraph_open = false;
+                continue;
+            }
+            if !literal && !paragraph_was_open {
+                idx += 1;
+                while idx < lines.len() && exact_colon_fence_len(lines.at(idx)) != Some(top) {
+                    idx += 1;
+                }
+                paragraph_open = false;
                 continue;
             }
         }
@@ -10543,6 +10597,7 @@ fn find_colon_fence_end(
                             .any(|line| line.starts_with(LAZY))
                     {
                         idx = close + 1;
+                        paragraph_open = false;
                         continue;
                     }
                 }

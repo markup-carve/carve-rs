@@ -14,6 +14,8 @@ mod raw_payload_termination;
 mod an_autolink_or_cross_reference_is_atomic_to_brackets_and_braces;
 #[path = "../an_explicit_heading_id_carrier_overrides_the_slug_heuristic.rs"]
 mod an_explicit_heading_id_carrier_overrides_the_slug_heuristic;
+#[path = "../an_unclosed_fence_ends_only_at_its_own_containers_closer.rs"]
+mod an_unclosed_fence_ends_only_at_its_own_containers_closer;
 #[path = "../footnote_container_paragraph_breaks.rs"]
 mod footnote_container_paragraph_breaks;
 
