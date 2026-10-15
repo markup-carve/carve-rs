@@ -16,6 +16,7 @@ which the published crate does not carry.
 - `FileSystemResolver` reads only regular files: a FIFO, device or directory inside the root is denied instead of opened, so an include naming a FIFO no longer blocks the caller (markup-carve/carve-js#3108).
 - A cross-reference `</#id>` is opaque to emphasis like an autolink: an earlier bare `/` no longer pairs with the slash inside it (markup-carve/carve-js#3100).
 - A `[` inside an autolink or cross-reference no longer opens a bracket run for emphasis pairing, and a braced closer inside a cross-reference no longer closes the span opened before it (markup-carve/carve-js#3105).
+- Inside an unclosed code fence in a `:::` container, only the innermost container's own closer ends the fence. A colon line of any other width is code; it used to open a nested container, so the host never closed and the rest of the document became code (markup-carve/carve#3201).
 - The `Wikilinks` extension no longer closes `[[` at a `]]` whose first bracket is escaped (`\]`), so `a [[x\]](u)` renders the core link instead of a wikilink (markup-carve/carve-js#3092).
 - An escaped include directive (`\{{ path }}`) stays literal: `render` and `flatten` no longer expand it, and `fmt` no longer adds a brace to `See \{{ a {{ path }}`. A directive that opens on the second of three braces (`{{{ path }}`) now expands, as it does in carve-js and carve-php (markup-carve/carve-js#3101).
 
