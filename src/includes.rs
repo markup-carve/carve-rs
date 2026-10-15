@@ -2533,20 +2533,9 @@ impl<'a> RunSlicer<'a> {
             if lo == 0 && hi == value.value.len() {
                 out.push(node.clone());
             } else if lo < hi {
-                let mut pos = value.pos.clone();
-                if let Some(pos) = pos.as_mut() {
-                    let prefix = &value.value[..lo];
-                    let through = &value.value[..hi];
-                    (pos.end_line, pos.end_column) =
-                        advance_line_column(pos.start_line, pos.start_column, through);
-                    (pos.start_line, pos.start_column) =
-                        advance_line_column(pos.start_line, pos.start_column, prefix);
-                    pos.end_offset = pos.start_offset + through.chars().count();
-                    pos.start_offset += prefix.chars().count();
-                }
                 out.push(InlineNode::Text(crate::ast::Text {
                     value: value.value[lo..hi].to_string(),
-                    pos,
+                    pos: value.pos.clone(),
                 }));
             }
         }
