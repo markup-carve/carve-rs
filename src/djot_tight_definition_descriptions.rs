@@ -142,30 +142,59 @@ pub(super) fn normalize(source: &str) -> String {
             inherited
         };
         if let BlockNode::List(list) = &node {
-            if !tight
-                && list.items.iter().all(|item| {
-                    item.children.iter().all(|child| {
-                        matches!(
-                            child,
-                            BlockNode::DefinitionList(_)
-                                | BlockNode::Paragraph(_)
-                                | BlockNode::Comment(_)
-                        )
-                    })
-                })
-                && list.items.iter().any(|item| {
-                    item.children
-                        .iter()
-                        .any(|child| matches!(child, BlockNode::DefinitionList(_)))
-                })
-                && list
-                    .items
+            let has_definition = list.items.iter().any(|item| {
+                item.children
                     .iter()
-                    .flat_map(|item| &item.children)
-                    .filter(|child| matches!(child, BlockNode::Paragraph(_)))
-                    .count()
-                    < 2
-            {
+                    .any(|child| matches!(child, BlockNode::DefinitionList(_)))
+            });
+            let safe_children = list.items.iter().all(|item| {
+                item.children.iter().all(|child| {
+                    matches!(
+                        child,
+                        BlockNode::DefinitionList(_)
+                            | BlockNode::Paragraph(_)
+                            | BlockNode::Comment(_)
+                    )
+                })
+            });
+            let mut previous: Option<&BlockNode> = None;
+            let mut gap = false;
+            for child in list.items.iter().flat_map(|item| &item.children) {
+                if let Some(BlockNode::Paragraph(before)) = previous {
+                    if let (Some(before), Some(after)) = (&before.pos, position(child)) {
+                        let mut blank = false;
+                        for line in before.end_line - 1..after.start_line - 1 {
+                            let value = layout.lines[line];
+                            if value
+                                .bytes()
+                                .all(|byte| matches!(byte, b' ' | b'\t' | b'>'))
+                            {
+                                blank = true;
+                            } else if blank && matches!(child, BlockNode::DefinitionList(_)) {
+                                let value = value.trim_matches([' ', '\t', '>']);
+                                gap |= value.starts_with('{') && value != "{loose}";
+                            }
+                        }
+                        gap |= blank
+                            && matches!(child, BlockNode::Paragraph(_) | BlockNode::Comment(_));
+                    }
+                }
+                previous = Some(child);
+            }
+            if has_definition && gap {
+                tight = false;
+                if let Some(pos) = list.pos.as_ref().filter(|_| list.tight) {
+                    let at = layout.offset(pos.start_offset);
+                    let prefix = &layout.lines[pos.start_line - 1]
+                        [..at - layout.offsets[pos.start_line - 1]];
+                    layout.edits.push(Edit {
+                        start: at,
+                        end: at,
+                        value: format!("{{loose}}\n{prefix}"),
+                    });
+                }
+            }
+            if !list.tight && safe_children && has_definition && !gap {
                 tight = true;
                 layout.clear_loose(list.pos.as_ref());
                 for item in &list.items {
@@ -208,7 +237,9 @@ pub(super) fn normalize(source: &str) -> String {
                             });
                         let mut joined = Paragraph::default();
                         for (index, paragraph) in description.iter().enumerate() {
-                            if index > 0 {
+                            if index > 0
+                                && !matches!(joined.children.last(), Some(InlineNode::HardBreak(_)))
+                            {
                                 joined.children.push(InlineNode::soft_break());
                             }
                             if let BlockNode::Paragraph(paragraph) = paragraph {
