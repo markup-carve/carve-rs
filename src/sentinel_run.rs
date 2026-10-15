@@ -1,7 +1,7 @@
 //! Allocate private-use markers absent from the document. Parser and writers
 //! use them temporarily, then remove them from output. Each caller keeps its
 //! own run so slot changes at one site do not renumber another. Fixed markers
-//! silently collide with authored text (carve#678). Ported from
+//! silently collide with authored text (markup-carve/carve#678). Ported from
 //! markup-carve/carve-js#1289.
 //!
 //! U+E000 is ordinary text; generated spaces use explicit AST nodes. E001 is
@@ -39,7 +39,7 @@ fn run_from<const N: usize>(first: u32) -> [char; N] {
 
 /// Pick an unused run, trying `base` first, then skipping past occupied points.
 /// A whole-run step would miss free gaps. Falls back to `base` if the pool is
-/// full so a writer can still render as it did before allocation.
+/// without a free `N`-point window so a writer can still render.
 pub(crate) fn pick_sentinel_run<const N: usize>(occupied: &BTreeSet<u32>, base: u32) -> [char; N] {
     let taken = |from: u32| (0..N as u32).any(|offset| occupied.contains(&(from + offset)));
 
