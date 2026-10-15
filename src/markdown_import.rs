@@ -2444,16 +2444,33 @@ impl Builder {
                 pos: None,
             })),
             Frame::Link {
-                autolink: Some((href, text)),
+                href,
+                autolink: Some((autolink_href, text)),
                 title,
                 ..
             } if title.is_none() => {
-                self.inline(InlineNode::AutoLink(AutoLink {
-                    attrs: None,
-                    href,
-                    text,
-                    pos: None,
-                }));
+                // Brackets stay visible but need percent encoding in the Markdown URL.
+                if href == autolink_href || !text.bytes().any(|byte| matches!(byte, b'[' | b']')) {
+                    self.inline(InlineNode::AutoLink(AutoLink {
+                        attrs: None,
+                        href: autolink_href,
+                        text,
+                        pos: None,
+                    }));
+                } else {
+                    self.inline(InlineNode::Link(Link {
+                        attrs: None,
+                        href,
+                        title: None,
+                        children: vec![InlineNode::text(text)],
+                        ref_label: None,
+                        raw_ref: None,
+                        resolved_empty_reference: false,
+                        from_crossref: false,
+                        from_heading_reference: false,
+                        pos: None,
+                    }));
+                }
             }
             Frame::Link {
                 href,

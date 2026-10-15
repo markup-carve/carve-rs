@@ -98,6 +98,33 @@ fn foreign_imports_keep_explicit_empty_destinations() {
 }
 
 #[test]
+fn markdown_autolink_brackets_keep_encoded_destinations() {
+    for (source, destination) in [
+        (
+            "[foo<https://example.com/?search=](uri)>\n",
+            "https://example.com/?search=%5D(uri)",
+        ),
+        (
+            "[foo<https://example.com/?search=][ref]>\n\n[ref]: /uri\n",
+            "https://example.com/?search=%5D%5Bref%5D",
+        ),
+    ] {
+        let document = markdown_to_ast(source);
+        let expected = format!("href=\"{destination}\"");
+        assert!(
+            render_html(&document).unwrap().contains(&expected),
+            "{source}"
+        );
+        let converted = carve::migrate_markdown(source);
+        assert!(to_html(&converted.value).contains(&expected), "{source}");
+        assert!(converted.value.contains("search=\\]"), "{source}");
+    }
+    let unicode = "<https://example.com/ä>";
+    assert_eq!(carve::migrate_markdown(unicode).value.trim(), unicode);
+    assert!(to_json(&markdown_to_ast(unicode)).contains("https://example.com/ä"));
+}
+
+#[test]
 fn empty_definition_writer_reports_each_discarded_field() {
     let wire = serde_json::json!({"type":"document","srcByteLength":0,"children":[
         {"type":"link_reference_definition","label":"r","href":"","title":"T","attrs":{"id":"x"}}
