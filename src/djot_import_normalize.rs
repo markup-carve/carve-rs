@@ -2735,6 +2735,25 @@ fn blocks_with_slot_inner(
             if separate && result.last().is_some_and(|line| !line.is_empty()) {
                 result.push(String::new());
             }
+            if previous_blank {
+                if let Some(parent) = top.as_ref().filter(|_| nested) {
+                    let mut previous = n;
+                    while previous > 0
+                        && lines[previous - 1]
+                            .bytes()
+                            .all(|byte| matches!(byte, b' ' | b'\t' | b'>'))
+                    {
+                        previous -= 1;
+                    }
+                    if previous > 0 {
+                        let (head_depth, head_body) = quoted(lines[previous - 1]);
+                        if let Some(prefix) = cached_regex!(r"^[ \t]*(?:(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})\))[ \t]+){2,}:").unwrap().find(head_body) {
+                            let (current_depth, _) = quoted(raw);
+                            if head_depth == current_depth && prefix.end() - 1 == indent && masks[previous - 1].as_bytes().get(lines[previous - 1].len() - head_body.len() + prefix.end() - 1) == Some(&b':') { target = parent.target + indent - parent.source; }
+                        }
+                    }
+                }
+            }
             let marker_end = item.get(2).unwrap().end();
             let marker_body = item.get(0).unwrap().end();
             let payload_start = if matches!(item[1].as_bytes()[0], b'-' | b'*' | b'+')

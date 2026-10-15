@@ -2192,3 +2192,6 @@ mod djot_definition_interruptions;
 
 #[path = "../djot_multiline_image_growth.rs"]
 mod djot_multiline_image_growth;
+
+#[path = "../djot_definition_container_ownership.rs"]
+mod djot_definition_container_ownership;

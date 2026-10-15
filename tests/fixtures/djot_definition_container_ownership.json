@@ -1,0 +1,914 @@
+[
+  {
+    "source": "> : term",
+    "html": "<blockquote>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n</blockquote>\n"
+  },
+  {
+    "source": "- : term",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. : term",
+    "html": "<ol>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- - : term",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "::: box\n: term\n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n</div>\n"
+  },
+  {
+    "source": "::: box\r\n: term\r\n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n</div>\n"
+  },
+  {
+    "source": "> - : term",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> :",
+    "html": "<blockquote>\n<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n</blockquote>\n"
+  },
+  {
+    "source": "- :",
+    "html": "<ul>\n<li>\n<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. :",
+    "html": "<ol>\n<li>\n<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- - :",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "::: box\n:\n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n</div>\n"
+  },
+  {
+    "source": "::: box\r\n:\r\n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n</div>\n"
+  },
+  {
+    "source": "> - :",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> : ",
+    "html": "<blockquote>\n<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n</blockquote>\n"
+  },
+  {
+    "source": "- : ",
+    "html": "<ul>\n<li>\n<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. : ",
+    "html": "<ol>\n<li>\n<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- - : ",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "::: box\n: \n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n</div>\n"
+  },
+  {
+    "source": "::: box\r\n: \r\n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n</div>\n"
+  },
+  {
+    "source": "> - : ",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt></dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> : term\n> \n>  body",
+    "html": "<blockquote>\n<dl>\n<dt>term</dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n</blockquote>\n"
+  },
+  {
+    "source": "> : term\r\n> \r\n>  body",
+    "html": "<blockquote>\n<dl>\n<dt>term</dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n</blockquote>\n"
+  },
+  {
+    "source": "- : term\n  \n   body",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nbody\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- : term\r\n  \r\n   body",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nbody\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. : term\n   \n    body",
+    "html": "<ol>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nbody\n</dd>\n</dl>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "1. : term\r\n   \r\n    body",
+    "html": "<ol>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nbody\n</dd>\n</dl>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- - : term\n    \n     body",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nbody\n</dd>\n</dl>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- - : term\r\n    \r\n     body",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nbody\n</dd>\n</dl>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "::: box\n: term\n\n body\n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt>term</dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n</div>\n"
+  },
+  {
+    "source": "::: box\r\n: term\r\n\r\n body\r\n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt>term</dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n</div>\n"
+  },
+  {
+    "source": "> - : term\n>   \n>    body",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nbody\n</dd>\n</dl>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - : term\r\n>   \r\n>    body",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nbody\n</dd>\n</dl>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> : term\n> \n>   first\n> \n>   second",
+    "html": "<blockquote>\n<dl>\n<dt>term</dt>\n<dd>\n<p>first</p>\n<p>second</p>\n</dd>\n</dl>\n</blockquote>\n"
+  },
+  {
+    "source": "> : term\r\n> \r\n>   first\r\n> \r\n>   second",
+    "html": "<blockquote>\n<dl>\n<dt>term</dt>\n<dd>\n<p>first</p>\n<p>second</p>\n</dd>\n</dl>\n</blockquote>\n"
+  },
+  {
+    "source": "- : term\n  \n    first\n  \n    second",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nfirst\nsecond\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- : term\r\n  \r\n    first\r\n  \r\n    second",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nfirst\nsecond\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. : term\n   \n     first\n   \n     second",
+    "html": "<ol>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nfirst\nsecond\n</dd>\n</dl>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "1. : term\r\n   \r\n     first\r\n   \r\n     second",
+    "html": "<ol>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nfirst\nsecond\n</dd>\n</dl>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- - : term\n    \n      first\n    \n      second",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nfirst\nsecond\n</dd>\n</dl>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- - : term\r\n    \r\n      first\r\n    \r\n      second",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nfirst\nsecond\n</dd>\n</dl>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "::: box\n: term\n\n  first\n\n  second\n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt>term</dt>\n<dd>\n<p>first</p>\n<p>second</p>\n</dd>\n</dl>\n</div>\n"
+  },
+  {
+    "source": "::: box\r\n: term\r\n\r\n  first\r\n\r\n  second\r\n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt>term</dt>\n<dd>\n<p>first</p>\n<p>second</p>\n</dd>\n</dl>\n</div>\n"
+  },
+  {
+    "source": "> - : term\n>   \n>     first\n>   \n>     second",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nfirst\nsecond\n</dd>\n</dl>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - : term\r\n>   \r\n>     first\r\n>   \r\n>     second",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nfirst\nsecond\n</dd>\n</dl>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> : outer\n> \n>  : child\n> \n>   body",
+    "html": "<blockquote>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>child</dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n</dd>\n</dl>\n</blockquote>\n"
+  },
+  {
+    "source": "> : outer\r\n> \r\n>  : child\r\n> \r\n>   body",
+    "html": "<blockquote>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>child</dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n</dd>\n</dl>\n</blockquote>\n"
+  },
+  {
+    "source": "- : outer\n  \n   : child\n  \n    body",
+    "html": "<ul>\n<li>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>child</dt>\n<dd>\nbody\n</dd>\n</dl>\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- : outer\r\n  \r\n   : child\r\n  \r\n    body",
+    "html": "<ul>\n<li>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>child</dt>\n<dd>\nbody\n</dd>\n</dl>\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. : outer\n   \n    : child\n   \n     body",
+    "html": "<ol>\n<li>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>child</dt>\n<dd>\nbody\n</dd>\n</dl>\n</dd>\n</dl>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "1. : outer\r\n   \r\n    : child\r\n   \r\n     body",
+    "html": "<ol>\n<li>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>child</dt>\n<dd>\nbody\n</dd>\n</dl>\n</dd>\n</dl>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- - : outer\n    \n     : child\n    \n      body",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>child</dt>\n<dd>\nbody\n</dd>\n</dl>\n</dd>\n</dl>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- - : outer\r\n    \r\n     : child\r\n    \r\n      body",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>child</dt>\n<dd>\nbody\n</dd>\n</dl>\n</dd>\n</dl>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "::: box\n: outer\n\n : child\n\n  body\n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>child</dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n</dd>\n</dl>\n</div>\n"
+  },
+  {
+    "source": "::: box\r\n: outer\r\n\r\n : child\r\n\r\n  body\r\n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>child</dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n</dd>\n</dl>\n</div>\n"
+  },
+  {
+    "source": "> - : outer\n>   \n>    : child\n>   \n>     body",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>child</dt>\n<dd>\nbody\n</dd>\n</dl>\n</dd>\n</dl>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - : outer\r\n>   \r\n>    : child\r\n>   \r\n>     body",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>child</dt>\n<dd>\nbody\n</dd>\n</dl>\n</dd>\n</dl>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> : term\n> \n> para",
+    "html": "<blockquote>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<p>para</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> : term\r\n> \r\n> para",
+    "html": "<blockquote>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<p>para</p>\n</blockquote>\n"
+  },
+  {
+    "source": "- : term\n  \n  para",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\npara\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- : term\r\n  \r\n  para",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\npara\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. : term\n   \n   para",
+    "html": "<ol>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\npara\n</li>\n</ol>\n"
+  },
+  {
+    "source": "1. : term\r\n   \r\n   para",
+    "html": "<ol>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\npara\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- - : term\n    \n    para",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\npara\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- - : term\r\n    \r\n    para",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\npara\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "::: box\n: term\n\npara\n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<p>para</p>\n</div>\n"
+  },
+  {
+    "source": "::: box\r\n: term\r\n\r\npara\r\n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<p>para</p>\n</div>\n"
+  },
+  {
+    "source": "> - : term\n>   \n>   para",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\npara\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - : term\r\n>   \r\n>   para",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\npara\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> : term\n> # heading",
+    "html": "<blockquote>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<h1 id=\"heading\">heading</h1>\n</blockquote>\n"
+  },
+  {
+    "source": "> : term\r\n> # heading",
+    "html": "<blockquote>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<h1 id=\"heading\">heading</h1>\n</blockquote>\n"
+  },
+  {
+    "source": "- : term\n  # heading",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<h1 id=\"heading\">heading</h1>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- : term\r\n  # heading",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<h1 id=\"heading\">heading</h1>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. : term\n   # heading",
+    "html": "<ol>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<h1 id=\"heading\">heading</h1>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "1. : term\r\n   # heading",
+    "html": "<ol>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<h1 id=\"heading\">heading</h1>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- - : term\n    # heading",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<h1 id=\"heading\">heading</h1>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- - : term\r\n    # heading",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<h1 id=\"heading\">heading</h1>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "::: box\n: term\n# heading\n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<h1 id=\"heading\">heading</h1>\n</div>\n"
+  },
+  {
+    "source": "::: box\r\n: term\r\n# heading\r\n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<h1 id=\"heading\">heading</h1>\n</div>\n"
+  },
+  {
+    "source": "> - : term\n>   # heading",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<h1 id=\"heading\">heading</h1>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - : term\r\n>   # heading",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<h1 id=\"heading\">heading</h1>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> : term\n> | a |",
+    "html": "<blockquote>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<table>\n<tr>\n<td>a</td>\n</tr>\n</table>\n</blockquote>\n"
+  },
+  {
+    "source": "> : term\r\n> | a |",
+    "html": "<blockquote>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<table>\n<tr>\n<td>a</td>\n</tr>\n</table>\n</blockquote>\n"
+  },
+  {
+    "source": "- : term\n  | a |",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<table>\n<tr>\n<td>a</td>\n</tr>\n</table>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- : term\r\n  | a |",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<table>\n<tr>\n<td>a</td>\n</tr>\n</table>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. : term\n   | a |",
+    "html": "<ol>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<table>\n<tr>\n<td>a</td>\n</tr>\n</table>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "1. : term\r\n   | a |",
+    "html": "<ol>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<table>\n<tr>\n<td>a</td>\n</tr>\n</table>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- - : term\n    | a |",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<table>\n<tr>\n<td>a</td>\n</tr>\n</table>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- - : term\r\n    | a |",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<table>\n<tr>\n<td>a</td>\n</tr>\n</table>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "::: box\n: term\n| a |\n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<table>\n<tr>\n<td>a</td>\n</tr>\n</table>\n</div>\n"
+  },
+  {
+    "source": "::: box\r\n: term\r\n| a |\r\n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<table>\n<tr>\n<td>a</td>\n</tr>\n</table>\n</div>\n"
+  },
+  {
+    "source": "> - : term\n>   | a |",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<table>\n<tr>\n<td>a</td>\n</tr>\n</table>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - : term\r\n>   | a |",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<table>\n<tr>\n<td>a</td>\n</tr>\n</table>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> : term\n> ```\n> code\n> ```",
+    "html": "<blockquote>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<pre><code>code\n</code></pre>\n</blockquote>\n"
+  },
+  {
+    "source": "> : term\r\n> ```\r\n> code\r\n> ```",
+    "html": "<blockquote>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<pre><code>code\r\n</code></pre>\n</blockquote>\n"
+  },
+  {
+    "source": "- : term\n  ```\n  code\n  ```",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<pre><code>code\n</code></pre>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- : term\r\n  ```\r\n  code\r\n  ```",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<pre><code>code\r\n</code></pre>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. : term\n   ```\n   code\n   ```",
+    "html": "<ol>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<pre><code>code\n</code></pre>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "1. : term\r\n   ```\r\n   code\r\n   ```",
+    "html": "<ol>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<pre><code>code\r\n</code></pre>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- - : term\n    ```\n    code\n    ```",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<pre><code>code\n</code></pre>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- - : term\r\n    ```\r\n    code\r\n    ```",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<pre><code>code\r\n</code></pre>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "::: box\n: term\n```\ncode\n```\n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<pre><code>code\n</code></pre>\n</div>\n"
+  },
+  {
+    "source": "::: box\r\n: term\r\n```\r\ncode\r\n```\r\n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<pre><code>code\r\n</code></pre>\n</div>\n"
+  },
+  {
+    "source": "> - : term\n>   ```\n>   code\n>   ```",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<pre><code>code\n</code></pre>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - : term\r\n>   ```\r\n>   code\r\n>   ```",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<pre><code>code\r\n</code></pre>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> {.x}\n> : term",
+    "html": "<blockquote>\n<dl class=\"x\">\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n</blockquote>\n"
+  },
+  {
+    "source": "> {.x}\r\n> : term",
+    "html": "<blockquote>\n<dl class=\"x\">\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n</blockquote>\n"
+  },
+  {
+    "source": "- {.x}\n  : term",
+    "html": "<ul>\n<li>\n<dl class=\"x\">\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- {.x}\r\n  : term",
+    "html": "<ul>\n<li>\n<dl class=\"x\">\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. {.x}\n   : term",
+    "html": "<ol>\n<li>\n<dl class=\"x\">\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "1. {.x}\r\n   : term",
+    "html": "<ol>\n<li>\n<dl class=\"x\">\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- - {.x}\n    : term",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n<dl class=\"x\">\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- - {.x}\r\n    : term",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n<dl class=\"x\">\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "::: box\n{.x}\n: term\n:::",
+    "html": "<div class=\"box\">\n<dl class=\"x\">\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n</div>\n"
+  },
+  {
+    "source": "::: box\r\n{.x}\r\n: term\r\n:::",
+    "html": "<div class=\"box\">\n<dl class=\"x\">\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n</div>\n"
+  },
+  {
+    "source": "> - {.x}\n>   : term",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl class=\"x\">\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - {.x}\r\n>   : term",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl class=\"x\">\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> para\n> : literal",
+    "html": "<blockquote>\n<p>para\n: literal</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> para\r\n> : literal",
+    "html": "<blockquote>\n<p>para\n: literal</p>\n</blockquote>\n"
+  },
+  {
+    "source": "- para\n  : literal",
+    "html": "<ul>\n<li>\npara\n: literal\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- para\r\n  : literal",
+    "html": "<ul>\n<li>\npara\n: literal\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. para\n   : literal",
+    "html": "<ol>\n<li>\npara\n: literal\n</li>\n</ol>\n"
+  },
+  {
+    "source": "1. para\r\n   : literal",
+    "html": "<ol>\n<li>\npara\n: literal\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- - para\n    : literal",
+    "html": "<ul>\n<li>\n<ul>\n<li>\npara\n: literal\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- - para\r\n    : literal",
+    "html": "<ul>\n<li>\n<ul>\n<li>\npara\n: literal\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "::: box\npara\n: literal\n:::",
+    "html": "<div class=\"box\">\n<p>para\n: literal</p>\n</div>\n"
+  },
+  {
+    "source": "::: box\r\npara\r\n: literal\r\n:::",
+    "html": "<div class=\"box\">\n<p>para\n: literal</p>\n</div>\n"
+  },
+  {
+    "source": "> - para\n>   : literal",
+    "html": "<blockquote>\n<ul>\n<li>\npara\n: literal\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - para\r\n>   : literal",
+    "html": "<blockquote>\n<ul>\n<li>\npara\n: literal\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> : `term >\n> word`",
+    "html": "<blockquote>\n<dl>\n<dt><code>term &gt;\nword</code></dt>\n<dd>\n</dd>\n</dl>\n</blockquote>\n"
+  },
+  {
+    "source": "> : `term >\r\n> word`",
+    "html": "<blockquote>\n<dl>\n<dt><code>term &gt;\nword</code></dt>\n<dd>\n</dd>\n</dl>\n</blockquote>\n"
+  },
+  {
+    "source": "- : `term >\n  word`",
+    "html": "<ul>\n<li>\n<dl>\n<dt><code>term &gt;\nword</code></dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- : `term >\r\n  word`",
+    "html": "<ul>\n<li>\n<dl>\n<dt><code>term &gt;\nword</code></dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. : `term >\n   word`",
+    "html": "<ol>\n<li>\n<dl>\n<dt><code>term &gt;\nword</code></dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "1. : `term >\r\n   word`",
+    "html": "<ol>\n<li>\n<dl>\n<dt><code>term &gt;\nword</code></dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- - : `term >\n    word`",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n<dl>\n<dt><code>term &gt;\nword</code></dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- - : `term >\r\n    word`",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n<dl>\n<dt><code>term &gt;\nword</code></dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "::: box\n: `term >\nword`\n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt><code>term &gt;\nword</code></dt>\n<dd>\n</dd>\n</dl>\n</div>\n"
+  },
+  {
+    "source": "::: box\r\n: `term >\r\nword`\r\n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt><code>term &gt;\nword</code></dt>\n<dd>\n</dd>\n</dl>\n</div>\n"
+  },
+  {
+    "source": "> - : `term >\n>   word`",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt><code>term &gt;\nword</code></dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - : `term >\r\n>   word`",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt><code>term &gt;\nword</code></dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> : [x](a\n> b)",
+    "html": "<blockquote>\n<dl>\n<dt>[x](a</dt>\n<dd>\n</dd>\n</dl>\n<ol start=\"2\" type=\"a\">\n<li>\n</li>\n</ol>\n</blockquote>\n"
+  },
+  {
+    "source": "> : [x](a\r\n> b)",
+    "html": "<blockquote>\n<dl>\n<dt>[x](a</dt>\n<dd>\n</dd>\n</dl>\n<ol start=\"2\" type=\"a\">\n<li>\n</li>\n</ol>\n</blockquote>\n"
+  },
+  {
+    "source": "- : [x](a\n  b)",
+    "html": "<ul>\n<li>\n<dl>\n<dt>[x](a</dt>\n<dd>\n</dd>\n</dl>\n<ol start=\"2\" type=\"a\">\n<li>\n</li>\n</ol>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- : [x](a\r\n  b)",
+    "html": "<ul>\n<li>\n<dl>\n<dt>[x](a</dt>\n<dd>\n</dd>\n</dl>\n<ol start=\"2\" type=\"a\">\n<li>\n</li>\n</ol>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. : [x](a\n   b)",
+    "html": "<ol>\n<li>\n<dl>\n<dt>[x](a</dt>\n<dd>\n</dd>\n</dl>\n<ol start=\"2\" type=\"a\">\n<li>\n</li>\n</ol>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "1. : [x](a\r\n   b)",
+    "html": "<ol>\n<li>\n<dl>\n<dt>[x](a</dt>\n<dd>\n</dd>\n</dl>\n<ol start=\"2\" type=\"a\">\n<li>\n</li>\n</ol>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- - : [x](a\n    b)",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n<dl>\n<dt>[x](a</dt>\n<dd>\n</dd>\n</dl>\n<ol start=\"2\" type=\"a\">\n<li>\n</li>\n</ol>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- - : [x](a\r\n    b)",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n<dl>\n<dt>[x](a</dt>\n<dd>\n</dd>\n</dl>\n<ol start=\"2\" type=\"a\">\n<li>\n</li>\n</ol>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "::: box\n: [x](a\nb)\n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt>[x](a</dt>\n<dd>\n</dd>\n</dl>\n<ol start=\"2\" type=\"a\">\n<li>\n</li>\n</ol>\n</div>\n"
+  },
+  {
+    "source": "::: box\r\n: [x](a\r\nb)\r\n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt>[x](a</dt>\n<dd>\n</dd>\n</dl>\n<ol start=\"2\" type=\"a\">\n<li>\n</li>\n</ol>\n</div>\n"
+  },
+  {
+    "source": "> - : [x](a\n>   b)",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>[x](a</dt>\n<dd>\n</dd>\n</dl>\n<ol start=\"2\" type=\"a\">\n<li>\n</li>\n</ol>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - : [x](a\r\n>   b)",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>[x](a</dt>\n<dd>\n</dd>\n</dl>\n<ol start=\"2\" type=\"a\">\n<li>\n</li>\n</ol>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> : term\n>  (a) text",
+    "html": "<blockquote>\n<dl>\n<dt>term\n(a) text</dt>\n<dd>\n</dd>\n</dl>\n</blockquote>\n"
+  },
+  {
+    "source": "> : term\r\n>  (a) text",
+    "html": "<blockquote>\n<dl>\n<dt>term\n(a) text</dt>\n<dd>\n</dd>\n</dl>\n</blockquote>\n"
+  },
+  {
+    "source": "- : term\n   (a) text",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term\n(a) text</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- : term\r\n   (a) text",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term\n(a) text</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. : term\n    (a) text",
+    "html": "<ol>\n<li>\n<dl>\n<dt>term\n(a) text</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "1. : term\r\n    (a) text",
+    "html": "<ol>\n<li>\n<dl>\n<dt>term\n(a) text</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- - : term\n     (a) text",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n<dl>\n<dt>term\n(a) text</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- - : term\r\n     (a) text",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n<dl>\n<dt>term\n(a) text</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "::: box\n: term\n (a) text\n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt>term\n(a) text</dt>\n<dd>\n</dd>\n</dl>\n</div>\n"
+  },
+  {
+    "source": "::: box\r\n: term\r\n (a) text\r\n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt>term\n(a) text</dt>\n<dd>\n</dd>\n</dl>\n</div>\n"
+  },
+  {
+    "source": "> - : term\n>    (a) text",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term\n(a) text</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - : term\r\n>    (a) text",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term\n(a) text</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> : term\n> \n> : second",
+    "html": "<blockquote>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n<dt>second</dt>\n<dd>\n</dd>\n</dl>\n</blockquote>\n"
+  },
+  {
+    "source": "> : term\r\n> \r\n> : second",
+    "html": "<blockquote>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n<dt>second</dt>\n<dd>\n</dd>\n</dl>\n</blockquote>\n"
+  },
+  {
+    "source": "- : term\n  \n  : second",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n<dt>second</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- : term\r\n  \r\n  : second",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n<dt>second</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "1. : term\n   \n   : second",
+    "html": "<ol>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n<dt>second</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "1. : term\r\n   \r\n   : second",
+    "html": "<ol>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n<dt>second</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- - : term\n    \n    : second",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n<dt>second</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- - : term\r\n    \r\n    : second",
+    "html": "<ul>\n<li>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n<dt>second</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "::: box\n: term\n\n: second\n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n<dt>second</dt>\n<dd>\n</dd>\n</dl>\n</div>\n"
+  },
+  {
+    "source": "::: box\r\n: term\r\n\r\n: second\r\n:::",
+    "html": "<div class=\"box\">\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n<dt>second</dt>\n<dd>\n</dd>\n</dl>\n</div>\n"
+  },
+  {
+    "source": "> - : term\n>   \n>   : second",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n<dt>second</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "> - : term\r\n>   \r\n>   : second",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n<dt>second</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- : term\n\n- other",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n</li>\n<li>\nother\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- : term\n\n  body\n\n- other",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<p>body</p>\n</li>\n<li>\n<p>other</p>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- : term\n  lazy\n\n  para",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term\nlazy</dt>\n<dd>\n</dd>\n</dl>\npara\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> : term\nlazy",
+    "html": "<blockquote>\n<dl>\n<dt>term\nlazy</dt>\n<dd>\n</dd>\n</dl>\n</blockquote>\n"
+  },
+  {
+    "source": "> : term\n\n> : other",
+    "html": "<blockquote>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n</blockquote>\n<blockquote>\n<dl>\n<dt>other</dt>\n<dd>\n</dd>\n</dl>\n</blockquote>\n"
+  },
+  {
+    "source": "para\n- : literal",
+    "html": "<p>para\n- : literal</p>\n"
+  },
+  {
+    "source": "```\n> : literal\n```",
+    "html": "<pre><code>&gt; : literal\n</code></pre>\n"
+  },
+  {
+    "source": "- : term\n- : other",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n</li>\n<li>\n<dl>\n<dt>other</dt>\n<dd>\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- : term\n  \n  para\n  \n  second",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<p>para</p>\n<p>second</p>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- : outer\n  \n   : inner\n  \n    body",
+    "html": "<ul>\n<li>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\nbody\n</dd>\n</dl>\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - : outer\n>   \n>    : inner\n>   \n>     body",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\nbody\n</dd>\n</dl>\n</dd>\n</dl>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- : outer\n  \n   : inner\n  \n    body\n  \n  outside",
+    "html": "<ul>\n<li>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\nbody\n</dd>\n</dl>\n</dd>\n</dl>\noutside\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - : outer\n>   \n>    : inner\n>   \n>     body\n>   \n>   outside",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\nbody\n</dd>\n</dl>\n</dd>\n</dl>\noutside\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- : outer\n  \n   : inner\n  \n    body\n  \n  outside\n  \n  second",
+    "html": "<ul>\n<li>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n</dd>\n</dl>\n<p>outside</p>\n<p>second</p>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - : outer\n>   \n>    : inner\n>   \n>     body\n>   \n>   outside\n>   \n>   second",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>outer</dt>\n<dd>\n<dl>\n<dt>inner</dt>\n<dd>\n<p>body</p>\n</dd>\n</dl>\n</dd>\n</dl>\n<p>outside</p>\n<p>second</p>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- : term\n  \n    first\n  \n    second\n  \n  outside",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nfirst\nsecond\n</dd>\n</dl>\noutside\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - : term\n>   \n>     first\n>   \n>     second\n>   \n>   outside",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nfirst\nsecond\n</dd>\n</dl>\noutside\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- : term\n  \n    first\n  \n    second\n  \n  outside\n  \n  second",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n<p>first</p>\n<p>second</p>\n</dd>\n</dl>\n<p>outside</p>\n<p>second</p>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - : term\n>   \n>     first\n>   \n>     second\n>   \n>   outside\n>   \n>   second",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n<p>first</p>\n<p>second</p>\n</dd>\n</dl>\n<p>outside</p>\n<p>second</p>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- : term\n  \n    first *\n  \n    second*",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nfirst *\nsecond*\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - : term\n>   \n>     first *\n>   \n>     second*",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nfirst *\nsecond*\n</dd>\n</dl>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- : term\n  \n    first *\n  \n    second*\n  \n  outside",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nfirst *\nsecond*\n</dd>\n</dl>\noutside\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - : term\n>   \n>     first *\n>   \n>     second*\n>   \n>   outside",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nfirst *\nsecond*\n</dd>\n</dl>\noutside\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- : term\n  \n    first *\n  \n    second*\n  \n  outside\n  \n  second",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n<p>first *</p>\n<p>second*</p>\n</dd>\n</dl>\n<p>outside</p>\n<p>second</p>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - : term\n>   \n>     first *\n>   \n>     second*\n>   \n>   outside\n>   \n>   second",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n<p>first *</p>\n<p>second*</p>\n</dd>\n</dl>\n<p>outside</p>\n<p>second</p>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- : term\n  \n    first\n  \n    {.x}\n    second",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nfirst\nsecond\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - : term\n>   \n>     first\n>   \n>     {.x}\n>     second",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nfirst\nsecond\n</dd>\n</dl>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- : term\n  \n    first\n  \n    {.x}\n    second\n  \n  outside",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nfirst\nsecond\n</dd>\n</dl>\noutside\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - : term\n>   \n>     first\n>   \n>     {.x}\n>     second\n>   \n>   outside",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nfirst\nsecond\n</dd>\n</dl>\noutside\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- : term\n  \n    first\n  \n    {.x}\n    second\n  \n  outside\n  \n  second",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n<p>first</p>\n<p class=\"x\">second</p>\n</dd>\n</dl>\n<p>outside</p>\n<p>second</p>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - : term\n>   \n>     first\n>   \n>     {.x}\n>     second\n>   \n>   outside\n>   \n>   second",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n<p>first</p>\n<p class=\"x\">second</p>\n</dd>\n</dl>\n<p>outside</p>\n<p>second</p>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- {#id}\n  : term\n  \n    first\n  \n    second",
+    "html": "<ul>\n<li>\n<dl id=\"id\">\n<dt>term</dt>\n<dd>\nfirst\nsecond\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - {#id}\n>   : term\n>   \n>     first\n>   \n>     second",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl id=\"id\">\n<dt>term</dt>\n<dd>\nfirst\nsecond\n</dd>\n</dl>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- {#id}\n  : term\n  \n    first\n  \n    second\n  \n  outside",
+    "html": "<ul>\n<li>\n<dl id=\"id\">\n<dt>term</dt>\n<dd>\nfirst\nsecond\n</dd>\n</dl>\noutside\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - {#id}\n>   : term\n>   \n>     first\n>   \n>     second\n>   \n>   outside",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl id=\"id\">\n<dt>term</dt>\n<dd>\nfirst\nsecond\n</dd>\n</dl>\noutside\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- {#id}\n  : term\n  \n    first\n  \n    second\n  \n  outside\n  \n  second",
+    "html": "<ul>\n<li>\n<dl id=\"id\">\n<dt>term</dt>\n<dd>\n<p>first</p>\n<p>second</p>\n</dd>\n</dl>\n<p>outside</p>\n<p>second</p>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - {#id}\n>   : term\n>   \n>     first\n>   \n>     second\n>   \n>   outside\n>   \n>   second",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl id=\"id\">\n<dt>term</dt>\n<dd>\n<p>first</p>\n<p>second</p>\n</dd>\n</dl>\n<p>outside</p>\n<p>second</p>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "😀\n\n- : term\n  \n    first\n  \n    second",
+    "html": "<p>😀</p>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nfirst\nsecond\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- : term\n  \n    first 😀\n  \n    日本語 second",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nfirst 😀\n日本語 second\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- : term\n  \n    [first][x]\n  \n    second\n\n[x]: /target",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n<a href=\"/target\">first</a>\nsecond\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- : term\n  \n    first[^n]\n  \n    second\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\nfirst<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a>\nsecond\n</dd>\n</dl>\n</li>\n</ul>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<p>note<a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "* : term\n\n  > q\n\n  second",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<blockquote>\n<p>q</p>\n</blockquote>\n<p>second</p>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - : term\n>\n>   > q\n>\n>   second",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<blockquote>\n<p>q</p>\n</blockquote>\n<p>second</p>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- : term\n\n  | a |\n\n  second",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n</dd>\n</dl>\n<table>\n<tr>\n<td>a</td>\n</tr>\n</table>\n<p>second</p>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- : t\n\n  ::: box\n  x\n  :::\n\n  after",
+    "html": "<ul>\n<li>\n<dl>\n<dt>t</dt>\n<dd>\n</dd>\n</dl>\n<div class=\"box\">\n<p>x</p>\n</div>\n<p>after</p>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- : term\n\n    a [x\n\n    ](u) b",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\na [x\n](u) b\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - : term\n> \n>     a [x\n> \n>     ](u) b",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\na [x\n](u) b\n</dd>\n</dl>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- : term\n\n    ![x\n\n    ](i.png)",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n![x\n](i.png)\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - : term\n> \n>     ![x\n> \n>     ](i.png)",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n![x\n](i.png)\n</dd>\n</dl>\n</li>\n</ul>\n</blockquote>\n"
+  },
+  {
+    "source": "- : term\n\n    [x\n\n    ][r]\n\n[r]: /u",
+    "html": "<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n[x\n][r]\n</dd>\n</dl>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> - : term\n> \n>     [x\n> \n>     ][r]\n\n[r]: /u",
+    "html": "<blockquote>\n<ul>\n<li>\n<dl>\n<dt>term</dt>\n<dd>\n[x\n][r]\n</dd>\n</dl>\n</li>\n</ul>\n</blockquote>\n"
+  }
+]
