@@ -10208,12 +10208,13 @@ fn exact_colon_fence_len(line: &str) -> Option<usize> {
 }
 
 /// Whether a paragraph is open after this colon-body line, for the §10 I4
-/// gate on an unclosed fence. Blank, colon, comment, heading and thematic-break
-/// lines leave none open.
+/// gate on an unclosed fence. Blank, colon, comment, block-attribute, heading and
+/// thematic-break lines leave none open.
 fn opens_colon_body_paragraph(line: &str) -> bool {
     let t = trim_ascii_end(trim_ascii_start(line));
     if t.is_empty()
         || t.starts_with("%%")
+        || (line.starts_with('{') && parse_standalone_attrs(line).is_some())
         || exact_colon_fence_len(t).is_some()
         || detect_container_open(t).is_some()
     {

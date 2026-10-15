@@ -40,6 +40,14 @@ const CASES: &[(&str, &str)] = &[
     ("::: note\n> quote\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <blockquote><p>quote\n<code>\ncode</code></p></blockquote>\n  <div>\n    <div>\n      <p>after <strong>b</strong></p>\n    </div>\n  </div>\n</aside>"),
     // an open item paragraph keeps the fence as text
     ("::: note\n- item\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <ul>\n    <li>item\n<code>\ncode</code></li>\n  </ul>\n  <div>\n    <div>\n      <p>after <strong>b</strong></p>\n    </div>\n  </div>\n</aside>"),
+    // corpus 606, after an attribute line
+    ("::: note\n{#x}\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <pre id=\"x\"><code>code\n::::\n</code></pre>\n</aside>\n<p>after <strong>b</strong></p>"),
+    // corpus 606-2, after an attribute line, nested
+    ("::: outer\n:::: inner\n{.c}\n```\ncode\n:::\n::::\n:::\nafter *b*\n", "<div class=\"outer\">\n  <div class=\"inner\">\n    <pre class=\"c\"><code>code\n:::\n</code></pre>\n  </div>\n</div>\n<p>after <strong>b</strong></p>"),
+    // corpus 606-3, after an attribute-only quote
+    ("::: note\n> {#x}\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <blockquote>\n\n  </blockquote>\n  <pre><code>code\n::::\n</code></pre>\n</aside>\n<p>after <strong>b</strong></p>"),
+    // corpus 606-4, after an attribute-only item
+    ("::: note\n- {#x}\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <ul>\n    <li></li>\n  </ul>\n  <pre><code>code\n::::\n</code></pre>\n</aside>\n<p>after <strong>b</strong></p>"),
     // an indented run is no fence
     ("::: note\n  ```\n  code\n  ::::\n:::\nafter\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <p><code>\ncode\n::::</code></p>\n</aside>\n<p>after</p>"),
 ];
