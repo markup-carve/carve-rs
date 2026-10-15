@@ -75,6 +75,22 @@ fn report_is_machine_readable_and_bounded() {
     assert!(report.contains("\"losses\":[]"));
 }
 
+#[test]
+fn table_span_report_uses_optional_numeric_fields() {
+    let path = std::env::temp_dir().join(format!("carve-table-loss-{}.json", std::process::id()));
+    let source = "|= System |= Limit | < |\n| A | Cold | 20 |\n| ^ | Hot | 10 |\n";
+    let output = run_input(
+        &["--markdown", "--report-losses", path.to_str().unwrap()],
+        source,
+    );
+    assert!(output.status.success());
+    let report = std::fs::read_to_string(&path).unwrap();
+    let _ = std::fs::remove_file(path);
+    assert!(report.contains("\"colspan\":2"));
+    assert!(report.contains("\"rowspan\":2"));
+    assert!(report.contains("\"totalLosses\":2"));
+}
+
 /// CARVE-P12-034 sends a dropped section attributes field to the PART 11 §1d
 /// channel, and CARVE-P11-046 keeps the render-loss flags out of it: a table
 /// carrying section attributes is no render loss, so `--strict-losses` passes it
@@ -120,6 +136,8 @@ fn allow_loss_offers_every_code_but_destination_denied() {
         "definition-list-flattened",
         "list-style-dropped",
         "list-delimiter-changed",
+        "table-span-flattened",
+        "table-header-row-demoted",
     ] {
         let accepted = run_input(&["--plain", "--allow-loss", code], "text\n");
         assert!(accepted.status.success(), "{code}: {:?}", accepted.stderr);
@@ -135,7 +153,7 @@ fn allow_loss_offers_every_code_but_destination_denied() {
         let stderr = String::from_utf8_lossy(&refused.stderr);
         assert_eq!(
             stderr.trim_end(),
-            "carve: --allow-loss expects raw-format-dropped, ruby-flattened, editorial-comment-flattened, carrier-attribute-dropped, definition-list-flattened, list-style-dropped or list-delimiter-changed"
+            "carve: --allow-loss expects raw-format-dropped, ruby-flattened, editorial-comment-flattened, carrier-attribute-dropped, definition-list-flattened, list-style-dropped, list-delimiter-changed, table-span-flattened or table-header-row-demoted"
         );
     }
     let help = run_input(&["--help"], "");

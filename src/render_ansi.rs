@@ -513,6 +513,7 @@ fn render_table(node: &Table, ctx: &mut AnsiContext) -> String {
             row.cells
                 .iter()
                 .map(|cell| {
+                    crate::render_loss::record_table_span(cell);
                     let content = match &cell.blocks {
                         Some(blocks) => trim_non_nbsp(&render_block_inlines(
                             &crate::render_plain::flatten_cell_block_inlines(blocks),
