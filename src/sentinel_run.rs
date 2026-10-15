@@ -1,33 +1,11 @@
-//! Picking a run of in-band markers a document cannot collide with.
+//! Allocate private-use markers absent from the document. Parser and writers
+//! use them temporarily, then remove them from output. Each caller keeps its
+//! own run so slot changes at one site do not renumber another. Fixed markers
+//! silently collide with authored text (carve#678). Ported from
+//! markup-carve/carve-js#1289.
 //!
-//! Three sites in this crate need one. The parser leaves a placeholder on the
-//! line a collected definition came from; the canonical writer carries verbatim
-//! whitespace, blank lines and an escaped space through whole-document
-//! normalization; the Markdown target carries PART 11 §8a and §8b's deferred
-//! escape decisions to the line it emits them on. All of them do it by putting a
-//! private-use character in the text and taking it back out later.
-//!
-//! A FIXED character cannot be told apart from an authored one, and the failure
-//! is silent in both directions: the writer eats the author's character, and the
-//! author's character makes the writer act on text it never wrote. That is the
-//! rule markup-carve/carve#678 settled, and it has now been re-broken once per
-//! new marker - markup-carve/carve-rs#607, #630, #1214 and #1216 - which is why
-//! the allocation lives here instead of being spelled again at each site.
-//!
-//! Escaping the authored occurrences cannot fix it: any escape needs a reserved
-//! character, and that character has the same collision. Picking characters the
-//! document does not use does fix it, and cannot fail in practice - the BMP
-//! private-use area alone has 6400 code points.
-//!
-//! WHAT IS SHARED IS THE ALLOCATOR, NOT THE RUN. Each site keeps its own run and
-//! its own slot meanings, because they have different lifetimes: the parser's
-//! spans one parse, the writer's one document's line assembly, the Markdown
-//! target's one document's line emission. A single shared run would tie them
-//! together for no gain and make a slot added at one site a renumbering at the
-//! others. Ported from markup-carve/carve-js#1289's `src/sentinel-run.ts`.
-//!
-//! The allocation pool retains its historical start at U+E001. Literal
-//! U+E000 is ordinary text; generated spaces are explicit AST nodes.
+//! U+E000 is ordinary text; generated spaces use explicit AST nodes. E001 is
+//! retained as the historical pool start.
 
 use std::collections::BTreeSet;
 
@@ -36,13 +14,7 @@ use std::collections::BTreeSet;
 pub(crate) const POOL_FIRST: u32 = 0xe001;
 pub(crate) const POOL_LAST: u32 = 0xf8ff;
 
-/// Which private-use code points `text` occupies, added to `occupied`.
-///
-/// A SET of code points rather than a search over the text joined: the answer is
-/// bounded by the private-use area (at most 6400 entries) however large the
-/// document is, and one pass builds it. Joining is a second full copy of the
-/// document, and scanning per candidate instead would be one full pass per
-/// rejected run.
+/// Add the private-use code points in `text` to `occupied`.
 pub(crate) fn collect_private_use(text: &str, occupied: &mut BTreeSet<u32>) {
     occupied.extend(
         text.chars()
@@ -65,24 +37,9 @@ fn run_from<const N: usize>(first: u32) -> [char; N] {
     })
 }
 
-/// `N` private-use code points, none of them in `occupied`.
-///
-/// The preferred run - `N` code points from `base` - is tried first, so the
-/// common case, a document with no private-use character at all, pays one scan
-/// that finds nothing and `N` set lookups.
-///
-/// When any preferred code point IS taken the search walks the pool ONE CODE
-/// POINT AT A TIME. Stepping a whole run at a time would step over the free
-/// window between two occupied code points whenever it is not a whole number of
-/// runs from the base, and report the area full while nearly all of it was free.
-/// Resuming PAST the occupied code point rather than one code point on is the
-/// same walk with the answers that cannot hold skipped: every run that begins in
-/// between contains the code point that just failed.
-///
-/// The last resort is the preferred run rather than a refusal: it needs the
-/// whole pool occupied, and a writer that gives up is worse than one that falls
-/// back to the behavior it had before the run was picked at all.
-/// markup-carve/carve-js#1289 lands in the same place.
+/// Pick an unused run, trying `base` first, then skipping past occupied points.
+/// A whole-run step would miss free gaps. Falls back to `base` if the pool is
+/// full so a writer can still render as it did before allocation.
 pub(crate) fn pick_sentinel_run<const N: usize>(occupied: &BTreeSet<u32>, base: u32) -> [char; N] {
     let taken = |from: u32| (0..N as u32).any(|offset| occupied.contains(&(from + offset)));
 
