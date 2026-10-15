@@ -925,6 +925,10 @@ fn run_migrate(args: &[String]) -> ExitCode {
             "--report" => {
                 i += 1;
                 report_path = args.get(i).map(String::as_str);
+                if report_path.is_none() {
+                    eprintln!("carve migrate: --report requires a value");
+                    return ExitCode::from(2);
+                }
             }
             "--directory" => {
                 i += 1;

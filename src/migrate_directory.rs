@@ -46,24 +46,53 @@ fn display(path: &Path) -> String {
         .replace(std::path::MAIN_SEPARATOR, "/")
 }
 
+fn future_path(path: &Path) -> Result<PathBuf, String> {
+    let mut ancestor = path.to_path_buf();
+    let mut missing = Vec::new();
+    loop {
+        match fs::symlink_metadata(&ancestor) {
+            Ok(_) => break,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                missing.push(
+                    ancestor
+                        .file_name()
+                        .ok_or("cannot resolve output path")?
+                        .to_os_string(),
+                );
+                ancestor = ancestor
+                    .parent()
+                    .ok_or("cannot resolve output path")?
+                    .to_path_buf();
+            }
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    let mut resolved = fs::canonicalize(ancestor).map_err(|e| e.to_string())?;
+    for name in missing.iter().rev() {
+        resolved.push(name);
+    }
+    Ok(resolved)
+}
+
 pub fn run(source: &str, output: &str, check_loss: bool) -> Result<u8, String> {
     let source =
         fs::canonicalize(source).map_err(|e| format!("cannot open source directory: {e}"))?;
     if !source.is_dir() {
         return Err("source is not a directory".into());
     }
-    let output = PathBuf::from(output);
-    if output.exists() {
-        return Err(format!("output already exists: {}", output.display()));
-    }
-    let lexical_output = if output.is_absolute() {
-        output.clone()
+    let requested = PathBuf::from(output);
+    let absolute_output = if requested.is_absolute() {
+        requested
     } else {
         std::env::current_dir()
             .map_err(|e| e.to_string())?
-            .join(&output)
+            .join(requested)
     };
-    if lexical_output.starts_with(&source) {
+    let output = future_path(&absolute_output)?;
+    if fs::symlink_metadata(&output).is_ok() {
+        return Err(format!("output already exists: {}", output.display()));
+    }
+    if output.starts_with(&source) {
         return Err("output must be outside the source directory".into());
     }
     let mut entries = Vec::new();
@@ -75,16 +104,8 @@ pub fn run(source: &str, output: &str, check_loss: bool) -> Result<u8, String> {
     {
         return Err("source contains no Markdown files".into());
     }
-    let parent = output
-        .parent()
-        .filter(|path| !path.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
+    let parent = output.parent().ok_or("output needs a directory name")?;
     fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    let parent = fs::canonicalize(parent).map_err(|e| e.to_string())?;
-    let output = parent.join(output.file_name().ok_or("output needs a directory name")?);
-    if output.starts_with(&source) {
-        return Err("output must be outside the source directory".into());
-    }
     let temporary = parent.join(format!(
         ".{}-{}-{}",
         output.file_name().unwrap().to_string_lossy(),
@@ -240,6 +261,27 @@ mod tests {
                 .contains("outside")
         );
         assert!(!source.join("new").exists());
+        let traversal = source.join("../source/new/out");
+        assert!(
+            run(source.to_str().unwrap(), traversal.to_str().unwrap(), false)
+                .unwrap_err()
+                .contains("outside")
+        );
+        assert!(!source.join("new").exists());
+        #[cfg(unix)]
+        {
+            let alias = root.join("alias");
+            std::os::unix::fs::symlink(&source, &alias).unwrap();
+            let through_alias = alias.join("new/out");
+            assert!(run(
+                source.to_str().unwrap(),
+                through_alias.to_str().unwrap(),
+                false
+            )
+            .unwrap_err()
+            .contains("outside"));
+            assert!(!source.join("new").exists());
+        }
         fs::write(source.join("migration-report.json"), "source").unwrap();
         let collision = root.join("collision");
         assert!(
