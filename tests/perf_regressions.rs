@@ -2389,3 +2389,46 @@ fn attached_id_heads_without_a_comment_closer_parse_bounded() {
         "attached ID heads without an editorial closer",
     );
 }
+
+#[test]
+fn a_ladder_of_items_holding_quotes_or_containers_parses_bounded() {
+    let _guard = perf_guard();
+    on_big_stack(|| {
+        // Every item re-parsed its whole body to ask whether it ends in an open
+        // paragraph, and each sub-list asked again inside that probe, so the
+        // body below each level was parsed twice: 40 levels took 44 s for the
+        // quote shape and 56 s for the container shape.
+        for shape in ["quote", "container"] {
+            let depth: usize = 60;
+            let mut source = String::new();
+            let mut indent = String::new();
+            let mut closers = Vec::new();
+            for i in 0..depth {
+                if i % 2 == 1 && shape == "quote" {
+                    let _ = write!(source, "{indent}> q{i}\n{indent}>\n");
+                    indent.push_str("> ");
+                } else if i % 2 == 1 {
+                    let fence = ":".repeat(3 + (depth - i).div_ceil(2));
+                    let _ = writeln!(source, "{indent}{fence} note");
+                    closers.push(format!("{indent}{fence}"));
+                } else {
+                    let _ = writeln!(source, "{indent}- item {i}");
+                    indent.push_str("  ");
+                }
+            }
+            while let Some(closer) = closers.pop() {
+                let _ = writeln!(source, "{closer}");
+            }
+
+            let start = Instant::now();
+            let html = carve::to_html(&source);
+
+            assert_eq!(html.matches("<li>").count(), depth / 2, "{shape}");
+            assert!(
+                start.elapsed().as_secs_f32() < MAX_SECS,
+                "a {depth}-level {shape} ladder took {:?}",
+                start.elapsed()
+            );
+        }
+    });
+}

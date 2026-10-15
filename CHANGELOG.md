@@ -14,6 +14,7 @@ which the published crate does not carry.
 ### Fixes
 
 - `FileSystemResolver` reads only regular files: a FIFO, device or directory inside the root is denied instead of opened, so an include naming a FIFO no longer blocks the caller (markup-carve/carve-js#3108).
+- A list whose items hold block quotes or containers no longer parses in exponential time: each item re-parsed its whole body to ask whether it ends in an open paragraph, so 40 levels took 44 s. The probe now runs only when a later line needs the answer.
 - A cross-reference `</#id>` is opaque to emphasis like an autolink: an earlier bare `/` no longer pairs with the slash inside it (markup-carve/carve-js#3100).
 - A `[` inside an autolink or cross-reference no longer opens a bracket run for emphasis pairing, and a braced closer inside a cross-reference no longer closes the span opened before it (markup-carve/carve-js#3105).
 - The `Wikilinks` extension no longer closes `[[` at a `]]` whose first bracket is escaped (`\]`), so `a [[x\]](u)` renders the core link instead of a wikilink (markup-carve/carve-js#3092).
