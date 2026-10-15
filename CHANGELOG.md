@@ -14,6 +14,7 @@ which the published crate does not carry.
 ### Fixes
 
 - `FileSystemResolver` reads only regular files: a FIFO, device or directory inside the root is denied instead of opened, so an include naming a FIFO no longer blocks the caller (markup-carve/carve-js#3108).
+- `render_carve` refuses a list nested past the parser's nesting cap with `RenderCarveError::SourceUnspellable` instead of writing source that reads back as a different document after a search that took up to minutes (CARVE-P9-078). The check counts container depth only, so a declared carve-out just under the cap is still written (markup-carve/carve-js#3107, markup-carve/carve-js#3109).
 - A cross-reference `</#id>` is opaque to emphasis like an autolink: an earlier bare `/` no longer pairs with the slash inside it (markup-carve/carve-js#3100).
 - A `[` inside an autolink or cross-reference no longer opens a bracket run for emphasis pairing, and a braced closer inside a cross-reference no longer closes the span opened before it (markup-carve/carve-js#3105).
 - The `Wikilinks` extension no longer closes `[[` at a `]]` whose first bracket is escaped (`\]`), so `a [[x\]](u)` renders the core link instead of a wikilink (markup-carve/carve-js#3092).

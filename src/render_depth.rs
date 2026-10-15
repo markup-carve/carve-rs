@@ -208,6 +208,34 @@ fn inspect<const HTML: bool>(doc: &Document) -> (bool, bool) {
     (false, preparation)
 }
 
+/// Whether some block or inline path nests as deep as the parser's cap.
+///
+/// Counted in the same units as [`inspect`]: a block a container holds is one
+/// level deeper, and a list level is charged once, to the item body, as the
+/// parser charges it.
+pub(crate) fn reaches_nesting_cap(doc: &Document) -> bool {
+    let cap = crate::parse::MAX_NESTING_DEPTH;
+    let mut blocks: Vec<(&BlockNode, usize)> = Vec::new();
+    let mut inlines: Vec<(&InlineNode, usize)> = Vec::new();
+    push_blocks(&mut blocks, &doc.children, 0);
+    for body in doc.footnote_defs.values() {
+        push_blocks(&mut blocks, body, 0);
+    }
+    while let Some((block, depth)) = blocks.pop() {
+        if depth >= cap {
+            return true;
+        }
+        push_block_children(block, depth, &mut blocks, &mut inlines);
+        while let Some((inline, depth)) = inlines.pop() {
+            if depth >= cap {
+                return true;
+            }
+            push_inline_children(inline, depth, &mut inlines);
+        }
+    }
+    false
+}
+
 fn push_blocks<'a>(out: &mut Vec<(&'a BlockNode, usize)>, children: &'a [BlockNode], depth: usize) {
     out.extend(children.iter().map(|child| (child, depth)));
 }
