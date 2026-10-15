@@ -43,7 +43,7 @@ fs = []
 # is BUILD METADATA, which a version requirement ignores, so `"0.39"` matches
 # it. Spelling it `0.39.0-unofficial` would ask for a PRE-RELEASE instead,
 # which is a different version space and not what is published.
-html5ever = "0.39"
+html5ever = "0.40"
 markup5ever_rcdom = "0.39"
 memchr = "2.7"
 smallvec = "1.15"
