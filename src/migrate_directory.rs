@@ -383,7 +383,44 @@ fn markdown_stem(name: &str) -> Option<&str> {
     })
 }
 
-fn collect(root: &Path, dir: &Path, entries: &mut Vec<(PathBuf, Kind)>) -> Result<(), String> {
+/// The file the walk saw, as (device, inode). A read compares it with what it
+/// opened, so an entry swapped for a symlink or another file in between is
+/// refused instead of followed.
+type Identity = Option<(u64, u64)>;
+
+#[cfg(unix)]
+fn identity(metadata: &fs::Metadata) -> Identity {
+    use std::os::unix::fs::MetadataExt;
+    Some((metadata.dev(), metadata.ino()))
+}
+
+#[cfg(not(unix))]
+fn identity(_: &fs::Metadata) -> Identity {
+    None
+}
+
+/// Open an entry for reading only if it is still the regular file the walk saw.
+fn open_unchanged(path: &Path, seen: Identity, name: &str) -> Result<fs::File, String> {
+    let changed = || format!("changed during migration: {name}");
+    let before = fs::symlink_metadata(path).map_err(|_| changed())?;
+    if !before.is_file() || identity(&before) != seen {
+        return Err(changed());
+    }
+    let file = fs::File::open(path).map_err(|e| format!("cannot read {name}: {e}"))?;
+    let opened = file
+        .metadata()
+        .map_err(|e| format!("cannot read {name}: {e}"))?;
+    if !opened.is_file() || identity(&opened) != seen {
+        return Err(changed());
+    }
+    Ok(file)
+}
+
+fn collect(
+    root: &Path,
+    dir: &Path,
+    entries: &mut Vec<(PathBuf, Kind, Identity)>,
+) -> Result<(), String> {
     let mut children = fs::read_dir(dir)
         .map_err(|e| e.to_string())?
         .map(|entry| entry.map_err(|e| e.to_string()))
@@ -391,7 +428,8 @@ fn collect(root: &Path, dir: &Path, entries: &mut Vec<(PathBuf, Kind)>) -> Resul
     children.sort_by_key(|entry| entry.file_name());
     for entry in children {
         let path = entry.path();
-        let kind = entry.file_type().map_err(|e| e.to_string())?;
+        let metadata = entry.metadata().map_err(|e| e.to_string())?;
+        let kind = metadata.file_type();
         if kind.is_dir() {
             collect(root, &path, entries)?;
         } else {
@@ -407,7 +445,7 @@ fn collect(root: &Path, dir: &Path, entries: &mut Vec<(PathBuf, Kind)>) -> Resul
             } else {
                 Kind::Asset
             };
-            entries.push((relative, classification));
+            entries.push((relative, classification, identity(&metadata)));
         }
     }
     Ok(())
@@ -469,10 +507,10 @@ pub fn run(source: &str, output: &str, check_loss: bool) -> Result<u8, String> {
     }
     let mut entries = Vec::new();
     collect(&source, &source, &mut entries)?;
-    entries.sort_by_key(|(path, _)| display(path).into_bytes());
+    entries.sort_by_key(|(path, _, _)| display(path).into_bytes());
     if !entries
         .iter()
-        .any(|(_, kind)| matches!(kind, Kind::Markdown))
+        .any(|(_, kind, _)| matches!(kind, Kind::Markdown))
     {
         return Err("source contains no Markdown files".into());
     }
@@ -494,7 +532,7 @@ pub fn run(source: &str, output: &str, check_loss: bool) -> Result<u8, String> {
         let mut skipped = Vec::<String>::new();
         let mut review = Vec::<String>::new();
         let mut destinations = HashSet::from(["migration-report.json".to_string()]);
-        for (relative, kind) in &entries {
+        for (relative, kind, seen) in &entries {
             let source_name = display(relative);
             if matches!(kind, Kind::Skipped) {
                 skipped.push(source_name);
@@ -519,11 +557,18 @@ pub fn run(source: &str, output: &str, check_loss: bool) -> Result<u8, String> {
             let target = temporary.join(&destination);
             fs::create_dir_all(target.parent().ok_or("invalid output path")?)
                 .map_err(|e| e.to_string())?;
+            let mut input = open_unchanged(&source.join(relative), *seen, &source_name)?;
             if matches!(kind, Kind::Asset) {
-                fs::copy(source.join(relative), target).map_err(|e| e.to_string())?;
+                let permissions = input.metadata().map_err(|e| e.to_string())?.permissions();
+                let mut copy = fs::File::create(&target).map_err(|e| e.to_string())?;
+                std::io::copy(&mut input, &mut copy)
+                    .map_err(|e| format!("cannot read {source_name}: {e}"))?;
+                fs::set_permissions(&target, permissions).map_err(|e| e.to_string())?;
                 assets.push(source_name);
             } else {
-                let bytes = fs::read(source.join(relative)).map_err(|e| e.to_string())?;
+                let mut bytes = Vec::new();
+                std::io::Read::read_to_end(&mut input, &mut bytes)
+                    .map_err(|e| format!("cannot read {source_name}: {e}"))?;
                 // CARVE-P0-023: a document's ill-formed bytes are replaced, as
                 // single-file migration does.
                 let text = String::from_utf8_lossy(&bytes);
@@ -564,13 +609,17 @@ pub fn run(source: &str, output: &str, check_loss: bool) -> Result<u8, String> {
             ),
         )
         .map_err(|e| e.to_string())?;
-        if output.exists() {
-            return Err(format!(
-                "output appeared during conversion: {}",
-                output.display()
-            ));
+        // Claim the output with an exclusive mkdir: `rename` replaces an
+        // empty directory on POSIX, so one created after the existence check
+        // would otherwise be replaced silently.
+        fs::create_dir(&output)
+            .map_err(|_| format!("output appeared during conversion: {}", output.display()))?;
+        #[cfg(not(unix))]
+        fs::remove_dir(&output).map_err(|e| e.to_string())?;
+        if let Err(error) = fs::rename(&temporary, &output) {
+            let _ = fs::remove_dir(&output);
+            return Err(error.to_string());
         }
-        fs::rename(&temporary, &output).map_err(|e| e.to_string())?;
         Ok(counts)
     })();
     if result.is_err() {
@@ -689,6 +738,33 @@ mod tests {
             0
         );
         assert!(output.join(".crv").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_entry_swapped_for_a_symlink_after_the_walk_is_refused() {
+        let root = std::env::temp_dir().join(format!(
+            "carve-swap-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let entry = root.join("a.md");
+        let outside = root.join("secret.txt");
+        fs::write(&entry, "# A\n").unwrap();
+        fs::write(&outside, "secret").unwrap();
+        let seen = super::identity(&fs::symlink_metadata(&entry).unwrap());
+        assert!(super::open_unchanged(&entry, seen, "a.md").is_ok());
+        fs::remove_file(&entry).unwrap();
+        std::os::unix::fs::symlink(&outside, &entry).unwrap();
+        assert_eq!(
+            super::open_unchanged(&entry, seen, "a.md").unwrap_err(),
+            "changed during migration: a.md"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
