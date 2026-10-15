@@ -282,12 +282,18 @@ fn main() -> ExitCode {
                 Some("table-header-row-demoted") => {
                     allowed_render_losses.push("table-header-row-demoted")
                 }
+                Some("table-header-row-hoisted") => {
+                    allowed_render_losses.push("table-header-row-hoisted")
+                }
+                Some("table-header-cell-demoted") => {
+                    allowed_render_losses.push("table-header-cell-demoted")
+                }
                 Some("list-style-dropped") => allowed_render_losses.push("list-style-dropped"),
                 Some("list-delimiter-changed") => {
                     allowed_render_losses.push("list-delimiter-changed")
                 }
                 _ => {
-                    eprintln!("carve: --allow-loss expects raw-format-dropped, ruby-flattened, editorial-comment-flattened, carrier-attribute-dropped, definition-list-flattened, list-style-dropped, list-delimiter-changed, table-span-flattened or table-header-row-demoted");
+                    eprintln!("carve: --allow-loss expects raw-format-dropped, ruby-flattened, editorial-comment-flattened, carrier-attribute-dropped, definition-list-flattened, list-style-dropped, list-delimiter-changed, table-span-flattened, table-header-row-demoted, table-header-row-hoisted or table-header-cell-demoted");
                     return ExitCode::from(2);
                 }
             },
@@ -1772,7 +1778,8 @@ fn print_usage() {
          editorial-comment-flattened, carrier-attribute-dropped\n                              \
          definition-list-flattened, list-style-dropped,\n                              \
          list-delimiter-changed, table-span-flattened,\n                              \
-         or table-header-row-demoted\n  \
+         table-header-row-demoted, table-header-row-hoisted\n                              \
+         or table-header-cell-demoted\n  \
          --max-render-losses N       bound detailed losses (default 100)\n\n\
          --include-root DIR          containment root for {{ path }} includes.\n                              \
          Defaults to the input file's directory; pass this to widen\n                              \

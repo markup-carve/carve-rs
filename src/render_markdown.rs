@@ -1599,20 +1599,25 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
             }
         }
     };
-    for row in &node.rows {
-        if header.is_some()
-            && row
-                .cells
-                .iter()
-                .all(|cell| cell.header || cell.span.is_some())
-            && row.cells.iter().any(|cell| cell.header)
-        {
+    for (row_index, row) in node.rows.iter().enumerate() {
+        let is_header = row
+            .cells
+            .iter()
+            .all(|cell| cell.header || cell.span.is_some())
+            && row.cells.iter().any(|cell| cell.header);
+        if is_header && header.is_some() {
             crate::render_loss::record_table_header_row(row.pos.as_ref());
+        } else if is_header && row_index > 0 {
+            // CARVE-P11-031 writes the first header row above the body rows before it.
+            crate::render_loss::record_table_header_row_hoisted(row.pos.as_ref());
         }
         let cells = row
             .cells
             .iter()
             .map(|cell| {
+                if !is_header && cell.header && cell.span.is_none() {
+                    crate::render_loss::record_table_header_cell(cell.pos.as_ref());
+                }
                 crate::render_loss::record_table_span(cell);
                 let inlines = match &cell.blocks {
                     Some(blocks) => {
@@ -1635,12 +1640,7 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
             .collect::<Vec<_>>();
         let rendered = format!("| {} |", cells.join(" | "));
         // A span placeholder belongs to the cell that covers it (PART 11 §10n).
-        if row
-            .cells
-            .iter()
-            .all(|cell| cell.header || cell.span.is_some())
-            && row.cells.iter().any(|cell| cell.header)
-        {
+        if is_header {
             if header.is_none() {
                 aligns.clear();
             }
