@@ -2213,3 +2213,5 @@ mod djot_definition_container_ownership;
 
 #[path = "../djot_opaque_reference_targets.rs"]
 mod djot_opaque_reference_targets;
+#[path = "../markdown_reference_definition_with_wrapped_fields.rs"]
+mod markdown_reference_definition_with_wrapped_fields;

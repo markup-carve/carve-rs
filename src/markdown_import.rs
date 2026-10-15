@@ -414,7 +414,15 @@ fn normalize_imported_reference_links(document: &mut Document) {
                                 matches!(link.children.as_slice(), [InlineNode::Text(child)] if child.value == text)
                             });
                             let explicit = raw.contains("][") || raw.ends_with("[]");
-                            if !canonical.contains('|')
+                            // The Carve writer has no spelling for a definition line
+                            // whose fields span lines, so its uses are inlined.
+                            let spellable = !definition.href.chars().any(char::is_whitespace)
+                                && !definition
+                                    .title
+                                    .as_deref()
+                                    .is_some_and(|title| title.contains(['\r', '\n']));
+                            if spellable
+                                && !canonical.contains('|')
                                 && !text.is_some_and(|text| text.contains('|'))
                                 && link.href == definition.href
                                 && link.title == definition.title
