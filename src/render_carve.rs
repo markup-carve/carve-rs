@@ -351,6 +351,8 @@ fn render_carve_unguarded(session: &RenderSession, doc: &Document) -> String {
         }
     }
     session.sentinels.with(|s| *s.borrow_mut() = next);
+    // The retry decides whether the final spelling is writable.
+    crate::render_carve_error::clear_unspellable();
     render_carve_once(session, doc)
 }
 
@@ -366,6 +368,10 @@ fn render_carve_once(session: &RenderSession, doc: &Document) -> String {
     let minimal = render_with_escapes(session, doc, EscapeMode::Minimal);
     let conservative = render_with_escapes(session, doc, EscapeMode::Conservative);
     if minimal == conservative {
+        // Equal spellings can still lose an over-cap list marker on readback.
+        if crate::render_depth::reaches_list_nesting_cap(doc) {
+            refuse_unless_it_reads_back(comparable_tree(&minimal).as_ref(), doc);
+        }
         return minimal;
     }
     // The minimal form that re-parses to THIS document is the document's
@@ -390,6 +396,16 @@ fn render_carve_once(session: &RenderSession, doc: &Document) -> String {
     // narrowing below. Parsing it in each made every narrowed document pay a
     // second full parse of its own output for an answer it already had.
     let conservative_tree = comparable_tree(&conservative);
+    // Every state the narrowing visits is verified against `conservative_tree`,
+    // so when that is not the document's tree no state reads back either. Past
+    // the cap that is the refuse arm of CARVE-P9-078, taken before a search whose
+    // every probe re-parses the whole deep document. The equal-forms return
+    // checks readback separately above.
+    if crate::render_depth::reaches_list_nesting_cap(doc)
+        && !refuse_unless_it_reads_back(conservative_tree.as_ref(), doc)
+    {
+        return conservative;
+    }
     if escaping_is_redundant(minimal_tree.as_ref(), conservative_tree.as_ref()) {
         return minimal;
     }
@@ -398,6 +414,20 @@ fn render_carve_once(session: &RenderSession, doc: &Document) -> String {
     // 11 §2b says how far that fallback actually reaches: the smallest unit
     // whose minimal form fails, and §2's own test everywhere else.
     narrow_escalation(session, doc, conservative, conservative_tree)
+}
+
+/// CARVE-P9-078: past the nesting cap the writer refuses rather than emit source
+/// that reads back as a different document. Records the refusal and returns
+/// false when `output_tree` is not the document's tree.
+fn refuse_unless_it_reads_back(output_tree: Option<&Document>, doc: &Document) -> bool {
+    if output_tree.is_some_and(|tree| *tree == comparable_document(doc.clone())) {
+        return true;
+    }
+    crate::render_carve_error::record_unspellable(
+        "document",
+        "content nested past the parser nesting limit of 200 has no spelling that reads back",
+    );
+    false
 }
 
 /// The conservative form of the units that need it, and the minimal form of
@@ -7828,6 +7858,108 @@ mod tests {
             "<p><span class=b>[</span><a href=/x>edit</a><span class=b>]</span> a [x](y) b.</p>";
         let (probes, _) = search_cost(&paragraph.repeat(64));
         assert_eq!(probes, 0);
+    }
+}
+
+/// Past the cap an item's over-cap marker line becomes paragraph text that still
+/// splits the item's paragraphs, and the `+` the writer spells that split with is
+/// flattened as well, so no source reads back (CARVE-P9-078). The writer used to
+/// return source that read back as a different tree, after a narrowing search
+/// whose every probe re-parsed the whole document (markup-carve/carve-js#3107).
+#[cfg(test)]
+mod nesting_cap_tests {
+    use super::tests::PARSED_BYTES;
+    use super::{comparable_document, comparable_tree, render_carve};
+    use crate::parse::MAX_NESTING_DEPTH;
+    use crate::RenderCarveError;
+
+    /// `depth` container levels, each holding one item line.
+    fn nested(shape: &str, depth: usize) -> String {
+        let mut out = String::new();
+        let mut indent = String::new();
+        for i in 0..depth {
+            let marker = if shape == "ordered" || (shape == "mixed" && i % 2 == 1) {
+                "1. "
+            } else {
+                "- "
+            };
+            out += &format!("{indent}{marker}item {i}\n");
+            indent += &" ".repeat(marker.len());
+        }
+        out
+    }
+
+    /// Deep parses and renders recurse once per level; a debug build's frames
+    /// need more than the default test-thread stack.
+    fn on_big_stack(f: impl FnOnce() + Send + 'static) {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(f)
+            .expect("spawn worker")
+            .join()
+            .expect("worker must return");
+    }
+
+    fn reads_back(source: &str) -> bool {
+        let doc = crate::parse::parse(source);
+        let written = render_carve(&doc).expect("written");
+        comparable_tree(&written) == Some(comparable_document(doc))
+    }
+
+    fn refused(source: &str) -> bool {
+        match render_carve(&crate::parse::parse(source)) {
+            Err(RenderCarveError::SourceUnspellable(error)) => {
+                error.reason().contains("nesting limit of 200")
+            }
+            _ => false,
+        }
+    }
+
+    #[test]
+    fn the_reason_names_the_cap() {
+        assert_eq!(
+            MAX_NESTING_DEPTH, 200,
+            "the refusal's reason spells the cap"
+        );
+    }
+
+    #[test]
+    fn ladders_at_the_cap_read_back() {
+        on_big_stack(|| {
+            for shape in ["bullet", "mixed"] {
+                assert!(reads_back(&nested(shape, MAX_NESTING_DEPTH)), "{shape}");
+            }
+        });
+    }
+
+    #[test]
+    fn list_ladders_past_the_cap_are_refused() {
+        on_big_stack(|| {
+            for (shape, depth) in [
+                ("bullet", MAX_NESTING_DEPTH + 1),
+                ("ordered", MAX_NESTING_DEPTH + 1),
+                ("mixed", MAX_NESTING_DEPTH + 30),
+            ] {
+                assert!(refused(&nested(shape, depth)), "{shape} {depth}");
+            }
+        });
+    }
+
+    /// COUNTED, so it reproduces under any load: the decision past the cap
+    /// re-parses the two forms and nothing else. The search it replaced
+    /// re-parsed the document dozens of times.
+    #[test]
+    fn the_decision_past_the_cap_reparses_two_documents() {
+        on_big_stack(|| {
+            for shape in ["bullet", "mixed"] {
+                let source = nested(shape, MAX_NESTING_DEPTH + 30);
+                let doc = crate::parse::parse(&source);
+                PARSED_BYTES.with(|n| n.set(0));
+                let _ = render_carve(&doc);
+                let reparsed = PARSED_BYTES.with(std::cell::Cell::get) as f64 / source.len() as f64;
+                assert!(reparsed < 4.0, "{shape}: {reparsed:.1} documents re-parsed");
+            }
+        });
     }
 }
 

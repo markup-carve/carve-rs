@@ -208,6 +208,29 @@ fn inspect<const HTML: bool>(doc: &Document) -> (bool, bool) {
     (false, preparation)
 }
 
+/// Whether a list item reaches the parser's nesting cap.
+///
+/// This gate is specific to the list writer's over-cap marker handling. Other
+/// deep containers can remain writable even when their AST exceeds the parser's
+/// cap, as happens with imported Markdown block quotes.
+pub(crate) fn reaches_list_nesting_cap(doc: &Document) -> bool {
+    let cap = crate::parse::MAX_NESTING_DEPTH;
+    let mut blocks: Vec<(&BlockNode, usize)> = Vec::new();
+    let mut inlines: Vec<(&InlineNode, usize)> = Vec::new();
+    push_blocks(&mut blocks, &doc.children, 0);
+    for body in doc.footnote_defs.values() {
+        push_blocks(&mut blocks, body, 0);
+    }
+    while let Some((block, depth)) = blocks.pop() {
+        if matches!(block, BlockNode::List(_)) && depth + 1 >= cap {
+            return true;
+        }
+        push_block_children(block, depth, &mut blocks, &mut inlines);
+        inlines.clear();
+    }
+    false
+}
+
 fn push_blocks<'a>(out: &mut Vec<(&'a BlockNode, usize)>, children: &'a [BlockNode], depth: usize) {
     out.extend(children.iter().map(|child| (child, depth)));
 }
