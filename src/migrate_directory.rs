@@ -11,6 +11,18 @@ enum Kind {
     Skipped,
 }
 
+/// The name without its `.md` or `.markdown` extension, matched ASCII
+/// case-insensitively: a Unicode lowercase fold (the Kelvin sign is `k`) would
+/// accept a name whose byte length no longer matches the extension.
+fn markdown_stem(name: &str) -> Option<&str> {
+    [".markdown", ".md"].into_iter().find_map(|extension| {
+        let cut = name.len().checked_sub(extension.len())?;
+        name.as_bytes()[cut..]
+            .eq_ignore_ascii_case(extension.as_bytes())
+            .then(|| &name[..cut])
+    })
+}
+
 fn collect(root: &Path, dir: &Path, entries: &mut Vec<(PathBuf, Kind)>) -> Result<(), String> {
     let mut children = fs::read_dir(dir)
         .map_err(|e| e.to_string())?
@@ -27,10 +39,10 @@ fn collect(root: &Path, dir: &Path, entries: &mut Vec<(PathBuf, Kind)>) -> Resul
                 .strip_prefix(root)
                 .map_err(|e| e.to_string())?
                 .to_path_buf();
-            let name = entry.file_name().to_string_lossy().to_lowercase();
+            let name = entry.file_name();
             let classification = if !kind.is_file() {
                 Kind::Skipped
-            } else if name.ends_with(".md") || name.ends_with(".markdown") {
+            } else if markdown_stem(&name.to_string_lossy()).is_some() {
                 Kind::Markdown
             } else {
                 Kind::Asset
@@ -133,12 +145,8 @@ pub fn run(source: &str, output: &str, check_loss: bool) -> Result<u8, String> {
                     .file_name()
                     .and_then(|name| name.to_str())
                     .ok_or("Markdown filename is not UTF-8")?;
-                let suffix = if name.to_lowercase().ends_with(".markdown") {
-                    9
-                } else {
-                    3
-                };
-                relative.with_file_name(format!("{}.crv", &name[..name.len() - suffix]))
+                let stem = markdown_stem(name).ok_or("invalid Markdown filename")?;
+                relative.with_file_name(format!("{stem}.crv"))
             } else {
                 relative.clone()
             };
@@ -156,8 +164,9 @@ pub fn run(source: &str, output: &str, check_loss: bool) -> Result<u8, String> {
                 assets.push(source_name);
             } else {
                 let bytes = fs::read(source.join(relative)).map_err(|e| e.to_string())?;
-                let text = String::from_utf8(bytes)
-                    .map_err(|_| format!("invalid UTF-8 in {source_name}"))?;
+                // CARVE-P0-023: a document's ill-formed bytes are replaced, as
+                // single-file migration does.
+                let text = String::from_utf8_lossy(&bytes);
                 let migrated = carve::try_migrate_markdown(&text)
                     .map_err(|e| format!("{source_name}: {e}"))?;
                 fs::write(target, migrated.value).map_err(|e| e.to_string())?;
@@ -312,6 +321,36 @@ mod tests {
             0
         );
         assert!(output.join(".crv").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn ill_formed_bytes_are_replaced_and_extensions_match_ascii_only() {
+        let root = std::env::temp_dir().join(format!(
+            "carve-ill-formed-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let source = root.join("source");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("bad.MD"), b"# before\xffafter\n").unwrap();
+        // U+212A KELVIN SIGN lowercases to `k`; this name is an asset.
+        fs::write(source.join("x.mar\u{212A}down"), "asset").unwrap();
+        let output = root.join("output");
+        assert_eq!(
+            run(source.to_str().unwrap(), output.to_str().unwrap(), false).unwrap(),
+            0
+        );
+        assert!(fs::read_to_string(output.join("bad.crv"))
+            .unwrap()
+            .contains("before\u{fffd}after"));
+        assert_eq!(
+            fs::read_to_string(output.join("x.mar\u{212A}down")).unwrap(),
+            "asset"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }

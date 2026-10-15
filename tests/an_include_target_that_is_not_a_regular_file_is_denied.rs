@@ -80,3 +80,14 @@ fn a_regular_file_still_resolves() {
     );
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn an_ill_formed_utf8_file_is_denied_not_replaced() {
+    let root = temp_root("ill-formed");
+    std::fs::write(root.join("child.crv"), b"a\xffb\n").unwrap();
+    assert_eq!(
+        resolve(root.clone(), "child.crv", None),
+        Err(IncludeDenial::Denied)
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}

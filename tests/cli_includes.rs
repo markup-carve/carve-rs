@@ -300,17 +300,17 @@ fn included_content_is_subject_to_the_same_sanitization_as_typed_content() {
 }
 
 #[test]
-fn ill_formed_included_bytes_are_replaced_before_parsing() {
+fn ill_formed_included_bytes_are_refused_not_replaced() {
+    // CARVE-P0-023 replaces ill-formed bytes in the document only; an included
+    // file holding them is non-text and refused under PART 6 I7.
     let tmp = TempDir::new("ill-formed");
-    let main = tmp.write("main.crv", "{{ child.crv }}\n");
+    let main = tmp.write("main.crv", "Before.\n\n{{ child.crv }}\n");
     fs::write(tmp.path().join("child.crv"), b"a\xed\xa0\x80b\n").unwrap();
     let out = run(&[main.to_str().unwrap()], None);
     assert!(out.success, "{}", out.stderr);
-    assert!(
-        out.stdout.contains("a\u{fffd}\u{fffd}\u{fffd}b"),
-        "{}",
-        out.stdout
-    );
+    assert!(!out.stdout.contains('\u{fffd}'), "{}", out.stdout);
+    assert!(out.stdout.contains("{{ child.crv }}"), "{}", out.stdout);
+    assert!(out.stderr.contains("include-unresolved"), "{}", out.stderr);
 }
 
 // ---------------------------------------------------------------------------

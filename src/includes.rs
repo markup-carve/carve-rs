@@ -3223,7 +3223,9 @@ impl IncludeResolver for FileSystemResolver {
         // between the two syscalls, which is why this resolver is for trusted
         // trees only.
         let bytes = std::fs::read(&real).map_err(|_| IncludeDenial::Denied)?;
-        let source = String::from_utf8_lossy(&bytes).into_owned();
+        // PART 6 I7: ill-formed bytes in an INCLUDED file are non-text and
+        // refused; only the document itself is replaced (CARVE-P0-023).
+        let source = String::from_utf8(bytes).map_err(|_| IncludeDenial::Denied)?;
         Ok(IncludeResolved::with_id(
             source,
             real.to_string_lossy().into_owned(),
