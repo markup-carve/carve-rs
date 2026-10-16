@@ -16747,7 +16747,7 @@ fn label_without_trailing_comment<'a>(label: &'a str, options: &Options<'_>) -> 
 /// THE CLOSER IS LOOKED FOR AHEAD, not on the next line: `- x` / `%%%` / `y` /
 /// `%%%` / `z` opens a real block that hides `y` and ends the item.
 fn flush_comment_keeps_the_item_open(cur: &mut LineCursor<'_>, line: &str) -> bool {
-    if is_flush_line_comment(line) {
+    if is_flush_line_comment(line) && !is_definition_placeholder(line) {
         return true;
     }
     detect_comment_fence_line(line)
@@ -16762,7 +16762,9 @@ fn flush_comment_keeps_the_item_open(cur: &mut LineCursor<'_>, line: &str) -> bo
 /// (markup-carve/carve-rs#1516).
 fn is_line_comment_any_column(line: &str) -> bool {
     let trimmed = trim_ascii_start(line);
-    trimmed.starts_with("%%") && detect_comment_fence_line(trimmed).is_none()
+    trimmed.starts_with("%%")
+        && !is_document_definition_placeholder(trimmed)
+        && detect_comment_fence_line(trimmed).is_none()
 }
 
 /// `is_line_comment_any_column`, over BOTH spellings §28 gives a comment.
@@ -17410,6 +17412,9 @@ fn collect_indented_block_mapped_with_columns(
     }
     let mut nested_fence: Option<FenceOpen> = None;
     while let Some(line) = cur.peek() {
+        if is_definition_placeholder(line) && indent_columns(line) < strip_cols {
+            break;
+        }
         if is_blank_line(line) {
             marker_note_intermediate_quote_open = false;
             definition_band_inline_run = None;
@@ -19694,7 +19699,7 @@ fn collect_definition_body(
     // (markup-carve/carve#1911, corpus 444-7 against 430-3).
     let mut reached: Vec<bool> = Vec::new();
     while let Some(line) = cur.peek() {
-        if is_document_definition_placeholder(line) {
+        if is_definition_placeholder(line) && indent_columns(line) < content_column {
             break;
         }
         if is_blank_line(line) {
