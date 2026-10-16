@@ -7714,6 +7714,8 @@ fn rebase_body_blocks(
     let mut orphaned_code: Option<(FenceOpen, usize)> = None;
     let mut after_blank = false;
     let mut paragraph_open = false;
+    // The open paragraph is the container's own, not a descendant's.
+    let mut own_paragraph = false;
     let mut opaque_quote_tail = false;
     // A code-shaped run outside the preceding verse's bases is inline text.
     // Keep its authored column through repeated rebase passes.
@@ -7767,6 +7769,7 @@ fn rebase_body_blocks(
         {
             orphaned_code = None;
             paragraph_open = true;
+            own_paragraph = false;
             after_blank = false;
             i += 1;
             continue;
@@ -7786,6 +7789,7 @@ fn rebase_body_blocks(
             let open = detect_fence_open(&local_at_base).unwrap();
             i = rebased_code_fence_end(&lines, i, base, open) + 1;
             paragraph_open = true;
+            own_paragraph = false;
             continue;
         }
         if base == 0 {
@@ -7804,6 +7808,7 @@ fn rebase_body_blocks(
                 );
             }
             paragraph_open = !is_line_comment_any_column(&lines[i]);
+            own_paragraph = false;
             block_at_minimum = !paragraph_open && source.reached.get(i).copied().unwrap_or(false);
             i += 1;
             continue;
@@ -7896,6 +7901,17 @@ fn rebase_body_blocks(
             nested_columns.pop();
             nested_list_marker_bases.pop();
         }
+        // §10 I2: a marker under the container's own paragraph folds into it
+        // and opens no item, so it sets no column for the lines below.
+        if include_sublists
+            && own_paragraph
+            && paragraph_open
+            && !after_blank
+            && is_list_marker(&local_at_base)
+        {
+            i += 1;
+            continue;
+        }
         if let Some(column) = marker_content_col_at(&lines[i], base)
             .filter(|_| !(absorbed_note_marker && paragraph_open && !after_blank))
         {
@@ -7909,6 +7925,7 @@ fn rebase_body_blocks(
                 }) && lines
                     .get(i + 1)
                     .is_some_and(|next| !is_blank_line(next) && indent_columns(next) < column);
+                own_paragraph = false;
                 paragraph_open = colon_folds
                     || (include_sublists
                         && marker
@@ -7956,6 +7973,7 @@ fn rebase_body_blocks(
                     || is_definition_list_start(&local_at_base))
             {
                 paragraph_open = true;
+                own_paragraph = false;
             }
             block_at_minimum = false;
             i += 1;
@@ -8332,6 +8350,7 @@ fn rebase_body_blocks(
                 continue;
             }
             paragraph_open = line_starts_paragraph(&lines[i]);
+            own_paragraph = paragraph_open;
             if paragraph_open {
                 term_boundary = false;
             }
@@ -10990,6 +11009,7 @@ struct QuotedEntryScan {
     scanned: usize,
     half: Option<DefHalf>,
     content_col: Option<usize>,
+    description_col: Option<usize>,
     // A BLOCK closed the innermost entry, so no paragraph is open below it. This
     // is what separates the two `half == None` states: no entry ever opened
     // (a paragraph is still open and a lazy marker folds into it) versus an
@@ -11023,6 +11043,9 @@ impl QuotedEntryScan {
             }
             let column = indent_columns(peeled);
             let rest = trim_ascii_start(peeled);
+            if !line.starts_with(LAZY) && self.description_col.is_some_and(|base| column < base) {
+                self.description_col = None;
+            }
             let ladder = innermost_marker_content_col(rest);
             if ladder > 0 {
                 self.content_col = Some(column + ladder);
@@ -11030,9 +11053,12 @@ impl QuotedEntryScan {
             let content = trim_ascii_start(innermost_marker_content(rest));
             if is_definition_list_start(content) {
                 self.half = Some(DefHalf::Term);
+                self.description_col = None;
                 self.closed_by_block = false;
             } else if strip_definition_marker(content).is_some() {
                 self.half = Some(DefHalf::Description);
+                self.description_col =
+                    definition_body_content_col(content).map(|body_col| column + ladder + body_col);
                 self.closed_by_block = false;
             } else if item_block_opener(content) {
                 // A block written inside the entry closes it, so a lazy line
@@ -12169,6 +12195,8 @@ fn collect_blockquote_body(
     // No replay without a fence to find: every level of a quote ladder would
     // otherwise walk its whole body once.
     let mut may_hold_fence = false;
+    // The last quoted line was read on a description body's base.
+    let mut description_line = false;
     let mut literal_quote_body = None;
     let mut last_quoted_at = None;
     while let Some(line) = cur.peek() {
@@ -12274,6 +12302,7 @@ fn collect_blockquote_body(
                 continue;
             }
             nested_verdict = None;
+            description_line = false;
             let after_nested = last_nested && may_hold_fence;
             last_nested = in_fence.is_none() && (stripped == ">" || stripped.starts_with("> "));
             may_hold_fence = may_hold_fence
@@ -12389,8 +12418,25 @@ fn collect_blockquote_body(
                     && !para_open.get()
                     && detect_fence_open(innermost_marker_content(stripped)).is_none()
                     && !body_ends_with_open_paragraph(stripped, options);
+                // A nested quote can carry the same description body base.
+                let mut description_content = stripped;
+                if may_have_term {
+                    while let Some(next) = strip_blockquote_prefix(description_content) {
+                        description_content = next;
+                    }
+                }
+                let in_description =
+                    may_have_term && description_content.starts_with([' ', '\t']) && {
+                        open_entry.advance(&inner.lines);
+                        open_entry
+                            .description_col
+                            .is_some_and(|base| indent_columns(description_content) >= base)
+                    };
+                description_line = in_description;
                 para_open = if nested_item_closes {
                     ParaOpen::Closed
+                } else if in_description {
+                    ParaOpen::from_line(trim_ascii_start(description_content), inherited_absorption)
                 } else {
                     ParaOpen::from_line(stripped, inherited_absorption)
                 };
@@ -12516,7 +12562,14 @@ fn collect_blockquote_body(
         } else {
             false
         };
-        if !(term_open || fenced_below.unwrap_or_else(|| para_open.get()))
+        // The replay reads a description body as quoted text; its own base
+        // closes the paragraph too.
+        let quoted_open = if description_line {
+            fenced_below.unwrap_or(true) && para_open.get()
+        } else {
+            fenced_below.unwrap_or_else(|| para_open.get())
+        };
+        if !(term_open || quoted_open)
             || is_blank_line(line)
             || (term_open && detect_list_marker_full(line).is_some_and(|marker| marker.indent == 0))
             || caption_content(line).is_some()
@@ -15956,13 +16009,42 @@ fn quoted_body_ends_with_an_invisible_line(body: &str) -> bool {
     if strip_blockquote_prefix(trim_ascii_start(last)).is_none() {
         return false;
     }
-    let dequote = |line: &str| -> String {
+    // The innermost quote's residue, with its depth.
+    let residue = |line: &str| -> (usize, String) {
         let mut local = trim_ascii_start(line);
+        let mut depth = 0;
         while let Some(rest) = strip_blockquote_prefix(local) {
+            depth += 1;
+            local = rest;
+            if !trim_ascii_start(rest).starts_with('>') {
+                break;
+            }
             local = trim_ascii_start(rest);
         }
-        local.to_string()
+        (depth, local.to_string())
     };
+    let (depth, last_residue) = residue(last);
+    let past = indent_columns(&last_residue);
+    // A quote does not rebase (CARVE-P0-004): past its column the line is
+    // paragraph text unless a container inside the quote owns that column.
+    if past > 0 {
+        let owned = body
+            .lines()
+            .rev()
+            .skip_while(|line| *line != last)
+            .skip(1)
+            .any(|line| {
+                let (at, local) = residue(line);
+                at == depth
+                    && indent_columns(&local) < past
+                    && (marker_content_col(&local).is_some()
+                        || definition_body_content_col(&local).is_some())
+            });
+        if !owned {
+            return false;
+        }
+    }
+    let dequote = |line: &str| trim_ascii_start(&residue(line).1).to_string();
     if is_definition_placeholder(&dequote(last)) {
         return true;
     }
