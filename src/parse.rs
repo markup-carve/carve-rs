@@ -7966,6 +7966,8 @@ fn rebase_body_blocks(
             && paragraph_open
             && base > 0
             && item_block_opener(&local_at_base)
+            && !(source.reached.get(i).copied().unwrap_or(false)
+                && strip_blockquote_prefix(&local_at_base).is_some())
             && !closed_fence_below_descendant
         {
             i += 1;
@@ -15089,7 +15091,13 @@ fn parse_list(
             // same rule the plain-continuation branch applies -- e.g. a
             // marker-line fence with blank-separated trailing text
             // (`- ```\n  c\n  ```\n\n  tail`).
-            if continuation_source_loosens(&stream.source, true) {
+            let refused_definition_plus = is_definition_list_start(marker.content)
+                && cur
+                    .lines
+                    .range(item_at + 1..cur.pos)
+                    .any(|line| indent_columns(line) == content_col && trim_ascii(line) == "+")
+                && !cur.lines.range(item_at + 1..cur.pos).any(is_blank_line);
+            if continuation_source_loosens(&stream.source, true) && !refused_definition_plus {
                 tight = false;
             }
             // A heading, a fence or a table on the marker line leaves the item
@@ -17809,6 +17817,14 @@ fn collect_indented_block_mapped_with_columns(
             && trim_ascii(line) == "+"
             && marker_colon.is_none()
         {
+            if marker_is_definition_term && marker_definition_has_description {
+                lines.push(String::new());
+                reached.push(false);
+                if building_maps {
+                    line_map.push(None);
+                    col_map.push(None);
+                }
+            }
             cur.consume();
             continue;
         }
