@@ -699,6 +699,8 @@ const IMPLEMENTED: &[&str] = &[
     // markup-carve/carve#2406 were rendered through this engine and diffed
     // against their committed HTML before the category was listed here.
     "an-attribute-line-under-an-attributed-sub-item-stays-in-that-item",
+    "an-unclosed-fence-after-an-attribute-line-in-a-container-ends-at-its-closer",
+    "a-quoted-comment-or-attribute-line-closes-the-quote-s-paragraph",
     "a-block-opener-indented-under-a-definition-term-is-term-text-at-every-depth",
     // Added with the spec bump to carve e00d86a9. All twenty-five documents of
     // markup-carve/carve#2458 were rendered through this engine and diffed
@@ -1642,6 +1644,14 @@ corpus_test!(
 corpus_test!(
     c_an_attribute_line_under_an_attributed_sub_item_stays_in_that_item,
     "an-attribute-line-under-an-attributed-sub-item-stays-in-that-item"
+);
+corpus_test!(
+    c_an_unclosed_fence_after_an_attribute_line_in_a_container_ends_at_its_closer,
+    "an-unclosed-fence-after-an-attribute-line-in-a-container-ends-at-its-closer"
+);
+corpus_test!(
+    c_a_quoted_comment_or_attribute_line_closes_the_quote_s_paragraph,
+    "a-quoted-comment-or-attribute-line-closes-the-quote-s-paragraph"
 );
 corpus_test!(
     c_a_block_opener_indented_under_a_definition_term_is_term_text_at_every_depth,

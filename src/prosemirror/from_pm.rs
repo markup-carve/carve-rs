@@ -44,8 +44,10 @@ pub fn from_prosemirror_with_report(json: &str) -> Result<ProseMirrorImport, Pro
         degraded: BTreeMap::new(),
     };
     let wire = reader.document(&input)?;
-    let document =
+    let mut document =
         from_json(&value_to_json(&wire)).map_err(|e| ProseMirrorError::new(e.to_string()))?;
+    // ProseMirror carries no `resolved` marker, so rebuild it from the definitions.
+    crate::ast_json::hydrate_resolved_empty_references(&mut document);
     Ok(ProseMirrorImport {
         document,
         dropped: reader.dropped,

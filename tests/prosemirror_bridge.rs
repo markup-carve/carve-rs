@@ -1663,8 +1663,10 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // 598 row 5 into a strikethrough, which round trips strictly.
     // Spec 88e7dab0 adds 21 documents (section 597 rows 5 to 8, sections 604
     // and 605): 17 round trip strictly and 4 report a degradation.
-    const STRICT: usize = 1958;
-    const LOSSY: usize = 620;
+    // Spec dc3bfaa5 adds sections 606 and 607 (seven documents): six round
+    // trip strictly and one reports a degradation.
+    const STRICT: usize = 1964;
+    const LOSSY: usize = 621;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in
