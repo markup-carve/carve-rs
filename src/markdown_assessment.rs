@@ -376,6 +376,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
         if strikes.synthetic_comment(&event, &range) {
             continue;
         }
+        let event = strikes.restore(event, &range);
         let range = strikes.original_range(range);
         let mut paren_list = false;
         if !matches!(event, Event::Start(_) | Event::End(_)) {

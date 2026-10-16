@@ -7,10 +7,14 @@ use pulldown_cmark::{BrokenLink, Event, LinkType, Options, Parser, Tag, TagEnd};
 use regex::Regex;
 
 const COMMENT: &str = "<!---->";
+// Same-length stand-in for a tilde run that cannot pair; not a pulldown delimiter.
+const INERT: u8 = b'%';
 
 pub(crate) struct PreparedStrikes<'a> {
     pub text: Cow<'a, str>,
+    source: &'a str,
     comments: Vec<usize>,
+    inert: Vec<usize>,
     references: HashMap<(usize, usize), (String, String, bool)>,
 }
 
@@ -18,6 +22,21 @@ impl PreparedStrikes<'_> {
     pub fn synthetic_comment(&self, event: &Event<'_>, range: &Range<usize>) -> bool {
         matches!(event, Event::InlineHtml(value) if value.as_ref() == COMMENT)
             && self.comments.binary_search(&range.start).is_ok()
+    }
+
+    /// Put back the tildes that `prepare` hid from the delimiter scan.
+    pub fn restore<'e>(&self, event: Event<'e>, range: &Range<usize>) -> Event<'e> {
+        let Event::Text(value) = &event else {
+            return event;
+        };
+        let original = self.original_range(range.clone());
+        let first = self.inert.partition_point(|&at| at < original.start);
+        if self.inert.get(first).map_or(true, |&at| at >= original.end)
+            || value.as_ref() != &self.text[range.clone()]
+        {
+            return event;
+        }
+        Event::Text(self.source[original].to_owned().into())
     }
 
     pub fn original_range(&self, range: Range<usize>) -> Range<usize> {
@@ -128,38 +147,45 @@ pub(crate) fn literal_underscore(
 pub(crate) fn prepare(source: &str, options: Options) -> PreparedStrikes<'_> {
     let mut result = PreparedStrikes {
         text: Cow::Borrowed(source),
+        source,
         comments: Vec::new(),
+        inert: Vec::new(),
         references: HashMap::new(),
     };
     let bytes = source.as_bytes();
     if !bytes.contains(&b'~') {
         return result;
     }
-    let mut candidates = Vec::new();
-    let mut at = 0;
-    while at < bytes.len() {
-        if bytes[at] != b'~' {
-            at += 1;
-            continue;
-        }
-        let end = at + bytes[at..].iter().take_while(|&&byte| byte == b'~').count();
-        if end == at + 1
-            && word_neighbor(source[..at].chars().next_back())
-            && word_neighbor(source[end..].chars().next())
-        {
-            candidates.push(at);
-        }
-        at = end;
-    }
-    if candidates.is_empty() {
-        return result;
-    }
     let mut eligible = vec![false; source.len()];
+    let mut scope = vec![0usize; source.len()];
+    let mut scopes = vec![0usize];
+    let mut next_scope = 1;
     let mut owners: Vec<Range<usize>> = Vec::new();
     let mut opaque = 0usize;
     let mut autolink = false;
     let mut parser = Parser::new_ext(source, options).into_offset_iter();
     while let Some((event, range)) = parser.next() {
+        let inline = |tag: &TagEnd| {
+            matches!(
+                tag,
+                TagEnd::Emphasis
+                    | TagEnd::Strong
+                    | TagEnd::Strikethrough
+                    | TagEnd::Superscript
+                    | TagEnd::Subscript
+            )
+        };
+        match &event {
+            Event::Start(tag) if !inline(&tag.to_end()) => {
+                scopes.push(next_scope);
+                next_scope += 1;
+            }
+            Event::End(tag) if !inline(tag) && scopes.len() > 1 => {
+                scopes.pop();
+            }
+            _ => {}
+        }
+        let current = *scopes.last().unwrap();
         match &event {
             Event::Start(Tag::CodeBlock(_) | Tag::HtmlBlock | Tag::MetadataBlock(_)) => opaque += 1,
             Event::End(TagEnd::CodeBlock | TagEnd::HtmlBlock | TagEnd::MetadataBlock(_)) => {
@@ -218,17 +244,20 @@ pub(crate) fn prepare(source: &str, options: Options) -> PreparedStrikes<'_> {
             }
             Event::Text(_) if opaque == 0 && !autolink => {
                 eligible[range.clone()].fill(true);
+                scope[range.clone()].fill(current);
             }
             Event::Start(Tag::Strikethrough) if opaque == 0 && !autolink => {
                 let mut start = range.start;
                 while start < range.end && bytes[start] == b'~' {
                     eligible[start] = true;
+                    scope[start] = current;
                     start += 1;
                 }
                 let mut end = range.end;
                 while end > range.start && bytes[end - 1] == b'~' {
                     end -= 1;
                     eligible[end] = true;
+                    scope[end] = current;
                 }
             }
             _ => {}
@@ -243,13 +272,19 @@ pub(crate) fn prepare(source: &str, options: Options) -> PreparedStrikes<'_> {
             eligible[email.start..email.end].fill(false);
         }
     }
+    let runs = tilde_runs(source, &eligible, &scope);
     let mut insertions = Vec::new();
-    for at in candidates {
-        if eligible[at] {
-            insertions.extend([at, at + 1]);
+    for run in &runs {
+        if !run.paired {
+            result.inert.extend(run.start..run.end);
+        } else if run.end == run.start + 1
+            && word_neighbor(source[..run.start].chars().next_back())
+            && word_neighbor(source[run.end..].chars().next())
+        {
+            insertions.extend([run.start, run.end]);
         }
     }
-    if insertions.is_empty() {
+    if insertions.is_empty() && result.inert.is_empty() {
         return result;
     }
     let mut text = String::with_capacity(source.len() + insertions.len() * COMMENT.len());
@@ -261,6 +296,96 @@ pub(crate) fn prepare(source: &str, options: Options) -> PreparedStrikes<'_> {
         from = at;
     }
     text.push_str(&source[from..]);
+    if !result.inert.is_empty() {
+        let mut bytes = text.into_bytes();
+        // Comment `i` sits before original offset `comments[i] - i * len`.
+        let mut before = 0;
+        for &at in &result.inert {
+            while result
+                .comments
+                .get(before)
+                .is_some_and(|&start| start - before * COMMENT.len() <= at)
+            {
+                before += 1;
+            }
+            bytes[at + before * COMMENT.len()] = INERT;
+        }
+        text = String::from_utf8(bytes).expect("an ASCII byte replaced by an ASCII byte");
+    }
     result.text = Cow::Owned(text);
     result
+}
+
+struct TildeRun {
+    start: usize,
+    end: usize,
+    paired: bool,
+}
+
+/// Pair GFM tilde runs the way markdown-it and carve-js do: a closer skips an
+/// opener of another length instead of failing. pulldown-cmark lets that
+/// failure block every later tilde closer, so a lone `~` inside `~~...~~`
+/// cost the whole strike.
+fn tilde_runs(source: &str, eligible: &[bool], scope: &[usize]) -> Vec<TildeRun> {
+    let bytes = source.as_bytes();
+    let mut runs = Vec::new();
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] != b'~' {
+            at += 1;
+            continue;
+        }
+        let end = at + bytes[at..].iter().take_while(|&&byte| byte == b'~').count();
+        let escaped = bytes[..at]
+            .iter()
+            .rev()
+            .take_while(|&&byte| byte == b'\\')
+            .count()
+            % 2
+            == 1;
+        if end - at <= 2
+            && !escaped
+            && eligible[at..end].iter().all(|&ok| ok)
+            && scope[at..end].iter().all(|&id| id == scope[at])
+        {
+            runs.push(TildeRun {
+                start: at,
+                end,
+                paired: false,
+            });
+        }
+        at = end;
+    }
+    let whitespace = |ch: Option<char>| ch.map_or(true, char::is_whitespace);
+    let punct = |ch: Option<char>| ch.is_some_and(punctuation);
+    // Per scope: the open runs, and per length the indices into that stack.
+    let mut stacks: HashMap<usize, (Vec<usize>, [Vec<usize>; 2])> = HashMap::new();
+    for index in 0..runs.len() {
+        let (start, end) = (runs[index].start, runs[index].end);
+        let before = source[..start].chars().next_back();
+        let after = source[end..].chars().next();
+        let left = !whitespace(after) && (!punct(after) || whitespace(before) || punct(before));
+        let right = !whitespace(before) && (!punct(before) || whitespace(after) || punct(after));
+        let (stack, by_length) = stacks.entry(scope[start]).or_default();
+        let length = end - start - 1;
+        if right {
+            if let Some(&position) = by_length[length].last() {
+                let opener = stack[position];
+                runs[opener].paired = true;
+                runs[index].paired = true;
+                stack.truncate(position);
+                for list in by_length.iter_mut() {
+                    while list.last().is_some_and(|&p| p >= position) {
+                        list.pop();
+                    }
+                }
+                continue;
+            }
+        }
+        if left {
+            by_length[length].push(stack.len());
+            stack.push(index);
+        }
+    }
+    runs
 }
