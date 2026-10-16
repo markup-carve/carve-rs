@@ -624,9 +624,15 @@ fn compare(name: &str, vector: &Value, run: &RunResult) -> Vec<String> {
 #[test]
 fn include_conformance_vectors_match_carve_js_goldens() {
     let dir = vectors_dir();
-    let mut entries: Vec<PathBuf> = fs::read_dir(&dir)
-        .unwrap_or_else(|e| panic!("read {dir:?}: {e}"))
-        .map(|e| e.expect("dir entry").path())
+    let additions =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/include-conformance-additions/vectors");
+    let mut entries: Vec<PathBuf> = [&dir, &additions]
+        .into_iter()
+        .flat_map(|source| {
+            fs::read_dir(source)
+                .unwrap_or_else(|e| panic!("read {source:?}: {e}"))
+                .map(|entry| entry.expect("dir entry").path())
+        })
         .filter(|p| p.extension().is_some_and(|x| x == "json"))
         .collect();
     entries.sort();
@@ -651,6 +657,10 @@ fn include_conformance_vectors_match_carve_js_goldens() {
 
     for path in &entries {
         let name = path.file_stem().unwrap().to_string_lossy().into_owned();
+        assert!(
+            !seen.contains(&name),
+            "duplicate include-conformance vector {name}"
+        );
         seen.push(name.clone());
         let raw = fs::read_to_string(path).expect("read vector");
         let vector = Value::parse(&raw).unwrap_or_else(|e| panic!("{name}: {e}"));
