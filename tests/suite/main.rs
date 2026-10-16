@@ -28,6 +28,8 @@ mod an_explicit_heading_id_carrier_overrides_the_slug_heuristic;
 mod an_item_line_under_a_plain_paragraph_stays_lazy_in_the_closer_scan;
 #[path = "../an_unclosed_fence_ends_only_at_its_own_containers_closer.rs"]
 mod an_unclosed_fence_ends_only_at_its_own_containers_closer;
+#[path = "../colon_body_on_a_marker_line_uses_its_host_base.rs"]
+mod colon_body_on_a_marker_line_uses_its_host_base;
 #[path = "../definitions_close_nested_containers.rs"]
 mod definitions_close_nested_containers;
 #[path = "../definitions_register_only_in_their_host_column.rs"]

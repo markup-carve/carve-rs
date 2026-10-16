@@ -8165,8 +8165,7 @@ fn rebase_body_blocks(
                 .map(|open| open.fence_len)
                 .or_else(|| detect_quote_block_open(&lines[i]))
             {
-                let marker_body =
-                    source.item_marker_at_start && i == 0 && !source.marker_colon_rebased;
+                let marker_body = i == 0 && !source.marker_colon_rebased;
                 let mut body_paragraph = false;
                 let mut body_code: Option<(FenceOpen, usize)> = None;
                 let mut body_comment: Option<usize> = None;
@@ -8220,7 +8219,7 @@ fn rebase_body_blocks(
                         body_items.pop();
                     }
                     let owned_by_item = body_items.last().is_some_and(|column| base >= *column);
-                    if !include_sublists
+                    if (marker_body || !include_sublists)
                         && base > 0
                         && !owned_by_item
                         && !comment_retains_frame
@@ -8241,15 +8240,18 @@ fn rebase_body_blocks(
                             colon.filter(|_| exact_colon_fence_len(&local).is_none())
                         {
                             Some(rebased_colon_group_end(&lines, i, base, width))
-                        } else if heading_content_starts(&local) || detect_thematic_break(&local) {
+                        } else if heading_content_starts(&local)
+                            || detect_thematic_break(&local)
+                            || is_table_start(&local)
+                            || parse_standalone_attrs(&local).is_some()
+                        {
                             Some(i)
                         } else if !body_paragraph && strip_blockquote_prefix(&local).is_some() {
                             // CARVE-P0-011: past the box's column it opens on
                             // its authored base, as a nested list does.
                             Some(rebased_quote_end(&lines, i, base))
                         } else if !body_paragraph
-                            && (parse_standalone_attrs(&local).is_some()
-                                || parse_link_def_line_with_value(&local).is_some())
+                            && parse_link_def_line_with_value(&local).is_some()
                         {
                             Some(i)
                         } else {
