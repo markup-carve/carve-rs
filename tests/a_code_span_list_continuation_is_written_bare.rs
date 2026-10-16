@@ -38,3 +38,11 @@ fn a_line_below_an_item_or_description_keeps_its_guard() {
     let quote = "`a\n > x`\n";
     assert_eq!(round_trips(quote), quote);
 }
+
+#[test]
+fn a_colon_run_with_content_is_bare_inside_a_code_span() {
+    for line in [":::}", ":::~", ":::t"] {
+        let source = format!("`\n{line}");
+        assert_eq!(round_trips(&source), format!("`\n{line}`\n"));
+    }
+}

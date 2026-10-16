@@ -5615,10 +5615,11 @@ fn guard_code_lines(
     // A list marker on a continuation line does not interrupt a paragraph, so
     // it stays bare unless the line would end an item, description or term.
     let marker = if ctx.in_term || ctx.item_paragraph {
-        MARKER.get_or_init(|| regex::Regex::new(r"^(?:>(?: |$)|:{3,}|\[[^\]\n]+\]:[ \t]|[-*] +|(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-z]|[A-Z])[.)] +)").unwrap())
+        MARKER.get_or_init(|| regex::Regex::new(r"^(?:>(?: |$)|:{3,}(?:[ \t]*$|[ \t]+)|\[[^\]\n]+\]:[ \t]|[-*] +|(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-z]|[A-Z])[.)] +)").unwrap())
     } else {
-        BLOCK_MARKER
-            .get_or_init(|| regex::Regex::new(r"^(?:>(?: |$)|:{3,}|\[[^\]\n]+\]:[ \t])").unwrap())
+        BLOCK_MARKER.get_or_init(|| {
+            regex::Regex::new(r"^(?:>(?: |$)|:{3,}(?:[ \t]*$|[ \t]+)|\[[^\]\n]+\]:[ \t])").unwrap()
+        })
     };
     written
         .split('\n')
