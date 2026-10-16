@@ -725,6 +725,8 @@ mod an_imported_cross_reference_stays_atomic;
 mod an_imported_element_keeps_its_key_order;
 #[path = "../an_imported_hard_break_drops_the_space_after_it.rs"]
 mod an_imported_hard_break_drops_the_space_after_it;
+#[path = "../an_imported_resolving_cross_reference_stays_text.rs"]
+mod an_imported_resolving_cross_reference_stays_text;
 #[path = "../an_include_target_that_is_not_a_regular_file_is_denied.rs"]
 mod an_include_target_that_is_not_a_regular_file_is_denied;
 #[path = "../an_included_child_is_read_with_the_callers_extensions.rs"]
