@@ -1189,6 +1189,13 @@ impl ContentColumns {
                 .starts_with('>')
                 .then(|| inside.as_ptr() as usize - line.as_ptr() as usize);
         }
+        // A description's marker line (`: > - para`) hands off the same way.
+        if let Some((indent, width)) =
+            detect_prepass_def_body(line).filter(|(at, _)| self.frames[level].def_list == Some(*at))
+        {
+            let offset = indent + width;
+            return line[offset..].starts_with('>').then_some(offset);
+        }
         // EXACTLY a live content column, never past one: an indented `>` that
         // reaches no open item is ordinary text, and the block parser reads it
         // that way too (carve-rs#1082).
@@ -2144,17 +2151,44 @@ fn extract_footnote_defs(
                 // the same answer. Excluding text left this engine reading one
                 // floor for openers and another for prose, which is the
                 // two-answers-at-once state the fix above set out to end.
-                let mut quote_depth = 0;
+                // A quote at an item's or a description's content column
+                // (`- > - para` / `  >   [^f]: n`) is a host level too; its
+                // continuation lines repeat the same indentation before `>`.
+                let structural_len = stripped.structural.len();
+                let mut quote_indents = Vec::new();
                 let mut inside = raw_def_line;
-                while let Some(rest) = strip_blockquote_prefix(inside) {
-                    quote_depth += 1;
+                // A marker in front of the quote (`- > [^f]: n`) stands for the
+                // same number of spaces on the lines below it.
+                loop {
+                    let mut indent = leading_ws(inside);
+                    if let Some(content) = detect_list_marker_full(inside)
+                        .map(|marker| marker.content)
+                        .or_else(|| {
+                            strip_definition_marker(&inside[indent..]).map(|(body, _)| body)
+                        })
+                        .filter(|content| content.starts_with('>'))
+                    {
+                        indent = content.as_ptr() as usize - inside.as_ptr() as usize;
+                    }
+                    let consumed = raw_def_line.len() - inside.len();
+                    if consumed + indent >= structural_len
+                        || !inside.is_char_boundary(indent)
+                        || inside[..indent].contains('\t')
+                    {
+                        break;
+                    }
+                    let Some(rest) = strip_blockquote_prefix(&inside[indent..]) else {
+                        break;
+                    };
+                    quote_indents.push(indent);
                     inside = rest;
                 }
+                let quote_depth = quote_indents.len();
                 let prefix_cols = inside.chars().count() - def_line.chars().count();
                 let note_floor = prefix_cols + footnote_body_floor(def_line);
                 // Measure indentation inside the note's existing quote host.
                 // A further quote marker is note content and stays in the body.
-                let content = |raw| strip_quote_levels(raw, quote_depth);
+                let content = |raw| strip_indented_quote_levels(raw, &quote_indents);
                 let marker_note = detect_list_marker_full(inside)
                     .is_some_and(|marker| parse_footnote_def_line(marker.content).is_some());
                 let track_note_opacity = marker_note
@@ -4950,6 +4984,17 @@ fn strip_container_prefixes_keep_indent(mut line: &str) -> String {
 thread_local! {
     pub(crate) static QUOTE_PREFIX_CALLS: std::cell::Cell<u64> =
         const { std::cell::Cell::new(0) };
+}
+
+/// `strip_quote_levels` for quotes each written after a fixed indentation.
+fn strip_indented_quote_levels<'a>(mut line: &'a str, indents: &[usize]) -> Option<&'a str> {
+    for &indent in indents {
+        if leading_ws(line) != indent {
+            return None;
+        }
+        line = strip_blockquote_prefix(&line[indent..])?;
+    }
+    Some(line)
 }
 
 fn strip_quote_levels(mut line: &str, depth: usize) -> Option<&str> {
@@ -19472,7 +19517,9 @@ fn body_ends_with_an_attribute_line(source: &str) -> bool {
 }
 
 fn definition_body_fold(source: &str, options: &Options<'_>) -> (bool, bool) {
-    if body_ends_with_an_unnoded_interrupter(source) {
+    if body_ends_with_an_unnoded_interrupter(source)
+        || quoted_body_ends_with_an_invisible_line(source)
+    {
         return (false, false);
     }
     let blocks = probe_blocks(source, options);
