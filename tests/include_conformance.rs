@@ -624,6 +624,8 @@ fn compare(name: &str, vector: &Value, run: &RunResult) -> Vec<String> {
 #[test]
 fn include_conformance_vectors_match_carve_js_goldens() {
     let dir = vectors_dir();
+    // These eight vectors come from carve spec d79a72ed. Keep the corpus
+    // submodule pin stable until its newer parser rulings are implemented.
     let additions =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/include-conformance-additions/vectors");
     let mut entries: Vec<PathBuf> = [&dir, &additions]
