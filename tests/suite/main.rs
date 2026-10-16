@@ -10,6 +10,8 @@
 #[path = "../raw_payload_termination.rs"]
 mod raw_payload_termination;
 
+#[path = "../a_block_at_an_item_content_column_closes_its_paragraph_before_an_unclosed_fence.rs"]
+mod a_block_at_an_item_content_column_closes_its_paragraph_before_an_unclosed_fence;
 #[path = "../an_autolink_a_cross_reference_or_a_comment_is_atomic.rs"]
 mod an_autolink_a_cross_reference_or_a_comment_is_atomic;
 #[path = "../an_autolink_or_cross_reference_is_atomic_to_brackets_and_braces.rs"]

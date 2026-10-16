@@ -10208,34 +10208,48 @@ fn exact_colon_fence_len(line: &str) -> Option<usize> {
 }
 
 /// The prefixes carrying an open colon-body paragraph, outermost first: bit
-/// `i` of `quotes` is set for a quote (`>`) and clear for an item (`-`).
+/// `i` of `quotes` is set for a quote (`>`) and clear for an item (`-`), whose
+/// content column is `columns[i]`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 struct OpenParagraph {
     depth: u8,
     quotes: u32,
+    columns: [u16; 32],
 }
 
 impl OpenParagraph {
     const PLAIN: Self = Self {
         depth: 0,
         quotes: 0,
+        columns: [0; 32],
     };
 
     fn outer_is_quote(self) -> Option<bool> {
         (self.depth > 0).then_some(self.quotes & 1 == 1)
     }
 
+    fn outer_item_column(self) -> Option<usize> {
+        (self.outer_is_quote() == Some(false)).then_some(usize::from(self.columns[0]))
+    }
+
     fn inner(self) -> Self {
+        let mut columns = [0; 32];
+        columns[..31].copy_from_slice(&self.columns[1..]);
         Self {
             depth: self.depth - 1,
             quotes: self.quotes >> 1,
+            columns,
         }
     }
 
-    fn under(self, quote: bool) -> Self {
+    fn under(self, quote: bool, column: usize) -> Self {
+        let mut columns = [0; 32];
+        columns[1..].copy_from_slice(&self.columns[..31]);
+        columns[0] = u16::try_from(column).unwrap_or(u16::MAX);
         Self {
             depth: (self.depth + 1).min(32),
             quotes: (self.quotes << 1) | u32::from(quote),
+            columns,
         }
     }
 }
@@ -10244,16 +10258,24 @@ impl OpenParagraph {
 /// gate on an unclosed fence. Blank, colon, comment, block-attribute, table-row,
 /// heading and thematic-break lines leave none open. A quote line always reads its content;
 /// an item line does only under an item's paragraph, where it starts the next
-/// item, and is lazy text under any other.
+/// item, and is lazy text under any other. A line reaching the open item's
+/// content column is read there (`in_item`), so a block at that column closes
+/// the item's paragraph (CARVE-P0-011).
 fn opens_colon_body_paragraph(
     line: &str,
     was_open: Option<OpenParagraph>,
+    in_item: bool,
 ) -> Option<OpenParagraph> {
     let t = trim_ascii_end(trim_ascii_start(line));
+    let block = if in_item {
+        trim_ascii_start(line)
+    } else {
+        line
+    };
     if t.is_empty()
         || t.starts_with("%%")
-        || (line.starts_with('{') && parse_standalone_attrs(line).is_some())
-        || (line.starts_with('|') && is_table_start(line))
+        || (block.starts_with('{') && parse_standalone_attrs(block).is_some())
+        || (block.starts_with('|') && is_table_start(block))
         || exact_colon_fence_len(t).is_some()
         || detect_container_open(t).is_some()
     {
@@ -10274,9 +10296,18 @@ fn opens_colon_body_paragraph(
                 let quoted = was_open
                     .filter(|open| open.outer_is_quote() == Some(true))
                     .map(OpenParagraph::inner);
-                return opens_colon_body_paragraph(&rest[1..], quoted).map(|open| open.under(true));
+                return opens_colon_body_paragraph(&rest[1..], quoted, false)
+                    .map(|open| open.under(true, 0));
             }
             Some(_) => {}
+        }
+    }
+    if let Some(open) = was_open {
+        if let Some(column) = open.outer_item_column() {
+            if line.bytes().take_while(|b| *b == b' ').count() >= column {
+                return opens_colon_body_paragraph(&line[column..], Some(open.inner()), true)
+                    .map(|inner| inner.under(false, column));
+            }
         }
     }
     let item = if t.starts_with('>') {
@@ -10285,13 +10316,17 @@ fn opens_colon_body_paragraph(
         detect_list_marker_full(t)
     };
     if let Some(open) = was_open {
-        if item.is_none() || open.outer_is_quote() != Some(false) {
+        if item.is_none() || (open.outer_is_quote() != Some(false) && !in_item) {
             return Some(open);
         }
     }
     match item {
         None => Some(OpenParagraph::PLAIN),
-        Some(item) => opens_colon_body_paragraph(item.content, None).map(|open| open.under(false)),
+        Some(item) => {
+            let column = marker_content_col(line).unwrap_or(0);
+            opens_colon_body_paragraph(item.content, None, false)
+                .map(|open| open.under(false, column))
+        }
     }
 }
 
@@ -10463,7 +10498,7 @@ fn collect_indexed_colon_body(
     while cur.peek().is_some() {
         let top = *stack.last().unwrap();
         let paragraph_was_open = paragraph_open;
-        paragraph_open = opens_colon_body_paragraph(cur.peek().unwrap(), paragraph_was_open);
+        paragraph_open = opens_colon_body_paragraph(cur.peek().unwrap(), paragraph_was_open, false);
         // A CLOSER OF AN OPEN CONTAINER IS NOT ABSORBABLE. §12's absorption is
         // about a paragraph swallowing a would-be OPENER; the container this
         // line closes was opened BEFORE the malformed fence was ever read, so
@@ -10590,7 +10625,7 @@ fn find_colon_fence_end(
         paragraph_open = if literal {
             None
         } else {
-            opens_colon_body_paragraph(line, paragraph_was_open)
+            opens_colon_body_paragraph(line, paragraph_was_open, false)
         };
         if exact_colon_fence_len(line) == Some(top) {
             stack.pop();
