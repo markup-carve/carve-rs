@@ -10241,8 +10241,8 @@ impl OpenParagraph {
 }
 
 /// Whether a paragraph is open after this colon-body line, for the §10 I4
-/// gate on an unclosed fence. Blank, colon, comment, block-attribute, heading and
-/// thematic-break lines leave none open. A quote line always reads its content;
+/// gate on an unclosed fence. Blank, colon, comment, block-attribute, table-row,
+/// heading and thematic-break lines leave none open. A quote line always reads its content;
 /// an item line does only under an item's paragraph, where it starts the next
 /// item, and is lazy text under any other.
 fn opens_colon_body_paragraph(
@@ -10253,6 +10253,7 @@ fn opens_colon_body_paragraph(
     if t.is_empty()
         || t.starts_with("%%")
         || (line.starts_with('{') && parse_standalone_attrs(line).is_some())
+        || (line.starts_with('|') && is_table_start(line))
         || exact_colon_fence_len(t).is_some()
         || detect_container_open(t).is_some()
     {

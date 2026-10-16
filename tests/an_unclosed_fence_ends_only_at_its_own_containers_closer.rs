@@ -48,6 +48,34 @@ const CASES: &[(&str, &str)] = &[
     ("::: note\n> {#x}\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <blockquote>\n\n  </blockquote>\n  <pre><code>code\n::::\n</code></pre>\n</aside>\n<p>after <strong>b</strong></p>"),
     // corpus 606-4, after an attribute-only item
     ("::: note\n- {#x}\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <ul>\n    <li></li>\n  </ul>\n  <pre><code>code\n::::\n</code></pre>\n</aside>\n<p>after <strong>b</strong></p>"),
+    // after a table row
+    ("::: note\npara\n| t |\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <p>para</p>\n  <table>\n    <tbody>\n      <tr><td>t</td></tr>\n    </tbody>\n  </table>\n  <pre><code>code\n::::\n</code></pre>\n</aside>\n<p>after <strong>b</strong></p>"),
+    // after a table row with a row attribute
+    ("::: note\npara\n| t |{.x}\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <p>para</p>\n  <table>\n    <tbody>\n      <tr class=\"x\"><td>t</td></tr>\n    </tbody>\n  </table>\n  <pre><code>code\n::::\n</code></pre>\n</aside>\n<p>after <strong>b</strong></p>"),
+    // after a table with a separator row
+    ("::: note\npara\n| a | b |\n|---|---|\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <p>para</p>\n  <table>\n    <thead>\n      <tr><th scope=\"col\">a</th><th scope=\"col\">b</th></tr>\n    </thead>\n  </table>\n  <pre><code>code\n::::\n</code></pre>\n</aside>\n<p>after <strong>b</strong></p>"),
+    // after a quoted table row
+    ("::: note\n> para\n> | t |\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <blockquote>\n    <p>para</p>\n    <table>\n      <tbody>\n        <tr><td>t</td></tr>\n      </tbody>\n    </table>\n  </blockquote>\n  <pre><code>code\n::::\n</code></pre>\n</aside>\n<p>after <strong>b</strong></p>"),
+    // after a nested quoted table row
+    ("::: note\n> > para\n> > | t |\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <blockquote>\n    <blockquote>\n      <p>para</p>\n      <table>\n        <tbody>\n          <tr><td>t</td></tr>\n        </tbody>\n      </table>\n    </blockquote>\n  </blockquote>\n  <pre><code>code\n::::\n</code></pre>\n</aside>\n<p>after <strong>b</strong></p>"),
+    // after a table-only item
+    ("::: note\n- para\n- | t |\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <ul>\n    <li>para</li>\n    <li>\n      <table>\n        <tbody>\n          <tr><td>t</td></tr>\n        </tbody>\n      </table>\n    </li>\n  </ul>\n  <pre><code>code\n::::\n</code></pre>\n</aside>\n<p>after <strong>b</strong></p>"),
+    // after a table-only ordered item
+    ("::: note\n1. para\n2. | t |\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <ol>\n    <li>para</li>\n    <li>\n      <table>\n        <tbody>\n          <tr><td>t</td></tr>\n        </tbody>\n      </table>\n    </li>\n  </ol>\n  <pre><code>code\n::::\n</code></pre>\n</aside>\n<p>after <strong>b</strong></p>"),
+    // after a link definition
+    ("::: note\npara\n[r]: /u\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <p>para</p>\n  <pre><code>code\n::::\n</code></pre>\n</aside>\n<p>after <strong>b</strong></p>"),
+    // after a quoted link definition
+    ("::: note\n> para\n> [r]: /u\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <blockquote><p>para</p></blockquote>\n  <pre><code>code\n::::\n</code></pre>\n</aside>\n<p>after <strong>b</strong></p>"),
+    // after a quoted titled link definition
+    ("::: note\n> para\n> [r]: /u \"t\"\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <blockquote><p>para</p></blockquote>\n  <pre><code>code\n::::\n</code></pre>\n</aside>\n<p>after <strong>b</strong></p>"),
+    // after a quoted footnote definition
+    ("::: note\n> para\n> [^r]: note\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <blockquote><p>para</p></blockquote>\n  <pre><code>code\n::::\n</code></pre>\n</aside>\n<p>after <strong>b</strong></p>"),
+    // after a nested quoted link definition
+    ("::: note\n> > para\n> > [r]: /u\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <blockquote>\n    <blockquote><p>para</p></blockquote>\n  </blockquote>\n  <pre><code>code\n::::\n</code></pre>\n</aside>\n<p>after <strong>b</strong></p>"),
+    // after a definition-only item
+    ("::: note\n- para\n- [r]: /u\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <ul>\n    <li>para</li>\n    <li></li>\n  </ul>\n  <pre><code>code\n::::\n</code></pre>\n</aside>\n<p>after <strong>b</strong></p>"),
+    // a quoted pipe line without a closing pipe keeps the paragraph open
+    ("::: note\n> para\n> | t\n```\ncode\n::::\n:::\nafter *b*\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <blockquote><p>para\n| t\n<code>\ncode</code></p></blockquote>\n  <div>\n    <div>\n      <p>after <strong>b</strong></p>\n    </div>\n  </div>\n</aside>"),
     // an indented run is no fence
     ("::: note\n  ```\n  code\n  ::::\n:::\nafter\n", "<aside class=\"admonition note\" aria-label=\"Note\">\n  <p><code>\ncode\n::::</code></p>\n</aside>\n<p>after</p>"),
 ];
