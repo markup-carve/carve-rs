@@ -127,10 +127,10 @@ fn a_column_zero_comment_after_a_footnote_term_releases_the_next_paragraph() {
 }
 
 #[test]
-fn a_caption_after_a_retained_description_comment_stays_outside_the_body() {
+fn a_caption_after_a_retained_description_comment_stays_in_the_body() {
     assert_eq!(
         html(":: t\n: para\n%% c\n^ cap\n"),
-        "<dl><dt>t</dt><dd>para</dd></dl><p>^ cap</p>"
+        "<dl><dt>t</dt><dd><p>para</p><p>^ cap</p></dd></dl>"
     );
 }
 

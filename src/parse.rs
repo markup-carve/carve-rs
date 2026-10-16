@@ -18935,6 +18935,11 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         .map(|l| strip_lazy(l))
         .collect::<Vec<_>>()
         .join("\n");
+    let at_content_column = at_content_column
+        && !lines
+            .iter()
+            .skip(1)
+            .any(|line| line.starts_with(LAZY) && caption_content(strip_lazy(line)).is_some());
     let joined = joined.as_str();
     let children = if options.positions {
         let anchors = lines
@@ -20346,7 +20351,8 @@ fn collect_definition_body(
                 && (detect_heading(opener).is_some()
                     || thematic_break_marker(opener).is_some()
                     || is_table_start(opener)
-                    || strip_blockquote_prefix(opener).is_some());
+                    || strip_blockquote_prefix(opener).is_some()
+                    || caption_content(opener).is_some());
             if indent > 0
                 && (indent < content_column
                     || paragraph_column.map_or(true, |owner| indent >= owner))
@@ -20403,8 +20409,8 @@ fn collect_definition_body(
             });
             if !below_the_column
                 && cur.at_document_level
-                && ((fence_interrupts && !retained_below_comment)
-                    || caption_content(&owned).is_some())
+                && fence_interrupts
+                && !retained_below_comment
             {
                 break;
             }
@@ -20417,7 +20423,8 @@ fn collect_definition_body(
                     && cur.reached.and_then(|r| r.get(cur.pos)).copied() == Some(false)
                     && detect_fence_open(&owned).is_some_and(|open| open.fence_len > 3))
                 && detect_fence_open(&owned).is_some();
-            if fold_below_column_opener
+            if caption_content(&owned).is_some()
+                || fold_below_column_opener
                 || opens_retained_fence
                 || indent > 0
                     && indent != content_column
@@ -20425,7 +20432,9 @@ fn collect_definition_body(
                     && paragraph_column.is_some_and(|owner| indent < owner)
                 || !interrupts_paragraph_in_band(cur, &owned, !below_the_column)
             {
-                let keep = if opens_retained_fence {
+                let keep = if caption_content(&owned).is_some() {
+                    format!("{LAZY}{owned}")
+                } else if opens_retained_fence {
                     owned.clone()
                 } else if fold_below_column_opener
                     || indent > 0

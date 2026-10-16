@@ -1,6 +1,6 @@
 //! Description-body boundaries follow §10 I2 and the definition-body production.
-//! List markers continue an open paragraph; captions and fences with a closer
-//! ahead end it. A fence with none folds, info string or not (carve#2735).
+//! List markers and captions below the body column continue an open paragraph.
+//! Fences with a closer ahead end it; fences without one fold (carve#2735).
 
 use carve::{to_html, to_html_with_options, Options};
 
@@ -55,12 +55,12 @@ fn a_task_marker_continues_the_body() {
     );
 }
 
-/// A CAPTION ends the body and leaves a paragraph - it captions nothing here.
+/// A caption below the body column folds as text with its caret.
 #[test]
-fn a_caption_ends_the_body() {
+fn a_caption_below_the_column_folds_into_the_body() {
     assert_html(
         &format!("{BODY}^ cap\n"),
-        "<dl><dt>t</dt><dd>d</dd></dl><p>^ cap</p>",
+        "<dl><dt>t</dt><dd>d ^ cap</dd></dl>",
     );
 }
 
