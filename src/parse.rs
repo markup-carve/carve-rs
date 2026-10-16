@@ -12367,11 +12367,12 @@ fn collect_blockquote_body(
                 // Preserve a nested quote marker for its own parse. The
                 // innermost quote consumes the `+` and takes the block.
                 if deepest != stripped {
-                    inner.push_at(
-                        stripped.to_string(),
-                        source_line,
-                        stripped_col(cur.source_col(at), line, stripped),
-                    );
+                    let column = stripped_col(cur.source_col(at), line, stripped);
+                    if cur.carried_reach(at) == Some(true) {
+                        inner.push_reached_at(stripped.to_string(), source_line, column);
+                    } else {
+                        inner.push_at(stripped.to_string(), source_line, column);
+                    }
                 }
                 let attach_col = cur.source_col(cur.pos);
                 let end = attached_block_lines(
@@ -12508,7 +12509,11 @@ fn collect_blockquote_body(
                 // (markup-carve/carve#1345).
                 if table.observe(stripped) {
                     para_open = ParaOpen::Closed;
-                    inner.push_at(stripped.to_string(), source_line, stripped_at);
+                    if cur.carried_reach(at) == Some(true) {
+                        inner.push_reached_at(stripped.to_string(), source_line, stripped_at);
+                    } else {
+                        inner.push_at(stripped.to_string(), source_line, stripped_at);
+                    }
                     continue;
                 }
                 let nested_item_closes = !stripped.starts_with([' ', '\t'])
@@ -12569,7 +12574,11 @@ fn collect_blockquote_body(
                     }
                 }
             }
-            inner.push_at(stripped.to_string(), source_line, stripped_at);
+            if cur.carried_reach(at) == Some(true) {
+                inner.push_reached_at(stripped.to_string(), source_line, stripped_at);
+            } else {
+                inner.push_at(stripped.to_string(), source_line, stripped_at);
+            }
             continue;
         }
         // Continuation marker (Carve, PART 9 §17): a lone `+` at column 0 after
@@ -15738,6 +15747,27 @@ fn innermost_marker_content_col(line: &str) -> usize {
     innermost_marker_tail(line).0
 }
 
+fn paragraph_owner_column(line: &str, base: usize) -> Option<usize> {
+    if let Some(marker) = detect_list_marker_full(line) {
+        let column = base + marker_content_col(line)?;
+        return paragraph_owner_column(marker.content, column);
+    }
+    if let Some(column) = definition_body_content_col(line) {
+        let body = strip_definition_marker(trim_ascii_start(line))?.0;
+        return paragraph_owner_column(body, base + column);
+    }
+    (detect_fence_open(trim_ascii_start(line)).is_none()
+        && !is_definition_list_start(trim_ascii_start(line))
+        && ParaOpen::from_line(line, false).get())
+    .then_some(base)
+}
+
+fn is_reference_definition(line: &str) -> bool {
+    parse_link_def_line(line).is_some()
+        || parse_footnote_def_line(line).is_some()
+        || is_definition_placeholder(line)
+}
+
 fn innermost_marker_tail(mut line: &str) -> (usize, &str) {
     let mut column = 0;
     while let Some(marker) = detect_list_marker_full(line) {
@@ -17353,6 +17383,7 @@ fn collect_indented_block_mapped_with_columns(
     let mut definition_band_inline_run = None;
     let mut marker_description_has_lazy_tail = false;
     let mut marker_description_is_paragraph = false;
+    let mut nested_paragraph_column = None;
     // A quote between the item's content column and the marker note's body
     // column belongs to the item and can take a flush-left lazy line.
     let mut marker_note_intermediate_quote_open = false;
@@ -17442,6 +17473,7 @@ fn collect_indented_block_mapped_with_columns(
         }
         if is_blank_line(line) {
             marker_note_intermediate_quote_open = false;
+            nested_paragraph_column = None;
             definition_band_inline_run = None;
             marker_colon_retained_para = false;
             if comment_fence.is_none() && fence.is_none() {
@@ -17551,6 +17583,31 @@ fn collect_indented_block_mapped_with_columns(
             continue;
         }
         let indent = indent_columns(line);
+        if indent == strip_cols
+            && (item_block_opener(trim_ascii_start(line))
+                || detect_comment_fence_line_any_column(line).is_some())
+        {
+            nested_paragraph_column = None;
+        }
+        if nested_paragraph_column.is_some_and(|owner| indent < owner)
+            && indent >= strip_cols
+            && is_reference_definition(trim_ascii_start(line))
+        {
+            nested_paragraph_column = None;
+        }
+        if nested_paragraph_column.is_some_and(|owner| indent >= owner)
+            && item_block_opener_with_invisible_arms(trim_ascii_start(line), true)
+        {
+            nested_paragraph_column = None;
+        }
+        if nested_paragraph_column.is_some_and(|owner| indent < owner)
+            && indent >= strip_cols
+            && detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
+                list_code_fence_closer_ahead(cur, open, strip_cols, parent_indent)
+            })
+        {
+            nested_paragraph_column = None;
+        }
         if marker_note_intermediate_quote_open
             && indent >= strip_cols
             && item_block_opener(trim_ascii_start(line))
@@ -18112,6 +18169,7 @@ fn collect_indented_block_mapped_with_columns(
             && indent <= strip_cols
         {
             if is_definition_list_start(trim_ascii_start(line)) {
+                nested_paragraph_column = None;
                 marker_definition_has_description = false;
                 marker_description_code_admitted = false;
                 marker_description_has_inline_code = false;
@@ -18125,6 +18183,8 @@ fn collect_indented_block_mapped_with_columns(
                 marker_description_has_inline_code = trim_ascii_start(line).contains('`');
                 marker_description_has_lazy_tail = false;
                 marker_description_is_paragraph = ParaOpen::from_line(body, false).get();
+                nested_paragraph_column = paragraph_owner_column(trim_ascii_start(line), indent)
+                    .filter(|owner| *owner > strip_cols);
                 marker_term_paragraph_open = false;
                 marker_term_open = false;
             } else if marker_definition_has_description
@@ -18287,6 +18347,21 @@ fn collect_indented_block_mapped_with_columns(
             _ => (sliced, consumed, synthetic),
         };
         let mut sliced = sliced;
+        if nested_paragraph_column.is_some_and(|owner| indent < owner)
+            && indent != strip_cols
+            && !(indent > strip_cols
+                && item_block_opener_with_invisible_arms(trim_ascii_start(line), true)
+                && detect_fence_open(trim_ascii_start(line)).is_none())
+            && !is_blank_line(line)
+            && !is_line_comment_any_column(line)
+            && detect_comment_fence_line_any_column(line).is_none()
+            && exact_colon_fence_len(trim_ascii_start(line)).is_none()
+            && strip_definition_marker(trim_ascii_start(line)).is_none()
+            && fence.is_none()
+            && comment_fence.is_none()
+        {
+            sliced = format!("{LAZY}{}", trim_ascii_start(&sliced));
+        }
         if marker_colon_retained_para && indent < strip_cols {
             sliced = trim_ascii_start(&sliced).to_string();
         }
@@ -19601,7 +19676,7 @@ fn body_ends_with_an_unnoded_interrupter(source: &str) -> bool {
 }
 
 fn body_ends_with_an_attribute_line(source: &str) -> bool {
-    let lines: Vec<&str> = source.lines().collect();
+    let lines: Vec<&str> = source.lines().map(trim_ascii_start).collect();
     let Some(end) = lines.iter().rposition(|line| !is_blank_line(line)) else {
         return false;
     };
@@ -19690,6 +19765,20 @@ fn collect_definition_body(
 ) -> MappedSource {
     let mut lines: Vec<String> = Vec::new();
     let mut nested_definition_open = seed.lines().any(is_definition_list_start);
+    let mut paragraph_column = seed
+        .lines()
+        .last()
+        .and_then(|line| paragraph_owner_column(line, content_column))
+        .filter(|column| *column > content_column);
+    let mut paragraph_marker_column = seed
+        .lines()
+        .last()
+        .filter(|line| is_list_marker(trim_ascii_start(line)))
+        .map(|_| content_column);
+    let mut paragraph_owner_is_item = seed
+        .lines()
+        .last()
+        .is_some_and(|line| is_list_marker(trim_ascii_start(line)));
     let mut descendant_marker_fence: Option<(FenceOpen, usize)> = None;
     let mut descendant_block_ended = false;
     // A lazy fold leaves a paragraph open. Rechecking by parsing all collected
@@ -19729,8 +19818,60 @@ fn collect_definition_body(
         }
         if is_blank_line(line) {
             retained_below_comment = false;
+            paragraph_column = None;
+            paragraph_marker_column = None;
         }
         let column = indent_columns(line);
+        let mut opens_descendant_here = false;
+        if !is_blank_line(line)
+            && fence.open.is_none()
+            && nested_lead_fence.is_none()
+            && descendant_marker_fence.is_none()
+        {
+            if paragraph_column.is_some_and(|owner| column < owner)
+                && column >= content_column
+                && is_reference_definition(trim_ascii_start(line))
+            {
+                paragraph_column = None;
+                paragraph_marker_column = None;
+                descendant_block_ended = true;
+            } else if paragraph_column.is_some_and(|owner| column < owner)
+                && column >= content_column
+                && (column == content_column || !paragraph_owner_is_item)
+                && (is_list_marker(trim_ascii_start(line))
+                    || item_block_opener_with_invisible_arms(trim_ascii_start(line), true))
+            {
+                paragraph_owner_is_item = is_list_marker(trim_ascii_start(line));
+                paragraph_column = paragraph_owner_column(trim_ascii_start(line), column)
+                    .filter(|owner| *owner > content_column);
+                paragraph_marker_column = is_list_marker(trim_ascii_start(line)).then_some(column);
+                opens_descendant_here = true;
+            } else if paragraph_marker_column == Some(column)
+                && is_list_marker(trim_ascii_start(line))
+            {
+                paragraph_owner_is_item = true;
+                paragraph_column = paragraph_owner_column(trim_ascii_start(line), column)
+                    .filter(|owner| *owner > content_column);
+                opens_descendant_here = paragraph_column.is_some();
+            } else if column >= content_column
+                && paragraph_column.map_or(true, |owner| column >= owner)
+                && (is_list_marker(trim_ascii_start(line))
+                    || strip_definition_marker(trim_ascii_start(line)).is_some())
+            {
+                paragraph_owner_is_item = is_list_marker(trim_ascii_start(line));
+                paragraph_column = paragraph_owner_column(trim_ascii_start(line), column)
+                    .filter(|owner| *owner > content_column);
+                paragraph_marker_column = is_list_marker(trim_ascii_start(line)).then_some(column);
+                opens_descendant_here = paragraph_column.is_some();
+            } else if paragraph_column.is_some_and(|owner| column >= owner)
+                && (item_block_opener_with_invisible_arms(trim_ascii_start(line), true)
+                    || is_line_comment_any_column(line))
+            {
+                paragraph_column = None;
+                paragraph_marker_column = None;
+                descendant_block_ended = true;
+            }
+        }
         let below_comment = column < content_column && trim_ascii_start(line).starts_with("%%");
         if column == 0
             && below_comment_span.is_none()
@@ -19849,6 +19990,17 @@ fn collect_definition_body(
                 // The residual is written back as the spaces the tab bought past
                 // the margin, which is what makes the two spellings agree.
                 let mut sliced = slice_columns(line, content_column.min(indent), true);
+                if !opens_descendant_here
+                    && !is_line_comment_any_column(line)
+                    && detect_comment_fence_line_any_column(line).is_none()
+                    && detect_fence_open(trim_ascii_start(line)).is_none()
+                    && paragraph_column.is_some_and(|owner| indent < owner)
+                    && indent != content_column
+                    && (paragraph_owner_is_item
+                        || !item_block_opener_with_invisible_arms(trim_ascii_start(line), true))
+                {
+                    sliced = format!("{LAZY}{}", trim_ascii_start(&sliced));
+                }
                 // Count what was actually removed rather than assuming three:
                 // `slice_columns` works in COLUMNS, and a tab is one codepoint
                 // spanning several of them. The difference in LENGTH is the
@@ -19966,6 +20118,7 @@ fn collect_definition_body(
                     }
                     if indent == content_column
                         && detect_fence_open(local).is_none()
+                        && !is_reference_definition(local)
                         && line_starts_paragraph(local)
                     {
                         descendant_block_ended = false;
@@ -20066,7 +20219,11 @@ fn collect_definition_body(
             // (markup-carve/carve#1809, corpus 430-2 and 430-3). This guard is
             // the one that ejected them: the interrupt test below never got the
             // line.
-            if indent > 0 && item_block_opener_with_invisible_arms(trim_ascii_start(line), false) {
+            if indent > 0
+                && (indent < content_column
+                    || paragraph_column.map_or(true, |owner| indent >= owner))
+                && item_block_opener_with_invisible_arms(trim_ascii_start(line), false)
+            {
                 break;
             }
             // Lazy continuation: a flush-left line with no blank before it that
@@ -20105,8 +20262,19 @@ fn collect_definition_body(
             {
                 break;
             }
-            if !interrupts_paragraph_in_band(cur, &owned, !below_the_column) {
-                let keep = if below_the_column {
+            if indent > 0
+                && indent != content_column
+                && detect_fence_open(&owned).is_none()
+                && paragraph_column.is_some_and(|owner| indent < owner)
+                || !interrupts_paragraph_in_band(cur, &owned, !below_the_column)
+            {
+                let keep = if indent > 0
+                    && indent != content_column
+                    && detect_fence_open(&owned).is_none()
+                    && paragraph_column.is_some_and(|owner| indent < owner)
+                {
+                    format!("{LAZY}{}", trim_ascii_start(line))
+                } else if below_the_column {
                     line.to_string()
                 } else if detect_fence_open(&owned).is_some() {
                     // ONE COLUMN, AS THE LIST TWIN KEEPS IT. The body dedents

@@ -22,6 +22,7 @@ pub(super) struct SourceLine {
     pub(super) text: String,
     origin: LineOrigin,
     pub(super) stripped: Option<isize>,
+    reached: bool,
 }
 
 impl SourceLine {
@@ -55,7 +56,18 @@ impl LineBuffer {
             text,
             origin: origin.map_or(LineOrigin::Unmapped, LineOrigin::Mapped),
             stripped,
+            reached: false,
         });
+    }
+
+    pub(super) fn push_reached_at(
+        &mut self,
+        text: String,
+        origin: Option<usize>,
+        stripped: Option<isize>,
+    ) {
+        self.push_at(text, origin, stripped);
+        self.lines.last_mut().unwrap().reached = true;
     }
 
     pub(super) fn push_synthetic_blank(&mut self) {
@@ -63,6 +75,7 @@ impl LineBuffer {
             text: String::new(),
             origin: LineOrigin::Synthetic,
             stripped: None,
+            reached: false,
         });
     }
 
@@ -80,6 +93,7 @@ impl LineBuffer {
             Vec::new()
         };
         let mut col_map = Vec::with_capacity(self.lines.len());
+        let mut reached = Vec::with_capacity(self.lines.len());
         for (index, line) in self.lines.into_iter().enumerate() {
             if index > 0 {
                 source.push('\n');
@@ -89,9 +103,13 @@ impl LineBuffer {
                 line_map.push(line.source_line());
             }
             col_map.push(line.stripped);
+            reached.push(line.reached);
         }
         if ends_in_authored_blank {
             source.push('\n');
+        }
+        if !reached.iter().any(|reached| *reached) {
+            reached.clear();
         }
         MappedSource {
             col_map,
@@ -101,7 +119,7 @@ impl LineBuffer {
             item_marker_at_start: false,
             marker_colon_rebased: false,
             marker_tail: None,
-            reached: Vec::new(),
+            reached,
             sublists_carry_authored_base: false,
         }
     }
