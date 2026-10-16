@@ -16,6 +16,8 @@ mod a_block_at_an_item_content_column_closes_its_paragraph_before_an_unclosed_fe
 mod a_definition_in_a_quote_under_an_item_leaves_no_lazy_paragraph;
 #[path = "../a_folded_marker_or_quote_does_not_move_the_base.rs"]
 mod a_folded_marker_or_quote_does_not_move_the_base;
+#[path = "../a_nested_note_on_a_marker_line_keeps_its_column.rs"]
+mod a_nested_note_on_a_marker_line_keeps_its_column;
 #[path = "../a_quote_on_a_container_marker_line_hosts_its_definitions.rs"]
 mod a_quote_on_a_container_marker_line_hosts_its_definitions;
 #[path = "../an_autolink_a_cross_reference_or_a_comment_is_atomic.rs"]

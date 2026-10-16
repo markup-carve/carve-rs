@@ -893,7 +893,9 @@ fn extract_nested_footnote_defs(
 
         let (body, nested, nested_positions, nested_links) =
             extract_footnote_defs(&parent.source, 1, options.positions, true, options);
-        defs.insert(label, compose_mapped_source(body, &parent));
+        let mut body = compose_mapped_source(body, &parent);
+        rebase_body_blocks(&mut body, true, options, false);
+        defs.insert(label, body);
 
         for (nested_label, nested_source) in nested {
             let nested_source = compose_mapped_source(nested_source, &parent);
@@ -1831,8 +1833,9 @@ fn extract_footnote_defs(
                 while i < lines.len() {
                     let line = lines[i];
                     let column = indent_columns(line);
-                    let below_comment =
-                        column < body_indent && trim_ascii_start(line).starts_with("%%");
+                    let below_comment = column < body_indent
+                        && trim_ascii_start(line).starts_with("%%")
+                        && !is_definition_placeholder(line);
                     if below_comment_span.is_some() || (below_comment && note_fence.is_none()) {
                         if below_comment_span.is_none()
                             && !retained_below_comment
@@ -2409,7 +2412,11 @@ fn extract_footnote_defs(
                 let absorbed_note_marker =
                     detect_list_marker_full(without_blockquote_prefixes(raw_def_line))
                         .is_some_and(|marker| parse_footnote_def_line(marker.content).is_some());
-                rebase_body_blocks(&mut definition_source, true, options, absorbed_note_marker);
+                if absorbed_note_marker
+                    || parse_footnote_def_line(trim_ascii_start(first)).is_none()
+                {
+                    rebase_body_blocks(&mut definition_source, true, options, absorbed_note_marker);
+                }
                 defs.insert(label.to_string(), definition_source);
             }
             // Leave the container's structural prefix (or a blank line at top
