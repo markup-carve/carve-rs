@@ -24,6 +24,8 @@ mod a_folded_marker_or_quote_does_not_move_the_base;
 mod a_nested_note_on_a_marker_line_keeps_its_column;
 #[path = "../a_quote_on_a_container_marker_line_hosts_its_definitions.rs"]
 mod a_quote_on_a_container_marker_line_hosts_its_definitions;
+#[path = "../a_term_has_no_content_column_for_a_nested_quote.rs"]
+mod a_term_has_no_content_column_for_a_nested_quote;
 #[path = "../an_autolink_a_cross_reference_or_a_comment_is_atomic.rs"]
 mod an_autolink_a_cross_reference_or_a_comment_is_atomic;
 #[path = "../an_autolink_or_cross_reference_is_atomic_to_brackets_and_braces.rs"]

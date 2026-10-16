@@ -17659,6 +17659,7 @@ fn collect_indented_block_mapped_with_columns(
         if marker_is_definition_lead
             && lines.is_empty()
             && indent > strip_cols
+            && (!marker_term_open || is_definition_list_start(trim_ascii_start(line)))
             && (strip_blockquote_prefix(trim_ascii_start(line)).is_some()
                 || is_definition_list_start(trim_ascii_start(line)))
         {
