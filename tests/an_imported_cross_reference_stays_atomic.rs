@@ -47,7 +47,14 @@ fn cross_references_in_imported_text_render_like_the_original() {
 
 #[test]
 fn escaped_cross_reference_spelling_stays_literal() {
-    for source in ["\\</#id>\n", "x \\</#id> y\n"] {
+    for source in [
+        "\\</#id>\n",
+        "x \\</#id> y\n",
+        "\\</#x~>y>\n",
+        "\\</#x]> b>\n",
+    ] {
+        assert!(!to_html(source).contains("class=\"tag\""));
+        assert!(!has_cross_reference(source));
         for roundtrip in [false, true] {
             let options = Options::default().with_roundtrip(roundtrip);
             let markdown = to_markdown_with_options(source, &options);

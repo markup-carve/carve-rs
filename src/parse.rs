@@ -24437,6 +24437,17 @@ fn parse_inline_context_with_pairs(
                     value: (nxt as char).to_string(),
                     pos: inline_pos(positions, base + i, base + i + 2),
                 }));
+                if nxt == b'<' {
+                    if let Some(end) = crossref_close(bytes, i + 1, &bounds).map(|close| close + 1)
+                    {
+                        out.push(InlineNode::Text(Text {
+                            value: text[i + 2..end].to_string(),
+                            pos: inline_pos(positions, base + i + 2, base + end),
+                        }));
+                        i = end;
+                        continue;
+                    }
+                }
                 i += 2;
                 continue;
             }
