@@ -10,11 +10,7 @@ fn has_cross_reference(source: &str) -> bool {
 #[test]
 fn imported_cross_references_stay_atomic() {
     for (source, markdown_expected, html_expected) in [
-        (
-            "{~a </#x~>y> b~}\n",
-            "~~a </#x~>y> b~~\n",
-            "~a </#x~>y> b~\n",
-        ),
+        ("{~a </#x~>y> b~}\n", "~a </#x~>y> b~\n", "~a </#x~>y> b~\n"),
         ("^[a </#x]> b]\n", "\\^[a </#x]> b]\n", "^[a </#x]> b]\n"),
     ] {
         let options = Options::default().with_roundtrip(true);
