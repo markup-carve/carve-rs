@@ -28,6 +28,7 @@ pub(super) struct PassState {
 
 pub(super) struct RenderSession {
     pub(super) pass: PassState,
+    pub(super) crossref_targets: Slot<RefCell<BTreeSet<String>>>,
     pub(super) redundant_ids: Slot<RefCell<BTreeSet<String>>>,
     pub(super) hyphen_breaks_are_unsafe: Slot<Cell<bool>>,
     pub(super) sentinels: Slot<RefCell<[Rc<String>; SENTINEL_COUNT]>>,
@@ -50,6 +51,7 @@ impl RenderSession {
                 unit_counter: Slot(Cell::new(0)),
                 escape_call_indexes: Slot(RefCell::new(HashMap::new())),
             },
+            crossref_targets: Slot(RefCell::new(BTreeSet::new())),
             redundant_ids: Slot(RefCell::new(BTreeSet::new())),
             hyphen_breaks_are_unsafe: Slot(Cell::new(false)),
             sentinels: Slot(RefCell::new(

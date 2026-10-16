@@ -148,6 +148,11 @@ pub fn render_carve(doc: &Document) -> Result<String, crate::RenderCarveError> {
     crate::render_loss::record_ruby_in_document(doc);
     let one_run = text_as_one_run(doc);
     let doc = one_run.as_ref().unwrap_or(doc);
+    *session.crossref_targets.borrow_mut() =
+        crate::parse::crossref_index_for_document(doc, crate::extension::HeadingIdOptions::PLAIN)
+            .ids()
+            .map(str::to_owned)
+            .collect();
     let source_watch = crate::render_carve_error::SourceSpellWatch::new();
     let watch = crate::render_depth::RenderDepthWatch::new();
     let output = protect_leading_bom(render_carve_unguarded(session, doc));
@@ -6993,7 +6998,12 @@ fn escape_text(
     let crossrefs = crate::parse::CrossrefScan::default();
     while let Some((offset, ch)) = chars.next() {
         if ch == '<' {
-            if let Some(end) = crossrefs.end(text.as_bytes(), offset) {
+            if let Some(end) = crossrefs.end(text.as_bytes(), offset).filter(|&end| {
+                !session
+                    .crossref_targets
+                    .borrow()
+                    .contains(&text[offset + 3..end - 1])
+            }) {
                 out.push_str(&text[offset..end]);
                 while chars.peek().is_some_and(|&(at, _)| at < end) {
                     if matches!(chars.next(), Some((_, '[' | ']'))) {
