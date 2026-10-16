@@ -14,10 +14,10 @@ mod raw_payload_termination;
 mod a_block_at_an_item_content_column_closes_its_paragraph_before_an_unclosed_fence;
 #[path = "../a_definition_in_a_quote_under_an_item_leaves_no_lazy_paragraph.rs"]
 mod a_definition_in_a_quote_under_an_item_leaves_no_lazy_paragraph;
-#[path = "../a_quote_on_a_container_marker_line_hosts_its_definitions.rs"]
-mod a_quote_on_a_container_marker_line_hosts_its_definitions;
 #[path = "../a_folded_marker_or_quote_does_not_move_the_base.rs"]
 mod a_folded_marker_or_quote_does_not_move_the_base;
+#[path = "../a_quote_on_a_container_marker_line_hosts_its_definitions.rs"]
+mod a_quote_on_a_container_marker_line_hosts_its_definitions;
 #[path = "../an_autolink_a_cross_reference_or_a_comment_is_atomic.rs"]
 mod an_autolink_a_cross_reference_or_a_comment_is_atomic;
 #[path = "../an_autolink_or_cross_reference_is_atomic_to_brackets_and_braces.rs"]
@@ -30,6 +30,8 @@ mod an_item_line_under_a_plain_paragraph_stays_lazy_in_the_closer_scan;
 mod an_unclosed_fence_ends_only_at_its_own_containers_closer;
 #[path = "../definitions_close_nested_containers.rs"]
 mod definitions_close_nested_containers;
+#[path = "../definitions_register_only_in_their_host_column.rs"]
+mod definitions_register_only_in_their_host_column;
 #[path = "../footnote_container_paragraph_breaks.rs"]
 mod footnote_container_paragraph_breaks;
 

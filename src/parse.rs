@@ -1474,6 +1474,7 @@ fn extract_footnote_defs(
     // line between entries is transparent to a definition list, so the gate
     // reads past one.
     let mut previous_non_blank = "";
+    let mut last_folded_marker = false;
     let mut i = 0;
     while i < lines.len() {
         let folded_fence = detect_fence_open(trim_ascii_start(lines[i])).is_some_and(|open| {
@@ -1490,10 +1491,22 @@ fn extract_footnote_defs(
         // Called for its effect on the column stack, not for its return: every
         // question below asks `reached_by` about a specific column instead of
         // taking the innermost one (carve-rs#1054).
+        let mut marker_probe_unaffordable = false;
+        let folded_marker = marker_line_may_be_lazy(lines[i])
+            && (last_folded_marker || !marker_follows_sibling(&body, lines[i]))
+            && line_folds_into_an_open_paragraph(
+                &body,
+                lines[i],
+                options,
+                &mut probe_budget,
+                &mut marker_probe_unaffordable,
+            );
+        last_folded_marker = folded_marker;
         columns.observe(
             lines[i],
             in_fence.is_some()
                 || folded_fence
+                || folded_marker
                 || verse_lines[i].is_body()
                 || in_comment_fence.is_some()
                 || prepass_quote_line_is_folded(&folded_into_term, i, lines[i]),
@@ -1774,6 +1787,7 @@ fn extract_footnote_defs(
             // whether, not where: a footnote definition registers wherever it
             // lands and is hoisted either way, so no column bound is enforced.
             let mut body_open_below = false;
+            let mut open_term = term_start_column(first).is_some();
             let mut retained_below_comment = false;
             let mut below_comment_span = None;
             // A lone marker-line `+` gives the note its first flush-left block.
@@ -1987,8 +2001,10 @@ fn extract_footnote_defs(
                         } else if let Some(mut open) = detect_fence_open(trimmed) {
                             open.content_col = indent_columns(line);
                             note_fence = Some(open);
-                        } else if let Some((label_part, target_part, mut def)) =
-                            parse_link_def_line_with_value(trim_ascii_start(trimmed))
+                        } else if let Some((label_part, target_part, mut def)) = (!open_term
+                            || indent_columns(trimmed) == 0)
+                            .then(|| parse_link_def_line_with_value(trim_ascii_start(trimmed)))
+                            .flatten()
                         {
                             // A LINK DEFINITION inside the body is
                             // document-level metadata like any other, so it is
@@ -2050,6 +2066,9 @@ fn extract_footnote_defs(
                         // too hoisted a line every other engine keeps in the body.
                         let residual = indent_columns(trimmed);
                         let flush = trim_ascii_start(trimmed);
+                        if residual == 0 || is_blank_line(trimmed) {
+                            open_term = term_start_column(flush).is_some();
+                        }
                         let is_note_def = parse_footnote_def_line(flush).is_some();
                         // A DEFINITION OPENS THE NESTED BODY; A BLOCK CLOSES IT.
                         // Plain prose is that body's own lazy continuation and
@@ -2279,14 +2298,14 @@ fn extract_footnote_defs(
                         if !line_reaches_floor {
                             break;
                         }
-                        if parse_footnote_def_line(trim_ascii_start(line)).is_some() {
+                        if marker_note && parse_footnote_def_line(trim_ascii_start(line)).is_some()
+                        {
                             break;
                         }
                         let dedented = strip_leading_columns(line, note_floor);
                         // A link definition at the note's own column is metadata,
                         // even when an open marker-line paragraph precedes it.
-                        if marker_note
-                            && indent_columns(line) == note_floor
+                        if indent_columns(line) >= note_floor
                             && note_admitted_fence.is_none()
                             && note_opacity.comment.is_none()
                             && note_opacity.code.is_none()
@@ -2627,6 +2646,17 @@ fn open_frame(blocks: &[BlockNode]) -> OpenFrame {
 /// get the same answer from the same code.
 fn marker_line_may_be_lazy(line: &str) -> bool {
     detect_list_marker_full(without_blockquote_prefixes(line)).is_some()
+}
+
+fn marker_follows_sibling(body: &[impl AsRef<str>], line: &str) -> bool {
+    body.last().is_some_and(|prior| {
+        let prior = prior.as_ref();
+        let prior_bare = without_blockquote_prefixes(prior);
+        let line_bare = without_blockquote_prefixes(line);
+        indent_columns(prior) == indent_columns(line)
+            && prior[..prior.len() - prior_bare.len()] == line[..line.len() - line_bare.len()]
+            && detect_list_marker_full(prior_bare).is_some()
+    })
 }
 
 /// Does the BLOCK PARSER fold `line` into a paragraph that was already open?
@@ -4024,6 +4054,7 @@ fn extract_link_defs_with_guard_full(
     options: &Options<'_>,
     mut guard: Option<&mut usize>,
 ) -> (String, BTreeMap<String, LinkDef>) {
+    let has_candidate = source_may_contain_link_definition(source);
     let mut body: Vec<std::borrow::Cow<'_, str>> = Vec::new();
     let mut defs = BTreeMap::new();
     let mut in_fence: Option<FenceOpen> = None;
@@ -4077,6 +4108,7 @@ fn extract_link_defs_with_guard_full(
     let mut container_closers: Option<ContainerCommentClosers> = None;
     // See `extract_footnote_defs`: the line the `after_term` gate asks about.
     let mut previous_non_blank = "";
+    let mut last_folded_marker = false;
     for (line_index, line) in all_lines.iter().copied().enumerate() {
         let folded_fence = detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
             !closer_maxima.has_run_after(line_index, open)
@@ -4090,10 +4122,25 @@ fn extract_link_defs_with_guard_full(
         // fence, so `  [r]: /u` after it was stripped to that phantom column and
         // registered, where the block parser sees a top-level line two columns
         // in and reads it as text.
+        let mut marker_probe_unaffordable = false;
+        let folded_marker = has_candidate
+            && marker_line_may_be_lazy(line)
+            && (last_folded_marker || !marker_follows_sibling(&body, line))
+            && guard.as_mut().is_some_and(|budget| {
+                line_folds_into_an_open_paragraph(
+                    &body,
+                    line,
+                    options,
+                    budget,
+                    &mut marker_probe_unaffordable,
+                )
+            });
+        last_folded_marker = folded_marker;
         let content_col = columns.observe(
             line,
             in_fence.is_some()
                 || folded_fence
+                || folded_marker
                 || verse_lines[line_index].is_body()
                 || in_comment_fence.is_some()
                 || prepass_quote_line_is_folded(&folded_into_term, line_index, line),
