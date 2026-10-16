@@ -15895,6 +15895,7 @@ thread_local! {
 /// (markup-carve/carve#1280).
 fn body_ends_with_open_paragraph(body: &str, options: &Options<'_>) -> bool {
     if body_ends_with_an_attribute_line(body)
+        || quoted_body_ends_with_an_invisible_line(body)
         || body
             .lines()
             .rev()
@@ -15941,6 +15942,32 @@ fn body_ends_with_open_paragraph(body: &str, options: &Options<'_>) -> bool {
     PARAGRAPH_BODY_PROBES.with(|count| count.set(count.get() + 1));
     let blocks = probe_blocks(body, options);
     block_ends_with_open_paragraph(blocks.last(), colon_fences_left_open(body), false)
+}
+
+/// Whether a body's last line is a definition or attribute line written
+/// inside a quote. It leaves no paragraph open in the quote (CARVE-P0-011,
+/// CARVE-P0-012), so the plain check, which sees the `>` first, misses it. A
+/// definition at the quote's own column leaves the document-column
+/// placeholder, which here is still inside the quote.
+fn quoted_body_ends_with_an_invisible_line(body: &str) -> bool {
+    let Some(last) = body.lines().rev().find(|line| !is_blank_line(line)) else {
+        return false;
+    };
+    if strip_blockquote_prefix(trim_ascii_start(last)).is_none() {
+        return false;
+    }
+    let dequote = |line: &str| -> String {
+        let mut local = trim_ascii_start(line);
+        while let Some(rest) = strip_blockquote_prefix(local) {
+            local = trim_ascii_start(rest);
+        }
+        local.to_string()
+    };
+    if is_definition_placeholder(&dequote(last)) {
+        return true;
+    }
+    let dequoted: Vec<String> = body.lines().map(dequote).collect();
+    body_ends_with_an_attribute_line(&dequoted.join("\n"))
 }
 
 /// Whether a list item still holds an open paragraph, probed only when a later
@@ -16011,6 +16038,7 @@ fn nested_ends_with_open_paragraph(
 ) -> bool {
     if !below_outer_column
         && (body_ends_with_an_attribute_line(nested)
+            || quoted_body_ends_with_an_invisible_line(nested)
             || nested
                 .lines()
                 .rev()
