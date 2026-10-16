@@ -1835,6 +1835,15 @@ fn extract_footnote_defs(
                     let column = indent_columns(line);
                     if retained_below_comment {
                         if let Some(open) = note_fence {
+                            if column < body_indent
+                                && !is_blank_line(line)
+                                && !is_fence_close(trim_ascii_start(line), open)
+                                && !lines[i..]
+                                    .iter()
+                                    .any(|next| is_fence_close(trim_ascii_start(next), open))
+                            {
+                                break;
+                            }
                             def_lines.push(line.to_owned());
                             def_line_map.push(Some(first_source_line + i));
                             if positions {
@@ -17943,8 +17952,24 @@ fn collect_indented_block_mapped_with_columns(
             && line_starts_paragraph(line)
             && !item_block_opener(line)
             && !interrupts_lazy_continuation_as_container(cur, line);
+        let retained_colon_fence = comment_boundary
+            && paragraph_before_comment
+            && marker_colon.is_some()
+            && detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
+                !cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
+                    && !item_body_fence_has_closer(
+                        cur.lines.range(cur.pos + 1..cur.lines.len()),
+                        open,
+                        strip_cols,
+                        |next, _| {
+                            detect_list_marker_full(next)
+                                .is_some_and(|marker| marker.indent <= parent_indent)
+                        },
+                    )
+            });
         if indent <= parent_indent
             && !comment_retains_owner
+            && !retained_colon_fence
             && !(marker_note_intermediate_quote_open
                 && line_starts_paragraph(line)
                 && !item_block_opener(line))
@@ -18011,7 +18036,7 @@ fn collect_indented_block_mapped_with_columns(
                 .is_some_and(|(at, _)| at + 1 == cur.pos);
             if (after_comment || after_span)
                 && paragraph_before_comment
-                && !interrupts_lazy_continuation_as_container(cur, line)
+                && (!interrupts_lazy_continuation_as_container(cur, line) || retained_colon_fence)
             {
                 marker_colon_retained_para = true;
             }
