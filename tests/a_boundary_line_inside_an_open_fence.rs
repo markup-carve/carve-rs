@@ -65,7 +65,7 @@ fn the_block_quote_collector_keeps_a_colon_fence_whole() {
 fn the_block_quote_collector_keeps_a_comment_fence_whole() {
     assert_eq!(
         flat(&format!("> q\n+\n{COMMENT}")),
-        "<blockquote> <p>q</p> </blockquote>"
+        "<blockquote><p>q</p></blockquote>"
     );
 }
 

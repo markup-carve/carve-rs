@@ -2394,17 +2394,25 @@ fn render_blockquote(
         buffers.borrow_mut().insert(out as *const String as usize);
     });
     indent(out, level);
-    if b.children.len() == 1 {
-        if let BlockNode::Paragraph(p) = &b.children[0] {
-            out.push_str("<blockquote");
-            write_attrs(out, &b.attrs);
+    // CARVE-P10-012: a comment or a raw block for another target contributes no
+    // slot, so it does not push a lone paragraph out of the compact form.
+    let mut visible = b.children.iter().filter(|child| !renders_nothing(child));
+    if let (Some(BlockNode::Paragraph(_)), None) = (visible.next(), visible.next()) {
+        out.push_str("<blockquote");
+        write_attrs(out, &b.attrs);
+        for child in &b.children {
+            let BlockNode::Paragraph(p) = child else {
+                // Rendered anyway for its side effects, such as a render-loss row.
+                render_block(out, child, level + 1, options, state);
+                continue;
+            };
             out.push_str("><p");
             write_attrs(out, &p.attrs);
             out.push('>');
             render_inlines(out, &p.children, options, state);
             out.push_str("</p></blockquote>");
-            return;
         }
+        return;
     }
     out.push_str("<blockquote");
     write_attrs(out, &b.attrs);
@@ -2426,6 +2434,19 @@ fn render_blockquote(
     out.push('\n');
     indent(out, level);
     out.push_str("</blockquote>");
+}
+
+/// The block kinds `render_block` writes no HTML for. Keep in step with its arms.
+fn renders_nothing(node: &BlockNode) -> bool {
+    match node {
+        BlockNode::Comment(_)
+        | BlockNode::LinkReferenceDefinition(_)
+        | BlockNode::CitationDefinition(_)
+        | BlockNode::AbbreviationDef(_) => true,
+        BlockNode::RawBlock(r) => r.format != "html",
+        BlockNode::BlockExtension(n) => renders_nothing(&n.fallback),
+        _ => false,
+    }
 }
 
 fn render_table(

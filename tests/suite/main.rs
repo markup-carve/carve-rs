@@ -745,6 +745,8 @@ mod an_inline_include_leaves_one_text_run;
 mod an_invalid_attribute_block_is_not_a_definition;
 #[path = "../an_invisible_line_below_a_description_s_column_folds_as_text.rs"]
 mod an_invisible_line_below_a_description_s_column_folds_as_text;
+#[path = "../an_invisible_quote_child_keeps_the_compact_quote.rs"]
+mod an_invisible_quote_child_keeps_the_compact_quote;
 #[path = "../an_italic_wrapping_a_strong_keeps_its_nesting.rs"]
 mod an_italic_wrapping_a_strong_keeps_its_nesting;
 #[path = "../an_item_opening_with_a_note_reference_keeps_its_text.rs"]
