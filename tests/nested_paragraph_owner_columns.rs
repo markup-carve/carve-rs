@@ -23,10 +23,10 @@ fn bullet_at_item_column_opens_beside_nested_description() {
 }
 
 #[test]
-fn thematic_break_below_description_column_stays_outside_nested_item() {
+fn thematic_break_below_description_column_folds_into_nested_item() {
     assert_eq!(
         html(":: t\n: - para\n ---\n"),
-        "<dl><dt>t</dt><dd><ul><li>para</li></ul></dd></dl><p>—</p>"
+        "<dl><dt>t</dt><dd><ul><li>para —</li></ul></dd></dl>"
     );
 }
 
