@@ -2225,11 +2225,14 @@ fn extract_footnote_defs(
                 {
                     note_opacity.comment = None;
                 }
-                // Every line at or past the body column is the note's, whatever
-                // a comment above it closed (CARVE-P9-053, CARVE-P0-014).
+                // A marker note admits comments at its host column.
                 let reaches_floor = |at, admitted_fence: Option<(FenceOpen, usize)>| {
                     content(lines[at]).is_some_and(|line| {
-                        admitted_fence.is_some() || indent_columns(line) >= note_floor
+                        admitted_fence.is_some()
+                            || indent_columns(line) >= note_floor
+                            || (marker_note
+                                && indent_columns(line) >= prefix_cols
+                                && is_line_comment_any_column(line))
                     })
                 };
                 let blank = |raw| content(raw).is_some_and(is_blank_line);
@@ -8406,6 +8409,7 @@ fn rebase_body_blocks(
             block_at_minimum = block_at_minimum
                 || reaches_container
                 || (i == 0 && source.item_marker_at_start)
+                || (i == 0 && is_collected_definition_placeholder(&lines[i]))
                 || !is_line_comment_any_column(&lines[i]);
             i += 1;
             continue;
@@ -14877,35 +14881,6 @@ fn parse_list(
             }
             continue;
         }
-        // A collected definition written on the marker line is the item's
-        // first (invisible) block, not an empty lead paragraph. With no open
-        // paragraph, a following line below the content column cannot lazily
-        // continue the item (§24 C3); only content that reaches the item's own
-        // column still belongs to it. Sending the placeholder through the lead
-        // paragraph path made `- [r]: /u` / ` :` render the colon inside the
-        // item, unlike the executable spec, carve-js and carve-php.
-        if is_collected_definition_placeholder(marker.content) {
-            let nested =
-                collect_indented_block_mapped(cur, content_col.saturating_sub(1), content_col);
-            let children = item_body(deferred, items.len(), nested, None, true, options);
-            items.push(ListItem {
-                attrs: item_attrs,
-                checked: marker.checked,
-                task_state: marker.task_state,
-                children,
-                pos: span_of(cur, item_at, cur.pos, options),
-            });
-            if cur.peek().is_some_and(|line| {
-                let indent = indent_columns(line);
-                !is_blank_line(line)
-                    && trim_ascii(line) != "+"
-                    && detect_list_marker_full(line).is_none()
-                    && indent < content_col
-            }) {
-                break;
-            }
-            continue;
-        }
         if marker_content_starts_block(marker.content, cur, content_col)
             || marker_content_is_attr_block(marker.content, cur, content_col)
             || marker_content_is_captioned_equation(marker.content, cur, content_col, options)
@@ -15411,7 +15386,8 @@ fn marker_content_starts_block(content: &str, _cur: &LineCursor<'_>, _content_co
     // Reference and footnote definitions are invisible blocks at a container's
     // content column. On a marker line they must enter the nested block parser,
     // not the lead-paragraph scanner (`r. [f]: t` is an empty list item).
-    if parse_footnote_def_line(content).is_some()
+    if is_collected_definition_placeholder(content)
+        || parse_footnote_def_line(content).is_some()
         || parse_link_def_line(content).is_some_and(|(_, target)| !trim_ascii(target).is_empty())
     {
         return true;
