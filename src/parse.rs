@@ -10207,10 +10207,48 @@ fn exact_colon_fence_len(line: &str) -> Option<usize> {
     }
 }
 
+/// The prefixes carrying an open colon-body paragraph, outermost first: bit
+/// `i` of `quotes` is set for a quote (`>`) and clear for an item (`-`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+struct OpenParagraph {
+    depth: u8,
+    quotes: u32,
+}
+
+impl OpenParagraph {
+    const PLAIN: Self = Self {
+        depth: 0,
+        quotes: 0,
+    };
+
+    fn outer_is_quote(self) -> Option<bool> {
+        (self.depth > 0).then_some(self.quotes & 1 == 1)
+    }
+
+    fn inner(self) -> Self {
+        Self {
+            depth: self.depth - 1,
+            quotes: self.quotes >> 1,
+        }
+    }
+
+    fn under(self, quote: bool) -> Self {
+        Self {
+            depth: (self.depth + 1).min(32),
+            quotes: (self.quotes << 1) | u32::from(quote),
+        }
+    }
+}
+
 /// Whether a paragraph is open after this colon-body line, for the §10 I4
 /// gate on an unclosed fence. Blank, colon, comment, block-attribute, heading and
-/// thematic-break lines leave none open.
-fn opens_colon_body_paragraph(line: &str) -> bool {
+/// thematic-break lines leave none open. A quote line always reads its content;
+/// an item line does only under an item's paragraph, where it starts the next
+/// item, and is lazy text under any other.
+fn opens_colon_body_paragraph(
+    line: &str,
+    was_open: Option<OpenParagraph>,
+) -> Option<OpenParagraph> {
     let t = trim_ascii_end(trim_ascii_start(line));
     if t.is_empty()
         || t.starts_with("%%")
@@ -10218,27 +10256,41 @@ fn opens_colon_body_paragraph(line: &str) -> bool {
         || exact_colon_fence_len(t).is_some()
         || detect_container_open(t).is_some()
     {
-        return false;
+        return None;
     }
     let hashes = t.bytes().take_while(|b| *b == b'#').count();
     if (1..=6).contains(&hashes) && matches!(t.as_bytes().get(hashes), None | Some(b' ' | b'\t')) {
-        return false;
+        return None;
     }
     let first = t.as_bytes()[0];
     if matches!(first, b'-' | b'*' | b'_') && t.len() >= 3 && t.bytes().all(|b| b == first) {
-        return false;
+        return None;
     }
-    // A quote or item opens a paragraph only when its content would.
     if let Some(rest) = t.strip_prefix('>') {
-        return match rest.as_bytes().first() {
-            None => false,
-            Some(b' ' | b'\t') => opens_colon_body_paragraph(&rest[1..]),
-            Some(_) => true,
-        };
+        match rest.as_bytes().first() {
+            None => return None,
+            Some(b' ' | b'\t') => {
+                let quoted = was_open
+                    .filter(|open| open.outer_is_quote() == Some(true))
+                    .map(OpenParagraph::inner);
+                return opens_colon_body_paragraph(&rest[1..], quoted).map(|open| open.under(true));
+            }
+            Some(_) => {}
+        }
     }
-    match detect_list_marker_full(t) {
-        Some(item) => opens_colon_body_paragraph(item.content),
-        None => true,
+    let item = if t.starts_with('>') {
+        None
+    } else {
+        detect_list_marker_full(t)
+    };
+    if let Some(open) = was_open {
+        if item.is_none() || open.outer_is_quote() != Some(false) {
+            return Some(open);
+        }
+    }
+    match item {
+        None => Some(OpenParagraph::PLAIN),
+        Some(item) => opens_colon_body_paragraph(item.content, None).map(|open| open.under(false)),
     }
 }
 
@@ -10406,11 +10458,11 @@ fn collect_indexed_colon_body(
     let mut origins = vec![None];
     let mut boundaries = Vec::new();
     let mut cacheable = true;
-    let mut paragraph_open = false;
+    let mut paragraph_open = None;
     while cur.peek().is_some() {
         let top = *stack.last().unwrap();
         let paragraph_was_open = paragraph_open;
-        paragraph_open = opens_colon_body_paragraph(cur.peek().unwrap());
+        paragraph_open = opens_colon_body_paragraph(cur.peek().unwrap(), paragraph_was_open);
         // A CLOSER OF AN OPEN CONTAINER IS NOT ABSORBABLE. §12's absorption is
         // about a paragraph swallowing a would-be OPENER; the container this
         // line closes was opened BEFORE the malformed fence was ever read, so
@@ -10431,14 +10483,14 @@ fn collect_indexed_colon_body(
             continue;
         }
         if skip_opaque_span_into(&mut inner, cur) {
-            paragraph_open = false;
+            paragraph_open = None;
             continue;
         }
         let line = cur.peek().unwrap();
         // An unclosed fence is code up to the innermost container's own closer;
         // every other colon line before it is content (A CLOSER IS REQUIRED,
         // carve#3201). Under an open paragraph it is text (§10 I4).
-        if !paragraph_was_open && detect_fence_open(line).is_some() {
+        if paragraph_was_open.is_none() && detect_fence_open(line).is_some() {
             push_current_line(&mut inner, cur);
             cur.consume();
             while let Some(next) = cur.peek() {
@@ -10448,7 +10500,7 @@ fn collect_indexed_colon_body(
                 push_current_line(&mut inner, cur);
                 cur.consume();
             }
-            paragraph_open = false;
+            paragraph_open = None;
             continue;
         }
         if !line.starts_with([' ', '\t']) {
@@ -10529,12 +10581,16 @@ fn find_colon_fence_end(
     // quadratic, as tests/perf_regressions.rs caught.
     let mut stack = vec![fence_len];
     let mut idx = start + 1;
-    let mut paragraph_open = false;
+    let mut paragraph_open = None;
     while idx < lines.len() {
         let line = lines.at(idx);
         let top = *stack.last().unwrap();
         let paragraph_was_open = paragraph_open;
-        paragraph_open = !literal && opens_colon_body_paragraph(line);
+        paragraph_open = if literal {
+            None
+        } else {
+            opens_colon_body_paragraph(line, paragraph_was_open)
+        };
         if exact_colon_fence_len(line) == Some(top) {
             stack.pop();
             idx += 1;
@@ -10591,15 +10647,15 @@ fn find_colon_fence_end(
                         break;
                     }
                 }
-                paragraph_open = false;
+                paragraph_open = None;
                 continue;
             }
-            if !literal && !paragraph_was_open {
+            if !literal && paragraph_was_open.is_none() {
                 idx += 1;
                 while idx < lines.len() && exact_colon_fence_len(lines.at(idx)) != Some(top) {
                     idx += 1;
                 }
-                paragraph_open = false;
+                paragraph_open = None;
                 continue;
             }
         }
@@ -10614,7 +10670,7 @@ fn find_colon_fence_end(
                             .any(|line| line.starts_with(LAZY))
                     {
                         idx = close + 1;
-                        paragraph_open = false;
+                        paragraph_open = None;
                         continue;
                     }
                 }
