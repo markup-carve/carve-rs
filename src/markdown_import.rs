@@ -901,7 +901,17 @@ fn markdown_to_ast_with_code_lines(
     let mut parser =
         Parser::new_with_broken_link_callback(&strikes.text, options, Some(&mut reference))
             .into_offset_iter();
-    fn push_text_after_entity_lt(builder: &mut Builder, pending: &mut u8, mut value: &str) {
+    fn push_text_after_entity_lt(
+        builder: &mut Builder,
+        pending: &mut u8,
+        mut value: &str,
+        native_code: bool,
+    ) {
+        if native_code {
+            *pending = 0;
+            builder.text(value);
+            return;
+        }
         loop {
             if value.is_empty() {
                 break;
@@ -1112,12 +1122,15 @@ fn markdown_to_ast_with_code_lines(
             text_end = Some(range.end);
         }
         if matches!(&event, Event::Text(_)) {
+            let native_code = builder
+                .frames
+                .iter()
+                .any(|frame| matches!(frame, Frame::HtmlCode { .. }));
             if builder.frames.iter().any(|frame| {
                 matches!(
                     frame,
                     Frame::CodeBlock { .. }
                         | Frame::Metadata(_)
-                        | Frame::HtmlCode { .. }
                         | Frame::Image { .. }
                         | Frame::RawHtml(_)
                 )
@@ -1146,6 +1159,7 @@ fn markdown_to_ast_with_code_lines(
                             &mut builder,
                             &mut entity_lt_prefix,
                             &source[cursor..link.start],
+                            native_code,
                         );
                     }
                     entity_lt_prefix = 0;
@@ -1163,10 +1177,16 @@ fn markdown_to_ast_with_code_lines(
                         &mut builder,
                         &mut entity_lt_prefix,
                         &source[cursor..range.end],
+                        native_code,
                     );
                 }
             } else {
                 if let Event::Text(text) = &event {
+                    if native_code {
+                        entity_lt_prefix = 0;
+                        builder.push(event, &source[range], empty_title);
+                        continue;
+                    }
                     let raw = &source[range.clone()];
                     if text.as_ref() == "<" && raw.starts_with('&') {
                         builder.inline(InlineNode::escaped_text("<"));
@@ -1183,7 +1203,7 @@ fn markdown_to_ast_with_code_lines(
                         builder.text(&text[1..]);
                         continue;
                     }
-                    push_text_after_entity_lt(&mut builder, &mut entity_lt_prefix, text);
+                    push_text_after_entity_lt(&mut builder, &mut entity_lt_prefix, text, false);
                     continue;
                 }
             }
