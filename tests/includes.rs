@@ -2999,11 +2999,24 @@ fn invalid_named_regions_warn_and_keep_resolved_dependency() {
         "// #region demo\nBody.\n// #endregion other",
         "// #region demo\nBody.\n// #endregion demo\n// #region demo",
         "// #region demo extra\nBody.\n// #endregion demo",
+        "// #region-x\n// #region demo\nBody.\n// #endregion demo",
+        "// #region demo\nBody.\n// #endregion-x",
     ] {
         let result = expand("{{ child @region:demo }}", &[("child", child)]);
         assert_eq!(result.rules(), vec!["include-region-invalid"]);
+        assert!(result.html.contains("{{ child "), "{}", result.html);
+        assert!(result.html.contains(":demo }}"), "{}", result.html);
         assert_eq!(result.dependencies, vec![dep("child", true)]);
     }
+    let run_on = expand(
+        "{{ child @region:demo }}",
+        &[(
+            "child",
+            "// #regionx\n// #region demo\nBody.\n// #endregion demo",
+        )],
+    );
+    assert!(run_on.rules().is_empty());
+    assert!(run_on.html.contains("Body."));
     for directive in [
         "{{ child #pick @region:demo }}",
         "{{ child @lines:1-2 @region:demo }}",

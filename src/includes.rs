@@ -1120,7 +1120,14 @@ fn region_range(source: &str, selected: &str) -> Option<(usize, usize)> {
             continue;
         };
         if !rest.is_empty() && !rest.starts_with([' ', '\t']) {
-            continue;
+            if rest
+                .as_bytes()
+                .first()
+                .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+            {
+                continue;
+            }
+            return None;
         }
         let name = rest.trim_matches([' ', '\t']);
         let valid = !name.is_empty() && {
