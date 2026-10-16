@@ -5039,10 +5039,10 @@ thread_local! {
 /// `strip_quote_levels` for quotes each written after a fixed indentation.
 fn strip_indented_quote_levels<'a>(mut line: &'a str, indents: &[usize]) -> Option<&'a str> {
     for &indent in indents {
-        if leading_ws(line) != indent {
+        if leading_ws(line) < indent {
             return None;
         }
-        line = strip_blockquote_prefix(&line[indent..])?;
+        line = strip_blockquote_prefix(trim_ascii_start(&line[indent..]))?;
     }
     Some(line)
 }
@@ -12662,7 +12662,8 @@ fn collect_blockquote_body(
             && !is_blank_line(line)
             && !is_definition_list_start(trim_ascii_start(line))
             && strip_description_prefix(trim_ascii_start(line)).is_none()
-            && !item_block_opener(trim_ascii_start(line))
+            && (!item_block_opener(trim_ascii_start(line))
+                || detect_fence_open(trim_ascii_start(line)).is_some())
         {
             open_entry.advance(&inner.lines);
             open_entry.half == Some(DefHalf::Term)
@@ -16225,10 +16226,7 @@ fn nested_ends_with_open_paragraph(
                 .lines()
                 .rev()
                 .find(|line| !is_blank_line(line))
-                .is_some_and(|line| {
-                    is_collected_definition_placeholder(trim_ascii_start(line))
-                        || parse_standalone_attrs(trim_ascii_start(line)).is_some()
-                }))
+                .is_some_and(|line| is_collected_definition_placeholder(trim_ascii_start(line))))
     {
         return false;
     }
@@ -17368,6 +17366,7 @@ fn collect_indented_block_mapped_with_columns(
     let marker_base = marker_lead
         .as_ref()
         .map_or(parent_indent, |marker| marker.indent);
+    let marker_ordered = marker_lead.as_ref().is_some_and(|marker| marker.ordered);
     let marker_content = marker_lead.map(|marker| marker.content);
     let marker_is_definition_lead = marker_content.is_some_and(|content| {
         let content = trim_ascii_start(content);
@@ -17647,9 +17646,10 @@ fn collect_indented_block_mapped_with_columns(
             }
             reached.push(false);
             cur.consume();
-            if cur
-                .peek()
-                .is_some_and(|next| is_blank_line(next) || indent_columns(next) > marker_base)
+            if marker_description_is_paragraph
+                || cur
+                    .peek()
+                    .is_some_and(|next| is_blank_line(next) || indent_columns(next) > marker_base)
             {
                 continue;
             }
@@ -17854,7 +17854,37 @@ fn collect_indented_block_mapped_with_columns(
         // A CLOSER IS PART OF THE SPAN, NOT A DEDENT. See
         // `body_open_comment_run`: this dedent ends the container, and a comment
         // delimiter closing a span these lines already hold is not one.
+        let comment_boundary = indent < strip_cols
+            && (marker_colon.is_some()
+                || (marker_is_definition_term && marker_definition_has_description))
+            && (marker_ordered
+                || cur.pos.checked_sub(1).is_some_and(|at| {
+                    let previous = cur.lines.at(at);
+                    indent_columns(previous) > marker_base && is_line_comment_any_column(previous)
+                }))
+            && (cur.pos.checked_sub(1).is_some_and(|at| {
+                let previous = cur.lines.at(at);
+                indent_columns(previous) < strip_cols && is_line_comment_any_column(previous)
+            }) || cur
+                .closed_comment_location
+                .is_some_and(|(at, _)| at + 1 == cur.pos));
+        let paragraph_before_comment = comment_boundary
+            && lines
+                .iter()
+                .rposition(|line| !is_blank_line(line) && !is_line_comment_any_column(line))
+                .is_some_and(|end| {
+                    let mut body = marker_content.unwrap_or_default().to_owned();
+                    body.push('\n');
+                    body.push_str(&lines[..=end].join("\n"));
+                    body_ends_with_open_paragraph(&body, &Options::default())
+                });
+        let comment_retains_owner = comment_boundary
+            && paragraph_before_comment
+            && line_starts_paragraph(line)
+            && !item_block_opener(line)
+            && !interrupts_lazy_continuation_as_container(cur, line);
         if indent <= parent_indent
+            && !comment_retains_owner
             && !(marker_note_intermediate_quote_open
                 && line_starts_paragraph(line)
                 && !item_block_opener(line))
@@ -17909,7 +17939,7 @@ fn collect_indented_block_mapped_with_columns(
         if marker_colon.is_some()
             && !literal_marker_body
             && indent < strip_cols
-            && indent > parent_indent
+            && indent >= parent_indent
             && !marker_colon_retained_para
         {
             let after_comment = cur.pos.checked_sub(1).is_some_and(|at| {
@@ -17920,9 +17950,7 @@ fn collect_indented_block_mapped_with_columns(
                 .closed_comment_location
                 .is_some_and(|(at, _)| at + 1 == cur.pos);
             if (after_comment || after_span)
-                && lines
-                    .iter()
-                    .any(|line| line_starts_paragraph(line) && !is_line_comment_any_column(line))
+                && paragraph_before_comment
                 && !interrupts_lazy_continuation_as_container(cur, line)
             {
                 marker_colon_retained_para = true;
@@ -19676,10 +19704,21 @@ fn body_ends_with_an_unnoded_interrupter(source: &str) -> bool {
 }
 
 fn body_ends_with_an_attribute_line(source: &str) -> bool {
-    let lines: Vec<&str> = source.lines().map(trim_ascii_start).collect();
+    let raw_lines: Vec<&str> = source.lines().collect();
+    let lines: Vec<&str> = raw_lines
+        .iter()
+        .map(|line| trim_ascii_start(line))
+        .collect();
     let Some(end) = lines.iter().rposition(|line| !is_blank_line(line)) else {
         return false;
     };
+    let start = lines[..end]
+        .iter()
+        .rposition(|line| is_blank_line(line))
+        .map_or(0, |index| index + 1);
+    if leading_ws(raw_lines[end]) > 0 && lines[start].starts_with('>') {
+        return false;
+    }
     if !trim_ascii_end(lines[end]).ends_with('}') {
         return false;
     }
@@ -20197,8 +20236,7 @@ fn collect_definition_body(
                 }
                 folded_into_quote = quoted;
             }
-            // A surviving quote owns the unmarked line before the definition
-            // body's column can classify its residue (CARVE-P0-004).
+            // A surviving quote owns this line before the definition column (CARVE-P0-004).
             if indent > 0 && folded_into_quote && !trim_ascii_start(line).starts_with("%%") {
                 folded_a_lazy_line = true;
                 lines.push(line.to_string());

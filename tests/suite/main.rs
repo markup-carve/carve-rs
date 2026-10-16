@@ -36,6 +36,8 @@ mod definitions_close_nested_containers;
 mod definitions_register_only_in_their_host_column;
 #[path = "../footnote_container_paragraph_breaks.rs"]
 mod footnote_container_paragraph_breaks;
+#[path = "../unmarked_lines_follow_their_reachable_container.rs"]
+mod unmarked_lines_follow_their_reachable_container;
 
 #[path = "../verbatim_continuation_guards.rs"]
 mod verbatim_continuation_guards;
