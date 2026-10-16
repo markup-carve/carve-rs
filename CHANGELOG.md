@@ -15,7 +15,7 @@ which the published crate does not carry.
 
 ### Breaking
 
-- Empty link destinations are real links: `[text]()` and `![alt]()` parse as a link and an image with an empty URL, and a bare `[r]:` line is an empty reference definition. Escape the opening bracket to keep such text literal. AST JSON carries contract version `2.0`, so 0.1.9 readers refuse trees written by this release, and `Link` and `Image` gain a `resolved_empty_reference` field that struct literals have to set (#2789, markup-carve/carve#2878).
+- Empty link destinations are real links: `[text]()` and `![alt]()` parse as a link and an image with an empty URL, and a bare `[r]:` line is an empty reference definition. Escape the opening bracket to keep such text literal. AST JSON carries contract version `1.2`, which adds `resolved: true` on a link or image reference use that resolved to an empty definition, an optional root `astVersion` that `--json` writes, and `comment.form` on comments; older readers refuse trees written by this release. `Link` and `Image` gain a `resolved_empty_reference` field that struct literals have to set (#2789, #2851, markup-carve/carve#2878).
 
 - New render loss codes. Markdown, plain text and ANSI output report `table-span-flattened` for each merged table cell; Markdown reports `table-header-row-demoted`, `table-header-row-hoisted` and `table-header-cell-demoted` when it rewrites a header row or cell. `--allow-loss` accepts all four, and a gate that fails on unknown codes has to list them (#2800, #2819, markup-carve/carve#3202).
 
@@ -29,7 +29,7 @@ which the published crate does not carry.
 
 - An emphasis, editorial or braced delimiter followed by a combining mark, a spacing mark, a variation selector or a keycap stays text, including the combined `/*...*/` token, and the writer forces the spelling where a bare one would not read back (#2810, #2812, #2816, #2817, markup-carve/carve#3209, markup-carve/carve#3217).
 
-- Inside an unclosed code fence in a `:::` container, only the innermost container's own closer ends the fence, also after a quote or list item that holds only a comment. A colon line of any other width is code; it used to open a nested container, so the rest of the document became code (#2797, #2827, markup-carve/carve#3201).
+- Inside an unclosed code fence in a `:::` container, only the innermost container's own closer ends the fence, also after a quote or list item that holds only a comment, an attribute line, or a table row; a block at a list item's content column also lets the fence end at that closer. A colon line of any other width is code; it used to open a nested container, so the rest of the document became code (#2797, #2827, #2839, #2848, #2846, #2854, #2853, markup-carve/carve#3201).
 
 - A list whose items hold block quotes or containers no longer parses in exponential time: 40 levels took 44 s (#2796).
 
@@ -43,7 +43,17 @@ which the published crate does not carry.
 
 - A line holding many `[x](/u ` attempts no longer parses in quadratic time: a destination scan stops at the first space that no title follows (#2837).
 
-- Markdown and HTML import write an unresolved cross-reference back verbatim instead of escaping its `#`, so it stays a cross-reference, while an escaped `\</#id>` stays literal (#2838, markup-carve/carve-php#3492).
+- Markdown and HTML import write an unresolved cross-reference back verbatim instead of escaping its `#`, so it stays a cross-reference, while an escaped `\</#id>` stays literal. Imported `</#id>` text stays literal even when its ID resolves, including Markdown entities that decode to that spelling (#2838, #2840, #2843, #2841, markup-carve/carve-php#3492).
+
+- A quote with one paragraph stays compact when its other children render nothing, such as comments or raw blocks for another target (#2847, #2845).
+
+- Markdown import keeps a strikethrough containing a lone `~`, such as `~~a x~y b~~` (#2849, #2842).
+
+- Inside a `:::` container, a list-item line after a plain paragraph stays paragraph text even when the item carries a comment or attribute line (#2850, #2844).
+
+- Formatting leaves `:::}`, `:::~`, and `:::t` unchanged on code-span continuation lines instead of adding spaces (#2855).
+
+- A definition or attribute line inside a quote nested in a list item lets a following line at the document column start outside the item (#2857, #2856).
 
 - The `Wikilinks` extension no longer closes `[[` at a `]]` whose first bracket is escaped, so `a [[x\]](u)` renders the core link (#2775).
 
