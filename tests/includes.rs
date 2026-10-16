@@ -2980,3 +2980,47 @@ fn include_padding_and_slot_separators_are_spaces() {
     let result = expand("{{ c.crv\t#Alpha }}", &[("c.crv", "# Alpha\nbody")]);
     assert_eq!(result.rules(), vec!["include-unresolved"]);
 }
+
+#[test]
+fn named_region_selects_stable_source_and_preserves_position() {
+    let child = "Before.\n// #region demo\n## Pick\n\nBody.\n// #endregion demo\nAfter.";
+    let result = expand("{{ child @region:demo }}", &[("child", child)]);
+    assert!(result.rules().is_empty());
+    assert!(result.html.contains("Pick"));
+    assert!(result.html.contains("Body."));
+    assert!(!result.html.contains("Before."));
+    assert!(!result.html.contains("After."));
+}
+
+#[test]
+fn invalid_named_regions_warn_and_keep_resolved_dependency() {
+    for child in [
+        "// #region other\nBody.\n// #endregion other",
+        "// #region demo\nBody.\n// #endregion other",
+        "// #region demo\nBody.\n// #endregion demo\n// #region demo",
+        "// #region demo extra\nBody.\n// #endregion demo",
+    ] {
+        let result = expand("{{ child @region:demo }}", &[("child", child)]);
+        assert_eq!(result.rules(), vec!["include-region-invalid"]);
+        assert_eq!(result.dependencies, vec![dep("child", true)]);
+    }
+    for directive in [
+        "{{ child #pick @region:demo }}",
+        "{{ child @lines:1-2 @region:demo }}",
+    ] {
+        let result = expand(
+            directive,
+            &[("child", "// #region demo\nBody.\n// #endregion demo")],
+        );
+        assert_eq!(result.rules(), vec!["include-selection-conflict"]);
+    }
+}
+
+#[test]
+fn named_region_accepts_crlf_and_extension_path() {
+    let child =
+        "Before.\r\n// #region demo\r\n## Pick\r\n\r\nBody.\r\n// #endregion demo\r\nAfter.";
+    let result = expand("{{ child.crv @region:demo }}", &[("child.crv", child)]);
+    assert_eq!(result.rules(), Vec::<&str>::new(), "{}", result.html);
+    assert!(result.html.contains("Pick"), "{}", result.html);
+}

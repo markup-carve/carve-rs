@@ -183,3 +183,14 @@ fn every_part_an_include_pulled_in_names_its_file() {
         json.matches("\"pos\":{").count() - json.matches("\"file\":\"child.crv\"").count();
     assert_eq!(unstamped, 0, "{json}");
 }
+
+#[test]
+fn a_named_region_keeps_the_selected_lines_original_coordinates() {
+    let child =
+        "Before.\r\n// #region demo\r\n## Pick\r\n\r\nBody.\r\n// #endregion demo\r\nAfter.";
+    let files = [("child.crv", child)];
+    assert_eq!(
+        positions("{{ child.crv @region:demo }}\n", &files),
+        positions("{{ child.crv @lines:3-5 }}\n", &files),
+    );
+}

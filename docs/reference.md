@@ -247,6 +247,7 @@ same.
 {{ chapters/intro.crv #setup }}       include one heading subtree, or the one
                                       block whose {#setup} id matches
 {{ notes.crv @lines:10-25 }}          include a physical line range
+{{ notes.crv @region:demo }}          include lines between named source markers
 {{ chapters/intro.crv @shift:2 }}     shift included heading levels by +2
 {{ chapters/intro.crv @shift:auto }}  shift to sit under the heading in scope
 ```
@@ -257,8 +258,11 @@ which ends with its container when the heading sits inside one. Otherwise the
 first block with that explicit id is included alone, at any depth. Ids on list
 items, table cells, inline elements and footnotes select nothing.
 
-`#section` and `@lines` are the two selection mechanisms and are mutually
-exclusive. Every failure (a missing file, binary content, both selectors, a
+`#section`, `@lines` and `@region` are selection options; a directive uses at
+most one. A region starts at a complete `// #region name` or `#region name`
+line and ends at a matching `// #endregion name` or `#endregion name` line.
+The marker lines are excluded. Every failure (a missing file, binary content,
+conflicting selectors, an invalid or missing region, a
 cycle, the depth limit, the size budget) emits a warning on stderr and leaves
 the directive **literal**; inclusion never silently drops a directive. A
 rejected directive has **no observable side effects**: the output is

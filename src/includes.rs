@@ -347,6 +347,7 @@ struct Directive {
     path: String,
     section: Option<String>,
     lines: Option<(usize, usize)>,
+    region: Option<String>,
     shift: Shift,
 }
 
@@ -620,6 +621,7 @@ fn option_parts(tail: &str) -> Vec<&str> {
 
 fn parse_options(raw: RawDirective) -> ParsedDirective {
     let mut lines = None;
+    let mut region = None;
     let mut shift = Shift::By(0);
     for part in option_parts(&raw.options) {
         let bad = || {
@@ -678,6 +680,13 @@ fn parse_options(raw: RawDirective) -> ParsedDirective {
                 }
                 lines = Some((a, b));
             }
+            "region" => {
+                let mut chars = value.chars();
+                if !chars.next().is_some_and(is_ident_start) || !chars.all(is_ident_rest) {
+                    return bad();
+                }
+                region = Some(value.to_string());
+            }
             "shift" => {
                 if value == "auto" {
                     shift = Shift::Auto;
@@ -700,6 +709,7 @@ fn parse_options(raw: RawDirective) -> ParsedDirective {
         path: raw.path,
         section: raw.section,
         lines,
+        region,
         shift,
     }))
 }
@@ -1090,6 +1100,58 @@ fn slice_lines(source: &str, range: (usize, usize)) -> String {
     lines[start..end].join("\n")
 }
 
+fn region_range(source: &str, selected: &str) -> Option<(usize, usize)> {
+    let mut seen = HashSet::new();
+    let mut stack: Vec<(&str, usize)> = Vec::new();
+    let mut range = None;
+    for (index, raw_line) in source.split('\n').enumerate() {
+        let line = raw_line
+            .trim_end_matches('\r')
+            .trim_start_matches([' ', '\t']);
+        let body = line
+            .strip_prefix("//")
+            .map(|rest| rest.trim_start_matches([' ', '\t']))
+            .unwrap_or(line);
+        let (closing, rest) = if let Some(rest) = body.strip_prefix("#endregion") {
+            (true, rest)
+        } else if let Some(rest) = body.strip_prefix("#region") {
+            (false, rest)
+        } else {
+            continue;
+        };
+        if !rest.is_empty() && !rest.starts_with([' ', '\t']) {
+            continue;
+        }
+        let name = rest.trim_matches([' ', '\t']);
+        let valid = !name.is_empty() && {
+            let mut chars = name.chars();
+            chars.next().is_some_and(is_ident_start) && chars.all(is_ident_rest)
+        };
+        if !name.is_empty() && !valid {
+            return None;
+        }
+        if closing {
+            let (open_name, open_index) = stack.pop()?;
+            if !name.is_empty() && name != open_name {
+                return None;
+            }
+            if open_name == selected {
+                range = Some((open_index + 2, index));
+            }
+        } else {
+            if !valid || !seen.insert(name) {
+                return None;
+            }
+            stack.push((name, index));
+        }
+    }
+    if stack.is_empty() {
+        range
+    } else {
+        None
+    }
+}
+
 struct ResolvedChild {
     source: String,
     id: String,
@@ -1098,14 +1160,15 @@ struct ResolvedChild {
 
 fn resolve_child(d: &Directive, state: &mut State<'_>) -> Option<ResolvedChild> {
     let resolver = state.opts.resolver?;
-    // I1: the two SELECTION mechanisms are mutually exclusive.
-    if d.section.is_some() && d.lines.is_some() {
+    // I1: a directive selects by at most one mechanism.
+    if usize::from(d.section.is_some())
+        + usize::from(d.lines.is_some())
+        + usize::from(d.region.is_some())
+        > 1
+    {
         state.warn(
             "include-selection-conflict",
-            format!(
-                "Include \"{}\" cannot use both #section and @lines.",
-                d.path
-            ),
+            format!("Include \"{}\" cannot combine selectors.", d.path),
         );
         return None;
     }
@@ -1198,7 +1261,24 @@ fn resolve_child(d: &Directive, state: &mut State<'_>) -> Option<ResolvedChild> 
         state.warn("include-budget", spent_message("include-budget", &d.path));
         return None;
     }
-    let (selected, position_base) = match d.lines {
+    let range = if let Some(region) = &d.region {
+        match region_range(&source, region) {
+            Some(range) => Some(range),
+            None => {
+                state.warn(
+                    "include-region-invalid",
+                    format!(
+                        "Include \"{}\" has an invalid or missing region \"{}\".",
+                        d.path, region
+                    ),
+                );
+                return None;
+            }
+        }
+    } else {
+        d.lines
+    };
+    let (selected, position_base) = match range {
         Some(range) => (
             slice_lines(&source, range),
             Some((source, range.0.saturating_sub(1))),
