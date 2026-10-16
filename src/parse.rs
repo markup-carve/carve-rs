@@ -1833,13 +1833,33 @@ fn extract_footnote_defs(
                 while i < lines.len() {
                     let line = lines[i];
                     let column = indent_columns(line);
+                    if retained_below_comment {
+                        if let Some(open) = note_fence {
+                            def_lines.push(line.to_owned());
+                            def_line_map.push(Some(first_source_line + i));
+                            if positions {
+                                def_col_map.push(Some(0));
+                            }
+                            if is_fence_close(trim_ascii_start(line), open) {
+                                note_fence = None;
+                                retained_below_comment = false;
+                            }
+                            i += 1;
+                            continue;
+                        }
+                    }
                     let below_comment = column < body_indent
                         && trim_ascii_start(line).starts_with("%%")
                         && !is_definition_placeholder(line);
                     if below_comment_span.is_some() || (below_comment && note_fence.is_none()) {
                         if below_comment_span.is_none()
                             && !retained_below_comment
-                            && !body_ends_with_open_paragraph(&def_lines.join("\n"), options)
+                            && ((open_term && column == 0 && def_lines.len() == 1)
+                                || (!open_term
+                                    && !body_ends_with_open_paragraph(
+                                        &def_lines.join("\n"),
+                                        options,
+                                    )))
                         {
                             break;
                         }
@@ -1855,7 +1875,7 @@ fn extract_footnote_defs(
                                 below_comment_span = Some(open.fence_len);
                             }
                         }
-                        let kept = if trim_ascii_start(line).starts_with("%%") {
+                        let kept = if trim_ascii_start(line).starts_with("%%") && !open_term {
                             trim_ascii_start(line).to_owned()
                         } else {
                             line.to_owned()
@@ -1872,9 +1892,23 @@ fn extract_footnote_defs(
                     if retained_below_comment
                         && column < body_indent
                         && !is_blank_line(line)
-                        && (column > 0 || !item_block_opener(trim_ascii_start(line)))
+                        && (column > 0
+                            || !item_block_opener(trim_ascii_start(line))
+                            || (detect_fence_open(trim_ascii_start(line)).is_some()
+                                && def_lines
+                                    .last()
+                                    .is_some_and(|last| is_line_comment_any_column(last))))
                     {
                         let kept = trim_ascii_start(line).to_owned();
+                        if def_lines
+                            .last()
+                            .is_some_and(|last| is_line_comment_any_column(last))
+                        {
+                            if let Some(mut open) = detect_fence_open(&kept) {
+                                open.content_col = 0;
+                                note_fence = Some(open);
+                            }
+                        }
                         def_line_map.push(Some(first_source_line + i));
                         if positions {
                             def_col_map.push(stripped_col(Some(0), line, &kept));
@@ -17654,9 +17688,11 @@ fn collect_indented_block_mapped_with_columns(
             reached.push(false);
             cur.consume();
             if marker_description_is_paragraph
-                || cur
-                    .peek()
-                    .is_some_and(|next| is_blank_line(next) || indent_columns(next) > marker_base)
+                || cur.peek().is_some_and(|next| {
+                    is_blank_line(next)
+                        || indent_columns(next) > marker_base
+                        || detect_fence_open(trim_ascii_start(next)).is_some()
+                })
             {
                 continue;
             }
@@ -17833,7 +17869,7 @@ fn collect_indented_block_mapped_with_columns(
             && marker_definition_has_description
             && fence.is_none()
             && comment_fence.is_none()
-            && indent > marker_base
+            && (indent > marker_base || detect_fence_open(trim_ascii_start(line)).is_some())
             && indent < strip_cols
             && lines
                 .last()
@@ -18391,6 +18427,10 @@ fn collect_indented_block_mapped_with_columns(
             && !is_line_comment_any_column(line)
             && detect_comment_fence_line_any_column(line).is_none()
             && exact_colon_fence_len(trim_ascii_start(line)).is_none()
+            && !(detect_fence_open(trim_ascii_start(line)).is_some()
+                && lines
+                    .last()
+                    .is_some_and(|line| is_line_comment_any_column(line)))
             && strip_definition_marker(trim_ascii_start(line)).is_none()
             && fence.is_none()
             && comment_fence.is_none()
@@ -18405,6 +18445,7 @@ fn collect_indented_block_mapped_with_columns(
             || lazy_list_marker
             || definition_band_inline_closer
             || (definition_comment_band
+                && detect_fence_open(trim_ascii_start(line)).is_none()
                 && !is_definition_list_start(trim_ascii_start(line))
                 && strip_description_prefix(trim_ascii_start(line)).is_none())
             || (marker_colon_retained_para && indent < strip_cols))
@@ -19833,6 +19874,8 @@ fn collect_definition_body(
     let mut folded_a_lazy_line = false;
     let mut folded_into_quote = false;
     let mut retained_below_comment = false;
+    let mut retained_comment_column = 0;
+    let mut retained_fence: Option<(FenceOpen, bool)> = None;
     let mut below_comment_span = None;
     // Seeded from the marker line's own content: does the body's LEAD open a
     // code fence NESTED past a list marker? Its verbatim body is the flush-left
@@ -19859,6 +19902,30 @@ fn collect_definition_body(
     // (markup-carve/carve#1911, corpus 444-7 against 430-3).
     let mut reached: Vec<bool> = Vec::new();
     while let Some(line) = cur.peek() {
+        if let Some((open, has_closer)) = retained_fence {
+            let payload_floor = if open.content_col == 0 {
+                content_column
+            } else {
+                open.content_col
+            };
+            if !has_closer && !line.starts_with(LAZY) && indent_columns(line) < payload_floor {
+                break;
+            }
+            let (kept, consumed, synthetic) = slice_columns_mapped(line, open.content_col, true);
+            lines.push(kept);
+            line_map.push(cur.source_line(cur.pos));
+            col_map.push(
+                cur.source_col(cur.pos)
+                    .map(|col| col + consumed as isize - synthetic as isize),
+            );
+            reached.push(false);
+            if is_fence_close(trim_ascii_start(line), open) {
+                retained_fence = None;
+                fence.closed_last = true;
+            }
+            cur.consume();
+            continue;
+        }
         if is_definition_placeholder(line) && indent_columns(line) < content_column {
             break;
         }
@@ -19959,6 +20026,7 @@ fn collect_definition_body(
             reached.push(false);
             lines.push(kept);
             retained_below_comment = true;
+            retained_comment_column = column;
             folded_a_lazy_line = false;
             cur.consume();
             continue;
@@ -20054,7 +20122,11 @@ fn collect_definition_body(
                 // `consumed - synthetic`, which is exactly the base the mapping
                 // in `slice_columns_mapped` documents.
                 let sliced_col = cur.source_col(cur.pos).map(|c| {
-                    c + line.chars().count().saturating_sub(sliced.chars().count()) as isize
+                    c + line
+                        .chars()
+                        .count()
+                        .saturating_sub(strip_lazy(&sliced).chars().count())
+                        as isize
                 });
                 // As in a list item, an unterminated fence at the definition
                 // body's content column stays in its open paragraph (§10 I4).
@@ -20268,6 +20340,22 @@ fn collect_definition_body(
                 && (indent < content_column
                     || paragraph_column.map_or(true, |owner| indent >= owner))
                 && item_block_opener_with_invisible_arms(trim_ascii_start(line), false)
+                && !(retained_below_comment
+                    && lines
+                        .last()
+                        .is_some_and(|line| is_line_comment_any_column(line))
+                    && (indent <= retained_comment_column || retained_comment_column == 0)
+                    && detect_fence_open(trim_ascii_start(line)).is_some())
+            {
+                break;
+            }
+            if retained_below_comment
+                && cur.reached.and_then(|r| r.get(cur.pos)).copied() == Some(true)
+                && detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
+                    cur.lines
+                        .range(cur.pos + 1..cur.lines.len())
+                        .any(|next| is_fence_close(trim_ascii_start(next), open))
+                })
             {
                 break;
             }
@@ -20303,17 +20391,30 @@ fn collect_definition_body(
             });
             if !below_the_column
                 && cur.at_document_level
-                && (fence_interrupts || caption_content(&owned).is_some())
+                && ((fence_interrupts && !retained_below_comment)
+                    || caption_content(&owned).is_some())
             {
                 break;
             }
-            if indent > 0
-                && indent != content_column
-                && detect_fence_open(&owned).is_none()
-                && paragraph_column.is_some_and(|owner| indent < owner)
+            let opens_retained_fence = retained_below_comment
+                && lines
+                    .last()
+                    .is_some_and(|line| is_line_comment_any_column(line))
+                && indent <= retained_comment_column
+                && !(cur.in_item_body
+                    && cur.reached.and_then(|r| r.get(cur.pos)).copied() == Some(false)
+                    && detect_fence_open(&owned).is_some_and(|open| open.fence_len > 3))
+                && detect_fence_open(&owned).is_some();
+            if opens_retained_fence
+                || indent > 0
+                    && indent != content_column
+                    && detect_fence_open(&owned).is_none()
+                    && paragraph_column.is_some_and(|owner| indent < owner)
                 || !interrupts_paragraph_in_band(cur, &owned, !below_the_column)
             {
-                let keep = if indent > 0
+                let keep = if opens_retained_fence {
+                    owned.clone()
+                } else if indent > 0
                     && indent != content_column
                     && detect_fence_open(&owned).is_none()
                     && paragraph_column.is_some_and(|owner| indent < owner)
@@ -20321,7 +20422,7 @@ fn collect_definition_body(
                     format!("{LAZY}{}", trim_ascii_start(line))
                 } else if below_the_column {
                     line.to_string()
-                } else if detect_fence_open(&owned).is_some() {
+                } else if detect_fence_open(&owned).is_some() && !opens_retained_fence {
                     // ONE COLUMN, AS THE LIST TWIN KEEPS IT. The body dedents
                     // its own lines by the content margin, so a line pushed at
                     // column 0 arrives AT that column on the reparse and the
@@ -20334,9 +20435,30 @@ fn collect_definition_body(
                     owned
                 };
                 folded_a_lazy_line = true;
+                if opens_retained_fence {
+                    retained_fence = detect_fence_open(&keep).map(|mut open| {
+                        open.content_col = indent;
+                        let has_closer =
+                            cur.lines.range(cur.pos + 1..cur.lines.len()).any(|next| {
+                                indent_columns(next) >= indent
+                                    && is_fence_close(trim_ascii_start(next), open)
+                            });
+                        (open, has_closer)
+                    });
+                    folded_a_lazy_line = false;
+                }
+                retained_below_comment = false;
+                let kept_col = if opens_retained_fence {
+                    cur.source_col(cur.pos)
+                        .map(|col| col + (line.len() - keep.len()) as isize)
+                } else if keep.starts_with(LAZY) && indent > 0 {
+                    cur.source_col(cur.pos).map(|col| col + indent as isize)
+                } else {
+                    cur.source_col(cur.pos)
+                };
                 lines.push(keep);
                 line_map.push(cur.source_line(cur.pos));
-                col_map.push(cur.source_col(cur.pos));
+                col_map.push(kept_col);
                 reached.push(false);
                 cur.consume();
                 continue;

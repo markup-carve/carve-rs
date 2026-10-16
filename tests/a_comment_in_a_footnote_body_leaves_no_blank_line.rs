@@ -75,3 +75,16 @@ fn control_a_comment_between_two_top_level_paragraphs_also_leaves_none() {
     assert_eq!(top, "<p>a</p>\n<p>b</p>");
     assert_eq!(top_cli, "<p>a</p>\n<p>b</p>");
 }
+
+#[test]
+fn a_comment_below_a_note_term_retains_the_following_body_line() {
+    let html = carve::to_html("[^c]: :: t\n      : para\n%% c\n        tail\n\nuse[^c]\n");
+    assert!(html.contains("<p>tail<a href=\"#fnref1\""), "{html}");
+    assert!(!html.starts_with("<p>tail</p>"), "{html}");
+}
+
+#[test]
+fn a_comment_after_a_bare_note_term_leaves_following_text_outside() {
+    let html = carve::to_html("[^c]: :: t\n%% c\nafter\n\nuse[^c]\n");
+    assert!(html.starts_with("<p>after</p>"), "{html}");
+}
