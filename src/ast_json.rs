@@ -433,6 +433,33 @@ fn refuse_const_violations(node: &Json, path: &str) -> Result<(), AstJsonError> 
             }
         }
         Json::Object(obj) => {
+            if matches!(obj.get("type"), Some(Json::String(ty)) if ty == "comment") {
+                if let Some(form) = obj.get("form") {
+                    let valid = match form.as_str() {
+                        Some("block") => {
+                            obj.get("block") == Some(&Json::Bool(true))
+                                && matches!(obj.get("delimited"), None | Some(Json::Bool(false)))
+                        }
+                        Some("line") => {
+                            obj.get("block") == Some(&Json::Bool(false))
+                                && matches!(obj.get("delimited"), None | Some(Json::Bool(false)))
+                        }
+                        Some("braced") => {
+                            obj.get("block") == Some(&Json::Bool(false))
+                                && obj.get("delimited") == Some(&Json::Bool(true))
+                        }
+                        _ => false,
+                    };
+                    if !valid {
+                        return Err(AstJsonError::invalid_at(
+                            format!(
+                                "comment at {path} has form that disagrees with block or delimited"
+                            ),
+                            field_path(path, "form"),
+                        ));
+                    }
+                }
+            }
             if let Some(Json::String(ty)) = obj.get("type") {
                 if let Some((_, pinned)) = crate::wire_fields::WIRE_CONST_FIELDS
                     .iter()
@@ -474,9 +501,21 @@ fn refuse_const_violations(node: &Json, path: &str) -> Result<(), AstJsonError> 
 
 pub fn from_json(input: &str) -> Result<Document, AstJsonError> {
     let json = parse_value(input)?;
+    let root = json.expect_object("document root")?;
+    if let Some(version) = root.get("astVersion") {
+        let version = version.expect_string("document.astVersion")?;
+        crate::ast_envelope::check_contract_version(version).map_err(|error| match error {
+            crate::ast_envelope::AstEnvelopeError::Version { .. } => {
+                AstJsonError::version(format!(
+                    "AST root announces contract version {version}; this build implements {}",
+                    crate::ast_envelope::AST_CONTRACT_VERSION
+                ))
+            }
+            _ => AstJsonError::new(error.to_string()),
+        })?;
+    }
     refuse_unknown_fields(&json, "")?;
     refuse_const_violations(&json, "")?;
-    let root = json.expect_object("document root")?;
     let root_type = required_string(root, "document", "type")?;
     if root_type != "document" {
         return Err(AstJsonError::new(format!(
@@ -552,14 +591,12 @@ pub fn from_json(input: &str) -> Result<Document, AstJsonError> {
 
     clear_unbacked_footnote_numbers(&mut doc);
     renumber_captions(&mut doc);
-    hydrate_resolved_empty_references(&mut doc);
     promote_ingested_block_images(&mut doc);
 
     Ok(doc)
 }
 
-/// The wire keeps the reference label and the empty destination, but has no
-/// separate resolved bit. Rebuild that bit from the document's definitions.
+/// Mark empty references resolved when an importer supplies definitions.
 pub(crate) fn hydrate_resolved_empty_references(doc: &mut Document) {
     use crate::include_walk::{visit_block_children, visit_inline_children, SubtreeVisitor};
     use std::collections::HashSet;
@@ -1655,6 +1692,9 @@ fn encode_inline_task<'a>(
                 if let Some(label) = &n.ref_label {
                     w.field("ref", |out| write_string(out, label));
                 }
+                if n.ref_label.is_some() && n.href.is_empty() && n.resolved_empty_reference {
+                    w.field("resolved", |out| write_bool(out, true));
+                }
                 if let Some(raw) = &n.raw_ref {
                     w.field("rawRef", |out| write_string(out, raw));
                 }
@@ -2011,6 +2051,7 @@ fn write_block_leaf(out: &mut String, node: &BlockNode) {
             if n.delimited {
                 w.field("delimited", |out| write_bool(out, true));
             }
+            w.field("form", |out| write_string(out, comment_form(n)));
             w.field("content", |out| write_string(out, &n.content));
             write_pos_field(&mut w, &n.pos);
             w.finish();
@@ -2586,6 +2627,7 @@ fn write_inline_leaf(out: &mut String, node: &InlineNode) {
             if n.delimited {
                 w.field("delimited", |out| write_bool(out, true));
             }
+            w.field("form", |out| write_string(out, comment_form(n)));
             w.field("content", |out| write_string(out, &n.content));
             write_pos_field(&mut w, &n.pos);
             w.finish();
@@ -2610,6 +2652,9 @@ fn write_link(out: &mut String, n: &Link) {
     if let Some(ref_label) = &n.ref_label {
         w.field("ref", |out| write_string(out, ref_label));
     }
+    if n.ref_label.is_some() && n.href.is_empty() && n.resolved_empty_reference {
+        w.field("resolved", |out| write_bool(out, true));
+    }
     if let Some(raw_ref) = &n.raw_ref {
         w.field("rawRef", |out| write_string(out, raw_ref));
     }
@@ -2632,6 +2677,9 @@ fn write_image(out: &mut String, n: &Image) {
     }
     if let Some(ref_label) = &n.ref_label {
         w.field("ref", |out| write_string(out, ref_label));
+    }
+    if n.ref_label.is_some() && n.src.is_empty() && n.resolved_empty_reference {
+        w.field("resolved", |out| write_bool(out, true));
     }
     if let Some(raw_ref) = &n.raw_ref {
         w.field("rawRef", |out| write_string(out, raw_ref));
@@ -3229,6 +3277,16 @@ fn decode_block_comment(obj: &Map<String, Json>) -> Result<BlockNode, AstJsonErr
     }))
 }
 
+fn comment_form(comment: &Comment) -> &'static str {
+    if comment.block {
+        "block"
+    } else if comment.delimited {
+        "braced"
+    } else {
+        "line"
+    }
+}
+
 fn decode_block_block_extension(obj: &Map<String, Json>) -> Result<BlockNode, AstJsonError> {
     Ok(BlockNode::BlockExtension(BlockExtension {
         name: required_string(obj, "block_extension", "name")?.to_string(),
@@ -3657,7 +3715,7 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
             from_crossref: false,
             from_heading_reference: false,
             pos: optional_pos(obj, "link")?,
-            resolved_empty_reference: false,
+            resolved_empty_reference: optional_resolved(obj, "link", "href")?,
         })),
         "image" => Ok(InlineNode::Image(decode_image(obj)?)),
         "span" => Ok(InlineNode::Span(Span {
@@ -3908,7 +3966,7 @@ fn decode_image(obj: &Map<String, Json>) -> Result<Image, AstJsonError> {
         ref_label: optional_string(obj, "ref")?.map(str::to_string),
         raw_ref: optional_string(obj, "rawRef")?.map(str::to_string),
         pos: optional_pos(obj, "image")?,
-        resolved_empty_reference: false,
+        resolved_empty_reference: optional_resolved(obj, "image", "src")?,
     })
 }
 
@@ -4207,6 +4265,25 @@ fn optional_bool(obj: &Map<String, Json>, field: &str) -> Result<Option<bool>, A
     obj.get(field)
         .map(|value| value.expect_bool(field))
         .transpose()
+}
+
+fn optional_resolved(
+    obj: &Map<String, Json>,
+    node_type: &str,
+    destination: &str,
+) -> Result<bool, AstJsonError> {
+    match obj.get("resolved") {
+        None => Ok(false),
+        Some(Json::Bool(true))
+            if obj.get("ref").is_some()
+                && obj.get(destination).and_then(Json::as_str) == Some("") =>
+        {
+            Ok(true)
+        }
+        _ => Err(AstJsonError::new(format!(
+            "{node_type}.resolved requires true, ref, and an empty {destination}"
+        ))),
+    }
 }
 
 fn positive_usize(value: Option<usize>, field: &str) -> Result<Option<usize>, AstJsonError> {

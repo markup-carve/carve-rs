@@ -147,7 +147,20 @@ struct AheadOfPin {
 // `]` where the fixture escapes the `[`. Both spellings conform, so the entry
 // died to a canonical-form decision rather than to a fix: the fixture is the
 // cross-engine contract for importer output, and this engine now writes it.
-const AHEAD_OF_PIN: &[AheadOfPin] = &[];
+const AHEAD_OF_PIN: &[AheadOfPin] = &[
+    AheadOfPin {
+        fixture: "comment-beside-dropped-element",
+        reason: "contract 1.2 adds comment.form (markup-carve/carve#3261); the golden gains it when the pin moves",
+        carve: None,
+        ast: Some(r#"{"type":"document","children":[{"type":"heading","level":2,"children":[{"type":"text","value":"T"}]},{"type":"comment","block":true,"form":"block","content":"/lit-part"},{"type":"paragraph","children":[{"type":"text","value":"y"}]},{"type":"paragraph","children":[{"type":"comment","block":false,"delimited":true,"form":"braced","content":"c"},{"type":"text","value":" w"}]},{"type":"paragraph","children":[{"type":"text","value":"z"}]},{"type":"comment","block":true,"form":"block","content":"\nA b\n"},{"type":"paragraph","children":[{"type":"text","value":"v"}]}]}"#),
+    },
+    AheadOfPin {
+        fixture: "table-cell-multi-line-comment",
+        reason: "contract 1.2 adds comment.form (markup-carve/carve#3261); the golden gains it when the pin moves",
+        carve: None,
+        ast: Some(r#"{"type":"document","children":[{"type":"table","rows":[{"type":"table_row","cells":[{"type":"table_cell","header":false,"children":[{"type":"text","value":"a  b"}]},{"type":"table_cell","header":false,"children":[{"type":"text","value":"c "},{"type":"comment","block":false,"delimited":true,"form":"braced","content":" one "},{"type":"text","value":" d"}]}]}]},{"type":"paragraph","children":[{"type":"text","value":"e "},{"type":"comment","block":false,"delimited":true,"form":"braced","content":" x\ny "},{"type":"text","value":" f"}]}]}"#),
+    },
+];
 
 /// The two fields that record WHERE a node was written rather than what it is.
 ///

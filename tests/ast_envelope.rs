@@ -23,8 +23,8 @@ fn tree() -> String {
 fn encode_wraps_the_tree_without_moving_it() {
     let doc = parse("# Title\n\nBody.\n");
     let wrapped = to_ast_envelope_json(&doc, &AstEnvelopeOptions::default()).unwrap();
-    assert!(wrapped.starts_with("{\"astVersion\":\"2.0\","));
-    assert_eq!(AST_CONTRACT_VERSION, "2.0");
+    assert!(wrapped.starts_with("{\"astVersion\":\"1.2\","));
+    assert_eq!(AST_CONTRACT_VERSION, "1.2");
     assert!(wrapped.contains(&format!("\"document\":{}", to_json(&doc))));
     assert!(!wrapped.contains("\"vocabulary\""));
     assert!(!wrapped.contains("\"extensions\""));
@@ -80,17 +80,30 @@ fn a_higher_minor_is_refused_too() {
     // schema is closed, so a 1.1 tree reaching a 1.0 reader would be refused on
     // ingest anyway - "a higher minor is accepted" was a tolerance that never
     // existed (markup-carve/carve#2894).
-    let payload = envelope(&tree(), &[("astVersion", "\"2.1\"")]);
+    let payload = envelope(&tree(), &[("astVersion", "\"1.3\"")]);
     let error = from_ast_envelope_json(&payload, &AstEnvelopeReaderOptions::default()).unwrap_err();
     match &error {
         AstEnvelopeError::Version { found, implemented } => {
-            assert_eq!(found, "2.1");
+            assert_eq!(found, "1.3");
             assert_eq!(implemented, AST_CONTRACT_VERSION);
         }
         other => panic!("expected a version error, got {other:?}"),
     }
-    assert!(error.to_string().contains("2.1"));
+    assert!(error.to_string().contains("1.3"));
     assert!(error.to_string().contains(AST_CONTRACT_VERSION));
+}
+
+#[test]
+fn version_12_accepts_lower_envelopes_and_refuses_20() {
+    for version in ["1.0", "1.1", "1.2"] {
+        let payload = envelope(&tree(), &[("astVersion", &format!("\"{version}\""))]);
+        from_ast_envelope_json(&payload, &AstEnvelopeReaderOptions::default()).unwrap();
+    }
+    let payload = envelope(&tree(), &[("astVersion", "\"2.0\"")]);
+    assert!(matches!(
+        from_ast_envelope_json(&payload, &AstEnvelopeReaderOptions::default()),
+        Err(AstEnvelopeError::Version { found, .. }) if found == "2.0"
+    ));
 }
 
 #[test]

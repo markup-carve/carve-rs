@@ -3,6 +3,128 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
+#[test]
+fn empty_reference_resolution_survives_json_ingest() {
+    for (source, resolved) in [
+        ("[t][r]\n\n[r]:\n", true),
+        ("![a][r]\n\n[r]:\n", true),
+        ("[t][missing]", false),
+        ("![a][missing]", false),
+        ("[t]()", false),
+        ("![a]()", false),
+        ("[t][r]\n\n[r]: /target\n", false),
+        ("![a][r]\n\n[r]: /target\n", false),
+        ("[^n]: [t][r]\n\n[r]:\n", true),
+    ] {
+        let parsed = carve::parse(source);
+        let json = carve::to_json(&parsed);
+        assert_eq!(json.contains("\"resolved\":true"), resolved, "{source}");
+        assert!(!json.contains("\"resolved\":false"));
+        let decoded = carve::from_json(&json).unwrap();
+        assert_eq!(
+            carve::to_json(&decoded).contains("\"resolved\":true"),
+            resolved,
+            "{source}"
+        );
+        if resolved {
+            let without_flag = json.replace(",\"resolved\":true", "");
+            let decoded = carve::from_json(&without_flag).unwrap();
+            assert!(!carve::to_json(&decoded).contains("\"resolved\":true"));
+        }
+        assert_eq!(
+            carve::render_carve(&decoded).unwrap(),
+            carve::render_carve(&parsed).unwrap(),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn resolved_is_only_true_on_an_empty_reference_use() {
+    let json = carve::to_json(&carve::parse("[t][r]\n\n[r]:\n"));
+    for bad in [
+        json.replace("\"resolved\":true", "\"resolved\":false"),
+        json.replace("\"resolved\":true", "\"resolved\":null"),
+        json.replace("\"href\":\"\"", "\"href\":\"/x\""),
+        json.replace("\"ref\":\"r\",", ""),
+    ] {
+        assert!(carve::from_json(&bad).is_err(), "{bad}");
+    }
+}
+
+#[test]
+fn comment_forms_are_written_and_checked() {
+    for (source, form) in [
+        ("%%% note\n%%%\n", "block"),
+        ("text %% note\n", "line"),
+        ("text {% note %}\n", "braced"),
+    ] {
+        let json = carve::to_json(&carve::parse(source));
+        assert!(json.contains(&format!("\"form\":\"{form}\"")), "{json}");
+        assert!(json.contains(&format!("\"block\":{}", form == "block")));
+        assert_eq!(json.contains("\"delimited\":true"), form == "braced");
+        carve::from_json(&json).unwrap();
+        let mismatch = json.replace(&format!("\"form\":\"{form}\""), "\"form\":\"line\"");
+        if form != "line" {
+            let error = carve::from_json(&mismatch).unwrap_err();
+            assert!(error.to_string().contains("comment at children"));
+        }
+        let mismatch = json.replace(&format!("\"form\":\"{form}\""), "\"form\":\"other\"");
+        let error = carve::from_json(&mismatch).unwrap_err();
+        assert!(error.to_string().contains("comment at children"));
+        assert_eq!(error.kind(), carve::AstJsonErrorKind::InvalidAst);
+        assert!(error.path().unwrap().ends_with(".form"));
+        if form == "line" {
+            let mismatch = json.replace("\"form\":\"line\"", "\"form\":\"braced\"");
+            assert!(carve::from_json(&mismatch).is_err());
+        }
+        let legacy = json.replace(&format!(",\"form\":\"{form}\""), "");
+        carve::from_json(&legacy).unwrap();
+    }
+}
+
+#[test]
+fn bare_tree_versions_are_checked() {
+    let tree = carve::to_json(&carve::parse("text"));
+    carve::from_json(&tree).unwrap();
+    let root = tree.strip_suffix('}').unwrap();
+    for version in ["1.0", "1.1", "1.2"] {
+        let input = format!("{root},\"astVersion\":\"{version}\"}}");
+        carve::from_json(&input).unwrap();
+    }
+    for version in ["1.3", "2.0"] {
+        let input = format!("{root},\"astVersion\":\"{version}\"}}");
+        assert_eq!(
+            format!("{:?}", carve::from_json(&input).unwrap_err().kind()),
+            "Version"
+        );
+    }
+    for version in ["01.2", "1.02", "1", "x"] {
+        let input = format!("{root},\"astVersion\":\"{version}\"}}");
+        assert!(carve::from_json(&input).is_err());
+    }
+    assert!(carve::from_json(&format!("{root},\"extra\":true}}")).is_err());
+}
+
+#[test]
+fn cli_json_names_the_contract_on_the_root() {
+    let (ok, source_json, stderr) = run(&["--json"], "text\n");
+    assert!(ok, "{stderr}");
+    for (args, input) in [
+        (&["--json"][..], "text\n"),
+        (&["--from-json", "--json"][..], source_json.as_str()),
+    ] {
+        let (ok, output, stderr) = run(args, input);
+        assert!(ok, "{stderr}");
+        assert!(output.contains("\"astVersion\":\"1.2\""));
+        let root: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(root["astVersion"], "1.2");
+        let (ok, rendered, stderr) = run(&["--from-json"], &output);
+        assert!(ok, "{stderr}");
+        assert!(!rendered.is_empty());
+    }
+}
+
 fn corpus_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus")
 }

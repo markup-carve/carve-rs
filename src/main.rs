@@ -770,6 +770,7 @@ fn main() -> ExitCode {
             OutputFormat::Json => {
                 options = options.with_positions(true);
                 carve::try_to_json_with_options(&source, &options)
+                    .map(add_ast_version)
                     .map_err(carve::CarveWriteError::from)
             }
         })
@@ -1365,8 +1366,21 @@ fn render_document(
         OutputFormat::Plain => carve::render_plain_text_with_options(&doc, options)?,
         OutputFormat::Ansi => carve::render_ansi_with_options(&doc, options)?,
         OutputFormat::Carve => carve::render_carve(&doc)?,
-        OutputFormat::Json => carve::to_json(&doc),
+        OutputFormat::Json => add_ast_version(carve::to_json(&doc)),
     })
+}
+
+/// The bare tree `--json` prints carries the contract version on its root (CARVE-P12-056).
+fn add_ast_version(json: String) -> String {
+    let trimmed = json.trim_end();
+    let Some(body) = trimmed.strip_suffix('}') else {
+        return json;
+    };
+    format!(
+        "{body},\"astVersion\":\"{}\"}}{}",
+        carve::AST_CONTRACT_VERSION,
+        &json[trimmed.len()..]
+    )
 }
 
 /// Report constructs that parse and render, but not the way the author meant.

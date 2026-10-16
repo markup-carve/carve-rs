@@ -11,6 +11,8 @@ pub enum AstJsonErrorKind {
     DepthLimit,
     /// An object contains a field outside the AST schema.
     UnknownField,
+    /// The tree announces a newer AST contract version.
+    Version,
     /// The decoded value or API tree violates the AST contract.
     InvalidAst,
 }
@@ -44,6 +46,21 @@ impl AstJsonError {
     pub(super) fn unknown_field(message: impl Into<String>, path: String) -> Self {
         Self {
             kind: AstJsonErrorKind::UnknownField,
+            path: Some(path),
+            ..Self::new(message)
+        }
+    }
+
+    pub(super) fn version(message: impl Into<String>) -> Self {
+        Self {
+            kind: AstJsonErrorKind::Version,
+            path: Some("astVersion".to_string()),
+            ..Self::new(message)
+        }
+    }
+
+    pub(super) fn invalid_at(message: impl Into<String>, path: String) -> Self {
+        Self {
             path: Some(path),
             ..Self::new(message)
         }

@@ -1,15 +1,15 @@
 //! The versioned AST interchange envelope (PART 12 §34, [CARVE-P12-056]).
 //!
-//! The tree is strict-closed and carries no version, so a reader that cannot
-//! read a payload has one answer for three different problems: a corrupt tree,
-//! a vocabulary this build does not know, and a document needing an extension
-//! it does not implement all arrive as one decode error. The envelope is what
-//! lets the reader name which one it hit.
+//! The tree is strict-closed, so a reader that cannot read a payload has one
+//! answer for three different problems: a corrupt tree, a vocabulary this build
+//! does not know, and a document needing an extension it does not implement all
+//! arrive as one decode error. The envelope is what lets the reader name which
+//! one it hit.
 //!
 //! The tree does not move. `document` is exactly what [`crate::to_json`] writes
-//! and [`crate::from_json`] reads; `carve --json` still writes it bare. This is
-//! the storage-and-process-boundary surface beside that codec, not a change to
-//! it.
+//! and [`crate::from_json`] reads; `carve --json` writes it bare, with
+//! `astVersion` on the root. This is the storage-and-process-boundary surface
+//! beside that codec, not a change to it.
 
 use std::cmp::Ordering;
 use std::collections::HashSet;
@@ -24,7 +24,7 @@ use crate::ast_json::{from_json, parse_value, try_to_json, value_to_json, AstJso
 /// versioned for authors, this is versioned for readers of a tree. A major bump
 /// removes, renames or reinterprets a field or a meaning; a minor bump adds a
 /// field or a node type.
-pub const AST_CONTRACT_VERSION: &str = "2.0";
+pub const AST_CONTRACT_VERSION: &str = "1.2";
 
 /// The vocabulary an envelope with no `vocabulary` is written in.
 pub const CORE_AST_VOCABULARY: &str = "https://markup-carve.org/ast/core";
@@ -58,6 +58,28 @@ fn split_contract_version(value: &str) -> Option<(&str, &str)> {
 /// contract version it is (carve-rs#1965).
 fn compare_version_part(left: &str, right: &str) -> Ordering {
     left.len().cmp(&right.len()).then_with(|| left.cmp(right))
+}
+
+pub(crate) fn check_contract_version(version: &str) -> Result<(), AstEnvelopeError> {
+    let Some((major, minor)) = split_contract_version(version) else {
+        return Err(AstEnvelopeError::Shape(format!(
+            "\"astVersion\" is {version:?}, which is not major.minor with no leading zero"
+        )));
+    };
+    let (our_major, our_minor) = split_contract_version(AST_CONTRACT_VERSION)
+        .expect("the build's own contract version matches the schema pattern");
+    let higher = match compare_version_part(major, our_major) {
+        Ordering::Greater => true,
+        Ordering::Equal => compare_version_part(minor, our_minor) == Ordering::Greater,
+        Ordering::Less => false,
+    };
+    if higher {
+        return Err(AstEnvelopeError::Version {
+            found: version.to_string(),
+            implemented: AST_CONTRACT_VERSION.to_string(),
+        });
+    }
+    Ok(())
 }
 
 /// An extension whose node types or fields the enveloped document uses.
@@ -108,7 +130,7 @@ pub struct AstEnvelopeReaderOptions {
 pub enum AstEnvelopeError {
     /// The envelope itself is not the shape the schema names.
     Shape(String),
-    /// The payload announces a higher MAJOR contract version.
+    /// The payload announces a higher major or minor contract version.
     ///
     /// §34(a) asks for a typed error naming both versions, and says why it is
     /// not a schema failure: the payload may be perfectly well-formed under a
@@ -273,34 +295,12 @@ pub fn from_ast_envelope_json(
             ))
         }
     };
-    let Some((major, minor)) = split_contract_version(&ast_version) else {
-        return Err(AstEnvelopeError::Shape(format!(
-            "\"astVersion\" is {ast_version:?}, which is not major.minor with no leading zero"
-        )));
-    };
+    check_contract_version(&ast_version)?;
     let Some(document) = object.get("document") else {
         return Err(AstEnvelopeError::Shape(
             "\"document\" is missing".to_string(),
         ));
     };
-
-    let (our_major, our_minor) = split_contract_version(AST_CONTRACT_VERSION)
-        .expect("the build's own contract version matches the schema pattern");
-    // ITS OWN VERSION OR LOWER (PART 12 §34). A higher MINOR is refused beside a
-    // higher major: the node schema is closed, so the field a minor adds is one
-    // this build would refuse on ingest anyway, and "a higher minor is accepted"
-    // described a tolerance the reader never had.
-    let higher = match compare_version_part(major, our_major) {
-        Ordering::Greater => true,
-        Ordering::Equal => compare_version_part(minor, our_minor) == Ordering::Greater,
-        Ordering::Less => false,
-    };
-    if higher {
-        return Err(AstEnvelopeError::Version {
-            found: ast_version,
-            implemented: AST_CONTRACT_VERSION.to_string(),
-        });
-    }
 
     match object.get("vocabulary") {
         None | Some(Json::Null) => {}
