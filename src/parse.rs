@@ -20336,10 +20336,18 @@ fn collect_definition_body(
             // (markup-carve/carve#1809, corpus 430-2 and 430-3). This guard is
             // the one that ejected them: the interrupt test below never got the
             // line.
+            let opener = trim_ascii_start(line);
+            let fold_below_column_opener = indent > 0
+                && indent < content_column
+                && (detect_heading(opener).is_some()
+                    || thematic_break_marker(opener).is_some()
+                    || is_table_start(opener)
+                    || strip_blockquote_prefix(opener).is_some());
             if indent > 0
                 && (indent < content_column
                     || paragraph_column.map_or(true, |owner| indent >= owner))
                 && item_block_opener_with_invisible_arms(trim_ascii_start(line), false)
+                && !fold_below_column_opener
                 && !(retained_below_comment
                     && lines
                         .last()
@@ -20405,7 +20413,8 @@ fn collect_definition_body(
                     && cur.reached.and_then(|r| r.get(cur.pos)).copied() == Some(false)
                     && detect_fence_open(&owned).is_some_and(|open| open.fence_len > 3))
                 && detect_fence_open(&owned).is_some();
-            if opens_retained_fence
+            if fold_below_column_opener
+                || opens_retained_fence
                 || indent > 0
                     && indent != content_column
                     && detect_fence_open(&owned).is_none()
@@ -20414,10 +20423,11 @@ fn collect_definition_body(
             {
                 let keep = if opens_retained_fence {
                     owned.clone()
-                } else if indent > 0
-                    && indent != content_column
-                    && detect_fence_open(&owned).is_none()
-                    && paragraph_column.is_some_and(|owner| indent < owner)
+                } else if fold_below_column_opener
+                    || indent > 0
+                        && indent != content_column
+                        && detect_fence_open(&owned).is_none()
+                        && paragraph_column.is_some_and(|owner| indent < owner)
                 {
                     format!("{LAZY}{}", trim_ascii_start(line))
                 } else if below_the_column {

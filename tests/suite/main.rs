@@ -130,6 +130,8 @@ mod a_below_column_comment_after_a_marker_line_opener_ends_the_item;
 mod a_below_column_comment_ends_no_item;
 #[path = "../a_below_column_marker_after_a_lazy_line_folds.rs"]
 mod a_below_column_marker_after_a_lazy_line_folds;
+#[path = "../a_below_column_opener_folds_into_a_description_paragraph.rs"]
+mod a_below_column_opener_folds_into_a_description_paragraph;
 #[path = "../a_blank_inside_a_sibling_sub_list_does_not_loosen_the_outer_list.rs"]
 mod a_blank_inside_a_sibling_sub_list_does_not_loosen_the_outer_list;
 #[path = "../a_blank_inside_an_unopened_fence_span_is_interior.rs"]

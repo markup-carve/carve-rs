@@ -1,31 +1,14 @@
-//! BELOW THE BODY'S COLUMN THE BODY ENDS (`definition_indent`,
-//! markup-carve/carve#932). The three bands, in column order:
+//! Definition body columns (`definition_indent`, markup-carve/carve#3295).
+//! The three bands, in column order:
 //!
-//!   - BELOW the body's content column, the body ENDS and the line is
-//!     classified in the surviving context.
+//!   - BELOW the body's content column, an opener folds into its open paragraph.
 //!   - AT the column, the line is the body's own block content, so a block
 //!     opener opens inside the `dd`.
 //!   - PAST the column, a recognized opener establishes an authored local base
 //!     (markup-carve/carve#1729), while ordinary text remains lazy continuation.
 //!
-//! `definition_indent` states the floor as column arithmetic; this states what
-//! happens on the other side of it. Every case below is a `:: t` / `:  body`
-//! entry with one more line at a named column, so the file reads as the ladder
-//! the clause describes and each boundary is pinned on both sides.
-//!
-//! WHAT THIS FIXES. The fold never looked at indentation - carve-rs#734 recorded
-//! exactly that when it labelled the no-blank shape a control - so BELOW and PAST
-//! produced the same bytes and the floor of three columns was unobservable on
-//! this side of it. Three bands were two.
-//!
-//! WHY THE SURVIVING CONTEXT ANSWERS IT THIS WAY. `lazy_continuation_line` is
-//! spelled as "a FLUSH-LEFT line with no blank before it", so an indented line
-//! is not one; and at document level PART 2's COLUMN-EXACT DELIMITERS makes an
-//! indented block opener plain text ("an indented heading, thematic break, or
-//! block quote is likewise plain text"). This engine's FOOTNOTE body, which the
-//! clause names as the precedent for what "below the content column" means,
-//! already answers exactly this way, and it is asserted beside the definition
-//! rather than cited.
+//! Column zero still ends the description, while a line at the body's column
+//! can open a block inside it.
 
 fn html(src: &str) -> String {
     carve::to_html(src).trim().to_string()
@@ -52,14 +35,13 @@ fn at_column_zero_the_body_ends_and_the_quote_opens_at_document_level() {
     );
 }
 
-/// One and two columns: the body ends the same way, and the residue is an
-/// INDENTED block opener at document level, which is plain text.
+/// One and two columns: the quote marker folds into the body paragraph.
 #[test]
-fn below_the_column_the_body_ends_and_the_line_is_a_document_level_paragraph() {
+fn below_the_column_the_quote_marker_folds_into_the_body() {
     for indent in [1, 2] {
         assert_eq!(
             html(&entry(indent, "> q")),
-            format!("{TIGHT}\n<p>&gt; q</p>"),
+            "<dl>\n  <dt>t</dt>\n  <dd>body\n&gt; q</dd>\n</dl>",
             "indent {indent}"
         );
     }

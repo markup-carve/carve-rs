@@ -17,8 +17,7 @@
 //!     at document level;
 //!  2. `item_block_opener` counted a footnote definition and a block-attribute
 //!     line as openers, and the below-column guard ejected them before the
-//!     interrupt test ever saw the line - the amended BELOW THE BODY'S COLUMN
-//!     THE BODY ENDS bullet is explicit that it is about OPENERS;
+//!     interrupt test ever saw the line;
 //!  3. `rebase_overindented_blocks` then rebased the folded line's RESIDUAL
 //!     INDENT away, delivering it FLUSH inside the description where the block
 //!     parser recognized its shape all over again: `{.k}` became the `dd`'s own
@@ -100,17 +99,23 @@ fn control_a_comment_is_column_exempt_and_renders_nothing() {
 }
 
 #[test]
-fn control_a_real_opener_below_the_column_still_ends_the_body() {
-    // The half that must NOT move: a fix that folded everything below the column
-    // fails here, and this is the row that separates the two readings.
+fn a_real_opener_below_the_column_folds_into_the_body() {
     for indent in [" ", "  "] {
-        for opener in ["> q", "# h", "| a |", "---", "::: note"] {
+        for opener in ["> q", "# h", "| a |", "---"] {
             let out = html(&format!(":: t\n:  d\n{indent}{opener}\n"));
             assert!(
-                out.starts_with(ENDS.trim_end_matches('\n')),
-                "indent {indent:?} opener {opener:?} did not end the body:\n{out}"
+                out.starts_with("<dl>\n  <dt>t</dt>\n  <dd>d\n"),
+                "indent {indent:?} opener {opener:?} did not fold:\n{out}"
             );
         }
+    }
+}
+
+#[test]
+fn a_colon_container_below_the_column_still_ends_the_body() {
+    for indent in [" ", "  "] {
+        assert!(html(&format!(":: t\n:  d\n{indent}::: note\n"))
+            .starts_with(ENDS.trim_end_matches('\n')));
     }
 }
 
