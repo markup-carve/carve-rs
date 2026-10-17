@@ -31,6 +31,7 @@ thread_local! {
     static REFERENCED_LINKS: std::cell::RefCell<std::collections::HashSet<String>> =
         std::cell::RefCell::new(std::collections::HashSet::new());
     static LIST_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static LIST_INDENT_BASE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     /// The `(term, expansion)` pairs this render emits an expansion for, so the
     /// definitions that supplied them can drop their line (PART 11 §10f).
     static CONSUMED_ABBREVIATIONS: std::cell::RefCell<crate::render_text::ConsumedAbbreviations> =
@@ -112,6 +113,7 @@ fn render_plain_text_inner(
 ) -> String {
     SMART_TYPOGRAPHY.with(|cell| cell.set(smart_typography));
     LIST_DEPTH.with(|cell| cell.set(0));
+    LIST_INDENT_BASE.with(|cell| cell.set(0));
     // The plain target expands a crossref label exactly as the other three do,
     // so it needs the same bound; without a guard installed `try_spend` would
     // fall back to the floor budget and clip a large document earlier here than
@@ -540,7 +542,9 @@ fn render_list(node: &List, depth: usize) -> String {
         cell.set(next);
         next
     });
-    let indent = "  ".repeat(list_depth - 1);
+    let base = LIST_INDENT_BASE.with(std::cell::Cell::get);
+    let indent = "  ".repeat(list_depth - 1 - base);
+    let column = "  ".repeat(list_depth - base);
     for item in &node.items {
         out.push_str(&indent);
         if node.ordered {
@@ -549,39 +553,42 @@ fn render_list(node: &List, depth: usize) -> String {
         } else {
             out.push_str("- ");
         }
-        let rendered = render_blocks(&item.children, depth + 1);
-        let mut content = trim_block_output(&rendered).to_string();
-        if node.tight {
-            let nested_indent = "  ".repeat(list_depth);
-            let ordered_prefix = |line: &str| {
-                let digits = line.bytes().take_while(u8::is_ascii_digit).count();
-                digits > 0
-                    && line
-                        .as_bytes()
-                        .get(digits..digits + 2)
-                        .is_some_and(|tail| matches!(tail, [b'.' | b')', b' ']))
-            };
-            let mut lines = content.split('\n').peekable();
-            let mut compact = String::with_capacity(content.len());
-            while let Some(line) = lines.next() {
-                compact.push_str(line);
-                if let Some(next) = lines.peek() {
-                    let marker = next
-                        .strip_prefix(&nested_indent)
-                        .is_some_and(|tail| tail.starts_with("- ") || ordered_prefix(tail));
-                    if !line.is_empty() || !marker {
-                        compact.push('\n');
-                    }
+        let mut content = String::new();
+        for (index, block) in item.children.iter().enumerate() {
+            if index == 0 {
+                content.push_str(&render_block(block, depth + 1));
+            } else if matches!(block, BlockNode::List(_)) {
+                if node.tight && content.ends_with("\n\n") {
+                    content.pop();
                 }
+                content.push_str(&render_block(block, depth + 1));
+            } else {
+                let previous = LIST_INDENT_BASE.with(|cell| cell.replace(list_depth));
+                let rendered = render_block(block, depth + 1);
+                LIST_INDENT_BASE.with(|cell| cell.set(previous));
+                content.push_str(&prefix_nonempty_lines(&rendered, &column));
             }
-            content = compact;
         }
-        out.push_str(&content);
+        out.push_str(trim_block_output(&content));
         out.push('\n');
     }
     LIST_DEPTH.with(|cell| cell.set(cell.get() - 1));
     out.push('\n');
     out
+}
+
+fn prefix_nonempty_lines(content: &str, prefix: &str) -> String {
+    content
+        .split('\n')
+        .map(|line| {
+            if line.is_empty() {
+                String::new()
+            } else {
+                format!("{prefix}{line}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn render_definition_list(items: &[DefinitionItem], trailing_blank: bool, depth: usize) -> String {

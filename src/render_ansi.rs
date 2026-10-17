@@ -101,6 +101,7 @@ fn render_ansi_inner(
         consumed_abbreviations: crate::render_text::consumed_abbreviation_definitions(doc),
         suppress_automatic_abbreviation: false,
         list_depth: 0,
+        indent_base: 0,
         block_quote_depth: 0,
         ordered: Vec::new(),
         defined_footnotes: doc.footnote_defs.keys().cloned().collect(),
@@ -125,6 +126,7 @@ struct AnsiContext {
     /// carve#1176). See the Markdown renderer's field for the reasoning.
     suppress_automatic_abbreviation: bool,
     list_depth: usize,
+    indent_base: usize,
     block_quote_depth: usize,
     ordered: Vec<usize>,
     /// Labels that actually have a definition. A reference without one did not
@@ -438,7 +440,7 @@ fn render_list(node: &List, ctx: &mut AnsiContext, depth: usize) -> String {
     }
     let mut out = String::new();
     for item in &node.items {
-        let indent = "  ".repeat(ctx.list_depth - 1);
+        let indent = "  ".repeat(ctx.list_depth - 1 - ctx.indent_base);
         let marker = if node.ordered {
             let n = ctx.ordered[ctx.list_depth];
             ctx.ordered[ctx.list_depth] = n + 1;
@@ -452,9 +454,24 @@ fn render_list(node: &List, ctx: &mut AnsiContext, depth: usize) -> String {
         } else {
             style("•", FG_CYAN)
         };
+        let mut content = String::new();
+        for (index, block) in item.children.iter().enumerate() {
+            if index == 0 || matches!(block, BlockNode::List(_)) {
+                content.push_str(&render_block(block, ctx, depth + 1));
+            } else {
+                let base = ctx.indent_base;
+                ctx.indent_base = ctx.list_depth;
+                let rendered = render_block(block, ctx, depth + 1);
+                ctx.indent_base = base;
+                content.push_str(&prefix_lines(
+                    &rendered,
+                    &"  ".repeat(ctx.list_depth - base),
+                ));
+            }
+        }
         out.push_str(&format!(
             "{indent}{marker} {}\n",
-            trim_block_output(&render_blocks(&item.children, ctx, depth + 1))
+            trim_block_output(&content)
         ));
     }
     ctx.list_depth -= 1;
