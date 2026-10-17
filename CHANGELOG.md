@@ -29,7 +29,7 @@ which the published crate does not carry.
 
 - An emphasis, editorial or braced delimiter followed by a combining mark, a spacing mark, a variation selector or a keycap stays text, including the combined `/*...*/` token, and the writer forces the spelling where a bare one would not read back (#2810, #2812, #2816, #2817, markup-carve/carve#3209, markup-carve/carve#3217).
 
-- Inside an unclosed code fence in a `:::` container, only the innermost container's own closer ends the fence, also after a quote or list item that holds only a comment, an attribute line, or a table row; a block at a list item's content column also lets the fence end at that closer. A colon line of any other width is code; it used to open a nested container, so the rest of the document became code (#2797, #2827, #2839, #2848, #2846, #2854, #2853, markup-carve/carve#3201).
+- Inside an unclosed code fence in a `:::` container, only the innermost container's own closer ends the fence, also after a quote or list item that holds only a comment, an attribute line, or a table row; a block at a list item's content column also lets the fence end at that closer. Comment-retained list items, descriptions and footnote bodies keep a following unclosed fence as code. A colon line of any other width is code; it used to open a nested container, so the rest of the document became code (#2797, #2827, #2839, #2848, #2846, #2854, #2853, #2865, #2870, #2871, #2873, markup-carve/carve#3201).
 
 - A list whose items hold block quotes or containers no longer parses in exponential time: 40 levels took 44 s (#2796).
 
@@ -53,7 +53,15 @@ which the published crate does not carry.
 
 - Formatting leaves `:::}`, `:::~`, and `:::t` unchanged on code-span continuation lines instead of adding spaces (#2855).
 
-- A definition or attribute line inside a quote nested in a list item lets a following line at the document column start outside the item (#2857, #2856).
+- A definition or attribute line inside a quote nested in a list item lets a following line at the document column start outside the item. A quote on a container's marker line registers definitions and footnotes at its own column, without swallowing a following document-column line (#2857, #2856, #2864, #2858, #2865, #2859, #2861, #2862).
+
+- Lazy lines inside descriptions, terms, notes and marker-line quotes stay with their open paragraph or caption. Outside an item, a below-column heading, rule, table row or quote marker in a description paragraph stays text instead of ending the body. An over-indented quote line under a term stays text, while a quote past an item's content column can open a quote (#2865, #2859, #2861, #2862, #2868, #2870, #2873, markup-carve/carve#3295).
+
+- Carve output writes a lazy thematic break in a description paragraph without indentation, so it reads back as paragraph text rather than a rule (#2868).
+
+- Comments in list, description, quote and footnote bodies stay with their owning container through a matched comment fence; a comment at a container's opener column can end it. A definition-shaped line in a marked footnote quote stays quoted text (#2870, #2871, #2873).
+
+- Source positions on a lazy line inside a list item keep their original columns instead of shifting by the trimmed indentation (#2867).
 
 - The `Wikilinks` extension no longer closes `[[` at a `]]` whose first bracket is escaped, so `a [[x\]](u)` renders the core link (#2775).
 
@@ -78,6 +86,8 @@ which the published crate does not carry.
 - BBCode import reads forum quote attributions: quoted names, phpBB `post_id` and Unix `time`, and vBulletin `name;id` (#2802).
 
 ### Improvements
+
+- Includes can select a named region between paired source markers, including a region nested inside another. The marker lines are omitted and included content keeps its original source positions. Invalid or missing regions and conflicting selectors produce a warning and leave the directive literal (#2866).
 
 - `carve migrate --from markdown --directory SOURCE --output TARGET` converts a Markdown tree, copies other regular files, skips symlinks and writes `migration-report.json`. Local links to converted files are rewritten to `.crv` where the target resolves; unresolved ones are listed in the report and put the file under review. It refuses an existing target, two inputs that map to one output and an entry that changed after the walk, and removes its staging directory when a conversion fails (#2824, #2832, #2834, #2836).
 
