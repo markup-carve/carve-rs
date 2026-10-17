@@ -2315,3 +2315,6 @@ mod a_code_fence_after_a_matched_comment_opens_in_the_description;
 
 #[path = "../a_lazy_colon_body_keeps_a_comment_and_follower.rs"]
 mod a_lazy_colon_body_keeps_a_comment_and_follower;
+
+#[path = "../a_comment_at_the_description_column_keeps_its_follower.rs"]
+mod a_comment_at_the_description_column_keeps_its_follower;

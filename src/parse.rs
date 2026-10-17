@@ -20778,6 +20778,13 @@ fn collect_definition_body(
                 }
                 folded_a_lazy_line = false;
                 lines.push(sliced);
+                if indent == content_column
+                    && (cur.in_item_body || cur.sublists_carry_authored_base)
+                    && ends_with_closed_comment_fence(&lines)
+                {
+                    retained_below_comment = true;
+                    retained_comment_column = indent;
+                }
                 line_map.push(cur.source_line(cur.pos));
                 reached.push(true);
                 cur.consume();
