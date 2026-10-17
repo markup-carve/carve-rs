@@ -15241,6 +15241,14 @@ fn parse_list(
                 content_col,
                 &mut item_open_fence,
             ));
+            let retained_marker_comment = marker_block_leaves_content_open
+                && stream.reached.last() == Some(&false)
+                && stream
+                    .source
+                    .lines()
+                    .collect::<Vec<_>>()
+                    .split_last()
+                    .is_some_and(|(close, body)| closes_a_held_comment_span(body, close));
             let marker_colon_closed = cur.marker_colon_closed;
             let marker_colon_open = !marker_colon_closed
                 && colon_fences_left_open(marker.content) > 0
@@ -15302,7 +15310,8 @@ fn parse_list(
                         }
                         let mut rebased = src.clone();
                         rebase_overindented_blocks(&mut rebased, false, options);
-                        body_ends_with_open_paragraph(&rebased.source, options)
+                        retained_marker_comment
+                            || body_ends_with_open_paragraph(&rebased.source, options)
                     },
                     |cur| collect_indented_block_mapped(cur, base_indent, content_col),
                 );

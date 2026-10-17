@@ -2327,3 +2327,6 @@ mod a_terminal_code_fence_after_a_quoted_item_comment;
 
 #[path = "../a_matched_comment_at_a_nested_description_opener_ends_it.rs"]
 mod a_matched_comment_at_a_nested_description_opener_ends_it;
+
+#[path = "../a_matched_comment_keeps_marker_line_block_followers.rs"]
+mod a_matched_comment_keeps_marker_line_block_followers;
