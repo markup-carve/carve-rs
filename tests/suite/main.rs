@@ -2296,3 +2296,6 @@ mod an_indented_quote_marker_opens_in_a_colon_body;
 
 #[path = "../a_retained_footnote_follower_does_not_extend_the_note.rs"]
 mod a_retained_footnote_follower_does_not_extend_the_note;
+
+#[path = "../a_marker_line_colon_body_keeps_a_matched_comment_span.rs"]
+mod a_marker_line_colon_body_keeps_a_matched_comment_span;

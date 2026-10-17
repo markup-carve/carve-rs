@@ -18454,6 +18454,7 @@ fn collect_indented_block_mapped_with_columns(
             && !fence_owns_flush_left
             && !retained_item_fence
             && fence.is_none()
+            && comment_fence.is_none()
             && indent < strip_cols
             && !is_line_comment_any_column(line)
             && detect_comment_fence_line_any_column(line).is_none()
