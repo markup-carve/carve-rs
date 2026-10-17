@@ -1660,8 +1660,10 @@ mod layout_html_tests {
         // a blank header row over a delimiter row (CARVE-P9-082).
         // Spec 32125a78 adds corpus 108-12. This path accepts it, and the
         // per-document assertion above checks its HTML against the parser.
+        // Corpus 617-3 is an unmarked CSV fence and remains ordinary code.
+        // The malformed cases keep `{table}` and bypass this borrowed path.
         assert_eq!(
-            accepted, 69,
+            accepted, 70,
             "update the pinned acceptance count only after reviewing the exact-parity widening"
         );
     }

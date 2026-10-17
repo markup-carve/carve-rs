@@ -485,6 +485,12 @@ impl Renderer {
     }
 
     fn table(&mut self, table: &Table) -> Option<Json> {
+        if table.source_format.is_some() {
+            self.degraded.insert(
+                "table_source_format".into(),
+                "the editor schema cannot preserve a CSV or TSV table source fence".into(),
+            );
+        }
         // ProseMirror's table node has no row-group concept, so a table that
         // STATES its head and foot row counts (PART 9, carve#1344) comes back
         // as one undifferentiated run of rows. Declaring that is the point:

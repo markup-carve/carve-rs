@@ -270,6 +270,25 @@ fn a_continuation_row_is_a_stated_loss() {
 }
 
 #[test]
+fn a_delimited_table_source_fence_is_a_stated_loss() {
+    const REASON: &str = "the editor schema cannot preserve a CSV or TSV table source fence";
+    for format in ["csv", "tsv"] {
+        let source = format!("{{table}}\n```{format}\nh\n```\n");
+        let report = to_prosemirror(&parse(&source));
+        assert_eq!(
+            report
+                .degraded
+                .get("table_source_format")
+                .map(String::as_str),
+            Some(REASON),
+            "{format}"
+        );
+    }
+    let control = to_prosemirror(&parse("|= h |\n"));
+    assert!(!control.degraded.contains_key("table_source_format"));
+}
+
+#[test]
 fn soft_break_survives_as_text_and_is_reported() {
     let (value, report) = pm("left\nright");
     assert_eq!(
@@ -1675,9 +1694,13 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // the quoted soft break in 23 reports an existing loss.
     // Spec ef068265 adds 616-26, which round trips strictly.
     // Spec ca5cf10a adds 05-lists-29 and 05-lists-30. Both round trip strictly.
-    const STRICT: usize = 2006;
+    // Corpus 617 adds four code fences that round trip strictly: unmarked CSV
+    // (row 3) and malformed quoting (rows 7, 11, and 12).
+    const STRICT: usize = 2010;
     // Spec 894ff32e adds 616-25, whose marked quote soft break reports a loss.
-    const LOSSY: usize = 661;
+    // The eight parsed CSV/TSV tables lose their source fence in ProseMirror;
+    // the bridge reports that loss instead of claiming a strict round trip.
+    const LOSSY: usize = 669;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in

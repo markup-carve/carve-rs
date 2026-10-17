@@ -200,6 +200,7 @@ fn parse_json(s: &str) -> Json {
 
 struct Node {
     ty: String,
+    delimited_table: bool,
     pos: Option<(usize, usize)>,
     path: String,
 }
@@ -244,6 +245,8 @@ fn walk(
                 out.push((
                     Node {
                         ty: ty.clone(),
+                        delimited_table: ty == "table"
+                            && matches!(obj.get("sourceFormat"), Some(Json::String(_))),
                         pos,
                         path: path.to_string(),
                     },
@@ -471,7 +474,11 @@ fn a_span_begins_at_the_constructs_opening_markup_over_the_corpus_inner() {
             let ahead: String = codepoints[at..codepoints.len().min(at + 24)]
                 .iter()
                 .collect();
-            let Some(ok) = opens_with(&node.ty, &ahead) else {
+            let Some(ok) = (if node.delimited_table {
+                Some(ahead.starts_with('`') || ahead.starts_with('~'))
+            } else {
+                opens_with(&node.ty, &ahead)
+            }) else {
                 continue;
             };
             examined += 1;
