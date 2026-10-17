@@ -1870,6 +1870,17 @@ fn extract_footnote_defs(
                     let below_comment = column < body_indent
                         && trim_ascii_start(line).starts_with("%%")
                         && !is_definition_placeholder(line);
+                    if below_comment
+                        && column == 0
+                        && below_comment_span.is_none()
+                        && detect_comment_fence_line_any_column(line).is_some_and(|open| {
+                            comment_fence_closers
+                                .get(&open.fence_len)
+                                .is_some_and(|&last| last > i)
+                        })
+                    {
+                        break;
+                    }
                     let empty_fence =
                         detect_comment_fence_line_any_column(line).is_some_and(|open| {
                             lines.get(i + 1).is_some_and(|next| {
@@ -2305,14 +2316,16 @@ fn extract_footnote_defs(
                 let content = |raw| strip_indented_quote_levels(raw, &quote_indents);
                 let marker_note = detect_list_marker_full(inside)
                     .is_some_and(|marker| parse_footnote_def_line(marker.content).is_some());
-                let track_note_opacity = marker_note
-                    && *body_opacity_candidates
-                        .get_or_insert_with(|| source.contains("%%%") || source.contains("~~~"));
+                let track_note_opacity = *body_opacity_candidates
+                    .get_or_insert_with(|| source.contains("%%%") || source.contains("~~~"));
                 let mut note_opacity = BodyCommentState::new();
                 let mut note_admitted_fence: Option<(FenceOpen, usize)> = None;
                 let comment_closes = |at, width, cache: &mut Option<ContainerCommentClosers>| {
                     let index = cache.get_or_insert_with(|| ContainerCommentClosers::build(&lines));
-                    index.closes_in_note(&lines, at, quote_depth, note_floor, width)
+                    let floor = content(lines[at])
+                        .map(|line| indent_columns(line).min(note_floor))
+                        .unwrap_or(note_floor);
+                    index.closes_in_note(&lines, at, quote_depth, floor, width)
                 };
                 // A matched fence at or past a marker-line note's body column
                 // opens in the note. The closer may return to the body column
@@ -2340,25 +2353,28 @@ fn extract_footnote_defs(
                     note_opacity.comment = None;
                 }
                 // A marker note admits comments at its host column.
-                let reaches_floor = |at, admitted_fence: Option<(FenceOpen, usize)>| {
-                    content(lines[at]).is_some_and(|line| {
-                        admitted_fence.is_some()
-                            || indent_columns(line) >= note_floor
-                            || (quote_depth > 0
-                                && indent_columns(line) > 0
-                                && trim_ascii_start(line).starts_with("%%"))
-                            || (marker_note
-                                && indent_columns(line) >= prefix_cols
-                                && is_line_comment_any_column(line))
-                    })
-                };
+                let reaches_floor =
+                    |at, admitted_fence: Option<(FenceOpen, usize)>, comment_open| {
+                        content(lines[at]).is_some_and(|line| {
+                            admitted_fence.is_some()
+                                || comment_open
+                                || indent_columns(line) >= note_floor
+                                || (quote_depth > 0
+                                    && indent_columns(line) > 0
+                                    && trim_ascii_start(line).starts_with("%%"))
+                                || (marker_note
+                                    && indent_columns(line) >= prefix_cols
+                                    && is_line_comment_any_column(line))
+                        })
+                    };
                 let blank = |raw| content(raw).is_some_and(is_blank_line);
                 let body_resumes = {
                     let mut at = i;
                     while at < lines.len() && blank(lines[at]) {
                         at += 1;
                     }
-                    at < lines.len() && reaches_floor(at, note_admitted_fence)
+                    at < lines.len()
+                        && reaches_floor(at, note_admitted_fence, note_opacity.comment.is_some())
                 };
                 if body_resumes {
                     while i < lines.len() {
@@ -2369,7 +2385,13 @@ fn extract_footnote_defs(
                             while after < lines.len() && blank(lines[after]) {
                                 after += 1;
                             }
-                            if after < lines.len() && reaches_floor(after, note_admitted_fence) {
+                            if after < lines.len()
+                                && reaches_floor(
+                                    after,
+                                    note_admitted_fence,
+                                    note_opacity.comment.is_some(),
+                                )
+                            {
                                 while i < after {
                                     let raw = lines[i];
                                     let line = content(raw).expect("checked quote prefix");
@@ -2392,7 +2414,8 @@ fn extract_footnote_defs(
                             }
                             break;
                         }
-                        let line_reaches_floor = reaches_floor(i, note_admitted_fence);
+                        let line_reaches_floor =
+                            reaches_floor(i, note_admitted_fence, note_opacity.comment.is_some());
                         if !line_reaches_floor {
                             break;
                         }
