@@ -2979,12 +2979,8 @@ fn render_delimited_table(
     session: &RenderSession,
     ctx: &mut CarveContext,
 ) -> Option<String> {
-    let format = table.source_format.as_ref()?.as_str();
-    let separator = match format {
-        "csv" => ',',
-        "tsv" => '\t',
-        _ => return None,
-    };
+    let format = table.source_format?;
+    let separator = format.separator();
     if table.short_caption.is_some()
         || table.separator_widths.is_some()
         || table
@@ -3051,7 +3047,8 @@ fn render_delimited_table(
     }
     let fence = safe_fence(&payload, 3);
     let mut source = format!(
-        "{fence}{format}\n{payload}{}{fence}",
+        "{fence}{}\n{payload}{}{fence}",
+        format.as_str(),
         if payload.is_empty() { "" } else { "\n" }
     );
     if let Some(caption) = &table.caption {

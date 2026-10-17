@@ -1,11 +1,8 @@
 use crate::ast::*;
 
 pub(super) fn from_code(code: &CodeBlock) -> Option<Table> {
-    let format = TableSourceFormat::from_lang(code.lang.as_deref()?)?;
-    let separator = match format {
-        TableSourceFormat::Csv => ',',
-        TableSourceFormat::Tsv => '\t',
-    };
+    let format = TableSourceFormat::from_name(code.lang.as_deref()?)?;
+    let separator = format.separator();
     let mut attrs = code.attrs.clone()?;
     if !attrs.key_values.get("table").is_some_and(String::is_empty) {
         return None;

@@ -1,5 +1,5 @@
 use super::{walk_all_blocks, warning, LintWarning};
-use crate::ast::{BlockNode, CodeBlock, Document, FigureTarget, Table};
+use crate::ast::{BlockNode, CodeBlock, Document, FigureTarget, Table, TableSourceFormat};
 use crate::parse::delimited_table::rows;
 
 pub(super) fn collect(
@@ -84,7 +84,7 @@ fn wide(table: &Table, source: &str, to_byte: &dyn Fn(usize) -> usize, out: &mut
         let width = fence.chars().take_while(|ch| *ch == marker).count();
         width >= 3
             && fence[width..].split_whitespace().next()
-                == table.source_format.as_ref().map(|format| format.as_str())
+                == table.source_format.map(TableSourceFormat::as_str)
     }) else {
         return;
     };
@@ -122,10 +122,8 @@ fn wide(table: &Table, source: &str, to_byte: &dyn Fn(usize) -> usize, out: &mut
         payload.push_str(line);
         payload.push('\n');
     }
-    let separator = if table.source_format.as_ref().map(|format| format.as_str()) == Some("csv") {
-        ','
-    } else {
-        '\t'
+    let Some(separator) = table.source_format.map(TableSourceFormat::separator) else {
+        return;
     };
     let Some(records) = rows(&payload, separator) else {
         return;

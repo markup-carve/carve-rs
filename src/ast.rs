@@ -674,18 +674,27 @@ pub enum TableSourceFormat {
 }
 
 impl TableSourceFormat {
-    pub const fn as_str(&self) -> &'static str {
+    /// Returns the name used in fences and AST JSON.
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::Csv => "csv",
             Self::Tsv => "tsv",
         }
     }
 
-    pub fn from_lang(value: &str) -> Option<Self> {
+    /// Parses a CSV or TSV source format name.
+    pub fn from_name(value: &str) -> Option<Self> {
         match value {
             "csv" => Some(Self::Csv),
             "tsv" => Some(Self::Tsv),
             _ => None,
+        }
+    }
+
+    pub(crate) const fn separator(self) -> char {
+        match self {
+            Self::Csv => ',',
+            Self::Tsv => '\t',
         }
     }
 }
