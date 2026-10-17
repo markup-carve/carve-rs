@@ -2996,24 +2996,19 @@ fn render_delimited_table(
         "tsv" => '\t',
         _ => return None,
     };
-    let foot = table
-        .attrs
-        .as_ref()
-        .and_then(|attrs| attrs.key_values.get("footer-rows"))
-        .and_then(|raw| raw.parse::<usize>().ok())
-        .unwrap_or(0);
-    let head = table
-        .attrs
-        .as_ref()
-        .and_then(|attrs| attrs.key_values.get("header-rows"))
-        .map(|raw| {
-            if raw.is_empty() {
-                Some(1)
-            } else {
-                raw.parse::<usize>().ok()
-            }
-        })
-        .unwrap_or(Some(table.rows.len().saturating_sub(foot).min(1)))?;
+    if table.short_caption.is_some()
+        || table.separator_widths.is_some()
+        || table.rows.iter().any(|row| row.continuation_lines.is_some())
+    {
+        return None;
+    }
+    let foot = crate::parse::delimited_table::count(
+        table.attrs.as_ref().and_then(|attrs| attrs.key_values.get("footer-rows")), 0,
+    );
+    let head = crate::parse::delimited_table::count(
+        table.attrs.as_ref().and_then(|attrs| attrs.key_values.get("header-rows")),
+        table.rows.len().saturating_sub(foot).min(1),
+    );
     let mut lines = Vec::new();
     for (index, row) in table.rows.iter().enumerate() {
         if row.attrs.is_some() {
@@ -3025,6 +3020,8 @@ fn render_delimited_table(
                 || cell.attrs.is_some()
                 || cell.blocks.is_some()
                 || cell.span.is_some()
+                || cell.colspan.is_some()
+                || cell.rowspan.is_some()
                 || cell.align.is_some()
                 || cell.valign.is_some()
             {

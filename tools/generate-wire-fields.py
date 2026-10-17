@@ -32,7 +32,7 @@ HELPERS = ("attrs", "pos")
 # branch. Keep the pinned corpus revision unchanged; once that pin contains a
 # field, the set insertion below is simply a no-op.
 
-PENDING_NODE_FIELDS = {"comment": ("delimited",)}
+PENDING_NODE_FIELDS = {"comment": ("delimited",), "table": ("sourceFormat",)}
 # Fields an unmerged schema change removes, so ingest refuses them now.
 PENDING_REMOVED_FIELDS: dict[str, tuple[str, ...]] = {}
 

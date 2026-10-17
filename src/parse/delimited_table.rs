@@ -8,7 +8,7 @@ pub(super) fn from_code(code: &CodeBlock) -> Option<Table> {
         _ => return None,
     };
     let mut attrs = code.attrs.clone()?;
-    if !attrs.key_values.contains_key("table") {
+    if !attrs.key_values.get("table").is_some_and(String::is_empty) {
         return None;
     }
     let data = rows(&code.content, separator)?;
@@ -54,6 +54,18 @@ pub(super) fn from_code(code: &CodeBlock) -> Option<Table> {
         .map(super::table_columns_from_attrs)
         .unwrap_or_default();
     let row_groups = attrs.as_ref().and_then(|attrs| {
+        if ![
+            "header-rows",
+            "footer-rows",
+            "body-rows",
+            "body-header-rows",
+            "body-header-cols",
+        ]
+        .iter()
+        .any(|key| attrs.key_values.contains_key(*key))
+        {
+            return None;
+        }
         let mut metadata = attrs.clone();
         if !metadata.key_values.contains_key("header-rows") {
             metadata
@@ -75,15 +87,18 @@ pub(super) fn from_code(code: &CodeBlock) -> Option<Table> {
     })
 }
 
-fn count(raw: Option<&String>, default: usize) -> usize {
+pub(crate) fn count(raw: Option<&String>, default: usize) -> usize {
     match raw {
         None => default,
-        Some(value) if value.is_empty() => 1,
-        Some(value) => value.parse().unwrap_or(default),
+        Some(value) if value.trim().is_empty() => 1,
+        Some(value) if value.trim().bytes().all(|byte| byte.is_ascii_digit()) => {
+            value.trim().parse().unwrap_or(default)
+        }
+        Some(_) => default,
     }
 }
 
-fn rows(source: &str, separator: char) -> Option<Vec<Vec<String>>> {
+pub(crate) fn rows(source: &str, separator: char) -> Option<Vec<Vec<String>>> {
     if source.is_empty() {
         return Some(Vec::new());
     }
@@ -173,6 +188,14 @@ mod tests {
         assert!(table.rows[0].cells[0].header);
         assert!(!table.rows[1].cells[0].header);
         assert!(table.attrs.is_none());
+        let mut non_boolean = code.clone();
+        non_boolean
+            .attrs
+            .as_mut()
+            .unwrap()
+            .key_values
+            .insert("table".into(), "x".into());
+        assert!(from_code(&non_boolean).is_none());
         assert!(from_code(&CodeBlock {
             attrs: None,
             ..code

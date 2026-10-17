@@ -9,6 +9,7 @@
 //! Unattached attributes follow PART 9 §15 A4.
 //! See `docs/linting.md` for rule ids and examples.
 
+mod delimited_table;
 mod reference_rules;
 mod source_rules;
 
@@ -184,6 +185,7 @@ pub(crate) fn lint_with_recovery(source: &str, options: &Options<'_>) -> (Vec<Li
     collect_template_source_warning(source, &doc, &mut out);
     collect_unattached_block_attribute_warnings(source, &unattached, &to_byte, &mut out);
     collect_table_column_warnings(source, &mut out);
+    delimited_table::collect(source, &doc, &to_byte, &mut out);
     collect_table_span_marker_warnings(source, &doc.children, &to_byte, &mut out);
     for body in doc.footnote_defs.values() {
         collect_table_span_marker_warnings(source, body, &to_byte, &mut out);

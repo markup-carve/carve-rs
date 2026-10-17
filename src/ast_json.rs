@@ -3360,8 +3360,14 @@ fn decode_table(obj: &Map<String, Json>) -> Result<Table, AstJsonError> {
         Some(value) => Some(Box::new(decode_row_groups(value, rows.len())?)),
         None => None,
     };
+    let source_format = optional_string(obj, "sourceFormat")?;
+    if source_format.is_some_and(|format| format != "csv" && format != "tsv") {
+        return Err(AstJsonError::new(
+            "table.sourceFormat must be csv or tsv".to_owned(),
+        ));
+    }
     Ok(Table {
-        source_format: optional_string(obj, "sourceFormat")?.map(str::to_string),
+        source_format: source_format.map(str::to_string),
         attrs: optional_attrs(obj)?,
         caption: optional_inlines(obj, "caption")?,
         short_caption: optional_inlines(obj, "shortCaption")?,
