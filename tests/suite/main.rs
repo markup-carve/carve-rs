@@ -38,6 +38,8 @@ mod an_autolink_or_cross_reference_is_atomic_to_brackets_and_braces;
 mod an_explicit_heading_id_carrier_overrides_the_slug_heuristic;
 #[path = "../an_item_line_under_a_plain_paragraph_stays_lazy_in_the_closer_scan.rs"]
 mod an_item_line_under_a_plain_paragraph_stays_lazy_in_the_closer_scan;
+#[path = "../an_unclosed_comment_fence_keeps_a_note_fence.rs"]
+mod an_unclosed_comment_fence_keeps_a_note_fence;
 #[path = "../an_unclosed_fence_after_a_retained_comment_stays_in_its_body.rs"]
 mod an_unclosed_fence_after_a_retained_comment_stays_in_its_body;
 #[path = "../an_unclosed_fence_ends_only_at_its_own_containers_closer.rs"]

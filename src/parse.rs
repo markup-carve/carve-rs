@@ -1922,19 +1922,33 @@ fn extract_footnote_defs(
                     if retained_below_comment
                         && column < body_indent
                         && !is_blank_line(line)
+                        && !open_term
                         && (column > 0
                             || !item_block_opener(trim_ascii_start(line))
                             || (detect_fence_open(trim_ascii_start(line)).is_some()
-                                && (def_lines
-                                    .last()
-                                    .is_some_and(|last| is_line_comment_any_column(last))
-                                    || ends_with_empty_comment_fence(&def_lines))))
+                                && (def_lines.last().is_some_and(|last| {
+                                    is_line_comment_any_column(last)
+                                        || detect_comment_fence_line_any_column(last).is_some_and(
+                                            |open| {
+                                                !lines[i..].iter().any(|next| {
+                                                    is_comment_fence_close_any_column(
+                                                        next,
+                                                        open.fence_len,
+                                                    )
+                                                })
+                                            },
+                                        )
+                                }) || ends_with_empty_comment_fence(&def_lines))))
                     {
                         let kept = trim_ascii_start(line).to_owned();
-                        if def_lines
-                            .last()
-                            .is_some_and(|last| is_line_comment_any_column(last))
-                            || ends_with_empty_comment_fence(&def_lines)
+                        if def_lines.last().is_some_and(|last| {
+                            is_line_comment_any_column(last)
+                                || detect_comment_fence_line_any_column(last).is_some_and(|open| {
+                                    !lines[i..].iter().any(|next| {
+                                        is_comment_fence_close_any_column(next, open.fence_len)
+                                    })
+                                })
+                        }) || ends_with_empty_comment_fence(&def_lines)
                         {
                             if let Some(mut open) = detect_fence_open(&kept) {
                                 open.content_col = 0;
