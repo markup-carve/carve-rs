@@ -1860,6 +1860,27 @@ fn extract_footnote_defs(
                     let below_comment = column < body_indent
                         && trim_ascii_start(line).starts_with("%%")
                         && !is_definition_placeholder(line);
+                    let empty_fence =
+                        detect_comment_fence_line_any_column(line).is_some_and(|open| {
+                            lines.get(i + 1).is_some_and(|next| {
+                                is_comment_fence_close_any_column(next, open.fence_len)
+                            })
+                        });
+                    let after_comment = i + 1 + usize::from(empty_fence);
+                    if below_comment
+                        && column == 0
+                        && (!nested || def_lines.len() == 1)
+                        && (is_line_comment_any_column(line) || empty_fence)
+                        && body.iter().all(|line| is_blank_line(line))
+                        && lines.get(after_comment).is_some_and(|next| {
+                            let follower_column = indent_columns(next);
+                            (follower_column == 0 || follower_column >= body_indent)
+                                && detect_fence_open(trim_ascii_start(next)).is_none()
+                        })
+                        && source.match_indices(&format!("[^{label}]")).count() <= 1
+                    {
+                        break;
+                    }
                     if below_comment_span.is_some() || (below_comment && note_fence.is_none()) {
                         if below_comment_span.is_none()
                             && !retained_below_comment
@@ -1904,14 +1925,16 @@ fn extract_footnote_defs(
                         && (column > 0
                             || !item_block_opener(trim_ascii_start(line))
                             || (detect_fence_open(trim_ascii_start(line)).is_some()
-                                && def_lines
+                                && (def_lines
                                     .last()
-                                    .is_some_and(|last| is_line_comment_any_column(last))))
+                                    .is_some_and(|last| is_line_comment_any_column(last))
+                                    || ends_with_empty_comment_fence(&def_lines))))
                     {
                         let kept = trim_ascii_start(line).to_owned();
                         if def_lines
                             .last()
                             .is_some_and(|last| is_line_comment_any_column(last))
+                            || ends_with_empty_comment_fence(&def_lines)
                         {
                             if let Some(mut open) = detect_fence_open(&kept) {
                                 open.content_col = 0;
@@ -8044,6 +8067,20 @@ fn rebase_body_blocks(
             i += 1;
             continue;
         }
+        if nested_columns.last().is_some_and(|column| base < *column) {
+            if let Some(open) = detect_comment_fence_line(&local_at_base) {
+                if let Some(close) = entry_closers
+                    .get_or_init(|| comment_closers_by_run(&lines))
+                    .get(&open.fence_len)
+                    .and_then(|at| at.get(at.partition_point(|&at| at <= i)).copied())
+                    .filter(|&close| close == i + 1)
+                {
+                    paragraph_open = false;
+                    i = close + 1;
+                    continue;
+                }
+            }
+        }
         while nested_columns.last().is_some_and(|column| base < *column) {
             nested_columns.pop();
             nested_list_marker_bases.pop();
@@ -8179,6 +8216,7 @@ fn rebase_body_blocks(
                 after_blank = false;
                 paragraph_open = false;
                 block_at_minimum = term_boundary
+                    || (close == Some(comment_at + 1) && block_at_minimum)
                     || (close.is_none()
                         && !include_sublists
                         && (block_at_minimum || comment_at == 0));
@@ -14267,10 +14305,11 @@ fn parse_list(
             // paragraph is left at all: a verbatim body holds none, and a line
             // below the column reaches neither.
             let fence_body_is_verbatim_here = item_open_fence.is_some() && indent < content_col;
+            let below_fence = matched_fence_below_item(cur, line, content_col);
             if !pending_blank
                 && !fence_body_is_verbatim_here
                 && item_paragraph_open.get()
-                && flush_comment_keeps_the_item_open(cur, line)
+                && (flush_comment_keeps_the_item_open(cur, line) || below_fence.is_some())
             {
                 // A collected definition at this container's column zero is
                 // not the comment exception below. It is a column-scoped I5
@@ -14290,6 +14329,9 @@ fn parse_list(
                         cur.source_col(cur.pos),
                     );
                     cur.consume();
+                    if let Some(run) = below_fence {
+                        append_comment_fence_closer(cur, &mut nested, run, false);
+                    }
                     // The lazy text after the comment belongs to the item too,
                     // and parsing it TOGETHER with the comment is what makes it
                     // a second paragraph rather than a continuation of the
@@ -14851,6 +14893,12 @@ fn parse_list(
                 if ended_on_blank {
                     break;
                 }
+                if cur
+                    .closed_comment_location
+                    .is_some_and(|(at, column)| at + 1 == cur.pos && column >= content_col)
+                {
+                    break;
+                }
                 if nested_definition_ended_paragraph {
                     break;
                 }
@@ -14859,10 +14907,15 @@ fn parse_list(
                 // then resume relative to that item's column just as the plain
                 // lazy path below does. Leaving it for the outer list's comment
                 // exception put the line after it in the outer item (#1424).
+                let below_fence = cur
+                    .peek()
+                    .map(str::to_string)
+                    .and_then(|line| matched_fence_below_item(cur, &line, nested_content_col));
                 if cur
                     .peek()
                     .map(str::to_string)
                     .is_some_and(|line| flush_comment_keeps_the_item_open(cur, &line))
+                    || below_fence.is_some()
                 {
                     let line = cur.peek().unwrap();
                     stream.push_newline_at(
@@ -14871,6 +14924,9 @@ fn parse_list(
                         cur.source_col(cur.pos),
                     );
                     cur.consume();
+                    if let Some(run) = below_fence {
+                        append_comment_fence_closer(cur, &mut stream, run, false);
+                    }
                     collect_trailing_lazy_through(
                         cur,
                         &mut stream,
@@ -16865,6 +16921,46 @@ fn flush_comment_keeps_the_item_open(cur: &mut LineCursor<'_>, line: &str) -> bo
         .is_some_and(|open| !cur.has_comment_closer_after(cur.pos + 1, open.fence_len))
 }
 
+fn matched_fence_below_item(
+    cur: &mut LineCursor<'_>,
+    line: &str,
+    content_col: usize,
+) -> Option<usize> {
+    let column = indent_columns(line);
+    if column >= content_col
+        || (column == 0 && !cur.in_item_body && !cur.sublists_carry_authored_base)
+    {
+        return None;
+    }
+    detect_comment_fence_line_any_column(line)
+        .filter(|open| {
+            open.tail.is_empty()
+                && cur
+                    .lines
+                    .line(cur.pos + 1)
+                    .is_some_and(|next| is_comment_fence_close_any_column(next, open.fence_len))
+        })
+        .map(|open| open.fence_len)
+}
+
+fn append_comment_fence_closer(
+    cur: &mut LineCursor<'_>,
+    target: &mut MappedSource,
+    run: usize,
+    trim: bool,
+) {
+    let Some(line) = cur.peek() else { return };
+    debug_assert!(is_comment_fence_close_any_column(line, run));
+    let kept = if trim { trim_ascii_start(line) } else { line };
+    target.push_newline_at(
+        kept.to_string(),
+        cur.source_line(cur.pos),
+        cur.source_col(cur.pos)
+            .map(|col| col + (line.len() - kept.len()) as isize),
+    );
+    cur.consume();
+}
+
 /// The `%%` line form at ANY column.
 ///
 /// A comment is column-exempt (§24 C3): below a container's content column it is
@@ -16876,6 +16972,13 @@ fn is_line_comment_any_column(line: &str) -> bool {
     trimmed.starts_with("%%")
         && !is_document_definition_placeholder(trimmed)
         && detect_comment_fence_line(trimmed).is_none()
+}
+
+fn ends_with_empty_comment_fence(lines: &[String]) -> bool {
+    lines.len() >= 2
+        && detect_comment_fence_line_any_column(&lines[lines.len() - 2]).is_some_and(|open| {
+            is_comment_fence_close_any_column(&lines[lines.len() - 1], open.fence_len)
+        })
 }
 
 /// `is_line_comment_any_column`, over BOTH spellings §28 gives a comment.
@@ -16892,6 +16995,22 @@ fn line_comment_keeps_the_container_open(cur: &mut LineCursor<'_>, line: &str) -
     }
     detect_comment_fence_line_any_column(line)
         .is_some_and(|open| !cur.has_comment_closer_after(cur.pos + 1, open.fence_len))
+}
+
+fn effective_comment_line_at(cur: &mut LineCursor<'_>, at: usize) -> bool {
+    let line = cur.lines.at(at);
+    if is_line_comment_any_column(line) {
+        return true;
+    }
+    detect_comment_fence_line_any_column(line).is_some_and(|open| {
+        let run = open.fence_len;
+        !cur.has_comment_closer_after(at + 1, run)
+            && (cur
+                .closed_comment_location
+                .map(|(closed, _)| closed != at)
+                .unwrap_or(true)
+                || at > 0 && is_comment_fence_close_any_column(cur.lines.at(at - 1), run))
+    })
 }
 
 /// Is the next line one `collect_trailing_lazy` could actually fold?
@@ -16947,8 +17066,13 @@ fn fold_lazy_run_and_resume_in_band(
         // in the innermost open item rather than the outer one
         // (markup-carve/carve-rs#1516). The marker-line sub-list ran this arm
         // already, flush-left only, for the same reason (carve-rs#1424).
-        if cur.peek().map(str::to_string).is_some_and(|line| {
-            indent_columns(&line) < content_col && line_comment_keeps_the_container_open(cur, &line)
+        let candidate_comment = cur.peek().map(str::to_string);
+        let comment_run = candidate_comment
+            .as_deref()
+            .and_then(|line| matched_fence_below_item(cur, line, content_col));
+        if candidate_comment.as_deref().is_some_and(|line| {
+            indent_columns(line) < content_col
+                && (line_comment_keeps_the_container_open(cur, line) || comment_run.is_some())
         }) {
             // ONLY WHILE THERE IS A PARAGRAPH FOR IT TO CLOSE. The exception is
             // about a comment not ENDING the container, and a container with no
@@ -16974,6 +17098,9 @@ fn fold_lazy_run_and_resume_in_band(
                     .map(|col| col + leading_ws(line) as isize),
             );
             cur.consume();
+            if let Some(run) = comment_run {
+                append_comment_fence_closer(cur, destination, run, true);
+            }
             // The comment CLOSED the paragraph, so the open-paragraph gate
             // below would stop the fold here - and the container is still open,
             // which is the whole point of the exception. Resume against the
@@ -17891,15 +18018,17 @@ fn collect_indented_block_mapped_with_columns(
             *fence = nested_fence;
             break;
         }
+        let prior_comment = cur
+            .pos
+            .checked_sub(1)
+            .is_some_and(|at| effective_comment_line_at(cur, at));
         let definition_comment_band = marker_is_definition_term
             && marker_definition_has_description
             && fence.is_none()
             && comment_fence.is_none()
             && (indent > marker_base || detect_fence_open(trim_ascii_start(line)).is_some())
             && indent < strip_cols
-            && lines
-                .last()
-                .is_some_and(|line| is_line_comment_any_column(line));
+            && prior_comment;
         let definition_band_inline_closer = definition_band_inline_run.is_some_and(|run| {
             if last_backtick_run_starts(line.as_bytes()).contains_key(&run) {
                 definition_band_inline_run = None;
@@ -17928,17 +18057,27 @@ fn collect_indented_block_mapped_with_columns(
                 || (marker_is_definition_term && marker_definition_has_description))
             && (marker_ordered
                 || cur.pos.checked_sub(1).is_some_and(|at| {
-                    let previous = cur.lines.at(at);
-                    indent_columns(previous) > marker_base && is_line_comment_any_column(previous)
+                    indent_columns(cur.lines.at(at)) > marker_base && prior_comment
                 }))
             && (cur.pos.checked_sub(1).is_some_and(|at| {
                 let previous = cur.lines.at(at);
-                indent_columns(previous) < strip_cols && is_line_comment_any_column(previous)
+                indent_columns(previous) < strip_cols && prior_comment
             }) || cur
                 .closed_comment_location
                 .is_some_and(|(at, _)| at + 1 == cur.pos));
-        let paragraph_before_comment = comment_boundary
+        let trailing_comment_lines = if prior_comment && ends_with_empty_comment_fence(&lines) {
+            2
+        } else if prior_comment
             && lines
+                .last()
+                .is_some_and(|line| detect_comment_fence_line_any_column(line).is_some())
+        {
+            1
+        } else {
+            0
+        };
+        let paragraph_before_comment = comment_boundary
+            && lines[..lines.len() - trailing_comment_lines]
                 .iter()
                 .rposition(|line| !is_blank_line(line) && !is_line_comment_any_column(line))
                 .is_some_and(|end| {
@@ -17955,6 +18094,13 @@ fn collect_indented_block_mapped_with_columns(
         let retained_colon_fence = comment_boundary
             && paragraph_before_comment
             && marker_colon.is_some()
+            && (cur
+                .pos
+                .checked_sub(1)
+                .is_some_and(|at| is_line_comment_any_column(cur.lines.at(at)))
+                || cur
+                    .closed_comment_location
+                    .is_some_and(|(at, _)| at + 1 == cur.pos))
             && detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
                 !cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
                     && !item_body_fence_has_closer(
@@ -18029,7 +18175,7 @@ fn collect_indented_block_mapped_with_columns(
         {
             let after_comment = cur.pos.checked_sub(1).is_some_and(|at| {
                 let previous = cur.lines.at(at);
-                indent_columns(previous) < strip_cols && is_line_comment_any_column(previous)
+                indent_columns(previous) < strip_cols && prior_comment
             });
             let after_span = cur
                 .closed_comment_location
@@ -20039,8 +20185,13 @@ fn collect_definition_body(
         let below_comment = column < content_column && trim_ascii_start(line).starts_with("%%");
         if column == 0
             && below_comment_span.is_none()
-            && detect_comment_fence_line_any_column(line)
-                .is_some_and(|open| cur.has_comment_closer_after(cur.pos + 1, open.fence_len))
+            && detect_comment_fence_line_any_column(line).is_some_and(|open| {
+                cur.has_comment_closer_after(cur.pos + 1, open.fence_len)
+                    && !cur
+                        .lines
+                        .line(cur.pos + 1)
+                        .is_some_and(|next| is_comment_fence_close_any_column(next, open.fence_len))
+            })
         {
             break;
         }
@@ -20064,7 +20215,9 @@ fn collect_definition_body(
                     below_comment_span = Some(open.fence_len);
                 }
             }
-            let kept = if trim_ascii_start(line).starts_with("%%") {
+            let kept = if nested_definition_open && lines.is_empty() && column > 0 {
+                line.to_owned()
+            } else if trim_ascii_start(line).starts_with("%%") {
                 trim_ascii_start(line).to_owned()
             } else {
                 line.to_owned()
@@ -20401,9 +20554,10 @@ fn collect_definition_body(
                 && item_block_opener_with_invisible_arms(trim_ascii_start(line), false)
                 && !fold_below_column_opener
                 && !(retained_below_comment
-                    && lines
+                    && (lines
                         .last()
                         .is_some_and(|line| is_line_comment_any_column(line))
+                        || ends_with_empty_comment_fence(&lines))
                     && (indent <= retained_comment_column || retained_comment_column == 0)
                     && detect_fence_open(trim_ascii_start(line)).is_some())
             {
@@ -20457,9 +20611,10 @@ fn collect_definition_body(
                 break;
             }
             let opens_retained_fence = retained_below_comment
-                && lines
+                && (lines
                     .last()
                     .is_some_and(|line| is_line_comment_any_column(line))
+                    || ends_with_empty_comment_fence(&lines))
                 && indent <= retained_comment_column
                 && !(cur.in_item_body
                     && cur.reached.and_then(|r| r.get(cur.pos)).copied() == Some(false)

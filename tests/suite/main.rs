@@ -2268,3 +2268,6 @@ mod markdown_shortcut_reference_imports_collapsed;
 
 #[path = "../a_marker_line_footnote_leaves_its_container_open.rs"]
 mod a_marker_line_footnote_leaves_its_container_open;
+
+#[path = "../matched_comment_fences_follow_line_comment_container_ownership.rs"]
+mod matched_comment_fences_follow_line_comment_container_ownership;
