@@ -1,4 +1,4 @@
-use carve::to_html;
+use carve::{to_html, to_html_with_options, Options};
 
 #[test]
 fn a_caption_below_the_quote_column_folds_into_the_quote() {
@@ -13,6 +13,21 @@ fn a_caption_below_the_quote_column_folds_into_the_quote() {
             "{source:?}: {html}"
         );
         assert!(!html.contains("<figcaption>"), "{source:?}: {html}");
+    }
+}
+
+#[test]
+fn a_lazy_tail_stays_with_the_below_column_caption_text() {
+    let source = "1. > para\n ^ cap\ntail\n";
+    for html in [
+        to_html(source),
+        to_html_with_options(source, &Options::default().with_positions(true)),
+    ] {
+        let compact = html.lines().map(str::trim).collect::<Vec<_>>().join("\n");
+        assert!(
+            compact.contains("<blockquote><p>para\n^ cap\ntail</p></blockquote>"),
+            "{html}"
+        );
     }
 }
 
