@@ -18600,6 +18600,7 @@ fn collect_indented_block_mapped_with_columns(
             line
         };
         let framed_comment_payload = comment_payload
+            && !(marker_is_definition_term && marker_definition_has_description)
             && (line.starts_with(LAZY)
                 || comment_fence_strip.is_some_and(|strip| strip < strip_cols));
         if marker_is_definition_term
@@ -18775,6 +18776,13 @@ fn collect_indented_block_mapped_with_columns(
                 || definition_band_inline_closer =>
             {
                 indent
+            }
+            (true, Some(_))
+                if comment_payload
+                    && marker_is_definition_term
+                    && marker_definition_has_description =>
+            {
+                0
             }
             (true, Some(_)) if comment_payload => strip_cols.min(indent_columns(payload_line)),
             (true, Some(span_strip)) => span_strip.min(indent),

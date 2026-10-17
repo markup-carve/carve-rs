@@ -26,6 +26,8 @@ mod a_definition_in_a_quote_under_an_item_leaves_no_lazy_paragraph;
 mod a_flush_comment_after_a_nested_note_marker_leaves_no_body_open;
 #[path = "../a_folded_marker_or_quote_does_not_move_the_base.rs"]
 mod a_folded_marker_or_quote_does_not_move_the_base;
+#[path = "../a_matched_comment_keeps_its_payload_in_a_list_description.rs"]
+mod a_matched_comment_keeps_its_payload_in_a_list_description;
 #[path = "../a_nested_note_on_a_marker_line_keeps_its_column.rs"]
 mod a_nested_note_on_a_marker_line_keeps_its_column;
 #[path = "../a_quote_on_a_container_marker_line_hosts_its_definitions.rs"]
