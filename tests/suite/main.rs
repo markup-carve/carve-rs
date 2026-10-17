@@ -2302,3 +2302,9 @@ mod a_marker_line_colon_body_keeps_a_matched_comment_span;
 
 #[path = "../a_marker_line_quote_caption_keeps_its_lazy_tail.rs"]
 mod a_marker_line_quote_caption_keeps_its_lazy_tail;
+
+#[path = "../a_matched_comment_below_a_child_column_keeps_the_child.rs"]
+mod a_matched_comment_below_a_child_column_keeps_the_child;
+
+#[path = "../a_matched_fence_between_nested_item_columns_ends_the_inner_item.rs"]
+mod a_matched_fence_between_nested_item_columns_ends_the_inner_item;

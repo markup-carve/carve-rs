@@ -8134,7 +8134,7 @@ fn rebase_body_blocks(
         if reaches_container && nested_columns.last().is_some_and(|column| base < *column) {
             block_at_minimum = true;
         }
-        // A comment below a descendant's column leaves that item available.
+        // A line comment below a descendant's column leaves that item available.
         if is_line_comment_any_column(&lines[i])
             && nested_columns.last().is_some_and(|column| base < *column)
         {
@@ -8144,15 +8144,27 @@ fn rebase_body_blocks(
         }
         if nested_columns.last().is_some_and(|column| base < *column) {
             if let Some(open) = detect_comment_fence_line(&local_at_base) {
-                if let Some(close) = entry_closers
+                let close = entry_closers
                     .get_or_init(|| comment_closers_by_run(&lines))
                     .get(&open.fence_len)
-                    .and_then(|at| at.get(at.partition_point(|&at| at <= i)).copied())
-                    .filter(|&close| close == i + 1)
-                {
-                    paragraph_open = false;
-                    i = close + 1;
-                    continue;
+                    .and_then(|at| at.get(at.partition_point(|&at| at <= i)).copied());
+                if let Some(close) = close {
+                    let between_items = nested_list_marker_bases
+                        .last()
+                        .and_then(|marker_base| *marker_base)
+                        .is_some_and(|outer_col| base >= outer_col);
+                    if include_sublists && between_items {
+                        nested_columns.pop();
+                        nested_list_marker_bases.pop();
+                        paragraph_open = false;
+                        i = close + 1;
+                        continue;
+                    }
+                    if include_sublists || indent_columns(&lines[i]) < base || close == i + 1 {
+                        paragraph_open = false;
+                        i = close + 1;
+                        continue;
+                    }
                 }
             }
         }
@@ -8192,6 +8204,23 @@ fn rebase_body_blocks(
                             .is_some_and(|marker| line_starts_paragraph(marker.content)));
                 nested_columns.push(column);
                 nested_list_marker_bases.push(marker.as_ref().filter(|_| base > 0).map(|_| base));
+                let mut inner_base = column;
+                let mut inner_content = marker.as_ref().map(|marker| marker.content);
+                while let Some(content) =
+                    inner_content.filter(|content| indent_columns(content) == 0)
+                {
+                    let Some(inner_marker) = detect_list_marker_full_at(content, 0) else {
+                        break;
+                    };
+                    let Some(width) = marker_content_col_at(content, 0) else {
+                        break;
+                    };
+                    let inner_column = inner_base + width;
+                    nested_columns.push(inner_column);
+                    nested_list_marker_bases.push(Some(inner_base));
+                    inner_base = inner_column;
+                    inner_content = Some(inner_marker.content);
+                }
                 after_blank = false;
                 block_at_minimum = false;
                 i += 1;
@@ -20500,9 +20529,12 @@ fn collect_definition_body(
                     below_comment_span = Some(open.fence_len);
                 }
             }
-            let kept = if nested_definition_open && lines.is_empty() && column > 0 {
-                line.to_owned()
-            } else if trim_ascii_start(line).starts_with("%%") {
+            let keep_authored = column > 0
+                && ((nested_definition_open && lines.is_empty())
+                    || detect_comment_fence_line_any_column(line).is_some_and(|open| {
+                        cur.has_comment_closer_after(cur.pos + 1, open.fence_len)
+                    }));
+            let kept = if !keep_authored && trim_ascii_start(line).starts_with("%%") {
                 trim_ascii_start(line).to_owned()
             } else {
                 line.to_owned()
