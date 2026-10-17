@@ -17135,17 +17135,22 @@ fn matched_fence_below_item(
 }
 
 fn marked_quote_before_comment(cur: &LineCursor<'_>, comment_at: usize) -> bool {
-    // CARVE-P0-013 and corpus 616-23 clear a marked quote's retained claim.
-    // A terminal empty fence leaves no following line to revoke the item's claim.
-    if let Some(last) = cur.lines.len().checked_sub(1) {
-        if comment_at + 2 < last
-            && indent_columns(cur.lines.at(last)) == 0
-            && detect_fence_open(cur.lines.at(last)).is_some()
-            && detect_comment_fence_line_any_column(cur.lines.at(comment_at)).is_some_and(|open| {
-                is_comment_fence_close_any_column(cur.lines.at(last - 1), open.fence_len)
-            })
+    // CARVE-P0-013 keeps an unmatched fence after the span in the item.
+    if let Some(open) = detect_comment_fence_line_any_column(cur.lines.at(comment_at)) {
+        if let Some(close) = (comment_at + 1..cur.lines.len())
+            .find(|&at| is_comment_fence_close_any_column(cur.lines.at(at), open.fence_len))
         {
-            return false;
+            let next = close + 1;
+            if next < cur.lines.len()
+                && indent_columns(cur.lines.at(next)) == 0
+                && detect_fence_open(cur.lines.at(next)).is_some_and(|code| {
+                    !cur.lines
+                        .range(next + 1..cur.lines.len())
+                        .any(|line| is_fence_close(trim_ascii_start(line), code))
+                })
+            {
+                return false;
+            }
         }
     }
     let Some((marker_at, marker)) = (0..comment_at)

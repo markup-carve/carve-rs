@@ -25,10 +25,10 @@ fn a_matched_comment_with_a_body_retains_the_item_fence() {
 }
 
 #[test]
-fn a_quoted_item_does_not_claim_a_matched_comment_body() {
+fn a_quoted_item_retains_an_empty_fence_after_a_matched_comment() {
     assert_eq!(
         html("- > para\n  > more\n %%%\n c\n %%%\n```\nx\n"),
-        "<ul><li><blockquote><p>para more</p></blockquote></li></ul><pre><code>x </code></pre>"
+        "<ul><li><blockquote><p>para more</p></blockquote><pre><code></code></pre></li></ul><p>x</p>"
     );
 }
 
@@ -41,18 +41,18 @@ fn a_quoted_item_without_a_marked_continuation_keeps_the_comment() {
 }
 
 #[test]
-fn an_ordered_marked_quote_releases_the_matched_comment_claim() {
+fn an_ordered_marked_quote_retains_the_empty_fence() {
     assert_eq!(
         html("1. > para\n   > more\n %%%\n c\n %%%\n```\nx\n"),
-        "<ol><li><blockquote><p>para more</p></blockquote></li></ol><pre><code>x </code></pre>"
+        "<ol><li><blockquote><p>para more</p></blockquote><pre><code></code></pre></li></ol><p>x</p>"
     );
 }
 
 #[test]
-fn two_empty_comment_spans_do_not_claim_a_marked_quote() {
+fn two_empty_comment_spans_keep_the_marked_quote_fence() {
     assert_eq!(
         html("- > para\n  > more\n %%%\n %%%\n %%%\n %%%\n```\nx\n"),
-        "<ul><li><blockquote><p>para more</p></blockquote></li></ul><pre><code>x </code></pre>"
+        "<ul><li><blockquote><p>para more</p></blockquote><pre><code></code></pre></li></ul><p>x</p>"
     );
 }
 
@@ -60,7 +60,7 @@ fn two_empty_comment_spans_do_not_claim_a_marked_quote() {
 fn a_prior_code_fence_does_not_change_the_comment_pair() {
     assert_eq!(
         html("```\n%%%\n```\n- > para\n  > more\n %%%\n c\n %%%\n```\nx\n"),
-        "<pre><code>%%% </code></pre><ul><li><blockquote><p>para more</p></blockquote></li></ul><pre><code>x </code></pre>"
+        "<pre><code>%%% </code></pre><ul><li><blockquote><p>para more</p></blockquote><pre><code></code></pre></li></ul><p>x</p>"
     );
 }
 

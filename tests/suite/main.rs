@@ -2309,7 +2309,6 @@ mod a_matched_fence_between_nested_item_columns_ends_the_inner_item;
 #[path = "../a_matched_comment_below_a_child_column_keeps_the_child.rs"]
 mod a_matched_comment_below_a_child_column_keeps_the_child;
 
-
 #[path = "../a_code_fence_after_a_matched_comment_opens_in_the_description.rs"]
 mod a_code_fence_after_a_matched_comment_opens_in_the_description;
 
@@ -2333,3 +2332,6 @@ mod a_matched_comment_keeps_marker_line_block_followers;
 
 #[path = "../a_matched_comment_keeps_a_footnote_list_fence.rs"]
 mod a_matched_comment_keeps_a_footnote_list_fence;
+
+#[path = "../a_matched_comment_keeps_a_fence_after_an_item_quote.rs"]
+mod a_matched_comment_keeps_a_fence_after_an_item_quote;
