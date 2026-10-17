@@ -20511,6 +20511,8 @@ fn collect_definition_body(
         }
         let below_comment = column < content_column && trim_ascii_start(line).starts_with("%%");
         if column == 0
+            && !cur.in_item_body
+            && !cur.sublists_carry_authored_base
             && below_comment_span.is_none()
             && detect_comment_fence_line_any_column(line).is_some_and(|open| {
                 cur.has_comment_closer_after(cur.pos + 1, open.fence_len)

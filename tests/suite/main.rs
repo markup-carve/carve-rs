@@ -2318,3 +2318,6 @@ mod a_lazy_colon_body_keeps_a_comment_and_follower;
 
 #[path = "../a_comment_at_the_description_column_keeps_its_follower.rs"]
 mod a_comment_at_the_description_column_keeps_its_follower;
+
+#[path = "../an_authored_indented_comment_keeps_the_nested_description.rs"]
+mod an_authored_indented_comment_keeps_the_nested_description;
