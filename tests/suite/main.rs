@@ -2330,3 +2330,6 @@ mod a_matched_comment_at_a_nested_description_opener_ends_it;
 
 #[path = "../a_matched_comment_keeps_marker_line_block_followers.rs"]
 mod a_matched_comment_keeps_marker_line_block_followers;
+
+#[path = "../a_matched_comment_keeps_a_footnote_list_fence.rs"]
+mod a_matched_comment_keeps_a_footnote_list_fence;

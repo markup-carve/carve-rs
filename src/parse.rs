@@ -1920,6 +1920,7 @@ fn extract_footnote_defs(
                         {
                             break;
                         }
+                        let matched_span_line = below_comment_span.is_some();
                         if let Some(width) = below_comment_span {
                             if is_comment_fence_close_any_column(line, width) {
                                 below_comment_span = None;
@@ -1932,7 +1933,11 @@ fn extract_footnote_defs(
                                 below_comment_span = Some(open.fence_len);
                             }
                         }
-                        let kept = if trim_ascii_start(line).starts_with("%%") && !open_term {
+                        let matched_span_line = matched_span_line || below_comment_span.is_some();
+                        let kept = if trim_ascii_start(line).starts_with("%%")
+                            && !open_term
+                            && !matched_span_line
+                        {
                             trim_ascii_start(line).to_owned()
                         } else {
                             line.to_owned()
