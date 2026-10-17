@@ -629,6 +629,7 @@ fn render_table(node: &Table) -> String {
                         ))
                         .to_string(),
                     }
+                    .replace(['\r', '\n'], " ")
                 })
                 .collect::<Vec<_>>()
                 .join(" | "),

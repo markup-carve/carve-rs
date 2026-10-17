@@ -2335,3 +2335,5 @@ mod a_matched_comment_keeps_a_footnote_list_fence;
 
 #[path = "../a_matched_comment_keeps_a_fence_after_an_item_quote.rs"]
 mod a_matched_comment_keeps_a_fence_after_an_item_quote;
+#[path = "../csv_table_writer_parity.rs"]
+mod csv_table_writer_parity;

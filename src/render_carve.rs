@@ -3039,12 +3039,14 @@ fn render_delimited_table(
                 fields.push(value);
             }
         }
-        lines.push(fields.join(&separator.to_string()));
+        let line = fields.join(&separator.to_string());
+        lines.push(if line.is_empty() {
+            "\"\"".to_owned()
+        } else {
+            line
+        });
     }
-    let mut payload = lines.join("\n");
-    if !lines.is_empty() && payload.is_empty() {
-        payload = "\"\"".to_owned();
-    }
+    let payload = lines.join("\n");
     let fence = safe_fence(&payload, 3);
     let mut source = format!(
         "{fence}{}\n{payload}{}{fence}",

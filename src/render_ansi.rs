@@ -543,6 +543,7 @@ fn render_table(node: &Table, ctx: &mut AnsiContext) -> String {
                         ))
                         .to_string(),
                     };
+                    let content = content.replace(['\r', '\n'], " ");
                     let plain = strip_ansi(&content);
                     RenderedCell {
                         content,
