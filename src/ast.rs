@@ -667,18 +667,25 @@ pub struct Table {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum TableSourceFormat {
     Csv,
     Tsv,
 }
 
-impl std::ops::Deref for TableSourceFormat {
-    type Target = str;
-
-    fn deref(&self) -> &str {
+impl TableSourceFormat {
+    pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Csv => "csv",
             Self::Tsv => "tsv",
+        }
+    }
+
+    pub fn from_lang(value: &str) -> Option<Self> {
+        match value {
+            "csv" => Some(Self::Csv),
+            "tsv" => Some(Self::Tsv),
+            _ => None,
         }
     }
 }

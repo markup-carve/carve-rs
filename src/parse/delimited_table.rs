@@ -1,11 +1,10 @@
 use crate::ast::*;
 
 pub(super) fn from_code(code: &CodeBlock) -> Option<Table> {
-    let format = code.lang.as_deref()?;
+    let format = TableSourceFormat::from_lang(code.lang.as_deref()?)?;
     let separator = match format {
-        "csv" => ',',
-        "tsv" => '\t',
-        _ => return None,
+        TableSourceFormat::Csv => ',',
+        TableSourceFormat::Tsv => '\t',
     };
     let mut attrs = code.attrs.clone()?;
     if !attrs.key_values.get("table").is_some_and(String::is_empty) {
@@ -76,11 +75,7 @@ pub(super) fn from_code(code: &CodeBlock) -> Option<Table> {
     });
     Some(Table {
         attrs,
-        source_format: Some(if format == "csv" {
-            TableSourceFormat::Csv
-        } else {
-            TableSourceFormat::Tsv
-        }),
+        source_format: Some(format),
         caption: None,
         short_caption: None,
         columns,
@@ -189,7 +184,10 @@ mod tests {
             pos: None,
         };
         let table = from_code(&code).unwrap();
-        assert_eq!(table.source_format.as_deref(), Some("tsv"));
+        assert_eq!(
+            table.source_format.map(|format| format.as_str()),
+            Some("tsv")
+        );
         assert!(table.rows[0].cells[0].header);
         assert!(!table.rows[1].cells[0].header);
         assert!(table.attrs.is_none());

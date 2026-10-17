@@ -2979,7 +2979,7 @@ fn render_delimited_table(
     session: &RenderSession,
     ctx: &mut CarveContext,
 ) -> Option<String> {
-    let format = table.source_format.as_deref()?;
+    let format = table.source_format.as_ref()?.as_str();
     let separator = match format {
         "csv" => ',',
         "tsv" => '\t',

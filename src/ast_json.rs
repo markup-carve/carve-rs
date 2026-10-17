@@ -1599,7 +1599,7 @@ fn encode_table_task<'a>(
                             w.field("rowGroups", |out| write_row_groups(out, groups));
                         }
                         if let Some(format) = &n.source_format {
-                            w.field("sourceFormat", |out| write_string(out, format));
+                            w.field("sourceFormat", |out| write_string(out, format.as_str()));
                         }
                         write_attrs_field(&mut w, &n.attrs);
                         write_pos_field(&mut w, &n.pos);
@@ -1611,7 +1611,7 @@ fn encode_table_task<'a>(
                         w.field("rowGroups", |out| write_row_groups(out, groups));
                     }
                     if let Some(format) = &n.source_format {
-                        w.field("sourceFormat", |out| write_string(out, format));
+                        w.field("sourceFormat", |out| write_string(out, format.as_str()));
                     }
                     write_attrs_field(&mut w, &n.attrs);
                     write_pos_field(&mut w, &n.pos);
@@ -1627,7 +1627,7 @@ fn encode_table_task<'a>(
                     w.field("rowGroups", |out| write_row_groups(out, groups));
                 }
                 if let Some(format) = &n.source_format {
-                    w.field("sourceFormat", |out| write_string(out, format));
+                    w.field("sourceFormat", |out| write_string(out, format.as_str()));
                 }
                 write_attrs_field(&mut w, &n.attrs);
                 write_pos_field(&mut w, &n.pos);
@@ -1639,7 +1639,7 @@ fn encode_table_task<'a>(
                 w.field("rowGroups", |out| write_row_groups(out, groups));
             }
             if let Some(format) = &n.source_format {
-                w.field("sourceFormat", |out| write_string(out, format));
+                w.field("sourceFormat", |out| write_string(out, format.as_str()));
             }
             write_attrs_field(&mut w, &n.attrs);
             write_pos_field(&mut w, &n.pos);
@@ -2190,7 +2190,7 @@ fn write_table(out: &mut String, n: &Table) {
         w.field("rowGroups", |out| write_row_groups(out, groups));
     }
     if let Some(format) = &n.source_format {
-        w.field("sourceFormat", |out| write_string(out, format));
+        w.field("sourceFormat", |out| write_string(out, format.as_str()));
     }
     write_attrs_field(&mut w, &n.attrs);
     write_pos_field(&mut w, &n.pos);
@@ -3361,19 +3361,13 @@ fn decode_table(obj: &Map<String, Json>) -> Result<Table, AstJsonError> {
         None => None,
     };
     let source_format = optional_string(obj, "sourceFormat")?;
-    if source_format.is_some_and(|format| format != "csv" && format != "tsv") {
+    if source_format.is_some_and(|format| TableSourceFormat::from_lang(format).is_none()) {
         return Err(AstJsonError::new(
             "table.sourceFormat must be csv or tsv".to_owned(),
         ));
     }
     Ok(Table {
-        source_format: source_format.map(|format| {
-            if format == "csv" {
-                TableSourceFormat::Csv
-            } else {
-                TableSourceFormat::Tsv
-            }
-        }),
+        source_format: source_format.and_then(TableSourceFormat::from_lang),
         attrs: optional_attrs(obj)?,
         caption: optional_inlines(obj, "caption")?,
         short_caption: optional_inlines(obj, "shortCaption")?,

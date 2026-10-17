@@ -82,7 +82,9 @@ fn wide(table: &Table, source: &str, to_byte: &dyn Fn(usize) -> usize, out: &mut
         let fence = &line[start..];
         let marker = fence.chars().next().unwrap_or(' ');
         let width = fence.chars().take_while(|ch| *ch == marker).count();
-        width >= 3 && fence[width..].split_whitespace().next() == table.source_format.as_deref()
+        width >= 3
+            && fence[width..].split_whitespace().next()
+                == table.source_format.as_ref().map(|format| format.as_str())
     }) else {
         return;
     };
@@ -120,7 +122,7 @@ fn wide(table: &Table, source: &str, to_byte: &dyn Fn(usize) -> usize, out: &mut
         payload.push_str(line);
         payload.push('\n');
     }
-    let separator = if table.source_format.as_deref() == Some("csv") {
+    let separator = if table.source_format.as_ref().map(|format| format.as_str()) == Some("csv") {
         ','
     } else {
         '\t'
