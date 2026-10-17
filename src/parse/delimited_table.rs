@@ -24,7 +24,7 @@ pub(super) fn from_code(code: &CodeBlock) -> Option<Table> {
         .retain(|slot| !matches!(slot, AttrSlot::Key(key) if key == "table"));
     let attrs = (attrs.id.is_some() || !attrs.classes.is_empty() || !attrs.key_values.is_empty())
         .then_some(attrs);
-    let rows = data
+    let rows: Vec<TableRow> = data
         .into_iter()
         .enumerate()
         .map(|(index, fields)| TableRow {
@@ -53,6 +53,15 @@ pub(super) fn from_code(code: &CodeBlock) -> Option<Table> {
         .as_ref()
         .map(super::table_columns_from_attrs)
         .unwrap_or_default();
+    let row_groups = attrs.as_ref().and_then(|attrs| {
+        let mut metadata = attrs.clone();
+        if !metadata.key_values.contains_key("header-rows") {
+            metadata
+                .key_values
+                .insert("header-rows".into(), head.to_string());
+        }
+        crate::table_source_metadata::row_groups(&metadata, rows.len()).map(Box::new)
+    });
     Some(Table {
         attrs,
         source_format: Some(format.to_owned()),
@@ -60,7 +69,7 @@ pub(super) fn from_code(code: &CodeBlock) -> Option<Table> {
         short_caption: None,
         columns,
         rows,
-        row_groups: None,
+        row_groups,
         separator_widths: None,
         pos: code.pos.clone(),
     })

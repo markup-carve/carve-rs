@@ -7109,10 +7109,30 @@ fn append_parsed_block(
         }
     }
     resolve_code_title(&mut node);
-    if let BlockNode::CodeBlock(code) = &node {
-        if let Some(table) = delimited_table::from_code(code) {
-            node = BlockNode::Table(table);
+    match &node {
+        BlockNode::CodeBlock(code) => {
+            if let Some(table) = delimited_table::from_code(code) {
+                node = BlockNode::Table(table);
+            }
         }
+        BlockNode::Figure(figure) => {
+            if let FigureTarget::CodeBlock(code) = &*figure.target {
+                let mut code = code.clone();
+                if let Some(attrs) = &figure.attrs {
+                    let mut block = BlockNode::CodeBlock(code.clone());
+                    apply_attrs_to_block(&mut block, attrs.clone());
+                    if let BlockNode::CodeBlock(with_attrs) = block {
+                        code = with_attrs;
+                    }
+                }
+                if let Some(mut table) = delimited_table::from_code(&code) {
+                    table.caption = Some(figure.caption.clone());
+                    table.pos = figure.pos.clone();
+                    node = BlockNode::Table(table);
+                }
+            }
+        }
+        _ => {}
     }
     if options.source_lines {
         if let Some(line) = cur.source_line(start_line) {

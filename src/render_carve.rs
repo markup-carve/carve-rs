@@ -2381,6 +2381,12 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
             if let Some(source) = render_delimited_table(table, session, ctx) {
                 return with_block_attrs(&table.attrs, &format!("{{table}}\n{source}"));
             }
+            if table.source_format.is_some() {
+                crate::render_carve_error::record_unspellable(
+                    "table",
+                    "the table cannot be written as delimited text",
+                );
+            }
             let mut attrs = table.attrs.clone();
             if let Some(attrs) = &mut attrs {
                 if attrs.order.is_empty() {
