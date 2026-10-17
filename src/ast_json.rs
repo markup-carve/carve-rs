@@ -3367,7 +3367,13 @@ fn decode_table(obj: &Map<String, Json>) -> Result<Table, AstJsonError> {
         ));
     }
     Ok(Table {
-        source_format: source_format.map(str::to_string),
+        source_format: source_format.map(|format| {
+            if format == "csv" {
+                TableSourceFormat::Csv
+            } else {
+                TableSourceFormat::Tsv
+            }
+        }),
         attrs: optional_attrs(obj)?,
         caption: optional_inlines(obj, "caption")?,
         short_caption: optional_inlines(obj, "shortCaption")?,

@@ -76,7 +76,11 @@ pub(super) fn from_code(code: &CodeBlock) -> Option<Table> {
     });
     Some(Table {
         attrs,
-        source_format: Some(format.to_owned()),
+        source_format: Some(if format == "csv" {
+            TableSourceFormat::Csv
+        } else {
+            TableSourceFormat::Tsv
+        }),
         caption: None,
         short_caption: None,
         columns,

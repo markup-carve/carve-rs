@@ -645,7 +645,7 @@ pub struct BlockQuote {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Table {
     pub attrs: Option<Attrs>,
-    pub source_format: Option<String>,
+    pub source_format: Option<TableSourceFormat>,
     pub caption: Option<Vec<InlineNode>>,
     /// Structured publishing/navigation label; Carve 0.1 source has no spelling.
     pub short_caption: Option<Vec<InlineNode>>,
@@ -664,6 +664,23 @@ pub struct Table {
     pub separator_widths: Option<Vec<u64>>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TableSourceFormat {
+    Csv,
+    Tsv,
+}
+
+impl std::ops::Deref for TableSourceFormat {
+    type Target = str;
+
+    fn deref(&self) -> &str {
+        match self {
+            Self::Csv => "csv",
+            Self::Tsv => "tsv",
+        }
+    }
 }
 
 /// An explicit head/body/foot partition of a table's rows (PART 12 §15).
