@@ -168,6 +168,7 @@ mod tests {
         );
         assert_eq!(rows("\"unclosed\n", ','), None);
         assert_eq!(rows("a\"b,c\n", ','), None);
+        assert_eq!(rows("\"a\" ,b\n", ','), None);
     }
 
     #[test]
