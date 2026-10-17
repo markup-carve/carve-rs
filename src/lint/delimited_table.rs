@@ -90,32 +90,23 @@ fn wide(table: &Table, source: &str, to_byte: &dyn Fn(usize) -> usize, out: &mut
         return;
     };
     let prefix = &opener[..start];
-    let quoted_prefix = lines
-        .clone()
-        .next()
-        .map(|line| {
-            let mut bytes = 0;
-            while line[bytes..].starts_with("> ") {
-                bytes += 2;
-            }
-            &line[..bytes]
-        })
-        .unwrap_or("");
     let marker = opener[start..].chars().next().unwrap_or(' ');
     let width = opener[start..]
         .chars()
         .take_while(|ch| *ch == marker)
         .count();
-    let quote_has_closer = !quoted_prefix.is_empty()
-        && lines.clone().any(|line| {
-            let Some(rest) = line.strip_prefix(quoted_prefix) else {
-                return false;
-            };
-            let rest = rest.trim();
-            rest.len() >= width && rest.chars().all(|ch| ch == marker)
-        });
-    let prefix = if prefix.is_empty() && quote_has_closer {
-        quoted_prefix
+    let body_prefix = lines.clone().find_map(|line| {
+        let start = line.find(marker)?;
+        let (candidate, rest) = line.split_at(start);
+        (rest.len() >= width
+            && rest.chars().all(|ch| ch == marker)
+            && candidate
+                .bytes()
+                .all(|byte| matches!(byte, b' ' | b'\t' | b'>')))
+        .then_some(candidate)
+    });
+    let prefix = if prefix.is_empty() {
+        body_prefix.unwrap_or("")
     } else {
         prefix
     };
@@ -168,6 +159,8 @@ mod tests {
         assert!(rules("> {table}\n> ```csv\n> \"x,y\",b\n> 1,2,3\n> ```\n")
             .contains(&"delimited-table-wide-row"));
         assert!(rules("{table}\n```csv\n> x,y\n1,2,3\n```\n").contains(&"delimited-table-wide-row"));
+        assert!(rules("- {table}\n  ```csv\n  \"x,y\",b\n  1,2,3\n  ```\n")
+            .contains(&"delimited-table-wide-row"));
         assert!(!rules("{table}\n```csv\na,b\n1,2\n`````\n^ x,y,z\n")
             .iter()
             .any(|rule| rule.starts_with("delimited-table-")));

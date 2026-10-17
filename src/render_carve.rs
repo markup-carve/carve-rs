@@ -2974,17 +2974,6 @@ fn colon_fence_for(ctx: &CarveContext) -> String {
     ":".repeat(3 + ctx.colon_fence_depth)
 }
 
-/// Tables prefer the NATIVE header form: an `=` on each header cell, plus the
-/// per-cell `<`/`>`/`~` alignment markers.
-///
-/// A colspan cell is always written plain (`| < |`), so a header row can keep
-/// the native form when its span markers form a TRAILING run of colspans after
-/// at least one real header cell: each `<` absorbs into the `|=` header on its
-/// left, and the row is still promoted by those markers. Everything else needs
-/// a delimiter row: a LEADING span has no `|=` anchor before it; a real cell
-/// AFTER a span would have to be written `|=< K`, read as an aligned header; and
-/// a trailing ROWSPAN (`^`) does not absorb left, so a native `| ^ |` in the
-/// first row is not a header cell and the row would fall out of the head.
 fn render_delimited_table(
     table: &Table,
     session: &RenderSession,
@@ -3072,6 +3061,17 @@ fn render_delimited_table(
     Some(source)
 }
 
+/// Tables prefer the NATIVE header form: an `=` on each header cell, plus the
+/// per-cell `<`/`>`/`~` alignment markers.
+///
+/// A colspan cell is always written plain (`| < |`), so a header row can keep
+/// the native form when its span markers form a TRAILING run of colspans after
+/// at least one real header cell: each `<` absorbs into the `|=` header on its
+/// left, and the row is still promoted by those markers. Everything else needs
+/// a delimiter row: a LEADING span has no `|=` anchor before it; a real cell
+/// AFTER a span would have to be written `|=< K`, read as an aligned header; and
+/// a trailing ROWSPAN (`^`) does not absorb left, so a native `| ^ |` in the
+/// first row is not a header cell and the row would fall out of the head.
 fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -> String {
     if node.rows.is_empty()
         && node
