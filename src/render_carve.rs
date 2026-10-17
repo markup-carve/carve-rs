@@ -2998,15 +2998,25 @@ fn render_delimited_table(
     };
     if table.short_caption.is_some()
         || table.separator_widths.is_some()
-        || table.rows.iter().any(|row| row.continuation_lines.is_some())
+        || table
+            .rows
+            .iter()
+            .any(|row| row.continuation_lines.is_some())
     {
         return None;
     }
     let foot = crate::parse::delimited_table::count(
-        table.attrs.as_ref().and_then(|attrs| attrs.key_values.get("footer-rows")), 0,
+        table
+            .attrs
+            .as_ref()
+            .and_then(|attrs| attrs.key_values.get("footer-rows")),
+        0,
     );
     let head = crate::parse::delimited_table::count(
-        table.attrs.as_ref().and_then(|attrs| attrs.key_values.get("header-rows")),
+        table
+            .attrs
+            .as_ref()
+            .and_then(|attrs| attrs.key_values.get("header-rows")),
         table.rows.len().saturating_sub(foot).min(1),
     );
     let mut lines = Vec::new();
