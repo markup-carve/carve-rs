@@ -17388,10 +17388,6 @@ fn collect_trailing_lazy_through_framed(
             if after_comment
                 && !matched_comment_before(cur)
                     .is_some_and(|at| marked_quote_before_comment(cur, at))
-                && !nested.source.lines().any(|line| {
-                    let line = trim_ascii_start(line);
-                    is_definition_list_start(line) || strip_description_prefix(line).is_some()
-                })
             {
                 nested.push_newline_at(
                     trim_ascii_start(line).to_owned(),
