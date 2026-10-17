@@ -2342,6 +2342,9 @@ fn extract_footnote_defs(
                     content(lines[at]).is_some_and(|line| {
                         admitted_fence.is_some()
                             || indent_columns(line) >= note_floor
+                            || (quote_depth > 0
+                                && indent_columns(line) > 0
+                                && trim_ascii_start(line).starts_with("%%"))
                             || (marker_note
                                 && indent_columns(line) >= prefix_cols
                                 && is_line_comment_any_column(line))

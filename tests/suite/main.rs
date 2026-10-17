@@ -14,6 +14,8 @@ mod raw_payload_termination;
 mod a_block_at_an_item_content_column_closes_its_paragraph_before_an_unclosed_fence;
 #[path = "../a_caption_below_a_description_column_folds_into_its_body.rs"]
 mod a_caption_below_a_description_column_folds_into_its_body;
+#[path = "../a_comment_below_a_quoted_note_column_keeps_its_body.rs"]
+mod a_comment_below_a_quoted_note_column_keeps_its_body;
 #[path = "../a_comment_retained_body_opens_its_fence.rs"]
 mod a_comment_retained_body_opens_its_fence;
 #[path = "../a_comment_retained_item_opens_its_fence.rs"]
