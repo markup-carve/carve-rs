@@ -16,6 +16,8 @@ mod a_block_at_an_item_content_column_closes_its_paragraph_before_an_unclosed_fe
 mod a_caption_below_a_description_column_folds_into_its_body;
 #[path = "../a_comment_retained_body_opens_its_fence.rs"]
 mod a_comment_retained_body_opens_its_fence;
+#[path = "../a_comment_retained_item_opens_its_fence.rs"]
+mod a_comment_retained_item_opens_its_fence;
 #[path = "../a_definition_in_a_quote_under_an_item_leaves_no_lazy_paragraph.rs"]
 mod a_definition_in_a_quote_under_an_item_leaves_no_lazy_paragraph;
 #[path = "../a_folded_marker_or_quote_does_not_move_the_base.rs"]

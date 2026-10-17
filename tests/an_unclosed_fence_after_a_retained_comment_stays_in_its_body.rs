@@ -20,10 +20,11 @@ fn a_document_column_line_exits_a_retained_footnote_fence() {
 }
 
 #[test]
-fn an_unclosed_fence_line_in_a_retained_item_colon_body_is_inline() {
+fn an_unclosed_fence_line_in_a_retained_item_colon_body_opens_code() {
+    // PART 0 X1 puts the retained fence in the note body.
     assert_eq!(
         html("- ::: note\n  more\n %% c\n```\n"),
-        "<ul><li><aside class=\"admonition note\" aria-label=\"Note\"><p>more</p><p><code></code></p></aside></li></ul>"
+        "<ul><li><aside class=\"admonition note\" aria-label=\"Note\"><p>more</p><pre><code></code></pre></aside></li></ul>"
     );
 }
 
