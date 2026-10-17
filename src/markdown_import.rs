@@ -2595,6 +2595,7 @@ impl Builder {
                 pos: None,
             })),
             Frame::Table { rows, .. } if !rows.is_empty() => self.block(BlockNode::Table(Table {
+                source_format: None,
                 attrs: None,
                 caption: None,
                 short_caption: None,

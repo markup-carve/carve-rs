@@ -1573,6 +1573,7 @@ fn list_table_as_table(node: &Admonition) -> Option<Table> {
         });
     }
     Some(Table {
+        source_format: None,
         attrs: None,
         caption: node.title.clone().filter(|t| !t.is_empty()),
         short_caption: None,

@@ -5970,6 +5970,7 @@ impl<'a> Importer<'a> {
             )));
         }
         Ok(BlockNode::Table(Table {
+            source_format: None,
             attrs,
             caption,
             short_caption: None,

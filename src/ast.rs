@@ -645,6 +645,7 @@ pub struct BlockQuote {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Table {
     pub attrs: Option<Attrs>,
+    pub source_format: Option<String>,
     pub caption: Option<Vec<InlineNode>>,
     /// Structured publishing/navigation label; Carve 0.1 source has no spelling.
     pub short_caption: Option<Vec<InlineNode>>,

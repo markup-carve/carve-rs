@@ -224,6 +224,7 @@ fn dropping_deep_content_inside_figures_citations_and_definitions_uses_bounded_s
                 pos: None,
             });
             let table = Table {
+                source_format: None,
                 attrs: None,
                 caption: None,
                 short_caption: None,

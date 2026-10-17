@@ -2378,6 +2378,9 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
             with_block_attrs(&rule.attrs, &marker.to_string().repeat(3))
         }
         BlockNode::Table(table) => {
+            if let Some(source) = render_delimited_table(table, session, ctx) {
+                return with_block_attrs(&table.attrs, &format!("{{table}}\n{source}"));
+            }
             let mut attrs = table.attrs.clone();
             if let Some(attrs) = &mut attrs {
                 if attrs.order.is_empty() {
@@ -2976,6 +2979,86 @@ fn colon_fence_for(ctx: &CarveContext) -> String {
 /// AFTER a span would have to be written `|=< K`, read as an aligned header; and
 /// a trailing ROWSPAN (`^`) does not absorb left, so a native `| ^ |` in the
 /// first row is not a header cell and the row would fall out of the head.
+fn render_delimited_table(
+    table: &Table,
+    session: &RenderSession,
+    ctx: &mut CarveContext,
+) -> Option<String> {
+    let format = table.source_format.as_deref()?;
+    let separator = match format {
+        "csv" => ',',
+        "tsv" => '\t',
+        _ => return None,
+    };
+    let foot = table
+        .attrs
+        .as_ref()
+        .and_then(|attrs| attrs.key_values.get("footer-rows"))
+        .and_then(|raw| raw.parse::<usize>().ok())
+        .unwrap_or(0);
+    let head = table
+        .attrs
+        .as_ref()
+        .and_then(|attrs| attrs.key_values.get("header-rows"))
+        .map(|raw| {
+            if raw.is_empty() {
+                Some(1)
+            } else {
+                raw.parse::<usize>().ok()
+            }
+        })
+        .unwrap_or(Some(table.rows.len().saturating_sub(foot).min(1)))?;
+    let mut lines = Vec::new();
+    for (index, row) in table.rows.iter().enumerate() {
+        if row.attrs.is_some() {
+            return None;
+        }
+        let mut fields = Vec::new();
+        for cell in &row.cells {
+            if cell.header != (index < head)
+                || cell.attrs.is_some()
+                || cell.blocks.is_some()
+                || cell.span.is_some()
+                || cell.align.is_some()
+                || cell.valign.is_some()
+            {
+                return None;
+            }
+            let mut value = String::new();
+            for child in &cell.children {
+                if let InlineNode::Text(text) = child {
+                    value.push_str(&text.value);
+                } else {
+                    return None;
+                }
+            }
+            if value.contains('\r') {
+                return None;
+            }
+            if value.contains([separator, '"', '\n']) {
+                fields.push(format!("\"{}\"", value.replace('"', "\"\"")));
+            } else {
+                fields.push(value);
+            }
+        }
+        lines.push(fields.join(&separator.to_string()));
+    }
+    let mut payload = lines.join("\n");
+    if !lines.is_empty() && payload.is_empty() {
+        payload = "\"\"".to_owned();
+    }
+    let fence = safe_fence(&payload, 3);
+    let mut source = format!(
+        "{fence}{format}\n{payload}{}{fence}",
+        if payload.is_empty() { "" } else { "\n" }
+    );
+    if let Some(caption) = &table.caption {
+        source.push_str("\n^ ");
+        source.push_str(&render_inlines(session, caption, ctx));
+    }
+    Some(source)
+}
+
 fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -> String {
     if node.rows.is_empty()
         && node

@@ -5456,6 +5456,7 @@ mod owned_html_metadata_depth_tests {
         for slot in 0..6 {
             let mut doc = crate::parse("");
             let table = |caption, short_caption| Table {
+                source_format: None,
                 attrs: None,
                 caption,
                 short_caption,

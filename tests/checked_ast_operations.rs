@@ -44,6 +44,7 @@ fn paragraph(children: Vec<InlineNode>) -> BlockNode {
 }
 fn table() -> Table {
     Table {
+        source_format: None,
         attrs: None,
         caption: None,
         short_caption: None,

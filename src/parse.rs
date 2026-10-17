@@ -3,6 +3,7 @@
 //! Block-level reads line by line; inline does a single linear scan
 //! over each block's text. No backtracking.
 
+mod delimited_table;
 mod inline_positions;
 mod quote_state;
 mod reference_resolution;
@@ -7108,6 +7109,11 @@ fn append_parsed_block(
         }
     }
     resolve_code_title(&mut node);
+    if let BlockNode::CodeBlock(code) = &node {
+        if let Some(table) = delimited_table::from_code(code) {
+            node = BlockNode::Table(table);
+        }
+    }
     if options.source_lines {
         if let Some(line) = cur.source_line(start_line) {
             stamp_source_line(&mut node, line);
@@ -21380,6 +21386,7 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // fail. Removed rather than corrected, since the two are now genuinely the
     // same.
     let mut table = Table {
+        source_format: None,
         pos: span_of(cur, span_start, cur.pos, options),
         attrs: None,
         caption,
