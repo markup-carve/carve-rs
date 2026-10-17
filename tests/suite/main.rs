@@ -2287,3 +2287,6 @@ mod a_marker_line_footnote_leaves_its_container_open;
 
 #[path = "../matched_comment_fences_follow_line_comment_container_ownership.rs"]
 mod matched_comment_fences_follow_line_comment_container_ownership;
+
+#[path = "../a_caption_below_a_marker_line_quote_is_lazy_text.rs"]
+mod a_caption_below_a_marker_line_quote_is_lazy_text;

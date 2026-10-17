@@ -11214,7 +11214,7 @@ fn finish_blockquote(
     // taking one binds the caption across the container change that opened the
     // quote - which is how `| a |` / blank / `>` / blank / `^ cap` captioned an
     // empty quote nobody wrote the caption under (markup-carve/carve#2892).
-    let caption = if children.is_empty() {
+    let caption = if children.is_empty() || cur.carried_reach(cur.pos) == Some(false) {
         None
     } else {
         consume_caption(cur, options)
@@ -12822,7 +12822,7 @@ fn collect_blockquote_body(
         if !(term_open || quoted_open)
             || is_blank_line(line)
             || (term_open && detect_list_marker_full(line).is_some_and(|marker| marker.indent == 0))
-            || caption_content(line).is_some()
+            || (caption_content(line).is_some() && cur.carried_reach(cur.pos) != Some(false))
             || {
                 let line_owned = line.to_string();
                 interrupts_lazy_continuation(cur, &line_owned)

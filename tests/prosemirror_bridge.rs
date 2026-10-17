@@ -1673,7 +1673,8 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // The refused continuation in 616-18 moves that row into the strict set.
     // Spec b9965c1b adds corpus 616 rows 21 to 24: 21, 22, and 24 are strict;
     // the quoted soft break in 23 reports an existing loss.
-    const STRICT: usize = 2003;
+    // Spec ef068265 adds 616-26, which round trips strictly.
+    const STRICT: usize = 2004;
     // Spec 894ff32e adds 616-25, whose marked quote soft break reports a loss.
     const LOSSY: usize = 661;
     assert_measured("strict round trips", covered, STRICT);
