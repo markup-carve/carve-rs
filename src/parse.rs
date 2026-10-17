@@ -1983,6 +1983,9 @@ fn extract_footnote_defs(
                             def_col_map.push(stripped_col(Some(0), line, &kept));
                         }
                         def_lines.push(kept);
+                        if note_fence.is_none() {
+                            retained_below_comment = false;
+                        }
                         i += 1;
                         continue;
                     }
