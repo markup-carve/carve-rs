@@ -2324,3 +2324,6 @@ mod an_authored_indented_comment_keeps_the_nested_description;
 
 #[path = "../a_terminal_code_fence_after_a_quoted_item_comment.rs"]
 mod a_terminal_code_fence_after_a_quoted_item_comment;
+
+#[path = "../a_matched_comment_at_a_nested_description_opener_ends_it.rs"]
+mod a_matched_comment_at_a_nested_description_opener_ends_it;

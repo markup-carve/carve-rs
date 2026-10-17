@@ -684,7 +684,10 @@ fn parse_with_options_mode_and_index(
     for (label, def) in note_link_defs {
         link_defs.entry(label).or_insert(def);
     }
-    let body = remap_source(body_source, &body);
+    let mut body = remap_source(body_source, &body);
+    if !options.positions && body.source.contains("%%%") && body.source.contains("::") {
+        body.col_map = vec![Some(0); body.source.lines().count()];
+    }
     let ((mut footnote_defs, mut children), link_defs, needs_late_link_resolution) =
         with_active_link_defs(link_defs, || {
             let footnote_defs: BTreeMap<String, Vec<BlockNode>> = footnote_defs_src
@@ -6471,7 +6474,11 @@ fn parse_mapped_source_at_level_into(
     in_item_body: bool,
     pending: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
-    if !options.source_lines && !options.positions && !needs_source_ending_map() {
+    if !options.source_lines
+        && !options.positions
+        && !needs_source_ending_map()
+        && !source.col_map.iter().any(Option::is_some)
+    {
         return parse_unpositioned_mapped_source(
             source,
             options,
@@ -6538,7 +6545,11 @@ fn parse_positioned_mapped_source(
     let mut cursor = Box::new(LineCursor::new_with_cols(
         &lines,
         Some(&source.line_map),
-        options.positions.then_some(source.col_map.as_slice()),
+        source
+            .col_map
+            .iter()
+            .any(Option::is_some)
+            .then_some(source.col_map.as_slice()),
     ));
     cursor.at_document_level = at_document_level;
     cursor.in_item_body = in_item_body;
@@ -20522,9 +20533,14 @@ fn collect_definition_body(
             }
         }
         let below_comment = column < content_column && trim_ascii_start(line).starts_with("%%");
+        let authored_opener_comment = cur.source_col(cur.pos).is_some_and(|comment_col| {
+            (0..cur.pos)
+                .rev()
+                .find(|&at| strip_description_prefix(trim_ascii_start(cur.lines.at(at))).is_some())
+                .is_some_and(|at| cur.source_col(at) == Some(comment_col))
+        });
         if column == 0
-            && !cur.in_item_body
-            && !cur.sublists_carry_authored_base
+            && ((!cur.in_item_body && !cur.sublists_carry_authored_base) || authored_opener_comment)
             && below_comment_span.is_none()
             && detect_comment_fence_line_any_column(line).is_some_and(|open| {
                 cur.has_comment_closer_after(cur.pos + 1, open.fence_len)
@@ -20792,8 +20808,24 @@ fn collect_definition_body(
                 }
                 folded_a_lazy_line = false;
                 lines.push(sliced);
+                let authored_below_body = cur.source_col(cur.pos).is_some_and(|comment_col| {
+                    (0..cur.pos)
+                        .rev()
+                        .find_map(|at| {
+                            strip_definition_marker(trim_ascii_start(cur.lines.at(at))).and_then(
+                                |(_, width)| {
+                                    cur.source_col(at).map(|base| {
+                                        base + indent_columns(cur.lines.at(at)) as isize
+                                            + width as isize
+                                    })
+                                },
+                            )
+                        })
+                        .is_some_and(|body_col| comment_col + (indent as isize) < body_col)
+                });
                 if indent == content_column
                     && (cur.in_item_body || cur.sublists_carry_authored_base)
+                    && authored_below_body
                     && ends_with_closed_comment_fence(&lines)
                 {
                     retained_below_comment = true;
