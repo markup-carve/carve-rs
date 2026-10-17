@@ -17194,6 +17194,13 @@ fn ends_with_empty_comment_fence(lines: &[String]) -> bool {
         })
 }
 
+fn ends_with_closed_comment_fence(lines: &[String]) -> bool {
+    let Some((closer, body)) = lines.split_last() else {
+        return false;
+    };
+    body_open_comment_run(body).is_some_and(|run| is_comment_fence_close_any_column(closer, run))
+}
+
 /// `is_line_comment_any_column`, over BOTH spellings §28 gives a comment.
 ///
 /// An opener with no exact-width closer AHEAD opens nothing and IS one
@@ -20874,7 +20881,7 @@ fn collect_definition_body(
                     && (lines
                         .last()
                         .is_some_and(|line| is_line_comment_any_column(line))
-                        || ends_with_empty_comment_fence(&lines))
+                        || ends_with_closed_comment_fence(&lines))
                     && (indent <= retained_comment_column || retained_comment_column == 0)
                     && detect_fence_open(trim_ascii_start(line)).is_some())
             {
@@ -20931,7 +20938,7 @@ fn collect_definition_body(
                 && (lines
                     .last()
                     .is_some_and(|line| is_line_comment_any_column(line))
-                    || ends_with_empty_comment_fence(&lines))
+                    || ends_with_closed_comment_fence(&lines))
                 && indent <= retained_comment_column
                 && !(cur.in_item_body
                     && cur.reached.and_then(|r| r.get(cur.pos)).copied() == Some(false)
