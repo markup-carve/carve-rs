@@ -1,13 +1,54 @@
 use crate::ast::*;
 
-pub(super) fn from_code(code: &CodeBlock) -> Option<Table> {
+pub(super) struct PayloadLine {
+    pub start: usize,
+    pub text: String,
+    pub line: usize,
+    pub column: usize,
+}
+
+struct FieldRange {
+    start: usize,
+    end: usize,
+    quoted: bool,
+    escaped: bool,
+}
+
+struct RowRange {
+    start: usize,
+    end: usize,
+    fields: Vec<FieldRange>,
+}
+
+fn position(lines: &[PayloadLine], start: usize, end: usize) -> Option<Pos> {
+    fn point(lines: &[PayloadLine], index: usize) -> Option<(usize, usize)> {
+        lines.iter().find_map(|line| {
+            let local = index.checked_sub(line.start)?;
+            let prefix = line.text.get(..local)?;
+            Some((line.line, line.column + prefix.chars().count()))
+        })
+    }
+    let (start_line, start_column) = point(lines, start)?;
+    let (end_line, end_column) = point(lines, end)?;
+    Some(Pos {
+        start_line,
+        end_line,
+        start_column,
+        end_column,
+        start_offset: 0,
+        end_offset: 0,
+        file: None,
+    })
+}
+
+pub(super) fn from_code(code: &CodeBlock, payload: &[PayloadLine]) -> Option<Table> {
     let format = TableSourceFormat::from_name(code.lang.as_deref()?)?;
     let separator = format.separator();
     let mut attrs = code.attrs.clone()?;
     if !attrs.key_values.get("table").is_some_and(String::is_empty) {
         return None;
     }
-    let data = rows(&code.content, separator)?;
+    let (data, ranges) = rows_with_ranges(&code.content, separator)?;
     let width = data.iter().map(Vec::len).max().unwrap_or(0);
     let foot = count(attrs.key_values.get("footer-rows"), 0);
     let head = count(
@@ -25,24 +66,35 @@ pub(super) fn from_code(code: &CodeBlock) -> Option<Table> {
         .enumerate()
         .map(|(index, fields)| TableRow {
             cells: (0..width)
-                .map(|column| TableCell {
-                    header: index < head,
-                    span: None,
-                    colspan: None,
-                    rowspan: None,
-                    align: None,
-                    valign: None,
-                    attrs: None,
-                    children: vec![InlineNode::Text(Text::from(
-                        fields.get(column).cloned().unwrap_or_default(),
-                    ))],
-                    blocks: None,
-                    pos: None,
+                .map(|column| {
+                    let range = ranges[index].fields.get(column);
+                    let cell_pos =
+                        range.and_then(|range| position(payload, range.start, range.end));
+                    let text_pos = range.filter(|range| !range.escaped).and_then(|range| {
+                        let start = range.start + usize::from(range.quoted);
+                        let end = range.end - usize::from(range.quoted);
+                        position(payload, start, end)
+                    });
+                    TableCell {
+                        header: index < head,
+                        span: None,
+                        colspan: None,
+                        rowspan: None,
+                        align: None,
+                        valign: None,
+                        attrs: None,
+                        children: vec![InlineNode::Text(Text {
+                            value: fields.get(column).cloned().unwrap_or_default(),
+                            pos: text_pos,
+                        })],
+                        blocks: None,
+                        pos: cell_pos,
+                    }
                 })
                 .collect(),
             attrs: None,
             continuation_lines: None,
-            pos: None,
+            pos: position(payload, ranges[index].start, ranges[index].end),
         })
         .collect();
     let columns = attrs
@@ -95,22 +147,33 @@ pub(crate) fn count(raw: Option<&String>, default: usize) -> usize {
 }
 
 pub(crate) fn rows(source: &str, separator: char) -> Option<Vec<Vec<String>>> {
+    rows_with_ranges(source, separator).map(|(rows, _)| rows)
+}
+
+fn rows_with_ranges(source: &str, separator: char) -> Option<(Vec<Vec<String>>, Vec<RowRange>)> {
     if source.is_empty() {
-        return Some(Vec::new());
+        return Some((Vec::new(), Vec::new()));
     }
     let mut records = Vec::new();
+    let mut ranges = Vec::new();
     let mut row = Vec::new();
+    let mut fields = Vec::new();
     let mut field = String::new();
-    let mut chars = source.chars().peekable();
+    let mut chars = source.char_indices().peekable();
     let mut quoted = false;
     let mut closed = false;
     let mut at_start = true;
-    while let Some(ch) = chars.next() {
+    let mut was_quoted = false;
+    let mut escaped = false;
+    let mut field_start = 0;
+    let mut row_start = 0;
+    while let Some((index, ch)) = chars.next() {
         if quoted {
             if ch == '"' {
-                if chars.peek() == Some(&'"') {
+                if chars.peek().is_some_and(|(_, next)| *next == '"') {
                     field.push('"');
                     chars.next();
+                    escaped = true;
                 } else {
                     quoted = false;
                     closed = true;
@@ -120,10 +183,25 @@ pub(crate) fn rows(source: &str, separator: char) -> Option<Vec<Vec<String>>> {
             }
         } else if ch == separator || ch == '\n' {
             row.push(std::mem::take(&mut field));
+            fields.push(FieldRange {
+                start: field_start,
+                end: index,
+                quoted: was_quoted,
+                escaped,
+            });
             closed = false;
             at_start = true;
+            field_start = index + ch.len_utf8();
+            was_quoted = false;
+            escaped = false;
             if ch == '\n' {
                 records.push(std::mem::take(&mut row));
+                ranges.push(RowRange {
+                    start: row_start,
+                    end: index,
+                    fields: std::mem::take(&mut fields),
+                });
+                row_start = index + 1;
             }
         } else if ch == '"' {
             if !at_start || closed {
@@ -131,6 +209,7 @@ pub(crate) fn rows(source: &str, separator: char) -> Option<Vec<Vec<String>>> {
             }
             quoted = true;
             at_start = false;
+            was_quoted = true;
         } else {
             if closed {
                 return None;
@@ -144,9 +223,20 @@ pub(crate) fn rows(source: &str, separator: char) -> Option<Vec<Vec<String>>> {
     }
     if !source.ends_with('\n') {
         row.push(field);
+        fields.push(FieldRange {
+            start: field_start,
+            end: source.len(),
+            quoted: was_quoted,
+            escaped,
+        });
         records.push(row);
+        ranges.push(RowRange {
+            start: row_start,
+            end: source.len(),
+            fields,
+        });
     }
-    Some(records)
+    Some((records, ranges))
 }
 
 #[cfg(test)]
@@ -180,7 +270,7 @@ mod tests {
             content: "A\tB\n1\t2\n".into(),
             pos: None,
         };
-        let table = from_code(&code).unwrap();
+        let table = from_code(&code, &[]).unwrap();
         assert_eq!(
             table.source_format.map(|format| format.as_str()),
             Some("tsv")
@@ -195,11 +285,14 @@ mod tests {
             .unwrap()
             .key_values
             .insert("table".into(), "x".into());
-        assert!(from_code(&non_boolean).is_none());
-        assert!(from_code(&CodeBlock {
-            attrs: None,
-            ..code
-        })
+        assert!(from_code(&non_boolean, &[]).is_none());
+        assert!(from_code(
+            &CodeBlock {
+                attrs: None,
+                ..code
+            },
+            &[]
+        )
         .is_none());
     }
 }

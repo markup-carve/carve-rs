@@ -7090,6 +7090,42 @@ fn over_cap_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockN
     })]
 }
 
+fn delimited_payload_lines(
+    cur: &LineCursor<'_>,
+    start: usize,
+    code: &CodeBlock,
+    options: &Options<'_>,
+) -> Vec<delimited_table::PayloadLine> {
+    if !options.positions
+        || code.content.is_empty()
+        || !matches!(code.lang.as_deref(), Some("csv" | "tsv"))
+    {
+        return Vec::new();
+    }
+    let mut payload = Vec::new();
+    let mut offset = 0;
+    for (index, text) in code.content.split_terminator('\n').enumerate() {
+        let at = start + index + 1;
+        let Some(original) = cur.lines.line(at) else {
+            return Vec::new();
+        };
+        let Some(line) = cur.source_line(at) else {
+            return Vec::new();
+        };
+        let Some(stripped) = stripped_col(cur.source_col(at), original, text) else {
+            return Vec::new();
+        };
+        payload.push(delimited_table::PayloadLine {
+            start: offset,
+            text: text.to_string(),
+            line,
+            column: document_column(stripped, 0),
+        });
+        offset += text.len() + 1;
+    }
+    payload
+}
+
 #[inline(never)]
 fn append_parsed_block(
     out: &mut Vec<BlockNode>,
@@ -7110,7 +7146,8 @@ fn append_parsed_block(
     }
     match &node {
         BlockNode::CodeBlock(code) => {
-            if let Some(table) = delimited_table::from_code(code) {
+            let payload = delimited_payload_lines(cur, start_line, code, options);
+            if let Some(table) = delimited_table::from_code(code, &payload) {
                 node = BlockNode::Table(table);
             }
         }
@@ -7124,7 +7161,8 @@ fn append_parsed_block(
                         code = with_attrs;
                     }
                 }
-                if let Some(mut table) = delimited_table::from_code(&code) {
+                let payload = delimited_payload_lines(cur, start_line, &code, options);
+                if let Some(mut table) = delimited_table::from_code(&code, &payload) {
                     table.caption = Some(figure.caption.clone());
                     table.pos = figure.pos.clone();
                     node = BlockNode::Table(table);

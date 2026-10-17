@@ -19,3 +19,26 @@ fn a_blank_csv_record_has_a_canonical_quoted_field() {
         .unwrap()
         .contains("```csv\na\n\"\"\n```"));
 }
+#[test]
+fn source_backed_csv_fields_have_original_source_spans() {
+    use carve::ast::{BlockNode, InlineNode, Pos};
+    let source = "{table}\n```csv\nα,\"b,c\"\n\"d\ne\",f\n```\n";
+    let doc = carve::parse_with_options(source, &carve::Options::default().with_positions(true));
+    let BlockNode::Table(table) = &doc.children[0] else {
+        panic!("expected a table")
+    };
+    let slice = |pos: &Pos| -> String {
+        source
+            .chars()
+            .skip(pos.start_offset)
+            .take(pos.end_offset - pos.start_offset)
+            .collect()
+    };
+    assert_eq!(slice(table.rows[0].pos.as_ref().unwrap()), "α,\"b,c\"");
+    assert_eq!(slice(table.rows[0].cells[0].pos.as_ref().unwrap()), "α");
+    let InlineNode::Text(text) = &table.rows[0].cells[1].children[0] else {
+        panic!("expected text")
+    };
+    assert_eq!(slice(text.pos.as_ref().unwrap()), "b,c");
+    assert_eq!(slice(table.rows[1].pos.as_ref().unwrap()), "\"d\ne\",f");
+}
