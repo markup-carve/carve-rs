@@ -875,6 +875,7 @@ const IMPLEMENTED: &[&str] = &[
     "editorial-markup-closes-outside-a-cross-reference-or-a-bracket-run",
     "the-combined-bold-italic-token-does-not-open-after-an-underscore-or-a-slash",
     "the-combined-bold-italic-token-does-not-open-inside-an-open-bare-italic-or-bold",
+    "csv-and-tsv-table-bodies",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
@@ -1704,3 +1705,4 @@ corpus_test!(
     c_table_row_ends_description_body,
     "a-table-row-ends-a-description-body-and-a-lone-plus-folds-into-a-term"
 );
+corpus_test!(c_csv_and_tsv_table_bodies, "csv-and-tsv-table-bodies");
