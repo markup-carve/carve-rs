@@ -2312,3 +2312,6 @@ mod a_matched_comment_below_a_child_column_keeps_the_child;
 
 #[path = "../a_code_fence_after_a_matched_comment_opens_in_the_description.rs"]
 mod a_code_fence_after_a_matched_comment_opens_in_the_description;
+
+#[path = "../a_lazy_colon_body_keeps_a_comment_and_follower.rs"]
+mod a_lazy_colon_body_keeps_a_comment_and_follower;

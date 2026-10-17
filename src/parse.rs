@@ -18498,6 +18498,12 @@ fn collect_indented_block_mapped_with_columns(
             && fence.is_none()
             && comment_fence.is_none()
             && indent < strip_cols
+            && !(indent > parent_indent
+                && line_starts_paragraph(line)
+                && !item_block_opener(trim_ascii_start(line))
+                && lines
+                    .last()
+                    .is_some_and(|prior| line_starts_paragraph(prior)))
             && !is_line_comment_any_column(line)
             && detect_comment_fence_line_any_column(line).is_none()
         {
