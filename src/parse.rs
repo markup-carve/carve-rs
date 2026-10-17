@@ -1724,6 +1724,13 @@ fn extract_footnote_defs(
         // ahead of a real definition exhausted it and the definition was
         // declined.
         if let Some((label, first)) = parse_footnote_def_line(def_line).filter(|_| {
+            let quoted_note_paragraph = nested
+                && stripped.structural.contains('>')
+                && body.last().is_some_and(|previous: &String| {
+                    strip_blockquote_prefix(trim_ascii_start(previous)).is_some_and(|content| {
+                        !is_blank_line(content) && !item_block_opener(trim_ascii_start(content))
+                    })
+                });
             let folds = marker_line_may_be_lazy(lines[i])
                 && line_folds_into_an_open_paragraph(
                     &body,
@@ -1732,7 +1739,10 @@ fn extract_footnote_defs(
                     &mut probe_budget,
                     &mut unaffordable,
                 );
-            !(folds || unaffordable || folded_into_term.folded.contains(&i))
+            !(folds
+                || quoted_note_paragraph
+                || unaffordable
+                || folded_into_term.folded.contains(&i))
         }) {
             let normalized_label = label_key(label);
             let first_for_label = !definition_keys.contains_key(&normalized_label);

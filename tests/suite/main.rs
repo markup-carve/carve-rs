@@ -28,6 +28,8 @@ mod a_nested_note_on_a_marker_line_keeps_its_column;
 mod a_quote_on_a_container_marker_line_hosts_its_definitions;
 #[path = "../a_quote_past_an_item_column_opens_after_its_paragraph.rs"]
 mod a_quote_past_an_item_column_opens_after_its_paragraph;
+#[path = "../a_quoted_note_paragraph_keeps_its_definition_shaped_line.rs"]
+mod a_quoted_note_paragraph_keeps_its_definition_shaped_line;
 #[path = "../a_term_has_no_content_column_for_a_nested_quote.rs"]
 mod a_term_has_no_content_column_for_a_nested_quote;
 #[path = "../an_autolink_a_cross_reference_or_a_comment_is_atomic.rs"]
