@@ -24,6 +24,8 @@ which the published crate does not carry.
 - The CLI replaces ill-formed UTF-8 in a document read from a file or stdin with U+FFFD instead of refusing it, for render, lint, `fmt`, flatten, merge and migrate. `fmt --write` and `fmt --check` still refuse to rewrite such a file, and an included file holding ill-formed bytes is refused with a warning. Check the encoding yourself if a pipeline relied on the refusal (#2810, #2820, #2832, markup-carve/carve#3212).
 
 ### Fixed
+- CSV and TSV fenced tables now parse and render, keep each written record on one row, and carry source positions for rows, cells and text. Empty records have no invented spans (#2872, #2875, #2876, #2877, #2878, markup-carve/carve#3239).
+- Plain text output writes list continuation blocks at the item content column (#2874).
 
 - Autolinks, cross-references and comments are atomic to the constructs around them: a `]` or `[` inside one no longer closes or opens a link, image, span or inline-note label, a cross-reference no longer pairs its `/` with an earlier one, a `~>` that ends one is no substitution arrow, and a braced closer inside one no longer closes the span opened before it (#2779, #2783, #2809, #2831, markup-carve/carve#3204, markup-carve/carve#3244).
 
