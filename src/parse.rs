@@ -14816,7 +14816,13 @@ fn parse_list(
                     content_col,
                     |src, below| {
                         !after_blank
-                            && nested_ends_with_open_paragraph_rebased(src, below, below, options)
+                            && (nested_ends_with_open_paragraph_rebased(src, below, below, options)
+                                || (src.reached.last() == Some(&true)
+                                    && src
+                                        .source
+                                        .lines()
+                                        .last()
+                                        .is_some_and(|line| caption_content(line).is_some())))
                     },
                     |cur| collect_indented_block_mapped(cur, base_indent, content_col),
                 );

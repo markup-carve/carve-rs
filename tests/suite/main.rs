@@ -2299,3 +2299,6 @@ mod a_retained_footnote_follower_does_not_extend_the_note;
 
 #[path = "../a_marker_line_colon_body_keeps_a_matched_comment_span.rs"]
 mod a_marker_line_colon_body_keeps_a_matched_comment_span;
+
+#[path = "../a_marker_line_quote_caption_keeps_its_lazy_tail.rs"]
+mod a_marker_line_quote_caption_keeps_its_lazy_tail;
