@@ -84,7 +84,8 @@ fn a_comment_below_a_note_term_retains_the_following_body_line() {
 }
 
 #[test]
-fn a_comment_after_a_bare_note_term_leaves_following_text_outside() {
+fn a_comment_after_a_bare_note_term_retains_the_following_text() {
     let html = carve::to_html("[^c]: :: t\n%% c\nafter\n\nuse[^c]\n");
-    assert!(html.starts_with("<p>after</p>"), "{html}");
+    assert!(html.starts_with("<p>use"), "{html}");
+    assert!(html.contains("<p>after<a href=\"#fnref1\""), "{html}");
 }

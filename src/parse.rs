@@ -1879,6 +1879,7 @@ fn extract_footnote_defs(
                     let after_comment = i + 1 + usize::from(empty_fence);
                     if below_comment
                         && column == 0
+                        && !open_term
                         && (!nested || def_lines.len() == 1)
                         && (is_line_comment_any_column(line) || empty_fence)
                         && body.iter().all(|line| is_blank_line(line))
@@ -1894,7 +1895,9 @@ fn extract_footnote_defs(
                     if below_comment_span.is_some() || (below_comment && note_fence.is_none()) {
                         if below_comment_span.is_none()
                             && !retained_below_comment
-                            && ((open_term && column == 0 && def_lines.len() == 1)
+                            && ((parse_footnote_def_line(first).is_some()
+                                && column == 0
+                                && def_lines.len() == 1)
                                 || (!open_term
                                     && !body_ends_with_open_paragraph(
                                         &def_lines.join("\n"),
@@ -1932,7 +1935,6 @@ fn extract_footnote_defs(
                     if retained_below_comment
                         && column < body_indent
                         && !is_blank_line(line)
-                        && !open_term
                         && (column > 0
                             || !item_block_opener(trim_ascii_start(line))
                             || (detect_fence_open(trim_ascii_start(line)).is_some()
