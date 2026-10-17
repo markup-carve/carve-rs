@@ -6494,6 +6494,21 @@ fn parse_unpositioned_mapped_source(
     if let Some(blocks) = parse_eof_closed_colon_ladder(source, options) {
         return blocks;
     }
+    if source.sublists_carry_authored_base
+        && source.source.contains(":::")
+        && source.source.lines().any(|line| {
+            line.starts_with([' ', '\t'])
+                && strip_blockquote_prefix(trim_ascii_start(line)).is_some()
+        })
+    {
+        return parse_positioned_mapped_source(
+            source,
+            options,
+            at_document_level,
+            in_item_body,
+            pending,
+        );
+    }
     parse_blocks_with_options_at_level_into_reached(
         &source.source,
         &source.reached,
@@ -6546,6 +6561,10 @@ fn parse_eof_closed_colon_ladder(
         || lines
             .iter()
             .any(|line| exact_colon_fence_len(line).is_some())
+        || lines.iter().any(|line| {
+            line.starts_with([' ', '\t'])
+                && strip_blockquote_prefix(trim_ascii_start(line)).is_some()
+        })
     {
         return None;
     }
@@ -7159,6 +7178,7 @@ struct ColonView {
     source: std::rc::Rc<ColonSource>,
     start: usize,
     end: usize,
+    marker_hosted: bool,
 }
 
 struct ColonSource {
@@ -9360,7 +9380,10 @@ fn parse_block(
     if let Some((level, first_text)) = detect_heading(line) {
         return Some(parse_heading_block(cur, level, first_text, options));
     }
-    if strip_blockquote_prefix(line).is_some() {
+    if strip_blockquote_prefix(line).is_some()
+        || (cur.colon_view.is_some_and(|view| view.marker_hosted)
+            && strip_blockquote_prefix(trim_ascii_start(line)).is_some())
+    {
         return Some(parse_blockquote(cur, options));
     }
     if is_list_marker(line) {
@@ -10706,6 +10729,10 @@ fn reuse_colon_views() -> bool {
 /// exists for the figure group, whose caption slot hangs on the closing fence
 /// (§4c): a group closed by end of input has no closer line for a caption.
 fn collect_shared_colon_body(cur: &mut LineCursor<'_>, opener_len: usize) -> (ColonView, bool) {
+    let marker_hosted = cur.colon_view.map_or(
+        cur.in_item_body || cur.sublists_carry_authored_base,
+        |view| view.marker_hosted,
+    );
     #[cfg(test)]
     let cached = COLON_CACHE_ENABLED.with(Cell::get);
     #[cfg(not(test))]
@@ -10721,6 +10748,7 @@ fn collect_shared_colon_body(cur: &mut LineCursor<'_>, opener_len: usize) -> (Co
                         source: view.source.clone(),
                         start,
                         end,
+                        marker_hosted,
                     },
                     closed,
                 );
@@ -10738,6 +10766,7 @@ fn collect_shared_colon_body(cur: &mut LineCursor<'_>, opener_len: usize) -> (Co
             }),
             start: 0,
             end,
+            marker_hosted,
         },
         closed,
     )
@@ -12440,7 +12469,12 @@ fn collect_blockquote_body(
     let mut literal_quote_body = None;
     let mut last_quoted_at = None;
     while let Some(line) = cur.peek() {
-        if let Some(stripped) = strip_blockquote_prefix(line) {
+        let quote_line = if cur.colon_view.is_some_and(|view| view.marker_hosted) {
+            trim_ascii_start(line)
+        } else {
+            line
+        };
+        if let Some(stripped) = strip_blockquote_prefix(quote_line) {
             if strip_description_prefix(trim_ascii_start(stripped)).is_some() {
                 lazy_description_open = false;
             }
@@ -19336,7 +19370,9 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // visible block opener interrupts (§10).
         let line_owned = line.to_string();
         if !lines.is_empty()
-            && interrupts_paragraph(cur, &line_owned)
+            && (interrupts_paragraph(cur, &line_owned)
+                || (cur.colon_view.is_some_and(|view| view.marker_hosted)
+                    && strip_blockquote_prefix(trim_ascii_start(line)).is_some()))
             && !(suppress_colon_interrupt && is_suppressed_colon_fence_line(&line_owned))
         {
             break;

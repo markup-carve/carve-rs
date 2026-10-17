@@ -2290,3 +2290,6 @@ mod matched_comment_fences_follow_line_comment_container_ownership;
 
 #[path = "../a_caption_below_a_marker_line_quote_is_lazy_text.rs"]
 mod a_caption_below_a_marker_line_quote_is_lazy_text;
+
+#[path = "../an_indented_quote_marker_opens_in_a_colon_body.rs"]
+mod an_indented_quote_marker_opens_in_a_colon_body;
