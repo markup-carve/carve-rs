@@ -42,3 +42,20 @@ fn source_backed_csv_fields_have_original_source_spans() {
     assert_eq!(slice(text.pos.as_ref().unwrap()), "b,c");
     assert_eq!(slice(table.rows[1].pos.as_ref().unwrap()), "\"d\ne\",f");
 }
+
+#[test]
+fn an_empty_csv_record_has_no_span_on_its_line_terminator() {
+    let doc = carve::parse_with_options(
+        "{table}\n```csv\na\n\n```\n",
+        &carve::Options::default().with_positions(true),
+    );
+    let carve::ast::BlockNode::Table(table) = &doc.children[0] else {
+        panic!("expected a table")
+    };
+    assert!(table.rows[1].pos.is_none());
+    assert!(table.rows[1].cells[0].pos.is_none());
+    let carve::ast::InlineNode::Text(text) = &table.rows[1].cells[0].children[0] else {
+        panic!("expected text")
+    };
+    assert!(text.pos.is_none());
+}

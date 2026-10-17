@@ -64,37 +64,48 @@ pub(super) fn from_code(code: &CodeBlock, payload: &[PayloadLine]) -> Option<Tab
     let rows: Vec<TableRow> = data
         .into_iter()
         .enumerate()
-        .map(|(index, fields)| TableRow {
-            cells: (0..width)
-                .map(|column| {
-                    let range = ranges[index].fields.get(column);
-                    let cell_pos =
-                        range.and_then(|range| position(payload, range.start, range.end));
-                    let text_pos = range.filter(|range| !range.escaped).and_then(|range| {
-                        let start = range.start + usize::from(range.quoted);
-                        let end = range.end - usize::from(range.quoted);
-                        position(payload, start, end)
-                    });
-                    TableCell {
-                        header: index < head,
-                        span: None,
-                        colspan: None,
-                        rowspan: None,
-                        align: None,
-                        valign: None,
-                        attrs: None,
-                        children: vec![InlineNode::Text(Text {
-                            value: fields.get(column).cloned().unwrap_or_default(),
-                            pos: text_pos,
-                        })],
-                        blocks: None,
-                        pos: cell_pos,
-                    }
-                })
-                .collect(),
-            attrs: None,
-            continuation_lines: None,
-            pos: position(payload, ranges[index].start, ranges[index].end),
+        .map(|(index, fields)| {
+            let empty_record = ranges[index].start == ranges[index].end;
+            TableRow {
+                cells: (0..width)
+                    .map(|column| {
+                        let range = if empty_record {
+                            None
+                        } else {
+                            ranges[index].fields.get(column)
+                        };
+                        let cell_pos =
+                            range.and_then(|range| position(payload, range.start, range.end));
+                        let text_pos = range.filter(|range| !range.escaped).and_then(|range| {
+                            let start = range.start + usize::from(range.quoted);
+                            let end = range.end - usize::from(range.quoted);
+                            position(payload, start, end)
+                        });
+                        TableCell {
+                            header: index < head,
+                            span: None,
+                            colspan: None,
+                            rowspan: None,
+                            align: None,
+                            valign: None,
+                            attrs: None,
+                            children: vec![InlineNode::Text(Text {
+                                value: fields.get(column).cloned().unwrap_or_default(),
+                                pos: text_pos,
+                            })],
+                            blocks: None,
+                            pos: cell_pos,
+                        }
+                    })
+                    .collect(),
+                attrs: None,
+                continuation_lines: None,
+                pos: if empty_record {
+                    None
+                } else {
+                    position(payload, ranges[index].start, ranges[index].end)
+                },
+            }
         })
         .collect();
     let columns = attrs
