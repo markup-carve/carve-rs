@@ -17112,6 +17112,18 @@ fn matched_fence_below_item(
 
 fn marked_quote_before_comment(cur: &LineCursor<'_>, comment_at: usize) -> bool {
     // CARVE-P0-013 and corpus 616-23 clear a marked quote's retained claim.
+    // A terminal empty fence leaves no following line to revoke the item's claim.
+    if let Some(last) = cur.lines.len().checked_sub(1) {
+        if comment_at + 2 < last
+            && indent_columns(cur.lines.at(last)) == 0
+            && detect_fence_open(cur.lines.at(last)).is_some()
+            && detect_comment_fence_line_any_column(cur.lines.at(comment_at)).is_some_and(|open| {
+                is_comment_fence_close_any_column(cur.lines.at(last - 1), open.fence_len)
+            })
+        {
+            return false;
+        }
+    }
     let Some((marker_at, marker)) = (0..comment_at)
         .rev()
         .find_map(|at| detect_list_marker_full(cur.lines.at(at)).map(|marker| (at, marker)))

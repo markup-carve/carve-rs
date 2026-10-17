@@ -2321,3 +2321,6 @@ mod a_comment_at_the_description_column_keeps_its_follower;
 
 #[path = "../an_authored_indented_comment_keeps_the_nested_description.rs"]
 mod an_authored_indented_comment_keeps_the_nested_description;
+
+#[path = "../a_terminal_code_fence_after_a_quoted_item_comment.rs"]
+mod a_terminal_code_fence_after_a_quoted_item_comment;
