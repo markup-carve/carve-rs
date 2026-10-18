@@ -15073,7 +15073,7 @@ fn parse_list(
             // into the inner item, where carve-js and carve-php end the list.
             let mut ended_on_blank =
                 cur.pos > before_block && is_blank_line(cur.lines.at(cur.pos - 1));
-            // A column-0 lazy-continuation line following the marker-line
+            // A below-column lazy-continuation line following the marker-line
             // sub-list folds into its last open paragraph (`- - b` / `lazy` ->
             // `<li>b\nlazy</li>`), and a following sibling marker at the
             // sub-list's column resumes the SAME list. This is the same
@@ -15137,7 +15137,7 @@ fn parse_list(
                 let has_lazy = if let Some(line) = cur.peek() {
                     let line = line.to_string();
                     !is_blank_line(&line)
-                        && indent_columns(&line) == 0
+                        && indent_columns(&line) < content_col
                         && !is_list_marker(&line)
                         && !interrupts_paragraph(cur, &line)
                 } else {
