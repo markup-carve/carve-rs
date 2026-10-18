@@ -35,11 +35,19 @@ fn a_below_column_body_is_outside_the_fence() {
 }
 
 #[test]
-fn a_three_deep_ladder_owns_the_body_at_the_innermost_item() {
+fn a_three_deep_ladder_releases_the_body_from_the_innermost_item() {
     assert_eq!(
         flat("- - - ``` x\ncode\n```\n"),
         "<ul> <li> <ul> <li> <ul> <li> \
          <pre><code class=\"language-x\"></code></pre> </li> </ul> </li> </ul> </li> </ul> <p>code <code></code></p>",
+    );
+}
+
+#[test]
+fn an_outer_paragraph_after_the_nested_fence_takes_a_lazy_line() {
+    assert_eq!(
+        flat("- - - ```\n  tail\ntail\n"),
+        "<ul> <li> <ul> <li> <ul> <li> <pre><code></code></pre> </li> </ul> </li> </ul> tail tail </li> </ul>",
     );
 }
 
@@ -52,7 +60,7 @@ fn a_quoted_item_fence_requires_marked_body_lines() {
 }
 
 #[test]
-fn an_ordered_ladder_owns_the_body() {
+fn an_ordered_ladder_releases_the_body() {
     assert_eq!(
         flat("1. 1. ``` x\ncode\n```\n"),
         "<ol> <li> <ol> <li> \
@@ -70,7 +78,7 @@ fn a_tilde_fence_answers_the_same_way() {
 }
 
 #[test]
-fn a_fence_with_no_info_string_owns_its_body() {
+fn a_fence_with_no_info_string_releases_a_below_column_body() {
     assert_eq!(
         flat("- - ```\ncode\n```\n"),
         "<ul> <li> <ul> <li> <pre><code></code></pre> </li> </ul> </li> </ul> <p>code <code></code></p>",
@@ -96,7 +104,7 @@ fn a_lone_flush_left_run_opens_a_document_block() {
 }
 
 #[test]
-fn a_trailing_sibling_marker_ends_the_fence_and_opens_an_outer_item() {
+fn a_trailing_marker_is_text_in_the_document_paragraph() {
     assert_eq!(
         flat("- - ``` x\ncode\n```\n- lazy\n"),
         "<ul> <li> <ul> <li> \
