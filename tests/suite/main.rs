@@ -482,8 +482,8 @@ mod a_multi_line_comment_in_a_table_cell_is_dropped;
 mod a_nested_container_in_a_description_body_folds_a_flush_left_line;
 #[path = "../a_nested_emphasis_keeps_its_nesting_in_markdown.rs"]
 mod a_nested_emphasis_keeps_its_nesting_in_markdown;
-#[path = "../a_nested_item_lead_fence_or_container_owns_its_flush_left_body.rs"]
-mod a_nested_item_lead_fence_or_container_owns_its_flush_left_body;
+#[path = "../a_nested_item_lead_fence_stops_at_host_boundary.rs"]
+mod a_nested_item_lead_fence_stops_at_host_boundary;
 #[path = "../a_nested_link_and_an_autolink_stay_nodes.rs"]
 mod a_nested_link_and_an_autolink_stay_nodes;
 #[path = "../a_nested_note_definition_is_at_the_bodys_own_column.rs"]

@@ -15032,50 +15032,18 @@ fn parse_list(
                     content_offset,
                     column: tail_col,
                 });
-            // A code fence or a colon container opened on this NESTED lead takes
-            // the flush-left lines below it, exactly as the single-level item
-            // does - but the inner re-parse cannot see those lines unless this
-            // frame hands them over (markup-carve/carve#1900, carve-rs#1547/#1548).
-            // A fence's flush-left body is VERBATIM, so it is framed with the lazy
-            // sentinel and the re-parse's fence owns it; a colon container whose
-            // body sits flush-left is ITEM TEXT, so the lines pass through unframed
-            // and the re-parse folds them into the degraded opener's paragraph.
-            // Only a flush-left (below outer content column) follower is taken:
-            // a line reaching the outer column is the outer item's, a sibling
-            // marker starts a new item, and a blank ends the run - which is where
-            // the single-level readings stop too.
+            // A fence on the nested marker line keeps only lines that reach
+            // its host. A flush-left line supplies neither item's content
+            // column, so the nested parse must not receive it as lazy payload
+            // (CARVE-P0-013).
             let inner_lead = trim_ascii_start(innermost_content);
-            if detect_fence_open(inner_lead).is_some() {
-                while let Some((framed, removed)) = cur.peek().and_then(|line| {
-                    (!is_blank_line(line)
-                        && trim_ascii(line) != "+"
-                        && strip_blockquote_prefix(line).is_none()
-                        && indent_columns(line) < content_col
-                        && detect_list_marker_full(line).is_none())
-                    .then(|| {
-                        let content = trim_ascii_start(strip_lazy(line));
-                        let removed = line.chars().count() - content.chars().count();
-                        (format!("{LAZY}{content}"), removed)
-                    })
-                }) {
-                    let src_line = cur.source_line(cur.pos);
-                    // The trim drops the line's own indent, so the column is
-                    // what was stripped. THE FRAME ITSELF IS NOT COUNTED: every
-                    // position reader takes `strip_lazy` first (`span_of`,
-                    // `flattened_span`, `inline_anchor_for_line`), so a constant
-                    // discounting the frame's width here would subtract it twice
-                    // (carve-rs#1559, carve-rs#1832).
-                    let src_col = cur.source_col(cur.pos).map(|c| c + removed as isize);
-                    stream.push_newline_at(framed, src_line, src_col);
-                    cur.consume();
-                }
-            }
             let before_block = cur.pos;
-            let collection_floor = if nested_definition_ended_paragraph {
-                content_col.saturating_sub(1)
-            } else {
-                base_indent
-            };
+            let collection_floor =
+                if nested_definition_ended_paragraph || detect_fence_open(inner_lead).is_some() {
+                    content_col.saturating_sub(1)
+                } else {
+                    base_indent
+                };
             let nested_lead_is_continuation = trim_ascii(innermost_content) == "+";
             let before_collection = stream.source.len();
             if nested_lead_is_continuation {
@@ -15244,7 +15212,9 @@ fn parse_list(
                     stream.reached.truncate(1);
                 }
             }
-            if detect_container_open(inner_lead).is_some() {
+            if detect_container_open(inner_lead).is_some()
+                || detect_fence_open(inner_lead).is_some()
+            {
                 item_paragraph_open =
                     ParagraphOpen::Known(body_ends_with_open_paragraph(&stream.source, options));
             }
@@ -15260,6 +15230,16 @@ fn parse_list(
                 // paragraph inside it, which starts at the text.
                 pos: span_of(cur, item_at, cur.pos, options),
             });
+            if detect_fence_open(inner_lead).is_some()
+                && cur.peek().is_some_and(|line| {
+                    !is_blank_line(line)
+                        && indent_columns(line) < content_col
+                        && detect_list_marker_full(line).is_none()
+                        && trim_ascii(line) != "+"
+                })
+            {
+                break;
+            }
             if nested_definition_ended_paragraph
                 && cur.peek().is_some_and(|line| {
                     !is_blank_line(line)
