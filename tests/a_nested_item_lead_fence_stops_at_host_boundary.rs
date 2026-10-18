@@ -52,6 +52,13 @@ fn an_outer_paragraph_after_the_nested_fence_takes_a_lazy_line() {
 }
 
 #[test]
+fn a_quoted_outer_paragraph_after_the_nested_fence_takes_a_lazy_line() {
+    let html = to_html("> - - - ```\n>   tail\n> tail\n");
+    assert!(html.contains("      tail\ntail\n    </li>"));
+    assert!(!html.contains("<p>tail</p>"));
+}
+
+#[test]
 fn a_quoted_item_fence_requires_marked_body_lines() {
     assert_eq!(
         flat("> - ``` x\ncode\n```\n"),
