@@ -16861,16 +16861,22 @@ fn continuation_source_loosens(source: &str, _source_is_the_item_body: bool) -> 
     let mut closer_index = None;
     let entry_closers = std::cell::OnceCell::new();
     let mut i = 0;
+    let mut closed_fence_before_blank = false;
     while i < lines.len() {
+        if !is_blank_line(lines[i]) {
+            closed_fence_before_blank = false;
+        }
         if let Some(open) = fence {
             if is_fence_close(lines[i], open) {
                 fence = None;
+                closed_fence_before_blank = true;
             }
             i += 1;
             continue;
         }
         if let Some(open) = detect_fence_open(lines[i]) {
             fence = Some(open);
+            closed_fence_before_blank = false;
             i += 1;
             continue;
         }
@@ -16968,6 +16974,18 @@ fn continuation_source_loosens(source: &str, _source_is_the_item_body: bool) -> 
             i += 1;
             continue;
         }
+        // The blank before a caption belongs to its table or closed fence.
+        if j == i + 1
+            && caption_content(lines[j]).is_some()
+            && (is_table_start(lines[i - 1])
+                || is_table_continuation(lines[i - 1])
+                || closed_fence_before_blank)
+        {
+            closed_fence_before_blank = false;
+            i += 1;
+            continue;
+        }
+        closed_fence_before_blank = false;
         if !continuation_line_opens_sub_block(lines[j], &lines[j + 1..]) {
             return true;
         }

@@ -24,6 +24,48 @@ use carve::to_html;
 const IMAGE: &str = "![alt](/i.png)";
 
 #[test]
+fn one_blank_before_table_caption_keeps_list_tight() {
+    let html = to_html("- | a |\n\n  ^ cap\n- c\n");
+    assert!(html.contains("<caption>cap</caption>"), "{html}");
+    assert!(html.contains("<li>c</li>"), "{html}");
+}
+
+#[test]
+fn two_blanks_detach_table_caption_and_loosen_list() {
+    let html = to_html("- | a |\n\n\n  ^ cap\n- c\n");
+    assert!(!html.contains("<caption>"), "{html}");
+    assert!(html.contains("<li><p>c</p></li>"), "{html}");
+}
+
+#[test]
+fn one_blank_before_table_continuation_caption_keeps_list_tight() {
+    let html = to_html("- | a |\n  + b |\n\n  ^ cap\n- c\n");
+    assert!(html.contains("<caption>cap</caption>"), "{html}");
+    assert!(html.contains("<li>c</li>"), "{html}");
+}
+
+#[test]
+fn one_blank_before_code_caption_keeps_list_tight() {
+    let html = to_html("- ```\n  x\n  ```\n\n  ^ cap\n- c\n");
+    assert!(html.contains("<figcaption>cap</figcaption>"), "{html}");
+    assert!(html.contains("<li>c</li>"), "{html}");
+}
+
+#[test]
+fn two_blanks_after_code_block_detach_caption() {
+    let html = to_html("- ```\n  x\n  ```\n\n\n  ^ cap\n- c\n");
+    assert!(!html.contains("<figcaption>"), "{html}");
+    assert!(html.contains("<li><p>c</p></li>"), "{html}");
+}
+
+#[test]
+fn blank_before_orphan_caption_loosens_list() {
+    let html = to_html("- text\n\n  ^ cap\n- c\n");
+    assert!(html.contains("<p>^ cap</p>"), "{html}");
+    assert!(html.contains("<li><p>c</p></li>"), "{html}");
+}
+
+#[test]
 fn a_caption_attaches_inside_a_list_item() {
     let html = to_html(&format!("- {IMAGE}\n  ^ Figure 1: caption\n"));
     assert!(
