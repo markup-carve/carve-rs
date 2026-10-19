@@ -1,0 +1,91 @@
+name: Propose Homebrew carve-js update
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: homebrew-carve-js-update
+  cancel-in-progress: false
+
+jobs:
+  propose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Require tap credential
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: test -n "$TAP_TOKEN"
+
+      - uses: actions/checkout@v6
+        with:
+          repository: markup-carve/homebrew-carve
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          fetch-depth: 0
+
+      - name: Propose the published engine
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/update-carve-js.py Formula/crv2pdf.rb
+          if git diff --quiet -- Formula/crv2pdf.rb; then
+            echo "The formula already pins the latest published engine."
+            exit 0
+          fi
+
+          version="$(sed -n 's|.*@markup-carve/carve/-/carve-\([0-9][0-9.]*\)\.tgz.*|\1|p' Formula/crv2pdf.rb | head -n 1)"
+          test -n "$version"
+          branch=automation/update-carve-js
+          remote_head="$(git ls-remote origin "refs/heads/$branch" | cut -f1)"
+          existing="$(gh pr list --repo markup-carve/homebrew-carve --head "$branch" --state open --json number --jq '.[0].number // empty')"
+          if gh pr list --repo markup-carve/homebrew-carve --head "$branch" --state closed \
+            --limit 200 --json title,mergedAt --jq '.[] | select(.mergedAt == null) | .title' \
+            | grep -Fxq "Update crv2pdf engine to carve-js $version"; then
+            echo "A maintainer closed the update for carve-js $version."
+            exit 0
+          fi
+          if [ -n "$remote_head" ] && [ -n "$existing" ] &&
+            git show "$remote_head:Formula/crv2pdf.rb" | cmp -s - Formula/crv2pdf.rb; then
+            echo "The open pull request already contains carve-js $version."
+            exit 0
+          fi
+          if [ -n "$remote_head" ] && [ "$(git show -s --format=%an "$remote_head")" != "homebrew-carve automation" ]; then
+            echo "::notice::The update branch has a maintainer commit; leaving it untouched."
+            exit 0
+          fi
+          git switch -C "$branch"
+          git add Formula/crv2pdf.rb
+          git config user.name "homebrew-carve automation"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: update crv2pdf engine to carve-js $version"
+          if [ -n "$remote_head" ]; then
+            git push --force-with-lease="refs/heads/$branch:$remote_head" origin "HEAD:refs/heads/$branch"
+          else
+            git push origin "HEAD:refs/heads/$branch"
+          fi
+
+          cat > "$RUNNER_TEMP/carve-js-pr.md" <<EOF
+          ## Summary
+
+          Update the crv2pdf formula to the published carve-js $version tarball. The updater checked npm's SHA-512 integrity, calculated the Homebrew SHA-256, and verified that the staged runtime dependencies still match the package metadata.
+
+          ## Verification
+
+          Homebrew test-bot and install checks run on this pull request before merge.
+          EOF
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --repo markup-carve/homebrew-carve --title "Update crv2pdf engine to carve-js $version" --body-file "$RUNNER_TEMP/carve-js-pr.md"
+            echo "Updated pull request $existing"
+          else
+            gh pr create --repo markup-carve/homebrew-carve --base main --head "$branch" \
+              --title "Update crv2pdf engine to carve-js $version" \
+              --body-file "$RUNNER_TEMP/carve-js-pr.md" \
+              --label chore --label area:tooling
+          fi
