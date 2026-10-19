@@ -3021,8 +3021,16 @@ fn expand_paragraph(block: &mut Paragraph, state: &mut State<'_>) -> Option<Vec<
                     let merged = with_child(&d, state, false, |expanded, state| {
                         let mut children = expanded.children;
                         if d.code.is_some() {
-                            if let [BlockNode::CodeBlock(code)] = children.as_mut_slice() {
-                                code.attrs.clone_from(&block.attrs);
+                            let table =
+                                if let [BlockNode::CodeBlock(code)] = children.as_mut_slice() {
+                                    code.attrs.clone_from(&block.attrs);
+                                    // `{table}` converts a csv/tsv code include as it does an authored fence (I1c).
+                                    crate::parse::delimited_table::from_code(code, &[])
+                                } else {
+                                    None
+                                };
+                            if let Some(table) = table {
+                                children[0] = BlockNode::Table(table);
                             }
                         }
                         merge_footnotes(expanded.footnotes, &mut children, state, expanded.file);

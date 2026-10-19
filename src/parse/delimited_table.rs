@@ -1,6 +1,6 @@
 use crate::ast::*;
 
-pub(super) struct PayloadLine {
+pub(crate) struct PayloadLine {
     pub start: usize,
     pub text: String,
     pub line: usize,
@@ -41,7 +41,7 @@ fn position(lines: &[PayloadLine], start: usize, end: usize) -> Option<Pos> {
     })
 }
 
-pub(super) fn from_code(code: &CodeBlock, payload: &[PayloadLine]) -> Option<Table> {
+pub(crate) fn from_code(code: &CodeBlock, payload: &[PayloadLine]) -> Option<Table> {
     let format = TableSourceFormat::from_name(code.lang.as_deref()?)?;
     let separator = format.separator();
     let mut attrs = code.attrs.clone()?;

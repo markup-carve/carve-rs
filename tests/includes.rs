@@ -3111,3 +3111,33 @@ fn a_code_include_drops_only_the_files_leading_byte_order_mark() {
     let later = expand("{{ a.txt @lines:2-2 @code }}", &files);
     assert_eq!(later.html, "<pre><code>\u{feff}two\n</code></pre>");
 }
+
+#[test]
+fn a_table_code_include_renders_as_an_authored_fence() {
+    let fence = "```";
+    for (attrs, lang, data) in [
+        (
+            "{table}",
+            "csv",
+            "Plan,Seats,Price\nStarter,1,\"$0\"\nTeam,10,\"$49, billed yearly\"\n",
+        ),
+        ("{table}", "tsv", "Name\tRole\nAda\tEngineer\n"),
+        ("{table}", "csv", "a,b\n\"bad\n"),
+        ("{table header-rows=0}", "csv", "a,b\n1,2\n"),
+        (
+            "{#t .wide table footer-rows=1 aligns=right}",
+            "csv",
+            "a,b\n1,2\n3,4\n",
+        ),
+        ("{table}", "csv", "a,b\n1,{{ other.crv }}\n"),
+    ] {
+        let authored = literal_html(&format!("{attrs}\n{fence}{lang}\n{data}{fence}\n"));
+        let path = format!("data.{lang}");
+        let result = expand(
+            &format!("{attrs}\n{{{{ {path} @code:{lang} }}}}"),
+            &[(path.as_str(), data), ("other.crv", "X")],
+        );
+        assert_eq!(result.rules(), Vec::<&str>::new(), "{}", result.html);
+        assert_eq!(result.html, authored, "{attrs} {lang}");
+    }
+}
