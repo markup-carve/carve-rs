@@ -63,7 +63,7 @@ use json::Value;
 /// closed retires its row instead of reading as coverage.
 const KNOWN_DIFFERENCES: &[(&str, &str)] = &[];
 
-/// Exact HTML corrections pending in the shared vectors, retired when the pin agrees.
+/// Output corrections pending in the shared vectors, retired when the pin agrees.
 const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 
 // ---------------------------------------------------------------------------
