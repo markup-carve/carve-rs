@@ -1324,6 +1324,7 @@ struct ResolvedChild {
     source: String,
     id: String,
     position_base: Option<(String, usize)>,
+    selected_range: Option<(usize, usize)>,
 }
 
 fn resolve_child(d: &Directive, state: &mut State<'_>) -> Option<ResolvedChild> {
@@ -1478,6 +1479,7 @@ fn resolve_child(d: &Directive, state: &mut State<'_>) -> Option<ResolvedChild> 
         source: selected,
         id,
         position_base,
+        selected_range: range,
     })
 }
 
@@ -2585,6 +2587,7 @@ fn expand_child(d: &Directive, state: &mut State<'_>, inline: bool) -> Option<Ex
         source,
         id,
         position_base,
+        selected_range,
     } = resolve_child(d, state)?;
     // I4 fragment containment: the child is PARSED as a self-contained
     // document, never spliced as source. A construct still open at the end of
@@ -2595,31 +2598,56 @@ fn expand_child(d: &Directive, state: &mut State<'_>, inline: bool) -> Option<Ex
     }
     let mut child = if let Some(lang) = &d.code {
         // I1c drops the FILE's leading U+FEFF, so only a selection from line 1 sheds it.
-        let from_first_line = !matches!(&position_base, Some((_, base)) if *base > 0);
-        let selected = if from_first_line {
-            source.strip_prefix('\u{feff}').unwrap_or(&source)
-        } else {
-            &source
-        };
-        let lines = source_lines(selected);
-        let content = if lines.is_empty() {
-            String::new()
-        } else {
-            format!("{}\n", lines.join("\n"))
-        };
-        let start_line = position_base.as_ref().map_or(1, |(_, base)| base + 1);
-        let end_line = start_line + lines.len().saturating_sub(1);
         let whole = position_base
             .as_ref()
-            .map_or(source.as_str(), |(whole, _)| whole);
-        // Lines and columns as carve-js reports them: column 1 on both ends.
+            .map_or(source.as_str(), |(whole, _)| whole.as_str());
+        let all_lines = source_lines(whole);
+        let (first, last) = selected_range.unwrap_or((1, all_lines.len()));
+        let first = first.max(1);
+        let last = last.min(all_lines.len());
+        let lines: Vec<&str> = if whole == "\u{feff}" {
+            Vec::new()
+        } else if first <= last {
+            all_lines[first - 1..last]
+                .iter()
+                .enumerate()
+                .map(|(index, line)| {
+                    if first == 1 && index == 0 {
+                        line.strip_prefix('\u{feff}').unwrap_or(line)
+                    } else {
+                        line
+                    }
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let content = lines.iter().map(|line| format!("{line}\n")).collect();
+        let (start_line, end_line) = if lines.is_empty() {
+            (first, first)
+        } else {
+            (first, last)
+        };
+        let start_offset = line_start_offset(whole, start_line)
+            + usize::from(start_line == 1 && whole.starts_with('\u{feff}'));
+        let end_offset = if lines.is_empty() {
+            start_offset
+        } else {
+            line_start_offset(whole, end_line) + all_lines[end_line - 1].chars().count()
+        };
+        let start_column = 1 + usize::from(start_line == 1 && whole.starts_with('\u{feff}'));
+        let end_column = if lines.is_empty() {
+            start_column
+        } else {
+            1 + all_lines[end_line - 1].chars().count()
+        };
         let pos = state.track_positions.then(|| crate::Pos {
             start_line,
             end_line,
-            start_column: 1,
-            end_column: 1,
-            start_offset: line_start_offset(whole, start_line),
-            end_offset: line_start_offset(whole, end_line),
+            start_column,
+            end_column,
+            start_offset,
+            end_offset,
             file: Some(crate::ast::SourceFile::new(&id)),
         });
         let mut doc = crate::parse_with_options("", &child_options);

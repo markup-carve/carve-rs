@@ -87,6 +87,10 @@ path = "tests/includes.rs"
 name = "include_conformance"
 path = "tests/include_conformance.rs"
 
+[[test]]
+name = "code_include_slice_and_positions"
+path = "tests/code_include_slice_and_positions.rs"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1
