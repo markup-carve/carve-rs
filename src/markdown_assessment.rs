@@ -12,11 +12,39 @@ pub(crate) struct Assessment {
     pub complete: bool,
 }
 
+const BRACKET_OPEN_SENTINEL: &str = "\u{E000}";
+const BRACKET_CLOSE_SENTINEL: &str = "\u{E001}";
+const BRACKET_OPEN_ENCODED: &str = "%EE%80%80";
+const BRACKET_CLOSE_ENCODED: &str = "%EE%80%81";
+
+/// Restores the bracket sentinels inside `href` and `src` attribute values only.
+fn restore_destination_brackets(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(at) = [" href=\"", " src=\""]
+        .iter()
+        .filter_map(|attr| rest.find(attr).map(|i| i + attr.len()))
+        .min()
+    {
+        out.push_str(&rest[..at]);
+        rest = &rest[at..];
+        let end = rest.find('"').unwrap_or(rest.len());
+        out.push_str(
+            &rest[..end]
+                .replace(BRACKET_OPEN_ENCODED, "[")
+                .replace(BRACKET_CLOSE_ENCODED, "]"),
+        );
+        rest = &rest[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
 fn bare_link_events<'a>(label: &str, prefix: &str) -> [Event<'a>; 3] {
     [
         Event::Start(Tag::Link {
             link_type: LinkType::Autolink,
-            dest_url: crate::markdown_import::markdown_destination(
+            dest_url: crate::markdown_import::markdown_autolink_destination(
                 &format!("{prefix}{label}"),
                 false,
             )
@@ -721,9 +749,69 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
     }
     let events = email_events(events, &line_starts, &mut diagnostics);
     if complete {
+        let mut reference_events = Vec::with_capacity(events.len());
+        let mut lone_image_paragraph_end = None;
+        for (index, event) in events.iter().enumerate() {
+            let lone_image = matches!(event, Event::Start(Tag::Paragraph))
+                && matches!(events.get(index + 1), Some(Event::Start(Tag::Image { .. })))
+                && {
+                    let mut depth = 0usize;
+                    let mut image_end = None;
+                    for (offset, inner) in events[index + 1..].iter().enumerate() {
+                        match inner {
+                            Event::Start(Tag::Image { .. }) => depth += 1,
+                            Event::End(TagEnd::Image) => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    image_end = Some(index + 1 + offset);
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    image_end.is_some_and(|end| {
+                        matches!(events.get(end + 1), Some(Event::End(TagEnd::Paragraph)))
+                    })
+                };
+            if lone_image {
+                lone_image_paragraph_end = events[index + 1..]
+                    .iter()
+                    .position(|inner| matches!(inner, Event::End(TagEnd::Image)))
+                    .map(|offset| index + offset + 2);
+            }
+            if lone_image || lone_image_paragraph_end == Some(index) {
+                continue;
+            }
+            let mut event = event.clone();
+            match &mut event {
+                Event::Start(
+                    Tag::Link {
+                        dest_url,
+                        link_type,
+                        ..
+                    }
+                    | Tag::Image {
+                        dest_url,
+                        link_type,
+                        ..
+                    },
+                ) if !matches!(link_type, LinkType::Autolink | LinkType::Email) => {
+                    // pulldown's href escaper encodes `[` and `]`, which Carve renders
+                    // literally; the sentinels survive it and are restored below. An
+                    // authored U+E000/U+E001 can only turn a match into a mismatch.
+                    *dest_url = crate::markdown_import::markdown_destination(dest_url, false)
+                        .replace('[', BRACKET_OPEN_SENTINEL)
+                        .replace(']', BRACKET_CLOSE_SENTINEL)
+                        .into();
+                }
+                _ => {}
+            }
+            reference_events.push(event);
+        }
         let mut expected = String::new();
-        pulldown_cmark::html::push_html(&mut expected, events.into_iter());
-        expected = expected
+        pulldown_cmark::html::push_html(&mut expected, reference_events.into_iter());
+        expected = restore_destination_brackets(&expected)
             .replace(
                 "<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n",
                 "<input disabled=\"\" type=\"checkbox\" checked=\"\"/>",

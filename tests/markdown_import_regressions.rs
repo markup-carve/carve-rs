@@ -336,3 +336,83 @@ fn empty_destination_inside_raw_html_wrappers_is_native() {
         .iter()
         .any(|row| row.code == "structure-unspellable"));
 }
+
+#[test]
+fn explicit_markdown_destinations_keep_literal_brackets() {
+    for (source, expected) in [
+        ("[a](/x[y])", "[a](/x[y])\n"),
+        ("![b](/p[q].png)", "![b](/p[q].png)\n"),
+        ("[a](</x[y]>)", "[a](/x[y])\n"),
+        ("[a](/x\\[y\\])", "[a](/x[y])\n"),
+        ("[a][r]\n\n[r]: /x[y]", "[a][r]\n\n[r]: /x[y]\n"),
+        ("[a](/x%5By%5D)", "[a](/x%5By%5D)\n"),
+    ] {
+        let result = migrate_markdown(source);
+        assert_eq!(result.value, expected, "{source}");
+        assert_eq!(to_carve(&result.value), result.value, "{source}");
+        assert!(
+            !result
+                .report
+                .diagnostics
+                .iter()
+                .any(|d| d.code == "fidelity-unverified"),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn markdown_image_paragraphs_have_exact_assessment() {
+    for (source, expected, codes) in [
+        (
+            "![x](/ü.png)",
+            "![x](/%C3%BC.png)\n",
+            vec!["markdown-paragraph", "markdown-image"],
+        ),
+        (
+            "[a](/x[y]) and ![b](/p[q].png)",
+            "[a](/x[y]) and ![b](/p[q].png)\n",
+            vec!["markdown-paragraph", "markdown-link", "markdown-image"],
+        ),
+        (
+            "![x](/u.png \"T\")",
+            "![x](/u.png \"T\")\n",
+            vec!["markdown-paragraph", "markdown-image"],
+        ),
+        (
+            "a ![x](/u.png)",
+            "a ![x](/u.png)\n",
+            vec!["markdown-paragraph", "markdown-image"],
+        ),
+    ] {
+        let result = migrate_markdown(source);
+        assert_eq!(result.value, expected, "{source}");
+        let found: Vec<_> = result
+            .report
+            .diagnostics
+            .iter()
+            .map(|d| d.code.as_str())
+            .collect();
+        assert_eq!(found, codes, "{source}");
+        assert!(
+            result
+                .report
+                .diagnostics
+                .iter()
+                .all(|d| d.path.as_deref() == Some("line:1")),
+            "{source}"
+        );
+    }
+    let reference = migrate_markdown("![x][r]\n\n[r]: /u.png");
+    assert!(!reference
+        .report
+        .diagnostics
+        .iter()
+        .any(|d| d.code == "fidelity-unverified"));
+    let two = migrate_markdown("![x](/a.png)\n![y](/b.png)");
+    assert!(!two
+        .report
+        .diagnostics
+        .iter()
+        .any(|d| d.code == "fidelity-unverified"));
+}

@@ -163,6 +163,14 @@ fn authored_inline_destination<'a>(source: &'a str, parsed: &'a str) -> &'a str 
 }
 
 pub(crate) fn markdown_destination(destination: &str, email: bool) -> String {
+    encode_markdown_destination(destination, email, false)
+}
+
+pub(crate) fn markdown_autolink_destination(destination: &str, email: bool) -> String {
+    encode_markdown_destination(destination, email, true)
+}
+
+fn encode_markdown_destination(destination: &str, email: bool, encode_brackets: bool) -> String {
     if is_empty_destination(destination) {
         return String::new();
     }
@@ -172,11 +180,12 @@ pub(crate) fn markdown_destination(destination: &str, email: bool) -> String {
         encoded.push_str("mailto:");
     }
     for byte in destination.bytes() {
-        if byte <= b' '
+        if (encode_brackets && matches!(byte, b'[' | b']'))
+            || byte <= b' '
             || byte >= 0x7f
             || matches!(
                 byte,
-                b'"' | b'<' | b'>' | b'[' | b'\\' | b']' | b'`' | b'^' | b'{' | b'|' | b'}'
+                b'"' | b'<' | b'>' | b'\\' | b'`' | b'^' | b'{' | b'|' | b'}'
             )
         {
             encoded.push('%');
@@ -192,7 +201,7 @@ pub(crate) fn markdown_destination(destination: &str, email: bool) -> String {
 pub(crate) fn literal_bare_link(label: &str, prefix: &str) -> InlineNode {
     InlineNode::Link(Link {
         attrs: None,
-        href: markdown_destination(&format!("{prefix}{label}"), false),
+        href: markdown_autolink_destination(&format!("{prefix}{label}"), false),
         title: None,
         children: vec![InlineNode::text(label)],
         ref_label: None,
@@ -2551,7 +2560,11 @@ impl Builder {
                 id,
             } => Frame::Link {
                 href: {
-                    let href = markdown_destination(&dest_url, link_type == LinkType::Email);
+                    let href = if matches!(link_type, LinkType::Autolink | LinkType::Email) {
+                        markdown_autolink_destination(&dest_url, link_type == LinkType::Email)
+                    } else {
+                        markdown_destination(&dest_url, false)
+                    };
                     let authored = if link_type == LinkType::Inline {
                         authored_inline_destination(source, &dest_url)
                     } else {
