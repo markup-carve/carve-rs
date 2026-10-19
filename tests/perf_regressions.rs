@@ -1,4 +1,7 @@
-use carve::{html_to_ast, HtmlImportOptions, Index, Options};
+use carve::{
+    expand_includes, html_to_ast, HtmlImportOptions, IncludeContext, IncludeDenial, IncludeOptions,
+    IncludeResolved, IncludeResolver, Index, Options,
+};
 use std::fmt::Write as _;
 use std::sync::Mutex;
 use std::time::Instant;
@@ -29,6 +32,58 @@ use std::time::Instant;
 /// `.github/workflows/ci.yml`. The lock stays because `cargo test` is still how
 /// this file is run locally, and it is the whole guard there.
 static PERF_LOCK: Mutex<()> = Mutex::new(());
+
+struct InMemoryInclude<'a>(&'a str);
+
+impl IncludeResolver for InMemoryInclude<'_> {
+    fn resolve(
+        &self,
+        _path: &str,
+        _ctx: &IncludeContext<'_>,
+    ) -> Result<IncludeResolved, IncludeDenial> {
+        Ok(IncludeResolved::from(self.0))
+    }
+}
+
+fn assert_selected_carve_include_scales(build: impl Fn(usize) -> String, directive: &str) {
+    assert_conversion_near_linear_at(
+        |child| {
+            let resolver = InMemoryInclude(child);
+            let source = format!("{{{{ child.crv {directive} }}}}\n");
+            let doc = carve::parse_with_options(&source, &Options::new().with_positions(true));
+            let options = IncludeOptions::new().with_resolver(&resolver);
+            let result = expand_includes(doc, &source, &options);
+            assert!(result.warnings.is_empty());
+        },
+        build,
+        directive,
+        2_000,
+        8_000,
+    );
+}
+
+#[test]
+fn selected_carve_lines_scale_near_linearly() {
+    assert_selected_carve_include_scales(
+        |n| (0..n).map(|i| format!("p{i}\n\n")).collect(),
+        "@lines:1-16000",
+    );
+}
+
+#[test]
+fn selected_carve_region_scales_near_linearly() {
+    assert_selected_carve_include_scales(
+        |n| {
+            let mut source = String::new();
+            for i in 0..n {
+                writeln!(source, "%% #region r{i}").unwrap();
+            }
+            source.push_str(&"%% #endregion\n".repeat(n));
+            source
+        },
+        "@region:r0",
+    );
+}
 
 /// Take the timing lock, ignoring poisoning: a panic in one perf test must not
 /// cascade into every other one reporting a lock error instead of its result.

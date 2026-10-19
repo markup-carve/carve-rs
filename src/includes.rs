@@ -2441,8 +2441,8 @@ fn shift_source_positions(
     line_base: usize,
 ) {
     let mut shift = ShiftPositions {
-        complete_source,
-        slice,
+        complete_line_starts: line_start_offsets(complete_source),
+        slice_line_starts: line_start_offsets(slice),
         line_base,
     };
     for block in blocks.iter_mut() {
@@ -2450,13 +2450,13 @@ fn shift_source_positions(
     }
 }
 
-struct ShiftPositions<'a> {
-    complete_source: &'a str,
-    slice: &'a str,
+struct ShiftPositions {
+    complete_line_starts: Vec<usize>,
+    slice_line_starts: Vec<usize>,
     line_base: usize,
 }
 
-impl crate::include_walk::SubtreeVisitor for ShiftPositions<'_> {
+impl crate::include_walk::SubtreeVisitor for ShiftPositions {
     fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
         for block in blocks.iter_mut() {
             crate::include_walk::visit_block_children(block, self);
@@ -2473,15 +2473,15 @@ impl crate::include_walk::SubtreeVisitor for ShiftPositions<'_> {
         pos.start_line += self.line_base;
         pos.end_line += self.line_base;
         pos.start_offset = source_offset(
-            self.complete_source,
-            self.slice,
+            &self.complete_line_starts,
+            &self.slice_line_starts,
             pos.start_line,
             pos.start_offset,
             self.line_base,
         );
         pos.end_offset = source_offset(
-            self.complete_source,
-            self.slice,
+            &self.complete_line_starts,
+            &self.slice_line_starts,
             pos.end_line,
             pos.end_offset,
             self.line_base,
@@ -2490,15 +2490,43 @@ impl crate::include_walk::SubtreeVisitor for ShiftPositions<'_> {
 }
 
 fn source_offset(
-    complete_source: &str,
-    slice: &str,
+    complete_line_starts: &[usize],
+    slice_line_starts: &[usize],
     complete_line: usize,
     offset: usize,
     line_base: usize,
 ) -> usize {
     let slice_line = complete_line.saturating_sub(line_base);
-    line_start_offset(complete_source, complete_line) + offset
-        - line_start_offset(slice, slice_line)
+    complete_line_starts
+        .get(complete_line.saturating_sub(1))
+        .copied()
+        .unwrap_or(*complete_line_starts.last().unwrap())
+        + offset
+        - slice_line_starts
+            .get(slice_line.saturating_sub(1))
+            .copied()
+            .unwrap_or(*slice_line_starts.last().unwrap())
+}
+
+fn line_start_offsets(source: &str) -> Vec<usize> {
+    let mut starts = vec![0];
+    let mut chars = source.chars().peekable();
+    let mut offset = 0;
+    while let Some(ch) = chars.next() {
+        offset += 1;
+        if ch == '\r' {
+            if chars.next_if_eq(&'\n').is_some() {
+                offset += 1;
+            }
+        } else if ch != '\n' {
+            continue;
+        }
+        starts.push(offset);
+    }
+    if starts.last() != Some(&offset) {
+        starts.push(offset);
+    }
+    starts
 }
 
 /// Codepoint offset of the given 1-based physical line in source.
