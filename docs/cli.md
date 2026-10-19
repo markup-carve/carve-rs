@@ -38,8 +38,14 @@ carve --ansi README.crv             # ANSI-colored terminal text
 echo '# Hello' | carve              # render from stdin
 carve merge base.crv ours.crv theirs.crv # structural three-way merge
 carve fmt --write notes.crv         # rewrite in canonical form
+carve fmt --align-tables --check notes.crv # check aligned table spelling
 carve fmt --migrate --write old.crv # also fix references that miss only by case
 ```
+
+`carve fmt --align-tables` pads table cells and separators to their column widths.
+`--check` compares files with this aligned output. Ordinary `fmt` keeps tables
+unaligned. Width counts Unicode 18 grapheme clusters, with wide and fullwidth
+clusters counting as two columns (CARVE-P11-071).
 
 ## Exact-case reference migration
 

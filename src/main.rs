@@ -109,6 +109,7 @@ fn main() -> ExitCode {
     let mut command = Command::Render;
     let mut fmt_write = false;
     let mut fmt_check = false;
+    let mut fmt_align_tables = false;
     let mut fmt_stamp = None;
     let mut fmt_migrate = false;
     let mut stamp_mode: Option<StampMode> = None;
@@ -151,6 +152,7 @@ fn main() -> ExitCode {
             }
             "-w" | "--write" if command == Command::Fmt => fmt_write = true,
             "--check" if command == Command::Fmt => fmt_check = true,
+            "--align-tables" if command == Command::Fmt => fmt_align_tables = true,
             "--migrate" if command == Command::Fmt => fmt_migrate = true,
             "--stamp" if command == Command::Fmt => fmt_stamp = Some(carve::StampForm::Line),
             "--stamp-block" if command == Command::Fmt => {
@@ -425,7 +427,14 @@ fn main() -> ExitCode {
     }
 
     if command == Command::Fmt {
-        return run_fmt(&input_paths, fmt_write, fmt_check, fmt_stamp, fmt_migrate);
+        return run_fmt(
+            &input_paths,
+            fmt_write,
+            fmt_check,
+            fmt_stamp,
+            fmt_migrate,
+            fmt_align_tables,
+        );
     }
 
     if command == Command::Flatten {
@@ -1664,6 +1673,7 @@ fn run_fmt(
     check: bool,
     stamp: Option<carve::StampForm>,
     migrate: bool,
+    align_tables: bool,
 ) -> ExitCode {
     if write && check {
         eprintln!("carve fmt: --write and --check are mutually exclusive");
@@ -1679,7 +1689,7 @@ fn run_fmt(
             eprintln!("carve fmt: cannot read stdin: {err}");
             return ExitCode::FAILURE;
         }
-        return match format_carve(&source, stamp, migrate) {
+        return match format_carve(&source, stamp, migrate, align_tables) {
             Ok(formatted) => write_stdout(&formatted),
             Err(err) => {
                 eprintln!("carve fmt: {err}");
@@ -1712,7 +1722,7 @@ fn run_fmt(
             }
             Err(err) => String::from_utf8_lossy(err.as_bytes()).into_owned(),
         };
-        let formatted = match format_carve(&source, stamp, migrate) {
+        let formatted = match format_carve(&source, stamp, migrate, align_tables) {
             Ok(formatted) => formatted,
             Err(err) => {
                 eprintln!("carve fmt: {path}: {err}");
@@ -1753,8 +1763,9 @@ fn format_carve(
     source: &str,
     stamp: Option<carve::StampForm>,
     migrate: bool,
+    align_tables: bool,
 ) -> Result<String, carve::CarveWriteError> {
-    let options = carve::Options::default();
+    let options = carve::Options::default().with_align_tables(align_tables);
     let formatted = if migrate {
         carve::try_to_carve_with_options(
             &carve::migrate_case_only_references(source, &options),
@@ -1822,6 +1833,7 @@ fn print_usage() {
          Format options:\n  \
          -w, --write                 write formatted output in place\n  \
          --check                     fail if any file is not formatted\n  \
+         --align-tables              align table columns in Carve source\n  \
          --migrate                   rewrite a reference that misses its only\n                              \
          target by case to the target's exact spelling\n\n\
          --stamp                     append/update provenance marker\n  \

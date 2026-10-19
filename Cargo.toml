@@ -123,3 +123,11 @@ path = "tests/carrier_marker_depth.rs"
 [[test]]
 name = "carrier_marker_figure"
 path = "tests/carrier_marker_figure.rs"
+
+[[test]]
+name = "table_alignment_fixtures"
+path = "tests/table_alignment_fixtures.rs"
+
+[[test]]
+name = "table_alignment_options"
+path = "tests/table_alignment_options.rs"

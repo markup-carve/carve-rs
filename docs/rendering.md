@@ -319,3 +319,10 @@ definition or its fields cannot be spelled faithfully, `render_carve` returns `S
 silently writing an inline link. AST decoding still accepts the reference.
 This follows the field-loss rule in spec PART 11 section 1d and the reference
 fields in PART 12 section 3.
+
+## Carve table alignment
+
+`Options::default().with_align_tables(true)` enables aligned tables in
+`try_to_carve_with_options`. For an existing `Document`, use
+`render_carve_with_options(&doc, &CarveWriterOptions::default().with_align_tables(true))`.
+The default writer keeps canonical tables unaligned.

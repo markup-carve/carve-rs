@@ -383,6 +383,8 @@ pub struct Options<'a> {
     /// It is an EXPORT option (§13b). It never enables a trusted HTML import,
     /// never widens an importer's mode and never relaxes a destination check.
     pub roundtrip: bool,
+    /// Align table columns when writing Carve source. Default `false`.
+    pub align_tables: bool,
     /// When `true`, lowercase the kept characters of an auto-generated heading
     /// id per code point (`char::to_lowercase`). Default `false`: heading ids
     /// are CASE-PRESERVING (`# Getting Started` -> `Getting-Started`), matching
@@ -467,6 +469,7 @@ impl Default for Options<'_> {
             allow_raw_html: true,
             smart_typography: SmartTypographyMode::Glyph,
             roundtrip: false,
+            align_tables: false,
             lowercase_heading_ids: false,
             ascii_heading_ids: AsciiHeadingIds::Off,
             source_lines: false,
@@ -503,6 +506,12 @@ impl<'a> Options<'a> {
     /// render headings flat with the id on the `<h*>`. See [`Options::sections`].
     pub fn with_sections(mut self, enabled: bool) -> Self {
         self.sections = enabled;
+        self
+    }
+
+    /// Align table columns when writing Carve source.
+    pub fn with_align_tables(mut self, enabled: bool) -> Self {
+        self.align_tables = enabled;
         self
     }
 

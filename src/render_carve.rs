@@ -140,9 +140,33 @@ enum EscapeMode {
     Conservative,
 }
 
+/// Options for writing Carve source.
+#[derive(Debug, Clone, Copy, Default)]
+#[non_exhaustive]
+pub struct CarveWriterOptions {
+    /// Align table columns in the written source.
+    pub align_tables: bool,
+}
+
+impl CarveWriterOptions {
+    /// Set optional table alignment.
+    pub fn with_align_tables(mut self, enabled: bool) -> Self {
+        self.align_tables = enabled;
+        self
+    }
+}
+
 /// Render a tree as canonical Carve source.
 pub fn render_carve(doc: &Document) -> Result<String, crate::RenderCarveError> {
-    let session = &RenderSession::new();
+    render_carve_with_options(doc, &CarveWriterOptions::default())
+}
+
+/// Render a tree with writer options.
+pub fn render_carve_with_options(
+    doc: &Document,
+    options: &CarveWriterOptions,
+) -> Result<String, crate::RenderCarveError> {
+    let session = &RenderSession::new(options.align_tables);
     // Reject excessive depth before recursive preparation reads the tree.
     crate::render_depth::refuse_if_too_deep(doc, "carve")?;
     crate::render_loss::record_ruby_in_document(doc);
@@ -3060,6 +3084,12 @@ fn render_delimited_table(
     Some(source)
 }
 
+fn table_written_width(session: &RenderSession, cell: &str) -> usize {
+    let marker = escaped_space(session);
+    let written = cell.replace(marker.as_str(), "\\ ");
+    crate::table_display_width::table_display_width(&written)
+}
+
 /// Tables prefer the NATIVE header form: an `=` on each header cell, plus the
 /// per-cell `<`/`>`/`~` alignment markers.
 ///
@@ -3085,6 +3115,7 @@ fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -
         return String::new();
     }
     let mut rows = Vec::new();
+    let mut row_slots: Vec<(usize, Vec<String>, char, String)> = Vec::new();
     let header_row = node
         .rows
         .first()
@@ -3181,11 +3212,15 @@ fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -
                 "a table row with no cells has no Carve source spelling",
             );
         }
-        rows.push(render_table_row(&cells, &render_attrs(&row.attrs)));
+        let attrs = render_attrs(&row.attrs);
+        row_slots.push((rows.len(), cells.clone(), '|', attrs.clone()));
+        rows.push(render_table_row(&cells, &attrs));
         for line in &continuations[row_index] {
+            row_slots.push((rows.len(), line.clone(), '+', String::new()));
             rows.push(format!("+{}|", line.join("|")));
         }
     }
+    let mut separator_index = None;
     if needs_delimiter {
         let sep = match authored_widths {
             // ONE SEPARATOR CELL PER ENTRY, not per row cell. Filling the row's
@@ -3199,7 +3234,65 @@ fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -
             None => format!("|{}|", vec!["---"; node.rows[0].cells.len()].join("|")),
         };
         let head_lines = node.rows[0].continuation_lines.unwrap_or(0);
-        rows.insert(1 + head_lines, sep);
+        let index = 1 + head_lines;
+        rows.insert(index, sep);
+        separator_index = Some(index);
+    }
+    if session.align_tables && !row_slots.is_empty() {
+        let mut widths = Vec::<usize>::new();
+        for (_, cells, _, _) in &row_slots {
+            for (index, cell) in cells.iter().enumerate() {
+                if widths.len() <= index {
+                    widths.resize(index + 1, 0);
+                }
+                widths[index] = widths[index].max(table_written_width(session, cell));
+            }
+        }
+        let separator_cells = separator_index.map(|index| {
+            rows[index][1..rows[index].len() - 1]
+                .split('|')
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        });
+        if let Some(cells) = &separator_cells {
+            for (index, cell) in cells.iter().enumerate() {
+                if widths.len() <= index {
+                    widths.resize(index + 1, 0);
+                }
+                widths[index] = widths[index].max(table_written_width(session, cell));
+            }
+        }
+        for (index, cells, marker, attrs) in row_slots {
+            let index = index + usize::from(separator_index.is_some_and(|sep| index >= sep));
+            let padded = cells
+                .iter()
+                .enumerate()
+                .map(|(column, cell)| {
+                    format!(
+                        "{cell}{}",
+                        " ".repeat(widths[column] - table_written_width(session, cell))
+                    )
+                })
+                .collect::<Vec<_>>();
+            rows[index] = if marker == '|' {
+                render_table_row(&padded, &attrs)
+            } else {
+                format!("+{}|", padded.join("|"))
+            };
+        }
+        if let (Some(index), Some(cells)) = (separator_index, separator_cells) {
+            let padded = cells
+                .iter()
+                .enumerate()
+                .map(|(column, cell)| {
+                    format!(
+                        "{cell}{}",
+                        " ".repeat(widths[column] - table_written_width(session, cell))
+                    )
+                })
+                .collect::<Vec<_>>();
+            rows[index] = format!("|{}|", padded.join("|"));
+        }
     }
     if let Some(row) = node
         .caption
@@ -8017,7 +8110,7 @@ mod tests {
     /// flattened inside emphasis, whose nodes the writer clones.
     #[test]
     fn the_bracket_scan_reaches_through_transparent_nodes() {
-        let session = &super::RenderSession::new();
+        let session = &super::RenderSession::new(false);
         for (inline, escaped) in [
             (
                 r#"{"type":"substitution","old":[{"type":"text","value":"["}],"new":[{"type":"text","value":"x"}]}"#,

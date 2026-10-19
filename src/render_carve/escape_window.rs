@@ -211,7 +211,7 @@ mod tests {
 
     #[test]
     fn nested_pruning_restores_the_outer_window_after_unwinding() {
-        let session = &RenderSession::new();
+        let session = &RenderSession::new(false);
         let outer = Window {
             ranges: HashMap::from([(ROOT, (0, 0))]),
             spans: Rc::default(),
@@ -236,7 +236,7 @@ mod tests {
 
     #[test]
     fn interrupted_inner_recording_preserves_the_outer_layout() {
-        let session = &RenderSession::new();
+        let session = &RenderSession::new(false);
         let (_, layout) = record(session, || {
             let Visit::Render(recorded) = visit(session, ROOT, 0) else {
                 panic!("recording skipped")

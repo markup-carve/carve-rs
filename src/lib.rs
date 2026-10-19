@@ -64,8 +64,10 @@ mod source_patch;
 mod source_positions;
 mod stamp;
 pub mod stream;
+mod table_display_width;
 mod table_source_metadata;
 mod table_spans;
+mod table_unicode_18_data;
 mod table_width;
 mod translit_map;
 mod wire_fields;
@@ -173,7 +175,7 @@ pub use render::{
     MAX_RENDER_DEPTH,
 };
 pub use render_ansi::{render_ansi, render_ansi_with_options};
-pub use render_carve::render_carve;
+pub use render_carve::{render_carve, render_carve_with_options, CarveWriterOptions};
 pub use render_carve_error::{CarveWriteError, RenderCarveError, SourceUnspellable};
 pub use render_depth::RenderDepthError;
 pub use render_loss::{
@@ -465,7 +467,10 @@ pub fn try_to_carve_with_options(
     // DEPTH half of that is true; a round-trip refusal is not, and one level
     // past the parse cap the flattening produces a code node whose value the
     // writer cannot spell, so a shipped CLI path aborted on valid input.
-    let rendered = render_carve(&doc)?;
+    let rendered = render_carve_with_options(
+        &doc,
+        &CarveWriterOptions::default().with_align_tables(options.align_tables),
+    )?;
     // The writer's own output, unedited. `restore_inline_comments` used to walk
     // the SOURCE lines here and graft each trailing `%%` back onto the first
     // formatted line equal to the part before it. It could not repair what it
