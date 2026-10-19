@@ -229,16 +229,11 @@ fn eligible_layout_text(source: &str) -> bool {
     if source.is_ascii() {
         return true;
     }
-    // Unicode is admitted only without syntax that uses ASCII marker flanking.
-    // Hand-written rather than a regex: this path is in every render, and the
-    // regex engine would ship in builds that otherwise never link it.
     let bytes = source.as_bytes();
-    if starts_with_line_marker(bytes) {
-        return false;
-    }
+    let mut has_markers = starts_with_line_marker(bytes);
     for (i, &b) in bytes.iter().enumerate() {
         if b == b'\n' && starts_with_line_marker(&bytes[i + 1..]) {
-            return false;
+            has_markers = true;
         }
         if matches!(
             b,
@@ -266,8 +261,19 @@ fn eligible_layout_text(source: &str) -> bool {
                 | b'+'
                 | b'|'
         ) {
-            return false;
+            has_markers = true;
         }
+    }
+    // A combining mark can make an ASCII delimiter part of a larger
+    // character. Keep those and other non-alphanumeric Unicode characters
+    // on the authoritative route when markers are present.
+    if has_markers
+        && source.char_indices().any(|(at, c)| {
+            !c.is_ascii()
+                && (!c.is_alphanumeric() || super::followed_by_grapheme_extender(bytes, at))
+        })
+    {
+        return false;
     }
     !source
         .chars()
@@ -1197,7 +1203,7 @@ mod layout_html_tests {
     }
 
     #[test]
-    fn unicode_plain_paragraphs_preserve_output_and_reject_marker_flanking() {
+    fn unicode_letters_in_supported_layouts_match_the_ast() {
         for text in [
             "café",
             "e\u{301}",
@@ -1219,8 +1225,21 @@ mod layout_html_tests {
             "café\n\n---",
             "é*bold*",
             "# café",
-            "`😀`",
             "[é](/x)",
+            "Café *bold*",
+            "東京 [link](/x)",
+        ] {
+            let source = format!("{text}\n");
+            assert_eq!(
+                try_layout_html(&source, &Options::default()),
+                Some(authoritative(&source)),
+                "{source}"
+            );
+        }
+        for text in [
+            "`😀`",
+            "*a*\u{FE0F}\u{20E3}",
+            "e\u{301} *bold*",
             "a\u{a0}b",
             "a\u{2028}b",
             "\u{feff}café",
@@ -1662,8 +1681,10 @@ mod layout_html_tests {
         // per-document assertion above checks its HTML against the parser.
         // Corpus 617-3 is an unmarked CSV fence and remains ordinary code.
         // The malformed cases keep `{table}` and bypass this borrowed path.
+        // Corpus 15-heading-ids-5 and 119-trojan-source-heading-ids-are-nfc-normalized-and-strip-invisible-controls
+        // now take the borrowed layout.
         assert_eq!(
-            accepted, 70,
+            accepted, 72,
             "update the pinned acceptance count only after reviewing the exact-parity widening"
         );
     }
@@ -1823,10 +1844,20 @@ mod layout_plain_scan_tests {
     use super::*;
 
     fn regex_eligible(source: &str) -> bool {
-        source.is_ascii()
-            || !regex::Regex::new(r#"[*\/`\[\]{}^\\<>_~!@$=#'":%+|]|(?:^|\n)(?:[ .-]|[A-Za-z0-9]+[.)] )|[^\x00-\x7f\pL\pM\pN\pP\pS]"#)
-                .unwrap()
-                .is_match(source)
+        if source.is_ascii() {
+            return true;
+        }
+        let has_markers = regex::Regex::new(
+            r#"[*\/`\[\]{}^\\<>_~!@$=#'":%+|]|(?:^|\n)(?:[ .-]|[A-Za-z0-9]+[.)] )"#,
+        )
+        .unwrap()
+        .is_match(source);
+        let rejected = if has_markers {
+            r"[^\x00-\x7f\p{Alphabetic}\pN]|\pM"
+        } else {
+            r"[^\x00-\x7f\pL\pM\pN\pP\pS]"
+        };
+        !regex::Regex::new(rejected).unwrap().is_match(source)
     }
 
     #[test]
@@ -1844,7 +1875,26 @@ mod layout_plain_scan_tests {
     }
 
     #[test]
-    fn boundary_cases_match_the_former_pattern() {
+    fn marker_guard_matches_unicode_categories() {
+        let alphanumeric = regex::Regex::new(r"\A[\p{Alphabetic}\pN]\z").unwrap();
+        let mark = regex::Regex::new(r"\A\pM\z").unwrap();
+        let mut buf = [0; 4];
+        for c in (0x80..=0x10FFFF).filter_map(char::from_u32) {
+            let text = c.encode_utf8(&mut buf);
+            let source = format!("{text} *x*");
+            let expected =
+                alphanumeric.is_match(text) && !mark.is_match(text) && !is_other_or_separator(c);
+            assert_eq!(
+                eligible_layout_text(&source),
+                expected,
+                "U+{:04X}",
+                c as u32
+            );
+        }
+    }
+
+    #[test]
+    fn boundary_cases_match_the_unicode_marker_guard() {
         let cases = [
             "é",
             "é*",
@@ -1919,6 +1969,10 @@ mod layout_plain_scan_tests {
             "a\u{0378}b",
             "a\u{10FFFF}b",
             "e\u{0301}",
+            "e\u{0301} *bold*",
+            "*a*\u{FE0F}\u{20E3}",
+            "Ⓐ *x*",
+            "🄰 *x*",
             "\u{1F600}",
             "\u{1F469}\u{200D}\u{1F4BB}",
             "€ £ ¥",
