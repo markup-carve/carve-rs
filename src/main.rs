@@ -1585,7 +1585,7 @@ fn run_lint_paths(
             let file = warning
                 .file
                 .as_deref()
-                .map_or_else(|| label.to_string(), &display);
+                .map_or_else(|| label.to_string(), display);
             let chain = if warning.included_by.is_empty() {
                 String::new()
             } else {
