@@ -210,13 +210,16 @@ fn html_urls(html: &str) -> Vec<(String, bool)> {
     urls
 }
 
+/// A fragment rewritten to its heading id's case: the fragment as written, and as rewritten.
+type Recased = Option<(String, String)>;
+
 fn inspect_link(
     destination: &str,
     source: &str,
     outputs: &HashSet<String>,
     ids: &std::collections::HashMap<String, HashSet<String>>,
     aliases: &HashMap<String, HashMap<String, Option<String>>>,
-) -> Option<(String, Value)> {
+) -> Option<(String, Value, Recased)> {
     if destination.starts_with("//")
         || destination.split(':').next().is_some_and(|prefix| {
             prefix
@@ -235,6 +238,7 @@ fn inspect_link(
         return Some((
             destination.to_string(),
             json!({"target": destination, "status": "unresolved", "reason": "site-root path needs route mapping"}),
+            None,
         ));
     }
     let (before_fragment, raw_fragment) = destination
@@ -251,6 +255,7 @@ fn inspect_link(
         (
             destination.to_string(),
             json!({"target": destination, "status": "unresolved", "reason": reason}),
+            None,
         )
     };
     let Some(path) = decode_url(raw_path) else {
@@ -304,15 +309,15 @@ fn inspect_link(
     } else {
         format!("{}.crv", &raw_path[..raw_path.len() - 3])
     };
+    let recased = raw_fragment
+        .zip(resolved)
+        .filter(|(_, id)| !fragment.is_empty() && *id != fragment)
+        .map(|(raw, id)| (raw.to_string(), encode_fragment(id)));
     let href = format!(
         "{new_path}{query}{}",
         raw_fragment.map_or(String::new(), |raw| format!(
             "#{}",
-            if resolved == Some(fragment.as_str()) {
-                raw.to_string()
-            } else {
-                encode_fragment(resolved.unwrap_or(raw))
-            }
+            recased.as_ref().map_or(raw, |(_, to)| to.as_str())
         ))
     );
     let status = if href == destination {
@@ -320,7 +325,17 @@ fn inspect_link(
     } else {
         "rewritten"
     };
-    Some((href, json!({"target": destination, "status": status})))
+    Some((
+        href,
+        json!({"target": destination, "status": status}),
+        recased,
+    ))
+}
+
+#[derive(Default)]
+struct Found {
+    links: Vec<Value>,
+    fixups: Vec<carve::MigrationDiagnostic>,
 }
 
 fn check_value(
@@ -329,7 +344,7 @@ fn check_value(
     outputs: &HashSet<String>,
     ids: &std::collections::HashMap<String, HashSet<String>>,
     aliases: &HashMap<String, HashMap<String, Option<String>>>,
-    links: &mut Vec<Value>,
+    found: &mut Found,
     changed: &mut bool,
 ) {
     match value {
@@ -342,16 +357,16 @@ fn check_value(
                 if let Some(content) = object.get("content").and_then(Value::as_str) {
                     for (destination, manual) in html_urls(content) {
                         if manual {
-                            links.push(json!({"target": destination, "status": "unresolved", "reason": "raw HTML srcset needs manual review"}));
+                            found.links.push(json!({"target": destination, "status": "unresolved", "reason": "raw HTML srcset needs manual review"}));
                             continue;
                         }
-                        if let Some((_, mut check)) =
+                        if let Some((_, mut check, _)) =
                             inspect_link(&destination, source, outputs, ids, aliases)
                         {
                             if check["status"] == "rewritten" {
                                 check = json!({"target": destination, "status": "unresolved", "reason": "raw HTML link needs manual rewrite"});
                             }
-                            links.push(check);
+                            found.links.push(check);
                         }
                     }
                 }
@@ -367,28 +382,35 @@ fn check_value(
                     .and_then(Value::as_str)
                     .filter(|href| !href.is_empty())
                 {
-                    if let Some((href, mut check)) =
+                    if let Some((href, mut check, recased)) =
                         inspect_link(destination, source, outputs, ids, aliases)
                     {
                         if href != destination && object.get("ref").is_some() {
                             check = json!({"target": destination, "status": "unresolved", "reason": "reference link needs manual rewrite"});
                         } else if href != destination {
+                            if let Some((from, to)) = recased {
+                                found.fixups.push(carve::fragment_fixup_diagnostic(
+                                    destination,
+                                    &from,
+                                    &to,
+                                ));
+                            }
                             object.insert(key.to_string(), Value::String(href));
                             *changed = true;
                         }
-                        links.push(check);
+                        found.links.push(check);
                     }
                 }
             }
             for (key, child) in object.iter_mut() {
                 if key != "attrs" && key != "position" {
-                    check_value(child, source, outputs, ids, aliases, links, changed);
+                    check_value(child, source, outputs, ids, aliases, found, changed);
                 }
             }
         }
         Value::Array(items) => {
             for item in items {
-                check_value(item, source, outputs, ids, aliases, links, changed);
+                check_value(item, source, outputs, ids, aliases, found, changed);
             }
         }
         _ => {}
@@ -429,17 +451,36 @@ fn check_links(
         let original = fs::read_to_string(&path).map_err(|e| e.to_string())?;
         let mut document = serde_json::from_str::<Value>(&carve::to_json(&carve::parse(&original)))
             .map_err(|e| e.to_string())?;
-        let mut links = Vec::new();
         let mut changed = false;
+        let mut found = Found::default();
         check_value(
             &mut document,
             &source,
             &outputs,
             &ids,
             &aliases,
-            &mut links,
+            &mut found,
             &mut changed,
         );
+        let Found { links, fixups } = found;
+        if !fixups.is_empty() {
+            let report: Value =
+                serde_json::from_str(&super::migration_report_json(&carve::MigrationReport {
+                    schema_version: 2,
+                    source_format: carve::SourceFormat::Markdown,
+                    mode: None,
+                    adapter: None,
+                    diagnostics: fixups,
+                }))
+                .map_err(|e| e.to_string())?;
+            let rows = report["diagnostics"]
+                .as_array()
+                .ok_or("invalid migration report")?;
+            file["diagnostics"]
+                .as_array_mut()
+                .ok_or("invalid migration report")?
+                .extend(rows.iter().cloned());
+        }
         if links.iter().any(|link| link["status"] == "unresolved") {
             broken.insert(source);
         }
@@ -726,6 +767,7 @@ pub fn run(source: &str, output: &str, check_loss: bool) -> Result<u8, String> {
 #[cfg(test)]
 mod tests {
     use super::run;
+    use serde_json::{json, Value};
     use std::fs;
 
     #[test]
@@ -884,6 +926,89 @@ mod tests {
             fs::read_to_string(output.join("x.mar\u{212A}down")).unwrap(),
             "asset"
         );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reports_case_only_fragment_fixups() {
+        let root = std::env::temp_dir().join(format!(
+            "carve-fixup-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let source = root.join("source");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("a.md"), "# Guide\n\nSee [steps](b.md#install-steps), [same](b.md#Install-Steps) and [whole](b.md).\n").unwrap();
+        fs::write(
+            source.join("b.md"),
+            "# Install Steps\n\nRun it.\n\n# Twin\n\n# twin\n",
+        )
+        .unwrap();
+        fs::write(
+            source.join("c.md"),
+            "[twin](b.md#TWIN) [none](b.md#nothing)\n",
+        )
+        .unwrap();
+        let output = root.join("output");
+        assert_eq!(
+            run(source.to_str().unwrap(), output.to_str().unwrap(), true).unwrap(),
+            1
+        );
+        assert_eq!(
+            fs::read_to_string(output.join("a.crv")).unwrap(),
+            "# Guide\n\nSee [steps](b.crv#Install-Steps), [same](b.crv#Install-Steps) and [whole](b.crv).\n"
+        );
+        let report: Value = serde_json::from_str(
+            &fs::read_to_string(output.join("migration-report.json")).unwrap(),
+        )
+        .unwrap();
+        let file = |name: &str| {
+            report["files"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|file| file["source"] == name)
+                .unwrap()
+                .clone()
+        };
+        let fixups = |file: &Value| {
+            file["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|row| row["code"] == "link-fragment-case-rewritten")
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        let a = file("a.md");
+        assert!(a["links"]
+            .as_array()
+            .unwrap()
+            .contains(&json!({"target": "b.md#install-steps", "status": "rewritten"})));
+        assert_eq!(
+            fixups(&a),
+            vec![json!({
+                "code": "link-fragment-case-rewritten",
+                "message": "Rewrote link fragment #install-steps to #Install-Steps, the one heading id it matches without regard to case.",
+                "severity": "info",
+                "fidelity": "normalized",
+                "confidence": "inferred",
+                "path": "link:b.md#install-steps",
+            })]
+        );
+        let c = file("c.md");
+        assert_eq!(
+            c["links"],
+            json!([
+                {"target": "b.md#TWIN", "status": "unresolved", "reason": "fragment missing from target"},
+                {"target": "b.md#nothing", "status": "unresolved", "reason": "fragment missing from target"},
+            ])
+        );
+        assert!(fixups(&c).is_empty());
+        assert_eq!(report["review"], json!(["c.md"]));
         fs::remove_dir_all(root).unwrap();
     }
 

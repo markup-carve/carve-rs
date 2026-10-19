@@ -255,8 +255,32 @@ pub fn migration_raw_heading_ids(source: &str) -> HashMap<String, usize> {
 }
 
 fn rewrite_same_file_heading_links(source: String) -> Result<String, crate::RenderCarveError> {
+    Ok(rewrite_same_file_heading_links_reported(source)?.value)
+}
+
+/// A case-only fragment rewrite: the destination before it, and the old and new fragment.
+pub(crate) struct FragmentFixup {
+    pub(crate) destination: String,
+    pub(crate) from: String,
+    pub(crate) to: String,
+}
+
+/// `unfixed` is the same rendering with the original fragments, so assessment sees only the conversion.
+pub(crate) struct FragmentRewrite {
+    pub(crate) value: String,
+    pub(crate) unfixed: String,
+    pub(crate) fixups: Vec<FragmentFixup>,
+}
+
+pub(crate) fn rewrite_same_file_heading_links_reported(
+    source: String,
+) -> Result<FragmentRewrite, crate::RenderCarveError> {
     if !source.contains("](#") {
-        return Ok(source);
+        return Ok(FragmentRewrite {
+            unfixed: source.clone(),
+            value: source,
+            fixups: Vec::new(),
+        });
     }
     let html = crate::to_html(&source);
     let mut raw_heading_ids = migration_raw_heading_ids(&source);
@@ -348,7 +372,7 @@ fn rewrite_same_file_heading_links(source: String) -> Result<String, crate::Rend
         value: &mut Value,
         exact: &HashSet<String>,
         aliases: &HashMap<String, Option<String>>,
-        changed: &mut bool,
+        fixups: &mut Vec<FragmentFixup>,
     ) {
         match value {
             Value::Object(object) => {
@@ -360,11 +384,14 @@ fn rewrite_same_file_heading_links(source: String) -> Result<String, crate::Rend
                             if let Some(fragment) = decode(raw) {
                                 if !exact.contains(&fragment) {
                                     if let Some(Some(id)) = aliases.get(&fragment.to_lowercase()) {
-                                        object.insert(
-                                            "href".into(),
-                                            Value::String(format!("#{}", encode(id))),
-                                        );
-                                        *changed = true;
+                                        let to = encode(id);
+                                        fixups.push(FragmentFixup {
+                                            destination: href.to_owned(),
+                                            from: raw.to_owned(),
+                                            to: to.clone(),
+                                        });
+                                        object
+                                            .insert("href".into(), Value::String(format!("#{to}")));
                                     }
                                 }
                             }
@@ -373,13 +400,13 @@ fn rewrite_same_file_heading_links(source: String) -> Result<String, crate::Rend
                 }
                 for (key, child) in object.iter_mut() {
                     if key != "attrs" && key != "position" {
-                        visit(child, exact, aliases, changed);
+                        visit(child, exact, aliases, fixups);
                     }
                 }
             }
             Value::Array(items) => {
                 for item in items {
-                    visit(item, exact, aliases, changed);
+                    visit(item, exact, aliases, fixups);
                 }
             }
             _ => {}
@@ -387,17 +414,29 @@ fn rewrite_same_file_heading_links(source: String) -> Result<String, crate::Rend
     }
     let mut document: Value =
         serde_json::from_str(&crate::to_json(&crate::parse(&source))).expect("parser emitted JSON");
-    let mut changed = false;
-    visit(&mut document, &exact, &aliases, &mut changed);
-    if !changed {
-        return Ok(source);
+    let original = document.clone();
+    let mut fixups = Vec::new();
+    visit(&mut document, &exact, &aliases, &mut fixups);
+    if fixups.is_empty() {
+        return Ok(FragmentRewrite {
+            unfixed: source.clone(),
+            value: source,
+            fixups,
+        });
     }
-    let document = crate::from_json(&document.to_string()).expect("parser emitted AST JSON");
-    let result = crate::render_carve(&document)?;
-    Ok(if source.ends_with('\n') {
-        result
-    } else {
-        result.trim_end_matches('\n').to_string()
+    let render = |document: &Value| -> Result<String, crate::RenderCarveError> {
+        let document = crate::from_json(&document.to_string()).expect("parser emitted AST JSON");
+        let result = crate::render_carve(&document)?;
+        Ok(if source.ends_with('\n') {
+            result
+        } else {
+            result.trim_end_matches('\n').to_string()
+        })
+    };
+    Ok(FragmentRewrite {
+        value: render(&document)?,
+        unfixed: render(&original)?,
+        fixups,
     })
 }
 

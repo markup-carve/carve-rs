@@ -171,10 +171,44 @@ fn try_migrate_markdown_with_fragments(
     source: &str,
     rewrite_heading_fragments: bool,
 ) -> Result<MigrationResult, crate::RenderCarveError> {
-    let (value, losses, notices) = crate::markdown_import::markdown_to_carve_with_losses_mode(
-        source,
-        rewrite_heading_fragments,
-    )?;
+    let (value, losses, notices) =
+        crate::markdown_import::markdown_to_carve_with_losses_mode(source, false)?;
+    if !rewrite_heading_fragments {
+        return assess_markdown_migration(source, value, losses, notices);
+    }
+    let rewrite = crate::markdown_import::rewrite_same_file_heading_links_reported(value)?;
+    let mut result = assess_markdown_migration(source, rewrite.unfixed, losses, notices)?;
+    result.value = rewrite.value;
+    result.report.diagnostics.extend(
+        rewrite
+            .fixups
+            .into_iter()
+            .map(|fixup| fragment_fixup_diagnostic(&fixup.destination, &fixup.from, &fixup.to)),
+    );
+    Ok(result)
+}
+
+/// The `link-fragment-case-rewritten` row for one rewritten link (CARVE-P2-031).
+#[doc(hidden)]
+pub fn fragment_fixup_diagnostic(destination: &str, from: &str, to: &str) -> MigrationDiagnostic {
+    MigrationDiagnostic {
+        code: "link-fragment-case-rewritten".to_owned(),
+        message: format!(
+            "Rewrote link fragment #{from} to #{to}, the one heading id it matches without regard to case."
+        ),
+        severity: HtmlImportSeverity::Info,
+        fidelity: MigrationFidelity::Normalized,
+        confidence: MigrationConfidence::Inferred,
+        path: Some(format!("link:{destination}")),
+    }
+}
+
+fn assess_markdown_migration(
+    source: &str,
+    value: String,
+    losses: Vec<crate::markdown_import::MarkdownImportLoss>,
+    notices: Vec<crate::markdown_import::FrontmatterNotice>,
+) -> Result<MigrationResult, crate::RenderCarveError> {
     let assessment = crate::markdown_assessment::assess(source, &value);
     if assessment.complete
         && notices.is_empty()
@@ -325,6 +359,51 @@ pub fn migrate_bbcode(source: &str) -> Result<MigrationResult, BbcodeImportError
 #[cfg(test)]
 mod evidence_tests {
     use super::*;
+
+    #[test]
+    fn same_file_fragment_rewrite_is_a_fixup_beside_a_complete_assessment() {
+        let result = migrate_markdown("# Install Steps\n\nSee [steps](#install-steps).\n");
+        assert_eq!(
+            result.value,
+            "# Install Steps\n\nSee [steps](#Install-Steps).\n"
+        );
+        let codes: Vec<_> = result
+            .report
+            .diagnostics
+            .iter()
+            .map(|row| row.code.as_str())
+            .collect();
+        assert_eq!(
+            codes,
+            [
+                "markdown-atx-heading",
+                "markdown-paragraph",
+                "markdown-link",
+                "link-fragment-case-rewritten"
+            ]
+        );
+        let row = result.report.diagnostics.last().unwrap();
+        assert_eq!(row.message, "Rewrote link fragment #install-steps to #Install-Steps, the one heading id it matches without regard to case.");
+        assert_eq!(row.severity, HtmlImportSeverity::Info);
+        assert_eq!(row.fidelity, MigrationFidelity::Normalized);
+        assert_eq!(row.confidence, MigrationConfidence::Inferred);
+        assert_eq!(row.path.as_deref(), Some("link:#install-steps"));
+        for markdown in [
+            "# Twin\n\n# twin\n\n[x](#TWIN)\n",
+            "# Install Steps\n\n[x](#Install-Steps)\n",
+        ] {
+            assert!(!migrate_markdown(markdown)
+                .report
+                .diagnostics
+                .iter()
+                .any(|row| row.code == "link-fragment-case-rewritten"));
+        }
+        let unicode = migrate_markdown("# ΟΔΟΣ\n\n[street](#οδος)\n");
+        assert_eq!(
+            unicode.report.diagnostics.last().unwrap().message,
+            "Rewrote link fragment #%CE%BF%CE%B4%CE%BF%CF%82 to #%CE%9F%CE%94%CE%9F%CE%A3, the one heading id it matches without regard to case."
+        );
+    }
 
     #[test]
     fn changed_output_or_known_loss_cannot_verify_literal_text() {
