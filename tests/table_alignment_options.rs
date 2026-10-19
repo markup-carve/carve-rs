@@ -59,6 +59,38 @@ fn written_escapes_count_in_width() {
     }
 }
 
+// The escaped-cell cases of spec #3329, copied until the spec pin reaches it.
+#[test]
+fn escaped_cell_fixtures() {
+    for (canonical, expected) in [
+        (
+            "| a\\ b | x |\n| ccc | `y|z` |\n",
+            "| a\\ b | x     |\n| ccc  | `y|z` |\n",
+        ),
+        ("| a\\ \\ b |\n| cccccc |\n", "| a\\ \\ b |\n| cccccc |\n"),
+        (
+            "| a \\\\ b | c \\| d |\n| e | f |\n",
+            "| a \\\\ b | c \\| d |\n| e      | f      |\n",
+        ),
+        (
+            "| \\^ | \\< | x |\n| a | b | ccc |\n",
+            "| \\^ | \\< | x   |\n| a  | b  | ccc |\n",
+        ),
+        (
+            "|= a\\ b |= *b* |\n| cccc | d |\n",
+            "|= a\\ b |= *b* |\n| cccc  | d    |\n",
+        ),
+        (
+            "| a | b |\n+ c\\ d | e |\n",
+            "| a    | b |\n+ c\\ d | e |\n",
+        ),
+    ] {
+        assert_eq!(aligned(canonical), expected, "{canonical}");
+        assert_eq!(aligned(expected), expected, "{expected}");
+        assert_eq!(carve::to_carve(expected), canonical, "{expected}");
+    }
+}
+
 #[test]
 fn cli_formats_and_checks_aligned_output() {
     let source = "| A | B |\n|---|---|\n| x | yy |\n";
