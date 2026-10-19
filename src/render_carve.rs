@@ -1229,13 +1229,14 @@ fn render_with_escapes_once(
     // `ordered_document_entries`, reused rather than reimplemented, so the
     // written source and the published tree cannot disagree.
     let footnote_defs = crate::ast_json::footnote_defs_in_source_order(doc);
-    let mut rendered = Vec::new();
+    let mut rendered: Vec<String> = Vec::new();
     // The document level joins its own entries rather than going through
     // `render_blocks`, so the adjacent-sibling-list separator is written here
     // too. See the note beside `lists_would_merge`; without it a top-level pair
     // -- which is where authors actually write one -- still merged (carve#1088).
     let mut previous_list: Option<&List> = None;
     let mut separated_from_previous = false;
+    let mut previous_emitted: Option<&BlockNode> = None;
     for (index, entry) in crate::ast_json::ordered_document_entries(doc, &footnote_defs)
         .into_iter()
         .enumerate()
@@ -1244,6 +1245,10 @@ fn render_with_escapes_once(
             escape_window::visit(session, escape_window::ROOT, index)
         else {
             continue;
+        };
+        let block = match entry {
+            crate::ast_json::DocEntry::Block(child) => Some(child),
+            crate::ast_json::DocEntry::FootnoteDef(..) => None,
         };
         let text = match entry {
             crate::ast_json::DocEntry::Block(child) => {
@@ -1288,11 +1293,21 @@ fn render_with_escapes_once(
         };
         escape_window::leave(session, recorded);
         if !writes_nothing(&text) {
-            rendered.push(if separated_from_previous && !rendered.is_empty() {
-                hard_list_boundary(session, &text)
+            let adjacent = previous_emitted
+                .zip(block)
+                .is_some_and(|(previous, block)| region_marker_adjacent(previous, block, &text));
+            if adjacent && !rendered.is_empty() {
+                let last = rendered.len() - 1;
+                rendered[last].push('\n');
+                rendered[last].push_str(&text);
             } else {
-                text
-            });
+                rendered.push(if separated_from_previous && !rendered.is_empty() {
+                    hard_list_boundary(session, &text)
+                } else {
+                    text
+                });
+            }
+            previous_emitted = block;
         }
     }
     // THE FALLBACK SPELLING IS DECIDED IN `render_with_escapes`, on the finished
@@ -1845,7 +1860,13 @@ fn caption_row(
     Some(format!("^ {written}"))
 }
 
-fn render_blocks(session: &RenderSession, blocks: &[BlockNode], ctx: &mut CarveContext) -> String {
+/// `item` is the list item whose children these are, for CARVE-P11-073 (b).
+fn render_blocks(
+    session: &RenderSession,
+    blocks: &[BlockNode],
+    ctx: &mut CarveContext,
+    item: Option<&Pos>,
+) -> String {
     if ctx.block_depth >= MAX_RENDER_DEPTH {
         crate::render_depth::record("carve");
         return String::new();
@@ -1854,7 +1875,7 @@ fn render_blocks(session: &RenderSession, blocks: &[BlockNode], ctx: &mut CarveC
     let previous_host = ctx.after_caption_host;
     let previous_paragraph_start = ctx.paragraph_starts_after_caption_host;
     ctx.after_caption_host = false;
-    let mut rendered = Vec::new();
+    let mut rendered: Vec<String> = Vec::new();
     // TWO ADJACENT SIBLING LISTS NEED SOMETHING BETWEEN THEM. Written at the
     // same column with matching markers they merge on re-parse, so
     // `parse(fmt(x)) == parse(x)` is false for a document the parser reads as
@@ -1874,6 +1895,8 @@ fn render_blocks(session: &RenderSession, blocks: &[BlockNode], ctx: &mut CarveC
     // of sibling lists at the column they were written.
     let mut previous_list: Option<&List> = None;
     let mut separated_from_previous = false;
+    let mut previous_emitted: Option<&BlockNode> = None;
+    let mut moved_marker: Option<&BlockNode> = None;
     let list = blocks.as_ptr() as usize;
     for (index, block) in blocks.iter().enumerate() {
         let escape_window::Visit::Render(recorded) = escape_window::visit(session, list, index)
@@ -1881,7 +1904,14 @@ fn render_blocks(session: &RenderSession, blocks: &[BlockNode], ctx: &mut CarveC
             continue;
         };
         ctx.paragraph_starts_after_caption_host = ctx.after_caption_host;
-        let text = render_block(session, block, ctx);
+        let mut text = render_block(session, block, ctx);
+        let moved = !writes_nothing(&text)
+            && item.is_some_and(|item| {
+                region_marker_at_item_marker_column(block, previous_emitted, moved_marker, item)
+            });
+        if moved {
+            text = at_marker_column(session, &text);
+        }
         escape_window::leave(session, recorded);
         ctx.after_caption_host = hosts_caption(block);
         if let BlockNode::List(list) = block {
@@ -1893,11 +1923,21 @@ fn render_blocks(session: &RenderSession, blocks: &[BlockNode], ctx: &mut CarveC
             separated_from_previous = false;
         }
         if !writes_nothing(&text) {
-            rendered.push(if separated_from_previous && !rendered.is_empty() {
-                hard_list_boundary(session, &text)
+            let adjacent = previous_emitted
+                .is_some_and(|previous| region_marker_adjacent(previous, block, &text));
+            if adjacent && !rendered.is_empty() {
+                let last = rendered.len() - 1;
+                rendered[last].push('\n');
+                rendered[last].push_str(&text);
             } else {
-                text
-            });
+                rendered.push(if separated_from_previous && !rendered.is_empty() {
+                    hard_list_boundary(session, &text)
+                } else {
+                    text
+                });
+            }
+            previous_emitted = Some(block);
+            moved_marker = moved.then_some(block);
         }
     }
     let out = rendered.join("\n\n");
@@ -1905,6 +1945,84 @@ fn render_blocks(session: &RenderSession, blocks: &[BlockNode], ctx: &mut CarveC
     ctx.paragraph_starts_after_caption_host = previous_paragraph_start;
     ctx.block_depth -= 1;
     out
+}
+
+/// CARVE-P11-073: a `%%` line that I1b reads as a region marker.
+fn is_region_marker(block: &BlockNode) -> bool {
+    let BlockNode::Comment(comment) = block else {
+        return false;
+    };
+    if comment.block || comment.delimited {
+        return false;
+    }
+    let content = comment.content.trim_start_matches([' ', '\t']);
+    content
+        .strip_prefix("#region")
+        .or_else(|| content.strip_prefix("#endregion"))
+        .is_some_and(|rest| !rest.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_'))
+}
+
+/// CARVE-P11-073: a region marker and its sibling keep the blank line, or its
+/// absence, the author wrote. Leading attribute lines of the later block sit
+/// between the two without being part of its `pos`.
+fn region_marker_adjacent(previous: &BlockNode, block: &BlockNode, rendered: &str) -> bool {
+    if !is_region_marker(previous) && !is_region_marker(block) {
+        return false;
+    }
+    // A block a following `%%` line cannot continue, whatever it is spelled as.
+    if !matches!(
+        previous,
+        BlockNode::Paragraph(_)
+            | BlockNode::BlockImage(_)
+            | BlockNode::Heading(_)
+            | BlockNode::CodeBlock(_)
+            | BlockNode::ThematicBreak(_)
+            | BlockNode::Comment(_)
+    ) {
+        return false;
+    }
+    let (Some(before), Some(after)) = (block_pos(previous), block_pos(block)) else {
+        return false;
+    };
+    after.start_line == before.end_line + 1 + leading_attribute_lines(block, rendered)
+}
+
+/// The attribute lines the writer put above `block`; only a paragraph's own
+/// text can also open with `{`.
+fn leading_attribute_lines(block: &BlockNode, rendered: &str) -> usize {
+    if let BlockNode::Paragraph(paragraph) = block {
+        return usize::from(
+            !render_attrs(&paragraph.attrs).is_empty() && rendered.starts_with('{'),
+        );
+    }
+    rendered
+        .split('\n')
+        .take_while(|line| line.starts_with('{'))
+        .count()
+}
+
+/// CARVE-P11-073: a region marker the reader kept in a list item from at or
+/// left of the item's marker column (X1) goes back to that column.
+fn region_marker_at_item_marker_column(
+    block: &BlockNode,
+    previous: Option<&BlockNode>,
+    moved_marker: Option<&BlockNode>,
+    item: &Pos,
+) -> bool {
+    let Some(previous) = previous else {
+        return false;
+    };
+    if !is_region_marker(block) {
+        return false;
+    }
+    let after_a_moved_marker = moved_marker.is_some_and(|moved| std::ptr::eq(moved, previous));
+    if !matches!(previous, BlockNode::Paragraph(_)) && !after_a_moved_marker {
+        return false;
+    }
+    let (Some(at), Some(before)) = (block_pos(block), block_pos(previous)) else {
+        return false;
+    };
+    at.start_line == before.end_line + 1 && at.start_column <= item.start_column
 }
 
 fn hosts_caption(block: &BlockNode) -> bool {
@@ -1945,7 +2063,7 @@ fn render_inside_colon_container(
     ctx: &mut CarveContext,
 ) -> String {
     ctx.colon_fence_depth += 1;
-    let body = render_blocks(session, blocks, ctx);
+    let body = render_blocks(session, blocks, ctx, None);
     ctx.colon_fence_depth -= 1;
     body
 }
@@ -2082,10 +2200,11 @@ fn render_item_blocks(
     session: &RenderSession,
     blocks: &[BlockNode],
     tight: bool,
+    item: Option<&Pos>,
     ctx: &mut CarveContext,
 ) -> String {
     if !tight {
-        return render_blocks(session, blocks, ctx);
+        return render_blocks(session, blocks, ctx, item);
     }
     if ctx.block_depth >= MAX_RENDER_DEPTH {
         crate::render_depth::record("carve");
@@ -2099,6 +2218,7 @@ fn render_item_blocks(
     // condition under which a later bullet written there joins it instead of
     // opening below the paragraph above it. See `needs_a_blank_line_above`.
     let mut a_sub_list_already_opened = false;
+    let mut moved_marker: Option<&BlockNode> = None;
     let list = blocks.as_ptr() as usize;
     for (index, block) in blocks.iter().enumerate() {
         let escape_window::Visit::Render(recorded) = escape_window::visit(session, list, index)
@@ -2217,7 +2337,14 @@ fn render_item_blocks(
             prev_at_marker_column = true;
             continue;
         }
-        out.push_str(&rendered);
+        if item.is_some_and(|item| {
+            region_marker_at_item_marker_column(block, prev, moved_marker, item)
+        }) {
+            out.push_str(&at_marker_column(session, &rendered));
+            moved_marker = Some(block);
+        } else {
+            out.push_str(&rendered);
+        }
         prev = Some(block);
         prev_at_marker_column = false;
     }
@@ -2366,7 +2493,7 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
                 return with_block_attrs(&quote.attrs, &format!("{fence} >\n{body}\n{fence}"));
             }
             let inner = with_reset_colon_fence_depth(ctx, |ctx| {
-                render_blocks(session, &quote.children, ctx)
+                render_blocks(session, &quote.children, ctx, None)
             });
             let body = inner
                 .split('\n')
@@ -2552,7 +2679,7 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
             let body = render_inside_colon_container(session, &div.children, ctx);
             with_block_attrs(&div.attrs, &format!("{fence}{label}\n{body}\n{fence}"))
         }
-        BlockNode::Section(section) => render_blocks(session, &section.children, ctx),
+        BlockNode::Section(section) => render_blocks(session, &section.children, ctx, None),
         BlockNode::DefinitionList(list) => {
             let body = with_reset_colon_fence_depth(ctx, |ctx| {
                 render_definition_list(session, &list.items, ctx)
@@ -2627,7 +2754,7 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
         }
         BlockNode::ExtensionCarrier(extension) => with_block_attrs(
             &extension.attrs,
-            &render_blocks(session, &extension.children, ctx),
+            &render_blocks(session, &extension.children, ctx, None),
         ),
     }
 }
@@ -2796,7 +2923,7 @@ fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveContext) -> 
                 .unwrap_or_default()
         } else {
             at_item_content_column(ctx, |ctx| {
-                render_item_blocks(session, &item.children, node.tight, ctx)
+                render_item_blocks(session, &item.children, node.tight, item.pos.as_ref(), ctx)
             })
         };
         // EMPTINESS is the only thing that earns `+`. A second, text-shaped test
@@ -2969,7 +3096,7 @@ fn render_definition_list(
                 }
             }
             let body = trim_non_nbsp(&at_item_content_column(ctx, |ctx| {
-                render_blocks(session, def, ctx)
+                render_blocks(session, def, ctx, None)
             }))
             .to_string();
             if body.is_empty() {
@@ -3706,7 +3833,7 @@ fn render_footnote_def_source(
     let previous_footnote_body = ctx.in_footnote_body;
     let previous_guard_types = std::mem::take(&mut ctx.footnote_guard_types);
     ctx.in_footnote_body = true;
-    let raw_body = render_blocks(session, blocks, ctx);
+    let raw_body = render_blocks(session, blocks, ctx, None);
     ctx.in_footnote_body = previous_footnote_body;
     let guard_types = std::mem::replace(&mut ctx.footnote_guard_types, previous_guard_types);
     if previous_footnote_body {

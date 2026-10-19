@@ -2340,3 +2340,6 @@ mod csv_table_writer_parity;
 
 #[path = "../select_include_region_resolves_a_region_the_way_the_expander_does.rs"]
 mod select_include_region_resolves_a_region_the_way_the_expander_does;
+
+#[path = "../fmt_keeps_a_regions_selection.rs"]
+mod fmt_keeps_a_regions_selection;
