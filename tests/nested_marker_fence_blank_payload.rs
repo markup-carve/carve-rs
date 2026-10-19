@@ -54,10 +54,15 @@ fn unused_nested_continuation_leaves_blank_outside_fence() {
                     " ".repeat(lead.len() - 2),
                     "\n".repeat(blanks)
                 );
-                let expected_raw = to_html(&format!(
-                    "{lead}{fence}\n{}+\ntail",
-                    " ".repeat(lead.len() - 2)
-                ));
+                let expected_raw = if fence == "```=html" {
+                    match lead {
+                        "- - " => "<ul>\n  <li>\n    <ul>\n      <li>\n        \n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail</p>",
+                        "1. - " => "<ol>\n  <li>\n    <ul>\n      <li>\n        \n      </li>\n    </ul>\n  </li>\n</ol>\n<p>tail</p>",
+                        _ => "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>\n            \n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail</p>",
+                    }
+                } else {
+                    ""
+                };
                 for html in [
                     to_html(&source),
                     to_html_with_options(&source, &Options::default().with_positions(true)),

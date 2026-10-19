@@ -18356,7 +18356,33 @@ fn collect_indented_block_mapped_with_columns(
         }
     }
     let mut nested_fence: Option<FenceOpen> = None;
+    let nested_fence_marker_col = marker_line_columns
+        .iter()
+        .rev()
+        .nth(1)
+        .copied()
+        .unwrap_or(strip_cols);
+    // Each ancestor must carry the attached flush-left block to the child.
+    let mut nested_fence_attachment = 0;
     while let Some(line) = cur.peek() {
+        if nested_fence_attachment > 0 {
+            let (mut kept, consumed, synthetic) = slice_columns_mapped(line, 0, true);
+            if nested_fence_attachment == 2 && trim_ascii_start(line) == "~~~" {
+                kept.insert_str(0, LAZY);
+            }
+            lines.push(kept);
+            reached.push(false);
+            if building_maps {
+                line_map.push(cur.source_line(cur.pos));
+                col_map.push(
+                    cur.source_col(cur.pos)
+                        .map(|col| col + consumed as isize - synthetic as isize),
+                );
+            }
+            cur.consume();
+            nested_fence_attachment -= 1;
+            continue;
+        }
         if strip_cols > 0
             && matches!(line.as_bytes().first(), Some(b'`' | b'~'))
             && cur.pos > 0
@@ -18682,10 +18708,20 @@ fn collect_indented_block_mapped_with_columns(
         // consumed and dropped - "as if the marker line had been a comment" -
         // rather than handed to the nested parse, where it would end the item
         // and cost the lazy fold the same document without it still has.
+        // A fence in the marker-line ladder keeps a valid `+` for its child.
+        let attaches_nested_fence = indent == nested_fence_marker_col
+            && marker_content.is_some_and(|content| {
+                detect_fence_open(innermost_marker_content(content)).is_some()
+            })
+            && cur.lines.line(cur.pos + 1).is_some_and(|next| {
+                attaches_flush_left(cur.source_col(cur.pos + 1), Some(&next))
+                    && !is_blank_line(next)
+            });
         if strip_cols > 0
             && indent == strip_cols
             && trim_ascii(line) == "+"
             && marker_colon.is_none()
+            && !attaches_nested_fence
         {
             if marker_is_definition_term && marker_definition_has_description {
                 lines.push(String::new());
@@ -18697,6 +18733,17 @@ fn collect_indented_block_mapped_with_columns(
             }
             cur.consume();
             continue;
+        }
+        if trim_ascii(line) == "+" && attaches_nested_fence {
+            nested_fence_attachment = cur.lines.line(cur.pos + 1).map_or(0, |next| {
+                if trim_ascii_start(next) == "~~~" {
+                    2
+                } else if line_starts_paragraph(next) && !item_block_opener(next) {
+                    1
+                } else {
+                    0
+                }
+            });
         }
         // A marker that attaches no block leaves the open fence unchanged.
         // Its following blank or indented lines remain fence payload (SS17 L3).
