@@ -4,6 +4,79 @@
 use carve::{to_carve, to_html};
 
 #[test]
+fn definitions_stay_above_markers_in_extension_containers() {
+    use carve::{BlockExtension, BlockNode, Comment, Div, ExtensionCarrier, Pos};
+
+    let marker = || {
+        BlockNode::Comment(Comment {
+            block: false,
+            delimited: false,
+            content: "#region r".into(),
+            pos: Some(Pos {
+                start_line: 4,
+                end_line: 4,
+                ..Pos::default()
+            }),
+        })
+    };
+    for container in [
+        BlockNode::ExtensionCarrier(ExtensionCarrier {
+            attrs: None,
+            name: "test".into(),
+            children: vec![marker()],
+            summary: None,
+            label: None,
+            pos: Some(Pos {
+                start_line: 3,
+                end_line: 4,
+                ..Pos::default()
+            }),
+        }),
+        BlockNode::BlockExtension(BlockExtension {
+            name: "test.region".into(),
+            version: None,
+            fallback: Box::new(BlockNode::Div(Div {
+                attrs: None,
+                label: None,
+                children: vec![marker()],
+                pos: None,
+            })),
+            payload: None,
+            attrs: None,
+            pos: Some(Pos {
+                start_line: 3,
+                end_line: 4,
+                ..Pos::default()
+            }),
+        }),
+    ] {
+        let mut doc = carve::parse("[ref]: /u\n\nSee [it][ref].\n");
+        for child in &mut doc.children {
+            match child {
+                BlockNode::LinkReferenceDefinition(def) => {
+                    def.pos = Some(Pos {
+                        start_line: 1,
+                        end_line: 1,
+                        ..Pos::default()
+                    })
+                }
+                BlockNode::Paragraph(paragraph) => {
+                    paragraph.pos = Some(Pos {
+                        start_line: 6,
+                        end_line: 6,
+                        ..Pos::default()
+                    })
+                }
+                _ => {}
+            }
+        }
+        doc.children.insert(0, container);
+        let rendered = carve::render_carve(&doc).unwrap();
+        assert!(rendered.starts_with("[ref]: /u\n"), "{rendered:?}");
+    }
+}
+
+#[test]
 fn fmt_writes_the_region_marker_fixture_bytes() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/region-marker-fmt.json")).unwrap();

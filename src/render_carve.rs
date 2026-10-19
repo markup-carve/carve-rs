@@ -1982,6 +1982,10 @@ fn is_region_marker(block: &BlockNode) -> bool {
     let BlockNode::Comment(comment) = block else {
         return false;
     };
+    is_region_marker_comment(comment)
+}
+
+fn is_region_marker_comment(comment: &Comment) -> bool {
     if comment.block || comment.delimited {
         return false;
     }
@@ -2037,20 +2041,144 @@ fn leading_attribute_lines(block: &BlockNode, rendered: &str) -> usize {
         .count()
 }
 
-/// CARVE-P11-073 (c): the start line of the last region marker in the tree,
-/// footnote bodies included.
+/// CARVE-P11-073 (c): find the last marker across blocks and inlines.
 fn last_region_marker_line(doc: &Document) -> Option<usize> {
-    let mut last: Option<usize> = None;
-    let mut visit = |block: &BlockNode| {
-        if is_region_marker(block) {
-            if let Some(pos) = block_pos(block) {
-                last = Some(last.map_or(pos.start_line, |line| line.max(pos.start_line)));
+    enum Node<'a> {
+        Block(&'a BlockNode),
+        Inline(&'a InlineNode),
+    }
+    fn blocks<'a>(stack: &mut Vec<Node<'a>>, nodes: &'a [BlockNode]) {
+        stack.extend(nodes.iter().map(Node::Block));
+    }
+    fn inlines<'a>(stack: &mut Vec<Node<'a>>, nodes: &'a [InlineNode]) {
+        stack.extend(nodes.iter().map(Node::Inline));
+    }
+    fn optional_inlines<'a>(stack: &mut Vec<Node<'a>>, nodes: &'a Option<Vec<InlineNode>>) {
+        if let Some(nodes) = nodes {
+            inlines(stack, nodes);
+        }
+    }
+    fn table<'a>(stack: &mut Vec<Node<'a>>, table: &'a Table) {
+        optional_inlines(stack, &table.caption);
+        optional_inlines(stack, &table.short_caption);
+        for row in &table.rows {
+            for cell in &row.cells {
+                inlines(stack, &cell.children);
+                if let Some(nodes) = &cell.blocks {
+                    blocks(stack, nodes);
+                }
             }
         }
-    };
-    crate::includes::walk_blocks(&doc.children, &mut visit);
-    for blocks in doc.footnote_defs.values() {
-        crate::includes::walk_blocks(blocks, &mut visit);
+    }
+    let mut stack = Vec::new();
+    blocks(&mut stack, &doc.children);
+    for body in doc.footnote_defs.values() {
+        blocks(&mut stack, body);
+    }
+    let mut last: Option<usize> = None;
+    while let Some(node) = stack.pop() {
+        match node {
+            Node::Block(block) => {
+                if let BlockNode::Comment(comment) = block {
+                    if is_region_marker_comment(comment) {
+                        if let Some(pos) = &comment.pos {
+                            last =
+                                Some(last.map_or(pos.start_line, |line| line.max(pos.start_line)));
+                        }
+                    }
+                }
+                match block {
+                    BlockNode::Heading(n) => inlines(&mut stack, &n.children),
+                    BlockNode::Paragraph(n) => inlines(&mut stack, &n.children),
+                    BlockNode::List(n) => {
+                        for item in &n.items {
+                            blocks(&mut stack, &item.children);
+                        }
+                    }
+                    BlockNode::BlockQuote(n) => blocks(&mut stack, &n.children),
+                    BlockNode::Table(n) => table(&mut stack, n),
+                    BlockNode::Admonition(n) => {
+                        optional_inlines(&mut stack, &n.title);
+                        blocks(&mut stack, &n.children);
+                    }
+                    BlockNode::Directive(n) => {
+                        optional_inlines(&mut stack, &n.title);
+                        blocks(&mut stack, &n.children);
+                    }
+                    BlockNode::Div(n) => blocks(&mut stack, &n.children),
+                    BlockNode::Section(n) => blocks(&mut stack, &n.children),
+                    BlockNode::LineBlock(n) => blocks(&mut stack, &n.children),
+                    BlockNode::DefinitionList(n) => {
+                        for item in &n.items {
+                            for term in &item.terms {
+                                inlines(&mut stack, &term.children);
+                            }
+                            for definition in &item.definitions {
+                                blocks(&mut stack, &definition.children);
+                            }
+                        }
+                    }
+                    BlockNode::Figure(n) => {
+                        inlines(&mut stack, &n.caption);
+                        optional_inlines(&mut stack, &n.short_caption);
+                        match n.target.as_ref() {
+                            FigureTarget::BlockQuote(t) => blocks(&mut stack, &t.children),
+                            FigureTarget::Table(t) => table(&mut stack, t),
+                            FigureTarget::Paragraph(t) => inlines(&mut stack, &t.children),
+                            FigureTarget::Image(_) | FigureTarget::CodeBlock(_) => {}
+                        }
+                    }
+                    BlockNode::FigureGroup(n) => {
+                        blocks(&mut stack, &n.children);
+                        optional_inlines(&mut stack, &n.caption);
+                    }
+                    BlockNode::CitationDefinition(n) => inlines(&mut stack, &n.children),
+                    BlockNode::BlockExtension(n) => stack.push(Node::Block(&n.fallback)),
+                    BlockNode::ExtensionCarrier(n) => {
+                        blocks(&mut stack, &n.children);
+                        optional_inlines(&mut stack, &n.summary);
+                    }
+                    _ => {}
+                }
+            }
+            Node::Inline(inline) => {
+                if let InlineNode::Comment(comment) = inline {
+                    if is_region_marker_comment(comment) {
+                        if let Some(pos) = &comment.pos {
+                            last =
+                                Some(last.map_or(pos.start_line, |line| line.max(pos.start_line)));
+                        }
+                    }
+                }
+                match inline {
+                    InlineNode::Emphasis(n) => inlines(&mut stack, &n.children),
+                    InlineNode::Link(n) => inlines(&mut stack, &n.children),
+                    InlineNode::Span(n) => inlines(&mut stack, &n.children),
+                    InlineNode::Extension(n) => inlines(&mut stack, &n.children),
+                    InlineNode::Ruby(n) => {
+                        for pair in &n.pairs {
+                            inlines(&mut stack, &pair.base);
+                            inlines(&mut stack, &pair.annotation);
+                        }
+                    }
+                    InlineNode::CitationGroup(n) => {
+                        for item in &n.items {
+                            optional_inlines(&mut stack, &item.prefix);
+                            optional_inlines(&mut stack, &item.locator);
+                            optional_inlines(&mut stack, &item.suffix);
+                        }
+                    }
+                    InlineNode::Footnote(n) => optional_inlines(&mut stack, &n.inline),
+                    InlineNode::CriticInsert(n) => inlines(&mut stack, &n.children),
+                    InlineNode::CriticDelete(n) => inlines(&mut stack, &n.children),
+                    InlineNode::CriticSubstitute(n) => {
+                        inlines(&mut stack, &n.old);
+                        inlines(&mut stack, &n.new);
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
     last
 }
