@@ -14863,7 +14863,9 @@ fn parse_list(
         if blank_run_before >= 3 {
             break;
         }
-        if pending_blank {
+        if pending_blank
+            || (!items.is_empty() && cur.pos > 0 && is_blank_line(cur.lines.at(cur.pos - 1)))
+        {
             tight = false;
             pending_blank = false;
         }
@@ -16308,6 +16310,9 @@ fn sublist_source_loosens_outer_item(source: &str) -> bool {
         return false;
     };
     let mut prev_blank = false;
+    let mut fence: Option<(FenceOpen, usize)> = None;
+    let mut after_fence = false;
+    let mut inline_fence = None;
     for (i, line) in lines.iter().enumerate() {
         if is_blank_line(line) {
             prev_blank = true;
@@ -16317,6 +16322,51 @@ fn sublist_source_loosens_outer_item(source: &str) -> bool {
             continue;
         }
         let indent = indent_columns(line);
+        if let Some((open, column)) = fence {
+            if indent >= column {
+                if is_fence_close(trim_ascii_start(line), open) {
+                    fence = None;
+                    after_fence = true;
+                }
+                prev_blank = false;
+                continue;
+            }
+            fence = None;
+            after_fence = true;
+        }
+        let inline_closer = inline_fence
+            .is_some_and(|open| indent > 0 && is_fence_close(trim_ascii_start(line), open));
+        if inline_closer {
+            inline_fence = None;
+        }
+        let candidate = detect_fence_open(trim_ascii_start(line));
+        let rejected_after_marker = candidate.is_some_and(|open| {
+            i > 0
+                && !prev_blank
+                && !after_fence
+                && marker_content_col(lines[i - 1]).is_some()
+                && !lines[i + 1..].iter().any(|next| {
+                    indent_columns(next) >= indent && is_fence_close(trim_ascii_start(next), open)
+                })
+        });
+        if rejected_after_marker {
+            inline_fence = candidate;
+        }
+        if let Some(open) = candidate.filter(|_| !inline_closer && !rejected_after_marker) {
+            // A run below the child column opens a block owned by the outer item.
+            fence = Some((
+                open,
+                if indent < inner_content_col {
+                    0
+                } else {
+                    indent
+                },
+            ));
+            prev_blank = false;
+            after_fence = false;
+            continue;
+        }
+        after_fence = false;
         // A marker at the sub-list's own column opens a sibling item or a
         // sibling sub-list, whose content column then applies (carve-rs#1846).
         if indent == 0 {

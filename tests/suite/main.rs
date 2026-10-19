@@ -7,6 +7,9 @@
 //! A new `tests/*.rs` needs a line here; `registry::every_test_file_is_compiled`
 //! fails until it has one.
 
+#[path = "../a_fence_run_that_dedents_out_of_a_child_keeps_the_outer_item_tight.rs"]
+mod a_fence_run_that_dedents_out_of_a_child_keeps_the_outer_item_tight;
+
 #[path = "../raw_payload_termination.rs"]
 mod raw_payload_termination;
 
