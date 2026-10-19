@@ -15865,10 +15865,8 @@ fn marker_content_is_captioned_inline(
     if !content.starts_with("$$`") && !content.starts_with("![") {
         return false;
     }
-    let caption_at = match cur.lines.line(cur.pos) {
-        Some(next) if is_blank_line(next) => cur.pos + 1,
-        _ => cur.pos,
-    };
+    let blank_before_caption = cur.lines.line(cur.pos).is_some_and(is_blank_line);
+    let caption_at = cur.pos + usize::from(blank_before_caption);
     let captioned = cur.lines.line(caption_at).is_some_and(|line| {
         indent_columns(line) == content_col
             && caption_content(&slice_columns(line, content_col, false)).is_some()
@@ -15879,7 +15877,7 @@ fn marker_content_is_captioned_inline(
     let inline = parse_inline_with_options(content, options);
     inline.len() == 1
         && match &inline[0] {
-            InlineNode::Image(_) => true,
+            InlineNode::Image(_) => blank_before_caption,
             InlineNode::Math(math) => math.display,
             _ => false,
         }

@@ -108,6 +108,13 @@ fn an_image_after_a_heading_keeps_its_caption_tight() {
 }
 
 #[test]
+fn an_adjacent_image_caption_does_not_absorb_the_following_fence() {
+    let html = to_html("- ![a](i)\n  ^ cap\n  ```\n  b\n y\n  ```\n");
+    assert!(html.contains("<figcaption>cap</figcaption>"), "{html}");
+    assert!(html.contains("<pre><code>b\n</code></pre>"), "{html}");
+}
+
+#[test]
 fn two_blanks_detach_figure_group_caption() {
     let html = to_html("- ::: figure\n  ![a](b.png)\n  :::\n\n\n  ^ cap\n- c\n");
     assert!(!html.contains("<figcaption>"), "{html}");
