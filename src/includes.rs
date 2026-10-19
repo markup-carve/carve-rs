@@ -2607,11 +2607,16 @@ fn expand_child(d: &Directive, state: &mut State<'_>, inline: bool) -> Option<Ex
     }
     let report = if state.opts.collect_included {
         if d.code.is_some() {
+            // Lint checks the content the renderer converts, not the raw bytes.
+            let payload = match children.first()? {
+                BlockNode::CodeBlock(code) => code.content.clone(),
+                _ => source.clone(),
+            };
             Some(AcceptedInclude::Code {
                 file: id.clone(),
                 included_by: reach.clone(),
                 block: Box::new(children.first()?.clone()),
-                payload: source.clone(),
+                payload,
             })
         } else {
             let selected_lines = d.section.as_ref().and_then(|_| {

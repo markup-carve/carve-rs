@@ -67,6 +67,48 @@ fn no_root_keeps_lint_output_unchanged() {
     );
 }
 
+#[test]
+fn lint_normalizes_included_delimited_table_line_endings() {
+    let cases = [
+        ("crlf", "a\r\n\"x\"\r\n", None),
+        ("cr_only_quoted", "\"x\"\r", None),
+        ("crlf_quoted_lf", "a\r\n\"x\ny\"\r\n", None),
+        (
+            "cr_only_wide",
+            "a,b\rc,d\re,f,g\r",
+            Some(("delimited-table-wide-row", 3)),
+        ),
+        (
+            "lf_wide",
+            "a,b\nc,d\ne,f,g\n",
+            Some(("delimited-table-wide-row", 3)),
+        ),
+    ];
+    for (name, content, expected) in cases {
+        let resolver = |path: &str, _: &IncludeContext<'_>| {
+            (path == "p.csv")
+                .then(|| IncludeResolved::from(content))
+                .ok_or(IncludeDenial::Unresolved)
+        };
+        let options = Options::new().with_lint_includes(
+            IncludeOptions::new()
+                .with_resolver(&resolver)
+                .with_source_path("doc.crv")
+                .collecting_included(),
+        );
+        let warnings = lint_carve_with_options("{table}\n{{ p.csv @code:csv }}\n", &options);
+        let actual: Vec<_> = warnings
+            .iter()
+            .map(|warning| (warning.rule, warning.line))
+            .collect();
+        assert_eq!(
+            actual.as_slice(),
+            expected.as_slice(),
+            "{name}: {warnings:?}"
+        );
+    }
+}
+
 #[cfg(feature = "fs")]
 #[test]
 fn cli_reports_included_malformed_record() {
