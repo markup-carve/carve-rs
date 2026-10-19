@@ -4,6 +4,7 @@
 //! over each block's text. No backtracking.
 
 pub(crate) mod delimited_table;
+mod grapheme_extender_ranges;
 mod inline_positions;
 mod quote_state;
 mod reference_resolution;
@@ -29160,10 +29161,6 @@ pub(crate) fn followed_by_grapheme_extender(bytes: &[u8], at: usize) -> bool {
     if !bytes.get(at).is_some_and(|byte| !byte.is_ascii()) {
         return false;
     }
-    static EXTENDER: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let pattern = EXTENDER.get_or_init(|| {
-        regex::Regex::new(r"\A[\p{Mn}\p{Mc}\p{Me}\u{FE00}-\u{FE0F}\u{200D}]").unwrap()
-    });
     let width = match bytes[at] {
         0xC0..=0xDF => 2,
         0xE0..=0xEF => 3,
@@ -29173,7 +29170,41 @@ pub(crate) fn followed_by_grapheme_extender(bytes: &[u8], at: usize) -> bool {
     bytes
         .get(at..at + width)
         .and_then(|first| std::str::from_utf8(first).ok())
-        .is_some_and(|first| pattern.is_match(first))
+        .and_then(|first| first.chars().next())
+        .is_some_and(|c| {
+            let value = c as u32;
+            grapheme_extender_ranges::EXTENDER
+                .binary_search_by(|&(start, end)| {
+                    if end < value {
+                        std::cmp::Ordering::Less
+                    } else if start > value {
+                        std::cmp::Ordering::Greater
+                    } else {
+                        std::cmp::Ordering::Equal
+                    }
+                })
+                .is_ok()
+        })
+}
+
+#[cfg(test)]
+mod grapheme_extender_tests {
+    use super::followed_by_grapheme_extender;
+
+    #[test]
+    fn extender_matches_regex_for_every_unicode_scalar() {
+        let regex = regex::Regex::new(r"\A[\p{Mn}\p{Mc}\p{Me}\u{FE00}-\u{FE0F}\u{200D}]").unwrap();
+        for c in (0..=0x10ffff).filter_map(char::from_u32) {
+            let mut buffer = [0; 4];
+            let value = c.encode_utf8(&mut buffer);
+            assert_eq!(
+                followed_by_grapheme_extender(value.as_bytes(), 0),
+                regex.is_match(value),
+                "U+{:04X}",
+                c as u32
+            );
+        }
+    }
 }
 
 fn decorated_braced_opener(bytes: &[u8], open: usize) -> bool {
