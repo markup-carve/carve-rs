@@ -98,15 +98,15 @@ fn foreign_imports_keep_explicit_empty_destinations() {
 }
 
 #[test]
-fn markdown_autolink_brackets_keep_encoded_destinations() {
+fn markdown_autolink_brackets_keep_literal_destinations() {
     for (source, destination) in [
         (
             "[foo<https://example.com/?search=](uri)>\n",
-            "https://example.com/?search=%5D(uri)",
+            "https://example.com/?search=](uri)",
         ),
         (
             "[foo<https://example.com/?search=][ref]>\n\n[ref]: /uri\n",
-            "https://example.com/?search=%5D%5Bref%5D",
+            "https://example.com/?search=][ref]",
         ),
     ] {
         let document = markdown_to_ast(source);
@@ -117,7 +117,12 @@ fn markdown_autolink_brackets_keep_encoded_destinations() {
         );
         let converted = carve::migrate_markdown(source);
         assert!(to_html(&converted.value).contains(&expected), "{source}");
-        assert!(converted.value.contains("search=\\]"), "{source}");
+        assert!(
+            converted
+                .value
+                .starts_with("[foo<https://example.com/?search=]"),
+            "{source}"
+        );
     }
     let unicode = "<https://example.com/ä>";
     assert_eq!(carve::migrate_markdown(unicode).value.trim(), unicode);

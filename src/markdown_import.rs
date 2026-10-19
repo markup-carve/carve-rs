@@ -2564,13 +2564,7 @@ impl Builder {
             } => Frame::Link {
                 href: {
                     let href = if matches!(link_type, LinkType::Autolink | LinkType::Email) {
-                        let written =
-                            markdown_autolink_destination(&dest_url, link_type == LinkType::Email);
-                        if source.contains('\\') || source.contains("](") || source.contains("][") {
-                            written.replace('[', "%5B").replace(']', "%5D")
-                        } else {
-                            written
-                        }
+                        markdown_autolink_destination(&dest_url, link_type == LinkType::Email)
                     } else {
                         markdown_destination(&dest_url, false)
                     };

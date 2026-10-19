@@ -53,3 +53,94 @@ fn markdown_autolinks_outside_carve_grammar_stay_links() {
         );
     }
 }
+
+#[test]
+fn markdown_autolink_fallback_keeps_literal_destination_brackets() {
+    use carve::{migrate_markdown, HtmlImportSeverity, MigrationConfidence, MigrationFidelity};
+
+    let cases = [
+        (
+            "<https://example.com/\\[\\>\n",
+            "[https://example.com/\\\\\\[\\\\](https://example.com/%5C[%5C)\n",
+            &["markdown-paragraph", "markdown-autolink"][..],
+        ),
+        (
+            "<https://e.com/a\\b>\n",
+            "[https://e.com/a\\\\b](https://e.com/a%5Cb)\n",
+            &["markdown-paragraph", "markdown-autolink"],
+        ),
+        (
+            "<https://e.com/a`b>\n",
+            "[https://e.com/a\\`b](https://e.com/a%60b)\n",
+            &["markdown-paragraph", "markdown-autolink"],
+        ),
+        (
+            "<https://e.com/a[b]>\n",
+            "<https://e.com/a[b]>\n",
+            &["markdown-paragraph", "markdown-autolink"],
+        ),
+        (
+            "[a](<x[y]>)\n",
+            "[a](x[y])\n",
+            &["markdown-paragraph", "markdown-link"],
+        ),
+        (
+            "[a](<x y>)\n",
+            "[a](x%20y)\n",
+            &["markdown-paragraph", "markdown-link"],
+        ),
+        (
+            "see https://example.com/[a]b here\n",
+            "see [https://example.com/[a]b](https://example.com/%5Ba%5Db) here\n",
+            &["markdown-paragraph", "markdown-bare-autolink"],
+        ),
+        (
+            "https://e.com/a]b\n",
+            "[https://e.com/a\\]b](https://e.com/a%5Db)\n",
+            &["markdown-paragraph", "markdown-bare-autolink"],
+        ),
+    ];
+    for (source, expected, codes) in cases {
+        let result = migrate_markdown(source);
+        assert_eq!(result.value, expected, "{source}");
+        let actual: Vec<_> = result
+            .report
+            .diagnostics
+            .iter()
+            .map(|row| row.code.as_str())
+            .collect();
+        assert_eq!(actual, codes, "{source}");
+        for row in &result.report.diagnostics {
+            assert_eq!(row.path.as_deref(), Some("line:1"), "{source}");
+            assert_eq!(row.confidence, MigrationConfidence::Exact, "{source}");
+            assert_eq!(row.severity, HtmlImportSeverity::Info, "{source}");
+            assert_eq!(
+                row.fidelity,
+                if matches!(row.code.as_str(), "markdown-paragraph" | "markdown-link") {
+                    MigrationFidelity::Preserved
+                } else {
+                    MigrationFidelity::Normalized
+                },
+                "{source}"
+            );
+        }
+    }
+}
+
+#[test]
+fn markdown_autolink_fallback_keeps_table_pipe_encoded() {
+    let source = "| URL |\n| --- |\n| <https://e.com/a\\|b> |\n";
+    let result = carve::migrate_markdown(source);
+    assert!(result.value.contains("%7C"), "{}", result.value);
+}
+
+#[test]
+fn markdown_bracketed_autolink_keeps_its_angle_form() {
+    for source in [
+        "[foo<https://example.com/?search=](uri)>\n",
+        "a [b <https://e.com/]> c\n",
+        "<https://e.com/a[b> c](/u)\n",
+    ] {
+        assert_eq!(carve::migrate_markdown(source).value, source);
+    }
+}
