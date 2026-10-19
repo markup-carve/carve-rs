@@ -30,6 +30,68 @@ fn bbcode_quote_fields_are_reported_at_source_lines() {
     }));
 }
 
+/// The spec's `bbcode-quote-attribution-*` importer-fidelity rows, replayed with their messages.
+#[test]
+fn the_spec_quote_attribution_fixtures_import_as_recorded() {
+    let manifest: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/spec/tests/importer-fidelity/manifest.json"
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    let cases: Vec<_> = manifest["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|case| {
+            case["id"]
+                .as_str()
+                .is_some_and(|id| id.starts_with("bbcode-quote-attribution-"))
+        })
+        .collect();
+    assert!(!cases.is_empty(), "the pinned spec carries the fixtures");
+    for case in cases {
+        let id = case["id"].as_str().unwrap();
+        let result = migrate_bbcode(case["input"].as_str().unwrap()).unwrap();
+        assert_eq!(
+            result.value,
+            case["expected"]["output"].as_str().unwrap(),
+            "{id}"
+        );
+        let expected = case["expected"]["diagnostics"].as_array().unwrap();
+        let rows: Vec<_> = result
+            .report
+            .diagnostics
+            .iter()
+            .zip(
+                expected
+                    .iter()
+                    .chain(std::iter::repeat(&serde_json::Value::Null)),
+            )
+            .map(|(row, want)| {
+                (
+                    row.code.to_string(),
+                    row.path.clone(),
+                    want["message"].as_str().map(|_| row.message.clone()),
+                )
+            })
+            .collect();
+        let wanted: Vec<_> = expected
+            .iter()
+            .map(|want| {
+                (
+                    want["code"].as_str().unwrap().to_string(),
+                    want["path"].as_str().map(str::to_string),
+                    want["message"].as_str().map(str::to_string),
+                )
+            })
+            .collect();
+        assert_eq!(rows, wanted, "{id}");
+    }
+}
+
 #[test]
 fn bbcode_quote_reports_every_replaced_attribution_part() {
     let source = "[quote=\"bob\" name=\"alice\" foo=bar name=\"carol\" stray]q[/quote]";
@@ -56,6 +118,24 @@ fn bbcode_quote_reports_every_replaced_attribution_part() {
     assert!(losses
         .iter()
         .all(|row| row.path.as_deref() == Some("line:1")));
+}
+
+#[test]
+fn bbcode_quote_groups_only_adjacent_bare_text_drops() {
+    let source = "[quote=\"bob\" name=\"alice\" foo=bar stray words]q[/quote]";
+    let result = migrate_bbcode(source).unwrap();
+    let messages: Vec<_> = result
+        .report
+        .diagnostics
+        .iter()
+        .filter(|row| row.code == "bbcode-quote-field-dropped")
+        .map(|row| row.message.as_str())
+        .collect();
+    assert_eq!(messages, [
+        "Dropped the unnamed quote attribution text \"bob\", which an explicit name= replaced.",
+        "Dropped the quote attribution field foo.",
+        "Dropped the unnamed quote attribution text \"stray words\", which an explicit name= replaced.",
+    ]);
 }
 
 #[test]

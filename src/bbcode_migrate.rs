@@ -120,6 +120,8 @@ fn escape_text(source: &str) -> Result<String, BbcodeImportError> {
             r"(?is)\[(?:c|icode)\].*?\[/(?:c|icode)\]",
             r"(?is)\[url\].*?\[/url\]",
             r"(?is)\[img(?:=[^\]]*)?\].*?\[/img\]",
+            // A quote opener with its fields after a space is a tag too.
+            r"(?i)\[quote [^\]]*\]",
             r"(?i)\[/?[a-z][a-z0-9]*(?:=[^\]]*)?\]",
             r"\[\*\]",
         ],
@@ -571,13 +573,16 @@ fn as_later_passes_leave_it(text: &str) -> (String, Vec<usize>) {
     let mut copy = String::with_capacity(text.len());
     let mut origin = Vec::with_capacity(text.len() + 1);
     let mut from = 0;
-    for caps in re(r"(?i)\[(/?)(\*|[a-z][a-z0-9]*)(=[^\]\n]*)?\]").captures_iter(text) {
+    // The second branch is a quote opener with its fields after a space (`[quote name="bob"]`).
+    for caps in re(r"(?i)\[(/?)(\*|[a-z][a-z0-9]*)(=[^\]\n]*)?\]|\[(quote)( [^\]\n]*)\]")
+        .captures_iter(text)
+    {
         let whole = caps.get(0).expect("group 0 always matches");
         let at = whole.start();
         if at > 0 && text.as_bytes()[at - 1] == b'\\' {
             continue;
         }
-        let removed = !caps[1].is_empty() || caps.get(3).is_some();
+        let removed = caps.get(4).is_some() || !caps[1].is_empty() || caps.get(3).is_some();
         if !removed && !is_later_block_tag(&caps[2]) {
             continue;
         }
@@ -794,14 +799,6 @@ fn quote_block(content: &str, author: Option<&str>) -> String {
     }
 }
 
-fn take_named(remaining: &mut String, name: &str) -> Option<String> {
-    let pattern = re(&format!(r#"(?i)\b{name}=["']([^"']+)["']"#));
-    let caps = pattern.captures(remaining)?;
-    let value = caps.get(1)?.as_str().to_string();
-    *remaining = pattern.replace(remaining, "").into_owned();
-    Some(value)
-}
-
 /// phpBB stores `time` as Unix seconds; 9 to 11 digits is that, a shorter number a clock value.
 fn unix_seconds_date(value: &str) -> Option<String> {
     if !(9..=11).contains(&value.len()) || !value.bytes().all(|byte| byte.is_ascii_digit()) {
@@ -831,89 +828,240 @@ pub(crate) struct DroppedQuoteField {
     pub line: usize,
 }
 
-fn format_attribution_with_losses(source: &str) -> (String, Vec<(String, bool)>) {
-    let mut remaining = source.trim().to_string();
-    let mut dropped = Vec::new();
-    let mut id = None;
-    let leading_id = re(r#"^["']([0-9]+)["']"#);
-    if let Some(caps) = leading_id.captures(&remaining) {
-        id = Some(caps[1].to_string());
-        remaining = remaining[caps.get(0).expect("leading id").end()..]
-            .trim()
-            .to_string();
-    } else {
-        let named = re(r#"(?i)\b(?:post_id|id)=["']?([0-9]+)["']?"#);
-        if let Some(caps) = named.captures(&remaining) {
-            id = Some(caps[1].to_string());
-            remaining = named.replacen(&remaining, 1, "").into_owned();
+enum AttributionPart {
+    Field { key: String, value: String },
+    Text { text: String, quoted: bool },
+}
+
+/// ASCII whitespace only, so every engine splits an attribution at the same places.
+fn is_attribution_space(byte: u8) -> bool {
+    matches!(byte, b' ' | b'\t' | b'\n' | b'\r' | b'\x0c')
+}
+
+/// Split an attribution into `key=value` fields, quoted texts and bare words.
+fn attribution_parts(attribution: &str) -> Vec<AttributionPart> {
+    let bytes = attribution.as_bytes();
+    let run_end = |from: usize| {
+        let mut at = from;
+        while at < bytes.len() && !is_attribution_space(bytes[at]) {
+            at += 1;
         }
-    }
-    let name = take_named(&mut remaining, "name");
-    let mut datetime = take_named(&mut remaining, "date");
-    let time = re(r#"(?i)\btime=(?:["']([^"']+)["']|([0-9]+)(?:\s|$))"#);
-    if let Some(caps) = time.captures(&remaining) {
-        let value = caps
-            .get(1)
-            .or_else(|| caps.get(2))
-            .expect("time value")
-            .as_str()
-            .to_string();
-        datetime = Some(match unix_seconds_date(&value) {
-            Some(date) => date,
-            None => match datetime {
-                Some(date) => format!("{date} {value}"),
-                None => value,
-            },
+        at
+    };
+    let quoted_end = |from: usize| -> Option<usize> {
+        let quote = *bytes.get(from)?;
+        if quote != b'"' && quote != b'\'' {
+            return None;
+        }
+        bytes[from + 1..]
+            .iter()
+            .position(|&byte| byte == quote)
+            .map(|offset| from + 1 + offset)
+    };
+    let key = re(r"^[A-Za-z_][A-Za-z0-9_-]*=");
+    let mut parts = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if is_attribution_space(bytes[i]) {
+            i += 1;
+            continue;
+        }
+        if let Some(found) = key.find(&attribution[i..]) {
+            let from = i + found.end();
+            let name = attribution[i..from - 1].to_string();
+            if let Some(close) = quoted_end(from) {
+                parts.push(AttributionPart::Field {
+                    key: name,
+                    value: attribution[from + 1..close].to_string(),
+                });
+                i = close + 1;
+            } else {
+                let to = run_end(from);
+                parts.push(AttributionPart::Field {
+                    key: name,
+                    value: attribution[from..to].to_string(),
+                });
+                i = to;
+            }
+            continue;
+        }
+        if let Some(close) = quoted_end(i) {
+            parts.push(AttributionPart::Text {
+                text: attribution[i + 1..close].to_string(),
+                quoted: true,
+            });
+            i = close + 1;
+            continue;
+        }
+        let to = run_end(i);
+        parts.push(AttributionPart::Text {
+            text: attribution[i..to].to_string(),
+            quoted: false,
         });
-        remaining = time.replacen(&remaining, 1, " ").into_owned();
+        i = to;
     }
-    let user_id = re(r#"(?i)\buser_id=(?:"[^"]*"|'[^']*'|\S+)"#);
-    for caps in user_id.captures_iter(&remaining) {
-        dropped.push((caps[0][..7].to_string(), false));
-    }
-    remaining = user_id.replace_all(&remaining, "").into_owned();
-    let mut fallback = remaining.trim();
-    if fallback.len() >= 2
-        && ((fallback.starts_with('"') && fallback.ends_with('"'))
-            || (fallback.starts_with('\'') && fallback.ends_with('\'')))
-    {
-        fallback = &fallback[1..fallback.len() - 1];
-    }
-    let mut fallback = fallback.to_string();
-    if id.is_none() {
-        if let Some(caps) = re(r"^(.+);([0-9]+)$").captures(&fallback) {
-            id = Some(caps[2].to_string());
-            fallback = caps[1].to_string();
-        }
-    }
-    if name.is_some() && !fallback.is_empty() {
-        let mut rest = fallback.as_str();
-        let quoted = remaining.trim();
-        if quoted.starts_with('"') || quoted.starts_with('\'') {
-            if let Some(end) = quoted[1..].find(&quoted[..1]) {
-                let author = &quoted[1..end + 1];
-                dropped.push((author.to_string(), true));
-                rest = quoted[end + 2..].trim();
+    parts
+}
+
+fn all_ascii_digits(value: &str) -> bool {
+    !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+/// Read a quote attribution into its `name (date) #id` caption and the parts it
+/// drops, in source order. docs/format-bridges.md, "BBCode quote attribution
+/// reading", is the contract.
+fn format_attribution_with_losses(source: &str) -> (String, Vec<(String, bool)>) {
+    let parts = attribution_parts(source);
+    // (source part index, field or text, unnamed)
+    let mut drops: Vec<(usize, String, bool)> = Vec::new();
+    let mut first: std::collections::HashMap<&'static str, (usize, String, String)> =
+        std::collections::HashMap::new();
+    let mut texts: Vec<(usize, String, bool)> = Vec::new();
+    for (index, part) in parts.into_iter().enumerate() {
+        match part {
+            AttributionPart::Text { text, quoted } => {
+                if !text.is_empty() {
+                    texts.push((index, text, quoted));
+                }
+            }
+            AttributionPart::Field { key, value } => {
+                let kind = match key.to_ascii_lowercase().as_str() {
+                    "name" | "author" => Some("name"),
+                    "post_id" => Some("post_id"),
+                    "id" => Some("id"),
+                    "date" => Some("date"),
+                    "time" => Some("time"),
+                    _ => None,
+                };
+                let usable = !value.is_empty()
+                    && (!matches!(kind, Some("post_id" | "id")) || all_ascii_digits(&value));
+                match kind {
+                    Some(kind) if usable && !first.contains_key(kind) => {
+                        first.insert(kind, (index, key, value));
+                    }
+                    _ => drops.push((index, key, false)),
+                }
             }
         }
-        let field = re(r#"\b([A-Za-z_][\w-]*)=(?:"[^"]*"|'[^']*'|\S+)"#);
-        for caps in field.captures_iter(rest) {
-            dropped.push((caps[1].to_string(), false));
+    }
+
+    let leading_id = match texts.first() {
+        Some((0, text, true)) if all_ascii_digits(text) => Some(texts.remove(0)),
+        _ => None,
+    };
+    let mut id = None;
+    if let Some((_, _, value)) = first.get("post_id") {
+        id = Some(value.clone());
+        if let Some((index, key, _)) = first.get("id") {
+            drops.push((*index, key.clone(), false));
         }
-        let unnamed = field.replace_all(rest, "");
-        let unnamed = unnamed.trim();
-        if !unnamed.is_empty() {
-            dropped.push((unnamed.to_string(), true));
+    } else if let Some((_, _, value)) = first.get("id") {
+        id = Some(value.clone());
+    } else if let Some((_, text, _)) = &leading_id {
+        id = Some(text.clone());
+    }
+    // A leading `"9"` that a field outranks is reported under the field it stands for.
+    if let Some((index, _, _)) = &leading_id {
+        if first.contains_key("post_id") || first.contains_key("id") {
+            drops.push((*index, "id".to_string(), false));
         }
     }
-    let mut output = name.unwrap_or(fallback);
-    if let Some(datetime) = datetime {
-        output.push_str(&format!(" ({datetime})"));
+
+    let mut text = texts
+        .iter()
+        .map(|(_, text, _)| text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let mut suffix = None;
+    if id.is_none() {
+        if let Some(caps) = re(r"^(?s)(.+);([0-9]+)$").captures(&text) {
+            id = Some(caps[2].to_string());
+            suffix = Some(format!(";{}", &caps[2]));
+            text = caps[1].to_string();
+        }
+    }
+
+    let name = match first.get("name") {
+        Some((_, _, value)) => {
+            let mut run: Option<(usize, String, usize)> = None;
+            for (index, value, quoted) in &texts {
+                if *quoted {
+                    if let Some((start, words, _)) = run.take() {
+                        drops.push((start, words, true));
+                    }
+                    drops.push((*index, value.clone(), true));
+                } else if let Some((_, words, last)) = &mut run {
+                    if *index == *last + 1 {
+                        words.push(' ');
+                        words.push_str(value);
+                        *last = *index;
+                    } else {
+                        let (start, words, _) =
+                            run.replace((*index, value.clone(), *index)).unwrap();
+                        drops.push((start, words, true));
+                    }
+                } else {
+                    run = Some((*index, value.clone(), *index));
+                }
+            }
+            if let Some((start, words, _)) = run {
+                drops.push((start, words, true));
+            }
+            if let Some(suffix) = suffix {
+                if let Some(last_index) = texts.last().map(|part| part.0) {
+                    if let Some(position) = drops
+                        .iter()
+                        .rposition(|(index, _, unnamed)| *unnamed && *index <= last_index)
+                    {
+                        if drops[position].1.ends_with(&suffix) {
+                            let length = drops[position].1.len() - suffix.len();
+                            drops[position].1.truncate(length);
+                            if drops[position].1.is_empty() {
+                                drops.remove(position);
+                            }
+                        }
+                    }
+                }
+            }
+            value.clone()
+        }
+        None => text,
+    };
+
+    let mut date = first.get("date").map(|(_, _, value)| value.clone());
+    if let Some((_, _, time)) = first.get("time") {
+        date = Some(match unix_seconds_date(time) {
+            Some(day) => {
+                if let Some((index, key, _)) = first.get("date") {
+                    drops.push((*index, key.clone(), false));
+                }
+                day
+            }
+            None => match date {
+                Some(date) => format!("{date} {time}"),
+                None => time.clone(),
+            },
+        });
+    }
+
+    let mut caption = Vec::new();
+    if !name.is_empty() {
+        caption.push(name);
+    }
+    if let Some(date) = date {
+        caption.push(format!("({date})"));
     }
     if let Some(id) = id {
-        output.push_str(&format!(" #{id}"));
+        caption.push(format!("#{id}"));
     }
-    (output.trim().to_string(), dropped)
+    drops.sort_by_key(|(index, _, _)| *index);
+    (
+        caption.join(" "),
+        drops
+            .into_iter()
+            .map(|(_, field, unnamed)| (field, unnamed))
+            .collect(),
+    )
 }
 
 /// Each opening quote tag's attribution with the fields it dropped (field, unnamed).
