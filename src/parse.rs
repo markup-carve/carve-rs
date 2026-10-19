@@ -16341,19 +16341,24 @@ fn sublist_source_loosens_outer_item(source: &str) -> bool {
             inline_fence = None;
         }
         let candidate = detect_fence_open(trim_ascii_start(line));
-        let rejected_after_marker = candidate.is_some_and(|open| {
+        // A child paragraph can continue past its marker before the folded
+        // run appears. The preceding paragraph line has the same claim as the
+        // marker line when no blank separates it from the run.
+        let rejected_in_paragraph = candidate.is_some_and(|open| {
             i > 0
                 && !prev_blank
                 && !after_fence
-                && marker_content_col(lines[i - 1]).is_some()
+                && (marker_content_col(lines[i - 1]).is_some()
+                    || (indent_columns(lines[i - 1]) >= inner_content_col
+                        && !continuation_line_opens_sub_block(lines[i - 1], &lines[i..])))
                 && !lines[i + 1..].iter().any(|next| {
                     indent_columns(next) >= indent && is_fence_close(trim_ascii_start(next), open)
                 })
         });
-        if rejected_after_marker {
+        if rejected_in_paragraph {
             inline_fence = candidate;
         }
-        if let Some(open) = candidate.filter(|_| !inline_closer && !rejected_after_marker) {
+        if let Some(open) = candidate.filter(|_| !inline_closer && !rejected_in_paragraph) {
             // A run below the child column opens a block owned by the outer item.
             fence = Some((
                 open,

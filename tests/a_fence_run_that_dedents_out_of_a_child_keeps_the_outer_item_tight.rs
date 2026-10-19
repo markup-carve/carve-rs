@@ -382,3 +382,23 @@ tail
         .collect();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+// Exact HTML from the fixed carve-js reference for the folded fence runs and controls.
+#[test]
+fn a_folded_child_fence_does_not_hide_the_outer_second_paragraph() {
+    let cases = [
+        ("- outer\n  - head\n     ```\n     a\n  ```\n\n  tail\n", "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"),
+        ("- outer\n  - head\n    more\n    ```\n    a\n   ```\n\n  tail\n", "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\nmore\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"),
+        ("- outer\n  - head\n    ```\n    a\n   ```\n\n  tail\n", "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"),
+        ("- outer\n  - head\n    ~~~\n    a\n   ~~~\n\n  tail\n", "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n~~~\na\n~~~</li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"),
+        ("1. outer\n   - head\n     ```\n     a\n    ```\n\n   tail\n", "<ol>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ol>"),
+        ("> - outer\n>   - head\n>     ```\n>     a\n>    ```\n>\n>   tail\n", "<blockquote>\n  <ul>\n    <li><p>outer</p>\n      <ul>\n        <li>head\n<code>\na\n</code></li>\n      </ul>\n      <p>tail</p>\n    </li>\n  </ul>\n</blockquote>"),
+        ("- outer\n  - head\n     ```\n     a\n   ```\n\n  tail\n", "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"),
+        ("- outer\n  - head\n\n    ```\n    a\n   ```\n\n  tail\n", "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>"),
+        ("- outer\n  - head\n\n    ```\n    a\n  ```\n\n  tail\n", "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>"),
+        ("- outer\n  - head\n    ```\n    a\n    ```\n\n  tail\n", "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"),
+        ("- outer\n  - head\n    ```\n    a\n   ```\n- next\n", "<ul>\n  <li>outer\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n  </li>\n  <li>next</li>\n</ul>"),
+    ];
+    for (source, expected) in cases {
+        assert_eq!(carve::to_html(source), expected, "{source:?}");
+    }
+}
