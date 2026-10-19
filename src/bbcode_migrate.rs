@@ -821,6 +821,10 @@ fn unix_seconds_date(value: &str) -> Option<String> {
 }
 
 fn format_attribution(source: &str) -> String {
+    format_attribution_with_loss(source).0
+}
+
+fn format_attribution_with_loss(source: &str) -> (String, bool) {
     let mut remaining = source.trim().to_string();
     let mut id = None;
     let leading_id = re(r#"^["']([0-9]+)["']"#);
@@ -855,9 +859,9 @@ fn format_attribution(source: &str) -> String {
         });
         remaining = time.replacen(&remaining, 1, " ").into_owned();
     }
-    remaining = re(r#"(?i)\buser_id=(?:"[^"]*"|'[^']*'|\S+)"#)
-        .replace_all(&remaining, "")
-        .into_owned();
+    let user_id = re(r#"(?i)\buser_id=(?:"[^"]*"|'[^']*'|\S+)"#);
+    let dropped_user_id = user_id.is_match(&remaining);
+    remaining = user_id.replace_all(&remaining, "").into_owned();
     let mut fallback = remaining.trim();
     if fallback.len() >= 2
         && ((fallback.starts_with('"') && fallback.ends_with('"'))
@@ -879,7 +883,7 @@ fn format_attribution(source: &str) -> String {
     if let Some(id) = id {
         output.push_str(&format!(" #{id}"));
     }
-    output.trim().to_string()
+    (output.trim().to_string(), dropped_user_id)
 }
 
 fn convert_quotes(text: String) -> String {
@@ -1118,9 +1122,56 @@ pub fn bbcode_to_carve(source: &str) -> Result<String, BbcodeImportError> {
     Ok(restore(text, open, close, &stash))
 }
 
+pub(crate) fn dropped_quote_user_id_lines(source: &str) -> Vec<usize> {
+    let mut visible = source.replace("\r\n", "\n").replace('\r', "\n");
+    for pattern in [
+        r"(?is)\[code(?:=[^\]]*)?\].*?\[/code\]",
+        r"(?is)\[(?:c|icode)\].*?\[/(?:c|icode)\]",
+        r"(?is)\[noparse\].*?\[/noparse\]",
+    ] {
+        let pattern = re(pattern);
+        visible = pattern
+            .replace_all(&visible, |caps: &Captures<'_>| {
+                caps[0]
+                    .chars()
+                    .map(|ch| if ch == '\n' { '\n' } else { ' ' })
+                    .collect::<String>()
+            })
+            .into_owned();
+    }
+    let quote = re(r"(?i)\[quote(?:[= ]([^\]]*))?\]");
+    let mut lines = Vec::new();
+    let mut line = 1;
+    let mut scanned = 0;
+    for caps in quote.captures_iter(&visible) {
+        let matched = caps.get(0).expect("quote match");
+        line += visible[scanned..matched.start()]
+            .bytes()
+            .filter(|byte| *byte == b'\n')
+            .count();
+        scanned = matched.start();
+        if caps
+            .get(1)
+            .is_some_and(|attribution| format_attribution_with_loss(attribution.as_str()).1)
+        {
+            lines.push(line);
+        }
+    }
+    lines
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quote_user_id_detector_matches_attribution() {
+        assert!(format_attribution_with_loss("\"alice\" post_id=12 user_id=3").1);
+        assert_eq!(
+            dropped_quote_user_id_lines("[quote=alice user_id=3]x[/quote]"),
+            vec![1]
+        );
+    }
 
     #[test]
     fn common_tags_convert() {

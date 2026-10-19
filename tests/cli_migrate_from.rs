@@ -98,6 +98,21 @@ fn migrates_bbcode() {
 }
 
 #[test]
+fn reports_dropped_bbcode_quote_user_id() {
+    let (out, report, ok) = run(
+        &["migrate", "--from", "bbcode", "--report", "-"],
+        "[quote=\"alice\" post_id=12 user_id=3]q[/quote]",
+    );
+    assert!(ok, "{report}");
+    assert!(out.contains("^ alice #12"), "{out}");
+    assert!(
+        report.contains("\"code\":\"bbcode-quote-user-id-dropped\""),
+        "{report}"
+    );
+    assert!(report.contains("\"path\":\"line:1\""), "{report}");
+}
+
+#[test]
 fn rejects_an_unknown_source_format() {
     let (_, err, ok) = run(&["migrate", "--from", "rst"], "x");
     assert!(!ok, "an unknown format should fail");

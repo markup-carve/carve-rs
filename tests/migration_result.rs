@@ -4,6 +4,62 @@ use carve::{
 };
 
 #[test]
+fn bbcode_quote_user_ids_are_reported_at_source_lines() {
+    let source =
+        "intro\r\n[quote=\"alice\" post_id=12 user_id=3]q[/quote]\n[quote=bob user_id=4]r[/quote]";
+    let result = migrate_bbcode(source).unwrap();
+    let losses: Vec<_> = result
+        .report
+        .diagnostics
+        .iter()
+        .filter(|row| row.code == "bbcode-quote-user-id-dropped")
+        .collect();
+    assert_eq!(losses.len(), 2);
+    assert_eq!(losses[0].path.as_deref(), Some("line:2"));
+    assert_eq!(losses[1].path.as_deref(), Some("line:3"));
+    assert!(losses.iter().all(|row| {
+        row.fidelity == MigrationFidelity::Dropped && row.confidence == MigrationConfidence::Exact
+    }));
+}
+
+#[test]
+fn bbcode_quote_user_ids_inside_literal_content_are_not_reported() {
+    for source in [
+        "[code][quote=user_id=7]x[/quote][/code]",
+        "[c][quote=user_id=7]x[/icode]",
+        "[noparse][quote=user_id=7]x[/quote][/noparse]",
+        "[quote name=\"a user_id=3\"]x[/quote]",
+    ] {
+        let result = migrate_bbcode(source).unwrap();
+        assert!(!result
+            .report
+            .diagnostics
+            .iter()
+            .any(|row| row.code == "bbcode-quote-user-id-dropped"));
+    }
+    assert!(
+        migrate_bbcode("[url=https://example.test][quote=alice user_id=7]x[/quote][/url]")
+            .unwrap()
+            .report
+            .diagnostics
+            .iter()
+            .any(|row| row.code == "bbcode-quote-user-id-dropped")
+    );
+    for source in [
+        "[url][quote=alice user_id=7]x[/quote][/url]",
+        "[img][quote=alice user_id=7]x[/quote][/img]",
+        "[quote=alice user_id=7]x",
+    ] {
+        assert!(migrate_bbcode(source)
+            .unwrap()
+            .report
+            .diagnostics
+            .iter()
+            .any(|row| row.code == "bbcode-quote-user-id-dropped"));
+    }
+}
+
+#[test]
 fn every_source_format_returns_the_same_result_shape() {
     let markdown = migrate_markdown("**strong**");
     assert_eq!(markdown.value, "*strong*\n");

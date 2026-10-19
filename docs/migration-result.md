@@ -33,6 +33,9 @@ trailing line endings. When the imported text matches and no known loss was
 reported, `literal-text-verified` records preserved/exact evidence. All other
 inputs retain the dropped/fallback `fidelity-unverified` warning.
 
+BBCode reports each dropped phpBB quote `user_id` as
+`bbcode-quote-user-id-dropped`, dropped/exact, at the quote's source line.
+
 Markdown reports each leading `---` block it converts to frontmatter as
 `frontmatter-synthesized`, info/normalized at `line:1`: the content survives
 byte-exact, and the reading of the `---` run was decided - an alternate block

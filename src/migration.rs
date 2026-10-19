@@ -284,12 +284,26 @@ pub fn migrate_djot(source: &str) -> MigrationResult {
 }
 
 pub fn migrate_bbcode(source: &str) -> Result<MigrationResult, BbcodeImportError> {
-    Ok(assessed(
+    let mut result = assessed(
         source,
         bbcode_to_carve(source)?,
         SourceFormat::Bbcode,
         false,
-    ))
+    );
+    result.report.diagnostics.extend(
+        crate::bbcode_migrate::dropped_quote_user_id_lines(source)
+            .into_iter()
+            .map(|line| MigrationDiagnostic {
+                code: "bbcode-quote-user-id-dropped".to_owned(),
+                message: "The BBCode quote user_id cannot be represented in Carve and was dropped."
+                    .to_owned(),
+                severity: HtmlImportSeverity::Warning,
+                fidelity: MigrationFidelity::Dropped,
+                confidence: MigrationConfidence::Exact,
+                path: Some(format!("line:{line}")),
+            }),
+    );
+    Ok(result)
 }
 
 #[cfg(test)]
