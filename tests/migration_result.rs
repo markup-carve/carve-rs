@@ -12,11 +12,12 @@ fn bbcode_quote_user_ids_are_reported_at_source_lines() {
         .report
         .diagnostics
         .iter()
-        .filter(|row| row.code == "bbcode-quote-user-id-dropped")
+        .filter(|row| row.code == "bbcode-quote-field-dropped")
         .collect();
     assert_eq!(losses.len(), 2);
     assert_eq!(losses[0].path.as_deref(), Some("line:2"));
     assert_eq!(losses[1].path.as_deref(), Some("line:3"));
+    assert!(losses.iter().all(|row| row.message.contains("user_id")));
     assert!(losses.iter().all(|row| {
         row.fidelity == MigrationFidelity::Dropped && row.confidence == MigrationConfidence::Exact
     }));
@@ -35,7 +36,7 @@ fn bbcode_quote_user_ids_inside_literal_content_are_not_reported() {
             .report
             .diagnostics
             .iter()
-            .any(|row| row.code == "bbcode-quote-user-id-dropped"));
+            .any(|row| row.code == "bbcode-quote-field-dropped"));
     }
     assert!(
         migrate_bbcode("[url=https://example.test][quote=alice user_id=7]x[/quote][/url]")
@@ -43,7 +44,7 @@ fn bbcode_quote_user_ids_inside_literal_content_are_not_reported() {
             .report
             .diagnostics
             .iter()
-            .any(|row| row.code == "bbcode-quote-user-id-dropped")
+            .any(|row| row.code == "bbcode-quote-field-dropped")
     );
     for source in [
         "[url][quote=alice user_id=7]x[/quote][/url]",
@@ -55,7 +56,7 @@ fn bbcode_quote_user_ids_inside_literal_content_are_not_reported() {
             .report
             .diagnostics
             .iter()
-            .any(|row| row.code == "bbcode-quote-user-id-dropped"));
+            .any(|row| row.code == "bbcode-quote-field-dropped"));
     }
 }
 

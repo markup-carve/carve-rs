@@ -106,7 +106,7 @@ fn reports_dropped_bbcode_quote_user_id() {
     assert!(ok, "{report}");
     assert!(out.contains("^ alice #12"), "{out}");
     assert!(
-        report.contains("\"code\":\"bbcode-quote-user-id-dropped\""),
+        report.contains("\"code\":\"bbcode-quote-field-dropped\""),
         "{report}"
     );
     assert!(report.contains("\"path\":\"line:1\""), "{report}");

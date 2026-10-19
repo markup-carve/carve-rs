@@ -34,7 +34,7 @@ reported, `literal-text-verified` records preserved/exact evidence. All other
 inputs retain the dropped/fallback `fidelity-unverified` warning.
 
 BBCode reports each dropped phpBB quote `user_id` as
-`bbcode-quote-user-id-dropped`, dropped/exact, at the quote's source line.
+`bbcode-quote-field-dropped`, dropped/exact, at the quote's source line.
 
 Markdown reports each leading `---` block it converts to frontmatter as
 `frontmatter-synthesized`, info/normalized at `line:1`: the content survives

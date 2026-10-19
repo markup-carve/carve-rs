@@ -294,7 +294,7 @@ pub fn migrate_bbcode(source: &str) -> Result<MigrationResult, BbcodeImportError
         crate::bbcode_migrate::dropped_quote_user_id_lines(source)
             .into_iter()
             .map(|line| MigrationDiagnostic {
-                code: "bbcode-quote-user-id-dropped".to_owned(),
+                code: "bbcode-quote-field-dropped".to_owned(),
                 message: "The BBCode quote user_id cannot be represented in Carve and was dropped."
                     .to_owned(),
                 severity: HtmlImportSeverity::Warning,
