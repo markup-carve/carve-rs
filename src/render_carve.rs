@@ -1969,6 +1969,10 @@ fn region_marker_adjacent(previous: &BlockNode, block: &BlockNode, rendered: &st
     if !is_region_marker(previous) && !is_region_marker(block) {
         return false;
     }
+    // A collected definition (§7) is written apart, so it is no sibling of the marker.
+    if matches!(block, BlockNode::LinkReferenceDefinition(_)) {
+        return false;
+    }
     // A block a following `%%` line cannot continue, whatever it is spelled as.
     if !matches!(
         previous,
@@ -2016,7 +2020,9 @@ fn region_marker_at_item_marker_column(
         return false;
     }
     let after_a_moved_marker = moved_marker.is_some_and(|moved| std::ptr::eq(moved, previous));
-    if !matches!(previous, BlockNode::Paragraph(_)) && !after_a_moved_marker {
+    if !matches!(previous, BlockNode::Paragraph(_) | BlockNode::BlockImage(_))
+        && !after_a_moved_marker
+    {
         return false;
     }
     let (Some(at), Some(before)) = (block_pos(block), block_pos(previous)) else {
