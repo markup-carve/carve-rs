@@ -66,6 +66,13 @@ A pipe-table `^` or `<` that cannot extend a neighboring cell triggers
 `table-span-marker-blocked` at the marker. The warning explains why the T5 span
 walk left it as a cell of its own.
 
+| Rule | Trigger | Suggested action |
+| --- | --- | --- |
+| `unclosed-code-fence` | A code or raw fence reaches a container boundary, a continuation marker, or the end of the document without a closer | Add a closing fence where the code should stop |
+| `continuation-marker-refused` | A `+` in a list item or definition description is followed by a blank line or the end of the document | Attach a block or delete the `+` |
+
+Both rules warn without an automatic fix.
+
 A bare key one edit from the consumed key its block reads triggers
 `consumed-key-near-miss`: `{tabel}` on a `csv` or `tsv` fence, or `{lose}` on a
 list or definition list. The key stays an ordinary attribute, so the table or

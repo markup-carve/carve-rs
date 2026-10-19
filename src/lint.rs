@@ -260,8 +260,10 @@ pub(crate) fn lint_with_recovery(source: &str, options: &Options<'_>) -> (Vec<Li
     // NOTHING behind - no node, no attrs on a neighbour - which is precisely why
     // §15 A4 needs a diagnostic, and why the parser has to say where it dropped
     // one rather than the linter guessing from the source.
-    let (doc, unattached) = crate::parse::collecting_unattached_block_attrs(|| {
-        parse_with_options(source, &parse_options)
+    let ((doc, unattached), lint_events) = crate::parse::collecting_lint_events(|| {
+        crate::parse::collecting_unattached_block_attrs(|| {
+            parse_with_options(source, &parse_options)
+        })
     });
 
     let element_names = semantic_span_order(options);
@@ -273,6 +275,7 @@ pub(crate) fn lint_with_recovery(source: &str, options: &Options<'_>) -> (Vec<Li
         }
     };
     let mut out = Vec::new();
+    collect_parser_events(source, &doc, &lint_events, &mut out);
     let mut visit = |node_type: &'static str, attrs: &Attrs, pos: Option<Pos>| {
         collect_semantic_attribute_warnings(
             node_type,
@@ -332,6 +335,133 @@ pub(crate) fn lint_with_recovery(source: &str, options: &Options<'_>) -> (Vec<Li
     }
     out.sort_by_key(|w| (w.start, w.end, w.rule));
     (out, recovered_metadata)
+}
+
+fn collect_parser_events(
+    source: &str,
+    doc: &Document,
+    events: &[crate::parse::LintEvent],
+    out: &mut Vec<LintWarning>,
+) {
+    use crate::parse::LintEvent;
+    use std::collections::HashSet;
+    let lines: Vec<&str> = source.split('\n').collect();
+    let mut fences = HashSet::new();
+    let mut item_columns = HashSet::new();
+    let mut item_lines = HashSet::new();
+    let mut blocks: Vec<_> = doc.children.iter().map(|block| (block, 0)).collect();
+    for body in doc.footnote_defs.values() {
+        blocks.extend(body.iter().map(|block| (block, 0)));
+    }
+    while let Some((block, depth)) = blocks.pop() {
+        match block {
+            BlockNode::CodeBlock(code) => {
+                if let Some(pos) = &code.pos {
+                    fences.insert((pos.start_line, pos.start_column));
+                }
+            }
+            BlockNode::RawBlock(raw) => {
+                if let Some(pos) = &raw.pos {
+                    fences.insert((pos.start_line, pos.start_column));
+                }
+            }
+            BlockNode::List(list) => {
+                for item in &list.items {
+                    if let Some(pos) = &item.pos {
+                        item_columns.insert(pos.start_column);
+                        item_lines.insert(pos.start_line);
+                    }
+                }
+            }
+            BlockNode::Figure(figure) => {
+                if let FigureTarget::CodeBlock(code) = &*figure.target {
+                    if let Some(pos) = &code.pos {
+                        fences.insert((pos.start_line, pos.start_column));
+                    }
+                }
+            }
+            _ => {}
+        }
+        let mut inlines = Vec::new();
+        crate::render_depth::push_block_children(block, depth, &mut blocks, &mut inlines);
+    }
+    let mut seen = HashSet::new();
+    for event in events {
+        let (line, column, rule, message, len) = match event {
+            LintEvent::Fence {
+                pos,
+                marker,
+                end_line,
+            } => {
+                if !fences.contains(&(pos.start_line, pos.start_column)) {
+                    continue;
+                }
+                let ending = if *end_line > lines.len()
+                    || (*end_line == lines.len() && lines.last() == Some(&""))
+                {
+                    "it runs to the end of the document".to_string()
+                } else if lines
+                    .get(end_line.saturating_sub(1))
+                    .is_some_and(|line| line.trim() == "+")
+                {
+                    format!("a continuation marker on line {end_line} ends it")
+                } else {
+                    format!("it ends at the end of its container on line {end_line}")
+                };
+                (pos.start_line, pos.start_column, "unclosed-code-fence", format!("The {marker} fence opened here has no closing fence; {ending}. Add a closing {marker} where the code should stop."), marker.len())
+            }
+            LintEvent::Marker { line, column, host } => {
+                if *host == "list item"
+                    && !item_columns.contains(column)
+                    && !item_lines.contains(line)
+                {
+                    continue;
+                }
+                if lines.get(*line).is_some_and(|next| !next.trim().is_empty()) {
+                    continue;
+                }
+                let blank = lines.get(*line).is_some_and(|line| line.trim().is_empty())
+                    && *line < lines.len() - 1;
+                let following = if blank {
+                    "a blank line"
+                } else {
+                    "the end of the document"
+                };
+                let remedy = if blank {
+                    "Delete the blank line to attach the next block, or delete the +."
+                } else {
+                    "Add a block after the +, or delete the +."
+                };
+                (*line, *column, "continuation-marker-refused", format!("This + attaches nothing: {following} follows it, so the marker is refused and the {host} ends here. {remedy}"), 1)
+            }
+        };
+        if !seen.insert((line, column, rule)) {
+            continue;
+        }
+        let Some(text) = lines.get(line.saturating_sub(1)) else {
+            continue;
+        };
+        let before = text
+            .char_indices()
+            .nth(column.saturating_sub(1))
+            .map_or(text.len(), |(offset, _)| offset);
+        let start = lines
+            .iter()
+            .take(line.saturating_sub(1))
+            .map(|line| line.len() + 1)
+            .sum::<usize>()
+            + before;
+        out.push(LintWarning {
+            file: None,
+            included_by: Vec::new(),
+            line,
+            column,
+            rule,
+            message,
+            start,
+            end: (start + len).min(source.len()),
+        });
+    }
 }
 
 fn collect_contained_reference_placements(

@@ -77,6 +77,65 @@ impl Drop for PlaceholderGuard {
 
 thread_local! {
     static UNTERMINATED_SOURCE_LINE: Cell<Option<usize>> = const { Cell::new(None) };
+    static LINT_EVENTS: RefCell<Option<Vec<LintEvent>>> = const { RefCell::new(None) };
+}
+
+#[derive(Clone)]
+pub(crate) enum LintEvent {
+    Fence {
+        pos: Pos,
+        marker: String,
+        end_line: usize,
+    },
+    Marker {
+        line: usize,
+        column: usize,
+        host: &'static str,
+    },
+}
+
+pub(crate) fn collecting_lint_events<T>(f: impl FnOnce() -> T) -> (T, Vec<LintEvent>) {
+    struct Guard(Option<Vec<LintEvent>>);
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            LINT_EVENTS.with(|slot| slot.replace(self.0.take()));
+        }
+    }
+    let guard = Guard(LINT_EVENTS.with(|slot| slot.replace(Some(Vec::new()))));
+    let result = f();
+    let events = LINT_EVENTS.with(|slot| slot.take()).unwrap_or_default();
+    drop(guard);
+    (result, events)
+}
+
+fn note_lint_event(event: LintEvent) {
+    LINT_EVENTS.with(|slot| {
+        if let Some(events) = slot.borrow_mut().as_mut() {
+            events.push(event);
+        }
+    });
+}
+
+fn note_refused_marker(cur: &LineCursor<'_>, at: usize, offset: usize, host: &'static str) {
+    let Some(next) = cur.lines.line(at + 1) else {
+        if let (Some(line), Some(col)) = (cur.source_line(at), cur.source_col(at)) {
+            note_lint_event(LintEvent::Marker {
+                line,
+                column: document_column(col, offset),
+                host,
+            });
+        }
+        return;
+    };
+    if is_blank_line(next) {
+        if let (Some(line), Some(col)) = (cur.source_line(at), cur.source_col(at)) {
+            note_lint_event(LintEvent::Marker {
+                line,
+                column: document_column(col, offset),
+                host,
+            });
+        }
+    }
 }
 
 /// Retain the physical EOF through container collection and nested parses.
@@ -10591,6 +10650,7 @@ fn detect_fence_open(line: &str) -> Option<FenceOpen> {
 
 fn parse_fence(cur: &mut LineCursor, open: FenceOpen, options: &Options<'_>) -> BlockNode {
     let span_start = cur.pos;
+    let mut closed = false;
     let open_line = cur.consume().unwrap();
     let open_trim = open_line[open.lang_start..].trim();
     let raw_format = open_trim.strip_prefix('=').map(|f| f.trim().to_string());
@@ -10616,6 +10676,7 @@ fn parse_fence(cur: &mut LineCursor, open: FenceOpen, options: &Options<'_>) -> 
                 && is_fence_close(strip_lazy(line), open))
         {
             cur.consume();
+            closed = true;
             break;
         }
         last_payload_line = cur.source_line(cur.pos);
@@ -10625,6 +10686,19 @@ fn parse_fence(cur: &mut LineCursor, open: FenceOpen, options: &Options<'_>) -> 
     // The span covers the opener, the body and the closer - the whole block as
     // the author wrote it, not just its content.
     let pos = span_of(cur, span_start, cur.pos, options);
+    if !closed {
+        if let Some(pos) = pos.clone() {
+            let marker = std::iter::repeat(open.fence_char as char)
+                .take(open.fence_len)
+                .collect();
+            let end_line = cur.source_line(cur.pos).unwrap_or(pos.end_line + 1);
+            note_lint_event(LintEvent::Fence {
+                pos,
+                marker,
+                end_line,
+            });
+        }
+    }
     let mut content = content_lines
         .iter()
         .map(|l| strip_lazy(l))
@@ -14271,6 +14345,7 @@ fn parse_list(
             && indent_columns(line) == base_indent
             && cur.carried_reach(cur.pos) != Some(false)
         {
+            note_refused_marker(cur, cur.pos, line.find('+').unwrap_or(0), "list item");
             cur.consume();
             pending_blank = false;
             // A marker is not the block these were written for either (§15 A4).
@@ -14905,6 +14980,9 @@ fn parse_list(
         // content means the item's first block is the following flush-left
         // block (no inline paragraph).
         if trim_ascii(marker.content) == "+" {
+            if let Some(line) = cur.lines.line(item_at) {
+                note_refused_marker(cur, item_at, line.find('+').unwrap_or(0), "list item");
+            }
             last_item_bare_continuation = true;
             let mut item = ListItem {
                 attrs: item_attrs,
@@ -18720,9 +18798,11 @@ fn collect_indented_block_mapped_with_columns(
         if strip_cols > 0
             && indent == strip_cols
             && trim_ascii(line) == "+"
+            && fence.is_none()
             && marker_colon.is_none()
             && !attaches_nested_fence
         {
+            note_refused_marker(cur, cur.pos, line.find('+').unwrap_or(0), "list item");
             if marker_is_definition_term && marker_definition_has_description {
                 lines.push(String::new());
                 reached.push(false);
@@ -18755,6 +18835,7 @@ fn collect_indented_block_mapped_with_columns(
                     || !attaches_flush_left(cur.source_col(cur.pos + 1), Some(&next))
             })
         {
+            note_refused_marker(cur, cur.pos, line.find('+').unwrap_or(0), "list item");
             cur.consume();
             continue;
         }
@@ -20556,6 +20637,14 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             // content is a lone `+`, seed the body with the FOLLOWING flush-left
             // block (no `+` literal), with no indentation. `:  \+` stays literal.
             let mut body = if is_plus_marker(def_trimmed) {
+                if let Some(line) = cur.lines.line(def_start) {
+                    note_refused_marker(
+                        cur,
+                        def_start,
+                        line.find('+').unwrap_or(0),
+                        "definition description",
+                    );
+                }
                 let mut fb = LineBuffer::default();
                 let lines = cur.lines;
                 let first_block_col = cur.source_col(cur.pos);
@@ -21073,6 +21162,12 @@ fn collect_definition_body(
         }
         // Form B: `+` pull-left continuation.
         if is_plus_marker(line) {
+            note_refused_marker(
+                cur,
+                cur.pos,
+                line.find('+').unwrap_or(0),
+                "definition description",
+            );
             cur.consume();
             // ...AND THE DESCRIPTION ENDS WHERE A COMMENT ENDS IT
             // (markup-carve/carve#1814). Same shape as the footnote body: a `+`

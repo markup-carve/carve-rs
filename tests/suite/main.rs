@@ -2380,3 +2380,6 @@ mod unmarked_line_after_quote_fence;
 mod nested_fence_continuation_blank_payload;
 #[path = "../nested_marker_fence_blank_payload.rs"]
 mod nested_marker_fence_blank_payload;
+
+#[path = "../lint_new_rules.rs"]
+mod lint_new_rules;

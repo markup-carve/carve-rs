@@ -174,9 +174,12 @@ fn definition_markers_do_not_hide_later_list_warnings() {
 #[test]
 fn fence_tracking_ends_with_the_owning_item() {
     for fence in ["```", "~~~"] {
-        let warnings = lint_carve(&format!(
+        let warnings: Vec<_> = lint_carve(&format!(
             "- a\n  - b\n\n    {fence}\n    p\n {fence}\n\n    tail\n"
-        ));
+        ))
+        .into_iter()
+        .filter(|warning| warning.rule != "unclosed-code-fence")
+        .collect();
         assert_eq!(warnings.len(), 1);
         assert_eq!(
             (warnings[0].rule, warnings[0].line),
@@ -349,11 +352,11 @@ fn canonical_empty_bodies_and_quote_prefixes_do_not_warn() {
         ":: t\n: {empty}\n\nflush\n",
         "- > ```\n  > x\n\n  > y\n  > ```\n",
     ] {
-        assert!(
-            carve::lint_carve(source).is_empty(),
-            "{source:?}: {:?}",
-            carve::lint_carve(source)
-        );
+        let warnings: Vec<_> = carve::lint_carve(source)
+            .into_iter()
+            .filter(|warning| warning.rule != "unclosed-code-fence")
+            .collect();
+        assert!(warnings.is_empty(), "{source:?}: {warnings:?}");
     }
     for source in [
         "> :  a\n>\n>    ```\n>    x\nflush\n",
