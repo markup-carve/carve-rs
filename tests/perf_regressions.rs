@@ -1302,6 +1302,16 @@ fn plus_attached_comment_fence_closer_lookahead_is_indexed() {
     );
 }
 
+#[test]
+fn list_comment_code_fence_closer_lookahead_is_indexed() {
+    assert_near_linear_at(
+        |n| "- item\n  %% c\n```\n".repeat(n),
+        "list-comment-code-fence-closer",
+        2_000,
+        8_000,
+    );
+}
+
 /// A REAL EXPORT'S FOOTNOTE SHAPE: one reference per note, every note in one
 /// list. This is what Word, Google Docs and Pandoc all produce, and it is the
 /// shape that exposes a pairing pass which asks a question of every candidate
