@@ -87,7 +87,7 @@ fn an_ill_formed_utf8_file_is_denied_not_replaced() {
     std::fs::write(root.join("child.crv"), b"a\xffb\n").unwrap();
     assert_eq!(
         resolve(root.clone(), "child.crv", None),
-        Err(IncludeDenial::Denied)
+        Err(IncludeDenial::NonText)
     );
     std::fs::remove_dir_all(root).unwrap();
 }

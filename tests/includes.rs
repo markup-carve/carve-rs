@@ -696,6 +696,30 @@ fn expand_fs(source: &str, root: &Path, opts: IncludeOptions<'_>) -> Expanded {
 
 #[test]
 #[cfg(feature = "fs")]
+fn invalid_utf8_include_is_non_text_at_the_resolver_and_processor() {
+    let tmp = TempDir::new("invalid-utf8");
+    fs::write(tmp.path().join("bad.crv"), b"a\xed\xa0\x80b").unwrap();
+    let resolver = FileSystemResolver::new(tmp.path()).unwrap();
+    let context = IncludeContext {
+        source_path: None,
+        stack: &[],
+        depth: 0,
+    };
+    assert_eq!(
+        resolver.resolve("bad.crv", &context),
+        Err(IncludeDenial::NonText)
+    );
+    let result = expand_fs("{{ bad.crv }}\n", tmp.path(), IncludeOptions::new());
+    assert_eq!(result.rules(), vec!["include-non-text"]);
+    assert!(result.html.contains("{{ bad.crv }}"));
+    assert_eq!(result.dependencies.len(), 1);
+    assert_eq!(result.dependencies[0].id, "bad.crv");
+    assert!(!result.dependencies[0].resolved);
+    assert_eq!(result.dependencies[0].denial, None);
+}
+
+#[test]
+#[cfg(feature = "fs")]
 fn filesystem_resolver_resolves_nested_relative_includes_against_the_parent_directory() {
     let tmp = TempDir::new("nested");
     tmp.write("main.crv", "{{ parts/part.crv }}\n");
