@@ -66,6 +66,11 @@ A pipe-table `^` or `<` that cannot extend a neighboring cell triggers
 `table-span-marker-blocked` at the marker. The warning explains why the T5 span
 walk left it as a cell of its own.
 
+A bare key one edit from the consumed key its block reads triggers
+`consumed-key-near-miss`: `{tabel}` on a `csv` or `tsv` fence, or `{lose}` on a
+list or definition list. The key stays an ordinary attribute, so the table or
+the loose list never happens.
+
 The compact semantic span attribute rules (spec PART 9 §10):
 
 | rule | fires on |

@@ -129,6 +129,8 @@ mod the_carve_writer_refuses_instead_of_aborting;
 
 #[path = "../invalid_container_metadata.rs"]
 mod invalid_container_metadata;
+#[path = "../lint_consumed_key_near_miss.rs"]
+mod lint_consumed_key_near_miss;
 
 #[path = "../a_band_line_under_a_block_that_interrupted_the_lead_paragraph.rs"]
 mod a_band_line_under_a_block_that_interrupted_the_lead_paragraph;
