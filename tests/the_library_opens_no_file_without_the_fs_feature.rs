@@ -41,7 +41,12 @@ fn library_sources() -> Vec<PathBuf> {
 /// the imported spelling as well as the fully qualified one.
 fn opens_a_file(line: &str) -> bool {
     let code = line.split("//").next().unwrap_or(line);
-    code.contains("fs::") || code.contains("File::open") || code.contains("File::create")
+    code.match_indices("fs::").any(|(index, _)| {
+        index == 0
+            || !code.as_bytes()[index - 1].is_ascii_alphanumeric()
+                && code.as_bytes()[index - 1] != b'_'
+    }) || code.contains("File::open")
+        || code.contains("File::create")
 }
 
 /// The shipped lines of a file: everything outside a `#[cfg(test)]` module.

@@ -363,6 +363,10 @@
       "cell_wrap": {
         "kind": "prose",
         "why": "the pinned grammar map predates this source-only table cell boundary"
+      },
+      "table_cell_ref": {
+        "kind": "prose",
+        "why": "the pinned grammar map predates the read-only table cell reference"
       }
     },
     "localUnmapped": "`abbreviation_def`, `citation_definition`, and `figure_group` remain under `unmapped` until this bridge implements their upstream CarveKit nodes. `citation` is nested group state, and `cell_wrap` is a source boundary the editor does not retain."

@@ -22447,12 +22447,12 @@ fn split_table_cells_seeded(
             && chars.clone().nth(1) == Some('#')
             && last_brace.is_some_and(|last| last >= index)
         {
-            let mut look = chars.clone();
+            let look = chars.clone();
             let mut marker = String::from("@");
             let mut quoted = false;
             let mut escaped = false;
             let mut complete = false;
-            while let Some(next) = look.next() {
+            for next in look {
                 if next == '|' && !quoted {
                     break;
                 }
