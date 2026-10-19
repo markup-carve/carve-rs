@@ -16988,14 +16988,12 @@ fn continuation_source_loosens(source: &str, _source_is_the_item_body: bool) -> 
         }
         let attached_caption = if j == i + 1 && caption_content(lines[j]).is_some() {
             let mut quote_host = false;
-            if strip_blockquote_prefix(lines[i - 1]).is_some() {
-                for previous in lines[..i].iter().rev() {
-                    if is_blank_line(previous) {
-                        break;
-                    }
-                    if let Some(content) = strip_blockquote_prefix(previous) {
-                        quote_host |= !trim_ascii(content).is_empty();
-                    }
+            for previous in lines[..i].iter().rev() {
+                if is_blank_line(previous) {
+                    break;
+                }
+                if let Some(content) = strip_blockquote_prefix(previous) {
+                    quote_host |= !trim_ascii(content).is_empty();
                 }
             }
             let inline_starts_block = i == 1 || is_blank_line(lines[i - 2]);
@@ -17036,7 +17034,10 @@ fn block_is_paragraph_shaped(block: &BlockNode) -> bool {
     match block {
         BlockNode::Paragraph(_) => true,
         BlockNode::BlockImage(_) => true,
-        BlockNode::Figure(f) => matches!(*f.target, FigureTarget::Image(_)),
+        BlockNode::Figure(f) => matches!(
+            *f.target,
+            FigureTarget::Image(_) | FigureTarget::Paragraph(_)
+        ),
         _ => false,
     }
 }

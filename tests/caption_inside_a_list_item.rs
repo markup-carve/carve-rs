@@ -73,6 +73,22 @@ fn one_blank_keeps_each_captionable_host_tight() {
 }
 
 #[test]
+fn a_blank_before_a_captioned_equation_loosens_the_list() {
+    for gap in ["", "\n"] {
+        let html = to_html(&format!("- a\n\n  $$`x`\n{gap}  ^ cap\n- c\n"));
+        assert!(html.contains("<li><p>a</p>"), "{html}");
+        assert!(html.contains("<li><p>c</p></li>"), "{html}");
+    }
+}
+
+#[test]
+fn a_lazy_quote_line_before_its_caption_keeps_the_list_tight() {
+    let html = to_html("- > q\n  text\n\n  ^ cap\n- c\n");
+    assert!(html.contains("<figcaption>cap</figcaption>"), "{html}");
+    assert!(html.contains("<li>c</li>"), "{html}");
+}
+
+#[test]
 fn two_blanks_detach_figure_group_caption() {
     let html = to_html("- ::: figure\n  ![a](b.png)\n  :::\n\n\n  ^ cap\n- c\n");
     assert!(!html.contains("<figcaption>"), "{html}");
