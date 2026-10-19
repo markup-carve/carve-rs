@@ -637,3 +637,15 @@ fn no_includes_leaves_directives_literal_and_keeps_raw_html() {
     assert!(out.stdout.contains("<p>{{ s.crv }}</p>"), "{}", out.stdout);
     assert!(out.stdout.contains("<b>x</b>"), "{}", out.stdout);
 }
+
+#[test]
+fn flatten_refuses_safe_and_no_includes_instead_of_reading_files() {
+    let tmp = TempDir::new("flatten-safe");
+    tmp.write("s.crv", "SECRET\n");
+    let main = tmp.write("d.crv", "{{ s.crv }}\n");
+    for flag in ["--safe", "--no-includes"] {
+        let out = run(&["flatten", flag, main.to_str().unwrap()], None);
+        assert_eq!(out.code, Some(2), "{flag} stderr: {}", out.stderr);
+        assert!(!out.stdout.contains("SECRET"), "{flag}: {}", out.stdout);
+    }
+}
