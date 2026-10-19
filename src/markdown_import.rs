@@ -94,6 +94,74 @@ pub(crate) struct FrontmatterNotice {
     pub typed_opener: bool,
 }
 
+thread_local! {
+    /// CARVE-P2-031: the destination each converted link had in the Markdown
+    /// source, keyed by the destination the conversion wrote. `None` marks two
+    /// spellings, which the report cannot tell apart.
+    static AUTHORED_DESTINATIONS: std::cell::RefCell<Option<HashMap<String, Option<String>>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Run a conversion and collect the destinations it changed, mapped back to
+/// the spelling the author wrote.
+pub(crate) fn with_authored_destinations<T>(
+    run: impl FnOnce() -> T,
+) -> (T, HashMap<String, String>) {
+    let outer = AUTHORED_DESTINATIONS.with(|cell| cell.replace(Some(HashMap::new())));
+    let value = run();
+    let recorded = AUTHORED_DESTINATIONS
+        .with(|cell| cell.replace(outer))
+        .unwrap_or_default();
+    let authored = recorded
+        .into_iter()
+        .filter_map(|(encoded, authored)| authored.filter(|a| *a != encoded).map(|a| (encoded, a)))
+        .collect();
+    (value, authored)
+}
+
+fn record_authored_destination(encoded: &str, authored: &str) {
+    AUTHORED_DESTINATIONS.with(|cell| {
+        if let Some(map) = cell.borrow_mut().as_mut() {
+            map.entry(encoded.to_owned())
+                .and_modify(|known| {
+                    if known.as_deref() != Some(authored) {
+                        *known = None;
+                    }
+                })
+                .or_insert_with(|| Some(authored.to_owned()));
+        }
+    });
+}
+
+/// The destination of an inline link or image as its source wrote it, when
+/// it reads back as `parsed`; otherwise `parsed`.
+fn authored_inline_destination<'a>(source: &'a str, parsed: &'a str) -> &'a str {
+    let Some(rest) = source
+        .rfind("](")
+        .and_then(|at| source[at + 2..].strip_suffix(')'))
+    else {
+        return parsed;
+    };
+    let rest = rest.trim_start_matches([' ', '\t', '\n']);
+    let raw = match rest.strip_prefix('<') {
+        Some(inner) => inner.split('>').next().unwrap_or(""),
+        None => rest.split([' ', '\t', '\n']).next().unwrap_or(""),
+    };
+    let mut unescaped = String::with_capacity(raw.len());
+    let mut chars = raw.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' && chars.peek().is_some_and(char::is_ascii_punctuation) {
+            continue;
+        }
+        unescaped.push(c);
+    }
+    if unescaped == parsed {
+        raw
+    } else {
+        parsed
+    }
+}
+
 pub(crate) fn markdown_destination(destination: &str, email: bool) -> String {
     if is_empty_destination(destination) {
         return String::new();
@@ -255,7 +323,7 @@ pub fn migration_raw_heading_ids(source: &str) -> HashMap<String, usize> {
 }
 
 fn rewrite_same_file_heading_links(source: String) -> Result<String, crate::RenderCarveError> {
-    Ok(rewrite_same_file_heading_links_reported(source)?.value)
+    Ok(rewrite_same_file_heading_links_reported(source, &HashMap::new())?.value)
 }
 
 /// A case-only fragment rewrite: the destination before it, and the old and new fragment.
@@ -272,8 +340,11 @@ pub(crate) struct FragmentRewrite {
     pub(crate) fixups: Vec<FragmentFixup>,
 }
 
+/// `authored` maps a converted destination back to the one the Markdown link
+/// wrote (CARVE-P2-031).
 pub(crate) fn rewrite_same_file_heading_links_reported(
     source: String,
+    authored: &HashMap<String, String>,
 ) -> Result<FragmentRewrite, crate::RenderCarveError> {
     if !source.contains("](#") {
         return Ok(FragmentRewrite {
@@ -373,6 +444,7 @@ pub(crate) fn rewrite_same_file_heading_links_reported(
         exact: &HashSet<String>,
         aliases: &HashMap<String, Option<String>>,
         fixups: &mut Vec<FragmentFixup>,
+        authored: &HashMap<String, String>,
     ) {
         match value {
             Value::Object(object) => {
@@ -385,9 +457,14 @@ pub(crate) fn rewrite_same_file_heading_links_reported(
                                 if !exact.contains(&fragment) {
                                     if let Some(Some(id)) = aliases.get(&fragment.to_lowercase()) {
                                         let to = encode(id);
+                                        let written =
+                                            authored.get(href).map_or(href, String::as_str);
                                         fixups.push(FragmentFixup {
-                                            destination: href.to_owned(),
-                                            from: raw.to_owned(),
+                                            destination: written.to_owned(),
+                                            from: written
+                                                .strip_prefix('#')
+                                                .unwrap_or(raw)
+                                                .to_owned(),
                                             to: to.clone(),
                                         });
                                         object
@@ -400,13 +477,13 @@ pub(crate) fn rewrite_same_file_heading_links_reported(
                 }
                 for (key, child) in object.iter_mut() {
                     if key != "attrs" && key != "position" {
-                        visit(child, exact, aliases, fixups);
+                        visit(child, exact, aliases, fixups, authored);
                     }
                 }
             }
             Value::Array(items) => {
                 for item in items {
-                    visit(item, exact, aliases, fixups);
+                    visit(item, exact, aliases, fixups, authored);
                 }
             }
             _ => {}
@@ -416,7 +493,7 @@ pub(crate) fn rewrite_same_file_heading_links_reported(
         serde_json::from_str(&crate::to_json(&crate::parse(&source))).expect("parser emitted JSON");
     let original = document.clone();
     let mut fixups = Vec::new();
-    visit(&mut document, &exact, &aliases, &mut fixups);
+    visit(&mut document, &exact, &aliases, &mut fixups, authored);
     if fixups.is_empty() {
         return Ok(FragmentRewrite {
             unfixed: source.clone(),
@@ -2473,7 +2550,16 @@ impl Builder {
                 link_type,
                 id,
             } => Frame::Link {
-                href: markdown_destination(&dest_url, link_type == LinkType::Email),
+                href: {
+                    let href = markdown_destination(&dest_url, link_type == LinkType::Email);
+                    let authored = if link_type == LinkType::Inline {
+                        authored_inline_destination(source, &dest_url)
+                    } else {
+                        &dest_url
+                    };
+                    record_authored_destination(&href, authored);
+                    href
+                },
                 title: (!title.is_empty() || empty_title).then(|| title.to_string()),
                 children: Vec::new(),
                 autolink: matches!(link_type, LinkType::Autolink | LinkType::Email)
@@ -2504,7 +2590,14 @@ impl Builder {
             Tag::Image {
                 dest_url, title, ..
             } => Frame::Image {
-                src: markdown_destination(&dest_url, false),
+                src: {
+                    let src = markdown_destination(&dest_url, false);
+                    record_authored_destination(
+                        &src,
+                        authored_inline_destination(source, &dest_url),
+                    );
+                    src
+                },
                 title: (!title.is_empty() || empty_title).then(|| title.to_string()),
                 alt: String::new(),
             },
