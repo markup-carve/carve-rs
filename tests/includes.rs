@@ -3141,3 +3141,65 @@ fn a_table_code_include_renders_as_an_authored_fence() {
         assert_eq!(result.html, authored, "{attrs} {lang}");
     }
 }
+
+// carve#3348: the file's leading U+FEFF is not content, so a line-1 marker still opens a region.
+#[test]
+fn a_leading_byte_order_mark_does_not_hide_a_line_one_region_marker() {
+    let code = expand(
+        "{{ snippet.js@region:b @code:js }}",
+        &[(
+            "snippet.js",
+            "\u{FEFF}// #region b\nbomcode()\n// #endregion b\n",
+        )],
+    );
+    assert!(code.rules().is_empty(), "{:?}", code.rules());
+    assert_eq!(
+        code.html,
+        "<pre><code class=\"language-js\">bomcode()\n</code></pre>"
+    );
+    let carve = expand(
+        "{{ part.crv @region:b }}",
+        &[(
+            "part.crv",
+            "\u{FEFF}%% #region b\nInside.\n%% #endregion b\n",
+        )],
+    );
+    assert!(carve.rules().is_empty(), "{:?}", carve.rules());
+    assert_eq!(carve.html, "<p>Inside.</p>");
+}
+
+// carve#3349: a range starting past the last line is an error; one ending past it still clamps.
+#[test]
+fn a_line_range_starting_past_the_end_warns_and_keeps_the_resolved_dependency() {
+    let files = [("two.txt", "one\ntwo\n")];
+    for source in ["{{ two.txt @lines:3-3 @code }}", "{{ two.txt @lines:3-4 }}"] {
+        let r = expand(source, &files);
+        assert_eq!(r.rules(), vec!["include-lines-out-of-range"], "{source}");
+        assert_eq!(r.html, literal_html(source), "{source}");
+        assert_eq!(r.dependencies, vec![dep("two.txt", true)], "{source}");
+    }
+    let bom_only = expand("{{ bom.txt @lines:1-1 @code }}", &[("bom.txt", "\u{FEFF}")]);
+    assert_eq!(bom_only.rules(), vec!["include-lines-out-of-range"]);
+    let clamped = expand("{{ two.txt @lines:2-9 @code }}", &files);
+    assert!(clamped.rules().is_empty());
+    assert_eq!(clamped.html, "<pre><code>two\n</code></pre>");
+}
+
+// carve#3351: an option given twice is an error, never "last one wins".
+#[test]
+fn an_option_given_twice_warns_and_stays_literal() {
+    let files = [("a.js", "one()\ntwo()\nthree()\n")];
+    for source in [
+        "{{ a.js @code:js @code:py }}",
+        "{{ a.js @lines:1-1 @lines:3-3 @code }}",
+        "{{ a.js @shift:1 @shift:2 @code }}",
+        "{{ a.js @code @code:js }}",
+        "{{ a.js @shift:auto @shift:1 }}",
+        "See {{ a.js @region:x @region:x }} here.",
+    ] {
+        let r = expand(source, &files);
+        assert_eq!(r.rules(), vec!["include-duplicate-option"], "{source}");
+        assert_eq!(r.html, literal_html(source), "{source}");
+        assert!(r.dependencies.is_empty(), "{source}");
+    }
+}

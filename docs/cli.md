@@ -111,9 +111,11 @@ carrier, so HTML gets the §13a attributes and Markdown the container comments
 and selects no import mode.
 Host resolver callbacks remain library-only because they cannot be represented
 as command-line values.
-`--no-raw-html` (alias `--safe`) escapes `=html` raw
-blocks and spans instead of emitting them verbatim, which is the safe choice when
-rendering untrusted input; it composes with every format and with `--profile`.
+`--no-raw-html` escapes `=html` raw
+blocks and spans instead of emitting them verbatim; it composes with every format
+and with `--profile`. `--no-includes` leaves every `{{ … }}` include directive
+literal, even with `--include-root`. `--safe` is the switch for untrusted input
+and implies both, as in carve-js and carve-php.
 In HTML an escaped raw block is written like a fenced code block of that
 language, `<pre><code class="language-html">`, so it keeps its line breaks.
 `--profile NAME` (`full` | `article` | `comment` | `minimal`) restricts which

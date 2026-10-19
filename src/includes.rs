@@ -602,6 +602,8 @@ enum ParsedDirective {
     /// A second `#section` where the grammar holds one. Carries the offending
     /// token.
     DuplicateSection(String),
+    /// An option key given a second time (I1). Carries the offending token.
+    DuplicateOption(String),
 }
 
 /// A `#name` the section slot would have taken, had it not already been full.
@@ -661,6 +663,7 @@ fn parse_options(raw: RawDirective) -> ParsedDirective {
     let mut region = None;
     let mut code = None;
     let mut shift = Shift::By(0);
+    let mut seen: HashSet<&str> = HashSet::new();
     for part in option_parts(&raw.options) {
         let bad = || {
             if part.starts_with('@') {
@@ -679,6 +682,9 @@ fn parse_options(raw: RawDirective) -> ParsedDirective {
             return bad();
         };
         if body == "code" {
+            if !seen.insert("code") {
+                return ParsedDirective::DuplicateOption(part.to_string());
+            }
             code = Some(None);
             continue;
         }
@@ -696,12 +702,18 @@ fn parse_options(raw: RawDirective) -> ParsedDirective {
         if !key_ok || !value_ok {
             return bad();
         }
+        // I1: a key given twice is an error, never "last one wins". Checked
+        // after the value, so a malformed repeat still reports as malformed.
+        let repeated = || ParsedDirective::DuplicateOption(part.to_string());
         match key {
             "code" => {
                 if !value.chars().all(|c| {
                     c.is_ascii_alphanumeric() || matches!(c, '_' | '+' | '#' | '.' | '/' | '-')
                 }) {
                     return bad();
+                }
+                if !seen.insert("code") {
+                    return repeated();
                 }
                 code = Some(Some(value.to_string()));
             }
@@ -728,6 +740,9 @@ fn parse_options(raw: RawDirective) -> ParsedDirective {
                 if b < a {
                     return bad();
                 }
+                if !seen.insert("lines") {
+                    return repeated();
+                }
                 lines = Some((a, b));
             }
             "region" => {
@@ -735,21 +750,28 @@ fn parse_options(raw: RawDirective) -> ParsedDirective {
                 if !chars.next().is_some_and(is_ident_start) || !chars.all(is_ident_rest) {
                     return bad();
                 }
+                if !seen.insert("region") {
+                    return repeated();
+                }
                 region = Some(value.to_string());
             }
             "shift" => {
-                if value == "auto" {
-                    shift = Shift::Auto;
+                let parsed = if value == "auto" {
+                    Shift::Auto
                 } else {
                     let digits = value.strip_prefix(['+', '-']).unwrap_or(value);
                     if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
                         return bad();
                     }
                     match value.strip_prefix('+').unwrap_or(value).parse::<i32>() {
-                        Ok(n) => shift = Shift::By(n),
+                        Ok(n) => Shift::By(n),
                         Err(_) => return bad(),
                     }
+                };
+                if !seen.insert("shift") {
+                    return repeated();
                 }
+                shift = parsed;
             }
             // Every other `@key` is RESERVED (I1).
             _ => return bad(),
@@ -1162,6 +1184,12 @@ fn source_lines(source: &str) -> Vec<&str> {
     lines
 }
 
+/// Physical lines in a file. A leading U+FEFF is not content, so a file
+/// holding only one has no lines.
+fn content_line_count(source: &str) -> usize {
+    source_lines(source.strip_prefix('\u{FEFF}').unwrap_or(source)).len()
+}
+
 fn slice_lines(source: &str, range: (usize, usize)) -> String {
     let lines = source_lines(source);
     let start = range.0.saturating_sub(1);
@@ -1215,6 +1243,8 @@ pub fn select_include_region(
 }
 
 fn region_range(source: &str, selected: &str, code: bool) -> Option<(usize, usize)> {
+    // I1b: the file's leading U+FEFF is not content, so it cannot hide a line-1 marker.
+    let source = source.strip_prefix('\u{FEFF}').unwrap_or(source);
     let mut seen = HashSet::new();
     let mut stack: Vec<(&str, usize)> = Vec::new();
     let mut range = None;
@@ -1423,6 +1453,18 @@ fn resolve_child(d: &Directive, state: &mut State<'_>) -> Option<ResolvedChild> 
             }
         }
     } else {
+        if d.lines
+            .is_some_and(|(start, _)| start > content_line_count(&source))
+        {
+            state.warn(
+                "include-lines-out-of-range",
+                format!(
+                    "Include line range for \"{}\" starts past end of file.",
+                    d.path
+                ),
+            );
+            return None;
+        }
         d.lines
     };
     let (selected, position_base) = match range {
@@ -2921,6 +2963,13 @@ fn expand_run(run: &[InlineNode], state: &mut State<'_>) -> Vec<InlineNode> {
                     );
                     return None;
                 }
+                ParsedDirective::DuplicateOption(part) => {
+                    state.warn(
+                        "include-duplicate-option",
+                        format!("Include option \"{part}\" repeats an option given earlier."),
+                    );
+                    return None;
+                }
                 ParsedDirective::NotADirective => return None,
             };
             with_child(&d, state, true, None, |expanded, state| {
@@ -3178,6 +3227,15 @@ fn expand_paragraph(block: &mut Paragraph, state: &mut State<'_>) -> Option<Vec<
                     state.warn(
                         "include-selection-conflict",
                         format!("Include directive cannot name two sections: \"{part}\"."),
+                    );
+                    None
+                });
+            }
+            ParsedDirective::DuplicateOption(part) => {
+                return state.at(position, |state| {
+                    state.warn(
+                        "include-duplicate-option",
+                        format!("Include option \"{part}\" repeats an option given earlier."),
                     );
                     None
                 });
