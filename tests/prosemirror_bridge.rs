@@ -1696,11 +1696,13 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // Spec ca5cf10a adds 05-lists-29 and 05-lists-30. Both round trip strictly.
     // Corpus 617 adds four code fences that round trip strictly: unmarked CSV
     // (row 3) and malformed quoting (rows 7, 11, and 12).
-    const STRICT: usize = 2010;
+    // Corpus 618 adds 16 caption/list cases: 13 round trip strictly and three
+    // report a loss.
+    const STRICT: usize = 2023;
     // Spec 894ff32e adds 616-25, whose marked quote soft break reports a loss.
     // The eight parsed CSV/TSV tables lose their source fence in ProseMirror;
     // the bridge reports that loss instead of claiming a strict round trip.
-    const LOSSY: usize = 669;
+    const LOSSY: usize = 672;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in
