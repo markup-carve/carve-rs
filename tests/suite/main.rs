@@ -2337,3 +2337,6 @@ mod a_matched_comment_keeps_a_footnote_list_fence;
 mod a_matched_comment_keeps_a_fence_after_an_item_quote;
 #[path = "../csv_table_writer_parity.rs"]
 mod csv_table_writer_parity;
+
+#[path = "../select_include_region_resolves_a_region_the_way_the_expander_does.rs"]
+mod select_include_region_resolves_a_region_the_way_the_expander_does;

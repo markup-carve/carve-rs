@@ -69,6 +69,27 @@ fn emit(
     }
 }
 
+fn region_keyword(body: &str) -> Option<bool> {
+    let keyword = body.strip_prefix('#')?;
+    let keyword = if keyword.get(..3)?.eq_ignore_ascii_case("end") {
+        &keyword[3..]
+    } else {
+        keyword
+    };
+    let prefix = keyword.get(..6)?;
+    if !prefix.eq_ignore_ascii_case("region") {
+        return None;
+    }
+    if keyword
+        .as_bytes()
+        .get(6)
+        .is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_')
+    {
+        return None;
+    }
+    Some(body.starts_with("#region") || body.starts_with("#endregion"))
+}
+
 fn visual(text: &str) -> usize {
     text.chars().fold(0, |col, ch| {
         if ch == '\t' {
@@ -150,6 +171,8 @@ pub(super) fn collect(
     {
         ignored.extend(pos.start_line..=pos.end_line);
     }
+    // `%%` line comments: the one hidden place a mis-cased `%% #Region` is checked.
+    let mut line_comments = BTreeSet::new();
     let mut paragraphs = BTreeSet::new();
     let mut headings = BTreeSet::new();
     let mut block_runs: BTreeMap<(char, usize), Vec<(usize, usize)>> = BTreeMap::new();
@@ -185,6 +208,10 @@ pub(super) fn collect(
                 }
             }
             match block {
+                BlockNode::Comment(c) if !c.block => {
+                    ignored.extend(pos.start_line..=pos.end_line);
+                    line_comments.extend(pos.start_line..=pos.end_line);
+                }
                 BlockNode::CodeBlock(_) | BlockNode::RawBlock(_) | BlockNode::Comment(_) => {
                     ignored.extend(pos.start_line..=pos.end_line);
                 }
@@ -545,6 +572,38 @@ pub(super) fn collect(
                     rule: "bidi-control-in-source",
                     message: "This bidi control is preserved by canonical Carve but removed from presentation output.".into(),
                 });
+            }
+        }
+        let trimmed = row.text.trim_start_matches([' ', '\t']);
+        let percent = trimmed.starts_with("%%") && !trimmed.starts_with("%%%");
+        let body = if percent {
+            trimmed[2..].trim_start_matches([' ', '\t'])
+        } else if let Some(rest) = trimmed.strip_prefix("<!--") {
+            rest.trim_start_matches([' ', '\t'])
+        } else if let Some(rest) = trimmed.strip_prefix("/*") {
+            rest.trim_start_matches([' ', '\t'])
+        } else if let Some(rest) = trimmed
+            .strip_prefix("//")
+            .or_else(|| trimmed.strip_prefix("--"))
+        {
+            rest.trim_start_matches([' ', '\t'])
+        } else {
+            trimmed
+        };
+        if let Some(lowercase) = region_keyword(body) {
+            if (!percent || !lowercase)
+                && (!ignored.contains(&ln) || (percent && line_comments.contains(&ln)))
+            {
+                emit(
+                    out,
+                    &rows,
+                    ln,
+                    row.text.len() - trimmed.len(),
+                    trimmed.len(),
+                    "region-marker-renders-as-text",
+                    "This line renders as text and is not a region marker for a Carve include. \
+                     Use \"%% #region name\".",
+                );
             }
         }
         if ignored.contains(&ln) {

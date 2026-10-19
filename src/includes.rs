@@ -352,6 +352,7 @@ struct Directive {
     section: Option<String>,
     lines: Option<(usize, usize)>,
     region: Option<String>,
+    code: Option<Option<String>>,
     shift: Shift,
 }
 
@@ -626,6 +627,7 @@ fn option_parts(tail: &str) -> Vec<&str> {
 fn parse_options(raw: RawDirective) -> ParsedDirective {
     let mut lines = None;
     let mut region = None;
+    let mut code = None;
     let mut shift = Shift::By(0);
     for part in option_parts(&raw.options) {
         let bad = || {
@@ -644,6 +646,10 @@ fn parse_options(raw: RawDirective) -> ParsedDirective {
         let Some(body) = part.strip_prefix('@') else {
             return bad();
         };
+        if body == "code" {
+            code = Some(None);
+            continue;
+        }
         let Some((key, value)) = body.split_once(':') else {
             return bad();
         };
@@ -654,11 +660,19 @@ fn parse_options(raw: RawDirective) -> ParsedDirective {
         let value_ok = !value.is_empty()
             && value
                 .chars()
-                .all(|c| !matches!(c, '#' | '@' | '}') && !c.is_whitespace());
+                .all(|c| !matches!(c, '@' | '}') && !c.is_whitespace());
         if !key_ok || !value_ok {
             return bad();
         }
         match key {
+            "code" => {
+                if !value.chars().all(|c| {
+                    c.is_ascii_alphanumeric() || matches!(c, '_' | '+' | '#' | '.' | '/' | '-')
+                }) {
+                    return bad();
+                }
+                code = Some(Some(value.to_string()));
+            }
             "lines" => {
                 let Some((a_raw, b_raw)) = value.split_once('-') else {
                     return bad();
@@ -714,6 +728,7 @@ fn parse_options(raw: RawDirective) -> ParsedDirective {
         section: raw.section,
         lines,
         region,
+        code,
         shift,
     }))
 }
@@ -1091,11 +1106,29 @@ impl State<'_> {
     }
 }
 
-fn slice_lines(source: &str, range: (usize, usize)) -> String {
-    let mut lines: Vec<&str> = source.split('\n').collect();
-    if lines.last() == Some(&"") {
-        lines.pop();
+fn source_lines(source: &str) -> Vec<&str> {
+    let bytes = source.as_bytes();
+    let mut lines = Vec::new();
+    let mut start = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        if matches!(bytes[i], b'\r' | b'\n') {
+            lines.push(&source[start..i]);
+            if bytes[i] == b'\r' && bytes.get(i + 1) == Some(&b'\n') {
+                i += 1;
+            }
+            start = i + 1;
+        }
+        i += 1;
     }
+    if start < source.len() {
+        lines.push(&source[start..]);
+    }
+    lines
+}
+
+fn slice_lines(source: &str, range: (usize, usize)) -> String {
+    let lines = source_lines(source);
     let start = range.0.saturating_sub(1);
     let end = range.1.min(lines.len());
     if start >= end {
@@ -1104,18 +1137,68 @@ fn slice_lines(source: &str, range: (usize, usize)) -> String {
     lines[start..end].join("\n")
 }
 
-fn region_range(source: &str, selected: &str) -> Option<(usize, usize)> {
+/// Which marker set a region lookup uses (spec I1b).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IncludeRegionMode {
+    /// A Carve include: only `%% #region` / `%% #endregion` are markers.
+    Carve,
+    /// A `@code` include: the source-comment forms are markers too.
+    Code,
+}
+
+/// The 1-based, inclusive content lines of a region. The opening marker is on
+/// `start - 1`; an empty region has `end == start - 1`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IncludeRegion {
+    /// First content line.
+    pub start: usize,
+    /// Last content line.
+    pub end: usize,
+}
+
+/// The region is missing, or a marker in the file is malformed or unpaired.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IncludeRegionError;
+
+impl IncludeRegionError {
+    /// The warning rule expansion reports for this failure.
+    pub fn rule(&self) -> &'static str {
+        "include-region-invalid"
+    }
+}
+
+/// Resolve `@region:name` in a file's text exactly as [`expand_includes`] does,
+/// so a host (an editor jumping to a region) follows the engine's marker rules.
+pub fn select_include_region(
+    source: &str,
+    name: &str,
+    mode: IncludeRegionMode,
+) -> Result<IncludeRegion, IncludeRegionError> {
+    region_range(source, name, matches!(mode, IncludeRegionMode::Code))
+        .map(|(start, end)| IncludeRegion { start, end })
+        .ok_or(IncludeRegionError)
+}
+
+fn region_range(source: &str, selected: &str, code: bool) -> Option<(usize, usize)> {
     let mut seen = HashSet::new();
     let mut stack: Vec<(&str, usize)> = Vec::new();
     let mut range = None;
-    for (index, raw_line) in source.split('\n').enumerate() {
-        let line = raw_line
-            .trim_end_matches('\r')
-            .trim_start_matches([' ', '\t']);
-        let body = line
-            .strip_prefix("//")
-            .map(|rest| rest.trim_start_matches([' ', '\t']))
-            .unwrap_or(line);
+    for (index, raw_line) in source_lines(source).into_iter().enumerate() {
+        let line = raw_line.trim_start_matches([' ', '\t']);
+        let (body, closer) = if line.starts_with("%%") && !line.starts_with("%%%") {
+            (&line[2..], "")
+        } else if !code {
+            continue;
+        } else if line.starts_with("//") || line.starts_with("--") {
+            (&line[2..], "")
+        } else if let Some(body) = line.strip_prefix("/*") {
+            (body, "*/")
+        } else if let Some(body) = line.strip_prefix("<!--") {
+            (body, "-->")
+        } else {
+            (line, "")
+        };
+        let body = body.trim_start_matches([' ', '\t']);
         let (closing, rest) = if let Some(rest) = body.strip_prefix("#endregion") {
             (true, rest)
         } else if let Some(rest) = body.strip_prefix("#region") {
@@ -1123,24 +1206,33 @@ fn region_range(source: &str, selected: &str) -> Option<(usize, usize)> {
         } else {
             continue;
         };
-        if !rest.is_empty() && !rest.starts_with([' ', '\t']) {
-            if rest
-                .as_bytes()
-                .first()
-                .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
-            {
-                continue;
-            }
-            return None;
+        if rest
+            .as_bytes()
+            .first()
+            .is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_')
+        {
+            continue;
         }
-        let name = rest.trim_matches([' ', '\t']);
-        let valid = !name.is_empty() && {
-            let mut chars = name.chars();
-            chars.next().is_some_and(is_ident_start) && chars.all(is_ident_rest)
+        let rest = rest.trim_end_matches([' ', '\t']);
+        let rest = if closer.is_empty() {
+            rest
+        } else {
+            rest.strip_suffix(closer)?.trim_end_matches([' ', '\t'])
         };
-        if !name.is_empty() && !valid {
-            return None;
-        }
+        let name = if rest.is_empty() {
+            ""
+        } else {
+            let name = rest
+                .strip_prefix([' ', '\t'])?
+                .trim_start_matches([' ', '\t']);
+            if name.is_empty()
+                || !name.chars().next().is_some_and(is_ident_start)
+                || !name.chars().all(is_ident_rest)
+            {
+                return None;
+            }
+            name
+        };
         if closing {
             let (open_name, open_index) = stack.pop()?;
             if !name.is_empty() && name != open_name {
@@ -1150,7 +1242,7 @@ fn region_range(source: &str, selected: &str) -> Option<(usize, usize)> {
                 range = Some((open_index + 2, index));
             }
         } else {
-            if !valid || !seen.insert(name) {
+            if name.is_empty() || !seen.insert(name) {
                 return None;
             }
             stack.push((name, index));
@@ -1176,6 +1268,7 @@ fn resolve_child(d: &Directive, state: &mut State<'_>) -> Option<ResolvedChild> 
         + usize::from(d.lines.is_some())
         + usize::from(d.region.is_some())
         > 1
+        || (d.code.is_some() && d.section.is_some())
     {
         state.warn(
             "include-selection-conflict",
@@ -1281,7 +1374,7 @@ fn resolve_child(d: &Directive, state: &mut State<'_>) -> Option<ResolvedChild> 
         return None;
     }
     let range = if let Some(region) = &d.region {
-        match region_range(&source, region) {
+        match region_range(&source, region, d.code.is_some()) {
             Some(range) => Some(range),
             None => {
                 state.warn(
@@ -2372,10 +2465,46 @@ fn expand_child(d: &Directive, state: &mut State<'_>, inline: bool) -> Option<Ex
     for extension in state.extensions {
         child_options = child_options.with_extension(*extension);
     }
-    let mut child = crate::parse_with_options(&source, &child_options);
+    let mut child = if let Some(lang) = &d.code {
+        let selected = source.strip_prefix('\u{feff}').unwrap_or(&source);
+        let lines = source_lines(selected);
+        let content = if lines.is_empty() {
+            String::new()
+        } else {
+            format!("{}\n", lines.join("\n"))
+        };
+        let start_line = position_base.as_ref().map_or(1, |(_, base)| base + 1);
+        let end_line = start_line + lines.len().saturating_sub(1);
+        let whole = position_base
+            .as_ref()
+            .map_or(source.as_str(), |(whole, _)| whole);
+        // Lines and columns as carve-js reports them: column 1 on both ends.
+        let pos = state.track_positions.then(|| crate::Pos {
+            start_line,
+            end_line,
+            start_column: 1,
+            end_column: 1,
+            start_offset: line_start_offset(whole, start_line),
+            end_offset: line_start_offset(whole, end_line),
+            file: Some(crate::ast::SourceFile::new(&id)),
+        });
+        let mut doc = crate::parse_with_options("", &child_options);
+        doc.children
+            .push(BlockNode::CodeBlock(crate::ast::CodeBlock {
+                attrs: None,
+                lang: lang.clone(),
+                title: None,
+                label: None,
+                content,
+                pos,
+            }));
+        doc
+    } else {
+        crate::parse_with_options(&source, &child_options)
+    };
     let mut children = std::mem::take(&mut child.children);
     let mut footnotes = std::mem::take(&mut child.footnote_defs);
-    if let Some((complete_source, line_base)) = position_base {
+    if let Some((complete_source, line_base)) = position_base.filter(|_| d.code.is_none()) {
         shift_source_positions(&mut children, &complete_source, &source, line_base);
         for body in footnotes.values_mut() {
             shift_source_positions(body, &complete_source, &source, line_base);
@@ -2874,16 +3003,22 @@ fn expand_paragraph(block: &mut Paragraph, state: &mut State<'_>) -> Option<Vec<
                     // resolver - and `with_child` releases what the child claimed.
                     // The paragraph is replaced by what it includes, so its id is
                     // given back while the child claims; left literal, it keeps it.
+                    // A code include keeps the id: it moves onto the code block.
                     let held = block
                         .attrs
                         .as_ref()
                         .and_then(|a| a.id.clone())
-                        .filter(|id| state.id_owner(id) == Some(state.owner));
+                        .filter(|id| d.code.is_none() && state.id_owner(id) == Some(state.owner));
                     if let Some(id) = &held {
                         state.release_id(id);
                     }
                     let merged = with_child(&d, state, false, |expanded, state| {
                         let mut children = expanded.children;
+                        if d.code.is_some() {
+                            if let [BlockNode::CodeBlock(code)] = children.as_mut_slice() {
+                                code.attrs.clone_from(&block.attrs);
+                            }
+                        }
                         merge_footnotes(expanded.footnotes, &mut children, state, expanded.file);
                         Some(children)
                     });

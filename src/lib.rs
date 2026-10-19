@@ -141,9 +141,10 @@ pub use html_import::{
     HtmlImportSeverity, ImportConfidence, ImportFidelity, MAX_HTML_IMPORT_DEPTH,
 };
 pub use includes::{
-    expand_includes, expands_for_target, IncludeContext, IncludeDenial, IncludeDependency,
-    IncludeOptions, IncludeResolved, IncludeResolver, IncludeResult, IncludeWarning,
-    DEFAULT_MAX_DEPTH, DEFAULT_MAX_RESOLVER_CALLS, DEFAULT_MAX_WARNINGS,
+    expand_includes, expands_for_target, select_include_region, IncludeContext, IncludeDenial,
+    IncludeDependency, IncludeOptions, IncludeRegion, IncludeRegionError, IncludeRegionMode,
+    IncludeResolved, IncludeResolver, IncludeResult, IncludeWarning, DEFAULT_MAX_DEPTH,
+    DEFAULT_MAX_RESOLVER_CALLS, DEFAULT_MAX_WARNINGS,
 };
 #[cfg(feature = "fs")]
 pub use includes::{FileSystemResolver, DEFAULT_MAX_FILE_BYTES};

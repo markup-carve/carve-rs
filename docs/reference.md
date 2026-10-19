@@ -247,7 +247,9 @@ same.
 {{ chapters/intro.crv #setup }}       include one heading subtree, or the one
                                       block whose {#setup} id matches
 {{ notes.crv @lines:10-25 }}          include a physical line range
-{{ notes.crv @region:demo }}          include lines between named source markers
+{{ notes.crv @region:demo }}          include lines between named region markers
+{{ src/main.rs @code:rust }}          include a file as one code block
+{{ src/main.rs @region:demo @code }}  include a region as a code block, no language
 {{ chapters/intro.crv @shift:2 }}     shift included heading levels by +2
 {{ chapters/intro.crv @shift:auto }}  shift to sit under the heading in scope
 ```
@@ -259,9 +261,34 @@ first block with that explicit id is included alone, at any depth. Ids on list
 items, table cells, inline elements and footnotes select nothing.
 
 `#section`, `@lines` and `@region` are selection options; a directive uses at
-most one. A region starts at a complete `// #region name` or `#region name`
-line and ends at a matching `// #endregion name` or `#endregion name` line.
-The marker lines are excluded. Every failure (a missing file, binary content,
+most one. A region is the lines between a `#region name` marker line and its
+matching `#endregion name` line; the marker lines are excluded. Which marker
+lines count depends on the include mode. A Carve include recognizes only the
+`%%` line comment, `%% #region name` and `%% #endregion name`, so the markers
+never render in the file that holds them. A code include (`@code`) also
+recognizes `#region name`, `// #region name`, `-- #region name`,
+`/* #region name */` and `<!-- #region name -->`; a block comment's closer
+must end the same line. The keywords are case-sensitive, a `%%%` line is a
+comment fence and never a marker, and CRLF, CR and LF all end a line for
+`@lines` and `@region`. `carve lint` reports a source-style or mixed-case marker
+line in a Carve file as `region-marker-renders-as-text`.
+
+`@code` or `@code:lang` turns the selected source (the whole file, an `@lines`
+range or an `@region` region) into one code block. The payload is not parsed,
+so a `{{ … }}` or a fence line inside it is content. A leading byte order mark
+is dropped and every line ends with a line feed; an empty selection gives an
+empty block. `@code:lang` sets the fence language; a bare `@code` sets none and
+nothing is inferred from the file extension. A block attribute line above the
+directive applies to the code block as it would to an authored fence, so a
+class, a `title` or a callout-reading extension works the same. `@code` cannot
+combine with `#section` (`include-selection-conflict`), `@shift` has no effect
+on it, and a code include inside a paragraph is `include-block-in-inline`.
+
+`select_include_region(source, name, mode)` resolves `@region:name` in a file's
+text with the expander's own scanner and returns the 1-based content lines, so
+an editor jumping to a region follows the same marker rules.
+
+Every failure (a missing file, binary content,
 conflicting selectors, an invalid or missing region, a
 cycle, the depth limit, the size budget) emits a warning on stderr and leaves
 the directive **literal**; inclusion never silently drops a directive. A

@@ -3007,7 +3007,7 @@ fn include_padding_and_slot_separators_are_spaces() {
 
 #[test]
 fn named_region_selects_stable_source_and_preserves_position() {
-    let child = "Before.\n// #region demo\n## Pick\n\nBody.\n// #endregion demo\nAfter.";
+    let child = "Before.\n%% #region demo\n## Pick\n\nBody.\n%% #endregion demo\nAfter.";
     let result = expand("{{ child @region:demo }}", &[("child", child)]);
     assert!(result.rules().is_empty());
     assert!(result.html.contains("Pick"));
@@ -3019,12 +3019,12 @@ fn named_region_selects_stable_source_and_preserves_position() {
 #[test]
 fn invalid_named_regions_warn_and_keep_resolved_dependency() {
     for child in [
-        "// #region other\nBody.\n// #endregion other",
-        "// #region demo\nBody.\n// #endregion other",
-        "// #region demo\nBody.\n// #endregion demo\n// #region demo",
-        "// #region demo extra\nBody.\n// #endregion demo",
-        "// #region-x\n// #region demo\nBody.\n// #endregion demo",
-        "// #region demo\nBody.\n// #endregion-x",
+        "%% #region other\nBody.\n%% #endregion other",
+        "%% #region demo\nBody.\n%% #endregion other",
+        "%% #region demo\nBody.\n%% #endregion demo\n%% #region demo",
+        "%% #region demo extra\nBody.\n%% #endregion demo",
+        "%% #region-x\n%% #region demo\nBody.\n%% #endregion demo",
+        "%% #region demo\nBody.\n%% #endregion-x",
     ] {
         let result = expand("{{ child @region:demo }}", &[("child", child)]);
         assert_eq!(result.rules(), vec!["include-region-invalid"]);
@@ -3036,7 +3036,7 @@ fn invalid_named_regions_warn_and_keep_resolved_dependency() {
         "{{ child @region:demo }}",
         &[(
             "child",
-            "// #regionx\n// #region demo\nBody.\n// #endregion demo",
+            "%% #regionx\n%% #region demo\nBody.\n%% #endregion demo",
         )],
     );
     assert!(run_on.rules().is_empty());
@@ -3047,7 +3047,7 @@ fn invalid_named_regions_warn_and_keep_resolved_dependency() {
     ] {
         let result = expand(
             directive,
-            &[("child", "// #region demo\nBody.\n// #endregion demo")],
+            &[("child", "%% #region demo\nBody.\n%% #endregion demo")],
         );
         assert_eq!(result.rules(), vec!["include-selection-conflict"]);
     }
@@ -3056,8 +3056,47 @@ fn invalid_named_regions_warn_and_keep_resolved_dependency() {
 #[test]
 fn named_region_accepts_crlf_and_extension_path() {
     let child =
-        "Before.\r\n// #region demo\r\n## Pick\r\n\r\nBody.\r\n// #endregion demo\r\nAfter.";
+        "Before.\r\n%% #region demo\r\n## Pick\r\n\r\nBody.\r\n%% #endregion demo\r\nAfter.";
     let result = expand("{{ child.crv @region:demo }}", &[("child.crv", child)]);
     assert_eq!(result.rules(), Vec::<&str>::new(), "{}", result.html);
     assert!(result.html.contains("Pick"), "{}", result.html);
+}
+
+#[test]
+fn lone_cr_ends_a_line_for_lines_and_code_regions() {
+    let lines = expand(
+        "{{ child.crv @lines:2-2 }}",
+        &[("child.crv", "One.\rTwo.\rThree.")],
+    );
+    assert_eq!(lines.rules(), Vec::<&str>::new(), "{}", lines.html);
+    assert_eq!(lines.html, "<p>Two.</p>");
+
+    let code = expand(
+        "{{ a.sql @region:q @code:sql }}",
+        &[("a.sql", "-- #region q\rSELECT 1;\r-- #endregion q\r")],
+    );
+    assert_eq!(code.rules(), Vec::<&str>::new(), "{}", code.html);
+    assert_eq!(
+        code.html,
+        "<pre><code class=\"language-sql\">SELECT 1;\n</code></pre>"
+    );
+}
+
+#[test]
+fn a_code_include_keeps_the_id_from_its_attribute_line() {
+    let result = expand(
+        "{#sample}\n{{ a.txt @code }}\n\n{{ b.crv }}",
+        &[("a.txt", "x\n"), ("b.crv", "{#sample}\nLater.\n")],
+    );
+    assert_eq!(
+        result.html.matches("id=\"sample\"").count(),
+        1,
+        "{}",
+        result.html
+    );
+    assert!(
+        result.html.contains("<pre id=\"sample\">"),
+        "{}",
+        result.html
+    );
 }

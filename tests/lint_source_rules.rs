@@ -385,3 +385,38 @@ fn repeated_unicode_warnings_keep_codepoint_columns() {
         .collect();
     assert_eq!(bidi, [(3, 2), (3, 4)]);
 }
+
+#[test]
+fn region_marker_rendering_warning() {
+    for source in [
+        "#region demo",
+        "#endregion",
+        "// #region demo",
+        "-- #region demo",
+        "/* #region demo */",
+        "<!-- #region demo -->",
+        "%% #Region demo",
+        "%% #ENDREGION",
+    ] {
+        let warnings: Vec<_> = lint_carve(source)
+            .into_iter()
+            .filter(|w| w.rule == "region-marker-renders-as-text")
+            .collect();
+        assert_eq!(warnings.len(), 1, "{source:?}: {warnings:?}");
+        assert!(warnings[0].message.contains("%% #region name"));
+    }
+    for source in [
+        "%% #region demo\nBody.\n%% #endregion demo",
+        "```txt\n#region demo\n```",
+        "%%%\n#region demo\n%%%",
+        "```txt\n%% #Region demo\n```",
+        "%%%\n%% #Region demo\n%%%",
+    ] {
+        assert!(
+            !lint_carve(source)
+                .iter()
+                .any(|w| w.rule == "region-marker-renders-as-text"),
+            "{source:?}"
+        );
+    }
+}
