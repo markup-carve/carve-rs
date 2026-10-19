@@ -42,7 +42,7 @@ fn check(data: &str, count: usize) {
 #[test]
 fn unclosed_code_fence_vectors() {
     check(
-        include_str!("spec/tests/lint-rule-vectors/unclosed-code-fence.json"),
+        include_str!("fixtures/lint-rule-vectors/unclosed-code-fence.json"),
         16,
     );
 }
@@ -50,7 +50,7 @@ fn unclosed_code_fence_vectors() {
 #[test]
 fn continuation_marker_refused_vectors() {
     check(
-        include_str!("spec/tests/lint-rule-vectors/continuation-marker-refused.json"),
+        include_str!("fixtures/lint-rule-vectors/continuation-marker-refused.json"),
         15,
     );
 }
