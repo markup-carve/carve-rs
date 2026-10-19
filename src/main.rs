@@ -1593,7 +1593,11 @@ fn run_lint_paths(
             lint_options.lint_includes = Some(
                 carve::IncludeOptions::new()
                     .with_resolver(resolver)
-                    .with_source_path(label)
+                    .with_source_path(
+                        std::fs::canonicalize(label)
+                            .map(|path| path.to_string_lossy().into_owned())
+                            .unwrap_or_else(|_| label.to_string()),
+                    )
                     .collecting_included(),
             );
         }

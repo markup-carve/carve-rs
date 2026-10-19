@@ -109,6 +109,90 @@ fn lint_normalizes_included_delimited_table_line_endings() {
     }
 }
 
+#[test]
+fn code_cycles_report_the_directive_and_its_include_chain() {
+    let cases = [
+        (
+            "Intro.\n\n{{ doc.crv @code }}\n",
+            None,
+            "doc.crv",
+            3,
+            vec![],
+        ),
+        (
+            "{{ a.crv }}\n",
+            Some("{{ doc.crv @code }}\n"),
+            "a.crv",
+            1,
+            vec![("doc.crv", 1, 1)],
+        ),
+        ("{{ doc.crv }}\n", None, "doc.crv", 1, vec![]),
+    ];
+    for (entry, child, file, line, chain) in cases {
+        let resolver = |path: &str, _: &IncludeContext<'_>| match path {
+            "doc.crv" => Ok(IncludeResolved::with_id(entry, "doc.crv")),
+            "a.crv" => Ok(IncludeResolved::with_id(child.unwrap(), "a.crv")),
+            _ => Err(IncludeDenial::Unresolved),
+        };
+        let options = Options::new().with_lint_includes(
+            IncludeOptions::new()
+                .with_resolver(&resolver)
+                .with_source_path("doc.crv"),
+        );
+        let findings = lint_carve_with_options(entry, &options);
+        assert_eq!(findings.len(), 1, "{entry}");
+        let finding = &findings[0];
+        assert_eq!(finding.rule, "include-cycle");
+        assert_eq!(finding.file.as_deref().unwrap_or("doc.crv"), file);
+        assert_eq!((finding.line, finding.column), (line, 1));
+        let actual_chain: Vec<_> = finding
+            .included_by
+            .iter()
+            .map(|site| (site.file.as_str(), site.line, site.column))
+            .collect();
+        assert_eq!(actual_chain, chain);
+    }
+}
+
+#[cfg(feature = "fs")]
+#[test]
+fn cli_code_cycle_exits_one_and_top_level_cycle_has_no_chain() {
+    use std::process::Command;
+    let dir = std::env::temp_dir().join(format!("carve-lint-cycles-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let cases = [
+        ("Intro.\n\n{{ doc.crv @code }}\n", None, "doc.crv:3:1"),
+        ("{{ a.crv }}\n", Some("{{ doc.crv @code }}\n"), "a.crv:1:1"),
+        ("{{ doc.crv }}\n", None, "doc.crv:1:1"),
+    ];
+    for (entry, child, location) in cases {
+        std::fs::write(dir.join("doc.crv"), entry).unwrap();
+        if let Some(child) = child {
+            std::fs::write(dir.join("a.crv"), child).unwrap();
+        }
+        let output = Command::new(env!("CARGO_BIN_EXE_carve"))
+            .current_dir(&dir)
+            .args(["lint", "--include-root", ".", "doc.crv"])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        let text = String::from_utf8(output.stdout).unwrap();
+        assert!(
+            text.starts_with(&format!("{location} include-cycle")),
+            "{text}"
+        );
+        if child.is_some() {
+            assert!(
+                text.trim_end().ends_with("(included from doc.crv:1:1)"),
+                "{text}"
+            );
+        } else {
+            assert!(!text.contains("included from"), "{text}");
+        }
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 #[cfg(feature = "fs")]
 #[test]
 fn cli_reports_included_malformed_record() {
