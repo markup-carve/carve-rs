@@ -927,7 +927,13 @@ mod tests {
         .unwrap();
         for row in rows.as_array().unwrap() {
             let source = row["source"].as_str().unwrap();
-            let expected = html_shape(row["html"].as_str().unwrap());
+            // `nativeHtml` overrides cmark-gfm where Carve keeps a destination bracket literal.
+            let expected = html_shape(
+                row.get("nativeHtml")
+                    .unwrap_or(&row["html"])
+                    .as_str()
+                    .unwrap(),
+            );
             let document = crate::markdown_import::try_markdown_to_ast(source).unwrap();
             let written = crate::markdown_import::try_markdown_to_carve(source).unwrap();
             let parsed = crate::parse(&written);

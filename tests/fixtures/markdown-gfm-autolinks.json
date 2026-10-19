@@ -10173,7 +10173,8 @@
   },
   {
     "source": "[a](/foo[) http://a.b",
-    "html": "<p><a href=\"/foo%5B\">a</a> <a href=\"http://a.b\">http://a.b</a></p>\n"
+    "html": "<p><a href=\"/foo%5B\">a</a> <a href=\"http://a.b\">http://a.b</a></p>\n",
+    "nativeHtml": "<p><a href=\"/foo[\">a</a> <a href=\"http://a.b\">http://a.b</a></p>\n"
   },
   {
     "source": "[x](http://a.b/`x y`) http://c.d",
