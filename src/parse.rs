@@ -11355,7 +11355,11 @@ fn finish_blockquote(
     // taking one binds the caption across the container change that opened the
     // quote - which is how `| a |` / blank / `>` / blank / `^ cap` captioned an
     // empty quote nobody wrote the caption under (markup-carve/carve#2892).
-    let caption = if children.is_empty() || cur.carried_reach(cur.pos) == Some(false) {
+    let caption_after_blank_reaches =
+        cur.peek().is_some_and(is_blank_line) && cur.carried_reach(cur.pos + 1) == Some(true);
+    let caption = if children.is_empty()
+        || (cur.carried_reach(cur.pos) == Some(false) && !caption_after_blank_reaches)
+    {
         None
     } else {
         consume_caption(cur, options)
@@ -15254,7 +15258,7 @@ fn parse_list(
         }
         if marker_content_starts_block(marker.content, cur, content_col)
             || marker_content_is_attr_block(marker.content, cur, content_col)
-            || marker_content_is_captioned_equation(marker.content, cur, content_col, options)
+            || marker_content_is_captioned_inline(marker.content, cur, content_col, options)
         {
             let mut stream = item_marker_source(cur, marker.content, item_at);
             let before_block = cur.pos;
@@ -15850,16 +15854,15 @@ fn marker_content_starts_block(content: &str, _cur: &LineCursor<'_>, _content_co
     false
 }
 
-/// Whether a list marker's content is a display-math line with a caption in its
-/// slot (PART 9 §4). The lead-paragraph scanner has no caption slot and would
-/// fold the caption line in as text, so the block parser takes the item.
-fn marker_content_is_captioned_equation(
+/// The lead-paragraph scanner has no caption slot. A standalone image or
+/// display equation followed by a caption goes through the block parser.
+fn marker_content_is_captioned_inline(
     content: &str,
     cur: &LineCursor<'_>,
     content_col: usize,
     options: &Options<'_>,
 ) -> bool {
-    if !content.starts_with("$$`") {
+    if !content.starts_with("$$`") && !content.starts_with("![") {
         return false;
     }
     let caption_at = match cur.lines.line(cur.pos) {
@@ -15874,7 +15877,12 @@ fn marker_content_is_captioned_equation(
         return false;
     }
     let inline = parse_inline_with_options(content, options);
-    inline.len() == 1 && matches!(&inline[0], InlineNode::Math(m) if m.display)
+    inline.len() == 1
+        && match &inline[0] {
+            InlineNode::Image(_) => true,
+            InlineNode::Math(math) => math.display,
+            _ => false,
+        }
 }
 
 /// Whether a valid standalone attribute block starts in a list marker's
@@ -16862,9 +16870,11 @@ fn continuation_source_loosens(source: &str, _source_is_the_item_body: bool) -> 
     let entry_closers = std::cell::OnceCell::new();
     let mut i = 0;
     let mut closed_fence_before_blank = false;
+    let mut closed_figure_before_blank = false;
     while i < lines.len() {
         if !is_blank_line(lines[i]) {
             closed_fence_before_blank = false;
+            closed_figure_before_blank = false;
         }
         if let Some(open) = fence {
             if is_fence_close(lines[i], open) {
@@ -16947,6 +16957,8 @@ fn continuation_source_loosens(source: &str, _source_is_the_item_body: bool) -> 
                 &mut comment_closers,
             )
             .unwrap_or(lines.len());
+            closed_figure_before_blank =
+                open.kind.as_deref() == Some("figure") && end < lines.len();
             i = end;
             continue;
         }
@@ -16974,18 +16986,42 @@ fn continuation_source_loosens(source: &str, _source_is_the_item_body: bool) -> 
             i += 1;
             continue;
         }
-        // The blank before a caption belongs to its table or closed fence.
-        if j == i + 1
-            && caption_content(lines[j]).is_some()
-            && (is_table_start(lines[i - 1])
+        let attached_caption = if j == i + 1 && caption_content(lines[j]).is_some() {
+            let mut quote_host = false;
+            if strip_blockquote_prefix(lines[i - 1]).is_some() {
+                for previous in lines[..i].iter().rev() {
+                    if is_blank_line(previous) {
+                        break;
+                    }
+                    if let Some(content) = strip_blockquote_prefix(previous) {
+                        quote_host |= !trim_ascii(content).is_empty();
+                    }
+                }
+            }
+            let inline_starts_block = i == 1 || is_blank_line(lines[i - 2]);
+            is_table_start(lines[i - 1])
                 || is_table_continuation(lines[i - 1])
-                || closed_fence_before_blank)
-        {
+                || (inline_starts_block && detect_block_image(lines[i - 1]).is_some())
+                || quote_host
+                || (inline_starts_block
+                    && lines[i - 1].starts_with("$$`")
+                    && matches!(
+                        parse_inline_with_options(lines[i - 1], &Options::default()).as_slice(),
+                        [InlineNode::Math(math)] if math.display
+                    ))
+                || closed_fence_before_blank
+                || closed_figure_before_blank
+        } else {
+            false
+        };
+        if attached_caption {
             closed_fence_before_blank = false;
+            closed_figure_before_blank = false;
             i += 1;
             continue;
         }
         closed_fence_before_blank = false;
+        closed_figure_before_blank = false;
         if !continuation_line_opens_sub_block(lines[j], &lines[j + 1..]) {
             return true;
         }
