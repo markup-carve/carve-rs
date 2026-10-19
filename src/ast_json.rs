@@ -592,6 +592,9 @@ pub fn from_json(input: &str) -> Result<Document, AstJsonError> {
     clear_unbacked_footnote_numbers(&mut doc);
     renumber_captions(&mut doc);
     promote_ingested_block_images(&mut doc);
+    if input.contains("\"table_cell_ref\"") {
+        crate::table_cell_refs::resolve(&mut doc);
+    }
 
     Ok(doc)
 }
@@ -2499,6 +2502,19 @@ fn write_inline_leaf(out: &mut String, node: &InlineNode) {
             write_pos_field(&mut w, &n.pos);
             w.finish();
         }
+        InlineNode::TableCellRef(n) => {
+            let mut w = typed(out, "table_cell_ref");
+            w.field("target", |out| write_string(out, &n.target));
+            w.field("row", |out| write_table_selector(out, &n.row));
+            w.field("column", |out| write_table_selector(out, &n.column));
+            w.field("source", |out| write_string(out, &n.source));
+            if let Some(value) = &n.value {
+                w.field("value", |out| write_string(out, value));
+            }
+            write_attrs_field(&mut w, &n.attrs);
+            write_pos_field(&mut w, &n.pos);
+            w.finish();
+        }
         InlineNode::CrossRef(n) => {
             let mut w = typed(out, "heading_ref");
             // The authored construct and its resolution, side by side
@@ -2969,6 +2985,13 @@ fn write_bool(out: &mut String, value: bool) {
 
 fn write_usize(out: &mut String, value: usize) {
     out.push_str(&value.to_string());
+}
+
+fn write_table_selector(out: &mut String, selector: &TableSelector) {
+    match selector {
+        TableSelector::Index(n) => write_usize(out, *n),
+        TableSelector::Name(name) => write_string(out, name),
+    }
 }
 
 fn ol_type_json(t: OrderedListType) -> &'static str {
@@ -3844,6 +3867,27 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
             text: optional_string(obj, "text")?.unwrap_or("").to_string(),
             pos: optional_pos(obj, "autolink")?,
         })),
+        "table_cell_ref" => {
+            let target = required_string(obj, "table_cell_ref", "target")?.to_string();
+            let row = required_table_selector(obj, "row")?;
+            let column = required_table_selector(obj, "column")?;
+            let source = required_string(obj, "table_cell_ref", "source")?.to_string();
+            if source != crate::table_cell_refs::canonical_source(&target, &row, &column) {
+                return Err(AstJsonError::new(
+                    "table_cell_ref.source disagrees with target, row or column",
+                ));
+            }
+            Ok(InlineNode::TableCellRef(Box::new(TableCellRef {
+                attrs: optional_attrs(obj)?,
+                target,
+                row,
+                column,
+                source,
+                value: optional_string(obj, "value")?.map(str::to_string),
+                reason: None,
+                pos: optional_pos(obj, "table_cell_ref")?,
+            })))
+        }
         "heading_ref" => Ok(InlineNode::CrossRef(CrossRef {
             target: required_string(obj, "heading_ref", "target")?.to_string(),
             href: optional_string(obj, "href")?.map(str::to_string),
@@ -4257,6 +4301,29 @@ fn required_string<'a>(
     field: &str,
 ) -> Result<&'a str, AstJsonError> {
     required_value(obj, node_type, field)?.expect_string(&format!("{node_type}.{field}"))
+}
+
+fn required_table_selector(
+    obj: &Map<String, Json>,
+    field: &str,
+) -> Result<TableSelector, AstJsonError> {
+    let value = required_value(obj, "table_cell_ref", field)?;
+    match value {
+        Json::String(name) => Ok(TableSelector::Name(name.clone())),
+        Json::Number(_) => {
+            let index = value.expect_usize(&format!("table_cell_ref.{field}"))?;
+            if index == 0 || index > 9_007_199_254_740_991 {
+                Err(AstJsonError::new(format!(
+                    "table_cell_ref.{field} must be between 1 and 9007199254740991"
+                )))
+            } else {
+                Ok(TableSelector::Index(index))
+            }
+        }
+        _ => Err(AstJsonError::new(format!(
+            "table_cell_ref.{field} must be a string or positive integer"
+        ))),
+    }
 }
 
 fn required_bool(

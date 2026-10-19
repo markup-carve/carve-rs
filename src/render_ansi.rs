@@ -964,6 +964,15 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
         // source run reaches this renderer and its own typography mode applies
         // to it. A caption target has no nodes - its label is LABEL + NUMBER -
         // so that one is still a string.
+        InlineNode::TableCellRef(r) => {
+            strip_terminal_controls(&r.value.clone().unwrap_or_else(|| {
+                format!(
+                    "{}{}",
+                    r.source,
+                    crate::render_carve::render_attrs(&r.attrs)
+                )
+            }))
+        }
         InlineNode::CrossRef(crossref) => {
             let resolved = ctx
                 .crossref_index

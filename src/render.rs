@@ -2545,8 +2545,8 @@ fn render_table(
         }
         attrs
             .key_values
-            .retain(|k, _| !matches!(k.as_str(), "aligns" | "valigns" | "widths"));
-        attrs.order.retain(|s| !matches!(s, AttrSlot::Key(k) if matches!(k.as_str(), "aligns" | "valigns" | "widths")));
+            .retain(|k, _| !matches!(k.as_str(), "aligns" | "valigns" | "widths" | "row-key"));
+        attrs.order.retain(|s| !matches!(s, AttrSlot::Key(k) if matches!(k.as_str(), "aligns" | "valigns" | "widths" | "row-key")));
         if !has_body_metadata || valid_groups {
             attrs
                 .key_values
@@ -4177,6 +4177,38 @@ fn render_inline_after(
             out.push('>');
             write_escaped_text(out, display);
             out.push_str("</a>");
+        }
+        InlineNode::TableCellRef(r) => {
+            if let Some(value) = &r.value {
+                let mut attrs = r.attrs.clone();
+                let code = attrs.as_mut().is_some_and(|a| {
+                    let code = a.key_values.remove("code").is_some();
+                    a.order
+                        .retain(|slot| !matches!(slot, AttrSlot::Key(key) if key == "code"));
+                    code
+                });
+                let decorated = attrs.as_ref().is_some_and(|a| {
+                    a.id.is_some() || !a.classes.is_empty() || !a.key_values.is_empty()
+                });
+                if code || decorated {
+                    out.push_str(if code { "<code" } else { "<span" });
+                    write_attrs(out, &attrs);
+                    out.push('>');
+                }
+                write_escaped_text(out, value);
+                if code || decorated {
+                    out.push_str(if code { "</code>" } else { "</span>" });
+                }
+            } else {
+                write_escaped_text(
+                    out,
+                    &format!(
+                        "{}{}",
+                        r.source,
+                        crate::render_carve::render_attrs(&r.attrs)
+                    ),
+                );
+            }
         }
         InlineNode::CrossRef(c) => {
             // The label is the target's cloned inline NODES, so it still

@@ -14,6 +14,27 @@ use carve::{
     expand_includes, parse, parse_with_options, render_html, BlockNode, IncludeContext,
     IncludeDenial, IncludeDependency, IncludeOptions, IncludeResolved, IncludeResolver, Options,
 };
+
+#[test]
+fn table_cell_reference_follows_an_included_table_rename() {
+    let source = "{{ a }}\n\n{{ b }}";
+    let resolver = MapResolver::new(&[
+        ("a", "{#sales}\n|= Quarter |= Revenue |\n| Q2 | 120 |"),
+        (
+            "b",
+            "{#sales}\n|= Quarter |= Revenue |\n| Q2 | 150 |\n\n@{#sales[\"Q2\"][\"Revenue\"]}",
+        ),
+    ]);
+    let result = expand_includes(
+        parse(source),
+        source,
+        &IncludeOptions::new().with_resolver(&resolver),
+    );
+    assert!(render_html(&result.doc).unwrap().contains("<p>150</p>"));
+    assert!(carve::render_carve(&result.doc)
+        .unwrap()
+        .contains("@{#sales-2[\"Q2\"][\"Revenue\"]}"));
+}
 // Only this build has a filesystem resolver; everything else here drives the
 // pass through a HOST-SUPPLIED closure, which is the case a database, object
 // store or in-memory medium is in.

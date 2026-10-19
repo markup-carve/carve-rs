@@ -1111,6 +1111,7 @@ fn extract_inline_text(node: &InlineNode, smart: SmartTypographyMode) -> String 
             }
         }
         InlineNode::Code(c) => c.value.clone(),
+        InlineNode::TableCellRef(r) => r.value.clone().unwrap_or_else(|| r.source.clone()),
         InlineNode::Math(m) => m.content.clone(),
         InlineNode::RawInline(r) => r.content.clone(),
         InlineNode::LiteralInline(l) => l.content.clone(),
@@ -1396,6 +1397,7 @@ fn is_empty_inline(node: &InlineNode) -> bool {
         | InlineNode::Symbol(_)
         | InlineNode::Abbreviation(_)
         | InlineNode::CrossRef(_)
+        | InlineNode::TableCellRef(_)
         | InlineNode::CaptionNumber(_)
         | InlineNode::CitationGroup(_)
         | InlineNode::Ruby(_)

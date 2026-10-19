@@ -1511,6 +1511,7 @@ fn normalize_escapes_nested(node: &mut InlineNode) {
         | InlineNode::Symbol(_)
         | InlineNode::AutoLink(_)
         | InlineNode::CrossRef(_)
+        | InlineNode::TableCellRef(_)
         | InlineNode::CaptionNumber(_)
         | InlineNode::Mention(_)
         | InlineNode::Tag(_)
@@ -5361,6 +5362,11 @@ fn render_inline_body(
             }
             format!("{{#{}#}}", escape_critic_text(&comment.text))
         }
+        InlineNode::TableCellRef(reference) => format!(
+            "{}{}",
+            reference.source,
+            render_inline_attrs(&reference.attrs, ctx)
+        ),
         InlineNode::CrossRef(crossref) => {
             format!("</#{}>", spell_crossref_target(&crossref.target))
         }

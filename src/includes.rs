@@ -1879,6 +1879,16 @@ impl SubtreeVisitor for FollowRename<'_> {
                         }
                     }
                 }
+                InlineNode::TableCellRef(reference) => {
+                    if let Some(new) = self.rename.get(&reference.target) {
+                        let prefix = format!("@{{#{}", reference.target);
+                        if let Some(rest) = reference.source.strip_prefix(&prefix) {
+                            reference.source = format!("@{{#{new}{rest}");
+                            reference.target = new.clone();
+                            reference.value = None;
+                        }
+                    }
+                }
                 _ => {}
             }
             crate::include_walk::visit_inline_children(node, self);
@@ -3517,6 +3527,7 @@ pub(crate) fn expand_includes_with_extensions(
         }
         doc.footnote_defs = defs;
         finish_renames(&mut doc, &mut state);
+        crate::table_cell_refs::resolve(&mut doc);
     }
     IncludeResult {
         doc,

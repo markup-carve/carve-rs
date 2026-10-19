@@ -64,6 +64,7 @@ mod source_patch;
 mod source_positions;
 mod stamp;
 pub mod stream;
+mod table_cell_refs;
 mod table_display_width;
 mod table_source_metadata;
 mod table_spans;

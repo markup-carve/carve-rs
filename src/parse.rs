@@ -768,6 +768,10 @@ fn parse_with_options_mode_and_index(
         // Measured here, so nothing about the parse path needs a second number.
         ingest_payload_len: 0,
     };
+    if source.contains("@{#") {
+        // Heading ids and reference labels below read the projected value.
+        crate::table_cell_refs::resolve(&mut doc);
+    }
     let has_crossrefs = source.contains("</#");
     let (mut heading_index, _assigned_heading_ids) = heading_index(
         &doc.children,
@@ -851,6 +855,10 @@ fn parse_with_options_mode_and_index(
         // bytes consecutively either way, so the private facade tree can avoid
         // a whole-document normalization pass.
         coalesce_text_runs(&mut doc);
+    }
+    if !options.extensions.is_empty() {
+        // An after_parse extension may add a table or reference after the first pass.
+        crate::table_cell_refs::resolve(&mut doc);
     }
     // After every extension has had its say, so a heading an extension added is
     // a crossref target like any other.
@@ -22426,8 +22434,55 @@ fn split_table_cells_seeded(
     let mut index = 0usize;
     let mut cell_start = 0usize;
     let mut chars = content.chars().peekable();
+    let last_brace = content
+        .chars()
+        .enumerate()
+        .filter_map(|(i, ch)| (ch == '}').then_some(i))
+        .last();
     while let Some(ch) = chars.next() {
         index += 1;
+        if open_len.is_none()
+            && ch == '@'
+            && chars.peek() == Some(&'{')
+            && chars.clone().nth(1) == Some('#')
+            && last_brace.is_some_and(|last| last >= index)
+        {
+            let mut look = chars.clone();
+            let mut marker = String::from("@");
+            let mut quoted = false;
+            let mut escaped = false;
+            let mut complete = false;
+            while let Some(next) = look.next() {
+                if next == '|' && !quoted {
+                    break;
+                }
+                marker.push(next);
+                if escaped {
+                    escaped = false;
+                    continue;
+                }
+                if next == '\\' {
+                    escaped = true;
+                    continue;
+                }
+                if next == '"' {
+                    quoted = !quoted;
+                    continue;
+                }
+                if next == '}' && !quoted {
+                    complete = true;
+                    break;
+                }
+            }
+            if complete && marker.starts_with("@{#") {
+                for _ in 1..marker.chars().count() {
+                    chars.next();
+                    index += 1;
+                }
+                buf.push_str(&marker);
+                continue;
+            }
+        }
         if open_len.is_none()
             && ch == '\\'
             && chars.peek().is_some_and(|next| next.is_ascii_punctuation())
@@ -25557,6 +25612,7 @@ fn set_inline_node_pos(node: &mut InlineNode, pos: Option<Pos>) {
         InlineNode::Symbol(n) => n.pos = pos,
         InlineNode::AutoLink(n) => n.pos = pos,
         InlineNode::CrossRef(n) => n.pos = pos,
+        InlineNode::TableCellRef(n) => n.pos = pos,
         InlineNode::CaptionNumber(n) => n.pos = pos,
         InlineNode::Mention(n) => n.pos = pos,
         InlineNode::Tag(n) => n.pos = pos,
@@ -26563,6 +26619,41 @@ fn parse_inline_context_with_pairs(
         }
 
         if c == b'@' {
+            if let Some((reference, consumed)) = parse_table_cell_ref(text, i, &bounds) {
+                flush_text(
+                    &mut out,
+                    &mut buf,
+                    positions,
+                    base,
+                    &mut buf_start,
+                    &mut buf_placeable,
+                    &mut buf_src_delta,
+                );
+                let mut node = InlineNode::TableCellRef(Box::new(reference));
+                set_inline_node_pos(
+                    &mut node,
+                    inline_pos(positions, base + i, base + i + consumed),
+                );
+                quotes.push(&mut out, node);
+                i += consumed;
+                continue;
+            }
+            if let Some(end) = table_marker_end(bytes, i, bounds.last_close_brace) {
+                flush_text(
+                    &mut out,
+                    &mut buf,
+                    positions,
+                    base,
+                    &mut buf_start,
+                    &mut buf_placeable,
+                    &mut buf_src_delta,
+                );
+                let mut node = InlineNode::text(text[i..=end].to_string());
+                set_inline_node_pos(&mut node, inline_pos(positions, base + i, base + end + 1));
+                quotes.push(&mut out, node);
+                i = end + 1;
+                continue;
+            }
             if let Some((mention, consumed)) = parse_mention(text, i) {
                 flush_text(
                     &mut out,
@@ -27302,7 +27393,7 @@ fn parse_reference_link(
     if bytes.get(after_text) != Some(&b'[') {
         return None;
     }
-    let label_close = reference_label_close(bytes, after_text)?;
+    let label_close = reference_label_close(bytes, after_text, bounds.last_close_brace)?;
     let after_label = label_close + 1;
     // Both brackets are present, so materializing their labels now costs O(1)
     // per accepted reference rather than per candidate `[`.
@@ -27768,7 +27859,7 @@ fn parse_reference_image(
     if bytes.get(after_alt) != Some(&b'[') {
         return None;
     }
-    let label_close = reference_label_close(bytes, after_alt)?;
+    let label_close = reference_label_close(bytes, after_alt, bounds.last_close_brace)?;
     let after_label = label_close + 1;
     let raw_alt = std::str::from_utf8(&bytes[start + 2..alt_close]).ok()?;
     let alt = unescape_title(raw_alt);
@@ -28030,6 +28121,121 @@ pub(crate) fn name_run_len(s: &str) -> usize {
         }
     }
     i
+}
+
+fn parse_table_cell_ref(
+    text: &str,
+    pos: usize,
+    bounds: &InlineBounds<'_>,
+) -> Option<(TableCellRef, usize)> {
+    let bytes = text.as_bytes();
+    let end = table_marker_end(bytes, pos, bounds.last_close_brace)?;
+    let source = text.get(pos..=end)?;
+    let inside = source.strip_prefix("@{#")?.strip_suffix('}')?;
+    let id_len = inside
+        .bytes()
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == b'_' || *c == b'-')
+        .count();
+    let target = inside.get(..id_len)?;
+    if target.is_empty()
+        || target.starts_with('-')
+        || !target
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-')
+    {
+        return None;
+    }
+    let (row, rest) = parse_table_selector(inside.get(id_len..)?)?;
+    let (column, rest) = parse_table_selector(rest)?;
+    if !rest.is_empty() {
+        return None;
+    }
+    let mut consumed = end + 1 - pos;
+    let mut attrs = None;
+    if let Some((parsed, after)) = read_attrs_at(bytes, end + 1, bounds.last_close_brace) {
+        attrs = Some(parsed);
+        consumed = after - pos;
+    }
+    Some((
+        TableCellRef {
+            attrs,
+            target: target.to_string(),
+            row,
+            column,
+            source: source.to_string(),
+            value: None,
+            reason: None,
+            pos: None,
+        },
+        consumed,
+    ))
+}
+
+pub(crate) fn table_marker_end(
+    bytes: &[u8],
+    start: usize,
+    last_brace: Option<usize>,
+) -> Option<usize> {
+    if !bytes.get(start..)?.starts_with(b"@{#") || last_brace? < start {
+        return None;
+    }
+    let mut at = start + 3;
+    let mut quoted = false;
+    while at < bytes.len() {
+        match bytes[at] {
+            b'\\' => at += 2,
+            b'"' => {
+                quoted = !quoted;
+                at += 1;
+            }
+            b'}' if !quoted => return Some(at),
+            b'\n' | b'\r' if !quoted => return None,
+            _ => at += 1,
+        }
+    }
+    None
+}
+
+fn parse_table_selector(text: &str) -> Option<(TableSelector, &str)> {
+    let rest = text.strip_prefix('[')?;
+    if let Some(rest) = rest.strip_prefix('"') {
+        let mut value = String::new();
+        let mut chars = rest.char_indices();
+        while let Some((at, ch)) = chars.next() {
+            if ch == '"' {
+                return Some((
+                    TableSelector::Name(value),
+                    rest.get(at + 1..)?.strip_prefix(']')?,
+                ));
+            }
+            if ch == '\\' {
+                let (_, next) = chars.next()?;
+                if next != '"' && next != '\\' {
+                    return None;
+                }
+                value.push(next);
+            } else if ch == '\n' || ch == '\r' {
+                return None;
+            } else {
+                value.push(ch);
+            }
+        }
+        None
+    } else {
+        let close = rest.find(']')?;
+        let digits = &rest[..close];
+        if digits.starts_with('0')
+            || digits.is_empty()
+            || !digits.bytes().all(|c| c.is_ascii_digit())
+        {
+            return None;
+        }
+        let index = digits.parse::<usize>().ok()?;
+        if index > 9_007_199_254_740_991 {
+            return None;
+        }
+        Some((TableSelector::Index(index), &rest[close + 1..]))
+    }
 }
 
 fn parse_mention(text: &str, pos: usize) -> Option<(Mention, usize)> {
@@ -28384,12 +28590,18 @@ fn bracketed_close(bytes: &[u8], start: usize, matches: &[usize]) -> Option<usiz
 /// Find the first structural `]` in a reference label. An opening `[` is label
 /// content rather than a nested delimiter, while escapes and opaque spans keep
 /// their closing brackets literal.
-fn reference_label_close(bytes: &[u8], start: usize) -> Option<usize> {
+fn reference_label_close(bytes: &[u8], start: usize, last_brace: Option<usize>) -> Option<usize> {
     if bytes.get(start) != Some(&b'[') {
         return None;
     }
     let mut i = start + 1;
     while i < bytes.len() {
+        if bytes[i] == b'@' {
+            if let Some(end) = table_marker_end(bytes, i, last_brace) {
+                i = end + 1;
+                continue;
+            }
+        }
         match bytes[i] {
             b'\\' if i + 1 < bytes.len() => i += 2,
             b'`' => i = skip_code_span(bytes, i)?,
@@ -28414,7 +28626,7 @@ pub(crate) fn reference_label_has_source_spelling(label: &str) -> bool {
         && !label.contains("{#")
         && !label.contains('[')
         && !label.contains('`')
-        && reference_label_close(run.as_bytes(), 0) == Some(run.len() - 1)
+        && reference_label_close(run.as_bytes(), 0, run.rfind('}')) == Some(run.len() - 1)
 }
 
 /// Read `[...]` content for an inline extension: the content runs to the
@@ -28499,8 +28711,15 @@ fn read_bracketed(bytes: &[u8], start: usize) -> Option<(String, usize)> {
     // An image alt is a literal slot, so a `{%` there opens no comment.
     let in_alt = start > 0 && bytes[start - 1] == b'!';
     let last_percent_close = bytes.windows(2).rposition(|w| w == b"%}");
+    let last_table_brace = bytes.iter().rposition(|&b| b == b'}');
     let mut slot_budget = BRACKET_RESCAN_BUDGET * bytes.len() + 64;
     while i < bytes.len() {
+        if bytes[i] == b'@' {
+            if let Some(end) = table_marker_end(bytes, i, last_table_brace) {
+                i = end + 1;
+                continue;
+            }
+        }
         match bytes[i] {
             b'{' if !in_alt
                 && bytes.get(i + 1) == Some(&b'%')
@@ -28742,6 +28961,7 @@ fn compute_bracket_matches(bytes: &[u8]) -> (Vec<usize>, Vec<usize>) {
         find_seq(bytes, at + 2, b"%}").map(|close| close + 2)
     };
     let crossref_end = CrossrefScan::default();
+    let last_table_brace = bytes.iter().rposition(|&b| b == b'}');
     // Closed verbatim spans the pass skipped, as (content start, end).
     let mut spans: Vec<(usize, usize)> = Vec::new();
     let mut stack: Vec<usize> = Vec::new();
@@ -28752,6 +28972,13 @@ fn compute_bracket_matches(bytes: &[u8]) -> (Vec<usize>, Vec<usize>) {
     let mut i = 0;
     while i < bytes.len() {
         let in_alt = alt.last().copied().unwrap_or(false);
+        if bytes[i] == b'@' {
+            if let Some(end) = table_marker_end(bytes, i, last_table_brace) {
+                fill_run(&mut run_at, &stack, i, end + 1);
+                i = end + 1;
+                continue;
+            }
+        }
         match bytes[i] {
             b'\\' if i + 1 < bytes.len() => {
                 fill_run(&mut run_at, &stack, i, i + 2);
@@ -28832,6 +29059,13 @@ fn compute_bracket_matches(bytes: &[u8]) -> (Vec<usize>, Vec<usize>) {
         while i < bytes.len() {
             budget = budget.checked_sub(1)?;
             let in_alt = alt.last().copied().unwrap_or(false);
+            if bytes[i] == b'@' {
+                if let Some(end) = table_marker_end(bytes, i, last_table_brace) {
+                    budget = budget.checked_sub(end + 1 - i)?;
+                    i = end + 1;
+                    continue;
+                }
+            }
             match bytes[i] {
                 b'\\' if i + 1 < bytes.len() => i += 2,
                 b'`' => {
@@ -31089,6 +31323,7 @@ fn holds_nested_anchor(nodes: &[InlineNode]) -> bool {
         | InlineNode::LiteralInline(_)
         | InlineNode::Symbol(_)
         | InlineNode::CrossRef(_)
+        | InlineNode::TableCellRef(_)
         | InlineNode::CaptionNumber(_)
         | InlineNode::Mention(_)
         | InlineNode::Tag(_)

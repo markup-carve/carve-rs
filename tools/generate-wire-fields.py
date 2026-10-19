@@ -33,6 +33,9 @@ HELPERS = ("attrs", "pos")
 # field, the set insertion below is simply a no-op.
 
 PENDING_NODE_FIELDS = {"comment": ("delimited",), "table": ("sourceFormat",)}
+PENDING_NODE_TYPES = {
+    "table_cell_ref": ("attrs", "column", "pos", "row", "source", "target", "type", "value"),
+}
 # Fields an unmerged schema change removes, so ingest refuses them now.
 PENDING_REMOVED_FIELDS: dict[str, tuple[str, ...]] = {}
 
@@ -56,6 +59,10 @@ def render(schema: dict) -> str:
             raise SystemExit(f"pending field names unknown node type {type_const}")
         removed = set(PENDING_REMOVED_FIELDS.get(type_const, ()))
         by_type[type_const] = sorted(set(by_type[type_const]).union(fields) - removed)
+
+    for type_const, fields in PENDING_NODE_TYPES.items():
+        if type_const not in by_type:
+            by_type[type_const] = sorted(fields)
 
     helpers: dict[str, list[str]] = {}
     for name in HELPERS:

@@ -758,6 +758,10 @@ impl Renderer {
                     self.push_text(out, &n.value, &next);
                 }
             }
+            InlineNode::TableCellRef(n) => {
+                self.degrade("table_cell_ref");
+                self.push_text(out, n.value.as_deref().unwrap_or(&n.source), marks);
+            }
             InlineNode::Link(n) => {
                 let before = out.len();
                 let mut a = attrs(n.attrs.as_ref());
@@ -1387,6 +1391,7 @@ fn push_plain_text(nodes: &[InlineNode], out: &mut String) {
             InlineNode::EscapedText(t) => out.push_str(&t.value),
             InlineNode::SmartPunctuation(t) => out.push_str(smart_punctuation_glyph(t)),
             InlineNode::Code(c) => out.push_str(&c.value),
+            InlineNode::TableCellRef(r) => out.push_str(r.value.as_deref().unwrap_or(&r.source)),
             InlineNode::Image(i) => out.push_str(&i.alt),
             InlineNode::Emphasis(e) => push_plain_text(&e.children, out),
             InlineNode::Link(l) => push_plain_text(&l.children, out),

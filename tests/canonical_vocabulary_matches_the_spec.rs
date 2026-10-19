@@ -30,6 +30,7 @@ use carve::profile::{Profile, CANONICAL_BLOCK_TYPES, CANONICAL_INLINE_TYPES};
 /// no longer ahead of anything and the exemption comes out with it - which is
 /// what the assertion below forces, rather than leaving a permanent carve-out.
 const AHEAD_OF_THE_PIN: &[&str] = &[];
+const AHEAD_INLINE_PIN: &[&str] = &["table_cell_ref"];
 
 /// The page's own list for one axis, as data.
 fn spec_vocabulary(axis: &str) -> Vec<String> {
@@ -82,6 +83,15 @@ fn expected_vocabulary(axis: &str) -> Vec<String> {
             assert!(
                 !names.iter().any(|n| n == pending),
                 "the pinned profiles.md now lists `{pending}` - drop it from AHEAD_OF_THE_PIN"
+            );
+            names.push((*pending).to_string());
+        }
+        names.sort();
+    } else if axis == "Inline" {
+        for pending in AHEAD_INLINE_PIN {
+            assert!(
+                !names.iter().any(|n| n == pending),
+                "the pinned profiles.md now lists `{pending}` - remove the temporary overlay"
             );
             names.push((*pending).to_string());
         }

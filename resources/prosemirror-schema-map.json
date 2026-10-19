@@ -291,6 +291,7 @@
     }
   },
   "unmapped": {
+    "table_cell_ref": "read-only table projection is carried as resolved text",
     "abbreviation_def": "abbreviation definitions ride on the doc node's attrs",
     "cell_wrap": "the editor does not retain a table cell's continuation-row boundary",
     "citation": "a citation is carried as one typed item inside citation_group.items in the Carve AST; ProseMirror keeps that item inside the carveCitation atom's items attribute rather than as a standalone editor node",

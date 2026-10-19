@@ -414,6 +414,7 @@ pub(crate) fn push_inline_children<'a>(
         | InlineNode::Symbol(_)
         | InlineNode::AutoLink(_)
         | InlineNode::CrossRef(_)
+        | InlineNode::TableCellRef(_)
         | InlineNode::CaptionNumber(_)
         | InlineNode::Mention(_)
         | InlineNode::Tag(_)

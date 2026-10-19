@@ -911,6 +911,13 @@ fn render_inline(node: &InlineNode, depth: usize) -> String {
             crate::render_loss::record_editorial_comment_flattened(c.pos.as_ref());
             strip_controls(&c.text)
         }
+        InlineNode::TableCellRef(r) => strip_controls(&r.value.clone().unwrap_or_else(|| {
+            format!(
+                "{}{}",
+                r.source,
+                crate::render_carve::render_attrs(&r.attrs)
+            )
+        })),
         InlineNode::CrossRef(crossref) => render_crossref(&crossref.target, depth),
         // Tier-2 ext node; the core renderer has no numbering, so emit the source.
         InlineNode::CitationGroup(group) => strip_controls(&group.raw),

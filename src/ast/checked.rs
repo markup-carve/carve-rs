@@ -231,6 +231,7 @@ fn inline_children<'a>(pending: &mut Vec<Work<'a>>, node: &'a InlineNode, depth:
         | InlineNode::Symbol(_)
         | InlineNode::AutoLink(_)
         | InlineNode::CrossRef(_)
+        | InlineNode::TableCellRef(_)
         | InlineNode::CaptionNumber(_)
         | InlineNode::Mention(_)
         | InlineNode::Tag(_)

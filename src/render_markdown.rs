@@ -3091,6 +3091,21 @@ fn render_inline_body(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize
         // Emitting only the title in BOTH cases would silently drop every
         // heading link from the Markdown export - the mistake this arm was first
         // written with.
+        InlineNode::TableCellRef(r) => match &r.value {
+            Some(value)
+                if r.attrs
+                    .as_ref()
+                    .is_some_and(|a| a.key_values.contains_key("code")) =>
+            {
+                render_code(&resolve_nbsp(&strip_controls(value)))
+            }
+            Some(value) => value.clone(),
+            None => format!(
+                "{}{}",
+                r.source,
+                crate::render_carve::render_attrs(&r.attrs)
+            ),
+        },
         InlineNode::CrossRef(crossref) => {
             // The label is the target's cloned inline NODES (PART 9R R4), so it
             // is written back out as Markdown markup rather than as flattened

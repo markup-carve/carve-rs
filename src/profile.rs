@@ -122,6 +122,7 @@ pub const CANONICAL_INLINE_TYPES: &[&str] = &[
     // Listed in profiles.md's inline vocabulary and missing here, so a profile
     // could not name them and the resolver denied the nodes outright.
     "heading_ref",
+    "table_cell_ref",
     "citation_group",
     "citation",
     "caption_number",
@@ -305,6 +306,7 @@ pub fn canonical_inline_type(node: &InlineNode) -> Option<&'static str> {
         // from the output entirely (carve#419).
         InlineNode::Symbol(_) => Some("symbol"),
         InlineNode::CrossRef(_) => Some("heading_ref"),
+        InlineNode::TableCellRef(_) => Some("table_cell_ref"),
         InlineNode::CaptionNumber(_) => Some("caption_number"),
         InlineNode::CriticSubstitute(_) => Some("substitution"),
         InlineNode::Comment(_) => Some("comment"),

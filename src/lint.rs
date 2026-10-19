@@ -260,7 +260,7 @@ pub(crate) fn lint_with_recovery(source: &str, options: &Options<'_>) -> (Vec<Li
     // NOTHING behind - no node, no attrs on a neighbour - which is precisely why
     // §15 A4 needs a diagnostic, and why the parser has to say where it dropped
     // one rather than the linter guessing from the source.
-    let (doc, unattached) = crate::parse::collecting_unattached_block_attrs(|| {
+    let (mut doc, unattached) = crate::parse::collecting_unattached_block_attrs(|| {
         parse_with_options(source, &parse_options)
     });
 
@@ -273,6 +273,7 @@ pub(crate) fn lint_with_recovery(source: &str, options: &Options<'_>) -> (Vec<Li
         }
     };
     let mut out = Vec::new();
+    collect_table_cell_reference_warnings(source, &mut doc, &to_byte, &mut out);
     let mut visit = |node_type: &'static str, attrs: &Attrs, pos: Option<Pos>| {
         collect_semantic_attribute_warnings(
             node_type,
@@ -332,6 +333,107 @@ pub(crate) fn lint_with_recovery(source: &str, options: &Options<'_>) -> (Vec<Li
     }
     out.sort_by_key(|w| (w.start, w.end, w.rule));
     (out, recovered_metadata)
+}
+
+fn collect_table_cell_reference_warnings(
+    source: &str,
+    doc: &mut Document,
+    to_byte: &dyn Fn(usize) -> usize,
+    out: &mut Vec<LintWarning>,
+) {
+    use crate::include_walk::{visit_block_children, visit_inline_children, SubtreeVisitor};
+    #[derive(Default)]
+    struct Nodes {
+        unresolved: Vec<(Option<Pos>, String, &'static str)>,
+        text: Vec<(usize, usize)>,
+    }
+    impl SubtreeVisitor for Nodes {
+        fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
+            for block in blocks {
+                visit_block_children(block, self);
+            }
+        }
+        fn inlines(&mut self, nodes: &mut Vec<InlineNode>) {
+            for node in nodes {
+                match node {
+                    InlineNode::TableCellRef(reference) if reference.value.is_none() => {
+                        self.unresolved.push((
+                            reference.pos.clone(),
+                            reference.source.clone(),
+                            reference.reason.unwrap_or("cell value could not resolve"),
+                        ))
+                    }
+                    InlineNode::Text(text) => {
+                        if let Some(pos) = &text.pos {
+                            self.text.push((pos.start_offset, pos.end_offset));
+                        }
+                    }
+                    _ => {}
+                }
+                visit_inline_children(node, self);
+            }
+        }
+    }
+    let mut nodes = Nodes::default();
+    nodes.blocks(&mut doc.children);
+    for body in doc.footnote_defs.values_mut() {
+        nodes.blocks(body);
+    }
+    for (pos, selector, reason) in nodes.unresolved {
+        out.push(warning(
+            pos,
+            to_byte,
+            "unresolved-table-cell-ref",
+            format!("Table cell reference {selector}: {reason}."),
+        ));
+    }
+    let bytes = source.as_bytes();
+    let last_brace = bytes.iter().rposition(|&b| b == b'}');
+    let mut scan = 0;
+    while let Some(offset) = source[scan..].find("@{#") {
+        let start = scan + offset;
+        let Some(end) = crate::parse::table_marker_end(bytes, start, last_brace) else {
+            scan = start + 3;
+            continue;
+        };
+        scan = end + 1;
+        if !nodes
+            .text
+            .iter()
+            .any(|&(from, to)| to_byte(from) <= start && scan <= to_byte(to))
+        {
+            continue;
+        }
+        let mut line = 1;
+        let mut column = 1;
+        let mut chars = source[..start].chars().peekable();
+        while let Some(ch) = chars.next() {
+            match ch {
+                '\r' => {
+                    if chars.peek() == Some(&'\n') {
+                        chars.next();
+                    }
+                    line += 1;
+                    column = 1;
+                }
+                '\n' => {
+                    line += 1;
+                    column = 1;
+                }
+                _ => column += 1,
+            }
+        }
+        out.push(LintWarning {
+            file: None,
+            included_by: Vec::new(),
+            line,
+            column,
+            rule: "malformed-table-cell-ref",
+            message: format!("Malformed table cell reference {}.", &source[start..scan]),
+            start,
+            end: scan,
+        });
+    }
 }
 
 fn collect_contained_reference_placements(
@@ -1517,6 +1619,7 @@ fn walk_inline(node: &InlineNode, visit: &mut Visit<'_>) {
         InlineNode::LiteralInline(n) => report("literal_inline", &n.attrs, n.pos.clone(), visit),
         InlineNode::Symbol(n) => report("symbol", &n.attrs, n.pos.clone(), visit),
         InlineNode::AutoLink(n) => report("autolink", &n.attrs, n.pos.clone(), visit),
+        InlineNode::TableCellRef(n) => report("table_cell_ref", &n.attrs, n.pos.clone(), visit),
         InlineNode::Mention(n) => report("mention", &n.attrs, n.pos.clone(), visit),
         InlineNode::Tag(n) => report("tag", &n.attrs, n.pos.clone(), visit),
         InlineNode::CitationGroup(n) => {

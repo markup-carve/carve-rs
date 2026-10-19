@@ -465,6 +465,7 @@ fn drain_inline(pending: &mut Vec<DropWork>, inline: &mut InlineNode) {
         | InlineNode::Symbol(_)
         | InlineNode::AutoLink(_)
         | InlineNode::CrossRef(_)
+        | InlineNode::TableCellRef(_)
         | InlineNode::CaptionNumber(_)
         | InlineNode::Mention(_)
         | InlineNode::Tag(_)
@@ -1242,6 +1243,7 @@ pub enum InlineNode {
     Symbol(Symbol),
     AutoLink(AutoLink),
     CrossRef(CrossRef),
+    TableCellRef(Box<TableCellRef>),
     CaptionNumber(CaptionNumber),
     Mention(Mention),
     Tag(Tag),
@@ -1289,6 +1291,7 @@ impl InlineNode {
             Self::Symbol(n) => n.pos.as_ref(),
             Self::AutoLink(n) => n.pos.as_ref(),
             Self::CrossRef(n) => n.pos.as_ref(),
+            Self::TableCellRef(n) => n.pos.as_ref(),
             Self::CaptionNumber(n) => n.pos.as_ref(),
             Self::Mention(n) => n.pos.as_ref(),
             Self::Tag(n) => n.pos.as_ref(),
@@ -1768,6 +1771,24 @@ pub struct CrossRef {
     /// resolved against nothing, which is what makes it render literally.
     pub href: Option<String>,
     /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TableSelector {
+    Index(usize),
+    Name(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableCellRef {
+    pub attrs: Option<Attrs>,
+    pub target: String,
+    pub row: TableSelector,
+    pub column: TableSelector,
+    pub source: String,
+    pub value: Option<String>,
+    pub reason: Option<&'static str>,
     pub pos: Option<Pos>,
 }
 

@@ -246,6 +246,7 @@ pub(crate) fn visit_inline_children<V: SubtreeVisitor>(node: &mut InlineNode, v:
         | InlineNode::Symbol(_)
         | InlineNode::AutoLink(_)
         | InlineNode::CrossRef(_)
+        | InlineNode::TableCellRef(_)
         | InlineNode::CaptionNumber(_)
         | InlineNode::Mention(_)
         | InlineNode::Tag(_)
@@ -309,6 +310,7 @@ pub(crate) fn inline_pos_slot(node: &mut InlineNode) -> &mut Option<Pos> {
         InlineNode::Symbol(n) => &mut n.pos,
         InlineNode::AutoLink(n) => &mut n.pos,
         InlineNode::CrossRef(n) => &mut n.pos,
+        InlineNode::TableCellRef(n) => &mut n.pos,
         InlineNode::CaptionNumber(n) => &mut n.pos,
         InlineNode::Mention(n) => &mut n.pos,
         InlineNode::Tag(n) => &mut n.pos,
@@ -377,6 +379,7 @@ fn inline_attrs_slot(node: &mut InlineNode) -> Option<&mut Option<Attrs>> {
         InlineNode::Symbol(n) => Some(&mut n.attrs),
         InlineNode::AutoLink(n) => Some(&mut n.attrs),
         InlineNode::CrossRef(_) => None,
+        InlineNode::TableCellRef(n) => Some(&mut n.attrs),
         InlineNode::CaptionNumber(_) => None,
         InlineNode::Mention(n) => Some(&mut n.attrs),
         InlineNode::Tag(n) => Some(&mut n.attrs),
