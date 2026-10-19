@@ -43,3 +43,53 @@ fn closed_nested_marker_fence_keeps_its_blank_payload() {
     let expected = "<ul>\n  <li>\n    <ul>\n      <li>\n        <pre><code>\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail</p>";
     assert_eq!(to_html(source), expected);
 }
+
+#[test]
+fn unused_nested_continuation_leaves_blank_outside_fence() {
+    for lead in ["- - ", "1. - ", "- - - "] {
+        for fence in ["```", "~~~", "```=html"] {
+            for blanks in 1..=2 {
+                let source = format!(
+                    "{lead}{fence}\n{}+\n{}tail",
+                    " ".repeat(lead.len() - 2),
+                    "\n".repeat(blanks)
+                );
+                let expected_raw = to_html(&format!(
+                    "{lead}{fence}\n{}+\ntail",
+                    " ".repeat(lead.len() - 2)
+                ));
+                for html in [
+                    to_html(&source),
+                    to_html_with_options(&source, &Options::default().with_positions(true)),
+                ] {
+                    if fence == "```=html" {
+                        assert_eq!(html, expected_raw, "{source:?}");
+                    } else {
+                        assert!(
+                            html.contains("<pre><code></code></pre>"),
+                            "{source:?}: {html}"
+                        );
+                    }
+                    assert!(html.ends_with("<p>tail</p>"), "{source:?}: {html}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn wide_nested_marker_uses_its_marker_column_for_continuation() {
+    for lead in ["- 1. ", "- 10. ", "- - [ ] "] {
+        let source = format!("{lead}```\n  +\n\ntail");
+        for html in [
+            to_html(&source),
+            to_html_with_options(&source, &Options::default().with_positions(true)),
+        ] {
+            assert!(
+                html.contains("<pre><code></code></pre>"),
+                "{source:?}: {html}"
+            );
+            assert!(html.ends_with("<p>tail</p>"), "{source:?}: {html}");
+        }
+    }
+}
