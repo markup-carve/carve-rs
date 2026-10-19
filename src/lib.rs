@@ -156,12 +156,13 @@ pub use incremental::{
 };
 pub use lint::{lint_carve, lint_carve_with_options, migrate_case_only_references, LintWarning};
 pub use markdown_import::{
-    markdown_to_ast, markdown_to_carve, try_markdown_to_ast, try_markdown_to_carve,
+    markdown_to_ast, markdown_to_carve, migration_raw_heading_ids, try_markdown_to_ast,
+    try_markdown_to_carve,
 };
 pub use migration::{
     migrate_bbcode, migrate_djot, migrate_html, migrate_markdown, try_migrate_markdown,
-    MigrationConfidence, MigrationDiagnostic, MigrationFidelity, MigrationReport, MigrationResult,
-    SourceFormat,
+    try_migrate_markdown_for_directory, MigrationConfidence, MigrationDiagnostic,
+    MigrationFidelity, MigrationReport, MigrationResult, SourceFormat,
 };
 pub use parse::{parse, parse_with_options};
 pub use profile::{DisallowedAction, LinkPolicy, Profile, ProfileViolation, ProfileViolationError};

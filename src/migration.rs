@@ -157,7 +157,24 @@ pub fn migrate_markdown(source: &str) -> MigrationResult {
 
 /// Migrate Markdown while preserving a typed canonical-writer failure.
 pub fn try_migrate_markdown(source: &str) -> Result<MigrationResult, crate::RenderCarveError> {
-    let (value, losses, notices) = crate::markdown_import::markdown_to_carve_with_losses(source)?;
+    try_migrate_markdown_with_fragments(source, true)
+}
+
+/// Directory migration checks links after all target files have been converted.
+pub fn try_migrate_markdown_for_directory(
+    source: &str,
+) -> Result<MigrationResult, crate::RenderCarveError> {
+    try_migrate_markdown_with_fragments(source, false)
+}
+
+fn try_migrate_markdown_with_fragments(
+    source: &str,
+    rewrite_heading_fragments: bool,
+) -> Result<MigrationResult, crate::RenderCarveError> {
+    let (value, losses, notices) = crate::markdown_import::markdown_to_carve_with_losses_mode(
+        source,
+        rewrite_heading_fragments,
+    )?;
     let assessment = crate::markdown_assessment::assess(source, &value);
     if assessment.complete
         && notices.is_empty()

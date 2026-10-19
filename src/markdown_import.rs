@@ -17,6 +17,11 @@
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{HashMap, HashSet};
+
+use html5ever::tendril::TendrilSink;
+use markup5ever_rcdom::{NodeData, RcDom};
+use serde_json::Value;
 
 use pulldown_cmark::{
     Alignment, CodeBlockKind, Event, HeadingLevel, LinkType, Options, Parser, Tag, TagEnd,
@@ -176,16 +181,230 @@ pub fn try_markdown_to_carve(markdown: &str) -> Result<String, crate::RenderCarv
 pub(crate) fn markdown_to_carve_with_losses(
     markdown: &str,
 ) -> Result<(String, Vec<MarkdownImportLoss>, Vec<FrontmatterNotice>), crate::RenderCarveError> {
+    markdown_to_carve_with_losses_mode(markdown, true)
+}
+
+pub(crate) fn markdown_to_carve_with_losses_mode(
+    markdown: &str,
+    rewrite_heading_fragments: bool,
+) -> Result<(String, Vec<MarkdownImportLoss>, Vec<FrontmatterNotice>), crate::RenderCarveError> {
     // PART 11 §10s: a carrier marker is lifted to a placeholder before the
     // conversion and written back as the Carve line it is afterwards, so the
     // Markdown reading in between never sees a comment it would carry across as
     // raw HTML.
-    markdown_to_carve_with_carriers(markdown, true)
+    markdown_to_carve_with_carriers(markdown, true, rewrite_heading_fragments)
+}
+
+#[doc(hidden)]
+pub fn migration_raw_heading_ids(source: &str) -> HashMap<String, usize> {
+    if !source.contains("=html") {
+        return HashMap::new();
+    }
+    fn visit(value: &Value, ids: &mut HashMap<String, usize>) {
+        match value {
+            Value::Object(object) => {
+                if matches!(
+                    object.get("type").and_then(Value::as_str),
+                    Some("raw_inline" | "raw_block")
+                ) && object.get("format").and_then(Value::as_str) == Some("html")
+                {
+                    if let Some(content) = object.get("content").and_then(Value::as_str) {
+                        let dom = html5ever::parse_document(RcDom::default(), Default::default())
+                            .one(content);
+                        let mut pending = vec![dom.document.clone()];
+                        while let Some(node) = pending.pop() {
+                            for child in node.children.borrow().iter() {
+                                if let NodeData::Element { name, attrs, .. } = &child.data {
+                                    if matches!(
+                                        &*name.local,
+                                        "section" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
+                                    ) {
+                                        for attr in attrs
+                                            .borrow()
+                                            .iter()
+                                            .filter(|attr| &*attr.name.local == "id")
+                                        {
+                                            *ids.entry(attr.value.to_string()).or_default() += 1;
+                                        }
+                                    }
+                                }
+                                pending.push(child.clone());
+                            }
+                        }
+                    }
+                }
+                for (key, child) in object {
+                    if key != "attrs" && key != "position" {
+                        visit(child, ids);
+                    }
+                }
+            }
+            Value::Array(items) => {
+                for item in items {
+                    visit(item, ids);
+                }
+            }
+            _ => {}
+        }
+    }
+    let document: Value =
+        serde_json::from_str(&crate::to_json(&crate::parse(source))).expect("parser emitted JSON");
+    let mut ids = HashMap::new();
+    visit(&document, &mut ids);
+    ids
+}
+
+fn rewrite_same_file_heading_links(source: String) -> Result<String, crate::RenderCarveError> {
+    if !source.contains("](#") {
+        return Ok(source);
+    }
+    let html = crate::to_html(&source);
+    let mut raw_heading_ids = migration_raw_heading_ids(&source);
+    let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(html);
+    let mut exact = HashSet::new();
+    let mut aliases: HashMap<String, Option<String>> = HashMap::new();
+    let mut pending = vec![dom.document.clone()];
+    while let Some(node) = pending.pop() {
+        for child in node.children.borrow().iter() {
+            if let NodeData::Element { name, attrs, .. } = &child.data {
+                if &*name.local == "a" {
+                    for attr in attrs
+                        .borrow()
+                        .iter()
+                        .filter(|attr| &*attr.name.local == "name")
+                    {
+                        exact.insert(attr.value.to_string());
+                    }
+                }
+                for attr in attrs
+                    .borrow()
+                    .iter()
+                    .filter(|attr| &*attr.name.local == "id")
+                {
+                    let id = attr.value.to_string();
+                    exact.insert(id.clone());
+                    if let Some(count) = raw_heading_ids.get_mut(&id) {
+                        if *count > 0 {
+                            *count -= 1;
+                            continue;
+                        }
+                    }
+                    if id.rsplit_once('-').is_some_and(|(_, number)| {
+                        !number.is_empty()
+                            && !number.starts_with('0')
+                            && number != "1"
+                            && number.bytes().all(|byte| byte.is_ascii_digit())
+                    }) {
+                        continue;
+                    }
+                    let heading_section = &*name.local == "section" && child.children.borrow().iter().any(|nested| {
+                        matches!(&nested.data, NodeData::Element { name, .. } if matches!(&*name.local, "h1" | "h2" | "h3" | "h4" | "h5" | "h6"))
+                    });
+                    let nested_heading =
+                        matches!(&*name.local, "h1" | "h2" | "h3" | "h4" | "h5" | "h6");
+                    if heading_section || nested_heading {
+                        let key = id.to_lowercase();
+                        aliases
+                            .entry(key)
+                            .and_modify(|old| {
+                                if old.as_ref() != Some(&id) {
+                                    *old = None;
+                                }
+                            })
+                            .or_insert(Some(id));
+                    }
+                }
+            }
+            pending.push(child.clone());
+        }
+    }
+    fn decode(value: &str) -> Option<String> {
+        let mut bytes = Vec::new();
+        let mut index = 0;
+        while index < value.len() {
+            if value.as_bytes()[index] == b'%' {
+                let hex = std::str::from_utf8(value.as_bytes().get(index + 1..index + 3)?).ok()?;
+                bytes.push(u8::from_str_radix(hex, 16).ok()?);
+                index += 3;
+            } else {
+                bytes.push(value.as_bytes()[index]);
+                index += 1;
+            }
+        }
+        String::from_utf8(bytes).ok()
+    }
+    fn encode(value: &str) -> String {
+        let mut result = String::new();
+        for byte in value.bytes() {
+            if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) {
+                result.push(byte as char);
+            } else {
+                result.push_str(&format!("%{byte:02X}"));
+            }
+        }
+        result
+    }
+    fn visit(
+        value: &mut Value,
+        exact: &HashSet<String>,
+        aliases: &HashMap<String, Option<String>>,
+        changed: &mut bool,
+    ) {
+        match value {
+            Value::Object(object) => {
+                if object.get("type").and_then(Value::as_str) == Some("link")
+                    && !object.contains_key("ref")
+                {
+                    if let Some(href) = object.get("href").and_then(Value::as_str) {
+                        if let Some(raw) = href.strip_prefix('#') {
+                            if let Some(fragment) = decode(raw) {
+                                if !exact.contains(&fragment) {
+                                    if let Some(Some(id)) = aliases.get(&fragment.to_lowercase()) {
+                                        object.insert(
+                                            "href".into(),
+                                            Value::String(format!("#{}", encode(id))),
+                                        );
+                                        *changed = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                for (key, child) in object.iter_mut() {
+                    if key != "attrs" && key != "position" {
+                        visit(child, exact, aliases, changed);
+                    }
+                }
+            }
+            Value::Array(items) => {
+                for item in items {
+                    visit(item, exact, aliases, changed);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut document: Value =
+        serde_json::from_str(&crate::to_json(&crate::parse(&source))).expect("parser emitted JSON");
+    let mut changed = false;
+    visit(&mut document, &exact, &aliases, &mut changed);
+    if !changed {
+        return Ok(source);
+    }
+    let document = crate::from_json(&document.to_string()).expect("parser emitted AST JSON");
+    let result = crate::render_carve(&document)?;
+    Ok(if source.ends_with('\n') {
+        result
+    } else {
+        result.trim_end_matches('\n').to_string()
+    })
 }
 
 fn markdown_to_carve_with_carriers(
     markdown: &str,
     enabled: bool,
+    rewrite_heading_fragments: bool,
 ) -> Result<(String, Vec<MarkdownImportLoss>, Vec<FrontmatterNotice>), crate::RenderCarveError> {
     let inline = if enabled {
         crate::inline_carriers::InlineCarriers::prepare(markdown)
@@ -200,7 +419,8 @@ fn markdown_to_carve_with_carriers(
         lift
     };
     if enabled && lift.damaged {
-        let (value, mut losses, notices) = markdown_to_carve_with_carriers(markdown, false)?;
+        let (value, mut losses, notices) =
+            markdown_to_carve_with_carriers(markdown, false, rewrite_heading_fragments)?;
         losses.push(MarkdownImportLoss {
             message: CARRIER_MARKERS_DAMAGED.to_owned(),
             line: None,
@@ -208,37 +428,45 @@ fn markdown_to_carve_with_carriers(
         });
         return Ok((value, losses, notices));
     }
-    let finish = |value: String,
-                  mut losses: Vec<MarkdownImportLoss>,
-                  notices: Vec<FrontmatterNotice>| {
-        let value = restore_markdown_abbreviations(value, markdown);
-        let source = crate::carrier_markers::restore_carrier_markers(&value, &lift);
-        let source = crate::carrier_markers::restore_nested_list_styles(&source, &lift);
-        let (restored, dropped) = source
-            .as_deref()
-            .map(|source| inline.restore(source))
-            .unwrap_or((None, Vec::new()));
-        if let Some(value) = restored {
-            losses.extend(
-                dropped
-                    .into_iter()
-                    .map(|(line, message)| MarkdownImportLoss {
-                        message,
-                        line: Some(line),
-                        kind: MarkdownLossKind::CarrierMarkersDamaged,
-                    }),
-            );
-            Ok((value, losses, notices))
-        } else {
-            let (value, mut losses, notices) = markdown_to_carve_with_carriers(markdown, false)?;
-            losses.push(MarkdownImportLoss {
-                message: CARRIER_MARKERS_DAMAGED.to_owned(),
-                line: None,
-                kind: MarkdownLossKind::CarrierMarkersDamaged,
-            });
-            Ok((value, losses, notices))
-        }
-    };
+    let finish =
+        |value: String, mut losses: Vec<MarkdownImportLoss>, notices: Vec<FrontmatterNotice>| {
+            let value = restore_markdown_abbreviations(value, markdown);
+            let source = crate::carrier_markers::restore_carrier_markers(&value, &lift);
+            let source = crate::carrier_markers::restore_nested_list_styles(&source, &lift);
+            let (restored, dropped) = source
+                .as_deref()
+                .map(|source| inline.restore(source))
+                .unwrap_or((None, Vec::new()));
+            if let Some(value) = restored {
+                losses.extend(
+                    dropped
+                        .into_iter()
+                        .map(|(line, message)| MarkdownImportLoss {
+                            message,
+                            line: Some(line),
+                            kind: MarkdownLossKind::CarrierMarkersDamaged,
+                        }),
+                );
+                Ok((
+                    if rewrite_heading_fragments {
+                        rewrite_same_file_heading_links(value)?
+                    } else {
+                        value
+                    },
+                    losses,
+                    notices,
+                ))
+            } else {
+                let (value, mut losses, notices) =
+                    markdown_to_carve_with_carriers(markdown, false, rewrite_heading_fragments)?;
+                losses.push(MarkdownImportLoss {
+                    message: CARRIER_MARKERS_DAMAGED.to_owned(),
+                    line: None,
+                    kind: MarkdownLossKind::CarrierMarkersDamaged,
+                });
+                Ok((value, losses, notices))
+            }
+        };
     let mut code_lines = Vec::new();
     let (mut document, mut losses, notices) =
         markdown_to_ast_with_code_lines(&lift.source, Some(&mut code_lines), Some(&lift.token))?;
@@ -3174,6 +3402,41 @@ fn is_void_html_tag(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lowercase_same_file_heading_fragment_resolves() {
+        assert!(
+            markdown_to_carve("# Install Steps\n\n[steps](#install-steps)")
+                .contains("[steps](#Install-Steps)")
+        );
+        assert!(
+            markdown_to_carve("# Install Steps\n\n# install steps\n\n[steps](#INSTALL-STEPS)")
+                .contains("[steps](#INSTALL-STEPS)")
+        );
+        assert!(markdown_to_carve(
+            "# Install Steps\n\n<a id=\"install-steps\"></a>\n\n[steps](#install-steps)"
+        )
+        .contains("[steps](#install-steps)"));
+        assert!(
+            markdown_to_carve("# Foo\n\n# Foo\n\n# Foo\n\n[third](#foo-2)")
+                .contains("[third](#foo-2)")
+        );
+        assert!(markdown_to_carve("> # Quote Head\n\n[quote](#quote-head)")
+            .contains("[quote](#Quote-Head)"));
+        assert!(
+            markdown_to_carve("# Real\n\n<h1 id=\"Fake\">Raw</h1>\n\n[raw](#fake)")
+                .contains("[raw](#fake)")
+        );
+        assert!(
+            markdown_to_carve("# Fake\n\n<h1 id=\"Fake\">Raw</h1>\n\n[native](#fake)")
+                .contains("[native](#Fake)")
+        );
+        assert!(markdown_to_carve("# Version 02\n\n[version](#version-02)")
+            .contains("[version](#Version-02)"));
+        assert!(
+            markdown_to_carve("# ΟΔΟΣ\n\n[street](#οδος)").contains("#%CE%9F%CE%94%CE%9F%CE%A3")
+        );
+    }
 
     /// markup-carve/carve#2799. A BARE `---` block becomes frontmatter only
     /// when its first content line has the shape of a mapping.

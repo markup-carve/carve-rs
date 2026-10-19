@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -61,6 +61,72 @@ fn html_ids(html: String) -> HashSet<String> {
         }
     }
     ids
+}
+
+fn heading_aliases(
+    html: String,
+    mut raw: HashMap<String, usize>,
+) -> HashMap<String, Option<String>> {
+    let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(html);
+    let mut aliases = HashMap::new();
+    let mut pending = vec![dom.document.clone()];
+    while let Some(node) = pending.pop() {
+        for child in node.children.borrow().iter() {
+            if let NodeData::Element { name, attrs, .. } = &child.data {
+                let heading_section = &*name.local == "section" && child.children.borrow().iter().any(|nested| {
+                    matches!(&nested.data, NodeData::Element { name, .. } if matches!(&*name.local, "h1" | "h2" | "h3" | "h4" | "h5" | "h6"))
+                });
+                let nested_heading =
+                    matches!(&*name.local, "h1" | "h2" | "h3" | "h4" | "h5" | "h6");
+                if heading_section || nested_heading {
+                    for attr in attrs
+                        .borrow()
+                        .iter()
+                        .filter(|attr| &*attr.name.local == "id")
+                    {
+                        let id = attr.value.to_string();
+                        if let Some(count) = raw.get_mut(&id) {
+                            if *count > 0 {
+                                *count -= 1;
+                                continue;
+                            }
+                        }
+                        if id.rsplit_once('-').is_some_and(|(_, number)| {
+                            !number.is_empty()
+                                && !number.starts_with('0')
+                                && number != "1"
+                                && number.bytes().all(|byte| byte.is_ascii_digit())
+                        }) {
+                            continue;
+                        }
+                        let key = id.to_lowercase();
+                        aliases
+                            .entry(key)
+                            .and_modify(|old: &mut Option<String>| {
+                                if old.as_ref() != Some(&id) {
+                                    *old = None;
+                                }
+                            })
+                            .or_insert(Some(id));
+                    }
+                }
+            }
+            pending.push(child.clone());
+        }
+    }
+    aliases
+}
+
+fn encode_fragment(value: &str) -> String {
+    let mut result = String::new();
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) {
+            result.push(byte as char);
+        } else {
+            result.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    result
 }
 
 fn normalize_html_url(value: &str) -> String {
@@ -149,6 +215,7 @@ fn inspect_link(
     source: &str,
     outputs: &HashSet<String>,
     ids: &std::collections::HashMap<String, HashSet<String>>,
+    aliases: &HashMap<String, HashMap<String, Option<String>>>,
 ) -> Option<(String, Value)> {
     if destination.starts_with("//")
         || destination.split(':').next().is_some_and(|prefix| {
@@ -212,7 +279,15 @@ fn inspect_link(
     if !fragment.is_empty() && !ids.contains_key(&mapped) {
         return Some(failure("asset fragment needs site check"));
     }
-    if !fragment.is_empty() && !ids.get(&mapped).is_some_and(|ids| ids.contains(&fragment)) {
+    let resolved = if ids.get(&mapped).is_some_and(|ids| ids.contains(&fragment)) {
+        Some(fragment.as_str())
+    } else {
+        aliases
+            .get(&mapped)
+            .and_then(|map| map.get(&fragment.to_lowercase()))
+            .and_then(Option::as_deref)
+    };
+    if !fragment.is_empty() && resolved.is_none() {
         return Some(failure("fragment missing from target"));
     }
     if mapped != target
@@ -231,7 +306,14 @@ fn inspect_link(
     };
     let href = format!(
         "{new_path}{query}{}",
-        raw_fragment.map_or(String::new(), |fragment| format!("#{fragment}"))
+        raw_fragment.map_or(String::new(), |raw| format!(
+            "#{}",
+            if resolved == Some(fragment.as_str()) {
+                raw.to_string()
+            } else {
+                encode_fragment(resolved.unwrap_or(raw))
+            }
+        ))
     );
     let status = if href == destination {
         "valid"
@@ -246,6 +328,7 @@ fn check_value(
     source: &str,
     outputs: &HashSet<String>,
     ids: &std::collections::HashMap<String, HashSet<String>>,
+    aliases: &HashMap<String, HashMap<String, Option<String>>>,
     links: &mut Vec<Value>,
     changed: &mut bool,
 ) {
@@ -263,7 +346,7 @@ fn check_value(
                             continue;
                         }
                         if let Some((_, mut check)) =
-                            inspect_link(&destination, source, outputs, ids)
+                            inspect_link(&destination, source, outputs, ids, aliases)
                         {
                             if check["status"] == "rewritten" {
                                 check = json!({"target": destination, "status": "unresolved", "reason": "raw HTML link needs manual rewrite"});
@@ -284,7 +367,8 @@ fn check_value(
                     .and_then(Value::as_str)
                     .filter(|href| !href.is_empty())
                 {
-                    if let Some((href, mut check)) = inspect_link(destination, source, outputs, ids)
+                    if let Some((href, mut check)) =
+                        inspect_link(destination, source, outputs, ids, aliases)
                     {
                         if href != destination && object.get("ref").is_some() {
                             check = json!({"target": destination, "status": "unresolved", "reason": "reference link needs manual rewrite"});
@@ -298,13 +382,13 @@ fn check_value(
             }
             for (key, child) in object.iter_mut() {
                 if key != "attrs" && key != "position" {
-                    check_value(child, source, outputs, ids, links, changed);
+                    check_value(child, source, outputs, ids, aliases, links, changed);
                 }
             }
         }
         Value::Array(items) => {
             for item in items {
-                check_value(item, source, outputs, ids, links, changed);
+                check_value(item, source, outputs, ids, aliases, links, changed);
             }
         }
         _ => {}
@@ -322,10 +406,14 @@ fn check_links(
         .chain(assets.iter().cloned())
         .collect();
     let mut ids = std::collections::HashMap::new();
+    let mut aliases = HashMap::new();
     for file in files.iter() {
         let output = file["output"].as_str().ok_or("invalid output name")?;
         let text = fs::read_to_string(temporary.join(output)).map_err(|e| e.to_string())?;
-        ids.insert(output.to_string(), html_ids(carve::to_html(&text)));
+        let html = carve::to_html(&text);
+        ids.insert(output.to_string(), html_ids(html.clone()));
+        let raw = carve::migration_raw_heading_ids(&text);
+        aliases.insert(output.to_string(), heading_aliases(html, raw));
     }
     let mut broken = HashSet::new();
     for file in files.iter_mut() {
@@ -348,6 +436,7 @@ fn check_links(
             &source,
             &outputs,
             &ids,
+            &aliases,
             &mut links,
             &mut changed,
         );
@@ -572,7 +661,7 @@ pub fn run(source: &str, output: &str, check_loss: bool) -> Result<u8, String> {
                 // CARVE-P0-023: a document's ill-formed bytes are replaced, as
                 // single-file migration does.
                 let text = String::from_utf8_lossy(&bytes);
-                let migrated = carve::try_migrate_markdown(&text)
+                let migrated = carve::try_migrate_markdown_for_directory(&text)
                     .map_err(|e| format!("{source_name}: {e}"))?;
                 fs::write(target, migrated.value).map_err(|e| e.to_string())?;
                 let report: Value =
@@ -810,12 +899,12 @@ mod tests {
         ));
         let source = root.join("source");
         fs::create_dir_all(source.join("chapters")).unwrap();
-        fs::write(source.join("index.md"), "# Home\n\n[good](chapters/intro.md#Intro) [self](#Home) [query](?view=1) [encoded](chapters/a%23b.md#A) [bad](chapters/intro.md#intro) [gone](missing.md) [route](/docs/intro) ![image](lost.png) [asset](manual.pdf#page=2)\n").unwrap();
+        fs::write(source.join("index.md"), "# Home\n\n[good](chapters/intro.md#Intro) [self](#Home) [self-low](#home) [query](?view=1) [encoded](chapters/a%23b.md#A) [bad](chapters/intro.md#intro) [third](chapters/intro.md#intro-2) [quote](chapters/intro.md#quote-head) [empty](chapters/intro.md#) [gone](missing.md) [route](/docs/intro) ![image](lost.png) [asset](manual.pdf#page=2)\n").unwrap();
         fs::write(source.join("chapters/a#b.md"), "# A\n").unwrap();
         fs::write(source.join("manual.pdf"), "pdf").unwrap();
         fs::write(
             source.join("chapters/intro.md"),
-            "# Intro\n\n[home](../index.md#Home)\n",
+            "# Intro\n\n[home](../index.md#Home)\n\n# Intro\n\n# Intro\n\n> # Quote Head\n",
         )
         .unwrap();
         let output = root.join("output");
@@ -826,6 +915,18 @@ mod tests {
         assert!(fs::read_to_string(output.join("index.crv"))
             .unwrap()
             .contains("(chapters/intro.crv#Intro)"));
+        assert!(fs::read_to_string(output.join("index.crv"))
+            .unwrap()
+            .contains("[bad](chapters/intro.crv#Intro)"));
+        assert!(fs::read_to_string(output.join("index.crv"))
+            .unwrap()
+            .contains("[empty](chapters/intro.crv#)"));
+        assert!(fs::read_to_string(output.join("index.crv"))
+            .unwrap()
+            .contains("[third](chapters/intro.md#intro-2)"));
+        assert!(fs::read_to_string(output.join("index.crv"))
+            .unwrap()
+            .contains("[quote](chapters/intro.crv#Quote-Head)"));
         assert!(fs::read_to_string(output.join("index.crv"))
             .unwrap()
             .contains("(chapters/a%23b.crv#A)"));
@@ -840,6 +941,9 @@ mod tests {
         assert!(links
             .iter()
             .any(|link| link["target"] == "#Home" && link["status"] == "valid"));
+        assert!(links
+            .iter()
+            .any(|link| link["target"] == "#home" && link["status"] == "rewritten"));
         assert!(links
             .iter()
             .any(|link| link["target"] == "?view=1" && link["status"] == "valid"));
@@ -867,14 +971,14 @@ mod tests {
         fs::create_dir_all(&source).unwrap();
         fs::write(
             source.join("page.md"),
-            "# Page\n\n[false anchor](other.md#shadow) [false code](other.md#ghost) [legacy](other.md#legacy)\n\n<a href=\" other.md \">raw</a>\n\n<img src=\" chart.png \" srcset=\"missing-responsive.png 2x, chart,v2.png 1x\">\n\n<link rel=\"preload\" as=\"image\" imagesrcset=\"chart,v2.png 2x\">\n\n<video poster=\"missing-poster.png\"></video>\n",
+            "# Page\n\n[false anchor](other.md#shadow) [false code](other.md#ghost) [raw heading](other.md#fake) [native](other.md#same) [legacy](other.md#legacy)\n\n<a href=\" other.md \">raw</a>\n\n<img src=\" chart.png \" srcset=\"missing-responsive.png 2x, chart,v2.png 1x\">\n\n<link rel=\"preload\" as=\"image\" imagesrcset=\"chart,v2.png 2x\">\n\n<video poster=\"missing-poster.png\"></video>\n",
         )
         .unwrap();
         fs::write(source.join("chart.png"), "png").unwrap();
         fs::write(source.join("chart,v2.png"), "png").unwrap();
         fs::write(
             source.join("other.md"),
-            "# Other\n\n<div data-id=\"shadow\">Text</div>\n\n`id=\"ghost\"`\n\n<a name=\"legacy\"></a>\n",
+            "# Other\n\n<div data-id=\"shadow\">Text</div>\n\n`id=\"ghost\"`\n\n<h1 id=\"Fake\">Raw</h1>\n\n# Same\n\n<h1 id=\"Same\">Raw</h1>\n\n<a name=\"legacy\"></a>\n",
         )
         .unwrap();
         let output = root.join("output");
@@ -900,6 +1004,17 @@ mod tests {
             .iter()
             .any(|link| link["target"] == "other.md#ghost"
                 && link["reason"] == "fragment missing from target"));
+        assert!(page["links"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|link| link["target"] == "other.md#fake"
+                && link["reason"] == "fragment missing from target"));
+        assert!(page["links"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|link| link["target"] == "other.md#same" && link["status"] == "rewritten"));
         assert!(page["links"]
             .as_array()
             .unwrap()
