@@ -30,9 +30,12 @@ fn one_level_deeper_the_line_is_text_of_the_outer_item() {
 }
 
 #[test]
-fn a_description_at_the_item_content_column_still_attaches() {
+fn an_item_description_attaches_unless_the_quoted_term_folds_it() {
     let html = compact(&to_html("- :: term\n  : body\n"));
     assert!(html.contains("<dd>body</dd>"), "{html}");
-    let html = compact(&to_html("> - :: term\n  : body\n"));
-    assert!(html.contains("<dd>body</dd>"), "{html}");
+    let html = to_html("> - :: term\n  : body\n");
+    assert_eq!(
+        html,
+        "<blockquote>\n  <ul>\n    <li>\n      <dl>\n        <dt>term\n: body</dt>\n      </dl>\n    </li>\n  </ul>\n</blockquote>"
+    );
 }

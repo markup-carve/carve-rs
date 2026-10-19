@@ -1149,6 +1149,10 @@ impl ContentColumns {
             self.observe_segment(level, bare, was_prev_blank, line_index);
             return self.current().cols.last().copied().unwrap_or(0);
         }
+        if strip_blockquote_prefix(raw_line).is_some() && !self.frames[0].cols.is_empty() {
+            self.frames.truncate(1);
+            self.frames[0] = ColumnFrame::default();
+        }
         let mut rest = raw_line;
         let mut level = 0usize;
         loop {
@@ -1159,7 +1163,11 @@ impl ContentColumns {
             while self.frames.len() <= level {
                 self.frames.push(ColumnFrame::default());
             }
+            let prior_columns = self.frames[level].cols.len();
             self.observe_segment(level, rest, was_prev_blank, line_index);
+            if self.frames[level].cols.len() < prior_columns {
+                self.frames.truncate(level + 1);
+            }
             let Some(offset) = self.next_quote_offset(level, rest) else {
                 break;
             };
@@ -1508,6 +1516,12 @@ fn extract_footnote_defs(
                 &mut marker_probe_unaffordable,
             );
         last_folded_marker = folded_marker;
+        let retained_unclosed_fence = i > 0
+            && is_line_comment_any_column(lines[i - 1])
+            && indent_columns(lines[i]) == 0
+            && columns.current().cols.last().is_some()
+            && detect_fence_open(lines[i])
+                .is_some_and(|open| !closer_maxima.has_run_after(i, open));
         columns.observe(
             lines[i],
             in_fence.is_some()
@@ -1515,7 +1529,8 @@ fn extract_footnote_defs(
                 || folded_marker
                 || verse_lines[i].is_body()
                 || in_comment_fence.is_some()
-                || prepass_quote_line_is_folded(&folded_into_term, i, lines[i]),
+                || prepass_quote_line_is_folded(&folded_into_term, i, lines[i])
+                || retained_unclosed_fence,
         );
         // A quote nested in a list item sits AT the item's content column, so
         // the prefix scan needs that column to see it (carve-rs#588).
@@ -1653,7 +1668,9 @@ fn extract_footnote_defs(
             }
         }
 
-        if let Some(mut open) = detect_fence_open(fence_line) {
+        if let Some(mut open) =
+            detect_fence_open(fence_line).filter(|_| !folded_into_term.folded.contains(&i))
+        {
             if stripped.description {
                 open.content_col = description_fence_content_column(lines[i], &stripped, &columns);
             }
@@ -1674,6 +1691,9 @@ fn extract_footnote_defs(
                 after_term,
             );
             if fence.opens {
+                if retained_unclosed_fence {
+                    open.content_col = columns.current().cols.last().copied().unwrap_or(0);
+                }
                 if !open.quoted && fence.quote_columns.is_empty() && fence.host_content_col > 0 {
                     open.content_col = fence.host_content_col;
                 }
@@ -3251,9 +3271,14 @@ fn term_folded_lines(
             if !through_list
                 && quotes == term_quotes
                 && !is_blank_line(at_term)
-                && indent_columns(at_term) > term_col
+                && (indent_columns(at_term) > term_col
+                    || (term_quotes > 0
+                        && term_quote_columns
+                            .first()
+                            .is_some_and(|column| indent_columns(lines[index]) > *column)))
                 && (strip_blockquote_prefix(rest).is_some()
-                    || strip_definition_marker(rest).is_some())
+                    || strip_definition_marker(rest).is_some()
+                    || strip_blockquote_prefix(trim_ascii_start(lines[index])).is_some())
             {
                 ownership.folded.insert(index);
                 index += 1;
@@ -4419,7 +4444,9 @@ fn extract_link_defs_with_guard_full(
                 continue;
             }
         }
-        if let Some(mut open) = detect_fence_open(fence_line) {
+        if let Some(mut open) =
+            detect_fence_open(fence_line).filter(|_| !folded_into_term.folded.contains(&line_index))
+        {
             open.content_col = authored_fence_col;
             open.quoted = term_fence.map_or(raw_is_quoted, |host| host.quote_depth > 0);
             let fence = prepass_fence_opens(
@@ -5545,6 +5572,7 @@ struct LineCursor<'a> {
     block_starts: Option<Vec<usize>>,
     closed_initial_container_end: Option<usize>,
     at_document_level: bool,
+    in_quoted_body: bool,
     /// True for the cursor reading a LIST ITEM's own body, and that body only.
     in_item_body: bool,
     /// Whether the INVISIBLE arms of `interrupts_paragraph` are live for the
@@ -5613,6 +5641,7 @@ impl<'a> LineCursor<'a> {
             block_starts: None,
             closed_initial_container_end: None,
             at_document_level: false,
+            in_quoted_body: false,
             in_item_body: false,
             invisible_arms: true,
             reached: None,
@@ -6455,6 +6484,12 @@ fn parse_mapped_source(source: &MappedSource, options: &Options<'_>) -> Vec<Bloc
     parse_mapped_source_at_level(source, options, false)
 }
 
+fn parse_quoted_mapped_source(source: &MappedSource, options: &Options<'_>) -> Vec<BlockNode> {
+    drained(options, |pending| {
+        parse_mapped_source_at_level_into(source, options, false, false, true, pending)
+    })
+}
+
 fn parse_mapped_source_at_document_level(
     source: &MappedSource,
     options: &Options<'_>,
@@ -6469,7 +6504,7 @@ fn parse_mapped_source_at_level(
     at_document_level: bool,
 ) -> Vec<BlockNode> {
     drained(options, |pending| {
-        parse_mapped_source_at_level_into(source, options, at_document_level, false, pending)
+        parse_mapped_source_at_level_into(source, options, at_document_level, false, false, pending)
     })
 }
 
@@ -6478,6 +6513,7 @@ fn parse_mapped_source_at_level_into(
     options: &Options<'_>,
     at_document_level: bool,
     in_item_body: bool,
+    in_quoted_body: bool,
     pending: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
     if !options.source_lines
@@ -6490,10 +6526,18 @@ fn parse_mapped_source_at_level_into(
             options,
             at_document_level,
             in_item_body,
+            in_quoted_body,
             pending,
         );
     }
-    parse_positioned_mapped_source(source, options, at_document_level, in_item_body, pending)
+    parse_positioned_mapped_source(
+        source,
+        options,
+        at_document_level,
+        in_item_body,
+        in_quoted_body,
+        pending,
+    )
 }
 
 #[inline(never)]
@@ -6502,6 +6546,7 @@ fn parse_unpositioned_mapped_source(
     options: &Options<'_>,
     at_document_level: bool,
     in_item_body: bool,
+    in_quoted_body: bool,
     pending: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
     // The ladder builds its own containers inside-out and hands back finished
@@ -6522,6 +6567,7 @@ fn parse_unpositioned_mapped_source(
             options,
             at_document_level,
             in_item_body,
+            in_quoted_body,
             pending,
         );
     }
@@ -6542,6 +6588,7 @@ fn parse_positioned_mapped_source(
     options: &Options<'_>,
     at_document_level: bool,
     in_item_body: bool,
+    in_quoted_body: bool,
     pending: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
     let lines: Vec<&str> = source.source.lines().collect();
@@ -6559,6 +6606,7 @@ fn parse_positioned_mapped_source(
     ));
     cursor.at_document_level = at_document_level;
     cursor.in_item_body = in_item_body;
+    cursor.in_quoted_body = in_quoted_body;
     cursor.reached = Some(source.reached.as_slice());
     cursor.sublists_carry_authored_base = source.sublists_carry_authored_base;
     cursor.marker_tail = source.marker_tail;
@@ -7460,7 +7508,7 @@ fn parse_item_body_into(
         Chunk::Source(source) => {
             let _depth = DepthScope::set(depth);
             let _group = FigureGroupScope::set(in_group);
-            parse_mapped_source_at_level_into(&source, options, false, true, nested)
+            parse_mapped_source_at_level_into(&source, options, false, true, false, nested)
         }
         Chunk::Parsed { blocks, carried } => {
             nested.extend(carried);
@@ -7567,11 +7615,11 @@ fn parse_item_chunk(
         .lines()
         .any(|line| line.starts_with([' ', '\t']))
     {
-        return parse_mapped_source_at_level_into(source, options, false, true, carried);
+        return parse_mapped_source_at_level_into(source, options, false, true, false, carried);
     }
     let mut rebased = source.clone();
     rebase_overindented_blocks(&mut rebased, false, options);
-    parse_mapped_source_at_level_into(&rebased, options, false, true, carried)
+    parse_mapped_source_at_level_into(&rebased, options, false, true, false, carried)
 }
 
 /// Last line in a colon group rebased with its opener.
@@ -10520,7 +10568,11 @@ fn parse_fence(cur: &mut LineCursor, open: FenceOpen, options: &Options<'_>) -> 
     let mut content_lines: Vec<String> = Vec::new();
     let mut last_payload_line = None;
     while let Some(line) = cur.peek() {
-        if is_fence_close(line, open) {
+        if is_fence_close(line, open)
+            || (cur.at_document_level
+                && line.starts_with(LAZY)
+                && is_fence_close(strip_lazy(line), open))
+        {
             cur.consume();
             break;
         }
@@ -11335,7 +11387,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNod
     let mut children = Vec::new();
     for part in parts {
         let source = part.into_source();
-        let blocks = parse_mapped_source(&source, options);
+        let blocks = parse_quoted_mapped_source(&source, options);
         drop(source);
         children.extend(blocks);
     }
@@ -12955,6 +13007,7 @@ fn collect_blockquote_body(
             && !is_definition_list_start(trim_ascii_start(line))
             && strip_description_prefix(trim_ascii_start(line)).is_none()
             && (!item_block_opener(trim_ascii_start(line))
+                || indent_columns(line) > 0
                 || detect_fence_open(trim_ascii_start(line)).is_some())
         {
             open_entry.advance(&inner.lines);
@@ -12969,7 +13022,18 @@ fn collect_blockquote_body(
         } else {
             fenced_below.unwrap_or_else(|| para_open.get())
         };
+        let empty_marker_leaf = inner.lines.len() == 1
+            && inner.lines.first().is_some_and(|source| {
+                let mut leaf = innermost_marker_content(&source.text);
+                let mut nested_quote = false;
+                while let Some(content) = strip_blockquote_prefix(leaf) {
+                    nested_quote = true;
+                    leaf = content;
+                }
+                nested_quote && (is_blank_line(leaf) || detect_fence_open(leaf).is_some())
+            });
         if !(term_open || quoted_open)
+            || empty_marker_leaf
             || is_blank_line(line)
             || (term_open && detect_list_marker_full(line).is_some_and(|marker| marker.indent == 0))
             || (caption_content(line).is_some() && cur.carried_reach(cur.pos) != Some(false))
@@ -13076,6 +13140,11 @@ fn collect_blockquote_body(
                 // frame to read it at column 0 wherever the container depth put
                 // it - `> > - :: t` / `:: u` keeps the second term inside the
                 // nested item instead of ejecting it (markup-carve/carve-rs#1538).
+                Some(DefHalf::Term)
+                    if is_desc && open_entry.content_col == Some(indent_columns(line)) =>
+                {
+                    (true, false)
+                }
                 Some(DefHalf::Term) if is_desc => {
                     lazy_description_open = true;
                     (false, true)
@@ -14812,7 +14881,9 @@ fn parse_list(
             // in the fold below, which stops the OTHER path from claiming the
             // very same line into the very same empty item.
             let first_block_attaches =
-                attaches_flush_left(cur.source_col(cur.pos), cur.lines.line(cur.pos).as_ref());
+                attaches_flush_left(cur.source_col(cur.pos), cur.lines.line(cur.pos).as_ref())
+                    || (cur.in_quoted_body
+                        && cur.peek().is_some_and(|line| indent_columns(line) == 0));
             if let Some(block) = first_block_attaches
                 .then(|| parse_continuation_block(cur, options, base_indent, None))
                 .flatten()
@@ -15205,6 +15276,9 @@ fn parse_list(
             // blanket `continuation_source_loosens` the other leads can afford.
             if sublist_source_loosens_outer_item(&stream.source) {
                 tight = false;
+            }
+            if sublist_source_trailing_invisible_separation(&stream.source) {
+                pending_blank = true;
             }
             if detect_fence_open(innermost_content).is_some()
                 && stream.source.lines().skip(1).all(is_blank_line)
@@ -16198,6 +16272,9 @@ fn sublist_source_loosens_outer_item(source: &str) -> bool {
             prev_blank = true;
             continue;
         }
+        if is_line_comment_any_column(line) || is_definition_placeholder(line) {
+            continue;
+        }
         let indent = indent_columns(line);
         // A marker at the sub-list's own column opens a sibling item or a
         // sibling sub-list, whose content column then applies (carve-rs#1846).
@@ -16264,6 +16341,25 @@ fn sublist_source_loosens_outer_item(source: &str) -> bool {
             return true;
         }
         prev_blank = false;
+    }
+    false
+}
+
+fn sublist_source_trailing_invisible_separation(source: &str) -> bool {
+    let mut lines = source.lines();
+    let Some(inner_content_col) = lines.find_map(marker_content_col) else {
+        return false;
+    };
+    let mut invisible = false;
+    for line in source.lines().rev() {
+        if is_line_comment_any_column(line) || is_definition_placeholder(line) {
+            if indent_columns(line) >= inner_content_col {
+                return false;
+            }
+            invisible = true;
+        } else {
+            return invisible && is_blank_line(line);
+        }
     }
     false
 }
@@ -17651,6 +17747,17 @@ fn collect_trailing_lazy_through_framed(
     frame_band_lines: bool,
 ) -> bool {
     let mut buffered = frame_band_lines.then(LineBuffer::default);
+    if cur.peek().is_some_and(|line| {
+        indent_columns(line) == 0
+            && detect_fence_open(line).is_some_and(|open| {
+                cur.lines.range(cur.pos + 1..cur.lines.len()).any(|next| {
+                    let next = strip_lazy(next);
+                    indent_columns(next) == 0 && is_fence_close(next, open)
+                })
+            })
+    }) {
+        return false;
+    }
     // PART 0 X1 lets a retained comment hand the next valid fence to its item.
     if let Some(line) = cur.peek() {
         if indent_columns(line) < content_col
@@ -18139,6 +18246,29 @@ fn collect_indented_block_mapped_with_columns(
     }
     let mut nested_fence: Option<FenceOpen> = None;
     while let Some(line) = cur.peek() {
+        if strip_cols > 0
+            && indent_columns(line) == 0
+            && cur.pos > 0
+            && is_line_comment_any_column(cur.lines.at(cur.pos - 1))
+            && detect_fence_open(line).is_some_and(|open| {
+                cur.lines.range(cur.pos + 1..cur.lines.len()).any(|next| {
+                    let next = strip_lazy(next);
+                    indent_columns(next) == 0 && is_fence_close(next, open)
+                })
+            })
+        {
+            break;
+        }
+        if comment_fence.is_some_and(|(width, opener_column)| {
+            opener_column >= strip_cols
+                && !is_blank_line(line)
+                && !line.starts_with(LAZY)
+                && indent_columns(line) < strip_cols
+                && indent_columns(line) < opener_column
+                && !is_comment_fence_close_any_column(line, width)
+        }) {
+            break;
+        }
         if is_definition_placeholder(line) && indent_columns(line) < strip_cols {
             break;
         }
@@ -18404,6 +18534,16 @@ fn collect_indented_block_mapped_with_columns(
             || (folded_code_span
                 && folded_code_paragraph_open
                 && (!is_list_marker(line) || indent > parent_indent)
+                && !interrupts_lazy_continuation_as_container(cur, line))
+            || (!colon_open.is_empty()
+                && indent < strip_cols
+                && !is_list_marker(line)
+                && lines.last().is_some_and(|prior| {
+                    line_starts_paragraph(prior)
+                        && exact_colon_fence_len(trim_ascii_start(prior)).is_none()
+                        && detect_comment_fence_line_any_column(prior).is_none()
+                        && detect_fence_open(trim_ascii_start(prior)).is_none()
+                })
                 && !interrupts_lazy_continuation_as_container(cur, line));
         // A `+` at an ancestor's marker column names only a flush-left block.
         // When the following line is indented, the marker contributes nothing
@@ -20058,8 +20198,11 @@ fn fold_term(
         }
         let Some(next) = cur.peek() else { break };
         if is_blank_line(next)
-            || strip_lazy(next).strip_prefix(":: ").is_some()
-            || strip_definition_marker(strip_lazy(next)).is_some()
+            || is_definition_list_start(strip_lazy(next))
+            || strip_lazy(next)
+                .strip_prefix(":: ")
+                .is_some_and(|rest| is_blank_line(rest) && rest.contains('\t'))
+            || (!next.starts_with(LAZY) && strip_definition_marker(strip_lazy(next)).is_some())
             || is_list_marker(next)
             || caption_content(next).is_some()
         {

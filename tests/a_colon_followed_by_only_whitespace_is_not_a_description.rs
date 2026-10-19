@@ -130,7 +130,10 @@ fn it_is_a_paragraph_with_no_term_open_above_it() {
 /// reach them.
 #[test]
 fn the_term_marker_keeps_its_own_readings() {
-    assert_eq!(flat(":: t\n:: \nx\n"), "<dl> <dt>t</dt> </dl> <p>:: x</p>");
+    assert_eq!(
+        carve::to_html(":: t\n:: \nx\n"),
+        "<dl>\n  <dt>t\n::\nx</dt>\n</dl>"
+    );
     assert_eq!(
         flat(":: t\n:: \t\nx\n"),
         "<dl> <dt>t</dt> </dl> <p>:: x</p>"

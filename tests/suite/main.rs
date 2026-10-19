@@ -2345,3 +2345,28 @@ mod select_include_region_resolves_a_region_the_way_the_expander_does;
 
 #[path = "../fmt_keeps_a_regions_selection.rs"]
 mod fmt_keeps_a_regions_selection;
+
+#[path = "../below_column_comment_span.rs"]
+mod below_column_comment_span;
+#[path = "../comment_retention_fence_boundary.rs"]
+mod comment_retention_fence_boundary;
+#[path = "../contentless_definition_term_marker.rs"]
+mod contentless_definition_term_marker;
+#[path = "../continuation_marker_in_quote.rs"]
+mod continuation_marker_in_quote;
+#[path = "../definition_term_lazy_line.rs"]
+mod definition_term_lazy_line;
+#[path = "../empty_quote_lazy_claim.rs"]
+mod empty_quote_lazy_claim;
+#[path = "../invisible_line_list_separation.rs"]
+mod invisible_line_list_separation;
+#[path = "../item_definition_registration.rs"]
+mod item_definition_registration;
+#[path = "../lazy_unclosed_colon_div.rs"]
+mod lazy_unclosed_colon_div;
+#[path = "../new_quote_definition_column.rs"]
+mod new_quote_definition_column;
+#[path = "../unmarked_description_below_quote.rs"]
+mod unmarked_description_below_quote;
+#[path = "../unmarked_line_after_quote_fence.rs"]
+mod unmarked_line_after_quote_fence;

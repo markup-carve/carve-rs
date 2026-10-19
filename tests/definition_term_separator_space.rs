@@ -436,16 +436,17 @@ fn term_fences_release_definitions_when_the_parent_list_ends() {
 
 #[test]
 fn term_quote_hosts_allow_indentation_above_the_list_floor() {
-    for source in [
-        "- > :: t\n   > ```\n  > [r]: /u\n",
-        "- head\n   > :: t\n  > ```\n  > [r]: /u\n",
-    ] {
-        let output = html(source);
-        assert!(
-            output.contains("<pre><code>[r]: /u\n</code></pre>"),
-            "{source:?}: {output}"
-        );
-    }
+    let source = "- > :: t\n   > ```\n  > [r]: /u\n";
+    assert_eq!(
+        html(source),
+        "<ul>\n  <li>\n    <blockquote>\n      <dl>\n        <dt>t\n&gt; <code></code></dt>\n      </dl>\n    </blockquote>\n  </li>\n</ul>"
+    );
+    let source = "- head\n   > :: t\n  > ```\n  > [r]: /u\n";
+    let output = html(source);
+    assert!(
+        output.contains("<pre><code>[r]: /u\n</code></pre>"),
+        "{source:?}: {output}"
+    );
 }
 
 #[test]
