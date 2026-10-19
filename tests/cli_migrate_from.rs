@@ -98,7 +98,7 @@ fn migrates_bbcode() {
 }
 
 #[test]
-fn reports_dropped_bbcode_quote_user_id() {
+fn reports_dropped_bbcode_quote_field() {
     let (out, report, ok) = run(
         &["migrate", "--from", "bbcode", "--report", "-"],
         "[quote=\"alice\" post_id=12 user_id=3]q[/quote]",

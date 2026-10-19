@@ -4,7 +4,7 @@ use carve::{
 };
 
 #[test]
-fn bbcode_quote_user_ids_are_reported_at_source_lines() {
+fn bbcode_quote_fields_are_reported_at_source_lines() {
     let source =
         "intro\r\n[quote=\"alice\" post_id=12 user_id=3]q[/quote]\n[quote=bob user_id=4]r[/quote]";
     let result = migrate_bbcode(source).unwrap();
@@ -15,16 +15,70 @@ fn bbcode_quote_user_ids_are_reported_at_source_lines() {
         .filter(|row| row.code == "bbcode-quote-field-dropped")
         .collect();
     assert_eq!(losses.len(), 2);
+    assert_eq!(result.report.diagnostics[0].code, "fidelity-unverified");
+    assert_eq!(
+        losses[0].message,
+        "Dropped the quote attribution field user_id."
+    );
     assert_eq!(losses[0].path.as_deref(), Some("line:2"));
     assert_eq!(losses[1].path.as_deref(), Some("line:3"));
     assert!(losses.iter().all(|row| row.message.contains("user_id")));
     assert!(losses.iter().all(|row| {
-        row.fidelity == MigrationFidelity::Dropped && row.confidence == MigrationConfidence::Exact
+        row.severity == HtmlImportSeverity::Warning
+            && row.fidelity == MigrationFidelity::Dropped
+            && row.confidence == MigrationConfidence::Exact
     }));
 }
 
 #[test]
-fn bbcode_quote_user_ids_inside_literal_content_are_not_reported() {
+fn bbcode_quote_reports_every_replaced_attribution_part() {
+    let source = "[quote=\"bob\" name=\"alice\" foo=bar name=\"carol\" stray]q[/quote]";
+    let result = migrate_bbcode(source).unwrap();
+    let losses: Vec<_> = result
+        .report
+        .diagnostics
+        .iter()
+        .filter(|row| row.code == "bbcode-quote-field-dropped")
+        .collect();
+    assert_eq!(result.report.diagnostics[0].code, "fidelity-unverified");
+    assert_eq!(
+        losses
+            .iter()
+            .map(|row| row.message.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+        "Dropped the unnamed quote attribution text \"bob\", which an explicit name= replaced.",
+        "Dropped the quote attribution field foo.",
+        "Dropped the quote attribution field name.",
+        "Dropped the unnamed quote attribution text \"stray\", which an explicit name= replaced.",
+    ]
+    );
+    assert!(losses
+        .iter()
+        .all(|row| row.path.as_deref() == Some("line:1")));
+}
+
+#[test]
+fn bbcode_quote_fields_follow_each_source_line() {
+    let source = "[quote name=\"alice\" foo=bar]a[/quote]\n[quote=\"bob\" name=\"carol\"]b[/quote]";
+    let result = migrate_bbcode(source).unwrap();
+    let losses: Vec<_> = result
+        .report
+        .diagnostics
+        .iter()
+        .filter(|row| row.code == "bbcode-quote-field-dropped")
+        .collect();
+    assert_eq!(
+        losses
+            .iter()
+            .map(|row| row.path.as_deref())
+            .collect::<Vec<_>>(),
+        vec![Some("line:1"), Some("line:2")]
+    );
+}
+
+#[test]
+fn bbcode_quote_fields_inside_literal_content_are_not_reported() {
     for source in [
         "[code][quote=user_id=7]x[/quote][/code]",
         "[c][quote=user_id=7]x[/icode]",

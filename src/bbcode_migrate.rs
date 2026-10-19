@@ -821,11 +821,19 @@ fn unix_seconds_date(value: &str) -> Option<String> {
 }
 
 fn format_attribution(source: &str) -> String {
-    format_attribution_with_loss(source).0
+    format_attribution_with_losses(source).0
 }
 
-fn format_attribution_with_loss(source: &str) -> (String, bool) {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DroppedQuoteField {
+    pub field: String,
+    pub unnamed: bool,
+    pub line: usize,
+}
+
+fn format_attribution_with_losses(source: &str) -> (String, Vec<(String, bool)>) {
     let mut remaining = source.trim().to_string();
+    let mut dropped = Vec::new();
     let mut id = None;
     let leading_id = re(r#"^["']([0-9]+)["']"#);
     if let Some(caps) = leading_id.captures(&remaining) {
@@ -860,7 +868,9 @@ fn format_attribution_with_loss(source: &str) -> (String, bool) {
         remaining = time.replacen(&remaining, 1, " ").into_owned();
     }
     let user_id = re(r#"(?i)\buser_id=(?:"[^"]*"|'[^']*'|\S+)"#);
-    let dropped_user_id = user_id.is_match(&remaining);
+    for caps in user_id.captures_iter(&remaining) {
+        dropped.push((caps[0][..7].to_string(), false));
+    }
     remaining = user_id.replace_all(&remaining, "").into_owned();
     let mut fallback = remaining.trim();
     if fallback.len() >= 2
@@ -876,6 +886,26 @@ fn format_attribution_with_loss(source: &str) -> (String, bool) {
             fallback = caps[1].to_string();
         }
     }
+    if name.is_some() && !fallback.is_empty() {
+        let mut rest = fallback.as_str();
+        let quoted = remaining.trim();
+        if quoted.starts_with('"') || quoted.starts_with('\'') {
+            if let Some(end) = quoted[1..].find(&quoted[..1]) {
+                let author = &quoted[1..end + 1];
+                dropped.push((author.to_string(), true));
+                rest = quoted[end + 2..].trim();
+            }
+        }
+        let field = re(r#"\b([A-Za-z_][\w-]*)=(?:"[^"]*"|'[^']*'|\S+)"#);
+        for caps in field.captures_iter(rest) {
+            dropped.push((caps[1].to_string(), false));
+        }
+        let unnamed = field.replace_all(rest, "");
+        let unnamed = unnamed.trim();
+        if !unnamed.is_empty() {
+            dropped.push((unnamed.to_string(), true));
+        }
+    }
     let mut output = name.unwrap_or(fallback);
     if let Some(datetime) = datetime {
         output.push_str(&format!(" ({datetime})"));
@@ -883,19 +913,28 @@ fn format_attribution_with_loss(source: &str) -> (String, bool) {
     if let Some(id) = id {
         output.push_str(&format!(" #{id}"));
     }
-    (output.trim().to_string(), dropped_user_id)
+    (output.trim().to_string(), dropped)
 }
 
-fn convert_quotes(text: String) -> String {
+/// Each opening quote tag's attribution with the fields it dropped (field, unnamed).
+type QuoteTagDrops = (String, Vec<(String, bool)>);
+
+fn convert_quotes(text: String) -> (String, Vec<QuoteTagDrops>) {
     let open = re(r"(?i)^\[quote(?:[= ]([^\]]*))?\]");
     let close = re(r"(?i)^\[/quote\]");
     let mut contents = vec![String::new()];
     let mut authors: Vec<Option<String>> = vec![None];
+    let mut drops = Vec::new();
     let mut i = 0;
     while i < text.len() {
         let rest = &text[i..];
         if let Some(caps) = open.captures(rest) {
             let whole = caps.get(0).expect("whole quote opener");
+            let attribution = caps.get(1).map_or("", |m| m.as_str());
+            drops.push((
+                attribution.to_string(),
+                format_attribution_with_losses(attribution).1,
+            ));
             contents.push(String::new());
             authors.push(caps.get(1).map(|m| m.as_str().to_string()));
             i += whole.end();
@@ -927,7 +966,7 @@ fn convert_quotes(text: String) -> String {
             .expect("root quote buffer")
             .push_str(&block);
     }
-    contents.pop().expect("root quote buffer")
+    (contents.pop().expect("root quote buffer"), drops)
 }
 
 #[derive(Debug)]
@@ -1095,6 +1134,12 @@ fn cleanup(mut text: String) -> String {
 
 /// Convert one bounded BBCode post to canonical Carve source.
 pub fn bbcode_to_carve(source: &str) -> Result<String, BbcodeImportError> {
+    bbcode_to_carve_with_drops(source).map(|(value, _)| value)
+}
+
+pub(crate) fn bbcode_to_carve_with_drops(
+    source: &str,
+) -> Result<(String, Vec<DroppedQuoteField>), BbcodeImportError> {
     if source.len() > BBCODE_MAX_INPUT_LENGTH {
         return Err(BbcodeImportError::InputTooLarge {
             bytes: source.len(),
@@ -1115,14 +1160,16 @@ pub fn bbcode_to_carve(source: &str) -> Result<String, BbcodeImportError> {
     };
     text = convert_pairs(text, link_mark);
     text = convert_code(text);
-    text = convert_quotes(text);
+    let (converted, quote_drops) = convert_quotes(text);
+    text = converted;
     text = convert_lists(text);
     text = convert_other(text);
     text = cleanup(text);
-    Ok(restore(text, open, close, &stash))
+    let value = restore(text, open, close, &stash);
+    Ok((value, locate_quote_drops(source, quote_drops)))
 }
 
-pub(crate) fn dropped_quote_user_id_lines(source: &str) -> Vec<usize> {
+fn locate_quote_drops(source: &str, quote_drops: Vec<QuoteTagDrops>) -> Vec<DroppedQuoteField> {
     let mut visible = source.replace("\r\n", "\n").replace('\r', "\n");
     for pattern in [
         r"(?is)\[code(?:=[^\]]*)?\].*?\[/code\]",
@@ -1140,7 +1187,7 @@ pub(crate) fn dropped_quote_user_id_lines(source: &str) -> Vec<usize> {
             .into_owned();
     }
     let quote = re(r"(?i)\[quote(?:[= ]([^\]]*))?\]");
-    let mut lines = Vec::new();
+    let mut tags = Vec::new();
     let mut line = 1;
     let mut scanned = 0;
     for caps in quote.captures_iter(&visible) {
@@ -1150,14 +1197,27 @@ pub(crate) fn dropped_quote_user_id_lines(source: &str) -> Vec<usize> {
             .filter(|byte| *byte == b'\n')
             .count();
         scanned = matched.start();
-        if caps
-            .get(1)
-            .is_some_and(|attribution| format_attribution_with_loss(attribution.as_str()).1)
-        {
-            lines.push(line);
+        let attribution = caps.get(1).map_or("", |m| m.as_str()).replace('\\', "");
+        tags.push((line, attribution));
+    }
+    let mut next = 0;
+    let mut result = Vec::new();
+    for (attribution, dropped) in quote_drops {
+        let wanted = attribution.replace('\\', "");
+        let found = (next..tags.len()).find(|&at| tags[at].1 == wanted);
+        let at = found.unwrap_or(next.min(tags.len().saturating_sub(1)));
+        if let Some(found) = found {
+            next = found + 1;
+        }
+        for (field, unnamed) in dropped {
+            result.push(DroppedQuoteField {
+                field,
+                unnamed,
+                line: tags.get(at).map_or(1, |tag| tag.0),
+            });
         }
     }
-    lines
+    result
 }
 
 #[cfg(test)]
@@ -1165,11 +1225,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn quote_user_id_detector_matches_attribution() {
-        assert!(format_attribution_with_loss("\"alice\" post_id=12 user_id=3").1);
+    fn quote_field_detector_matches_attribution() {
         assert_eq!(
-            dropped_quote_user_id_lines("[quote=alice user_id=3]x[/quote]"),
-            vec![1]
+            format_attribution_with_losses("\"alice\" post_id=12 user_id=3").1,
+            vec![("user_id".into(), false)]
+        );
+        assert_eq!(
+            bbcode_to_carve_with_drops("[quote=alice user_id=3]x[/quote]")
+                .unwrap()
+                .1[0]
+                .line,
+            1
         );
     }
 

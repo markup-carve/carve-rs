@@ -1,7 +1,7 @@
 use crate::markdown_import::MarkdownLossKind;
 use crate::{
-    bbcode_to_carve, html_to_carve, BbcodeImportError, HtmlImportAdapter, HtmlImportError,
-    HtmlImportMode, HtmlImportOptions, HtmlImportSeverity,
+    html_to_carve, BbcodeImportError, HtmlImportAdapter, HtmlImportError, HtmlImportMode,
+    HtmlImportOptions, HtmlImportSeverity,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -301,23 +301,22 @@ pub fn migrate_djot(source: &str) -> MigrationResult {
 }
 
 pub fn migrate_bbcode(source: &str) -> Result<MigrationResult, BbcodeImportError> {
-    let mut result = assessed(
-        source,
-        bbcode_to_carve(source)?,
-        SourceFormat::Bbcode,
-        false,
-    );
+    let (value, dropped) = crate::bbcode_migrate::bbcode_to_carve_with_drops(source)?;
+    let mut result = assessed(source, value, SourceFormat::Bbcode, false);
     result.report.diagnostics.extend(
-        crate::bbcode_migrate::dropped_quote_user_id_lines(source)
+        dropped
             .into_iter()
-            .map(|line| MigrationDiagnostic {
+            .map(|drop| MigrationDiagnostic {
                 code: "bbcode-quote-field-dropped".to_owned(),
-                message: "The BBCode quote user_id cannot be represented in Carve and was dropped."
-                    .to_owned(),
+                message: if drop.unnamed {
+                    format!("Dropped the unnamed quote attribution text \"{}\", which an explicit name= replaced.", drop.field)
+                } else {
+                    format!("Dropped the quote attribution field {}.", drop.field)
+                },
                 severity: HtmlImportSeverity::Warning,
                 fidelity: MigrationFidelity::Dropped,
                 confidence: MigrationConfidence::Exact,
-                path: Some(format!("line:{line}")),
+                path: Some(format!("line:{}", drop.line)),
             }),
     );
     Ok(result)
