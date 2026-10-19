@@ -51,3 +51,17 @@ fn wire_roundtrip_and_header_rows() {
         .unwrap()
         .contains("@{#s[2][2]}"));
 }
+
+#[test]
+fn header_reference_does_not_recurse_when_matching_column_names() {
+    let source = "{#t}\n|= A @{#t[1][\"A\"]} |= B |\n| 1 | 2 |\n\nx @{#t[1][1]}";
+    let html = carve::to_html(source);
+    assert!(html.contains("<p>x 1</p>"), "{html}");
+}
+
+#[test]
+fn malformed_quoted_selector_stops_at_the_line_break() {
+    let source = "see @{#t[\"a\nb _x_ \"]} done";
+    let html = carve::to_html(source);
+    assert!(html.contains("<u>x</u>"), "{html}");
+}

@@ -237,11 +237,17 @@ impl Resolver {
             TableSelector::Name(name) if !name.is_empty() && table.head > 0 => {
                 let mut found = None;
                 for col in 0..table.grid[table.head - 1].len() {
-                    if self
-                        .cell_value(table, table.head - 1, col, active, true)
-                        .as_deref()
-                        == Some(name)
-                    {
+                    let Some(cell) = table.cell(table.head - 1, col) else {
+                        continue;
+                    };
+                    let key = cell as *const TableCell as usize;
+                    if active.contains(&key) {
+                        continue;
+                    }
+                    active.push(key);
+                    let value = self.cell_value(table, table.head - 1, col, active, true);
+                    active.pop();
+                    if value.as_deref() == Some(name) {
                         if found.is_some() {
                             return None;
                         }

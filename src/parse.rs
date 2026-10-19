@@ -28183,13 +28183,18 @@ pub(crate) fn table_marker_end(
     let mut quoted = false;
     while at < bytes.len() {
         match bytes[at] {
-            b'\\' => at += 2,
+            b'\\' => {
+                if matches!(bytes.get(at + 1), Some(b'\n' | b'\r')) {
+                    return None;
+                }
+                at += 2;
+            }
             b'"' => {
                 quoted = !quoted;
                 at += 1;
             }
             b'}' if !quoted => return Some(at),
-            b'\n' | b'\r' if !quoted => return None,
+            b'\n' | b'\r' => return None,
             _ => at += 1,
         }
     }
