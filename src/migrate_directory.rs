@@ -333,9 +333,11 @@ fn inspect_link(
 }
 
 #[derive(Default)]
-struct Found {
+struct Found<'a> {
     links: Vec<Value>,
     fixups: Vec<carve::MigrationDiagnostic>,
+    /// The file's converted destinations mapped to their authored spelling.
+    authored: Option<&'a HashMap<String, String>>,
 }
 
 fn check_value(
@@ -389,11 +391,17 @@ fn check_value(
                             check = json!({"target": destination, "status": "unresolved", "reason": "reference link needs manual rewrite"});
                         } else if href != destination {
                             if let Some((from, to)) = recased {
-                                found.fixups.push(carve::fragment_fixup_diagnostic(
-                                    destination,
-                                    &from,
-                                    &to,
-                                ));
+                                // CARVE-P2-031: the row names the destination as the
+                                // Markdown link wrote it.
+                                let written = found
+                                    .authored
+                                    .and_then(|map| map.get(destination))
+                                    .map_or(destination, String::as_str);
+                                let from =
+                                    written.split_once('#').map_or(from.as_str(), |(_, f)| f);
+                                found
+                                    .fixups
+                                    .push(carve::fragment_fixup_diagnostic(written, from, &to));
                             }
                             object.insert(key.to_string(), Value::String(href));
                             *changed = true;
@@ -421,6 +429,7 @@ fn check_links(
     temporary: &Path,
     files: &mut [Value],
     assets: &[String],
+    authored: &HashMap<String, HashMap<String, String>>,
 ) -> Result<HashSet<String>, String> {
     let outputs: HashSet<String> = files
         .iter()
@@ -452,7 +461,10 @@ fn check_links(
         let mut document = serde_json::from_str::<Value>(&carve::to_json(&carve::parse(&original)))
             .map_err(|e| e.to_string())?;
         let mut changed = false;
-        let mut found = Found::default();
+        let mut found = Found {
+            authored: authored.get(&source),
+            ..Found::default()
+        };
         check_value(
             &mut document,
             &source,
@@ -462,7 +474,7 @@ fn check_links(
             &mut found,
             &mut changed,
         );
-        let Found { links, fixups } = found;
+        let Found { links, fixups, .. } = found;
         if !fixups.is_empty() {
             let report: Value =
                 serde_json::from_str(&super::migration_report_json(&carve::MigrationReport {
@@ -658,6 +670,7 @@ pub fn run(source: &str, output: &str, check_loss: bool) -> Result<u8, String> {
     fs::create_dir(&temporary).map_err(|e| e.to_string())?;
     let result = (|| -> Result<(usize, usize, usize, usize), String> {
         let mut files = Vec::<Value>::new();
+        let mut authored = HashMap::<String, HashMap<String, String>>::new();
         let mut assets = Vec::<String>::new();
         let mut skipped = Vec::<String>::new();
         let mut review = Vec::<String>::new();
@@ -702,8 +715,10 @@ pub fn run(source: &str, output: &str, check_loss: bool) -> Result<u8, String> {
                 // CARVE-P0-023: a document's ill-formed bytes are replaced, as
                 // single-file migration does.
                 let text = String::from_utf8_lossy(&bytes);
-                let migrated = carve::try_migrate_markdown_for_directory(&text)
-                    .map_err(|e| format!("{source_name}: {e}"))?;
+                let (migrated, destinations) =
+                    carve::try_migrate_markdown_for_directory_with_destinations(&text)
+                        .map_err(|e| format!("{source_name}: {e}"))?;
+                authored.insert(source_name.clone(), destinations);
                 fs::write(target, migrated.value).map_err(|e| e.to_string())?;
                 let report: Value =
                     serde_json::from_str(&super::migration_report_json(&migrated.report))
@@ -721,7 +736,7 @@ pub fn run(source: &str, output: &str, check_loss: bool) -> Result<u8, String> {
                 files.push(json!({"source": source_name, "output": destination_name, "diagnostics": diagnostics}));
             }
         }
-        let broken = check_links(&temporary, &mut files, &assets)?;
+        let broken = check_links(&temporary, &mut files, &assets, &authored)?;
         for file in &files {
             let source = file["source"].as_str().ok_or("invalid source name")?;
             if broken.contains(source) && !review.iter().any(|item| item == source) {
