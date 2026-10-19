@@ -1468,7 +1468,8 @@ fn run_lint(args: &[String]) -> ExitCode {
                      Options:\n  \
                      --extensions           enable the bundled extensions\n  \
                      --extension citations  enable citation placement lint\n  \
-                     --include-root DIR     expand includes under DIR\n\n\
+                     --include-root DIR     expand and lint includes within DIR;\n                         \
+                     without it no include target is read\n\n\
                      Exit codes:\n  \
                      0   no findings\n  \
                      1   findings reported\n  \
@@ -1904,10 +1905,11 @@ fn print_usage() {
          carve flatten [file]        write the document as ONE self-contained\n                              \
          file, every include expanded in place (the\n                              \
          opposite of fmt, which leaves them alone)\n  \
-         carve lint [files]          report constructs that render wrong\n                              \
+         carve lint [--include-root DIR] [files]\n                              \
+         report constructs that render wrong\n                              \
          (exit 1 on findings, 2 if a file cannot be read)\n  \
-         carve merge [--json] BASE OURS THEIRS\n  \
-                                     merge independent structural edits\n  \
+         carve merge [--json] BASE OURS THEIRS\n                              \
+         merge independent structural edits\n  \
          carve migrate --from FORMAT [options] [file]\n                              \
          convert html, markdown (md), djot or bbcode to Carve.\n                              \
          Folder: --from markdown --directory SOURCE --output TARGET.\n                              \
@@ -1927,7 +1929,7 @@ fn print_usage() {
          --roundtrip                 add preservation carriers to HTML or Markdown\n  \
          --plain, --plain-text       plain text\n  \
          --ansi                      ANSI-colored terminal text\n  \
-         --carve                     canonical Carve source\n\n\
+         --carve                     canonical Carve source\n\n  \
          --json, --ast               the parsed AST as JSON\n  \
          --from-json                 read an encoded AST instead of Carve source\n\n\
          Format options:\n  \
@@ -1935,7 +1937,7 @@ fn print_usage() {
          --check                     fail if any file is not formatted\n  \
          --align-tables              align table columns in Carve source\n  \
          --migrate                   rewrite a reference that misses its only\n                              \
-         target by case to the target's exact spelling\n\n\
+         target by case to the target's exact spelling\n\n  \
          --stamp                     append/update provenance marker\n  \
          --stamp-block               append/update provenance marker as block comment\n\n\
          Render mode (HTML only; default --interactive):\n  \
@@ -1948,7 +1950,7 @@ fn print_usage() {
          preset: mermaid, plantuml, d2, graphviz, wavedrom, abc, vega-lite,\n                              \
          chart); needed for --static to flatten/degrade those constructs\n  \
          --extension KEY             enable a registry extension (repeatable;\n                              \
-                                     an unknown key prints the accepted list)\n  \
+         an unknown key prints the accepted list)\n  \
          --tabs-mode MODE            css (default) or aria for --extension tabs\n  \
          --citation-mode MODE        numbered (default) or author-date\n  \
          --no-sections               render headings without section wrappers\n  \
@@ -1962,19 +1964,21 @@ fn print_usage() {
          --profile-base-host HOST    base host for the profile link policy\n  \
          --smart-typography MODE     glyph (default), source (all source runs),\n                              \
          quotes-source (quotes only); every presentation target\n  \
-         --quote-locale LOCALE       use locale-specific opening/closing quotes\n\n\
+         --quote-locale LOCALE       use locale-specific opening/closing quotes\n\n  \
          --strict-losses             refuse output when rendering loses content or structure\n  \
          --report-losses FILE        write JSON loss report (`-` for stderr)\n  \
-         --allow-loss CODE          accept raw-format-dropped, ruby-flattened,\n                              \
+         --allow-loss CODE           accept raw-format-dropped, ruby-flattened,\n                              \
          editorial-comment-flattened, carrier-attribute-dropped\n                              \
          definition-list-flattened, list-style-dropped,\n                              \
          list-delimiter-changed, table-span-flattened,\n                              \
          table-header-row-demoted, table-header-row-hoisted\n                              \
          or table-header-cell-demoted\n  \
-         --max-render-losses N       bound detailed losses (default 100)\n\n\
-         --include-root DIR          containment root for {{ path }} includes.\n                              \
-         Defaults to the input file's directory; pass this to widen\n                              \
-         or narrow it, or to enable includes on stdin\n  \
+         --max-render-losses N       bound detailed losses (default 100)\n\n  \
+         --include-root DIR          containment root for {{{{ path }}}} includes.\n                              \
+         Render defaults to the input file's directory; pass this\n                              \
+         to widen or narrow it, or to enable includes on stdin.\n                              \
+         carve lint has no default: it expands and lints\n                              \
+         included content only within this root\n  \
          --report-includes FILE      write the JSON include-dependency list\n                              \
          (`-` for stderr)\n\n\
          Spec: https://markup-carve.github.io/carve/"

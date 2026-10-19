@@ -34,3 +34,40 @@ fn help_lists_the_version_flag() {
     assert_eq!(code, Some(0));
     assert!(stdout.contains("-V, --version"), "help omits --version");
 }
+
+// carve-rs#2901, #2902: `{{` in the help format string collapsed to `{`, and
+// lint's include root has no default, unlike render's.
+#[test]
+fn help_documents_the_include_root_for_render_and_lint() {
+    let (stdout, _stderr, code) = carve(&["--help"]);
+    assert_eq!(code, Some(0));
+    assert!(
+        stdout.contains("containment root for {{ path }} includes"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("carve lint [--include-root DIR] [files]"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("carve lint has no default"), "{stdout}");
+    for line in stdout.lines() {
+        assert!(
+            line.is_empty()
+                || line.starts_with(' ')
+                || line.ends_with(':')
+                || line.starts_with("carve")
+                || line.starts_with("Spec:"),
+            "help line is not indented: {line:?}"
+        );
+        assert!(
+            !line.starts_with(&" ".repeat(31)),
+            "help line is over-indented: {line:?}"
+        );
+    }
+    let (lint, _stderr, code) = carve(&["lint", "--help"]);
+    assert_eq!(code, Some(0));
+    assert!(
+        lint.contains("without it no include target is read"),
+        "{lint}"
+    );
+}
