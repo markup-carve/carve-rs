@@ -106,6 +106,7 @@ const IMPLEMENTED: &[&str] = &[
     "a-derived-title-yields-to-an-authored-one",
     "adjacent-block-openers-in-an-attached-run-stay-separate",
     "a-caption-attaches-across-one-blank-line",
+    "captions-in-list-items-do-not-create-a-paragraph-gap",
     "a-container-a-lazy-line-folded-into-is-still-open",
     "two-blank-lines-detach-a-caption",
     "a-list-marker-at-the-content-column-inside-an-open-fence",
