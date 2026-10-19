@@ -12,7 +12,7 @@ fn all_lint_include_vectors() {
     ))
     .unwrap();
     let vectors = corpus["vectors"].as_array().unwrap();
-    assert_eq!(vectors.len(), 23);
+    assert_eq!(vectors.len(), 29);
     for vector in vectors {
         let files: HashMap<String, String> =
             serde_json::from_value(vector["files"].clone()).unwrap();
