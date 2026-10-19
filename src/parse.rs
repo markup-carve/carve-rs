@@ -16387,13 +16387,15 @@ fn sublist_source_loosens_outer_item(source: &str) -> bool {
 }
 
 fn sublist_source_trailing_invisible_separation(source: &str) -> bool {
-    let mut lines = source.lines();
-    let Some(inner_content_col) = lines.find_map(marker_content_col) else {
-        return false;
-    };
     let mut invisible = false;
+    let mut inner_content_col = None;
     for line in source.lines().rev() {
         if is_line_comment_any_column(line) || is_definition_placeholder(line) {
+            let Some(inner_content_col) = *inner_content_col
+                .get_or_insert_with(|| source.lines().find_map(marker_content_col))
+            else {
+                return false;
+            };
             if indent_columns(line) >= inner_content_col {
                 return false;
             }
@@ -17789,7 +17791,7 @@ fn collect_trailing_lazy_through_framed(
 ) -> bool {
     let mut buffered = frame_band_lines.then(LineBuffer::default);
     if cur.peek().is_some_and(|line| {
-        indent_columns(line) == 0
+        matches!(line.as_bytes().first(), Some(b'`' | b'~'))
             && detect_fence_open(line)
                 .is_some_and(|open| cur.has_list_fence_closer_after(cur.pos, open))
     }) {
@@ -18284,7 +18286,7 @@ fn collect_indented_block_mapped_with_columns(
     let mut nested_fence: Option<FenceOpen> = None;
     while let Some(line) = cur.peek() {
         if strip_cols > 0
-            && indent_columns(line) == 0
+            && matches!(line.as_bytes().first(), Some(b'`' | b'~'))
             && cur.pos > 0
             && is_line_comment_any_column(cur.lines.at(cur.pos - 1))
             && detect_fence_open(line)
