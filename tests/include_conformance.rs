@@ -202,6 +202,58 @@ struct RunResult {
     /// cannot see the assembled tree's shape - footnotes are collected globally
     /// at render time either way.
     flattened: Option<String>,
+    positions: Option<Value>,
+}
+
+fn positions(doc: &carve::Document, base_real: Option<&str>) -> Value {
+    fn visit(value: &Value, base_real: Option<&str>, out: &mut Vec<Value>) {
+        match value {
+            Value::Arr(items) => {
+                for item in items {
+                    visit(item, base_real, out);
+                }
+            }
+            Value::Obj(fields) => {
+                if let Some(kind) = value.get("type").and_then(Value::as_str) {
+                    if kind != "document" {
+                        let mut node = vec![("type".to_string(), Value::Str(kind.to_string()))];
+                        if let Some(Value::Obj(pos)) = value.get("pos") {
+                            let mut pos: Vec<(String, Value)> = [
+                                "startLine",
+                                "startColumn",
+                                "endLine",
+                                "endColumn",
+                                "startOffset",
+                                "endOffset",
+                                "file",
+                            ]
+                            .iter()
+                            .filter_map(|key| pos.iter().find(|(name, _)| name == key).cloned())
+                            .collect();
+                            if let Some((_, Value::Str(file))) =
+                                pos.iter_mut().find(|(key, _)| key == "file")
+                            {
+                                *file = fold_path(file, base_real);
+                            }
+                            node.push(("pos".to_string(), Value::Obj(pos)));
+                        }
+                        out.push(Value::Obj(node));
+                    }
+                }
+                for (key, child) in fields {
+                    if key != "pos" {
+                        visit(child, base_real, out);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let ast = Value::parse(&carve::to_json(doc)).expect("expanded AST JSON");
+    let mut out = Vec::new();
+    visit(&ast, base_real, &mut out);
+    Value::Arr(out)
 }
 
 // ---------------------------------------------------------------------------
@@ -357,6 +409,10 @@ fn run_vector(vector: &Value) -> RunResult {
             formatted_run: None, // filesystem vectors never set the equivalence flag
             carve_target: None,  // nor the I15 flag: both are virtual-mode only
             flattened: None,     // nor `checkFlattened`
+            positions: vector["checkPositions"]
+                .as_bool()
+                .filter(|v| *v)
+                .map(|_| positions(&result.doc, Some(&base_real_str))),
         };
         // `tmp` drops here, removing the tree.
     }
@@ -378,6 +434,10 @@ fn run_vector(vector: &Value) -> RunResult {
             formatted_run: None,
             carve_target: None,
             flattened: None,
+            positions: vector["checkPositions"]
+                .as_bool()
+                .filter(|v| *v)
+                .map(|_| positions(&result.doc, None)),
         };
     }
 
@@ -448,6 +508,10 @@ fn run_vector(vector: &Value) -> RunResult {
         formatted_run,
         carve_target,
         flattened,
+        positions: vector["checkPositions"]
+            .as_bool()
+            .filter(|v| *v)
+            .map(|_| positions(&result.doc, None)),
     }
 }
 
@@ -579,6 +643,15 @@ fn compare(name: &str, vector: &Value, run: &RunResult) -> Vec<String> {
             "dependencies:\n    expected {exp_deps:?}\n    actual   {:?}",
             run.dependencies
         ));
+    }
+    if vector["checkPositions"].as_bool() == Some(true) {
+        let expected_positions = expected.get("positions").expect("expected.positions");
+        if run.positions.as_ref() != Some(expected_positions) {
+            diffs.push(format!(
+                "positions:\n    expected {expected_positions:?}\n    actual   {:?}",
+                run.positions
+            ));
+        }
     }
 
     // I7 no-leak: no forbidden substring may appear in any RAW warning message.
