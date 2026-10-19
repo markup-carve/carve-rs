@@ -119,11 +119,17 @@ fn heading_aliases(
 
 fn encode_fragment(value: &str) -> String {
     let mut result = String::new();
-    for byte in value.bytes() {
-        if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) {
-            result.push(byte as char);
+    for ch in value.chars() {
+        if ch.is_whitespace()
+            || ch.is_control()
+            || matches!(ch, '"' | '<' | '>' | '\\' | '`' | '^' | '{' | '|' | '}')
+        {
+            let mut buffer = [0; 4];
+            for byte in ch.encode_utf8(&mut buffer).bytes() {
+                result.push_str(&format!("%{byte:02X}"));
+            }
         } else {
-            result.push_str(&format!("%{byte:02X}"));
+            result.push(ch);
         }
     }
     result
@@ -956,10 +962,10 @@ mod tests {
         ));
         let source = root.join("source");
         fs::create_dir_all(&source).unwrap();
-        fs::write(source.join("a.md"), "# Guide\n\nSee [steps](b.md#install-steps), [same](b.md#Install-Steps) and [whole](b.md).\n").unwrap();
+        fs::write(source.join("a.md"), "# Guide\n\nSee [steps](b.md#install-steps), [same](b.md#Install-Steps), [unicode](b.md#über-uns) and [whole](b.md).\n").unwrap();
         fs::write(
             source.join("b.md"),
-            "# Install Steps\n\nRun it.\n\n# Twin\n\n# twin\n",
+            "# Install Steps\n\nRun it.\n\n# Über Uns\n\n# Twin\n\n# twin\n",
         )
         .unwrap();
         fs::write(
@@ -974,7 +980,7 @@ mod tests {
         );
         assert_eq!(
             fs::read_to_string(output.join("a.crv")).unwrap(),
-            "# Guide\n\nSee [steps](b.crv#Install-Steps), [same](b.crv#Install-Steps) and [whole](b.crv).\n"
+            "# Guide\n\nSee [steps](b.crv#Install-Steps), [same](b.crv#Install-Steps), [unicode](b.crv#Über-Uns) and [whole](b.crv).\n"
         );
         let report: Value = serde_json::from_str(
             &fs::read_to_string(output.join("migration-report.json")).unwrap(),
@@ -1005,14 +1011,24 @@ mod tests {
             .contains(&json!({"target": "b.md#install-steps", "status": "rewritten"})));
         assert_eq!(
             fixups(&a),
-            vec![json!({
-                "code": "link-fragment-case-rewritten",
-                "message": "Rewrote link fragment #install-steps to #Install-Steps, the one heading id it matches without regard to case.",
-                "severity": "info",
-                "fidelity": "normalized",
-                "confidence": "inferred",
-                "path": "link:b.md#install-steps",
-            })]
+            vec![
+                json!({
+                    "code": "link-fragment-case-rewritten",
+                    "message": "Rewrote link fragment #install-steps to #Install-Steps, the one heading id it matches without regard to case.",
+                    "severity": "info",
+                    "fidelity": "normalized",
+                    "confidence": "inferred",
+                    "path": "link:b.md#install-steps",
+                }),
+                json!({
+                    "code": "link-fragment-case-rewritten",
+                    "message": "Rewrote link fragment #über-uns to #Über-Uns, the one heading id it matches without regard to case.",
+                    "severity": "info",
+                    "fidelity": "normalized",
+                    "confidence": "inferred",
+                    "path": "link:b.md#über-uns",
+                })
+            ]
         );
         let c = file("c.md");
         assert_eq!(

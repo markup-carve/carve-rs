@@ -366,7 +366,7 @@ fn markdown_image_paragraphs_have_exact_assessment() {
     for (source, expected, codes) in [
         (
             "![x](/ü.png)",
-            "![x](/%C3%BC.png)\n",
+            "![x](/ü.png)\n",
             vec!["markdown-paragraph", "markdown-image"],
         ),
         (

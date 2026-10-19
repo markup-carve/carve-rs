@@ -40,14 +40,30 @@ fn restore_destination_brackets(html: &str) -> String {
     out
 }
 
+fn destination_has_entity(source: &str) -> bool {
+    static ENTITY: OnceLock<regex::Regex> = OnceLock::new();
+    let entity = ENTITY.get_or_init(|| {
+        regex::Regex::new(r"&(?:#[xX][0-9A-Fa-f]+|#[0-9]+|[A-Za-z][A-Za-z0-9]+);").unwrap()
+    });
+    for opener in ["](", "]:"] {
+        for (at, _) in source.match_indices(opener) {
+            let rest = &source[at + opener.len()..];
+            let end = rest.find([')', '\n']).unwrap_or(rest.len());
+            if entity.is_match(&rest[..end]) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 fn bare_link_events<'a>(label: &str, prefix: &str) -> [Event<'a>; 3] {
     [
         Event::Start(Tag::Link {
             link_type: LinkType::Autolink,
-            dest_url: crate::markdown_import::markdown_autolink_destination(
-                &format!("{prefix}{label}"),
-                false,
-            )
+            dest_url: crate::markdown_import::markdown_bare_link_destination(&format!(
+                "{prefix}{label}"
+            ))
             .into(),
             title: "".into(),
             id: "".into(),
@@ -380,7 +396,11 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
     let mut complete = prepared_urls.as_ref().map_or(true, |prepared| prepared.2);
     let mut definition_spans = Vec::new();
     for (_, definition) in parser.reference_definitions().iter() {
-        definition_spans.push(strikes.original_range(definition.span.clone()));
+        let span = strikes.original_range(definition.span.clone());
+        if destination_has_entity(&source[span.clone()]) {
+            complete = false;
+        }
+        definition_spans.push(span);
         diagnostics.push(diagnostic(
             "reference-definition",
             &line_starts,
@@ -406,6 +426,21 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
         }
         let event = strikes.restore(event, &range);
         let range = strikes.original_range(range);
+        if matches!(
+            &event,
+            Event::Start(
+                Tag::Link {
+                    link_type: LinkType::Inline,
+                    ..
+                } | Tag::Image {
+                    link_type: LinkType::Inline,
+                    ..
+                }
+            )
+        ) && destination_has_entity(&source[range.clone()])
+        {
+            complete = false;
+        }
         let mut paren_list = false;
         if !matches!(event, Event::Start(_) | Event::End(_)) {
             content_spans.push(range.clone());
@@ -750,6 +785,11 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
     let events = email_events(events, &line_starts, &mut diagnostics);
     if complete {
         let mut reference_events = Vec::with_capacity(events.len());
+        let mut unicode_marker = "CARVEURLUNICODEPLACEHOLDER".to_owned();
+        while source.contains(&unicode_marker) || value.contains(&unicode_marker) {
+            unicode_marker.push('X');
+        }
+        let mut unicode_chars = Vec::new();
         let mut lone_image_paragraph_end = None;
         for (index, event) in events.iter().enumerate() {
             let lone_image = matches!(event, Event::Start(Tag::Paragraph))
@@ -805,12 +845,43 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                         .replace(']', BRACKET_CLOSE_SENTINEL)
                         .into();
                 }
+                Event::Start(Tag::Link {
+                    dest_url,
+                    link_type: LinkType::Autolink,
+                    ..
+                }) => {
+                    *dest_url = dest_url
+                        .replace('[', BRACKET_OPEN_SENTINEL)
+                        .replace(']', BRACKET_CLOSE_SENTINEL)
+                        .into();
+                }
                 _ => {}
+            }
+            if let Event::Start(Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. }) =
+                &mut event
+            {
+                let mut marked = String::new();
+                for ch in dest_url.chars() {
+                    if !ch.is_ascii()
+                        && !ch.is_whitespace()
+                        && !ch.is_control()
+                        && !matches!(ch, '\u{E000}' | '\u{E001}')
+                    {
+                        marked.push_str(&format!("{unicode_marker}{}END", unicode_chars.len()));
+                        unicode_chars.push(ch);
+                    } else {
+                        marked.push(ch);
+                    }
+                }
+                *dest_url = marked.into();
             }
             reference_events.push(event);
         }
         let mut expected = String::new();
         pulldown_cmark::html::push_html(&mut expected, reference_events.into_iter());
+        for (index, ch) in unicode_chars.into_iter().enumerate() {
+            expected = expected.replace(&format!("{unicode_marker}{index}END"), &ch.to_string());
+        }
         expected = restore_destination_brackets(&expected)
             .replace(
                 "<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n",

@@ -420,7 +420,7 @@ mod evidence_tests {
         let unicode = migrate_markdown("# ΟΔΟΣ\n\n[street](#οδος)\n");
         assert_eq!(
             unicode.report.diagnostics.last().unwrap().message,
-            "Rewrote link fragment #οδος to #%CE%9F%CE%94%CE%9F%CE%A3, the one heading id it matches without regard to case."
+            "Rewrote link fragment #οδος to #ΟΔΟΣ, the one heading id it matches without regard to case."
         );
     }
 
@@ -428,16 +428,16 @@ mod evidence_tests {
     #[test]
     fn a_fragment_fixup_names_the_authored_spelling() {
         let result = migrate_markdown("# Über Uns\n\nSee [a](#über-uns).\n");
-        assert_eq!(result.value, "# Über Uns\n\nSee [a](#%C3%9Cber-Uns).\n");
+        assert_eq!(result.value, "# Über Uns\n\nSee [a](#Über-Uns).\n");
         let row = result.report.diagnostics.last().unwrap();
         assert_eq!(row.code, "link-fragment-case-rewritten");
         assert_eq!(row.severity, HtmlImportSeverity::Info);
         assert_eq!(row.fidelity, MigrationFidelity::Normalized);
         assert_eq!(row.confidence, MigrationConfidence::Inferred);
         assert_eq!(row.path.as_deref(), Some("link:#über-uns"));
-        assert_eq!(row.message, "Rewrote link fragment #über-uns to #%C3%9Cber-Uns, the one heading id it matches without regard to case.");
+        assert_eq!(row.message, "Rewrote link fragment #über-uns to #Über-Uns, the one heading id it matches without regard to case.");
 
-        // Two spellings of one encoded destination cannot be told apart.
+        // Distinct authored spellings retain distinct destination keys.
         let twins = migrate_markdown("# Über Uns\n\nSee [a](#über-uns) and [b](#%C3%BCber-uns).\n");
         let paths: Vec<_> = twins
             .report
@@ -446,7 +446,7 @@ mod evidence_tests {
             .filter(|row| row.code == "link-fragment-case-rewritten")
             .map(|row| row.path.as_deref().unwrap())
             .collect();
-        assert_eq!(paths, ["link:#%C3%BCber-uns", "link:#%C3%BCber-uns"]);
+        assert_eq!(paths, ["link:#über-uns", "link:#%C3%BCber-uns"]);
     }
 
     #[test]

@@ -401,7 +401,8 @@
   },
   {
     "source": "[a](<😀>)",
-    "html": "<p><a href=\"%F0%9F%98%80\">a</a></p>\n"
+    "html": "<p><a href=\"%F0%9F%98%80\">a</a></p>\n",
+    "carveHtml": "<p><a href=\"😀\">a</a></p>\n"
   },
   {
     "source": "[a](<a\\<b>)",

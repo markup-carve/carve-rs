@@ -163,14 +163,26 @@ fn authored_inline_destination<'a>(source: &'a str, parsed: &'a str) -> &'a str 
 }
 
 pub(crate) fn markdown_destination(destination: &str, email: bool) -> String {
-    encode_markdown_destination(destination, email, false)
+    encode_markdown_destination(destination, email)
 }
 
 pub(crate) fn markdown_autolink_destination(destination: &str, email: bool) -> String {
-    encode_markdown_destination(destination, email, true)
+    encode_markdown_destination(destination, email)
 }
 
-fn encode_markdown_destination(destination: &str, email: bool, encode_brackets: bool) -> String {
+pub(crate) fn markdown_bare_link_destination(destination: &str) -> String {
+    let mut encoded = String::new();
+    for byte in destination.bytes() {
+        if byte >= 0x7f || matches!(byte, b'[' | b']') {
+            encoded.push_str(&format!("%{byte:02X}"));
+        } else {
+            encoded.push(byte as char);
+        }
+    }
+    encode_markdown_destination(&encoded, false)
+}
+
+fn encode_markdown_destination(destination: &str, email: bool) -> String {
     if is_empty_destination(destination) {
         return String::new();
     }
@@ -179,20 +191,19 @@ fn encode_markdown_destination(destination: &str, email: bool, encode_brackets: 
     if email {
         encoded.push_str("mailto:");
     }
-    for byte in destination.bytes() {
-        if (encode_brackets && matches!(byte, b'[' | b']'))
-            || byte <= b' '
-            || byte >= 0x7f
-            || matches!(
-                byte,
-                b'"' | b'<' | b'>' | b'\\' | b'`' | b'^' | b'{' | b'|' | b'}'
-            )
+    for ch in destination.chars() {
+        if ch.is_whitespace()
+            || ch.is_control()
+            || matches!(ch, '"' | '<' | '>' | '\\' | '`' | '^' | '{' | '|' | '}')
         {
-            encoded.push('%');
-            encoded.push(HEX[(byte >> 4) as usize] as char);
-            encoded.push(HEX[(byte & 15) as usize] as char);
+            let mut buffer = [0; 4];
+            for byte in ch.encode_utf8(&mut buffer).bytes() {
+                encoded.push('%');
+                encoded.push(HEX[(byte >> 4) as usize] as char);
+                encoded.push(HEX[(byte & 15) as usize] as char);
+            }
         } else {
-            encoded.push(byte as char);
+            encoded.push(ch);
         }
     }
     encoded
@@ -201,7 +212,7 @@ fn encode_markdown_destination(destination: &str, email: bool, encode_brackets: 
 pub(crate) fn literal_bare_link(label: &str, prefix: &str) -> InlineNode {
     InlineNode::Link(Link {
         attrs: None,
-        href: markdown_autolink_destination(&format!("{prefix}{label}"), false),
+        href: markdown_bare_link_destination(&format!("{prefix}{label}")),
         title: None,
         children: vec![InlineNode::text(label)],
         ref_label: None,
@@ -438,15 +449,7 @@ pub(crate) fn rewrite_same_file_heading_links_reported(
         String::from_utf8(bytes).ok()
     }
     fn encode(value: &str) -> String {
-        let mut result = String::new();
-        for byte in value.bytes() {
-            if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) {
-                result.push(byte as char);
-            } else {
-                result.push_str(&format!("%{byte:02X}"));
-            }
-        }
-        result
+        encode_markdown_destination(value, false)
     }
     fn visit(
         value: &mut Value,
@@ -2561,7 +2564,13 @@ impl Builder {
             } => Frame::Link {
                 href: {
                     let href = if matches!(link_type, LinkType::Autolink | LinkType::Email) {
-                        markdown_autolink_destination(&dest_url, link_type == LinkType::Email)
+                        let written =
+                            markdown_autolink_destination(&dest_url, link_type == LinkType::Email);
+                        if source.contains('\\') || source.contains("](") || source.contains("][") {
+                            written.replace('[', "%5B").replace(']', "%5D")
+                        } else {
+                            written
+                        }
                     } else {
                         markdown_destination(&dest_url, false)
                     };
@@ -2915,7 +2924,6 @@ impl Builder {
                 title,
                 ..
             } if title.is_none() => {
-                // Brackets stay visible but need percent encoding in the Markdown URL.
                 if href == autolink_href || !text.bytes().any(|byte| matches!(byte, b'[' | b']')) {
                     self.inline(InlineNode::AutoLink(AutoLink {
                         attrs: None,
@@ -3578,9 +3586,7 @@ mod tests {
         );
         assert!(markdown_to_carve("# Version 02\n\n[version](#version-02)")
             .contains("[version](#Version-02)"));
-        assert!(
-            markdown_to_carve("# ΟΔΟΣ\n\n[street](#οδος)").contains("#%CE%9F%CE%94%CE%9F%CE%A3")
-        );
+        assert!(markdown_to_carve("# ΟΔΟΣ\n\n[street](#οδος)").contains("#ΟΔΟΣ"));
     }
 
     /// markup-carve/carve#2799. A BARE `---` block becomes frontmatter only
@@ -4005,7 +4011,7 @@ mod destination_encoding_tests {
             ("<https://example.com?find=\\*>", "<p><a href=\"https://example.com?find=%5C*\">https://example.com?find=\\*</a></p>"),
             ("<https://foo.bar.`baz>`", "<p><a href=\"https://foo.bar.%60baz\">https://foo.bar.`baz</a>`</p>"),
             ("[x](<a b>)", "<p><a href=\"a%20b\">x</a></p>"),
-            ("[x](<é/中?q=a&b=c>)", "<p><a href=\"%C3%A9/%E4%B8%AD?q=a&amp;b=c\">x</a></p>"),
+            ("[x](<é/中?q=a&b=c>)", "<p><a href=\"é/中?q=a&amp;b=c\">x</a></p>"),
             ("a ![x](<a b>)", "<p>a <img src=\"a%20b\" alt=\"x\"></p>"),
             ("[x](a%20b)", "<p><a href=\"a%20b\">x</a></p>"),
             ("[x](<a'b>)", "<p><a href=\"a&apos;b\">x</a></p>"),
