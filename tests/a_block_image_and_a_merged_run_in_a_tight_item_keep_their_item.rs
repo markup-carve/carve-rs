@@ -50,9 +50,10 @@ fn keeps_its_html(src: &str) -> bool {
     carve::to_html(&fmt(src)) == carve::to_html(src)
 }
 
+/// The image stays in the loose hosting item as a blank-separated paragraph.
 #[test]
 fn a_block_image_below_a_sub_list_stays_in_the_hosting_item() {
-    assert_eq!(fmt("- - p\n\n  ![z](i.png)\n"), "- - p\n+\n![z](i.png)\n");
+    assert_eq!(fmt("- - p\n\n  ![z](i.png)\n"), "- - p\n\n  ![z](i.png)\n");
     assert_eq!(
         carve::to_html("- - p\n\n  ![z](i.png)\n"),
         "<ul>\n  <li>\n    <ul>\n      <li>p</li>\n    </ul>\n    \
@@ -153,20 +154,23 @@ fn a_run_of_three_quotes_carries_the_marker_on_every_lower_block() {
 fn a_child_gains_no_marker_where_none_is_needed() {
     for (src, expected) in [
         // A sub-list whose last item ends in a block that closes.
-        ("- - # h\n\n  ![z](i.png)\n", "- - # h\n  ![z](i.png)\n"),
-        ("- - | a |\n\n  ![z](i.png)\n", "- - | a |\n  ![z](i.png)\n"),
-        ("- - ---\n\n  ![z](i.png)\n", "- - ---\n  ![z](i.png)\n"),
+        ("- - # h\n\n  ![z](i.png)\n", "- - # h\n\n  ![z](i.png)\n"),
+        (
+            "- - | a |\n\n  ![z](i.png)\n",
+            "- - | a |\n\n  ![z](i.png)\n",
+        ),
+        ("- - ---\n\n  ![z](i.png)\n", "- - ---\n\n  ![z](i.png)\n"),
         (
             "- - ```\n    c\n    ```\n\n  ![z](i.png)\n",
-            "- - ```\n    c\n    ```\n  ![z](i.png)\n",
+            "- - ```\n    c\n    ```\n\n  ![z](i.png)\n",
         ),
         (
             "- - ::: d\n    x\n    :::\n\n  ![z](i.png)\n",
-            "- - ::: d\n    x\n    :::\n  ![z](i.png)\n",
+            "- - ::: d\n    x\n    :::\n\n  ![z](i.png)\n",
         ),
         // No container above at all.
-        ("- # h\n\n  ![z](i.png)\n", "- # h\n  ![z](i.png)\n"),
-        ("- | a |\n\n  ![z](i.png)\n", "- | a |\n  ![z](i.png)\n"),
+        ("- # h\n\n  ![z](i.png)\n", "- # h\n\n  ![z](i.png)\n"),
+        ("- | a |\n\n  ![z](i.png)\n", "- | a |\n\n  ![z](i.png)\n"),
     ] {
         assert_eq!(fmt(src), expected, "control moved: {src:?}");
         assert!(keeps_its_html(src), "control lost its html: {src:?}");

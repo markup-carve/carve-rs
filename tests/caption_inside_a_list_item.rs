@@ -219,3 +219,89 @@ fn a_lazy_caption_at_column_zero_does_not_attach() {
     assert!(!html.contains("<figcaption>"), "{html}");
     assert!(html.contains("^ lazy cap"), "{html}");
 }
+
+#[test]
+fn nested_list_caption_slots_match_reference_html() {
+    let cases = [
+        (
+            include_str!("fixtures/caption_nested_list/01-a.crv"),
+            include_str!("fixtures/caption_nested_list/01-a.html"),
+        ),
+        (
+            include_str!("fixtures/caption_nested_list/02-b.crv"),
+            include_str!("fixtures/caption_nested_list/02-b.html"),
+        ),
+        (
+            include_str!("fixtures/caption_nested_list/03-c.crv"),
+            include_str!("fixtures/caption_nested_list/03-c.html"),
+        ),
+        (
+            include_str!("fixtures/caption_nested_list/04-i.crv"),
+            include_str!("fixtures/caption_nested_list/04-i.html"),
+        ),
+        (
+            include_str!("fixtures/caption_nested_list/05-j.crv"),
+            include_str!("fixtures/caption_nested_list/05-j.html"),
+        ),
+        (
+            include_str!("fixtures/caption_nested_list/06-p.crv"),
+            include_str!("fixtures/caption_nested_list/06-p.html"),
+        ),
+        (
+            include_str!("fixtures/caption_nested_list/07-d.crv"),
+            include_str!("fixtures/caption_nested_list/07-d.html"),
+        ),
+        (
+            include_str!("fixtures/caption_nested_list/08-e.crv"),
+            include_str!("fixtures/caption_nested_list/08-e.html"),
+        ),
+        (
+            include_str!("fixtures/caption_nested_list/09-k.crv"),
+            include_str!("fixtures/caption_nested_list/09-k.html"),
+        ),
+        (
+            include_str!("fixtures/caption_nested_list/10-n.crv"),
+            include_str!("fixtures/caption_nested_list/10-n.html"),
+        ),
+        (
+            include_str!("fixtures/caption_nested_list/11-g.crv"),
+            include_str!("fixtures/caption_nested_list/11-g.html"),
+        ),
+        (
+            include_str!("fixtures/caption_nested_list/12-m.crv"),
+            include_str!("fixtures/caption_nested_list/12-m.html"),
+        ),
+        (
+            include_str!("fixtures/caption_nested_list/13-ad.crv"),
+            include_str!("fixtures/caption_nested_list/13-ad.html"),
+        ),
+        (
+            include_str!("fixtures/caption_nested_list/14-z.crv"),
+            include_str!("fixtures/caption_nested_list/14-z.html"),
+        ),
+        (
+            include_str!("fixtures/caption_nested_list/15-q.crv"),
+            include_str!("fixtures/caption_nested_list/15-q.html"),
+        ),
+        (
+            include_str!("fixtures/caption_nested_list/16-imgnocap.crv"),
+            include_str!("fixtures/caption_nested_list/16-imgnocap.html"),
+        ),
+        (
+            include_str!("fixtures/caption_nested_list/17-imgcap1.crv"),
+            include_str!("fixtures/caption_nested_list/17-imgcap1.html"),
+        ),
+        (
+            include_str!("fixtures/caption_nested_list/18-imgcap0.crv"),
+            include_str!("fixtures/caption_nested_list/18-imgcap0.html"),
+        ),
+    ];
+    for (index, (source, expected)) in cases.into_iter().enumerate() {
+        assert_eq!(
+            format!("{}\n", to_html(source)),
+            expected,
+            "case {:02}",
+            index + 1
+        );
+    }
+}

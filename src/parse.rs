@@ -16208,8 +16208,57 @@ fn sublist_source_loosens_outer_item(source: &str) -> bool {
                 continue;
             }
         }
+        let caption_slot = prev_blank
+            && i > 1
+            && is_blank_line(lines[i - 1])
+            && !is_blank_line(lines[i - 2])
+            && caption_content(line).is_some()
+            && {
+                let host = lines[i - 2];
+                let inline_starts_block = i == 2
+                    || is_blank_line(lines[i - 3])
+                    || parse_standalone_attrs(lines[i - 3]).is_some()
+                    || is_heading_marker_line(lines[i - 3]);
+                let quote = lines[..i - 2]
+                    .iter()
+                    .rev()
+                    .take_while(|line| !is_blank_line(line))
+                    .chain(std::iter::once(&host))
+                    .any(|line| {
+                        strip_blockquote_prefix(line)
+                            .is_some_and(|content| !trim_ascii(content).is_empty())
+                    });
+                let fence = lines[..i - 2]
+                    .iter()
+                    .rev()
+                    .take_while(|line| !is_blank_line(line))
+                    .filter_map(|line| detect_fence_open(line))
+                    .any(|open| is_fence_close(host, open));
+                let figure = exact_colon_fence_len(host).is_some_and(|length| {
+                    lines[..i - 2].iter().rev().any(|line| {
+                        detect_container_open(line).is_some_and(|open| {
+                            open.fence_len == length && open.kind.as_deref() == Some("figure")
+                        })
+                    })
+                });
+                is_table_start(host)
+                    || (i > 2
+                        && is_table_continuation(host)
+                        && (is_table_start(lines[i - 3]) || is_table_continuation(lines[i - 3])))
+                    || quote
+                    || fence
+                    || figure
+                    || (inline_starts_block && detect_block_image(host).is_some())
+                    || (inline_starts_block
+                        && host.starts_with("$$`")
+                        && matches!(
+                            parse_inline_with_options(host, &Options::default()).as_slice(),
+                            [InlineNode::Math(math)] if math.display
+                        ))
+            };
         if prev_blank
             && indent < inner_content_col
+            && !caption_slot
             && !continuation_line_opens_sub_block(line, &lines[i + 1..])
         {
             return true;
@@ -17051,6 +17100,9 @@ fn block_is_paragraph_shaped(block: &BlockNode) -> bool {
 fn continuation_line_opens_sub_block(line: &str, rest: &[&str]) -> bool {
     let base = indent_columns(line);
     let local = strip_leading_columns(line, base);
+    if detect_block_image(&local).is_some() {
+        return false;
+    }
     if is_list_marker(&local)
         || item_block_opener(&local)
         || interrupts_paragraph_with_rest(&local, &[])
