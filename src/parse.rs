@@ -16996,7 +16996,10 @@ fn continuation_source_loosens(source: &str, _source_is_the_item_body: bool) -> 
                     quote_host |= !trim_ascii(content).is_empty();
                 }
             }
-            let inline_starts_block = i == 1 || is_blank_line(lines[i - 2]);
+            let inline_starts_block = i == 1
+                || is_blank_line(lines[i - 2])
+                || parse_standalone_attrs(lines[i - 2]).is_some()
+                || is_heading_marker_line(lines[i - 2]);
             is_table_start(lines[i - 1])
                 || is_table_continuation(lines[i - 1])
                 || (inline_starts_block && detect_block_image(lines[i - 1]).is_some())

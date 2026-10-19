@@ -89,6 +89,25 @@ fn a_lazy_quote_line_before_its_caption_keeps_the_list_tight() {
 }
 
 #[test]
+fn an_image_or_equation_after_attributes_keeps_its_caption_tight() {
+    for host in ["![a](b.png)", "$$`x`"] {
+        let html = to_html(&format!("- {{.x}}\n  {host}\n\n  ^ cap\n- c\n"));
+        assert!(
+            html.contains("<figcaption>cap</figcaption>"),
+            "{host}: {html}"
+        );
+        assert!(html.contains("<li>c</li>"), "{host}: {html}");
+    }
+}
+
+#[test]
+fn an_image_after_a_heading_keeps_its_caption_tight() {
+    let html = to_html("- # h\n  ![a](b.png)\n\n  ^ cap\n- c\n");
+    assert!(html.contains("<figcaption>cap</figcaption>"), "{html}");
+    assert!(html.contains("<li>c</li>"), "{html}");
+}
+
+#[test]
 fn two_blanks_detach_figure_group_caption() {
     let html = to_html("- ::: figure\n  ![a](b.png)\n  :::\n\n\n  ^ cap\n- c\n");
     assert!(!html.contains("<figcaption>"), "{html}");
