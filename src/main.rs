@@ -446,6 +446,12 @@ fn main() -> ExitCode {
     }
 
     if command == Command::Flatten {
+        // Flatten exists to read includes, so a switch that forbids that is
+        // refused rather than ignored (carve-js rejects both flags too).
+        if no_includes {
+            eprintln!("carve flatten: --safe and --no-includes leave nothing to flatten");
+            return ExitCode::from(2);
+        }
         return run_flatten(
             input_paths.first().map(String::as_str),
             include_root.as_deref(),
