@@ -19032,7 +19032,13 @@ fn collect_indented_block_mapped_with_columns(
                     && marker_is_definition_term
                     && marker_definition_has_description =>
             {
-                0
+                comment_fence.map_or(0, |(_, opener)| {
+                    if opener >= strip_cols && indent >= opener {
+                        strip_cols
+                    } else {
+                        0
+                    }
+                })
             }
             (true, Some(_)) if comment_payload => strip_cols.min(indent_columns(payload_line)),
             (true, Some(span_strip)) => span_strip.min(indent),

@@ -161,8 +161,9 @@ pub use markdown_import::{
 };
 pub use migration::{
     fragment_fixup_diagnostic, migrate_bbcode, migrate_djot, migrate_html, migrate_markdown,
-    try_migrate_markdown, try_migrate_markdown_for_directory, MigrationConfidence,
-    MigrationDiagnostic, MigrationFidelity, MigrationReport, MigrationResult, SourceFormat,
+    try_migrate_markdown, try_migrate_markdown_for_directory,
+    try_migrate_markdown_for_directory_with_destinations, MigrationConfidence, MigrationDiagnostic,
+    MigrationFidelity, MigrationReport, MigrationResult, SourceFormat,
 };
 pub use parse::{parse, parse_with_options};
 pub use profile::{DisallowedAction, LinkPolicy, Profile, ProfileViolation, ProfileViolationError};

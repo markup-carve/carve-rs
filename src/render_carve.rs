@@ -965,8 +965,12 @@ fn comparable_tree(source: &str) -> Option<Document> {
 /// Empty is the only case that matters: a description holding content writes
 /// that content and needs nothing from here. Collecting the set first keeps the
 /// map below empty, and avoids cloning, for documents without such a description.
-fn emptied_marker_lines(blocks: &[BlockNode], into: &mut HashSet<usize>) {
-    emptied_marker_lines_at(blocks, 0, into);
+fn emptied_marker_lines(
+    blocks: &[BlockNode],
+    into: &mut HashSet<usize>,
+    last_marker: Option<usize>,
+) {
+    emptied_marker_lines_at(blocks, 0, into, last_marker);
 }
 
 /// `list_depth` is how many lists enclose `blocks`. It gates the emptied-item
@@ -975,7 +979,12 @@ fn emptied_marker_lines(blocks: &[BlockNode], into: &mut HashSet<usize>) {
 /// 117-footnote-definition-inside-a-container-is-collected-2, and it round-trips
 /// there because nothing follows at a shallower column for the marker to
 /// capture. carve-js and carve-php draw the line in the same place.
-fn emptied_marker_lines_at(blocks: &[BlockNode], list_depth: usize, into: &mut HashSet<usize>) {
+fn emptied_marker_lines_at(
+    blocks: &[BlockNode],
+    list_depth: usize,
+    into: &mut HashSet<usize>,
+    last_marker: Option<usize>,
+) {
     for block in blocks {
         match block {
             BlockNode::DefinitionList(list) => {
@@ -986,20 +995,26 @@ fn emptied_marker_lines_at(blocks: &[BlockNode], list_depth: usize, into: &mut H
                                 into.insert(pos.start_line);
                             }
                         } else {
-                            emptied_marker_lines_at(&def.children, list_depth, into);
+                            emptied_marker_lines_at(&def.children, list_depth, into, last_marker);
                         }
                     }
                 }
             }
             BlockNode::BlockQuote(quote) => {
-                emptied_marker_lines_at(&quote.children, list_depth, into)
+                emptied_marker_lines_at(&quote.children, list_depth, into, last_marker)
             }
             BlockNode::Admonition(admonition) => {
-                emptied_marker_lines_at(&admonition.children, list_depth, into);
+                emptied_marker_lines_at(&admonition.children, list_depth, into, last_marker);
             }
-            BlockNode::Directive(div) => emptied_marker_lines_at(&div.children, list_depth, into),
-            BlockNode::Div(div) => emptied_marker_lines_at(&div.children, list_depth, into),
-            BlockNode::Section(div) => emptied_marker_lines_at(&div.children, list_depth, into),
+            BlockNode::Directive(div) => {
+                emptied_marker_lines_at(&div.children, list_depth, into, last_marker)
+            }
+            BlockNode::Div(div) => {
+                emptied_marker_lines_at(&div.children, list_depth, into, last_marker)
+            }
+            BlockNode::Section(div) => {
+                emptied_marker_lines_at(&div.children, list_depth, into, last_marker)
+            }
             // The two other walks over this tree (`normalize_escapes_block` and
             // `redundant_heading_ids`) both descend into a figure's block-quote
             // target, so this one does too. No input reaches it today - a `dd`
@@ -1008,11 +1023,11 @@ fn emptied_marker_lines_at(blocks: &[BlockNode], list_depth: usize, into: &mut H
             // moment that changes.
             BlockNode::Figure(figure) => {
                 if let FigureTarget::BlockQuote(quote) = &*figure.target {
-                    emptied_marker_lines_at(&quote.children, list_depth, into);
+                    emptied_marker_lines_at(&quote.children, list_depth, into, last_marker);
                 }
             }
             BlockNode::FigureGroup(group) => {
-                emptied_marker_lines_at(&group.children, list_depth, into)
+                emptied_marker_lines_at(&group.children, list_depth, into, last_marker)
             }
             BlockNode::List(list) => {
                 for item in &list.items {
@@ -1022,9 +1037,13 @@ fn emptied_marker_lines_at(blocks: &[BlockNode], list_depth: usize, into: &mut H
                     // that line. Put the definition back there; spelling the
                     // item with `+` would attach the following outer content to
                     // this inner item on the next parse (carve-rs#1144).
-                    if list_depth > 0 && item.children.is_empty() {
+                    // CARVE-P11-073 (c): at the top level too, when a region
+                    // marker below would otherwise be crossed.
+                    if item.children.is_empty() {
                         if let Some(pos) = &item.pos {
-                            into.insert(pos.start_line);
+                            if list_depth > 0 || above_a_marker(Some(pos.start_line), last_marker) {
+                                into.insert(pos.start_line);
+                            }
                         }
                     }
                     // A definition the author wrote BETWEEN two of an item's
@@ -1043,11 +1062,11 @@ fn emptied_marker_lines_at(blocks: &[BlockNode], list_depth: usize, into: &mut H
                             into.insert(line);
                         }
                     }
-                    emptied_marker_lines_at(&item.children, list_depth + 1, into);
+                    emptied_marker_lines_at(&item.children, list_depth + 1, into, last_marker);
                 }
             }
             BlockNode::ExtensionCarrier(extension) => {
-                emptied_marker_lines_at(&extension.children, list_depth, into);
+                emptied_marker_lines_at(&extension.children, list_depth, into, last_marker);
             }
             _ => {}
         }
@@ -1060,7 +1079,7 @@ fn emptied_marker_lines_at(blocks: &[BlockNode], list_depth: usize, into: &mut H
 /// inside an item's gap. A definition on either belongs back on it.
 fn definitions_by_description_line(doc: &Document) -> HashMap<usize, DefinitionAtLine> {
     let mut lines = HashSet::new();
-    emptied_marker_lines(&doc.children, &mut lines);
+    emptied_marker_lines(&doc.children, &mut lines, last_region_marker_line(doc));
     let mut out = HashMap::new();
     if lines.is_empty() {
         return out;
@@ -1237,10 +1256,11 @@ fn render_with_escapes_once(
     let mut previous_list: Option<&List> = None;
     let mut separated_from_previous = false;
     let mut previous_emitted: Option<&BlockNode> = None;
-    for (index, entry) in crate::ast_json::ordered_document_entries(doc, &footnote_defs)
-        .into_iter()
-        .enumerate()
-    {
+    let entries = definitions_above_a_marker_in_place(
+        crate::ast_json::ordered_document_entries(doc, &footnote_defs),
+        last_region_marker_line(doc),
+    );
+    for (index, entry) in entries.into_iter().enumerate() {
         let escape_window::Visit::Render(recorded) =
             escape_window::visit(session, escape_window::ROOT, index)
         else {
@@ -1249,6 +1269,10 @@ fn render_with_escapes_once(
         let block = match entry {
             crate::ast_json::DocEntry::Block(child) => Some(child),
             crate::ast_json::DocEntry::FootnoteDef(..) => None,
+        };
+        let footnote_line = match &entry {
+            crate::ast_json::DocEntry::FootnoteDef(_, blocks, pos) => footnote_line(blocks, *pos),
+            crate::ast_json::DocEntry::Block(_) => None,
         };
         let text = match entry {
             crate::ast_json::DocEntry::Block(child) => {
@@ -1293,9 +1317,15 @@ fn render_with_escapes_once(
         };
         escape_window::leave(session, recorded);
         if !writes_nothing(&text) {
-            let adjacent = previous_emitted
-                .zip(block)
-                .is_some_and(|(previous, block)| region_marker_adjacent(previous, block, &text));
+            let adjacent = match (previous_emitted, block, footnote_line) {
+                (Some(previous), Some(block), _) => region_marker_adjacent(previous, block, &text),
+                // A footnote written in place directly under a marker (CARVE-P11-073 (c)).
+                (Some(previous), None, Some(line)) => {
+                    is_region_marker(previous)
+                        && block_pos(previous).is_some_and(|pos| line == pos.end_line + 1)
+                }
+                _ => false,
+            };
             if adjacent && !rendered.is_empty() {
                 let last = rendered.len() - 1;
                 rendered[last].push('\n');
@@ -1969,20 +1999,22 @@ fn region_marker_adjacent(previous: &BlockNode, block: &BlockNode, rendered: &st
     if !is_region_marker(previous) && !is_region_marker(block) {
         return false;
     }
-    // A collected definition (§7) is written apart, so it is no sibling of the marker.
-    if matches!(block, BlockNode::LinkReferenceDefinition(_)) {
-        return false;
-    }
     // A block a following `%%` line cannot continue, whatever it is spelled as.
-    if !matches!(
-        previous,
+    let closed = match previous {
         BlockNode::Paragraph(_)
-            | BlockNode::BlockImage(_)
-            | BlockNode::Heading(_)
-            | BlockNode::CodeBlock(_)
-            | BlockNode::ThematicBreak(_)
-            | BlockNode::Comment(_)
-    ) {
+        | BlockNode::BlockImage(_)
+        | BlockNode::Heading(_)
+        | BlockNode::CodeBlock(_)
+        | BlockNode::ThematicBreak(_)
+        | BlockNode::Comment(_)
+        | BlockNode::Table(_)
+        | BlockNode::Div(_)
+        | BlockNode::Admonition(_)
+        | BlockNode::LinkReferenceDefinition(_) => true,
+        BlockNode::BlockQuote(quote) => quote.fenced,
+        _ => false,
+    };
+    if !closed {
         return false;
     }
     let (Some(before), Some(after)) = (block_pos(previous), block_pos(block)) else {
@@ -2003,6 +2035,87 @@ fn leading_attribute_lines(block: &BlockNode, rendered: &str) -> usize {
         .split('\n')
         .take_while(|line| line.starts_with('{'))
         .count()
+}
+
+/// CARVE-P11-073 (c): the start line of the last region marker in the tree,
+/// footnote bodies included.
+fn last_region_marker_line(doc: &Document) -> Option<usize> {
+    let mut last: Option<usize> = None;
+    let mut visit = |block: &BlockNode| {
+        if is_region_marker(block) {
+            if let Some(pos) = block_pos(block) {
+                last = Some(last.map_or(pos.start_line, |line| line.max(pos.start_line)));
+            }
+        }
+    };
+    crate::includes::walk_blocks(&doc.children, &mut visit);
+    for blocks in doc.footnote_defs.values() {
+        crate::includes::walk_blocks(blocks, &mut visit);
+    }
+    last
+}
+
+fn above_a_marker(line: Option<usize>, last_marker: Option<usize>) -> bool {
+    matches!((line, last_marker), (Some(line), Some(marker)) if line < marker)
+}
+
+/// The line a footnote definition was written on.
+fn footnote_line(blocks: &[BlockNode], pos: Option<&Pos>) -> Option<usize> {
+    pos.or_else(|| blocks.first().and_then(block_pos))
+        .map(|pos| pos.start_line)
+}
+
+/// CARVE-P11-073 (c): a definition with a region marker below it is not
+/// collected to the end; it goes back among the blocks in source order.
+fn definitions_above_a_marker_in_place(
+    entries: Vec<crate::ast_json::DocEntry<'_>>,
+    last_marker: Option<usize>,
+) -> Vec<crate::ast_json::DocEntry<'_>> {
+    use crate::ast_json::DocEntry;
+    if last_marker.is_none() {
+        return entries;
+    }
+    let definition_line = |entry: &DocEntry<'_>| match entry {
+        DocEntry::Block(BlockNode::LinkReferenceDefinition(def)) => {
+            def.pos.as_ref().map(|pos| pos.start_line)
+        }
+        DocEntry::FootnoteDef(_, blocks, pos) => footnote_line(blocks, *pos),
+        DocEntry::Block(_) => None,
+    };
+    let is_definition = |entry: &DocEntry<'_>| {
+        matches!(
+            entry,
+            DocEntry::Block(BlockNode::LinkReferenceDefinition(_)) | DocEntry::FootnoteDef(..)
+        )
+    };
+    let mut body = Vec::new();
+    let mut hoisted = Vec::new();
+    let mut in_place = Vec::new();
+    for entry in entries {
+        let line = definition_line(&entry);
+        if !is_definition(&entry) {
+            body.push(entry);
+        } else if above_a_marker(line, last_marker) {
+            in_place.push((line.unwrap_or(0), entry));
+        } else {
+            hoisted.push(entry);
+        }
+    }
+    in_place.sort_by_key(|(line, _)| *line);
+    for (line, entry) in in_place {
+        let at = body
+            .iter()
+            .position(|entry| match entry {
+                DocEntry::Block(block) if !is_definition(entry) => {
+                    block_pos(block).is_some_and(|pos| pos.start_line > line)
+                }
+                _ => false,
+            })
+            .unwrap_or(body.len());
+        body.insert(at, entry);
+    }
+    body.extend(hoisted);
+    body
 }
 
 /// CARVE-P11-073: a region marker the reader kept in a list item from at or

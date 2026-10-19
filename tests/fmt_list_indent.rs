@@ -8,7 +8,7 @@
 //! O(depth^2), and `05-lists-5` came back with four spaces where it was written
 //! with two (carve-rs#594; carve-js fixed the same shape in its #653).
 
-use carve::to_carve;
+use carve::{ast::BlockNode, parse, to_carve};
 
 fn ladder(depth: usize) -> String {
     (0..depth)
@@ -54,4 +54,51 @@ fn formatting_stays_idempotent() {
     let once = to_carve("- fruit\n  - apples\n    - deep\n- veg\n");
 
     assert_eq!(to_carve(&once), once);
+}
+
+#[test]
+fn a_comment_in_a_definition_list_item_stays_idempotent() {
+    let cases = [
+        (
+            "- :: t\n:  - a\n     %%%\n     [r]: /url\n     %%%\n",
+            "- :: t\n  : - a\n\n    %%%\n    [r]: /url\n    %%%\n",
+            "[r]: /url",
+        ),
+        (
+            "- :: t\n:  - a\n     %%%\n       [r]: /url\n     %%%\n",
+            "- :: t\n  : - a\n\n    %%%\n      [r]: /url\n    %%%\n",
+            "  [r]: /url",
+        ),
+        (
+            "- :: t\n:  - a\n\n     %%%\n     x\n       y\n     %%%\n",
+            "- :: t\n  : - a\n\n    %%%\n    x\n      y\n    %%%\n",
+            "x\n  y",
+        ),
+        (
+            "- :: t\n  : - a\n\n    %%%\n      [r]: /url\n    %%%\n",
+            "- :: t\n  : - a\n\n    %%%\n      [r]: /url\n    %%%\n",
+            "  [r]: /url",
+        ),
+        (
+            "- :: t\n  : text\n\n    %%%\n    x\n    %%%\n",
+            "- :: t\n  : text\n\n    %%%\n    x\n    %%%\n",
+            "x",
+        ),
+    ];
+    for (source, expected, content) in cases {
+        let once = to_carve(source);
+        assert_eq!(once, expected, "source: {source}");
+        assert_eq!(to_carve(&once), once, "source: {source}");
+        let doc = parse(source);
+        let BlockNode::List(outer) = &doc.children[0] else {
+            panic!("expected outer list");
+        };
+        let BlockNode::DefinitionList(defs) = &outer.items[0].children[0] else {
+            panic!("expected definition list");
+        };
+        let BlockNode::Comment(comment) = &defs.items[0].definitions[0].children[1] else {
+            panic!("expected block comment");
+        };
+        assert_eq!(comment.content, content);
+    }
 }

@@ -34,6 +34,11 @@ fn a_region_marker_keeps_the_reading_it_had() {
         ),
         // Below a list the closer cannot be written adjacent: it would join the item.
         ("- a\n\n%% #endregion r\n", "- a\n\n%% #endregion r\n"),
+        // A definition above a marker is not hoisted past it, so the item keeps it.
+        (
+            "- [ref]: /url\n%% #region r\n\nSee [it][ref].\n",
+            "- [ref]: /url\n\n%% #region r\n\nSee [it][ref].\n",
+        ),
         // A paragraph holding only an image is written as a block image.
         (
             " ![Apollo](a.jpg)\n%% #region r\n",
