@@ -131,3 +131,7 @@ path = "tests/table_alignment_fixtures.rs"
 [[test]]
 name = "table_alignment_options"
 path = "tests/table_alignment_options.rs"
+
+[[test]]
+name = "lint_include_conformance"
+path = "tests/lint_include_conformance.rs"

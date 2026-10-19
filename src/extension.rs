@@ -338,6 +338,7 @@ pub type SocialLinkResolver<'a> =
     dyn Fn(&SocialLinkResolverInput<'_>) -> Result<Option<String>, String> + 'a;
 
 pub struct Options<'a> {
+    pub lint_includes: Option<crate::includes::IncludeOptions<'a>>,
     pub extensions: Vec<&'a dyn CarveExtension>,
     pub mention_url: Option<String>,
     pub tag_url: Option<String>,
@@ -459,6 +460,7 @@ impl Default for Options<'_> {
     fn default() -> Self {
         Self {
             extensions: Vec::new(),
+            lint_includes: None,
             mention_url: None,
             tag_url: None,
             mention_resolver: None,
@@ -484,6 +486,11 @@ impl Default for Options<'_> {
 }
 
 impl<'a> Options<'a> {
+    pub fn with_lint_includes(mut self, includes: crate::includes::IncludeOptions<'a>) -> Self {
+        self.lint_includes = Some(includes);
+        self
+    }
+
     pub fn new() -> Self {
         Self::default()
     }

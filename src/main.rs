@@ -1415,11 +1415,25 @@ fn run_lint(args: &[String]) -> ExitCode {
     let mut paths: Vec<&str> = Vec::new();
     let mut enable_extensions = false;
     let mut enable_citations = false;
+    let mut include_root: Option<String> = None;
     let mut index = 0;
     while index < args.len() {
         let arg = &args[index];
         match arg.as_str() {
             "--extensions" => enable_extensions = true,
+            "--include-root" => {
+                index += 1;
+                match args.get(index) {
+                    Some(root) => include_root = Some(root.clone()),
+                    None => {
+                        eprintln!("carve lint: --include-root requires a directory");
+                        return ExitCode::from(2);
+                    }
+                }
+            }
+            other if other.starts_with("--include-root=") => {
+                include_root = Some(other[15..].to_string())
+            }
             "--extension" => {
                 index += 1;
                 match args.get(index).map(String::as_str) {
@@ -1449,11 +1463,12 @@ fn run_lint(args: &[String]) -> ExitCode {
                 println!(
                     "carve lint - report constructs that parse but do not reach the page\n\n\
                      Usage:\n  \
-                     carve lint [--extensions] [--extension citations] [files]\n\n\
+                     carve lint [--extensions] [--extension citations] [--include-root DIR] [files]\n\n\
                      Reads stdin when no file is given, or when the file is `-`.\n\n\
                      Options:\n  \
                      --extensions           enable the bundled extensions\n  \
-                     --extension citations  enable citation placement lint\n\n\
+                     --extension citations  enable citation placement lint\n  \
+                     --include-root DIR     expand includes under DIR\n\n\
                      Exit codes:\n  \
                      0   no findings\n  \
                      1   findings reported\n  \
@@ -1472,10 +1487,20 @@ fn run_lint(args: &[String]) -> ExitCode {
         }
         index += 1;
     }
-    run_lint_paths(&paths, enable_extensions, enable_citations)
+    run_lint_paths(
+        &paths,
+        enable_extensions,
+        enable_citations,
+        include_root.as_deref(),
+    )
 }
 
-fn run_lint_paths(paths: &[&str], enable_extensions: bool, enable_citations: bool) -> ExitCode {
+fn run_lint_paths(
+    paths: &[&str],
+    enable_extensions: bool,
+    enable_citations: bool,
+    include_root: Option<&str>,
+) -> ExitCode {
     // Only `options.extensions` is read by the linter - `lint_carve_with_options`
     // documents that - so nothing else from the render path is plumbed through
     // here. Owned locally so they outlive the borrow in `options`.
@@ -1502,13 +1527,88 @@ fn run_lint_paths(paths: &[&str], enable_extensions: bool, enable_citations: boo
         options = options.with_extension(&citations);
     }
 
+    #[cfg(feature = "fs")]
+    let resolver = match include_root.map(|root| {
+        let absolute = if std::path::Path::new(root).is_absolute() {
+            std::path::PathBuf::from(root)
+        } else {
+            std::env::current_dir()?.join(root)
+        };
+        carve::FileSystemResolver::new(absolute)
+    }) {
+        Some(Ok(resolver)) => Some(resolver),
+        Some(Err(err)) => {
+            eprintln!(
+                "carve lint: cannot use include root {}: {err}",
+                include_root.unwrap_or_default()
+            );
+            return ExitCode::from(2);
+        }
+        None => None,
+    };
+    #[cfg(not(feature = "fs"))]
+    let resolver: Option<NoResolver> = {
+        if include_root.is_some() {
+            eprintln!(
+                "carve lint: cannot use include root {}",
+                include_root.unwrap_or_default()
+            );
+            return ExitCode::from(2);
+        }
+        None
+    };
+    let root_path = include_root.and_then(|root| std::fs::canonicalize(root).ok());
+    let display = |file: &str| -> String {
+        root_path
+            .as_ref()
+            .and_then(|root| std::path::Path::new(file).strip_prefix(root).ok())
+            .map_or_else(
+                || file.to_string(),
+                |path| path.to_string_lossy().replace('\\', "/"),
+            )
+    };
     let mut findings = 0usize;
     let mut unreadable = false;
 
     let mut lint_source = |source: &str, label: &str| {
-        for warning in carve::lint_carve_with_options(source, &options) {
+        let mut lint_options = carve::Options::new();
+        lint_options.extensions = options.extensions.clone();
+        if let Some(resolver) = resolver.as_ref() {
+            lint_options.lint_includes = Some(
+                carve::IncludeOptions::new()
+                    .with_resolver(resolver)
+                    .with_source_path(label)
+                    .collecting_included(),
+            );
+        }
+        for warning in carve::lint_carve_with_options(source, &lint_options) {
+            let file = warning
+                .file
+                .as_deref()
+                .map_or_else(|| label.to_string(), &display);
+            let chain = if warning.included_by.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    " (included from {})",
+                    warning
+                        .included_by
+                        .iter()
+                        .enumerate()
+                        .map(|(index, site)| {
+                            let site_file = if index == 0 {
+                                label.to_string()
+                            } else {
+                                display(&site.file)
+                            };
+                            format!("{site_file}:{}:{}", site.line, site.column)
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" > ")
+                )
+            };
             println!(
-                "{label}:{}:{} {} — {}",
+                "{file}:{}:{} {} — {}{chain}",
                 warning.line, warning.column, warning.rule, warning.message
             );
             findings += 1;

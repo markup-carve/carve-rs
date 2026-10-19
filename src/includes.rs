@@ -91,6 +91,31 @@ pub struct IncludeWarning {
     /// `None` for a top-level document the caller gave no `source_path` for -
     /// there is no identity to report, and none is invented.
     pub file: Option<String>,
+    pub included_by: Vec<IncludeSite>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct IncludeSite {
+    pub file: String,
+    pub line: usize,
+    pub column: usize,
+}
+
+#[derive(Debug, Clone)]
+pub enum AcceptedInclude {
+    Carve {
+        file: String,
+        included_by: Vec<IncludeSite>,
+        source: String,
+        first_line: usize,
+        selected_lines: Option<(usize, usize)>,
+    },
+    Code {
+        file: String,
+        included_by: Vec<IncludeSite>,
+        block: Box<BlockNode>,
+        payload: String,
+    },
 }
 
 /// Context handed to a resolver for one directive.
@@ -217,7 +242,7 @@ where
 
 /// Expansion knobs. Default-constructed options carry NO resolver, so
 /// [`expand_includes`] is a no-op that leaves every directive literal.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct IncludeOptions<'a> {
     resolver: Option<&'a dyn IncludeResolver>,
     source_path: Option<String>,
@@ -226,11 +251,17 @@ pub struct IncludeOptions<'a> {
     max_resolver_calls: Option<usize>,
     max_warnings: Option<usize>,
     extensions: Vec<&'a dyn CarveExtension>,
+    collect_included: bool,
 }
 
 impl<'a> IncludeOptions<'a> {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn collecting_included(mut self) -> Self {
+        self.collect_included = true;
+        self
     }
 
     pub fn with_resolver(mut self, resolver: &'a dyn IncludeResolver) -> Self {
@@ -334,6 +365,7 @@ pub struct IncludeResult {
     /// ADMITTED could not tell "read nothing" from "read a file and refused
     /// it", which is the one thing a reader of this number wants to know.
     pub charged_bytes: usize,
+    pub included: Vec<AcceptedInclude>,
 }
 
 // ---------------------------------------------------------------------------
@@ -872,6 +904,8 @@ struct State<'a> {
     /// Extensions each child is parsed with.
     extensions: &'a [&'a dyn CarveExtension],
     warnings: Vec<IncludeWarning>,
+    included: Vec<AcceptedInclude>,
+    reach: Vec<IncludeSite>,
     max_depth: usize,
     max_bytes: usize,
     used_bytes: usize,
@@ -995,6 +1029,7 @@ impl State<'_> {
             rule: rule.to_string(),
             message,
             file: position.and_then(|p| p.file).or(file),
+            included_by: self.reach.clone(),
         });
     }
 
@@ -2037,6 +2072,7 @@ fn merge_footnotes(
     child_children: &mut [BlockNode],
     state: &mut State<'_>,
     child_file: Option<String>,
+    reach: &[IncludeSite],
 ) {
     if child_defs.is_empty() {
         return;
@@ -2058,12 +2094,14 @@ fn merge_footnotes(
             label.clone()
         };
         if final_label != label {
+            let outer_reach = std::mem::replace(&mut state.reach, reach.to_vec());
             state.warn_for_at(
                 "include-footnote-rename",
                 format!("Footnote label \"{label}\" was renamed to \"{final_label}\"."),
                 child_file.clone(),
                 body.first().and_then(crate::ast_json::block_pos),
             );
+            state.reach = outer_reach;
             rename.insert(label.clone(), final_label.clone());
         }
         if let Some(target) = state.footnotes.last_mut() {
@@ -2270,6 +2308,8 @@ struct ExpandedChild {
     children: Vec<BlockNode>,
     footnotes: BTreeMap<String, Vec<BlockNode>>,
     file: Option<String>,
+    report: Option<AcceptedInclude>,
+    reach: Vec<IncludeSite>,
 }
 
 /// Resolve one directive and hand the result to `merge`, which decides whether
@@ -2287,16 +2327,34 @@ fn with_child<T>(
     d: &Directive,
     state: &mut State<'_>,
     inline: bool,
+    attrs: Option<&Attrs>,
     merge: impl FnOnce(ExpandedChild, &mut State<'_>) -> Option<T>,
 ) -> Option<T> {
     state.open_reservations();
-    let merged = expand_child(d, state, inline).and_then(|child| merge(child, state));
-    if merged.is_some() {
+    let before = state.included.len();
+    let merged = expand_child(d, state, inline).and_then(|child| {
+        let mut report = child.report.clone();
+        if let (Some(AcceptedInclude::Code { block, .. }), Some(attrs)) = (&mut report, attrs) {
+            if let BlockNode::CodeBlock(code) = block.as_mut() {
+                code.attrs = Some(attrs.clone());
+                if let Some(table) = crate::parse::delimited_table::from_code(code, &[]) {
+                    **block = BlockNode::Table(table);
+                }
+            }
+        }
+        merge(child, state).map(|value| (value, report))
+    });
+    if let Some((value, report)) = merged {
+        if let Some(report) = report {
+            state.included.insert(before, report);
+        }
         state.commit_reservations();
+        Some(value)
     } else {
+        state.included.truncate(before);
         state.rollback_reservations();
+        None
     }
-    merged
 }
 
 /// Record which file a position is measured in, for every node a resolved child
@@ -2510,10 +2568,11 @@ fn expand_child(d: &Directive, state: &mut State<'_>, inline: bool) -> Option<Ex
     };
     let mut children = std::mem::take(&mut child.children);
     let mut footnotes = std::mem::take(&mut child.footnote_defs);
-    if let Some((complete_source, line_base)) = position_base.filter(|_| d.code.is_none()) {
-        shift_source_positions(&mut children, &complete_source, &source, line_base);
+    if let Some((complete_source, line_base)) = position_base.as_ref().filter(|_| d.code.is_none())
+    {
+        shift_source_positions(&mut children, complete_source, &source, *line_base);
         for body in footnotes.values_mut() {
-            shift_source_positions(body, &complete_source, &source, line_base);
+            shift_source_positions(body, complete_source, &source, *line_base);
         }
     }
     // Select BEFORE expanding: nested includes outside the wanted section must
@@ -2537,6 +2596,46 @@ fn expand_child(d: &Directive, state: &mut State<'_>, inline: bool) -> Option<Ex
         }
     }
 
+    let site = state.warning_position.as_ref().map(|p| IncludeSite {
+        file: state.file.clone().unwrap_or_default(),
+        line: p.line,
+        column: p.column,
+    });
+    let mut reach = state.reach.clone();
+    if let Some(site) = site {
+        reach.push(site);
+    }
+    let report = if state.opts.collect_included {
+        if d.code.is_some() {
+            Some(AcceptedInclude::Code {
+                file: id.clone(),
+                included_by: reach.clone(),
+                block: Box::new(children.first()?.clone()),
+                payload: source.clone(),
+            })
+        } else {
+            let selected_lines = d.section.as_ref().and_then(|_| {
+                let first = children
+                    .first()
+                    .and_then(crate::ast_json::block_pos)?
+                    .start_line;
+                let last = children
+                    .last()
+                    .and_then(crate::ast_json::block_pos)?
+                    .end_line;
+                Some((first, last))
+            });
+            Some(AcceptedInclude::Carve {
+                file: id.clone(),
+                included_by: reach.clone(),
+                source: source.clone(),
+                first_line: position_base.as_ref().map_or(0, |(_, base)| *base),
+                selected_lines,
+            })
+        }
+    } else {
+        None
+    };
     // Everything from here on operates on the child's own content, so warnings
     // it raises name the CHILD rather than the document that included it.
     let outer_file = state.file.replace(id.clone());
@@ -2555,6 +2654,7 @@ fn expand_child(d: &Directive, state: &mut State<'_>, inline: bool) -> Option<Ex
         Shift::By(n) => n,
         Shift::Auto => 0,
     };
+    let outer_reach = std::mem::replace(&mut state.reach, reach.clone());
     state.stack.push(id.clone());
     state.depth += 1;
     state.footnotes.push(footnotes);
@@ -2589,6 +2689,7 @@ fn expand_child(d: &Directive, state: &mut State<'_>, inline: bool) -> Option<Ex
     state.context_level = outer_context;
     state.depth -= 1;
     state.stack.pop();
+    state.reach = outer_reach;
     state.owner = outer_owner;
     // A paragraph a nested include contributed is spliced the same way.
     let dropped = match children.as_mut_slice() {
@@ -2622,6 +2723,8 @@ fn expand_child(d: &Directive, state: &mut State<'_>, inline: bool) -> Option<Ex
         children,
         footnotes,
         file: Some(id),
+        report,
+        reach,
     })
 }
 
@@ -2815,7 +2918,7 @@ fn expand_run(run: &[InlineNode], state: &mut State<'_>) -> Vec<InlineNode> {
                 }
                 ParsedDirective::NotADirective => return None,
             };
-            with_child(&d, state, true, |expanded, state| {
+            with_child(&d, state, true, None, |expanded, state| {
                 let mut children = expanded.children;
                 // I2: resolved content in INLINE position must parse to inline-only
                 // content - a single paragraph, or nothing.
@@ -2835,7 +2938,13 @@ fn expand_run(run: &[InlineNode], state: &mut State<'_>) -> Vec<InlineNode> {
                 // rename rewrites the references inside `children`, so taking them
                 // first would rename the definition while leaving the spliced
                 // reference pointing at the label the parent kept.
-                merge_footnotes(expanded.footnotes, &mut children, state, expanded.file);
+                merge_footnotes(
+                    expanded.footnotes,
+                    &mut children,
+                    state,
+                    expanded.file,
+                    &expanded.reach,
+                );
                 Some(match children.first_mut() {
                     Some(BlockNode::Paragraph(p)) => std::mem::take(&mut p.children),
                     _ => Vec::new(),
@@ -3018,24 +3127,31 @@ fn expand_paragraph(block: &mut Paragraph, state: &mut State<'_>) -> Option<Vec<
                     if let Some(id) = &held {
                         state.release_id(id);
                     }
-                    let merged = with_child(&d, state, false, |expanded, state| {
-                        let mut children = expanded.children;
-                        if d.code.is_some() {
-                            let table =
-                                if let [BlockNode::CodeBlock(code)] = children.as_mut_slice() {
-                                    code.attrs.clone_from(&block.attrs);
-                                    // `{table}` converts a csv/tsv code include as it does an authored fence (I1c).
-                                    crate::parse::delimited_table::from_code(code, &[])
-                                } else {
-                                    None
-                                };
-                            if let Some(table) = table {
-                                children[0] = BlockNode::Table(table);
+                    let merged =
+                        with_child(&d, state, false, block.attrs.as_ref(), |expanded, state| {
+                            let mut children = expanded.children;
+                            if d.code.is_some() {
+                                let table =
+                                    if let [BlockNode::CodeBlock(code)] = children.as_mut_slice() {
+                                        code.attrs.clone_from(&block.attrs);
+                                        // `{table}` converts a csv/tsv code include as it does an authored fence (I1c).
+                                        crate::parse::delimited_table::from_code(code, &[])
+                                    } else {
+                                        None
+                                    };
+                                if let Some(table) = table {
+                                    children[0] = BlockNode::Table(table);
+                                }
                             }
-                        }
-                        merge_footnotes(expanded.footnotes, &mut children, state, expanded.file);
-                        Some(children)
-                    });
+                            merge_footnotes(
+                                expanded.footnotes,
+                                &mut children,
+                                state,
+                                expanded.file,
+                                &expanded.reach,
+                            );
+                            Some(children)
+                        });
                     if let (None, Some(id)) = (&merged, &held) {
                         let owner = state.owner;
                         state.reserve_id(id, owner);
@@ -3208,6 +3324,8 @@ pub(crate) fn expand_includes_with_extensions(
         opts: options,
         extensions,
         warnings: Vec::new(),
+        included: Vec::new(),
+        reach: Vec::new(),
         max_depth: options.max_depth.unwrap_or(DEFAULT_MAX_DEPTH),
         max_bytes: options
             .max_bytes
@@ -3287,6 +3405,7 @@ pub(crate) fn expand_includes_with_extensions(
         suppressed_warnings: state.suppressed_warnings,
         dependencies: state.dependencies,
         charged_bytes: state.used_bytes,
+        included: state.included,
     }
 }
 

@@ -26,6 +26,8 @@ use crate::table_spans::TableSpanPlan;
 /// passed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LintWarning {
+    pub file: Option<String>,
+    pub included_by: Vec<crate::includes::IncludeSite>,
     /// 1-based line number.
     pub line: usize,
     /// 1-based column number.
@@ -67,7 +69,141 @@ pub fn lint_carve(source: &str) -> Vec<LintWarning> {
 /// (`profile`, `mode`, `symbols`, ...) are deliberately ignored rather than
 /// half-applied.
 pub fn lint_carve_with_options(source: &str, options: &Options<'_>) -> Vec<LintWarning> {
-    lint_with_recovery(source, options).0
+    let mut out = lint_with_recovery(source, options).0;
+    if let Some(includes) = &options.lint_includes {
+        out.extend(lint_includes(source, options, includes));
+    }
+    out
+}
+
+fn lint_includes(
+    source: &str,
+    options: &Options<'_>,
+    includes: &crate::includes::IncludeOptions<'_>,
+) -> Vec<LintWarning> {
+    use crate::includes::AcceptedInclude;
+    use std::collections::HashSet;
+    let parse_options = Options {
+        positions: true,
+        extensions: options.extensions.clone(),
+        ..Options::default()
+    };
+    let doc = parse_with_options(source, &parse_options);
+    let result =
+        crate::includes::expand_includes(doc, source, &includes.clone().collecting_included());
+    let mut findings = Vec::new();
+    for entry in result.included {
+        match entry {
+            AcceptedInclude::Carve {
+                file,
+                included_by,
+                source,
+                first_line,
+                selected_lines,
+            } => {
+                for mut finding in lint_with_recovery(&source, options).0 {
+                    finding.line += first_line;
+                    if selected_lines
+                        .is_some_and(|(start, end)| finding.line < start || finding.line > end)
+                    {
+                        continue;
+                    }
+                    finding.file = Some(file.clone());
+                    finding.included_by = included_by.clone();
+                    findings.push(finding);
+                }
+            }
+            AcceptedInclude::Code {
+                file,
+                included_by,
+                block,
+                payload,
+            } => {
+                let marked = match block.as_ref() {
+                    BlockNode::CodeBlock(code) => code
+                        .attrs
+                        .as_ref()
+                        .is_some_and(|a| a.key_values.get("table").is_some_and(String::is_empty)),
+                    BlockNode::Table(table) => table.source_format.is_some(),
+                    _ => false,
+                };
+                if !marked {
+                    continue;
+                }
+                let separator = match block.as_ref() {
+                    BlockNode::CodeBlock(code) => match code.lang.as_deref() {
+                        Some("csv") => ',',
+                        Some("tsv") => '\t',
+                        _ => continue,
+                    },
+                    BlockNode::Table(table) => match table.source_format {
+                        Some(format) => format.separator(),
+                        None => continue,
+                    },
+                    _ => continue,
+                };
+                let start_line = crate::ast_json::block_pos(&block).map_or(1, |pos| pos.start_line);
+                if let Some((rule, message, line)) =
+                    crate::parse::delimited_table::lint_payload(&payload, separator)
+                {
+                    findings.push(LintWarning {
+                        file: Some(file),
+                        included_by,
+                        line: start_line + line - 1,
+                        column: 1,
+                        rule,
+                        message: message.into(),
+                        start: 0,
+                        end: 0,
+                    });
+                }
+            }
+        }
+    }
+    for warning in result.warnings {
+        let Some(rule) = literal_include_rule(&warning.rule) else {
+            continue;
+        };
+        findings.push(LintWarning {
+            file: warning.included_by.first().and(warning.file),
+            included_by: warning.included_by,
+            line: warning.line,
+            column: warning.column,
+            rule,
+            message: warning.message,
+            start: 0,
+            end: 0,
+        });
+    }
+    let mut seen = HashSet::new();
+    findings.retain(|finding| {
+        finding.included_by.is_empty()
+            || seen.insert((
+                finding.file.clone(),
+                finding.line,
+                finding.column,
+                finding.rule,
+            ))
+    });
+    findings
+}
+
+/// The include Warnings that leave a directive literal; renames and clamps keep their content.
+fn literal_include_rule(rule: &str) -> Option<&'static str> {
+    Some(match rule {
+        "include-block-in-inline" => "include-block-in-inline",
+        "include-budget" => "include-budget",
+        "include-call-limit" => "include-call-limit",
+        "include-cycle" => "include-cycle",
+        "include-depth" => "include-depth",
+        "include-non-text" => "include-non-text",
+        "include-region-invalid" => "include-region-invalid",
+        "include-section" => "include-section",
+        "include-selection-conflict" => "include-selection-conflict",
+        "include-unknown-option" => "include-unknown-option",
+        "include-unresolved" => "include-unresolved",
+        _ => return None,
+    })
 }
 
 /// Rewrite each reference that misses its target only by case to the target's
@@ -303,7 +439,7 @@ fn collect_table_column_warnings(source: &str, out: &mut Vec<LintWarning>) {
                     {
                         column_points += line[column_byte..start].chars().count();
                         column_byte = start;
-                        out.push(LintWarning { line: index + 1, column: column_points + 1, rule: "table-alignment-run-padding", message: format!("The table alignment run {:?} has no terminating space, so it is literal cell content. Add a space after the run to make it alignment.", &line[start..end]), start: line_start + start, end: line_start + end });
+                        out.push(LintWarning { file: None, included_by: Vec::new(), line: index + 1, column: column_points + 1, rule: "table-alignment-run-padding", message: format!("The table alignment run {:?} has no terminating space, so it is literal cell content. Add a space after the run to make it alignment.", &line[start..end]), start: line_start + start, end: line_start + end });
                     }
                 }
                 i += 1;
@@ -344,6 +480,8 @@ fn collect_table_column_warnings(source: &str, out: &mut Vec<LintWarning>) {
                     // non-ASCII character (markup-carve/carve-rs#2099).
                     let push = |out: &mut Vec<LintWarning>, rule, message: String| {
                         out.push(LintWarning {
+                            file: None,
+                            included_by: Vec::new(),
                             line: index + 1,
                             column: line[..key_at].chars().count() + 1,
                             rule,
@@ -438,7 +576,7 @@ fn collect_table_span_marker_warnings(
                 let Some((line, column, start)) = located else {
                     continue;
                 };
-                out.push(LintWarning {
+                out.push(LintWarning { file: None, included_by: Vec::new(),
                     line,
                     column,
                     start,
@@ -528,6 +666,8 @@ fn collect_unattached_block_attribute_warnings(
         ))
         .max(start);
         out.push(LintWarning {
+            file: None,
+            included_by: Vec::new(),
             line: pos.start_line.max(1),
             column: pos.start_column.max(1),
             rule: "unattached-block-attribute",
@@ -611,7 +751,7 @@ fn collect_template_source_warning(source: &str, doc: &Document, out: &mut Vec<L
                     .is_some_and(|rest| rest.starts_with(char::is_whitespace))
             });
         if shaped {
-            out.push(LintWarning {
+            out.push(LintWarning { file: None, included_by: Vec::new(),
                 line,
                 column,
                 rule: "braced-comment-in-a-template-source",
@@ -827,6 +967,8 @@ fn collect_term_fold_warnings(
                 let start =
                     starts.get(line_no - 1).copied().unwrap_or(0) + line[..indent].chars().count();
                 out.push(LintWarning {
+                    file: None,
+                    included_by: Vec::new(),
                     line: line_no,
                     column: line[..indent].chars().count() + 1,
                     rule: "definition-term-block-folded",
@@ -1142,6 +1284,8 @@ fn warning(
     let pos = pos.unwrap_or_default();
     let start = to_byte(pos.start_offset);
     LintWarning {
+        file: None,
+        included_by: Vec::new(),
         line: pos.start_line.max(1),
         column: pos.start_column.max(1),
         rule,

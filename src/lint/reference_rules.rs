@@ -681,6 +681,8 @@ fn report(
         })
         .unwrap_or((1, 1, 0, 0));
     out.push(LintWarning {
+        file: None,
+        included_by: Vec::new(),
         line,
         column,
         start,

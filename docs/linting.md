@@ -28,6 +28,18 @@ report an unreadable path as a lint failure; collapsing it into 0 would pass a
 build whose documents were never opened. A bad path is reported and skipped, so
 one missing file in a glob still lets every other document be checked.
 
+Pass `--include-root DIR` to lint included files. The root is required for expansion; lint does not infer it from the input path. Findings in included files show a path relative to the root and the directive chain:
+
+```bash
+carve lint --include-root . doc.crv
+```
+
+```text
+data/plans.csv:3:1 delimited-table-malformed — This marked CSV/TSV record has malformed quoting, so the include remains a code block. (included from doc.crv:2:1)
+```
+
+Rust callers can set `Options::with_lint_includes(IncludeOptions::new().with_resolver(&resolver).with_source_path("doc.crv"))`. The resolver can be virtual or filesystem backed. Without this option, `lint_carve_with_options` does not expand includes.
+
 Reads stdin with no path, or with `-`, and reports under `<stdin>`.
 `--extensions` enables the bundled extensions. For citations, use
 `carve lint --extension citations docs/*.crv`. The command refuses render-only

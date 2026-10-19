@@ -59,6 +59,8 @@ fn emit(
     if let Some(row) = lines.get(line.saturating_sub(1)) {
         let offset = offset.min(row.text.len());
         out.push(LintWarning {
+            file: None,
+            included_by: Vec::new(),
             line,
             column: row.column(offset),
             start: row.start + offset,
@@ -404,6 +406,8 @@ pub(super) fn collect(
             column_points += source[column_byte..m.start()].chars().count();
             column_byte = m.start();
             out.push(LintWarning {
+                file: None,
+                included_by: Vec::new(),
                 line: index + 1,
                 column: column_points + 1,
                 start: m.start(),
@@ -564,7 +568,7 @@ pub(super) fn collect(
         let ln = index + 1;
         for (column, (at, ch)) in row.text.char_indices().enumerate() {
             if matches!(ch, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}') {
-                out.push(LintWarning {
+                out.push(LintWarning { file: None, included_by: Vec::new(),
                     line: ln,
                     column: column + 1,
                     start: row.start + at,

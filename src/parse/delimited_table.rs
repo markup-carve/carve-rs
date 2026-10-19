@@ -157,13 +157,32 @@ pub(crate) fn count(raw: Option<&String>, default: usize) -> usize {
     }
 }
 
+pub(crate) fn lint_payload(
+    source: &str,
+    separator: char,
+) -> Option<(&'static str, &'static str, usize)> {
+    let (rows, ranges) = match rows_with_error(source, separator) {
+        Ok(value) => value,
+        Err(start) => return Some(("delimited-table-malformed", "This marked CSV/TSV record has malformed quoting, so the include remains a code block.", 1 + source[..start].bytes().filter(|b| *b == b'\n').count())),
+    };
+    let width = rows.first()?.len();
+    rows.iter().zip(ranges).find(|(row, _)| row.len() > width).map(|(_, range)| ("delimited-table-wide-row", "A CSV/TSV record has more fields than the first record; the table keeps the extra columns.", 1 + source[..range.start].bytes().filter(|b| *b == b'\n').count()))
+}
+
 pub(crate) fn rows(source: &str, separator: char) -> Option<Vec<Vec<String>>> {
     rows_with_ranges(source, separator).map(|(rows, _)| rows)
 }
 
 fn rows_with_ranges(source: &str, separator: char) -> Option<(Vec<Vec<String>>, Vec<RowRange>)> {
+    rows_with_error(source, separator).ok()
+}
+
+fn rows_with_error(
+    source: &str,
+    separator: char,
+) -> Result<(Vec<Vec<String>>, Vec<RowRange>), usize> {
     if source.is_empty() {
-        return Some((Vec::new(), Vec::new()));
+        return Ok((Vec::new(), Vec::new()));
     }
     let mut records = Vec::new();
     let mut ranges = Vec::new();
@@ -216,21 +235,21 @@ fn rows_with_ranges(source: &str, separator: char) -> Option<(Vec<Vec<String>>, 
             }
         } else if ch == '"' {
             if !at_start || closed {
-                return None;
+                return Err(row_start);
             }
             quoted = true;
             at_start = false;
             was_quoted = true;
         } else {
             if closed {
-                return None;
+                return Err(row_start);
             }
             field.push(ch);
             at_start = false;
         }
     }
     if quoted {
-        return None;
+        return Err(row_start);
     }
     if !source.ends_with('\n') {
         row.push(field);
@@ -247,7 +266,7 @@ fn rows_with_ranges(source: &str, separator: char) -> Option<(Vec<Vec<String>>, 
             fields,
         });
     }
-    Some((records, ranges))
+    Ok((records, ranges))
 }
 
 #[cfg(test)]
