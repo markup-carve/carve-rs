@@ -7,19 +7,22 @@ fn aligned(source: &str) -> String {
 }
 
 fn cli(args: &[&str], input: &str) -> std::process::Output {
+    // A file-path run never reads stdin, so it gets none: writing to it races the exit.
+    let stdin = if input.is_empty() {
+        Stdio::null()
+    } else {
+        Stdio::piped()
+    };
     let mut child = Command::new(env!("CARGO_BIN_EXE_carve"))
         .args(args)
-        .stdin(Stdio::piped())
+        .stdin(stdin)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(input.as_bytes())
-        .unwrap();
+    if let Some(mut pipe) = child.stdin.take() {
+        pipe.write_all(input.as_bytes()).unwrap();
+    }
     child.wait_with_output().unwrap()
 }
 
@@ -59,38 +62,6 @@ fn written_escapes_count_in_width() {
     }
 }
 
-// The escaped-cell cases of spec #3329, copied until the spec pin reaches it.
-#[test]
-fn escaped_cell_fixtures() {
-    for (canonical, expected) in [
-        (
-            "| a\\ b | x |\n| ccc | `y|z` |\n",
-            "| a\\ b | x     |\n| ccc  | `y|z` |\n",
-        ),
-        ("| a\\ \\ b |\n| cccccc |\n", "| a\\ \\ b |\n| cccccc |\n"),
-        (
-            "| a \\\\ b | c \\| d |\n| e | f |\n",
-            "| a \\\\ b | c \\| d |\n| e      | f      |\n",
-        ),
-        (
-            "| \\^ | \\< | x |\n| a | b | ccc |\n",
-            "| \\^ | \\< | x   |\n| a  | b  | ccc |\n",
-        ),
-        (
-            "|= a\\ b |= *b* |\n| cccc | d |\n",
-            "|= a\\ b |= *b* |\n| cccc  | d    |\n",
-        ),
-        (
-            "| a | b |\n+ c\\ d | e |\n",
-            "| a    | b |\n+ c\\ d | e |\n",
-        ),
-    ] {
-        assert_eq!(aligned(canonical), expected, "{canonical}");
-        assert_eq!(aligned(expected), expected, "{expected}");
-        assert_eq!(carve::to_carve(expected), canonical, "{expected}");
-    }
-}
-
 #[test]
 fn cli_formats_and_checks_aligned_output() {
     let source = "| A | B |\n|---|---|\n| x | yy |\n";
@@ -118,7 +89,7 @@ fn cli_formats_and_checks_aligned_output() {
         Some(0)
     );
     std::fs::remove_file(path).unwrap();
-    assert!(!cli(&["--align-tables"], source).status.success());
+    assert!(!cli(&["--align-tables"], "").status.success());
 }
 
 #[test]

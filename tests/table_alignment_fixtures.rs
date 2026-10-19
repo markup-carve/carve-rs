@@ -16,7 +16,8 @@ fn shared_alignment_fixtures() {
     let data = std::fs::read_to_string(path)
         .expect("missing spec fixtures: run git submodule update --init --recursive");
     let cases: Vec<Case> = serde_json::from_str(&data).unwrap();
-    assert!(!cases.is_empty());
+    // 7 base rows plus the 6 escaped-cell rows of spec #3329.
+    assert!(cases.len() >= 13, "{} fixtures", cases.len());
     let options = carve::Options::default().with_align_tables(true);
     for case in cases {
         assert_eq!(
