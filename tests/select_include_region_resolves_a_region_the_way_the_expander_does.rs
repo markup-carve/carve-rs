@@ -27,3 +27,15 @@ fn region_selection_follows_mode_and_physical_lines() {
         Ok(IncludeRegion { start: 2, end: 1 })
     );
 }
+
+#[test]
+fn a_leading_byte_order_mark_is_skipped_before_markers_are_matched() {
+    assert_eq!(
+        select_include_region(
+            "\u{FEFF}%% #region b\nx\n%% #endregion b\n",
+            "b",
+            IncludeRegionMode::Carve
+        ),
+        Ok(IncludeRegion { start: 2, end: 2 })
+    );
+}
