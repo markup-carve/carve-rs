@@ -64,12 +64,7 @@ use json::Value;
 const KNOWN_DIFFERENCES: &[(&str, &str)] = &[];
 
 /// Exact HTML corrections pending in the shared vectors, retired when the pin agrees.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[(
-    // CARVE-P11-073 keeps region markers on their lines (carve#3330).
-    "i01b-region-host-renders-no-marker",
-    "fmt",
-    r##""# Project\n\nIntro.\n\n%% #region requirements\n- PHP 8.3 or later\n- Composer 2.7\n%% #endregion requirements\n\nMore text.\n""##,
-)];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 
 // ---------------------------------------------------------------------------
 // Vector location
