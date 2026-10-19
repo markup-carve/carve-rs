@@ -351,6 +351,11 @@ impl IncludeResolver for MapResolver {
 }
 ```
 
+`IncludeDenial::NonText` refuses a target that exists but is not text.
+`FileSystemResolver` returns it for a file whose bytes are not well-formed
+UTF-8, and expansion reports it as `include-non-text` rather than
+`include-unresolved`.
+
 A child is parsed as a document of its own, so hand it the extensions the parent
 was parsed with through `IncludeOptions::with_extension`. Otherwise syntax an
 extension adds, a `[[Page]]` wikilink say, works in the parent and stays literal

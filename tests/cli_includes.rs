@@ -310,7 +310,8 @@ fn ill_formed_included_bytes_are_refused_not_replaced() {
     assert!(out.success, "{}", out.stderr);
     assert!(!out.stdout.contains('\u{fffd}'), "{}", out.stdout);
     assert!(out.stdout.contains("{{ child.crv }}"), "{}", out.stdout);
-    assert!(out.stderr.contains("include-unresolved"), "{}", out.stderr);
+    assert!(out.stderr.contains("[include-non-text]"), "{}", out.stderr);
+    assert!(!out.stderr.contains("include-unresolved"), "{}", out.stderr);
 }
 
 // ---------------------------------------------------------------------------
@@ -416,8 +417,8 @@ fn flatten_reports_an_unresolved_target_and_keeps_the_directive() {
 /// `--report-includes` publishes the spec I11 dependency list (carve-rs#1676).
 ///
 /// Refusals carry their class here, which the WARNING deliberately does not:
-/// every refusal warns as `include-unresolved` so a rendered page cannot report
-/// "outside the root" apart from "not there" (I7). This file is written only
+/// a missing target and a containment refusal both warn as `include-unresolved`,
+/// so a rendered page cannot report "outside the root" apart from "not there" (I7). This file is written only
 /// where the operator asked for it, and it goes to the processor.
 #[test]
 fn the_dependency_list_names_resolved_and_refused_targets_with_their_class() {

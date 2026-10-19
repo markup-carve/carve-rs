@@ -162,6 +162,10 @@ pub enum IncludeDenial {
     Denied,
     /// Refused for a reason the resolver does not classify.
     Unresolved,
+    /// The target is there but is not text, such as bytes that are not
+    /// well-formed UTF-8 (PART 6 I7). Expansion warns `include-non-text` and,
+    /// as for NUL content, records the target unresolved with no class.
+    NonText,
 }
 
 impl IncludeDenial {
@@ -173,6 +177,7 @@ impl IncludeDenial {
             Self::NoRoot => "no-root",
             Self::Denied => "include-denied",
             Self::Unresolved => "include-unresolved",
+            Self::NonText => "include-non-text",
         }
     }
 }
@@ -1225,11 +1230,20 @@ fn resolve_child(d: &Directive, state: &mut State<'_>) -> Option<ResolvedChild> 
             let id = resolver
                 .unresolved_id(&d.path, &ctx)
                 .unwrap_or_else(|| d.path.clone());
-            state.note_denied(&id, false, Some(denial));
-            state.warn(
-                "include-unresolved",
-                format!("Include \"{}\" could not be resolved.", d.path),
-            );
+            if denial == IncludeDenial::NonText {
+                // As for NUL content below: an unresolved target, no class.
+                state.note(&id, false);
+                state.warn(
+                    "include-non-text",
+                    format!("Include \"{}\" did not resolve to text.", d.path),
+                );
+            } else {
+                state.note_denied(&id, false, Some(denial));
+                state.warn(
+                    "include-unresolved",
+                    format!("Include \"{}\" could not be resolved.", d.path),
+                );
+            }
             return None;
         }
     };
@@ -3312,7 +3326,7 @@ impl IncludeResolver for FileSystemResolver {
         let bytes = std::fs::read(&real).map_err(|_| IncludeDenial::Denied)?;
         // PART 6 I7: ill-formed bytes in an INCLUDED file are non-text and
         // refused; only the document itself is replaced (CARVE-P0-023).
-        let source = String::from_utf8(bytes).map_err(|_| IncludeDenial::Denied)?;
+        let source = String::from_utf8(bytes).map_err(|_| IncludeDenial::NonText)?;
         Ok(IncludeResolved::with_id(
             source,
             real.to_string_lossy().into_owned(),
