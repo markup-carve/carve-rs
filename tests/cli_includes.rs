@@ -602,3 +602,50 @@ fn report_includes_without_a_file_is_a_usage_error() {
     assert_eq!(out.code, Some(2), "stderr: {}", out.stderr);
     assert!(out.stderr.contains("--report-includes"), "{}", out.stderr);
 }
+
+#[test]
+fn safe_mode_leaves_every_include_directive_literal() {
+    let tmp = TempDir::new("safe-file");
+    tmp.write("s.crv", "SECRET\n");
+    let main = tmp.write("d.crv", "{{ s.crv }}\n\n{{ s.crv @code }}\n");
+    let out = run(&["--safe", main.to_str().unwrap()], None);
+    assert!(out.success, "stderr: {}", out.stderr);
+    assert!(!out.stdout.contains("SECRET"), "{}", out.stdout);
+    assert!(out.stdout.contains("<p>{{ s.crv }}</p>"), "{}", out.stdout);
+}
+
+#[test]
+fn safe_mode_overrides_an_explicit_include_root_on_stdin() {
+    let tmp = TempDir::new("safe-stdin");
+    tmp.write("s.crv", "SECRET\n");
+    let out = run(
+        &["--safe", "--include-root", tmp.path().to_str().unwrap()],
+        Some("{{ s.crv }}\n"),
+    );
+    assert!(out.success, "stderr: {}", out.stderr);
+    assert!(!out.stdout.contains("SECRET"), "{}", out.stdout);
+}
+
+#[test]
+fn no_includes_leaves_directives_literal_and_keeps_raw_html() {
+    let tmp = TempDir::new("no-includes");
+    tmp.write("s.crv", "SECRET\n");
+    let main = tmp.write("d.crv", "{{ s.crv }}\n\n`<b>x</b>`{=html}\n");
+    let out = run(&["--no-includes", main.to_str().unwrap()], None);
+    assert!(out.success, "stderr: {}", out.stderr);
+    assert!(!out.stdout.contains("SECRET"), "{}", out.stdout);
+    assert!(out.stdout.contains("<p>{{ s.crv }}</p>"), "{}", out.stdout);
+    assert!(out.stdout.contains("<b>x</b>"), "{}", out.stdout);
+}
+
+#[test]
+fn flatten_refuses_safe_and_no_includes_instead_of_reading_files() {
+    let tmp = TempDir::new("flatten-safe");
+    tmp.write("s.crv", "SECRET\n");
+    let main = tmp.write("d.crv", "{{ s.crv }}\n");
+    for flag in ["--safe", "--no-includes"] {
+        let out = run(&["flatten", flag, main.to_str().unwrap()], None);
+        assert_eq!(out.code, Some(2), "{flag} stderr: {}", out.stderr);
+        assert!(!out.stdout.contains("SECRET"), "{flag}: {}", out.stdout);
+    }
+}

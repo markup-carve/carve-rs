@@ -197,6 +197,8 @@ fn literal_include_rule(rule: &str) -> Option<&'static str> {
         "include-call-limit" => "include-call-limit",
         "include-cycle" => "include-cycle",
         "include-depth" => "include-depth",
+        "include-duplicate-option" => "include-duplicate-option",
+        "include-lines-out-of-range" => "include-lines-out-of-range",
         "include-non-text" => "include-non-text",
         "include-region-invalid" => "include-region-invalid",
         "include-section" => "include-section",

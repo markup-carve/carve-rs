@@ -176,7 +176,8 @@ its options and its rendered output, is in
 
 Rendering attacker-controlled Carve needs the safe path: `--safe` on the
 CLI, or the checked render options in the library, which escape raw HTML
-blocks instead of emitting them. Nesting depth and other renderer limits
+blocks instead of emitting them. `--safe` also leaves every `{{ … }}`
+include directive literal, so the document reads no files. Nesting depth and other renderer limits
 are bounded by default. The full threat model, every knob and what each one
 refuses is in [docs/security.md](https://github.com/markup-carve/carve-rs/blob/main/docs/security.md).
 

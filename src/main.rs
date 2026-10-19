@@ -130,6 +130,7 @@ fn main() -> ExitCode {
     // flag is refused at the parse site and this never moves.
     #[cfg_attr(not(feature = "fs"), allow(unused_mut))]
     let mut include_root: Option<String> = None;
+    let mut no_includes = false;
     let mut input_paths: Vec<String> = Vec::new();
     let mut args = raw_args.into_iter();
     while let Some(arg) = args.next() {
@@ -404,7 +405,14 @@ fn main() -> ExitCode {
                     include_root = Some(absolute.unwrap_or(value));
                 }
             }
-            "--no-raw-html" | "--safe" => options = options.with_raw_html(false),
+            "--no-raw-html" => options = options.with_raw_html(false),
+            // Untrusted input: the resolver MUST be off (includes, "The host
+            // resolver"), so --safe also leaves every directive literal.
+            "--safe" => {
+                options = options.with_raw_html(false);
+                no_includes = true;
+            }
+            "--no-includes" => no_includes = true,
             "-" if command == Command::Render => input_paths.clear(),
             "-" if command == Command::Fmt => input_paths.push(arg),
             path if path.starts_with('-') => {
@@ -438,6 +446,12 @@ fn main() -> ExitCode {
     }
 
     if command == Command::Flatten {
+        // Flatten exists to read includes, so a switch that forbids that is
+        // refused rather than ignored (carve-js rejects both flags too).
+        if no_includes {
+            eprintln!("carve flatten: --safe and --no-includes leave nothing to flatten");
+            return ExitCode::from(2);
+        }
         return run_flatten(
             input_paths.first().map(String::as_str),
             include_root.as_deref(),
@@ -596,7 +610,8 @@ fn main() -> ExitCode {
     } else {
         carve::RenderTarget::Html
     };
-    let want_includes = root.is_some()
+    let want_includes = !no_includes
+        && root.is_some()
         && carve::expands_for_target(include_target)
         && (include_root.is_some() || source.contains("{{"));
 
@@ -1958,8 +1973,10 @@ fn print_usage() {
          --mention-url TEMPLATE      render @mentions as links (HTML only)\n  \
          --tag-url TEMPLATE          render #tags as links (HTML only)\n  \
          --symbol NAME=VALUE         map :NAME: to VALUE (repeatable)\n  \
-         --no-raw-html, --safe       escape =html raw blocks/spans instead of\n                              \
-         emitting them (for untrusted input)\n  \
+         --no-raw-html               escape =html raw blocks/spans instead of\n                              \
+         emitting them\n  \
+         --safe                      for untrusted input: --no-raw-html and\n                              \
+         --no-includes together\n  \
          --profile NAME              restrict features (full|article|comment|minimal)\n  \
          --profile-base-host HOST    base host for the profile link policy\n  \
          --smart-typography MODE     glyph (default), source (all source runs),\n                              \
@@ -1979,6 +1996,7 @@ fn print_usage() {
          to widen or narrow it, or to enable includes on stdin.\n                              \
          carve lint has no default: it expands and lints\n                              \
          included content only within this root\n  \
+         --no-includes               leave include directives literal\n  \
          --report-includes FILE      write the JSON include-dependency list\n                              \
          (`-` for stderr)\n\n\
          Spec: https://markup-carve.github.io/carve/"

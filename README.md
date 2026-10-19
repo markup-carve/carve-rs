@@ -89,7 +89,8 @@ Extensions can add syntax, AST transforms, and renderers. Built-in profiles
 restrict constructs and resource use for untrusted content. Raw HTML, custom
 renderers, and symbol values have separate trust boundaries.
 
-For untrusted CLI input, use `--safe` to escape raw HTML. See
+For untrusted CLI input, use `--safe` to escape raw HTML and leave
+include directives literal. See
 [Extensions](https://github.com/markup-carve/carve-rs/blob/main/docs/extensions.md),
 [Security](https://github.com/markup-carve/carve-rs/blob/main/docs/security.md),
 and [Linting](https://github.com/markup-carve/carve-rs/blob/main/docs/linting.md).
