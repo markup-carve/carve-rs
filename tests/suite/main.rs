@@ -2375,3 +2375,6 @@ mod new_quote_definition_column;
 mod unmarked_description_below_quote;
 #[path = "../unmarked_line_after_quote_fence.rs"]
 mod unmarked_line_after_quote_fence;
+
+#[path = "../nested_marker_fence_blank_payload.rs"]
+mod nested_marker_fence_blank_payload;

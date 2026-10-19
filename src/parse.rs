@@ -15324,16 +15324,6 @@ fn parse_list(
             if sublist_source_trailing_invisible_separation(&stream.source) {
                 pending_blank = true;
             }
-            if detect_fence_open(innermost_content).is_some()
-                && stream.source.lines().skip(1).all(is_blank_line)
-            {
-                if let Some(end) = stream.source.find('\n') {
-                    stream.source.truncate(end);
-                    stream.line_map.truncate(1);
-                    stream.col_map.truncate(1);
-                    stream.reached.truncate(1);
-                }
-            }
             if detect_container_open(inner_lead).is_some()
                 || detect_fence_open(inner_lead).is_some()
             {
