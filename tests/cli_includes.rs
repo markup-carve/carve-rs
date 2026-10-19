@@ -171,6 +171,31 @@ fn an_unresolvable_directive_warns_on_stderr_and_stays_literal() {
 }
 
 #[test]
+fn an_include_with_invalid_utf8_warns_as_non_text() {
+    let tmp = TempDir::new("invalid-utf8");
+    fs::write(tmp.path().join("bad.crv"), b"a\xed\xa0\x80b *x*\n").unwrap();
+    let main = tmp.write("main.crv", "{{ bad.crv }}\n");
+    let report = tmp.path().join("deps.json");
+    let out = run(
+        &[
+            "--report-includes",
+            report.to_str().unwrap(),
+            main.to_str().unwrap(),
+        ],
+        None,
+    );
+    assert!(out.success, "{}", out.stderr);
+    assert!(out.stdout.contains("{{ bad.crv }}"), "{}", out.stdout);
+    assert!(out.stderr.contains("include-non-text"), "{}", out.stderr);
+    assert!(!out.stderr.contains("include-unresolved"), "{}", out.stderr);
+    let json = fs::read_to_string(&report).unwrap();
+    assert_eq!(
+        json.trim(),
+        "{\"dependencies\":[{\"id\":\"bad.crv\",\"resolved\":false}]}",
+    );
+}
+
+#[test]
 fn an_escape_above_the_default_root_is_denied() {
     let tmp = TempDir::new("escape");
     tmp.write("secret.crv", "TOP SECRET\n");
@@ -310,7 +335,7 @@ fn ill_formed_included_bytes_are_refused_not_replaced() {
     assert!(out.success, "{}", out.stderr);
     assert!(!out.stdout.contains('\u{fffd}'), "{}", out.stdout);
     assert!(out.stdout.contains("{{ child.crv }}"), "{}", out.stdout);
-    assert!(out.stderr.contains("include-unresolved"), "{}", out.stderr);
+    assert!(out.stderr.contains("include-non-text"), "{}", out.stderr);
 }
 
 // ---------------------------------------------------------------------------
@@ -416,7 +441,7 @@ fn flatten_reports_an_unresolved_target_and_keeps_the_directive() {
 /// `--report-includes` publishes the spec I11 dependency list (carve-rs#1676).
 ///
 /// Refusals carry their class here, which the WARNING deliberately does not:
-/// every refusal warns as `include-unresolved` so a rendered page cannot report
+/// containment and lookup refusals warn as `include-unresolved` so a rendered page cannot report
 /// "outside the root" apart from "not there" (I7). This file is written only
 /// where the operator asked for it, and it goes to the processor.
 #[test]
