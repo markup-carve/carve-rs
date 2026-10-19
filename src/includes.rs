@@ -2466,7 +2466,13 @@ fn expand_child(d: &Directive, state: &mut State<'_>, inline: bool) -> Option<Ex
         child_options = child_options.with_extension(*extension);
     }
     let mut child = if let Some(lang) = &d.code {
-        let selected = source.strip_prefix('\u{feff}').unwrap_or(&source);
+        // I1c drops the FILE's leading U+FEFF, so only a selection from line 1 sheds it.
+        let from_first_line = !matches!(&position_base, Some((_, base)) if *base > 0);
+        let selected = if from_first_line {
+            source.strip_prefix('\u{feff}').unwrap_or(&source)
+        } else {
+            &source
+        };
         let lines = source_lines(selected);
         let content = if lines.is_empty() {
             String::new()

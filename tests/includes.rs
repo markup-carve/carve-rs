@@ -3100,3 +3100,14 @@ fn a_code_include_keeps_the_id_from_its_attribute_line() {
         result.html
     );
 }
+
+#[test]
+fn a_code_include_drops_only_the_files_leading_byte_order_mark() {
+    let files = [("a.txt", "\u{feff}one\n\u{feff}two\n")];
+    let whole = expand("{{ a.txt @code }}", &files);
+    assert_eq!(whole.html, "<pre><code>one\n\u{feff}two\n</code></pre>");
+    let first = expand("{{ a.txt @lines:1-1 @code }}", &files);
+    assert_eq!(first.html, "<pre><code>one\n</code></pre>");
+    let later = expand("{{ a.txt @lines:2-2 @code }}", &files);
+    assert_eq!(later.html, "<pre><code>\u{feff}two\n</code></pre>");
+}
