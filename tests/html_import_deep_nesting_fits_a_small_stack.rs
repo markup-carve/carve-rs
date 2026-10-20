@@ -49,37 +49,56 @@ fn parsed_element_depth(html: &str) -> usize {
     deepest
 }
 
+/// Each shape at the deepest nesting the depth guard accepts, and one level past it.
+///
+/// The guard counts importer depth, and one level of a shape spends more than one
+/// unit of it, so the deepest real nesting is the accepted count below, not 128.
 #[test]
 fn deep_block_containers_fit_a_two_mib_stack() {
+    // (name, open, close, elements per level, deepest accepted count)
     let shapes = [
-        ("div", "<div>", "</div>"),
-        ("blockquote", "<blockquote>", "</blockquote>"),
-        ("ul", "<ul><li>", "</li></ul>"),
-        ("ol", "<ol><li>", "</li></ol>"),
-        ("section", "<section>", "</section>"),
-        ("figure", "<figure>", "</figure>"),
-        ("details", "<details>", "</details>"),
-        ("dl", "<dl><dd>", "</dd></dl>"),
+        ("div", "<div>", "</div>", 1, 63),
+        ("blockquote", "<blockquote>", "</blockquote>", 1, 63),
+        ("ul", "<ul><li>", "</li></ul>", 2, 63),
+        ("ol", "<ol><li>", "</li></ol>", 2, 63),
+        ("section", "<section>", "</section>", 1, 63),
+        ("figure", "<figure>", "</figure>", 1, 63),
+        ("details", "<details>", "</details>", 1, 63),
+        ("dl", "<dl><dd>", "</dd></dl>", 2, 42),
+        ("td", "<table><tr><td>", "</td></tr></table>", 3, 32),
     ];
-    for (name, open, close) in shapes {
-        let html = nested(open, close, 128);
+    for (name, open, close, per_level, accepted) in shapes {
+        let deepest = nested(open, close, accepted);
+        let past = nested(open, close, accepted + 1);
+        // html, body and the shape's own elements; html5ever adds tbody to a table.
+        let elements = 2 + accepted * (per_level + usize::from(name == "td"));
         assert!(
-            parsed_element_depth(&html) > 16,
-            "{name}: {}",
-            parsed_element_depth(&html)
+            parsed_element_depth(&deepest) >= elements,
+            "{name}: parsed depth {} below {elements}",
+            parsed_element_depth(&deepest)
         );
         for mode in [
             HtmlImportMode::Safe,
             HtmlImportMode::Semantic,
             HtmlImportMode::Roundtrip,
         ] {
-            let result = on_small_stack(html.clone(), mode, false);
+            assert_eq!(
+                on_small_stack(deepest.clone(), mode, false),
+                Ok(()),
+                "{name} {mode:?} at {accepted}"
+            );
+            // A roundtrip figure past the guard is preserved as raw HTML.
             let expected = if name == "figure" && mode == HtmlImportMode::Roundtrip {
                 Ok(())
             } else {
                 Err(HtmlImportError::DepthLimit)
             };
-            assert_eq!(result, expected, "{name}");
+            assert_eq!(
+                on_small_stack(past.clone(), mode, false),
+                expected,
+                "{name} {mode:?} at {}",
+                accepted + 1
+            );
         }
     }
 }
