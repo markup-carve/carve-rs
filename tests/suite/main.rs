@@ -2405,6 +2405,8 @@ mod nested_fence_continuation_blank_payload;
 #[path = "../nested_marker_fence_blank_payload.rs"]
 mod nested_marker_fence_blank_payload;
 
+#[path = "../a_tab_indented_quote_in_an_item_starts_on_its_marker.rs"]
+mod a_tab_indented_quote_in_an_item_starts_on_its_marker;
 #[path = "../lint_list_column_traps.rs"]
 mod lint_list_column_traps;
 #[path = "../lint_new_rules.rs"]

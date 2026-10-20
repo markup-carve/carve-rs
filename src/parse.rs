@@ -8193,9 +8193,10 @@ fn rebase_named_colon_extent(
         if !is_blank_line(line) && column >= strip {
             #[cfg(test)]
             NAMED_COLON_REBASE_LINES.with(|count| count.set(count.get() + 1));
-            *line = Cow::Owned(strip_leading_columns(line, strip));
+            let (residue, consumed, synthetic) = slice_columns_mapped(line, strip, true);
+            *line = Cow::Owned(residue);
             if let Some(Some(column)) = columns.get_mut(at) {
-                *column += strip as isize;
+                *column += consumed as isize - synthetic as isize;
             }
         }
     }
@@ -9091,12 +9092,12 @@ fn rebase_body_blocks(
                 }
                 continue;
             }
-            *line = Cow::Owned(strip_leading_columns(line, base));
+            let (residue, consumed, synthetic) = slice_columns_mapped(line, base, true);
+            *line = Cow::Owned(residue);
             if let Some(Some(col)) = source.col_map.get_mut(j) {
-                // Source columns are visual columns, not byte offsets. A tab
-                // crossing the authored base can remove one byte while moving
-                // four columns; advancing by the byte delta corrupts `pos`.
-                *col += base as isize;
+                // Codepoints, like the line-block arm above: a tab is one
+                // codepoint however many columns it fills.
+                *col += consumed as isize - synthetic as isize;
             }
         }
         i = end + 1;
