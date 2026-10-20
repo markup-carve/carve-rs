@@ -73,7 +73,7 @@ fn stays_silent_where_the_raw_span_has_no_trailing_whitespace() {
 #[test]
 fn names_a_loss_the_engine_really_takes() {
     let value = migrate_markdown("<a href=\"foo  \nbar\">\n").value;
-    assert!(value.contains("foo  \n"));
+    assert!(value.contains("foo\n"), "{value}");
     let html = carve::render_html(&carve::parse(&value)).expect("render");
     assert!(html.contains("<a href=\"foo\nbar\">"), "{html}");
 }

@@ -473,6 +473,8 @@ mod a_lone_pipe_line_does_not_panic;
 mod a_lone_tilde_keeps_its_markdown_strike;
 #[path = "../a_markdown_deletion_is_not_a_strike.rs"]
 mod a_markdown_deletion_is_not_a_strike;
+#[path = "../a_markdown_import_is_a_fmt_fixed_point.rs"]
+mod a_markdown_import_is_a_fmt_fixed_point;
 #[path = "../a_markdown_line_keeps_a_trailing_form_feed.rs"]
 mod a_markdown_line_keeps_a_trailing_form_feed;
 #[path = "../a_markdown_link_with_an_empty_destination_is_its_text.rs"]

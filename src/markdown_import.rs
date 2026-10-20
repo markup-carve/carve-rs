@@ -78,6 +78,9 @@ pub(crate) const LEADING_WHITESPACE_UNSPELLABLE: &str =
     "Dropped whitespace a decoded reference put at the start of a line; \
      Carve spells no leading whitespace on a paragraph";
 
+/// What the reader drops at the end of a content line inside a verbatim run.
+const RAW_SPAN_DROPPED_WHITESPACE: [char; 2] = [' ', '\t'];
+
 pub(crate) const RAW_SPAN_WHITESPACE_TRIMMED: &str =
     "A raw span ends a content line in whitespace, which Carve drops; \
      the whitespace did not reach the converted source";
@@ -625,6 +628,7 @@ fn markdown_to_carve_with_carriers(
                 kind: MarkdownLossKind::Unspellable,
             }),
     );
+    trim_raw_span_line_ends(&mut document);
     let expected_code = document.markdown_code_values();
     if code_lines.len() != expected_code.len() {
         code_lines = vec![None; expected_code.len()];
@@ -1108,6 +1112,53 @@ fn drop_leading_decoded_whitespace(document: &mut Document) -> Vec<String> {
     crate::html_import::for_each_inline_run(&mut document.children, &mut strip);
 
     messages
+}
+
+/// Drop the whitespace a raw span carries at the end of a content line.
+///
+/// CARVE-P2-025 drops it on read, so writing it leaves an import that is not a
+/// `fmt` fixed point; the loss is already reported when the span is read.
+fn trim_raw_span_line_ends(document: &mut Document) {
+    use crate::include_walk::{visit_block_children, visit_inline_children, SubtreeVisitor};
+    struct Trim;
+    impl SubtreeVisitor for Trim {
+        fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
+            for block in blocks {
+                visit_block_children(block, self);
+            }
+        }
+        fn inlines(&mut self, inlines: &mut Vec<InlineNode>) {
+            for inline in inlines {
+                if let InlineNode::RawInline(raw) = inline {
+                    if raw.content.contains('\n') {
+                        raw.content = trim_line_ends_before_breaks(&raw.content);
+                    }
+                }
+                visit_inline_children(inline, self);
+            }
+        }
+    }
+    for blocks in document.footnote_defs.values_mut() {
+        Trim.blocks(blocks);
+    }
+    Trim.blocks(&mut document.children);
+}
+
+fn trim_line_ends_before_breaks(content: &str) -> String {
+    let lines: Vec<&str> = content.split('\n').collect();
+    let last = lines.len() - 1;
+    lines
+        .iter()
+        .enumerate()
+        .map(|(index, line)| {
+            if index == last {
+                *line
+            } else {
+                line.trim_end_matches(RAW_SPAN_DROPPED_WHITESPACE)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Convert Markdown source to a Carve [`Document`].
@@ -2484,7 +2535,7 @@ impl Builder {
             if index == newlines {
                 break;
             }
-            if line.ends_with([' ', '\t', '\u{b}', '\u{c}']) {
+            if line.ends_with(RAW_SPAN_DROPPED_WHITESPACE) {
                 self.losses.push(MarkdownImportLoss {
                     message: RAW_SPAN_WHITESPACE_TRIMMED.to_owned(),
                     line: Some(start + index),
