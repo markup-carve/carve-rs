@@ -26737,7 +26737,10 @@ fn parse_inline_context_with_pairs(
     if options.extensions.is_empty()
         && !bytes.is_empty()
         && bytes.len() <= 64
-        && bytes.iter().all(u8::is_ascii_alphanumeric)
+        && bytes
+            .iter()
+            .all(|&b| b.is_ascii_alphanumeric() || b == b' ')
+        && (!bytes.contains(&b' ') || CELL_WRAPS.with(|wraps| wraps.borrow().is_empty()))
     {
         let mapped = positions
             .and_then(|map| map.unmapped_prefix.as_ref())
