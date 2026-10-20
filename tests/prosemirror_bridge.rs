@@ -71,17 +71,11 @@ const NOT_IN_CORPUS: &[(&str, &str)] = &[
 // Comparing against the SOURCE instead would report 749 documents whose `.crv`
 // is simply not in canonical form; `tests/corpus_canonical_form.rs` is where
 // that belongs.
-const SOURCE_LOSSY: &[(&str, &[&str])] = &[
-    (
-        "the sanitized-away `href` attribute is not carried, so \
+const SOURCE_LOSSY: &[(&str, &[&str])] = &[(
+    "the sanitized-away `href` attribute is not carried, so \
          `[safe](https://example.com){href=javascript:steal}` comes back without it",
-        &["108-security-hardening-11.crv"],
-    ),
-    (
-        "the ProseMirror round trip duplicates the loose-list attribute before the list",
-        &["626-an-indented-plus-below-a-nested-fence-stays-content-at-every-depth-6.crv"],
-    ),
-];
+    &["108-security-hardening-11.crv"],
+)];
 
 /// Every declared source-lossy document, sorted.
 fn source_lossy_names() -> Vec<String> {

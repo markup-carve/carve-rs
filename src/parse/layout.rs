@@ -1693,8 +1693,9 @@ mod layout_html_tests {
         // The malformed cases keep `{table}` and bypass this borrowed path.
         // Corpus 15-heading-ids-5 and 119-trojan-source-heading-ids-are-nfc-normalized-and-strip-invisible-controls
         // now take the borrowed layout.
+        // Spec cc388b35 adds corpus 630-5; the unchanged scanner's exact shadow parity is checked above.
         assert_eq!(
-            accepted, 72,
+            accepted, 73,
             "update the pinned acceptance count only after reviewing the exact-parity widening"
         );
     }

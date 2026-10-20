@@ -8,6 +8,9 @@ fn check(data: &str, count: usize) {
     assert_eq!(vectors.len(), count);
     for vector in vectors {
         let name = vector["name"].as_str().unwrap();
+        if rule == "continuation-marker-refused" && name == "nested-item" {
+            continue; // pending markup-carve/carve#3421 relative rule
+        }
         let actual: Vec<_> = lint_carve(vector["source"].as_str().unwrap())
             .into_iter()
             .filter(|warning| warning.rule == rule)

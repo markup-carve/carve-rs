@@ -1254,6 +1254,7 @@ fn render_with_escapes_once(
     // too. See the note beside `lists_would_merge`; without it a top-level pair
     // -- which is where authors actually write one -- still merged (carve#1088).
     let mut previous_list: Option<&List> = None;
+    let mut adjacent_list_indent = 0;
     let mut separated_from_previous = false;
     let mut previous_emitted: Option<&BlockNode> = None;
     let entries = definitions_above_a_marker_in_place(
@@ -1274,12 +1275,17 @@ fn render_with_escapes_once(
             crate::ast_json::DocEntry::FootnoteDef(_, blocks, pos) => footnote_line(blocks, *pos),
             crate::ast_json::DocEntry::Block(_) => None,
         };
+        let mut after_empty_nested = false;
         let text = match entry {
             crate::ast_json::DocEntry::Block(child) => {
                 ctx.paragraph_starts_after_caption_host = ctx.after_caption_host;
                 let text = render_block(session, child, &mut ctx);
                 ctx.after_caption_host = hosts_caption(child);
                 if let BlockNode::List(list) = child {
+                    after_empty_nested = list.attrs.is_none()
+                        && previous_list.is_some_and(|previous| {
+                            lists_would_merge(previous, list) && ends_in_empty_nested_item(previous)
+                        });
                     separated_from_previous =
                         previous_list.is_some_and(|previous| lists_would_merge(previous, list));
                     previous_list = Some(list);
@@ -1326,7 +1332,15 @@ fn render_with_escapes_once(
                 }
                 _ => false,
             };
-            if adjacent && !rendered.is_empty() {
+            if !after_empty_nested {
+                adjacent_list_indent = 0;
+            }
+            if after_empty_nested && !rendered.is_empty() {
+                adjacent_list_indent += 1;
+                let last = rendered.len() - 1;
+                rendered[last].push('\n');
+                rendered[last].push_str(&indent_adjacent_list(&text, adjacent_list_indent));
+            } else if adjacent && !rendered.is_empty() {
                 let last = rendered.len() - 1;
                 rendered[last].push('\n');
                 rendered[last].push_str(&text);
@@ -1924,6 +1938,7 @@ fn render_blocks(
     // later list inside the earlier one. Three blank lines separate any number
     // of sibling lists at the column they were written.
     let mut previous_list: Option<&List> = None;
+    let mut adjacent_list_indent = 0;
     let mut separated_from_previous = false;
     let mut previous_emitted: Option<&BlockNode> = None;
     let mut moved_marker: Option<&BlockNode> = None;
@@ -1944,6 +1959,9 @@ fn render_blocks(
         }
         escape_window::leave(session, recorded);
         ctx.after_caption_host = hosts_caption(block);
+        let after_empty_nested = matches!(block, BlockNode::List(list) if list.attrs.is_none()
+            && previous_list.is_some_and(|previous| lists_would_merge(previous, list) && ends_in_empty_nested_item(previous))
+            && item.is_none());
         if let BlockNode::List(list) = block {
             separated_from_previous =
                 previous_list.is_some_and(|previous| lists_would_merge(previous, list));
@@ -1955,7 +1973,15 @@ fn render_blocks(
         if !writes_nothing(&text) {
             let adjacent = previous_emitted
                 .is_some_and(|previous| region_marker_adjacent(previous, block, &text));
-            if adjacent && !rendered.is_empty() {
+            if !after_empty_nested {
+                adjacent_list_indent = 0;
+            }
+            if after_empty_nested && !rendered.is_empty() {
+                adjacent_list_indent += 1;
+                let last = rendered.len() - 1;
+                rendered[last].push('\n');
+                rendered[last].push_str(&indent_adjacent_list(&text, adjacent_list_indent));
+            } else if adjacent && !rendered.is_empty() {
                 let last = rendered.len() - 1;
                 rendered[last].push('\n');
                 rendered[last].push_str(&text);
@@ -2768,7 +2794,11 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
         }
         BlockNode::List(list) => {
             let body = with_reset_colon_fence_depth(ctx, |ctx| render_list(session, list, ctx));
-            with_loose_key(list_needs_loose_key(list, &body), &list.attrs, &body)
+            with_loose_key(
+                list_needs_loose_key(session, list, &body, ctx.list_depth > 0),
+                &list.attrs,
+                &body,
+            )
         }
         // PART 11 §6 writes the marker the author used, now that the AST
         // records it (carve#976, carve-rs#843). Only the HYPHEN spelling can be
@@ -3063,7 +3093,7 @@ fn with_loose_key(needs_key: bool, attrs: &Option<Attrs>, body: &str) -> String 
 
 /// Whether a LIST needs the key: §17 L7's re-parse, with the one shortcut that
 /// is sound in a single direction.
-fn list_needs_loose_key(list: &List, body: &str) -> bool {
+fn list_needs_loose_key(session: &RenderSession, list: &List, body: &str, nested: bool) -> bool {
     if list.tight || list.items.is_empty() {
         return false;
     }
@@ -3088,11 +3118,31 @@ fn list_needs_loose_key(list: &List, body: &str) -> bool {
     if !body_has_blank_line(body) {
         return true;
     }
-    match comparable_tree(body).as_ref().and_then(|doc| {
-        doc.children
-            .iter()
-            .find(|child| !matches!(child, BlockNode::Comment(_)))
-    }) {
+    let restored = restore_verbatim(session, body);
+    let probe = if nested {
+        format!("- {}", restored.replace('\n', "\n  "))
+    } else {
+        restored
+    };
+    let tree = comparable_tree(&probe);
+    let first = tree.as_ref().and_then(|doc| doc.children.first());
+    let candidate = if nested {
+        match first {
+            Some(BlockNode::List(wrapper)) => wrapper.items.first().and_then(|item| {
+                item.children
+                    .iter()
+                    .find(|child| !matches!(child, BlockNode::Comment(_)))
+            }),
+            _ => None,
+        }
+    } else {
+        tree.as_ref().and_then(|doc| {
+            doc.children
+                .iter()
+                .find(|child| !matches!(child, BlockNode::Comment(_)))
+        })
+    };
+    match candidate {
         Some(BlockNode::List(reparsed)) => reparsed.tight,
         // Anything else means the body did not read back as a list at all, so
         // the looseness certainly did not survive.
@@ -3128,9 +3178,30 @@ fn with_block_attrs(attrs: &Option<Attrs>, body: &str) -> String {
 fn nested_tight_item_loses_tightness(item: &ListItem) -> bool {
     item.children.windows(2).any(|pair| {
         matches!(pair[1], BlockNode::Paragraph(_))
+            && !matches!(&pair[1], BlockNode::Paragraph(p) if matches!(p.children.as_slice(), [InlineNode::Text(t)] if t.value == "+"))
             && (matches!(pair[0], BlockNode::Paragraph(_) | BlockNode::BlockQuote(_))
                 || matches!(&pair[0], BlockNode::List(list) if list.items.last().is_some_and(|item| !item.children.is_empty())))
     })
+}
+
+fn indent_adjacent_list(text: &str, width: usize) -> String {
+    let indent = " ".repeat(width);
+    text.lines()
+        .map(|line| {
+            if line.is_empty() {
+                String::new()
+            } else {
+                format!("{indent}{line}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn ends_in_empty_nested_item(list: &List) -> bool {
+    list.items.last().and_then(|item| item.children.last()).is_some_and(
+        |block| matches!(block, BlockNode::List(child) if child.items.last().is_some_and(|item| item.children.is_empty() || matches!(item.children.last(), Some(BlockNode::List(_)) if ends_in_empty_nested_item(child))))
+    )
 }
 
 fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveContext) -> String {
@@ -3161,6 +3232,12 @@ fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveContext) -> 
         let loosen_item =
             node.tight && ctx.list_depth > 1 && nested_tight_item_loses_tightness(item);
         if loosen_item {
+            if ctx.list_depth >= crate::parse::MAX_NESTING_DEPTH {
+                crate::render_carve_error::record_unspellable(
+                    "document",
+                    "content nested past the parser nesting limit of 200 has no spelling that reads back",
+                );
+            }
             crate::render_loss::record_list_tightness_lost(item.pos.as_ref());
         }
         let mut prefix = if node.ordered {

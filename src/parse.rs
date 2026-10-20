@@ -15054,14 +15054,14 @@ fn parse_list(
                     && cur.lines.line(cur.pos - 1).is_some_and(|prior| {
                         indent_columns(prior) == content_col && trim_ascii(prior) == "+"
                     });
-                let descendant_plus_after_fence = cur.pos > 0
+                let descendant_plus_after_fence = nested_columns.fence_seen
                     && !is_ordered
-                    && nested_columns.fence_seen
+                    && cur.pos > 0
                     && cur.peek().is_some_and(|next| {
                         line_starts_paragraph(next) && !item_block_opener(next)
                     })
                     && cur.lines.line(cur.pos - 1).is_some_and(|prior| {
-                        indent_columns(prior) >= content_col + 2 && trim_ascii(prior) == "+"
+                        trim_ascii(prior) == "+" && indent_columns(prior) >= content_col + 2
                     });
                 let nested_bare_ends_item = nested_bare_marker_then_plain(cur, content_col);
                 if outer_plus_after_fence {
@@ -15695,7 +15695,7 @@ fn parse_list(
                 if detect_fence_open(inner_lead).is_some()
                     && cur.pos > 0
                     && cur.lines.line(cur.pos - 1).is_some_and(|prior| {
-                        indent_columns(prior) >= content_col + 2 && trim_ascii(prior) == "+"
+                        trim_ascii(prior) == "+" && indent_columns(prior) >= content_col + 2
                     })
                 {
                     break;
@@ -15766,7 +15766,14 @@ fn parse_list(
             // own business - `sublist_source_loosens_outer_item` is the same
             // non-propagating test the following-line sub-list path uses, not the
             // blanket `continuation_source_loosens` the other leads can afford.
-            if sublist_source_loosens_outer_item(&stream.source) {
+            let blank_after_bare_nested_marker = nested_lead_is_continuation
+                && cur.lines.line(item_at + 1).is_some_and(is_blank_line)
+                && cur.lines.line(item_at + 2).is_some_and(|line| {
+                    indent_columns(line) == content_col
+                        && (is_plus_marker(trim_ascii_start(line))
+                            || line_starts_paragraph(trim_ascii_start(line)))
+                });
+            if sublist_source_loosens_outer_item(&stream.source) || blank_after_bare_nested_marker {
                 tight = false;
             }
             if sublist_source_trailing_invisible_separation(&stream.source) {
@@ -18289,7 +18296,12 @@ fn fold_lazy_run_and_resume_in_band(
         } else {
             nested.append(resumed);
         }
-        if cur.pos == before_resume {
+        let next_is_comment = cur.pos == before_resume
+            && cur
+                .peek()
+                .map(str::to_string)
+                .is_some_and(|line| line_comment_keeps_the_container_open(cur, &line));
+        if cur.pos == before_resume && !next_is_comment {
             break;
         }
     }
@@ -18575,7 +18587,7 @@ fn nested_bare_marker_then_plain(cur: &LineCursor<'_>, content_col: usize) -> bo
     let Some(next) = cur.peek() else {
         return false;
     };
-    if indent_columns(next) != 0 || !line_starts_paragraph(next) {
+    if next.starts_with([' ', '\t']) || !line_starts_paragraph(next) {
         return false;
     }
     let Some(outer) = detect_list_marker_full(cur.lines.at(outer_at)) else {
@@ -18829,8 +18841,10 @@ fn collect_indented_block_mapped_with_columns(
         .map_or(parent_indent, |marker| marker.indent);
     let marker_ordered = marker_lead.as_ref().is_some_and(|marker| marker.ordered);
     let marker_content = marker_lead.map(|marker| marker.content);
-    nested_item_columns.fence_seen |= marker_content
-        .is_some_and(|content| detect_fence_open(innermost_marker_content(content)).is_some());
+    nested_item_columns.fence_seen |= marker_content.is_some_and(|content| {
+        content.contains(['`', '~'])
+            && detect_fence_open(innermost_marker_content(content)).is_some()
+    });
     let marker_is_definition_lead = marker_content.is_some_and(|content| {
         let content = trim_ascii_start(content);
         is_definition_list_start(content)
@@ -18927,6 +18941,7 @@ fn collect_indented_block_mapped_with_columns(
     }
     let mut nested_fence: Option<FenceOpen> = None;
     let mut active_nested_fence = marker_content
+        .filter(|content| content.contains(['`', '~']))
         .and_then(detect_list_marker_full)
         .and_then(|marker| detect_fence_open(innermost_marker_content(marker.content)))
         .map(|mut open| {
@@ -19429,7 +19444,8 @@ fn collect_indented_block_mapped_with_columns(
         // rather than handed to the nested parse, where it would end the item
         // and cost the lazy fold the same document without it still has.
         // A fence in the marker-line ladder keeps a valid `+` for its child.
-        let nested_host = indent == nested_fence_marker_col
+        let nested_host = is_plus_marker(line)
+            && indent == nested_fence_marker_col
             && marker_content.is_some_and(|content| {
                 let content = innermost_marker_content(content);
                 detect_fence_open(content).is_some() || detect_container_open(content).is_some()
@@ -19779,7 +19795,7 @@ fn collect_indented_block_mapped_with_columns(
             }
         } else if fence.is_none() && comment_fence.is_none() && colon_open.is_empty() {
             if let Some(marker) = detect_list_marker_full_at(line, indent) {
-                if active_nested_fence.is_none() {
+                if active_nested_fence.is_none() && marker.content.contains(['`', '~']) {
                     active_nested_fence = detect_fence_open(innermost_marker_content(
                         marker.content,
                     ))
@@ -19789,8 +19805,8 @@ fn collect_indented_block_mapped_with_columns(
                         open
                     });
                 }
-                nested_item_columns.fence_seen |=
-                    detect_fence_open(innermost_marker_content(marker.content)).is_some();
+                nested_item_columns.fence_seen |= marker.content.contains(['`', '~'])
+                    && detect_fence_open(innermost_marker_content(marker.content)).is_some();
                 nested_folded_fence = false;
                 while nested_item_columns
                     .last()
@@ -20214,8 +20230,8 @@ fn collect_indented_block_mapped_with_columns(
                 .is_some_and(|&(_, column)| indent < column && indent >= strip_cols)
             && detect_fence_open(trim_ascii_start(line)).is_some()
         {
-            let trimmed = trim_ascii_start(line);
-            trimmed_after_slice += line.len() - trimmed.len();
+            let trimmed = trim_ascii_start(&sliced);
+            trimmed_after_slice += sliced.len() - trimmed.len();
             sliced = format!("{LAZY}{trimmed}");
             nested_folded_fence = false;
         }
@@ -20275,8 +20291,8 @@ fn collect_indented_block_mapped_with_columns(
         let after_below_comment = cur.closed_comment_location.is_some_and(|(at, column)| {
             at + 1 == cur.pos && column < strip_cols && indent != strip_cols
         }) || cur.pos.checked_sub(1).is_some_and(|at| {
-            indent_columns(cur.lines.at(at)) < strip_cols
-                && is_line_comment_any_column(cur.lines.at(at))
+            is_line_comment_any_column(cur.lines.at(at))
+                && indent_columns(cur.lines.at(at)) < strip_cols
         });
         let at_descendant_column = after_below_comment
             && nested_item_columns
