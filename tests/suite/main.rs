@@ -85,6 +85,8 @@ mod unmarked_lines_follow_their_reachable_container;
 #[path = "../verbatim_continuation_guards.rs"]
 mod verbatim_continuation_guards;
 
+#[path = "../a_backslash_run_before_a_table_pipe_is_assessed.rs"]
+mod a_backslash_run_before_a_table_pipe_is_assessed;
 #[path = "../a_bracketed_pointy_autolink_keeps_its_angle_form.rs"]
 mod a_bracketed_pointy_autolink_keeps_its_angle_form;
 #[path = "../markdown_autolink_roundtrip.rs"]

@@ -14,6 +14,8 @@ pub(crate) struct Assessment {
     pub extra_cell_lines: Vec<usize>,
 }
 
+/// Marks a bare link whose table-cell pipes were unescaped when the event was built.
+const TABLE_BARE_LINK: &str = "\u{E002}table-bare";
 const BRACKET_OPEN_SENTINEL: &str = "\u{E000}";
 const BRACKET_CLOSE_SENTINEL: &str = "\u{E001}";
 const BRACKET_OPEN_ENCODED: &str = "%EE%80%80";
@@ -459,6 +461,89 @@ fn ordered_delimiters(blocks: &[crate::BlockNode]) -> Vec<char> {
     found
 }
 
+/// cmark-gfm drops one backslash before a table pipe and keeps the pipe in the
+/// cell, for any run length; pulldown splits the cell on an even run. Rewrite each
+/// even run in a table row as one backslash fewer plus a stand-in character, so
+/// pulldown reads the cell as cmark-gfm does. Returns the stand-in and where it sits.
+fn hide_even_pipe_runs(source: &str) -> Option<(String, char, Vec<usize>)> {
+    let delimiter = |line: &str| {
+        let line = line.trim();
+        line.contains('-')
+            && line
+                .chars()
+                .all(|c| matches!(c, '|' | '-' | ':' | ' ' | '\t'))
+    };
+    let lines: Vec<&str> = source.split('\n').collect();
+    let mut rows = BTreeSet::new();
+    for (index, line) in lines.iter().enumerate() {
+        if index == 0 || !delimiter(line) || !lines[index - 1].contains('|') {
+            continue;
+        }
+        rows.insert(index - 1);
+        let mut next = index + 1;
+        while next < lines.len() && !lines[next].trim().is_empty() {
+            rows.insert(next);
+            next += 1;
+        }
+    }
+    let has_even_run = rows.iter().any(|&index| {
+        let bytes = lines[index].as_bytes();
+        (0..bytes.len()).any(|at| {
+            bytes[at] == b'|' && {
+                let run = bytes[..at]
+                    .iter()
+                    .rev()
+                    .take_while(|b| **b == b'\\')
+                    .count();
+                run >= 2 && run % 2 == 0
+            }
+        })
+    });
+    if !has_even_run {
+        return None;
+    }
+    let stand_in = ['^', '+', '=', '$', '}']
+        .into_iter()
+        .find(|candidate| !source.contains(*candidate))?;
+    let mut out = String::with_capacity(source.len());
+    let mut hidden = Vec::new();
+    for (index, line) in lines.iter().enumerate() {
+        if index > 0 {
+            out.push('\n');
+        }
+        if !rows.contains(&index) {
+            out.push_str(line);
+            continue;
+        }
+        let bytes = line.as_bytes();
+        let mut at = 0;
+        while at < bytes.len() {
+            if bytes[at] != b'\\' {
+                let start = at;
+                while at < bytes.len() && bytes[at] != b'\\' {
+                    at += 1;
+                }
+                out.push_str(&line[start..at]);
+                continue;
+            }
+            let start = at;
+            while at < bytes.len() && bytes[at] == b'\\' {
+                at += 1;
+            }
+            let run = at - start;
+            if bytes.get(at) == Some(&b'|') && run % 2 == 0 {
+                out.push_str(&line[start..at - 1]);
+                hidden.push(out.len());
+                out.push(stand_in);
+                at += 1;
+            } else {
+                out.push_str(&line[start..at]);
+            }
+        }
+    }
+    Some((out, stand_in, hidden))
+}
+
 /// Assess the native parser's occurrences and verify the document the writer produced.
 pub(crate) fn assess(source: &str, value: &str) -> Assessment {
     use crate::html_import::ImportFidelity::{Degraded, Dropped, Normalized, Preserved};
@@ -473,6 +558,11 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
     let mut source = source.replace("\r\n", "\n").replace('\r', "\n");
     if !source.is_empty() && !source.ends_with('\n') {
         source.push('\n');
+    }
+    let mut hidden_pipe = None;
+    if let Some((hidden, stand_in, positions)) = hide_even_pipe_runs(&source) {
+        source = hidden;
+        hidden_pipe = Some((stand_in, positions));
     }
     let mut line_starts = vec![0];
     line_starts.extend(
@@ -528,6 +618,9 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
     let mut html_block = false;
     let mut html_fragments = 0usize;
     let mut table_pipe_escapes = BTreeSet::new();
+    if let Some((_, positions)) = &hidden_pipe {
+        table_pipe_escapes.extend(positions.iter().map(|at| at - 1));
+    }
     let mut table_width = 0usize;
     let mut extra_cell_lines = Vec::new();
     static REWRITE: OnceLock<regex::Regex> = OnceLock::new();
@@ -627,9 +720,14 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                     } else {
                         std::borrow::Cow::Borrowed(&source[link.start..link.end])
                     };
-                    events.extend(
-                        bare_link_events(&label, link.prefix).map(|event| (event, link.start)),
-                    );
+                    let mut link_events = bare_link_events(&label, link.prefix);
+                    if link.table {
+                        // The label is already unescaped; the row-level pass must not drop a second backslash.
+                        if let Event::Start(Tag::Link { title, .. }) = &mut link_events[0] {
+                            *title = TABLE_BARE_LINK.into();
+                        }
+                    }
+                    events.extend(link_events.map(|event| (event, link.start)));
                     diagnostics.push(positioned(
                         "bare-autolink",
                         &line_starts,
@@ -940,8 +1038,9 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
             table_autolink = match event {
                 Event::Start(Tag::Link {
                     link_type: LinkType::Autolink | LinkType::Email,
+                    title,
                     ..
-                }) => in_table,
+                }) => in_table && title.as_ref() != TABLE_BARE_LINK,
                 Event::End(TagEnd::Link) => false,
                 _ => table_autolink,
             };
@@ -982,12 +1081,28 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                 continue;
             }
             let mut event = event.clone();
+            if let Event::Start(Tag::Link { title, .. }) = &mut event {
+                if title.as_ref() == TABLE_BARE_LINK {
+                    *title = "".into();
+                }
+            }
             if table_autolink {
                 match &mut event {
                     Event::Start(Tag::Link { dest_url, .. }) => {
                         *dest_url = dest_url.replace("\\|", "|").into();
                     }
                     Event::Text(text) => *text = text.replace("\\|", "|").into(),
+                    _ => {}
+                }
+            }
+            if let Some((stand_in, _)) = &hidden_pipe {
+                match &mut event {
+                    Event::Text(text) | Event::Code(text) | Event::InlineHtml(text) => {
+                        *text = text.replace(*stand_in, "|").into();
+                    }
+                    Event::Start(Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. }) => {
+                        *dest_url = dest_url.replace(*stand_in, "|").into();
+                    }
                     _ => {}
                 }
             }
@@ -1202,10 +1317,10 @@ mod tests {
                 .iter()
                 .map(|row| (row.code.as_str(), row.path.as_deref(), row.fidelity))
                 .collect();
-            assert_eq!(
-                actual,
-                vec![("fidelity-unverified", None, MigrationFidelity::Dropped)],
-                "{source}"
+            // cmark-gfm keeps the pipe in the cell after dropping one backslash.
+            assert!(
+                actual.iter().all(|row| row.0 != "fidelity-unverified"),
+                "{source}: {actual:?}"
             );
         }
         let result = crate::migrate_markdown("a\\|b");
