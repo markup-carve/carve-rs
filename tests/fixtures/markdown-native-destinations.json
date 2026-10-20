@@ -81,19 +81,23 @@
   },
   {
     "source": "[a](/x\\ )",
-    "html": "<p><a href=\"/x%5C\">a</a></p>\n"
+    "html": "<p><a href=\"/x%5C\">a</a></p>\n",
+    "carveHtml": "<p><a href=\"/x\\\">a</a></p>"
   },
   {
     "source": "[a](/x\\  \"t\")",
-    "html": "<p><a href=\"/x%5C\" title=\"t\">a</a></p>\n"
+    "html": "<p><a href=\"/x%5C\" title=\"t\">a</a></p>\n",
+    "carveHtml": "<p><a href=\"/x\\\" title=\"t\">a</a></p>"
   },
   {
     "source": "[a](/x\\  't')",
-    "html": "<p><a href=\"/x%5C\" title=\"t\">a</a></p>\n"
+    "html": "<p><a href=\"/x%5C\" title=\"t\">a</a></p>\n",
+    "carveHtml": "<p><a href=\"/x\\\" title=\"t\">a</a></p>"
   },
   {
     "source": "[a](/x\\  (t))",
-    "html": "<p><a href=\"/x%5C\" title=\"t\">a</a></p>\n"
+    "html": "<p><a href=\"/x%5C\" title=\"t\">a</a></p>\n",
+    "carveHtml": "<p><a href=\"/x\\\" title=\"t\">a</a></p>"
   },
   {
     "source": "![a](/x()",
@@ -177,19 +181,23 @@
   },
   {
     "source": "![a](/x\\ )",
-    "html": "<p><img src=\"/x%5C\" alt=\"a\" /></p>\n"
+    "html": "<p><img src=\"/x%5C\" alt=\"a\" /></p>\n",
+    "carveHtml": "<img src=\"/x\\\" alt=\"a\">"
   },
   {
     "source": "![a](/x\\  \"t\")",
-    "html": "<p><img src=\"/x%5C\" alt=\"a\" title=\"t\" /></p>\n"
+    "html": "<p><img src=\"/x%5C\" alt=\"a\" title=\"t\" /></p>\n",
+    "carveHtml": "<img src=\"/x\\\" alt=\"a\" title=\"t\">"
   },
   {
     "source": "![a](/x\\  't')",
-    "html": "<p><img src=\"/x%5C\" alt=\"a\" title=\"t\" /></p>\n"
+    "html": "<p><img src=\"/x%5C\" alt=\"a\" title=\"t\" /></p>\n",
+    "carveHtml": "<img src=\"/x\\\" alt=\"a\" title=\"t\">"
   },
   {
     "source": "![a](/x\\  (t))",
-    "html": "<p><img src=\"/x%5C\" alt=\"a\" title=\"t\" /></p>\n"
+    "html": "<p><img src=\"/x%5C\" alt=\"a\" title=\"t\" /></p>\n",
+    "carveHtml": "<img src=\"/x\\\" alt=\"a\" title=\"t\">"
   },
   {
     "source": "(see [docs](/guide), \"Setup\")",
@@ -221,7 +229,8 @@
   },
   {
     "source": "[a](/x\\ \"t\")",
-    "html": "<p><a href=\"/x%5C\" title=\"t\">a</a></p>\n"
+    "html": "<p><a href=\"/x%5C\" title=\"t\">a</a></p>\n",
+    "carveHtml": "<p><a href=\"/x\\\" title=\"t\">a</a></p>"
   },
   {
     "source": "[a](/x(a(b)c) \"t\")",
@@ -253,7 +262,8 @@
   },
   {
     "source": "[a](/x`code`( \"t\")",
-    "html": "<p><a href=\"/x%60code%60(\" title=\"t\">a</a></p>\n"
+    "html": "<p><a href=\"/x%60code%60(\" title=\"t\">a</a></p>\n",
+    "carveHtml": "<p><a href=\"/x`code`(\" title=\"t\">a</a></p>"
   },
   {
     "source": "![a [b ![c](/x)](oops](/i)",
@@ -333,7 +343,8 @@
   },
   {
     "source": "[o [a](/x`)`) p](/u)",
-    "html": "<p>[o <a href=\"/x%60\">a</a>`) p](/u)</p>\n"
+    "html": "<p>[o <a href=\"/x%60\">a</a>`) p](/u)</p>\n",
+    "carveHtml": "<p>[o <a href=\"/x`\">a</a>`) p](/u)</p>"
   },
   {
     "source": "[o [a](/x \"t`\")`\") p](/u)",
@@ -341,7 +352,8 @@
   },
   {
     "source": "[o [a](/x<!--)-->) p](/u)",
-    "html": "<p>[o <a href=\"/x%3C!--\">a</a>--&gt;) p](/u)</p>\n"
+    "html": "<p>[o <a href=\"/x%3C!--\">a</a>--&gt;) p](/u)</p>\n",
+    "carveHtml": "<p>[o <a href=\"/x&lt;!--\">a</a>--&gt;) p](/u)</p>"
   },
   {
     "source": "[a](/x`c\\ d`( \"t\")",
@@ -373,19 +385,23 @@
   },
   {
     "source": "[o `[a]` p](/x`c`( \"t\")",
-    "html": "<p><a href=\"/x%60c%60(\" title=\"t\">o <code>[a]</code> p</a></p>\n"
+    "html": "<p><a href=\"/x%60c%60(\" title=\"t\">o <code>[a]</code> p</a></p>\n",
+    "carveHtml": "<p><a href=\"/x`c`(\" title=\"t\">o <code>[a]</code> p</a></p>"
   },
   {
     "source": "[a](<http://a`b>) `tail`",
-    "html": "<p><a href=\"http://a%60b\">a</a> <code>tail</code></p>\n"
+    "html": "<p><a href=\"http://a%60b\">a</a> <code>tail</code></p>\n",
+    "carveHtml": "<p><a href=\"http://a`b\">a</a> <code>tail</code></p>"
   },
   {
     "source": "[a](<\\\\>)",
-    "html": "<p><a href=\"%5C\">a</a></p>\n"
+    "html": "<p><a href=\"%5C\">a</a></p>\n",
+    "carveHtml": "<p><a href=\"\\\">a</a></p>"
   },
   {
     "source": "[a](<\\>>)",
-    "html": "<p><a href=\"%3E\">a</a></p>\n"
+    "html": "<p><a href=\"%3E\">a</a></p>\n",
+    "carveHtml": "<p><a href=\"&gt;\">a</a></p>"
   },
   {
     "source": "[a](<\\_>)",
@@ -393,11 +409,13 @@
   },
   {
     "source": "[a](<\\<>)",
-    "html": "<p><a href=\"%3C\">a</a></p>\n"
+    "html": "<p><a href=\"%3C\">a</a></p>\n",
+    "carveHtml": "<p><a href=\"&lt;\">a</a></p>"
   },
   {
     "source": "[a](<\\`>)",
-    "html": "<p><a href=\"%60\">a</a></p>\n"
+    "html": "<p><a href=\"%60\">a</a></p>\n",
+    "carveHtml": "<p><a href=\"`\">a</a></p>"
   },
   {
     "source": "[a](<😀>)",
@@ -406,7 +424,8 @@
   },
   {
     "source": "[a](<a\\<b>)",
-    "html": "<p><a href=\"a%3Cb\">a</a></p>\n"
+    "html": "<p><a href=\"a%3Cb\">a</a></p>\n",
+    "carveHtml": "<p><a href=\"a&lt;b\">a</a></p>"
   },
   {
     "source": "[r](/x`c d`[e]())\n\n[r]: /u",
@@ -446,74 +465,92 @@
   },
   {
     "source": "[a](<a\\\nb>)",
-    "html": "<p><a href=\"a%5C%0Ab\">a</a></p>\n"
+    "html": "<p><a href=\"a%5C%0Ab\">a</a></p>\n",
+    "carveHtml": "<p><a href=\"a\\%0Ab\">a</a></p>"
   },
   {
     "source": "[a](<a\\\nb> \"t\")",
-    "html": "<p><a href=\"a%5C%0Ab\" title=\"t\">a</a></p>\n"
+    "html": "<p><a href=\"a%5C%0Ab\" title=\"t\">a</a></p>\n",
+    "carveHtml": "<p><a href=\"a\\%0Ab\" title=\"t\">a</a></p>"
   },
   {
     "source": "> [a](<a\\\n> b>)",
-    "html": "<blockquote>\n<p><a href=\"a%5C%0Ab\">a</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"a%5C%0Ab\">a</a></p>\n</blockquote>\n",
+    "carveHtml": "<blockquote><p><a href=\"a\\%0Ab\">a</a></p></blockquote>"
   },
   {
     "source": "- [a](<a\\\n  b>)",
-    "html": "<ul>\n<li><a href=\"a%5C%0Ab\">a</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"a%5C%0Ab\">a</a></li>\n</ul>\n",
+    "carveHtml": "<ul>\n  <li><a href=\"a\\%0Ab\">a</a></li>\n</ul>"
   },
   {
     "source": "![a](<a\\\nb>)",
-    "html": "<p><img src=\"a%5C%0Ab\" alt=\"a\" /></p>\n"
+    "html": "<p><img src=\"a%5C%0Ab\" alt=\"a\" /></p>\n",
+    "carveHtml": "<img src=\"a\\%0Ab\" alt=\"a\">"
   },
   {
     "source": "[o [a](<a\\\nb>) p](/u)",
-    "html": "<p>[o <a href=\"a%5C%0Ab\">a</a> p](/u)</p>\n"
+    "html": "<p>[o <a href=\"a%5C%0Ab\">a</a> p](/u)</p>\n",
+    "carveHtml": "<p>[o <a href=\"a\\%0Ab\">a</a> p](/u)</p>"
   },
   {
     "source": "- [a](<a\\\n  b>)\n- c",
-    "html": "<ul>\n<li><a href=\"a%5C%0Ab\">a</a></li>\n<li>c</li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"a%5C%0Ab\">a</a></li>\n<li>c</li>\n</ul>\n",
+    "carveHtml": "<ul>\n  <li><a href=\"a\\%0Ab\">a</a></li>\n  <li>c</li>\n</ul>"
   },
   {
     "source": "[a](<a\\\nb>) `c\nd` tail\nlast",
-    "html": "<p><a href=\"a%5C%0Ab\">a</a> <code>c d</code> tail\nlast</p>\n"
+    "html": "<p><a href=\"a%5C%0Ab\">a</a> <code>c d</code> tail\nlast</p>\n",
+    "carveHtml": "<p><a href=\"a\\%0Ab\">a</a> <code>c d</code> tail\nlast</p>"
   },
   {
     "source": "[a](<a\\\nb>) [c](/x\n\"t\")",
-    "html": "<p><a href=\"a%5C%0Ab\">a</a> <a href=\"/x\" title=\"t\">c</a></p>\n"
+    "html": "<p><a href=\"a%5C%0Ab\">a</a> <a href=\"/x\" title=\"t\">c</a></p>\n",
+    "carveHtml": "<p><a href=\"a\\%0Ab\">a</a> <a href=\"/x\" title=\"t\">c</a></p>"
   },
   {
     "source": "[a](<a\\\n   b>)",
-    "html": "<p><a href=\"a%5C%0Ab\">a</a></p>\n"
+    "html": "<p><a href=\"a%5C%0Ab\">a</a></p>\n",
+    "carveHtml": "<p><a href=\"a\\%0Ab\">a</a></p>"
   },
   {
     "source": "[a](<a\\\n\tb>)",
-    "html": "<p><a href=\"a%5C%0Ab\">a</a></p>\n"
+    "html": "<p><a href=\"a%5C%0Ab\">a</a></p>\n",
+    "carveHtml": "<p><a href=\"a\\%0Ab\">a</a></p>"
   },
   {
     "source": "- [a](<a\\\n     b>)",
-    "html": "<ul>\n<li><a href=\"a%5C%0Ab\">a</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"a%5C%0Ab\">a</a></li>\n</ul>\n",
+    "carveHtml": "<ul>\n  <li><a href=\"a\\%0Ab\">a</a></li>\n</ul>"
   },
   {
     "source": "> [a](<a\\\n   b>)",
-    "html": "<blockquote>\n<p><a href=\"a%5C%0A%20%20%20b\">a</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"a%5C%0A%20%20%20b\">a</a></p>\n</blockquote>\n",
+    "carveHtml": "<blockquote><p><a href=\"a\\%0A%20%20%20b\">a</a></p></blockquote>"
   },
   {
     "source": "> [a](<a\\\n>    b>)",
-    "html": "<blockquote>\n<p><a href=\"a%5C%0Ab\">a</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"a%5C%0Ab\">a</a></p>\n</blockquote>\n",
+    "carveHtml": "<blockquote><p><a href=\"a\\%0Ab\">a</a></p></blockquote>"
   },
   {
     "source": "> see https://example.com/some/long/path [a](<a\\\n   b>)",
-    "html": "<blockquote>\n<p>see <a href=\"https://example.com/some/long/path\">https://example.com/some/long/path</a> <a href=\"a%5C%0A%20%20%20b\">a</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p>see <a href=\"https://example.com/some/long/path\">https://example.com/some/long/path</a> <a href=\"a%5C%0A%20%20%20b\">a</a></p>\n</blockquote>\n",
+    "carveHtml": "<blockquote><p>see <a href=\"https://example.com/some/long/path\">https://example.com/some/long/path</a> <a href=\"a\\%0A%20%20%20b\">a</a></p></blockquote>"
   },
   {
     "source": "> x\nlazy https://example.com/long [a](<a\\\n>    b>)",
-    "html": "<blockquote>\n<p>x\nlazy <a href=\"https://example.com/long\">https://example.com/long</a> <a href=\"a%5C%0Ab\">a</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p>x\nlazy <a href=\"https://example.com/long\">https://example.com/long</a> <a href=\"a%5C%0Ab\">a</a></p>\n</blockquote>\n",
+    "carveHtml": "<blockquote><p>x\nlazy <a href=\"https://example.com/long\">https://example.com/long</a> <a href=\"a\\%0Ab\">a</a></p></blockquote>"
   },
   {
     "source": "- - [a](<a\\\n   b>)",
-    "html": "<ul>\n<li>\n<ul>\n<li><a href=\"a%5C%0A%20b\">a</a></li>\n</ul>\n</li>\n</ul>\n"
+    "html": "<ul>\n<li>\n<ul>\n<li><a href=\"a%5C%0A%20b\">a</a></li>\n</ul>\n</li>\n</ul>\n",
+    "carveHtml": "<ul>\n  <li>\n    <ul>\n      <li><a href=\"a\\%0A%20b\">a</a></li>\n    </ul>\n  </li>\n</ul>"
   },
   {
     "source": "> > [a](<a\\\n>    b>)",
-    "html": "<blockquote>\n<blockquote>\n<p><a href=\"a%5C%0A%20%20%20b\">a</a></p>\n</blockquote>\n</blockquote>\n"
+    "html": "<blockquote>\n<blockquote>\n<p><a href=\"a%5C%0A%20%20%20b\">a</a></p>\n</blockquote>\n</blockquote>\n",
+    "carveHtml": "<blockquote>\n  <blockquote><p><a href=\"a\\%0A%20%20%20b\">a</a></p></blockquote>\n</blockquote>"
   }
 ]

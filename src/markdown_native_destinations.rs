@@ -451,7 +451,7 @@ mod tests {
         for source in ["a > b [a](<a\\\n   b>)", "a - b - [a](<a\\\n   b>)"] {
             let written = crate::markdown_to_carve(source);
             assert!(
-                crate::to_html(&written).contains("href=\"a%5C%0Ab\""),
+                crate::to_html(&written).contains("href=\"a\\%0Ab\""),
                 "{source:?}: {written}"
             );
         }

@@ -157,11 +157,13 @@
   },
   {
     "source": "http://example.test/[r]",
-    "html": "<p><a href=\"http://example.test/%5Br%5D\">http://example.test/[r]</a></p>\n"
+    "html": "<p><a href=\"http://example.test/%5Br%5D\">http://example.test/[r]</a></p>\n",
+    "nativeHtml": "<p><a href=\"http://example.test/[r]\">http://example.test/[r]</a></p>\n"
   },
   {
     "source": "http://example.test/a\\*b",
-    "html": "<p><a href=\"http://example.test/a%5C*b\">http://example.test/a\\*b</a></p>\n"
+    "html": "<p><a href=\"http://example.test/a%5C*b\">http://example.test/a\\*b</a></p>\n",
+    "nativeHtml": "<p><a href=\"http://example.test/a\\*b\">http://example.test/a\\*b</a></p>\n"
   },
   {
     "source": "*http://example.test.*",
@@ -201,11 +203,13 @@
   },
   {
     "source": "*http://example.test/[r]*",
-    "html": "<p><em><a href=\"http://example.test/%5Br%5D\">http://example.test/[r]</a></em></p>\n"
+    "html": "<p><em><a href=\"http://example.test/%5Br%5D\">http://example.test/[r]</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"http://example.test/[r]\">http://example.test/[r]</a></em></p>\n"
   },
   {
     "source": "*http://example.test/a\\*b*",
-    "html": "<p><em><a href=\"http://example.test/a%5C*b\">http://example.test/a\\*b</a></em></p>\n"
+    "html": "<p><em><a href=\"http://example.test/a%5C*b\">http://example.test/a\\*b</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"http://example.test/a\\*b\">http://example.test/a\\*b</a></em></p>\n"
   },
   {
     "source": "**http://example.test.**",
@@ -245,11 +249,13 @@
   },
   {
     "source": "**http://example.test/[r]**",
-    "html": "<p><strong><a href=\"http://example.test/%5Br%5D\">http://example.test/[r]</a></strong></p>\n"
+    "html": "<p><strong><a href=\"http://example.test/%5Br%5D\">http://example.test/[r]</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"http://example.test/[r]\">http://example.test/[r]</a></strong></p>\n"
   },
   {
     "source": "**http://example.test/a\\*b**",
-    "html": "<p><strong><a href=\"http://example.test/a%5C*b\">http://example.test/a\\*b</a></strong></p>\n"
+    "html": "<p><strong><a href=\"http://example.test/a%5C*b\">http://example.test/a\\*b</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"http://example.test/a\\*b\">http://example.test/a\\*b</a></strong></p>\n"
   },
   {
     "source": "~~http://example.test~~",
@@ -293,11 +299,13 @@
   },
   {
     "source": "~~http://example.test/[r]~~",
-    "html": "<p><del><a href=\"http://example.test/%5Br%5D\">http://example.test/[r]</a></del></p>\n"
+    "html": "<p><del><a href=\"http://example.test/%5Br%5D\">http://example.test/[r]</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"http://example.test/[r]\">http://example.test/[r]</a></del></p>\n"
   },
   {
     "source": "~~http://example.test/a\\*b~~",
-    "html": "<p><del><a href=\"http://example.test/a%5C*b\">http://example.test/a\\*b</a></del></p>\n"
+    "html": "<p><del><a href=\"http://example.test/a%5C*b\">http://example.test/a\\*b</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"http://example.test/a\\*b\">http://example.test/a\\*b</a></del></p>\n"
   },
   {
     "source": "`http://example.test`",
@@ -533,11 +541,13 @@
   },
   {
     "source": "> http://example.test/[r]",
-    "html": "<blockquote>\n<p><a href=\"http://example.test/%5Br%5D\">http://example.test/[r]</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"http://example.test/%5Br%5D\">http://example.test/[r]</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"http://example.test/[r]\">http://example.test/[r]</a></p>\n</blockquote>\n"
   },
   {
     "source": "> http://example.test/a\\*b",
-    "html": "<blockquote>\n<p><a href=\"http://example.test/a%5C*b\">http://example.test/a\\*b</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"http://example.test/a%5C*b\">http://example.test/a\\*b</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"http://example.test/a\\*b\">http://example.test/a\\*b</a></p>\n</blockquote>\n"
   },
   {
     "source": "- http://example.test",
@@ -581,11 +591,13 @@
   },
   {
     "source": "- http://example.test/[r]",
-    "html": "<ul>\n<li><a href=\"http://example.test/%5Br%5D\">http://example.test/[r]</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"http://example.test/%5Br%5D\">http://example.test/[r]</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"http://example.test/[r]\">http://example.test/[r]</a></li>\n</ul>\n"
   },
   {
     "source": "- http://example.test/a\\*b",
-    "html": "<ul>\n<li><a href=\"http://example.test/a%5C*b\">http://example.test/a\\*b</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"http://example.test/a%5C*b\">http://example.test/a\\*b</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"http://example.test/a\\*b\">http://example.test/a\\*b</a></li>\n</ul>\n"
   },
   {
     "source": "https://example.test/a.",
@@ -625,11 +637,13 @@
   },
   {
     "source": "https://example.test/a/[r]",
-    "html": "<p><a href=\"https://example.test/a/%5Br%5D\">https://example.test/a/[r]</a></p>\n"
+    "html": "<p><a href=\"https://example.test/a/%5Br%5D\">https://example.test/a/[r]</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://example.test/a/[r]\">https://example.test/a/[r]</a></p>\n"
   },
   {
     "source": "https://example.test/a/a\\*b",
-    "html": "<p><a href=\"https://example.test/a/a%5C*b\">https://example.test/a/a\\*b</a></p>\n"
+    "html": "<p><a href=\"https://example.test/a/a%5C*b\">https://example.test/a/a\\*b</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://example.test/a/a\\*b\">https://example.test/a/a\\*b</a></p>\n"
   },
   {
     "source": "*https://example.test/a.*",
@@ -669,11 +683,13 @@
   },
   {
     "source": "*https://example.test/a/[r]*",
-    "html": "<p><em><a href=\"https://example.test/a/%5Br%5D\">https://example.test/a/[r]</a></em></p>\n"
+    "html": "<p><em><a href=\"https://example.test/a/%5Br%5D\">https://example.test/a/[r]</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://example.test/a/[r]\">https://example.test/a/[r]</a></em></p>\n"
   },
   {
     "source": "*https://example.test/a/a\\*b*",
-    "html": "<p><em><a href=\"https://example.test/a/a%5C*b\">https://example.test/a/a\\*b</a></em></p>\n"
+    "html": "<p><em><a href=\"https://example.test/a/a%5C*b\">https://example.test/a/a\\*b</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://example.test/a/a\\*b\">https://example.test/a/a\\*b</a></em></p>\n"
   },
   {
     "source": "**https://example.test/a.**",
@@ -713,11 +729,13 @@
   },
   {
     "source": "**https://example.test/a/[r]**",
-    "html": "<p><strong><a href=\"https://example.test/a/%5Br%5D\">https://example.test/a/[r]</a></strong></p>\n"
+    "html": "<p><strong><a href=\"https://example.test/a/%5Br%5D\">https://example.test/a/[r]</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://example.test/a/[r]\">https://example.test/a/[r]</a></strong></p>\n"
   },
   {
     "source": "**https://example.test/a/a\\*b**",
-    "html": "<p><strong><a href=\"https://example.test/a/a%5C*b\">https://example.test/a/a\\*b</a></strong></p>\n"
+    "html": "<p><strong><a href=\"https://example.test/a/a%5C*b\">https://example.test/a/a\\*b</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://example.test/a/a\\*b\">https://example.test/a/a\\*b</a></strong></p>\n"
   },
   {
     "source": "~~https://example.test/a~~",
@@ -761,11 +779,13 @@
   },
   {
     "source": "~~https://example.test/a/[r]~~",
-    "html": "<p><del><a href=\"https://example.test/a/%5Br%5D\">https://example.test/a/[r]</a></del></p>\n"
+    "html": "<p><del><a href=\"https://example.test/a/%5Br%5D\">https://example.test/a/[r]</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://example.test/a/[r]\">https://example.test/a/[r]</a></del></p>\n"
   },
   {
     "source": "~~https://example.test/a/a\\*b~~",
-    "html": "<p><del><a href=\"https://example.test/a/a%5C*b\">https://example.test/a/a\\*b</a></del></p>\n"
+    "html": "<p><del><a href=\"https://example.test/a/a%5C*b\">https://example.test/a/a\\*b</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://example.test/a/a\\*b\">https://example.test/a/a\\*b</a></del></p>\n"
   },
   {
     "source": "`https://example.test/a`",
@@ -1001,11 +1021,13 @@
   },
   {
     "source": "> https://example.test/a/[r]",
-    "html": "<blockquote>\n<p><a href=\"https://example.test/a/%5Br%5D\">https://example.test/a/[r]</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://example.test/a/%5Br%5D\">https://example.test/a/[r]</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://example.test/a/[r]\">https://example.test/a/[r]</a></p>\n</blockquote>\n"
   },
   {
     "source": "> https://example.test/a/a\\*b",
-    "html": "<blockquote>\n<p><a href=\"https://example.test/a/a%5C*b\">https://example.test/a/a\\*b</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://example.test/a/a%5C*b\">https://example.test/a/a\\*b</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://example.test/a/a\\*b\">https://example.test/a/a\\*b</a></p>\n</blockquote>\n"
   },
   {
     "source": "- https://example.test/a",
@@ -1049,11 +1071,13 @@
   },
   {
     "source": "- https://example.test/a/[r]",
-    "html": "<ul>\n<li><a href=\"https://example.test/a/%5Br%5D\">https://example.test/a/[r]</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://example.test/a/%5Br%5D\">https://example.test/a/[r]</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://example.test/a/[r]\">https://example.test/a/[r]</a></li>\n</ul>\n"
   },
   {
     "source": "- https://example.test/a/a\\*b",
-    "html": "<ul>\n<li><a href=\"https://example.test/a/a%5C*b\">https://example.test/a/a\\*b</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://example.test/a/a%5C*b\">https://example.test/a/a\\*b</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://example.test/a/a\\*b\">https://example.test/a/a\\*b</a></li>\n</ul>\n"
   },
   {
     "source": "FTP://example.test/a.",
@@ -1093,11 +1117,13 @@
   },
   {
     "source": "FTP://example.test/a/[r]",
-    "html": "<p><a href=\"FTP://example.test/a/%5Br%5D\">FTP://example.test/a/[r]</a></p>\n"
+    "html": "<p><a href=\"FTP://example.test/a/%5Br%5D\">FTP://example.test/a/[r]</a></p>\n",
+    "nativeHtml": "<p><a href=\"FTP://example.test/a/[r]\">FTP://example.test/a/[r]</a></p>\n"
   },
   {
     "source": "FTP://example.test/a/a\\*b",
-    "html": "<p><a href=\"FTP://example.test/a/a%5C*b\">FTP://example.test/a/a\\*b</a></p>\n"
+    "html": "<p><a href=\"FTP://example.test/a/a%5C*b\">FTP://example.test/a/a\\*b</a></p>\n",
+    "nativeHtml": "<p><a href=\"FTP://example.test/a/a\\*b\">FTP://example.test/a/a\\*b</a></p>\n"
   },
   {
     "source": "*FTP://example.test/a.*",
@@ -1137,11 +1163,13 @@
   },
   {
     "source": "*FTP://example.test/a/[r]*",
-    "html": "<p><em><a href=\"FTP://example.test/a/%5Br%5D\">FTP://example.test/a/[r]</a></em></p>\n"
+    "html": "<p><em><a href=\"FTP://example.test/a/%5Br%5D\">FTP://example.test/a/[r]</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"FTP://example.test/a/[r]\">FTP://example.test/a/[r]</a></em></p>\n"
   },
   {
     "source": "*FTP://example.test/a/a\\*b*",
-    "html": "<p><em><a href=\"FTP://example.test/a/a%5C*b\">FTP://example.test/a/a\\*b</a></em></p>\n"
+    "html": "<p><em><a href=\"FTP://example.test/a/a%5C*b\">FTP://example.test/a/a\\*b</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"FTP://example.test/a/a\\*b\">FTP://example.test/a/a\\*b</a></em></p>\n"
   },
   {
     "source": "**FTP://example.test/a.**",
@@ -1181,11 +1209,13 @@
   },
   {
     "source": "**FTP://example.test/a/[r]**",
-    "html": "<p><strong><a href=\"FTP://example.test/a/%5Br%5D\">FTP://example.test/a/[r]</a></strong></p>\n"
+    "html": "<p><strong><a href=\"FTP://example.test/a/%5Br%5D\">FTP://example.test/a/[r]</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"FTP://example.test/a/[r]\">FTP://example.test/a/[r]</a></strong></p>\n"
   },
   {
     "source": "**FTP://example.test/a/a\\*b**",
-    "html": "<p><strong><a href=\"FTP://example.test/a/a%5C*b\">FTP://example.test/a/a\\*b</a></strong></p>\n"
+    "html": "<p><strong><a href=\"FTP://example.test/a/a%5C*b\">FTP://example.test/a/a\\*b</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"FTP://example.test/a/a\\*b\">FTP://example.test/a/a\\*b</a></strong></p>\n"
   },
   {
     "source": "~~FTP://example.test/a~~",
@@ -1229,11 +1259,13 @@
   },
   {
     "source": "~~FTP://example.test/a/[r]~~",
-    "html": "<p><del><a href=\"FTP://example.test/a/%5Br%5D\">FTP://example.test/a/[r]</a></del></p>\n"
+    "html": "<p><del><a href=\"FTP://example.test/a/%5Br%5D\">FTP://example.test/a/[r]</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"FTP://example.test/a/[r]\">FTP://example.test/a/[r]</a></del></p>\n"
   },
   {
     "source": "~~FTP://example.test/a/a\\*b~~",
-    "html": "<p><del><a href=\"FTP://example.test/a/a%5C*b\">FTP://example.test/a/a\\*b</a></del></p>\n"
+    "html": "<p><del><a href=\"FTP://example.test/a/a%5C*b\">FTP://example.test/a/a\\*b</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"FTP://example.test/a/a\\*b\">FTP://example.test/a/a\\*b</a></del></p>\n"
   },
   {
     "source": "`FTP://example.test/a`",
@@ -1469,11 +1501,13 @@
   },
   {
     "source": "> FTP://example.test/a/[r]",
-    "html": "<blockquote>\n<p><a href=\"FTP://example.test/a/%5Br%5D\">FTP://example.test/a/[r]</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"FTP://example.test/a/%5Br%5D\">FTP://example.test/a/[r]</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"FTP://example.test/a/[r]\">FTP://example.test/a/[r]</a></p>\n</blockquote>\n"
   },
   {
     "source": "> FTP://example.test/a/a\\*b",
-    "html": "<blockquote>\n<p><a href=\"FTP://example.test/a/a%5C*b\">FTP://example.test/a/a\\*b</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"FTP://example.test/a/a%5C*b\">FTP://example.test/a/a\\*b</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"FTP://example.test/a/a\\*b\">FTP://example.test/a/a\\*b</a></p>\n</blockquote>\n"
   },
   {
     "source": "- FTP://example.test/a",
@@ -1517,11 +1551,13 @@
   },
   {
     "source": "- FTP://example.test/a/[r]",
-    "html": "<ul>\n<li><a href=\"FTP://example.test/a/%5Br%5D\">FTP://example.test/a/[r]</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"FTP://example.test/a/%5Br%5D\">FTP://example.test/a/[r]</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"FTP://example.test/a/[r]\">FTP://example.test/a/[r]</a></li>\n</ul>\n"
   },
   {
     "source": "- FTP://example.test/a/a\\*b",
-    "html": "<ul>\n<li><a href=\"FTP://example.test/a/a%5C*b\">FTP://example.test/a/a\\*b</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"FTP://example.test/a/a%5C*b\">FTP://example.test/a/a\\*b</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"FTP://example.test/a/a\\*b\">FTP://example.test/a/a\\*b</a></li>\n</ul>\n"
   },
   {
     "source": "www.example.test.",
@@ -1561,11 +1597,13 @@
   },
   {
     "source": "www.example.test/[r]",
-    "html": "<p><a href=\"http://www.example.test/%5Br%5D\">www.example.test/[r]</a></p>\n"
+    "html": "<p><a href=\"http://www.example.test/%5Br%5D\">www.example.test/[r]</a></p>\n",
+    "nativeHtml": "<p><a href=\"http://www.example.test/[r]\">www.example.test/[r]</a></p>\n"
   },
   {
     "source": "www.example.test/a\\*b",
-    "html": "<p><a href=\"http://www.example.test/a%5C*b\">www.example.test/a\\*b</a></p>\n"
+    "html": "<p><a href=\"http://www.example.test/a%5C*b\">www.example.test/a\\*b</a></p>\n",
+    "nativeHtml": "<p><a href=\"http://www.example.test/a\\*b\">www.example.test/a\\*b</a></p>\n"
   },
   {
     "source": "*www.example.test.*",
@@ -1605,11 +1643,13 @@
   },
   {
     "source": "*www.example.test/[r]*",
-    "html": "<p><em><a href=\"http://www.example.test/%5Br%5D\">www.example.test/[r]</a></em></p>\n"
+    "html": "<p><em><a href=\"http://www.example.test/%5Br%5D\">www.example.test/[r]</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"http://www.example.test/[r]\">www.example.test/[r]</a></em></p>\n"
   },
   {
     "source": "*www.example.test/a\\*b*",
-    "html": "<p><em><a href=\"http://www.example.test/a%5C*b\">www.example.test/a\\*b</a></em></p>\n"
+    "html": "<p><em><a href=\"http://www.example.test/a%5C*b\">www.example.test/a\\*b</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"http://www.example.test/a\\*b\">www.example.test/a\\*b</a></em></p>\n"
   },
   {
     "source": "**www.example.test.**",
@@ -1649,11 +1689,13 @@
   },
   {
     "source": "**www.example.test/[r]**",
-    "html": "<p><strong><a href=\"http://www.example.test/%5Br%5D\">www.example.test/[r]</a></strong></p>\n"
+    "html": "<p><strong><a href=\"http://www.example.test/%5Br%5D\">www.example.test/[r]</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"http://www.example.test/[r]\">www.example.test/[r]</a></strong></p>\n"
   },
   {
     "source": "**www.example.test/a\\*b**",
-    "html": "<p><strong><a href=\"http://www.example.test/a%5C*b\">www.example.test/a\\*b</a></strong></p>\n"
+    "html": "<p><strong><a href=\"http://www.example.test/a%5C*b\">www.example.test/a\\*b</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"http://www.example.test/a\\*b\">www.example.test/a\\*b</a></strong></p>\n"
   },
   {
     "source": "~~www.example.test~~",
@@ -1697,11 +1739,13 @@
   },
   {
     "source": "~~www.example.test/[r]~~",
-    "html": "<p><del><a href=\"http://www.example.test/%5Br%5D\">www.example.test/[r]</a></del></p>\n"
+    "html": "<p><del><a href=\"http://www.example.test/%5Br%5D\">www.example.test/[r]</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"http://www.example.test/[r]\">www.example.test/[r]</a></del></p>\n"
   },
   {
     "source": "~~www.example.test/a\\*b~~",
-    "html": "<p><del><a href=\"http://www.example.test/a%5C*b\">www.example.test/a\\*b</a></del></p>\n"
+    "html": "<p><del><a href=\"http://www.example.test/a%5C*b\">www.example.test/a\\*b</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"http://www.example.test/a\\*b\">www.example.test/a\\*b</a></del></p>\n"
   },
   {
     "source": "`www.example.test`",
@@ -1937,11 +1981,13 @@
   },
   {
     "source": "> www.example.test/[r]",
-    "html": "<blockquote>\n<p><a href=\"http://www.example.test/%5Br%5D\">www.example.test/[r]</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"http://www.example.test/%5Br%5D\">www.example.test/[r]</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"http://www.example.test/[r]\">www.example.test/[r]</a></p>\n</blockquote>\n"
   },
   {
     "source": "> www.example.test/a\\*b",
-    "html": "<blockquote>\n<p><a href=\"http://www.example.test/a%5C*b\">www.example.test/a\\*b</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"http://www.example.test/a%5C*b\">www.example.test/a\\*b</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"http://www.example.test/a\\*b\">www.example.test/a\\*b</a></p>\n</blockquote>\n"
   },
   {
     "source": "- www.example.test",
@@ -1985,11 +2031,13 @@
   },
   {
     "source": "- www.example.test/[r]",
-    "html": "<ul>\n<li><a href=\"http://www.example.test/%5Br%5D\">www.example.test/[r]</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"http://www.example.test/%5Br%5D\">www.example.test/[r]</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"http://www.example.test/[r]\">www.example.test/[r]</a></li>\n</ul>\n"
   },
   {
     "source": "- www.example.test/a\\*b",
-    "html": "<ul>\n<li><a href=\"http://www.example.test/a%5C*b\">www.example.test/a\\*b</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"http://www.example.test/a%5C*b\">www.example.test/a\\*b</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"http://www.example.test/a\\*b\">www.example.test/a\\*b</a></li>\n</ul>\n"
   },
   {
     "source": "a@example.test.",
@@ -2501,11 +2549,13 @@
   },
   {
     "source": "https://x.test/a_b/[r]",
-    "html": "<p><a href=\"https://x.test/a_b/%5Br%5D\">https://x.test/a_b/[r]</a></p>\n"
+    "html": "<p><a href=\"https://x.test/a_b/%5Br%5D\">https://x.test/a_b/[r]</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/a_b/[r]\">https://x.test/a_b/[r]</a></p>\n"
   },
   {
     "source": "https://x.test/a_b/a\\*b",
-    "html": "<p><a href=\"https://x.test/a_b/a%5C*b\">https://x.test/a_b/a\\*b</a></p>\n"
+    "html": "<p><a href=\"https://x.test/a_b/a%5C*b\">https://x.test/a_b/a\\*b</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/a_b/a\\*b\">https://x.test/a_b/a\\*b</a></p>\n"
   },
   {
     "source": "*https://x.test/a_b*",
@@ -2549,11 +2599,13 @@
   },
   {
     "source": "*https://x.test/a_b/[r]*",
-    "html": "<p><em><a href=\"https://x.test/a_b/%5Br%5D\">https://x.test/a_b/[r]</a></em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/a_b/%5Br%5D\">https://x.test/a_b/[r]</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/a_b/[r]\">https://x.test/a_b/[r]</a></em></p>\n"
   },
   {
     "source": "*https://x.test/a_b/a\\*b*",
-    "html": "<p><em><a href=\"https://x.test/a_b/a%5C*b\">https://x.test/a_b/a\\*b</a></em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/a_b/a%5C*b\">https://x.test/a_b/a\\*b</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/a_b/a\\*b\">https://x.test/a_b/a\\*b</a></em></p>\n"
   },
   {
     "source": "**https://x.test/a_b**",
@@ -2597,11 +2649,13 @@
   },
   {
     "source": "**https://x.test/a_b/[r]**",
-    "html": "<p><strong><a href=\"https://x.test/a_b/%5Br%5D\">https://x.test/a_b/[r]</a></strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/a_b/%5Br%5D\">https://x.test/a_b/[r]</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/a_b/[r]\">https://x.test/a_b/[r]</a></strong></p>\n"
   },
   {
     "source": "**https://x.test/a_b/a\\*b**",
-    "html": "<p><strong><a href=\"https://x.test/a_b/a%5C*b\">https://x.test/a_b/a\\*b</a></strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/a_b/a%5C*b\">https://x.test/a_b/a\\*b</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/a_b/a\\*b\">https://x.test/a_b/a\\*b</a></strong></p>\n"
   },
   {
     "source": "~~https://x.test/a_b~~",
@@ -2645,11 +2699,13 @@
   },
   {
     "source": "~~https://x.test/a_b/[r]~~",
-    "html": "<p><del><a href=\"https://x.test/a_b/%5Br%5D\">https://x.test/a_b/[r]</a></del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/a_b/%5Br%5D\">https://x.test/a_b/[r]</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/a_b/[r]\">https://x.test/a_b/[r]</a></del></p>\n"
   },
   {
     "source": "~~https://x.test/a_b/a\\*b~~",
-    "html": "<p><del><a href=\"https://x.test/a_b/a%5C*b\">https://x.test/a_b/a\\*b</a></del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/a_b/a%5C*b\">https://x.test/a_b/a\\*b</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/a_b/a\\*b\">https://x.test/a_b/a\\*b</a></del></p>\n"
   },
   {
     "source": "`https://x.test/a_b`",
@@ -2885,11 +2941,13 @@
   },
   {
     "source": "> https://x.test/a_b/[r]",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/a_b/%5Br%5D\">https://x.test/a_b/[r]</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/a_b/%5Br%5D\">https://x.test/a_b/[r]</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/a_b/[r]\">https://x.test/a_b/[r]</a></p>\n</blockquote>\n"
   },
   {
     "source": "> https://x.test/a_b/a\\*b",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/a_b/a%5C*b\">https://x.test/a_b/a\\*b</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/a_b/a%5C*b\">https://x.test/a_b/a\\*b</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/a_b/a\\*b\">https://x.test/a_b/a\\*b</a></p>\n</blockquote>\n"
   },
   {
     "source": "- https://x.test/a_b",
@@ -2933,203 +2991,253 @@
   },
   {
     "source": "- https://x.test/a_b/[r]",
-    "html": "<ul>\n<li><a href=\"https://x.test/a_b/%5Br%5D\">https://x.test/a_b/[r]</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/a_b/%5Br%5D\">https://x.test/a_b/[r]</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/a_b/[r]\">https://x.test/a_b/[r]</a></li>\n</ul>\n"
   },
   {
     "source": "- https://x.test/a_b/a\\*b",
-    "html": "<ul>\n<li><a href=\"https://x.test/a_b/a%5C*b\">https://x.test/a_b/a\\*b</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/a_b/a%5C*b\">https://x.test/a_b/a\\*b</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/a_b/a\\*b\">https://x.test/a_b/a\\*b</a></li>\n</ul>\n"
   },
   {
     "source": "https://x.test/a\\_b",
-    "html": "<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a></p>\n"
+    "html": "<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a></p>\n"
   },
   {
     "source": "https://x.test/a\\_b.",
-    "html": "<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>.</p>\n"
+    "html": "<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>.</p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>.</p>\n"
   },
   {
     "source": "https://x.test/a\\_b,",
-    "html": "<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>,</p>\n"
+    "html": "<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>,</p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>,</p>\n"
   },
   {
     "source": "https://x.test/a\\_b!",
-    "html": "<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>!</p>\n"
+    "html": "<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>!</p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>!</p>\n"
   },
   {
     "source": "https://x.test/a\\_b)",
-    "html": "<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>)</p>\n"
+    "html": "<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>)</p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>)</p>\n"
   },
   {
     "source": "https://x.test/a\\_b);",
-    "html": "<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>);</p>\n"
+    "html": "<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>);</p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>);</p>\n"
   },
   {
     "source": "https://x.test/a\\_b*",
-    "html": "<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>*</p>\n"
+    "html": "<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>*</p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>*</p>\n"
   },
   {
     "source": "https://x.test/a\\_b_",
-    "html": "<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>_</p>\n"
+    "html": "<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>_</p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>_</p>\n"
   },
   {
     "source": "https://x.test/a\\_b&amp;",
-    "html": "<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>&amp;</p>\n"
+    "html": "<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>&amp;</p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>&amp;</p>\n"
   },
   {
     "source": "https://x.test/a\\_b?q=1",
-    "html": "<p><a href=\"https://x.test/a%5C_b?q=1\">https://x.test/a\\_b?q=1</a></p>\n"
+    "html": "<p><a href=\"https://x.test/a%5C_b?q=1\">https://x.test/a\\_b?q=1</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/a\\_b?q=1\">https://x.test/a\\_b?q=1</a></p>\n"
   },
   {
     "source": "https://x.test/a\\_b/[r]",
-    "html": "<p><a href=\"https://x.test/a%5C_b/%5Br%5D\">https://x.test/a\\_b/[r]</a></p>\n"
+    "html": "<p><a href=\"https://x.test/a%5C_b/%5Br%5D\">https://x.test/a\\_b/[r]</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/a\\_b/[r]\">https://x.test/a\\_b/[r]</a></p>\n"
   },
   {
     "source": "https://x.test/a\\_b/a\\*b",
-    "html": "<p><a href=\"https://x.test/a%5C_b/a%5C*b\">https://x.test/a\\_b/a\\*b</a></p>\n"
+    "html": "<p><a href=\"https://x.test/a%5C_b/a%5C*b\">https://x.test/a\\_b/a\\*b</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/a\\_b/a\\*b\">https://x.test/a\\_b/a\\*b</a></p>\n"
   },
   {
     "source": "*https://x.test/a\\_b*",
-    "html": "<p><em><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a></em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a></em></p>\n"
   },
   {
     "source": "*https://x.test/a\\_b.*",
-    "html": "<p><em><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>.</em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>.</em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>.</em></p>\n"
   },
   {
     "source": "*https://x.test/a\\_b,*",
-    "html": "<p><em><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>,</em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>,</em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>,</em></p>\n"
   },
   {
     "source": "*https://x.test/a\\_b!*",
-    "html": "<p><em><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>!</em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>!</em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>!</em></p>\n"
   },
   {
     "source": "*https://x.test/a\\_b)*",
-    "html": "<p><em><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>)</em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>)</em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>)</em></p>\n"
   },
   {
     "source": "*https://x.test/a\\_b);*",
-    "html": "<p><em><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>);</em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>);</em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>);</em></p>\n"
   },
   {
     "source": "*https://x.test/a\\_b**",
-    "html": "<p><em><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a></em>*</p>\n"
+    "html": "<p><em><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a></em>*</p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a></em>*</p>\n"
   },
   {
     "source": "*https://x.test/a\\_b_*",
-    "html": "<p><em><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>_</em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>_</em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>_</em></p>\n"
   },
   {
     "source": "*https://x.test/a\\_b&amp;*",
-    "html": "<p><em><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>&amp;</em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>&amp;</em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>&amp;</em></p>\n"
   },
   {
     "source": "*https://x.test/a\\_b?q=1*",
-    "html": "<p><em><a href=\"https://x.test/a%5C_b?q=1\">https://x.test/a\\_b?q=1</a></em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/a%5C_b?q=1\">https://x.test/a\\_b?q=1</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/a\\_b?q=1\">https://x.test/a\\_b?q=1</a></em></p>\n"
   },
   {
     "source": "*https://x.test/a\\_b/[r]*",
-    "html": "<p><em><a href=\"https://x.test/a%5C_b/%5Br%5D\">https://x.test/a\\_b/[r]</a></em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/a%5C_b/%5Br%5D\">https://x.test/a\\_b/[r]</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/a\\_b/[r]\">https://x.test/a\\_b/[r]</a></em></p>\n"
   },
   {
     "source": "*https://x.test/a\\_b/a\\*b*",
-    "html": "<p><em><a href=\"https://x.test/a%5C_b/a%5C*b\">https://x.test/a\\_b/a\\*b</a></em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/a%5C_b/a%5C*b\">https://x.test/a\\_b/a\\*b</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/a\\_b/a\\*b\">https://x.test/a\\_b/a\\*b</a></em></p>\n"
   },
   {
     "source": "**https://x.test/a\\_b**",
-    "html": "<p><strong><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a></strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a></strong></p>\n"
   },
   {
     "source": "**https://x.test/a\\_b.**",
-    "html": "<p><strong><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>.</strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>.</strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>.</strong></p>\n"
   },
   {
     "source": "**https://x.test/a\\_b,**",
-    "html": "<p><strong><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>,</strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>,</strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>,</strong></p>\n"
   },
   {
     "source": "**https://x.test/a\\_b!**",
-    "html": "<p><strong><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>!</strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>!</strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>!</strong></p>\n"
   },
   {
     "source": "**https://x.test/a\\_b)**",
-    "html": "<p><strong><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>)</strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>)</strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>)</strong></p>\n"
   },
   {
     "source": "**https://x.test/a\\_b);**",
-    "html": "<p><strong><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>);</strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>);</strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>);</strong></p>\n"
   },
   {
     "source": "**https://x.test/a\\_b***",
-    "html": "<p><strong><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a></strong>*</p>\n"
+    "html": "<p><strong><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a></strong>*</p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a></strong>*</p>\n"
   },
   {
     "source": "**https://x.test/a\\_b_**",
-    "html": "<p><strong><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>_</strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>_</strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>_</strong></p>\n"
   },
   {
     "source": "**https://x.test/a\\_b&amp;**",
-    "html": "<p><strong><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>&amp;</strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>&amp;</strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>&amp;</strong></p>\n"
   },
   {
     "source": "**https://x.test/a\\_b?q=1**",
-    "html": "<p><strong><a href=\"https://x.test/a%5C_b?q=1\">https://x.test/a\\_b?q=1</a></strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/a%5C_b?q=1\">https://x.test/a\\_b?q=1</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/a\\_b?q=1\">https://x.test/a\\_b?q=1</a></strong></p>\n"
   },
   {
     "source": "**https://x.test/a\\_b/[r]**",
-    "html": "<p><strong><a href=\"https://x.test/a%5C_b/%5Br%5D\">https://x.test/a\\_b/[r]</a></strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/a%5C_b/%5Br%5D\">https://x.test/a\\_b/[r]</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/a\\_b/[r]\">https://x.test/a\\_b/[r]</a></strong></p>\n"
   },
   {
     "source": "**https://x.test/a\\_b/a\\*b**",
-    "html": "<p><strong><a href=\"https://x.test/a%5C_b/a%5C*b\">https://x.test/a\\_b/a\\*b</a></strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/a%5C_b/a%5C*b\">https://x.test/a\\_b/a\\*b</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/a\\_b/a\\*b\">https://x.test/a\\_b/a\\*b</a></strong></p>\n"
   },
   {
     "source": "~~https://x.test/a\\_b~~",
-    "html": "<p><del><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a></del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a></del></p>\n"
   },
   {
     "source": "~~https://x.test/a\\_b.~~",
-    "html": "<p><del><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>.</del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>.</del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>.</del></p>\n"
   },
   {
     "source": "~~https://x.test/a\\_b,~~",
-    "html": "<p><del><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>,</del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>,</del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>,</del></p>\n"
   },
   {
     "source": "~~https://x.test/a\\_b!~~",
-    "html": "<p><del><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>!</del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>!</del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>!</del></p>\n"
   },
   {
     "source": "~~https://x.test/a\\_b)~~",
-    "html": "<p><del><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>)</del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>)</del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>)</del></p>\n"
   },
   {
     "source": "~~https://x.test/a\\_b);~~",
-    "html": "<p><del><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>);</del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>);</del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>);</del></p>\n"
   },
   {
     "source": "~~https://x.test/a\\_b*~~",
-    "html": "<p><del><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>*</del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>*</del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>*</del></p>\n"
   },
   {
     "source": "~~https://x.test/a\\_b_~~",
-    "html": "<p><del><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>_</del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>_</del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>_</del></p>\n"
   },
   {
     "source": "~~https://x.test/a\\_b&amp;~~",
-    "html": "<p><del><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>&amp;</del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>&amp;</del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>&amp;</del></p>\n"
   },
   {
     "source": "~~https://x.test/a\\_b?q=1~~",
-    "html": "<p><del><a href=\"https://x.test/a%5C_b?q=1\">https://x.test/a\\_b?q=1</a></del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/a%5C_b?q=1\">https://x.test/a\\_b?q=1</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/a\\_b?q=1\">https://x.test/a\\_b?q=1</a></del></p>\n"
   },
   {
     "source": "~~https://x.test/a\\_b/[r]~~",
-    "html": "<p><del><a href=\"https://x.test/a%5C_b/%5Br%5D\">https://x.test/a\\_b/[r]</a></del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/a%5C_b/%5Br%5D\">https://x.test/a\\_b/[r]</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/a\\_b/[r]\">https://x.test/a\\_b/[r]</a></del></p>\n"
   },
   {
     "source": "~~https://x.test/a\\_b/a\\*b~~",
-    "html": "<p><del><a href=\"https://x.test/a%5C_b/a%5C*b\">https://x.test/a\\_b/a\\*b</a></del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/a%5C_b/a%5C*b\">https://x.test/a\\_b/a\\*b</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/a\\_b/a\\*b\">https://x.test/a\\_b/a\\*b</a></del></p>\n"
   },
   {
     "source": "`https://x.test/a\\_b`",
@@ -3325,99 +3433,123 @@
   },
   {
     "source": "> https://x.test/a\\_b",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a></p>\n</blockquote>\n"
   },
   {
     "source": "> https://x.test/a\\_b.",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>.</p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>.</p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>.</p>\n</blockquote>\n"
   },
   {
     "source": "> https://x.test/a\\_b,",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>,</p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>,</p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>,</p>\n</blockquote>\n"
   },
   {
     "source": "> https://x.test/a\\_b!",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>!</p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>!</p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>!</p>\n</blockquote>\n"
   },
   {
     "source": "> https://x.test/a\\_b)",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>)</p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>)</p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>)</p>\n</blockquote>\n"
   },
   {
     "source": "> https://x.test/a\\_b);",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>);</p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>);</p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>);</p>\n</blockquote>\n"
   },
   {
     "source": "> https://x.test/a\\_b*",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>*</p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>*</p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>*</p>\n</blockquote>\n"
   },
   {
     "source": "> https://x.test/a\\_b_",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>_</p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>_</p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>_</p>\n</blockquote>\n"
   },
   {
     "source": "> https://x.test/a\\_b&amp;",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>&amp;</p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>&amp;</p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>&amp;</p>\n</blockquote>\n"
   },
   {
     "source": "> https://x.test/a\\_b?q=1",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/a%5C_b?q=1\">https://x.test/a\\_b?q=1</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/a%5C_b?q=1\">https://x.test/a\\_b?q=1</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/a\\_b?q=1\">https://x.test/a\\_b?q=1</a></p>\n</blockquote>\n"
   },
   {
     "source": "> https://x.test/a\\_b/[r]",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/a%5C_b/%5Br%5D\">https://x.test/a\\_b/[r]</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/a%5C_b/%5Br%5D\">https://x.test/a\\_b/[r]</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/a\\_b/[r]\">https://x.test/a\\_b/[r]</a></p>\n</blockquote>\n"
   },
   {
     "source": "> https://x.test/a\\_b/a\\*b",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/a%5C_b/a%5C*b\">https://x.test/a\\_b/a\\*b</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/a%5C_b/a%5C*b\">https://x.test/a\\_b/a\\*b</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/a\\_b/a\\*b\">https://x.test/a\\_b/a\\*b</a></p>\n</blockquote>\n"
   },
   {
     "source": "- https://x.test/a\\_b",
-    "html": "<ul>\n<li><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a></li>\n</ul>\n"
   },
   {
     "source": "- https://x.test/a\\_b.",
-    "html": "<ul>\n<li><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>.</li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>.</li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>.</li>\n</ul>\n"
   },
   {
     "source": "- https://x.test/a\\_b,",
-    "html": "<ul>\n<li><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>,</li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>,</li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>,</li>\n</ul>\n"
   },
   {
     "source": "- https://x.test/a\\_b!",
-    "html": "<ul>\n<li><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>!</li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>!</li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>!</li>\n</ul>\n"
   },
   {
     "source": "- https://x.test/a\\_b)",
-    "html": "<ul>\n<li><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>)</li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>)</li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>)</li>\n</ul>\n"
   },
   {
     "source": "- https://x.test/a\\_b);",
-    "html": "<ul>\n<li><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>);</li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>);</li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>);</li>\n</ul>\n"
   },
   {
     "source": "- https://x.test/a\\_b*",
-    "html": "<ul>\n<li><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>*</li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>*</li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>*</li>\n</ul>\n"
   },
   {
     "source": "- https://x.test/a\\_b_",
-    "html": "<ul>\n<li><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>_</li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>_</li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>_</li>\n</ul>\n"
   },
   {
     "source": "- https://x.test/a\\_b&amp;",
-    "html": "<ul>\n<li><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>&amp;</li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/a%5C_b\">https://x.test/a\\_b</a>&amp;</li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/a\\_b\">https://x.test/a\\_b</a>&amp;</li>\n</ul>\n"
   },
   {
     "source": "- https://x.test/a\\_b?q=1",
-    "html": "<ul>\n<li><a href=\"https://x.test/a%5C_b?q=1\">https://x.test/a\\_b?q=1</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/a%5C_b?q=1\">https://x.test/a\\_b?q=1</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/a\\_b?q=1\">https://x.test/a\\_b?q=1</a></li>\n</ul>\n"
   },
   {
     "source": "- https://x.test/a\\_b/[r]",
-    "html": "<ul>\n<li><a href=\"https://x.test/a%5C_b/%5Br%5D\">https://x.test/a\\_b/[r]</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/a%5C_b/%5Br%5D\">https://x.test/a\\_b/[r]</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/a\\_b/[r]\">https://x.test/a\\_b/[r]</a></li>\n</ul>\n"
   },
   {
     "source": "- https://x.test/a\\_b/a\\*b",
-    "html": "<ul>\n<li><a href=\"https://x.test/a%5C_b/a%5C*b\">https://x.test/a\\_b/a\\*b</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/a%5C_b/a%5C*b\">https://x.test/a\\_b/a\\*b</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/a\\_b/a\\*b\">https://x.test/a\\_b/a\\*b</a></li>\n</ul>\n"
   },
   {
     "source": "https://x.test/?a=1&amp;b=2",
@@ -3461,11 +3593,13 @@
   },
   {
     "source": "https://x.test/?a=1&amp;b=2/[r]",
-    "html": "<p><a href=\"https://x.test/?a=1&amp;amp;b=2/%5Br%5D\">https://x.test/?a=1&amp;amp;b=2/[r]</a></p>\n"
+    "html": "<p><a href=\"https://x.test/?a=1&amp;amp;b=2/%5Br%5D\">https://x.test/?a=1&amp;amp;b=2/[r]</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/?a=1&amp;amp;b=2/[r]\">https://x.test/?a=1&amp;amp;b=2/[r]</a></p>\n"
   },
   {
     "source": "https://x.test/?a=1&amp;b=2/a\\*b",
-    "html": "<p><a href=\"https://x.test/?a=1&amp;amp;b=2/a%5C*b\">https://x.test/?a=1&amp;amp;b=2/a\\*b</a></p>\n"
+    "html": "<p><a href=\"https://x.test/?a=1&amp;amp;b=2/a%5C*b\">https://x.test/?a=1&amp;amp;b=2/a\\*b</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/?a=1&amp;amp;b=2/a\\*b\">https://x.test/?a=1&amp;amp;b=2/a\\*b</a></p>\n"
   },
   {
     "source": "*https://x.test/?a=1&amp;b=2*",
@@ -3509,11 +3643,13 @@
   },
   {
     "source": "*https://x.test/?a=1&amp;b=2/[r]*",
-    "html": "<p><em><a href=\"https://x.test/?a=1&amp;amp;b=2/%5Br%5D\">https://x.test/?a=1&amp;amp;b=2/[r]</a></em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/?a=1&amp;amp;b=2/%5Br%5D\">https://x.test/?a=1&amp;amp;b=2/[r]</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/?a=1&amp;amp;b=2/[r]\">https://x.test/?a=1&amp;amp;b=2/[r]</a></em></p>\n"
   },
   {
     "source": "*https://x.test/?a=1&amp;b=2/a\\*b*",
-    "html": "<p><em><a href=\"https://x.test/?a=1&amp;amp;b=2/a%5C*b\">https://x.test/?a=1&amp;amp;b=2/a\\*b</a></em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/?a=1&amp;amp;b=2/a%5C*b\">https://x.test/?a=1&amp;amp;b=2/a\\*b</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/?a=1&amp;amp;b=2/a\\*b\">https://x.test/?a=1&amp;amp;b=2/a\\*b</a></em></p>\n"
   },
   {
     "source": "**https://x.test/?a=1&amp;b=2**",
@@ -3557,11 +3693,13 @@
   },
   {
     "source": "**https://x.test/?a=1&amp;b=2/[r]**",
-    "html": "<p><strong><a href=\"https://x.test/?a=1&amp;amp;b=2/%5Br%5D\">https://x.test/?a=1&amp;amp;b=2/[r]</a></strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/?a=1&amp;amp;b=2/%5Br%5D\">https://x.test/?a=1&amp;amp;b=2/[r]</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/?a=1&amp;amp;b=2/[r]\">https://x.test/?a=1&amp;amp;b=2/[r]</a></strong></p>\n"
   },
   {
     "source": "**https://x.test/?a=1&amp;b=2/a\\*b**",
-    "html": "<p><strong><a href=\"https://x.test/?a=1&amp;amp;b=2/a%5C*b\">https://x.test/?a=1&amp;amp;b=2/a\\*b</a></strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/?a=1&amp;amp;b=2/a%5C*b\">https://x.test/?a=1&amp;amp;b=2/a\\*b</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/?a=1&amp;amp;b=2/a\\*b\">https://x.test/?a=1&amp;amp;b=2/a\\*b</a></strong></p>\n"
   },
   {
     "source": "~~https://x.test/?a=1&amp;b=2~~",
@@ -3605,11 +3743,13 @@
   },
   {
     "source": "~~https://x.test/?a=1&amp;b=2/[r]~~",
-    "html": "<p><del><a href=\"https://x.test/?a=1&amp;amp;b=2/%5Br%5D\">https://x.test/?a=1&amp;amp;b=2/[r]</a></del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/?a=1&amp;amp;b=2/%5Br%5D\">https://x.test/?a=1&amp;amp;b=2/[r]</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/?a=1&amp;amp;b=2/[r]\">https://x.test/?a=1&amp;amp;b=2/[r]</a></del></p>\n"
   },
   {
     "source": "~~https://x.test/?a=1&amp;b=2/a\\*b~~",
-    "html": "<p><del><a href=\"https://x.test/?a=1&amp;amp;b=2/a%5C*b\">https://x.test/?a=1&amp;amp;b=2/a\\*b</a></del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/?a=1&amp;amp;b=2/a%5C*b\">https://x.test/?a=1&amp;amp;b=2/a\\*b</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/?a=1&amp;amp;b=2/a\\*b\">https://x.test/?a=1&amp;amp;b=2/a\\*b</a></del></p>\n"
   },
   {
     "source": "`https://x.test/?a=1&amp;b=2`",
@@ -3845,11 +3985,13 @@
   },
   {
     "source": "> https://x.test/?a=1&amp;b=2/[r]",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/?a=1&amp;amp;b=2/%5Br%5D\">https://x.test/?a=1&amp;amp;b=2/[r]</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/?a=1&amp;amp;b=2/%5Br%5D\">https://x.test/?a=1&amp;amp;b=2/[r]</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/?a=1&amp;amp;b=2/[r]\">https://x.test/?a=1&amp;amp;b=2/[r]</a></p>\n</blockquote>\n"
   },
   {
     "source": "> https://x.test/?a=1&amp;b=2/a\\*b",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/?a=1&amp;amp;b=2/a%5C*b\">https://x.test/?a=1&amp;amp;b=2/a\\*b</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/?a=1&amp;amp;b=2/a%5C*b\">https://x.test/?a=1&amp;amp;b=2/a\\*b</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/?a=1&amp;amp;b=2/a\\*b\">https://x.test/?a=1&amp;amp;b=2/a\\*b</a></p>\n</blockquote>\n"
   },
   {
     "source": "- https://x.test/?a=1&amp;b=2",
@@ -3893,203 +4035,253 @@
   },
   {
     "source": "- https://x.test/?a=1&amp;b=2/[r]",
-    "html": "<ul>\n<li><a href=\"https://x.test/?a=1&amp;amp;b=2/%5Br%5D\">https://x.test/?a=1&amp;amp;b=2/[r]</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/?a=1&amp;amp;b=2/%5Br%5D\">https://x.test/?a=1&amp;amp;b=2/[r]</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/?a=1&amp;amp;b=2/[r]\">https://x.test/?a=1&amp;amp;b=2/[r]</a></li>\n</ul>\n"
   },
   {
     "source": "- https://x.test/?a=1&amp;b=2/a\\*b",
-    "html": "<ul>\n<li><a href=\"https://x.test/?a=1&amp;amp;b=2/a%5C*b\">https://x.test/?a=1&amp;amp;b=2/a\\*b</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/?a=1&amp;amp;b=2/a%5C*b\">https://x.test/?a=1&amp;amp;b=2/a\\*b</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/?a=1&amp;amp;b=2/a\\*b\">https://x.test/?a=1&amp;amp;b=2/a\\*b</a></li>\n</ul>\n"
   },
   {
     "source": "https://x.test/[r]",
-    "html": "<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a></p>\n"
+    "html": "<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/[r]\">https://x.test/[r]</a></p>\n"
   },
   {
     "source": "https://x.test/[r].",
-    "html": "<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>.</p>\n"
+    "html": "<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>.</p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/[r]\">https://x.test/[r]</a>.</p>\n"
   },
   {
     "source": "https://x.test/[r],",
-    "html": "<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>,</p>\n"
+    "html": "<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>,</p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/[r]\">https://x.test/[r]</a>,</p>\n"
   },
   {
     "source": "https://x.test/[r]!",
-    "html": "<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>!</p>\n"
+    "html": "<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>!</p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/[r]\">https://x.test/[r]</a>!</p>\n"
   },
   {
     "source": "https://x.test/[r])",
-    "html": "<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>)</p>\n"
+    "html": "<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>)</p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/[r]\">https://x.test/[r]</a>)</p>\n"
   },
   {
     "source": "https://x.test/[r]);",
-    "html": "<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>);</p>\n"
+    "html": "<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>);</p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/[r]\">https://x.test/[r]</a>);</p>\n"
   },
   {
     "source": "https://x.test/[r]*",
-    "html": "<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>*</p>\n"
+    "html": "<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>*</p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/[r]\">https://x.test/[r]</a>*</p>\n"
   },
   {
     "source": "https://x.test/[r]_",
-    "html": "<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>_</p>\n"
+    "html": "<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>_</p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/[r]\">https://x.test/[r]</a>_</p>\n"
   },
   {
     "source": "https://x.test/[r]&amp;",
-    "html": "<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>&amp;</p>\n"
+    "html": "<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>&amp;</p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/[r]\">https://x.test/[r]</a>&amp;</p>\n"
   },
   {
     "source": "https://x.test/[r]?q=1",
-    "html": "<p><a href=\"https://x.test/%5Br%5D?q=1\">https://x.test/[r]?q=1</a></p>\n"
+    "html": "<p><a href=\"https://x.test/%5Br%5D?q=1\">https://x.test/[r]?q=1</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/[r]?q=1\">https://x.test/[r]?q=1</a></p>\n"
   },
   {
     "source": "https://x.test/[r]/[r]",
-    "html": "<p><a href=\"https://x.test/%5Br%5D/%5Br%5D\">https://x.test/[r]/[r]</a></p>\n"
+    "html": "<p><a href=\"https://x.test/%5Br%5D/%5Br%5D\">https://x.test/[r]/[r]</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/[r]/[r]\">https://x.test/[r]/[r]</a></p>\n"
   },
   {
     "source": "https://x.test/[r]/a\\*b",
-    "html": "<p><a href=\"https://x.test/%5Br%5D/a%5C*b\">https://x.test/[r]/a\\*b</a></p>\n"
+    "html": "<p><a href=\"https://x.test/%5Br%5D/a%5C*b\">https://x.test/[r]/a\\*b</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/[r]/a\\*b\">https://x.test/[r]/a\\*b</a></p>\n"
   },
   {
     "source": "*https://x.test/[r]*",
-    "html": "<p><em><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a></em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/[r]\">https://x.test/[r]</a></em></p>\n"
   },
   {
     "source": "*https://x.test/[r].*",
-    "html": "<p><em><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>.</em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>.</em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/[r]\">https://x.test/[r]</a>.</em></p>\n"
   },
   {
     "source": "*https://x.test/[r],*",
-    "html": "<p><em><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>,</em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>,</em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/[r]\">https://x.test/[r]</a>,</em></p>\n"
   },
   {
     "source": "*https://x.test/[r]!*",
-    "html": "<p><em><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>!</em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>!</em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/[r]\">https://x.test/[r]</a>!</em></p>\n"
   },
   {
     "source": "*https://x.test/[r])*",
-    "html": "<p><em><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>)</em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>)</em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/[r]\">https://x.test/[r]</a>)</em></p>\n"
   },
   {
     "source": "*https://x.test/[r]);*",
-    "html": "<p><em><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>);</em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>);</em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/[r]\">https://x.test/[r]</a>);</em></p>\n"
   },
   {
     "source": "*https://x.test/[r]**",
-    "html": "<p><em><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a></em>*</p>\n"
+    "html": "<p><em><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a></em>*</p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/[r]\">https://x.test/[r]</a></em>*</p>\n"
   },
   {
     "source": "*https://x.test/[r]_*",
-    "html": "<p><em><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>_</em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>_</em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/[r]\">https://x.test/[r]</a>_</em></p>\n"
   },
   {
     "source": "*https://x.test/[r]&amp;*",
-    "html": "<p><em><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>&amp;</em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>&amp;</em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/[r]\">https://x.test/[r]</a>&amp;</em></p>\n"
   },
   {
     "source": "*https://x.test/[r]?q=1*",
-    "html": "<p><em><a href=\"https://x.test/%5Br%5D?q=1\">https://x.test/[r]?q=1</a></em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/%5Br%5D?q=1\">https://x.test/[r]?q=1</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/[r]?q=1\">https://x.test/[r]?q=1</a></em></p>\n"
   },
   {
     "source": "*https://x.test/[r]/[r]*",
-    "html": "<p><em><a href=\"https://x.test/%5Br%5D/%5Br%5D\">https://x.test/[r]/[r]</a></em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/%5Br%5D/%5Br%5D\">https://x.test/[r]/[r]</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/[r]/[r]\">https://x.test/[r]/[r]</a></em></p>\n"
   },
   {
     "source": "*https://x.test/[r]/a\\*b*",
-    "html": "<p><em><a href=\"https://x.test/%5Br%5D/a%5C*b\">https://x.test/[r]/a\\*b</a></em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/%5Br%5D/a%5C*b\">https://x.test/[r]/a\\*b</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/[r]/a\\*b\">https://x.test/[r]/a\\*b</a></em></p>\n"
   },
   {
     "source": "**https://x.test/[r]**",
-    "html": "<p><strong><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a></strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/[r]\">https://x.test/[r]</a></strong></p>\n"
   },
   {
     "source": "**https://x.test/[r].**",
-    "html": "<p><strong><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>.</strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>.</strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/[r]\">https://x.test/[r]</a>.</strong></p>\n"
   },
   {
     "source": "**https://x.test/[r],**",
-    "html": "<p><strong><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>,</strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>,</strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/[r]\">https://x.test/[r]</a>,</strong></p>\n"
   },
   {
     "source": "**https://x.test/[r]!**",
-    "html": "<p><strong><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>!</strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>!</strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/[r]\">https://x.test/[r]</a>!</strong></p>\n"
   },
   {
     "source": "**https://x.test/[r])**",
-    "html": "<p><strong><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>)</strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>)</strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/[r]\">https://x.test/[r]</a>)</strong></p>\n"
   },
   {
     "source": "**https://x.test/[r]);**",
-    "html": "<p><strong><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>);</strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>);</strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/[r]\">https://x.test/[r]</a>);</strong></p>\n"
   },
   {
     "source": "**https://x.test/[r]***",
-    "html": "<p><strong><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a></strong>*</p>\n"
+    "html": "<p><strong><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a></strong>*</p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/[r]\">https://x.test/[r]</a></strong>*</p>\n"
   },
   {
     "source": "**https://x.test/[r]_**",
-    "html": "<p><strong><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>_</strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>_</strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/[r]\">https://x.test/[r]</a>_</strong></p>\n"
   },
   {
     "source": "**https://x.test/[r]&amp;**",
-    "html": "<p><strong><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>&amp;</strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>&amp;</strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/[r]\">https://x.test/[r]</a>&amp;</strong></p>\n"
   },
   {
     "source": "**https://x.test/[r]?q=1**",
-    "html": "<p><strong><a href=\"https://x.test/%5Br%5D?q=1\">https://x.test/[r]?q=1</a></strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/%5Br%5D?q=1\">https://x.test/[r]?q=1</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/[r]?q=1\">https://x.test/[r]?q=1</a></strong></p>\n"
   },
   {
     "source": "**https://x.test/[r]/[r]**",
-    "html": "<p><strong><a href=\"https://x.test/%5Br%5D/%5Br%5D\">https://x.test/[r]/[r]</a></strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/%5Br%5D/%5Br%5D\">https://x.test/[r]/[r]</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/[r]/[r]\">https://x.test/[r]/[r]</a></strong></p>\n"
   },
   {
     "source": "**https://x.test/[r]/a\\*b**",
-    "html": "<p><strong><a href=\"https://x.test/%5Br%5D/a%5C*b\">https://x.test/[r]/a\\*b</a></strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/%5Br%5D/a%5C*b\">https://x.test/[r]/a\\*b</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/[r]/a\\*b\">https://x.test/[r]/a\\*b</a></strong></p>\n"
   },
   {
     "source": "~~https://x.test/[r]~~",
-    "html": "<p><del><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a></del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/[r]\">https://x.test/[r]</a></del></p>\n"
   },
   {
     "source": "~~https://x.test/[r].~~",
-    "html": "<p><del><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>.</del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>.</del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/[r]\">https://x.test/[r]</a>.</del></p>\n"
   },
   {
     "source": "~~https://x.test/[r],~~",
-    "html": "<p><del><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>,</del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>,</del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/[r]\">https://x.test/[r]</a>,</del></p>\n"
   },
   {
     "source": "~~https://x.test/[r]!~~",
-    "html": "<p><del><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>!</del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>!</del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/[r]\">https://x.test/[r]</a>!</del></p>\n"
   },
   {
     "source": "~~https://x.test/[r])~~",
-    "html": "<p><del><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>)</del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>)</del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/[r]\">https://x.test/[r]</a>)</del></p>\n"
   },
   {
     "source": "~~https://x.test/[r]);~~",
-    "html": "<p><del><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>);</del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>);</del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/[r]\">https://x.test/[r]</a>);</del></p>\n"
   },
   {
     "source": "~~https://x.test/[r]*~~",
-    "html": "<p><del><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>*</del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>*</del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/[r]\">https://x.test/[r]</a>*</del></p>\n"
   },
   {
     "source": "~~https://x.test/[r]_~~",
-    "html": "<p><del><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>_</del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>_</del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/[r]\">https://x.test/[r]</a>_</del></p>\n"
   },
   {
     "source": "~~https://x.test/[r]&amp;~~",
-    "html": "<p><del><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>&amp;</del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>&amp;</del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/[r]\">https://x.test/[r]</a>&amp;</del></p>\n"
   },
   {
     "source": "~~https://x.test/[r]?q=1~~",
-    "html": "<p><del><a href=\"https://x.test/%5Br%5D?q=1\">https://x.test/[r]?q=1</a></del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/%5Br%5D?q=1\">https://x.test/[r]?q=1</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/[r]?q=1\">https://x.test/[r]?q=1</a></del></p>\n"
   },
   {
     "source": "~~https://x.test/[r]/[r]~~",
-    "html": "<p><del><a href=\"https://x.test/%5Br%5D/%5Br%5D\">https://x.test/[r]/[r]</a></del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/%5Br%5D/%5Br%5D\">https://x.test/[r]/[r]</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/[r]/[r]\">https://x.test/[r]/[r]</a></del></p>\n"
   },
   {
     "source": "~~https://x.test/[r]/a\\*b~~",
-    "html": "<p><del><a href=\"https://x.test/%5Br%5D/a%5C*b\">https://x.test/[r]/a\\*b</a></del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/%5Br%5D/a%5C*b\">https://x.test/[r]/a\\*b</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/[r]/a\\*b\">https://x.test/[r]/a\\*b</a></del></p>\n"
   },
   {
     "source": "`https://x.test/[r]`",
@@ -4285,99 +4477,123 @@
   },
   {
     "source": "> https://x.test/[r]",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/[r]\">https://x.test/[r]</a></p>\n</blockquote>\n"
   },
   {
     "source": "> https://x.test/[r].",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>.</p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>.</p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/[r]\">https://x.test/[r]</a>.</p>\n</blockquote>\n"
   },
   {
     "source": "> https://x.test/[r],",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>,</p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>,</p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/[r]\">https://x.test/[r]</a>,</p>\n</blockquote>\n"
   },
   {
     "source": "> https://x.test/[r]!",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>!</p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>!</p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/[r]\">https://x.test/[r]</a>!</p>\n</blockquote>\n"
   },
   {
     "source": "> https://x.test/[r])",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>)</p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>)</p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/[r]\">https://x.test/[r]</a>)</p>\n</blockquote>\n"
   },
   {
     "source": "> https://x.test/[r]);",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>);</p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>);</p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/[r]\">https://x.test/[r]</a>);</p>\n</blockquote>\n"
   },
   {
     "source": "> https://x.test/[r]*",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>*</p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>*</p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/[r]\">https://x.test/[r]</a>*</p>\n</blockquote>\n"
   },
   {
     "source": "> https://x.test/[r]_",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>_</p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>_</p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/[r]\">https://x.test/[r]</a>_</p>\n</blockquote>\n"
   },
   {
     "source": "> https://x.test/[r]&amp;",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>&amp;</p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>&amp;</p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/[r]\">https://x.test/[r]</a>&amp;</p>\n</blockquote>\n"
   },
   {
     "source": "> https://x.test/[r]?q=1",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/%5Br%5D?q=1\">https://x.test/[r]?q=1</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/%5Br%5D?q=1\">https://x.test/[r]?q=1</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/[r]?q=1\">https://x.test/[r]?q=1</a></p>\n</blockquote>\n"
   },
   {
     "source": "> https://x.test/[r]/[r]",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/%5Br%5D/%5Br%5D\">https://x.test/[r]/[r]</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/%5Br%5D/%5Br%5D\">https://x.test/[r]/[r]</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/[r]/[r]\">https://x.test/[r]/[r]</a></p>\n</blockquote>\n"
   },
   {
     "source": "> https://x.test/[r]/a\\*b",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/%5Br%5D/a%5C*b\">https://x.test/[r]/a\\*b</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/%5Br%5D/a%5C*b\">https://x.test/[r]/a\\*b</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/[r]/a\\*b\">https://x.test/[r]/a\\*b</a></p>\n</blockquote>\n"
   },
   {
     "source": "- https://x.test/[r]",
-    "html": "<ul>\n<li><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/[r]\">https://x.test/[r]</a></li>\n</ul>\n"
   },
   {
     "source": "- https://x.test/[r].",
-    "html": "<ul>\n<li><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>.</li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>.</li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/[r]\">https://x.test/[r]</a>.</li>\n</ul>\n"
   },
   {
     "source": "- https://x.test/[r],",
-    "html": "<ul>\n<li><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>,</li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>,</li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/[r]\">https://x.test/[r]</a>,</li>\n</ul>\n"
   },
   {
     "source": "- https://x.test/[r]!",
-    "html": "<ul>\n<li><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>!</li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>!</li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/[r]\">https://x.test/[r]</a>!</li>\n</ul>\n"
   },
   {
     "source": "- https://x.test/[r])",
-    "html": "<ul>\n<li><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>)</li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>)</li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/[r]\">https://x.test/[r]</a>)</li>\n</ul>\n"
   },
   {
     "source": "- https://x.test/[r]);",
-    "html": "<ul>\n<li><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>);</li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>);</li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/[r]\">https://x.test/[r]</a>);</li>\n</ul>\n"
   },
   {
     "source": "- https://x.test/[r]*",
-    "html": "<ul>\n<li><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>*</li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>*</li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/[r]\">https://x.test/[r]</a>*</li>\n</ul>\n"
   },
   {
     "source": "- https://x.test/[r]_",
-    "html": "<ul>\n<li><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>_</li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>_</li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/[r]\">https://x.test/[r]</a>_</li>\n</ul>\n"
   },
   {
     "source": "- https://x.test/[r]&amp;",
-    "html": "<ul>\n<li><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>&amp;</li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a>&amp;</li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/[r]\">https://x.test/[r]</a>&amp;</li>\n</ul>\n"
   },
   {
     "source": "- https://x.test/[r]?q=1",
-    "html": "<ul>\n<li><a href=\"https://x.test/%5Br%5D?q=1\">https://x.test/[r]?q=1</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/%5Br%5D?q=1\">https://x.test/[r]?q=1</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/[r]?q=1\">https://x.test/[r]?q=1</a></li>\n</ul>\n"
   },
   {
     "source": "- https://x.test/[r]/[r]",
-    "html": "<ul>\n<li><a href=\"https://x.test/%5Br%5D/%5Br%5D\">https://x.test/[r]/[r]</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/%5Br%5D/%5Br%5D\">https://x.test/[r]/[r]</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/[r]/[r]\">https://x.test/[r]/[r]</a></li>\n</ul>\n"
   },
   {
     "source": "- https://x.test/[r]/a\\*b",
-    "html": "<ul>\n<li><a href=\"https://x.test/%5Br%5D/a%5C*b\">https://x.test/[r]/a\\*b</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/%5Br%5D/a%5C*b\">https://x.test/[r]/a\\*b</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/[r]/a\\*b\">https://x.test/[r]/a\\*b</a></li>\n</ul>\n"
   },
   {
     "source": "https://x.test/a(b)",
@@ -4421,11 +4637,13 @@
   },
   {
     "source": "https://x.test/a(b)/[r]",
-    "html": "<p><a href=\"https://x.test/a(b)/%5Br%5D\">https://x.test/a(b)/[r]</a></p>\n"
+    "html": "<p><a href=\"https://x.test/a(b)/%5Br%5D\">https://x.test/a(b)/[r]</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/a(b)/[r]\">https://x.test/a(b)/[r]</a></p>\n"
   },
   {
     "source": "https://x.test/a(b)/a\\*b",
-    "html": "<p><a href=\"https://x.test/a(b)/a%5C*b\">https://x.test/a(b)/a\\*b</a></p>\n"
+    "html": "<p><a href=\"https://x.test/a(b)/a%5C*b\">https://x.test/a(b)/a\\*b</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/a(b)/a\\*b\">https://x.test/a(b)/a\\*b</a></p>\n"
   },
   {
     "source": "*https://x.test/a(b)*",
@@ -4469,11 +4687,13 @@
   },
   {
     "source": "*https://x.test/a(b)/[r]*",
-    "html": "<p><em><a href=\"https://x.test/a(b)/%5Br%5D\">https://x.test/a(b)/[r]</a></em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/a(b)/%5Br%5D\">https://x.test/a(b)/[r]</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/a(b)/[r]\">https://x.test/a(b)/[r]</a></em></p>\n"
   },
   {
     "source": "*https://x.test/a(b)/a\\*b*",
-    "html": "<p><em><a href=\"https://x.test/a(b)/a%5C*b\">https://x.test/a(b)/a\\*b</a></em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/a(b)/a%5C*b\">https://x.test/a(b)/a\\*b</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/a(b)/a\\*b\">https://x.test/a(b)/a\\*b</a></em></p>\n"
   },
   {
     "source": "**https://x.test/a(b)**",
@@ -4517,11 +4737,13 @@
   },
   {
     "source": "**https://x.test/a(b)/[r]**",
-    "html": "<p><strong><a href=\"https://x.test/a(b)/%5Br%5D\">https://x.test/a(b)/[r]</a></strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/a(b)/%5Br%5D\">https://x.test/a(b)/[r]</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/a(b)/[r]\">https://x.test/a(b)/[r]</a></strong></p>\n"
   },
   {
     "source": "**https://x.test/a(b)/a\\*b**",
-    "html": "<p><strong><a href=\"https://x.test/a(b)/a%5C*b\">https://x.test/a(b)/a\\*b</a></strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/a(b)/a%5C*b\">https://x.test/a(b)/a\\*b</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/a(b)/a\\*b\">https://x.test/a(b)/a\\*b</a></strong></p>\n"
   },
   {
     "source": "~~https://x.test/a(b)~~",
@@ -4565,11 +4787,13 @@
   },
   {
     "source": "~~https://x.test/a(b)/[r]~~",
-    "html": "<p><del><a href=\"https://x.test/a(b)/%5Br%5D\">https://x.test/a(b)/[r]</a></del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/a(b)/%5Br%5D\">https://x.test/a(b)/[r]</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/a(b)/[r]\">https://x.test/a(b)/[r]</a></del></p>\n"
   },
   {
     "source": "~~https://x.test/a(b)/a\\*b~~",
-    "html": "<p><del><a href=\"https://x.test/a(b)/a%5C*b\">https://x.test/a(b)/a\\*b</a></del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/a(b)/a%5C*b\">https://x.test/a(b)/a\\*b</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/a(b)/a\\*b\">https://x.test/a(b)/a\\*b</a></del></p>\n"
   },
   {
     "source": "`https://x.test/a(b)`",
@@ -4805,11 +5029,13 @@
   },
   {
     "source": "> https://x.test/a(b)/[r]",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/a(b)/%5Br%5D\">https://x.test/a(b)/[r]</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/a(b)/%5Br%5D\">https://x.test/a(b)/[r]</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/a(b)/[r]\">https://x.test/a(b)/[r]</a></p>\n</blockquote>\n"
   },
   {
     "source": "> https://x.test/a(b)/a\\*b",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/a(b)/a%5C*b\">https://x.test/a(b)/a\\*b</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/a(b)/a%5C*b\">https://x.test/a(b)/a\\*b</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/a(b)/a\\*b\">https://x.test/a(b)/a\\*b</a></p>\n</blockquote>\n"
   },
   {
     "source": "- https://x.test/a(b)",
@@ -4853,11 +5079,13 @@
   },
   {
     "source": "- https://x.test/a(b)/[r]",
-    "html": "<ul>\n<li><a href=\"https://x.test/a(b)/%5Br%5D\">https://x.test/a(b)/[r]</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/a(b)/%5Br%5D\">https://x.test/a(b)/[r]</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/a(b)/[r]\">https://x.test/a(b)/[r]</a></li>\n</ul>\n"
   },
   {
     "source": "- https://x.test/a(b)/a\\*b",
-    "html": "<ul>\n<li><a href=\"https://x.test/a(b)/a%5C*b\">https://x.test/a(b)/a\\*b</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/a(b)/a%5C*b\">https://x.test/a(b)/a\\*b</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/a(b)/a\\*b\">https://x.test/a(b)/a\\*b</a></li>\n</ul>\n"
   },
   {
     "source": "http://a_b.test",
@@ -8701,195 +8929,243 @@
   },
   {
     "source": "https://例.test/a",
-    "html": "<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a></p>\n"
+    "html": "<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://例.test/a\">https://例.test/a</a></p>\n"
   },
   {
     "source": "https://例.test/a.",
-    "html": "<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>.</p>\n"
+    "html": "<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>.</p>\n",
+    "nativeHtml": "<p><a href=\"https://例.test/a\">https://例.test/a</a>.</p>\n"
   },
   {
     "source": "https://例.test/a,",
-    "html": "<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>,</p>\n"
+    "html": "<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>,</p>\n",
+    "nativeHtml": "<p><a href=\"https://例.test/a\">https://例.test/a</a>,</p>\n"
   },
   {
     "source": "https://例.test/a!",
-    "html": "<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>!</p>\n"
+    "html": "<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>!</p>\n",
+    "nativeHtml": "<p><a href=\"https://例.test/a\">https://例.test/a</a>!</p>\n"
   },
   {
     "source": "https://例.test/a)",
-    "html": "<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>)</p>\n"
+    "html": "<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>)</p>\n",
+    "nativeHtml": "<p><a href=\"https://例.test/a\">https://例.test/a</a>)</p>\n"
   },
   {
     "source": "https://例.test/a);",
-    "html": "<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>);</p>\n"
+    "html": "<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>);</p>\n",
+    "nativeHtml": "<p><a href=\"https://例.test/a\">https://例.test/a</a>);</p>\n"
   },
   {
     "source": "https://例.test/a*",
-    "html": "<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>*</p>\n"
+    "html": "<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>*</p>\n",
+    "nativeHtml": "<p><a href=\"https://例.test/a\">https://例.test/a</a>*</p>\n"
   },
   {
     "source": "https://例.test/a_",
-    "html": "<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>_</p>\n"
+    "html": "<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>_</p>\n",
+    "nativeHtml": "<p><a href=\"https://例.test/a\">https://例.test/a</a>_</p>\n"
   },
   {
     "source": "https://例.test/a&amp;",
-    "html": "<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>&amp;</p>\n"
+    "html": "<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>&amp;</p>\n",
+    "nativeHtml": "<p><a href=\"https://例.test/a\">https://例.test/a</a>&amp;</p>\n"
   },
   {
     "source": "https://例.test/a?q=1",
-    "html": "<p><a href=\"https://%E4%BE%8B.test/a?q=1\">https://例.test/a?q=1</a></p>\n"
+    "html": "<p><a href=\"https://%E4%BE%8B.test/a?q=1\">https://例.test/a?q=1</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://例.test/a?q=1\">https://例.test/a?q=1</a></p>\n"
   },
   {
     "source": "https://例.test/a/[r]",
-    "html": "<p><a href=\"https://%E4%BE%8B.test/a/%5Br%5D\">https://例.test/a/[r]</a></p>\n"
+    "html": "<p><a href=\"https://%E4%BE%8B.test/a/%5Br%5D\">https://例.test/a/[r]</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://例.test/a/[r]\">https://例.test/a/[r]</a></p>\n"
   },
   {
     "source": "https://例.test/a/a\\*b",
-    "html": "<p><a href=\"https://%E4%BE%8B.test/a/a%5C*b\">https://例.test/a/a\\*b</a></p>\n"
+    "html": "<p><a href=\"https://%E4%BE%8B.test/a/a%5C*b\">https://例.test/a/a\\*b</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://例.test/a/a\\*b\">https://例.test/a/a\\*b</a></p>\n"
   },
   {
     "source": "*https://例.test/a*",
-    "html": "<p><em><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a></em></p>\n"
+    "html": "<p><em><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://例.test/a\">https://例.test/a</a></em></p>\n"
   },
   {
     "source": "*https://例.test/a.*",
-    "html": "<p><em><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>.</em></p>\n"
+    "html": "<p><em><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>.</em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://例.test/a\">https://例.test/a</a>.</em></p>\n"
   },
   {
     "source": "*https://例.test/a,*",
-    "html": "<p><em><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>,</em></p>\n"
+    "html": "<p><em><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>,</em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://例.test/a\">https://例.test/a</a>,</em></p>\n"
   },
   {
     "source": "*https://例.test/a!*",
-    "html": "<p><em><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>!</em></p>\n"
+    "html": "<p><em><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>!</em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://例.test/a\">https://例.test/a</a>!</em></p>\n"
   },
   {
     "source": "*https://例.test/a)*",
-    "html": "<p><em><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>)</em></p>\n"
+    "html": "<p><em><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>)</em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://例.test/a\">https://例.test/a</a>)</em></p>\n"
   },
   {
     "source": "*https://例.test/a);*",
-    "html": "<p><em><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>);</em></p>\n"
+    "html": "<p><em><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>);</em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://例.test/a\">https://例.test/a</a>);</em></p>\n"
   },
   {
     "source": "*https://例.test/a**",
-    "html": "<p><em><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a></em>*</p>\n"
+    "html": "<p><em><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a></em>*</p>\n",
+    "nativeHtml": "<p><em><a href=\"https://例.test/a\">https://例.test/a</a></em>*</p>\n"
   },
   {
     "source": "*https://例.test/a_*",
-    "html": "<p><em><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>_</em></p>\n"
+    "html": "<p><em><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>_</em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://例.test/a\">https://例.test/a</a>_</em></p>\n"
   },
   {
     "source": "*https://例.test/a&amp;*",
-    "html": "<p><em><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>&amp;</em></p>\n"
+    "html": "<p><em><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>&amp;</em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://例.test/a\">https://例.test/a</a>&amp;</em></p>\n"
   },
   {
     "source": "*https://例.test/a?q=1*",
-    "html": "<p><em><a href=\"https://%E4%BE%8B.test/a?q=1\">https://例.test/a?q=1</a></em></p>\n"
+    "html": "<p><em><a href=\"https://%E4%BE%8B.test/a?q=1\">https://例.test/a?q=1</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://例.test/a?q=1\">https://例.test/a?q=1</a></em></p>\n"
   },
   {
     "source": "*https://例.test/a/[r]*",
-    "html": "<p><em><a href=\"https://%E4%BE%8B.test/a/%5Br%5D\">https://例.test/a/[r]</a></em></p>\n"
+    "html": "<p><em><a href=\"https://%E4%BE%8B.test/a/%5Br%5D\">https://例.test/a/[r]</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://例.test/a/[r]\">https://例.test/a/[r]</a></em></p>\n"
   },
   {
     "source": "*https://例.test/a/a\\*b*",
-    "html": "<p><em><a href=\"https://%E4%BE%8B.test/a/a%5C*b\">https://例.test/a/a\\*b</a></em></p>\n"
+    "html": "<p><em><a href=\"https://%E4%BE%8B.test/a/a%5C*b\">https://例.test/a/a\\*b</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://例.test/a/a\\*b\">https://例.test/a/a\\*b</a></em></p>\n"
   },
   {
     "source": "**https://例.test/a**",
-    "html": "<p><strong><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a></strong></p>\n"
+    "html": "<p><strong><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://例.test/a\">https://例.test/a</a></strong></p>\n"
   },
   {
     "source": "**https://例.test/a.**",
-    "html": "<p><strong><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>.</strong></p>\n"
+    "html": "<p><strong><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>.</strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://例.test/a\">https://例.test/a</a>.</strong></p>\n"
   },
   {
     "source": "**https://例.test/a,**",
-    "html": "<p><strong><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>,</strong></p>\n"
+    "html": "<p><strong><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>,</strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://例.test/a\">https://例.test/a</a>,</strong></p>\n"
   },
   {
     "source": "**https://例.test/a!**",
-    "html": "<p><strong><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>!</strong></p>\n"
+    "html": "<p><strong><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>!</strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://例.test/a\">https://例.test/a</a>!</strong></p>\n"
   },
   {
     "source": "**https://例.test/a)**",
-    "html": "<p><strong><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>)</strong></p>\n"
+    "html": "<p><strong><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>)</strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://例.test/a\">https://例.test/a</a>)</strong></p>\n"
   },
   {
     "source": "**https://例.test/a);**",
-    "html": "<p><strong><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>);</strong></p>\n"
+    "html": "<p><strong><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>);</strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://例.test/a\">https://例.test/a</a>);</strong></p>\n"
   },
   {
     "source": "**https://例.test/a***",
-    "html": "<p><strong><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a></strong>*</p>\n"
+    "html": "<p><strong><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a></strong>*</p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://例.test/a\">https://例.test/a</a></strong>*</p>\n"
   },
   {
     "source": "**https://例.test/a_**",
-    "html": "<p><strong><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>_</strong></p>\n"
+    "html": "<p><strong><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>_</strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://例.test/a\">https://例.test/a</a>_</strong></p>\n"
   },
   {
     "source": "**https://例.test/a&amp;**",
-    "html": "<p><strong><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>&amp;</strong></p>\n"
+    "html": "<p><strong><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>&amp;</strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://例.test/a\">https://例.test/a</a>&amp;</strong></p>\n"
   },
   {
     "source": "**https://例.test/a?q=1**",
-    "html": "<p><strong><a href=\"https://%E4%BE%8B.test/a?q=1\">https://例.test/a?q=1</a></strong></p>\n"
+    "html": "<p><strong><a href=\"https://%E4%BE%8B.test/a?q=1\">https://例.test/a?q=1</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://例.test/a?q=1\">https://例.test/a?q=1</a></strong></p>\n"
   },
   {
     "source": "**https://例.test/a/[r]**",
-    "html": "<p><strong><a href=\"https://%E4%BE%8B.test/a/%5Br%5D\">https://例.test/a/[r]</a></strong></p>\n"
+    "html": "<p><strong><a href=\"https://%E4%BE%8B.test/a/%5Br%5D\">https://例.test/a/[r]</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://例.test/a/[r]\">https://例.test/a/[r]</a></strong></p>\n"
   },
   {
     "source": "**https://例.test/a/a\\*b**",
-    "html": "<p><strong><a href=\"https://%E4%BE%8B.test/a/a%5C*b\">https://例.test/a/a\\*b</a></strong></p>\n"
+    "html": "<p><strong><a href=\"https://%E4%BE%8B.test/a/a%5C*b\">https://例.test/a/a\\*b</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://例.test/a/a\\*b\">https://例.test/a/a\\*b</a></strong></p>\n"
   },
   {
     "source": "~~https://例.test/a~~",
-    "html": "<p><del><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a></del></p>\n"
+    "html": "<p><del><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://例.test/a\">https://例.test/a</a></del></p>\n"
   },
   {
     "source": "~~https://例.test/a.~~",
-    "html": "<p><del><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>.</del></p>\n"
+    "html": "<p><del><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>.</del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://例.test/a\">https://例.test/a</a>.</del></p>\n"
   },
   {
     "source": "~~https://例.test/a,~~",
-    "html": "<p><del><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>,</del></p>\n"
+    "html": "<p><del><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>,</del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://例.test/a\">https://例.test/a</a>,</del></p>\n"
   },
   {
     "source": "~~https://例.test/a!~~",
-    "html": "<p><del><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>!</del></p>\n"
+    "html": "<p><del><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>!</del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://例.test/a\">https://例.test/a</a>!</del></p>\n"
   },
   {
     "source": "~~https://例.test/a)~~",
-    "html": "<p><del><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>)</del></p>\n"
+    "html": "<p><del><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>)</del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://例.test/a\">https://例.test/a</a>)</del></p>\n"
   },
   {
     "source": "~~https://例.test/a);~~",
-    "html": "<p><del><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>);</del></p>\n"
+    "html": "<p><del><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>);</del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://例.test/a\">https://例.test/a</a>);</del></p>\n"
   },
   {
     "source": "~~https://例.test/a*~~",
-    "html": "<p><del><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>*</del></p>\n"
+    "html": "<p><del><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>*</del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://例.test/a\">https://例.test/a</a>*</del></p>\n"
   },
   {
     "source": "~~https://例.test/a_~~",
-    "html": "<p><del><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>_</del></p>\n"
+    "html": "<p><del><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>_</del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://例.test/a\">https://例.test/a</a>_</del></p>\n"
   },
   {
     "source": "~~https://例.test/a&amp;~~",
-    "html": "<p><del><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>&amp;</del></p>\n"
+    "html": "<p><del><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>&amp;</del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://例.test/a\">https://例.test/a</a>&amp;</del></p>\n"
   },
   {
     "source": "~~https://例.test/a?q=1~~",
-    "html": "<p><del><a href=\"https://%E4%BE%8B.test/a?q=1\">https://例.test/a?q=1</a></del></p>\n"
+    "html": "<p><del><a href=\"https://%E4%BE%8B.test/a?q=1\">https://例.test/a?q=1</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://例.test/a?q=1\">https://例.test/a?q=1</a></del></p>\n"
   },
   {
     "source": "~~https://例.test/a/[r]~~",
-    "html": "<p><del><a href=\"https://%E4%BE%8B.test/a/%5Br%5D\">https://例.test/a/[r]</a></del></p>\n"
+    "html": "<p><del><a href=\"https://%E4%BE%8B.test/a/%5Br%5D\">https://例.test/a/[r]</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://例.test/a/[r]\">https://例.test/a/[r]</a></del></p>\n"
   },
   {
     "source": "~~https://例.test/a/a\\*b~~",
-    "html": "<p><del><a href=\"https://%E4%BE%8B.test/a/a%5C*b\">https://例.test/a/a\\*b</a></del></p>\n"
+    "html": "<p><del><a href=\"https://%E4%BE%8B.test/a/a%5C*b\">https://例.test/a/a\\*b</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://例.test/a/a\\*b\">https://例.test/a/a\\*b</a></del></p>\n"
   },
   {
     "source": "`https://例.test/a`",
@@ -9085,99 +9361,123 @@
   },
   {
     "source": "> https://例.test/a",
-    "html": "<blockquote>\n<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://例.test/a\">https://例.test/a</a></p>\n</blockquote>\n"
   },
   {
     "source": "> https://例.test/a.",
-    "html": "<blockquote>\n<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>.</p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>.</p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://例.test/a\">https://例.test/a</a>.</p>\n</blockquote>\n"
   },
   {
     "source": "> https://例.test/a,",
-    "html": "<blockquote>\n<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>,</p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>,</p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://例.test/a\">https://例.test/a</a>,</p>\n</blockquote>\n"
   },
   {
     "source": "> https://例.test/a!",
-    "html": "<blockquote>\n<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>!</p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>!</p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://例.test/a\">https://例.test/a</a>!</p>\n</blockquote>\n"
   },
   {
     "source": "> https://例.test/a)",
-    "html": "<blockquote>\n<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>)</p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>)</p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://例.test/a\">https://例.test/a</a>)</p>\n</blockquote>\n"
   },
   {
     "source": "> https://例.test/a);",
-    "html": "<blockquote>\n<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>);</p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>);</p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://例.test/a\">https://例.test/a</a>);</p>\n</blockquote>\n"
   },
   {
     "source": "> https://例.test/a*",
-    "html": "<blockquote>\n<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>*</p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>*</p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://例.test/a\">https://例.test/a</a>*</p>\n</blockquote>\n"
   },
   {
     "source": "> https://例.test/a_",
-    "html": "<blockquote>\n<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>_</p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>_</p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://例.test/a\">https://例.test/a</a>_</p>\n</blockquote>\n"
   },
   {
     "source": "> https://例.test/a&amp;",
-    "html": "<blockquote>\n<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>&amp;</p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>&amp;</p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://例.test/a\">https://例.test/a</a>&amp;</p>\n</blockquote>\n"
   },
   {
     "source": "> https://例.test/a?q=1",
-    "html": "<blockquote>\n<p><a href=\"https://%E4%BE%8B.test/a?q=1\">https://例.test/a?q=1</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://%E4%BE%8B.test/a?q=1\">https://例.test/a?q=1</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://例.test/a?q=1\">https://例.test/a?q=1</a></p>\n</blockquote>\n"
   },
   {
     "source": "> https://例.test/a/[r]",
-    "html": "<blockquote>\n<p><a href=\"https://%E4%BE%8B.test/a/%5Br%5D\">https://例.test/a/[r]</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://%E4%BE%8B.test/a/%5Br%5D\">https://例.test/a/[r]</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://例.test/a/[r]\">https://例.test/a/[r]</a></p>\n</blockquote>\n"
   },
   {
     "source": "> https://例.test/a/a\\*b",
-    "html": "<blockquote>\n<p><a href=\"https://%E4%BE%8B.test/a/a%5C*b\">https://例.test/a/a\\*b</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://%E4%BE%8B.test/a/a%5C*b\">https://例.test/a/a\\*b</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://例.test/a/a\\*b\">https://例.test/a/a\\*b</a></p>\n</blockquote>\n"
   },
   {
     "source": "- https://例.test/a",
-    "html": "<ul>\n<li><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://例.test/a\">https://例.test/a</a></li>\n</ul>\n"
   },
   {
     "source": "- https://例.test/a.",
-    "html": "<ul>\n<li><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>.</li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>.</li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://例.test/a\">https://例.test/a</a>.</li>\n</ul>\n"
   },
   {
     "source": "- https://例.test/a,",
-    "html": "<ul>\n<li><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>,</li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>,</li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://例.test/a\">https://例.test/a</a>,</li>\n</ul>\n"
   },
   {
     "source": "- https://例.test/a!",
-    "html": "<ul>\n<li><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>!</li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>!</li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://例.test/a\">https://例.test/a</a>!</li>\n</ul>\n"
   },
   {
     "source": "- https://例.test/a)",
-    "html": "<ul>\n<li><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>)</li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>)</li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://例.test/a\">https://例.test/a</a>)</li>\n</ul>\n"
   },
   {
     "source": "- https://例.test/a);",
-    "html": "<ul>\n<li><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>);</li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>);</li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://例.test/a\">https://例.test/a</a>);</li>\n</ul>\n"
   },
   {
     "source": "- https://例.test/a*",
-    "html": "<ul>\n<li><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>*</li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>*</li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://例.test/a\">https://例.test/a</a>*</li>\n</ul>\n"
   },
   {
     "source": "- https://例.test/a_",
-    "html": "<ul>\n<li><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>_</li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>_</li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://例.test/a\">https://例.test/a</a>_</li>\n</ul>\n"
   },
   {
     "source": "- https://例.test/a&amp;",
-    "html": "<ul>\n<li><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>&amp;</li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://%E4%BE%8B.test/a\">https://例.test/a</a>&amp;</li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://例.test/a\">https://例.test/a</a>&amp;</li>\n</ul>\n"
   },
   {
     "source": "- https://例.test/a?q=1",
-    "html": "<ul>\n<li><a href=\"https://%E4%BE%8B.test/a?q=1\">https://例.test/a?q=1</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://%E4%BE%8B.test/a?q=1\">https://例.test/a?q=1</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://例.test/a?q=1\">https://例.test/a?q=1</a></li>\n</ul>\n"
   },
   {
     "source": "- https://例.test/a/[r]",
-    "html": "<ul>\n<li><a href=\"https://%E4%BE%8B.test/a/%5Br%5D\">https://例.test/a/[r]</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://%E4%BE%8B.test/a/%5Br%5D\">https://例.test/a/[r]</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://例.test/a/[r]\">https://例.test/a/[r]</a></li>\n</ul>\n"
   },
   {
     "source": "- https://例.test/a/a\\*b",
-    "html": "<ul>\n<li><a href=\"https://%E4%BE%8B.test/a/a%5C*b\">https://例.test/a/a\\*b</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://%E4%BE%8B.test/a/a%5C*b\">https://例.test/a/a\\*b</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://例.test/a/a\\*b\">https://例.test/a/a\\*b</a></li>\n</ul>\n"
   },
   {
     "source": "https://x.test/a--b",
@@ -9221,11 +9521,13 @@
   },
   {
     "source": "https://x.test/a--b/[r]",
-    "html": "<p><a href=\"https://x.test/a--b/%5Br%5D\">https://x.test/a--b/[r]</a></p>\n"
+    "html": "<p><a href=\"https://x.test/a--b/%5Br%5D\">https://x.test/a--b/[r]</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/a--b/[r]\">https://x.test/a--b/[r]</a></p>\n"
   },
   {
     "source": "https://x.test/a--b/a\\*b",
-    "html": "<p><a href=\"https://x.test/a--b/a%5C*b\">https://x.test/a--b/a\\*b</a></p>\n"
+    "html": "<p><a href=\"https://x.test/a--b/a%5C*b\">https://x.test/a--b/a\\*b</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/a--b/a\\*b\">https://x.test/a--b/a\\*b</a></p>\n"
   },
   {
     "source": "*https://x.test/a--b*",
@@ -9269,11 +9571,13 @@
   },
   {
     "source": "*https://x.test/a--b/[r]*",
-    "html": "<p><em><a href=\"https://x.test/a--b/%5Br%5D\">https://x.test/a--b/[r]</a></em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/a--b/%5Br%5D\">https://x.test/a--b/[r]</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/a--b/[r]\">https://x.test/a--b/[r]</a></em></p>\n"
   },
   {
     "source": "*https://x.test/a--b/a\\*b*",
-    "html": "<p><em><a href=\"https://x.test/a--b/a%5C*b\">https://x.test/a--b/a\\*b</a></em></p>\n"
+    "html": "<p><em><a href=\"https://x.test/a--b/a%5C*b\">https://x.test/a--b/a\\*b</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"https://x.test/a--b/a\\*b\">https://x.test/a--b/a\\*b</a></em></p>\n"
   },
   {
     "source": "**https://x.test/a--b**",
@@ -9317,11 +9621,13 @@
   },
   {
     "source": "**https://x.test/a--b/[r]**",
-    "html": "<p><strong><a href=\"https://x.test/a--b/%5Br%5D\">https://x.test/a--b/[r]</a></strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/a--b/%5Br%5D\">https://x.test/a--b/[r]</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/a--b/[r]\">https://x.test/a--b/[r]</a></strong></p>\n"
   },
   {
     "source": "**https://x.test/a--b/a\\*b**",
-    "html": "<p><strong><a href=\"https://x.test/a--b/a%5C*b\">https://x.test/a--b/a\\*b</a></strong></p>\n"
+    "html": "<p><strong><a href=\"https://x.test/a--b/a%5C*b\">https://x.test/a--b/a\\*b</a></strong></p>\n",
+    "nativeHtml": "<p><strong><a href=\"https://x.test/a--b/a\\*b\">https://x.test/a--b/a\\*b</a></strong></p>\n"
   },
   {
     "source": "~~https://x.test/a--b~~",
@@ -9365,11 +9671,13 @@
   },
   {
     "source": "~~https://x.test/a--b/[r]~~",
-    "html": "<p><del><a href=\"https://x.test/a--b/%5Br%5D\">https://x.test/a--b/[r]</a></del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/a--b/%5Br%5D\">https://x.test/a--b/[r]</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/a--b/[r]\">https://x.test/a--b/[r]</a></del></p>\n"
   },
   {
     "source": "~~https://x.test/a--b/a\\*b~~",
-    "html": "<p><del><a href=\"https://x.test/a--b/a%5C*b\">https://x.test/a--b/a\\*b</a></del></p>\n"
+    "html": "<p><del><a href=\"https://x.test/a--b/a%5C*b\">https://x.test/a--b/a\\*b</a></del></p>\n",
+    "nativeHtml": "<p><del><a href=\"https://x.test/a--b/a\\*b\">https://x.test/a--b/a\\*b</a></del></p>\n"
   },
   {
     "source": "`https://x.test/a--b`",
@@ -9605,11 +9913,13 @@
   },
   {
     "source": "> https://x.test/a--b/[r]",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/a--b/%5Br%5D\">https://x.test/a--b/[r]</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/a--b/%5Br%5D\">https://x.test/a--b/[r]</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/a--b/[r]\">https://x.test/a--b/[r]</a></p>\n</blockquote>\n"
   },
   {
     "source": "> https://x.test/a--b/a\\*b",
-    "html": "<blockquote>\n<p><a href=\"https://x.test/a--b/a%5C*b\">https://x.test/a--b/a\\*b</a></p>\n</blockquote>\n"
+    "html": "<blockquote>\n<p><a href=\"https://x.test/a--b/a%5C*b\">https://x.test/a--b/a\\*b</a></p>\n</blockquote>\n",
+    "nativeHtml": "<blockquote>\n<p><a href=\"https://x.test/a--b/a\\*b\">https://x.test/a--b/a\\*b</a></p>\n</blockquote>\n"
   },
   {
     "source": "- https://x.test/a--b",
@@ -9653,27 +9963,33 @@
   },
   {
     "source": "- https://x.test/a--b/[r]",
-    "html": "<ul>\n<li><a href=\"https://x.test/a--b/%5Br%5D\">https://x.test/a--b/[r]</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/a--b/%5Br%5D\">https://x.test/a--b/[r]</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/a--b/[r]\">https://x.test/a--b/[r]</a></li>\n</ul>\n"
   },
   {
     "source": "- https://x.test/a--b/a\\*b",
-    "html": "<ul>\n<li><a href=\"https://x.test/a--b/a%5C*b\">https://x.test/a--b/a\\*b</a></li>\n</ul>\n"
+    "html": "<ul>\n<li><a href=\"https://x.test/a--b/a%5C*b\">https://x.test/a--b/a\\*b</a></li>\n</ul>\n",
+    "nativeHtml": "<ul>\n<li><a href=\"https://x.test/a--b/a\\*b\">https://x.test/a--b/a\\*b</a></li>\n</ul>\n"
   },
   {
     "source": "https://x.test/[r]\n\n[r]: /u\n",
-    "html": "<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a></p>\n"
+    "html": "<p><a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/[r]\">https://x.test/[r]</a></p>\n"
   },
   {
     "source": "https://x.test/a\\_b/[r]\n\n[r]: /u\n",
-    "html": "<p><a href=\"https://x.test/a%5C_b/%5Br%5D\">https://x.test/a\\_b/[r]</a></p>\n"
+    "html": "<p><a href=\"https://x.test/a%5C_b/%5Br%5D\">https://x.test/a\\_b/[r]</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/a\\_b/[r]\">https://x.test/a\\_b/[r]</a></p>\n"
   },
   {
     "source": "see https://x.test/a\\_b/_c_\n",
-    "html": "<p>see <a href=\"https://x.test/a%5C_b/_c\">https://x.test/a\\_b/_c</a>_</p>\n"
+    "html": "<p>see <a href=\"https://x.test/a%5C_b/_c\">https://x.test/a\\_b/_c</a>_</p>\n",
+    "nativeHtml": "<p>see <a href=\"https://x.test/a\\_b/_c\">https://x.test/a\\_b/_c</a>_</p>\n"
   },
   {
     "source": "https://x.test/a\\/<em>b</em>\n",
-    "html": "<p><a href=\"https://x.test/a%5C/\">https://x.test/a\\/</a><em>b</em></p>\n"
+    "html": "<p><a href=\"https://x.test/a%5C/\">https://x.test/a\\/</a><em>b</em></p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/a\\/\">https://x.test/a\\/</a><em>b</em></p>\n"
   },
   {
     "source": "https://x.test/?a=1&amp;b=_c_\n",
@@ -9685,7 +10001,8 @@
   },
   {
     "source": "https://x.test/?a=1&amp;[r]\n\n[r]: /u\n",
-    "html": "<p><a href=\"https://x.test/?a=1&amp;amp;%5Br%5D\">https://x.test/?a=1&amp;amp;[r]</a></p>\n"
+    "html": "<p><a href=\"https://x.test/?a=1&amp;amp;%5Br%5D\">https://x.test/?a=1&amp;amp;[r]</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/?a=1&amp;amp;[r]\">https://x.test/?a=1&amp;amp;[r]</a></p>\n"
   },
   {
     "source": "a&#64;example.test",
@@ -9797,11 +10114,13 @@
   },
   {
     "source": "http://例_名.test",
-    "html": "<p><a href=\"http://%E4%BE%8B_%E5%90%8D.test\">http://例_名.test</a></p>\n"
+    "html": "<p><a href=\"http://%E4%BE%8B_%E5%90%8D.test\">http://例_名.test</a></p>\n",
+    "nativeHtml": "<p><a href=\"http://例_名.test\">http://例_名.test</a></p>\n"
   },
   {
     "source": "*http://例_名.test*",
-    "html": "<p><em><a href=\"http://%E4%BE%8B_%E5%90%8D.test\">http://例_名.test</a></em></p>\n"
+    "html": "<p><em><a href=\"http://%E4%BE%8B_%E5%90%8D.test\">http://例_名.test</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"http://例_名.test\">http://例_名.test</a></em></p>\n"
   },
   {
     "source": "[label http://例_名.test](target)",
@@ -9809,11 +10128,13 @@
   },
   {
     "source": "http://x.例_名.test",
-    "html": "<p><a href=\"http://x.%E4%BE%8B_%E5%90%8D.test\">http://x.例_名.test</a></p>\n"
+    "html": "<p><a href=\"http://x.%E4%BE%8B_%E5%90%8D.test\">http://x.例_名.test</a></p>\n",
+    "nativeHtml": "<p><a href=\"http://x.例_名.test\">http://x.例_名.test</a></p>\n"
   },
   {
     "source": "*http://x.例_名.test*",
-    "html": "<p><em><a href=\"http://x.%E4%BE%8B_%E5%90%8D.test\">http://x.例_名.test</a></em></p>\n"
+    "html": "<p><em><a href=\"http://x.%E4%BE%8B_%E5%90%8D.test\">http://x.例_名.test</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"http://x.例_名.test\">http://x.例_名.test</a></em></p>\n"
   },
   {
     "source": "[label http://x.例_名.test](target)",
@@ -9821,11 +10142,13 @@
   },
   {
     "source": "http://x.𐄀name.test",
-    "html": "<p><a href=\"http://x.%F0%90%84%80name.test\">http://x.𐄀name.test</a></p>\n"
+    "html": "<p><a href=\"http://x.%F0%90%84%80name.test\">http://x.𐄀name.test</a></p>\n",
+    "nativeHtml": "<p><a href=\"http://x.𐄀name.test\">http://x.𐄀name.test</a></p>\n"
   },
   {
     "source": "*http://x.𐄀name.test*",
-    "html": "<p><em><a href=\"http://x.%F0%90%84%80name.test\">http://x.𐄀name.test</a></em></p>\n"
+    "html": "<p><em><a href=\"http://x.%F0%90%84%80name.test\">http://x.𐄀name.test</a></em></p>\n",
+    "nativeHtml": "<p><em><a href=\"http://x.𐄀name.test\">http://x.𐄀name.test</a></em></p>\n"
   },
   {
     "source": "[label http://x.𐄀name.test](target)",
@@ -9837,7 +10160,8 @@
   },
   {
     "source": "*x* https://x.test/[r]\n\n[r]: /u",
-    "html": "<p><em>x</em> <a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a></p>\n"
+    "html": "<p><em>x</em> <a href=\"https://x.test/%5Br%5D\">https://x.test/[r]</a></p>\n",
+    "nativeHtml": "<p><em>x</em> <a href=\"https://x.test/[r]\">https://x.test/[r]</a></p>\n"
   },
   {
     "source": "www.example.test_ b",
@@ -9857,7 +10181,8 @@
   },
   {
     "source": "https://x.test/a b",
-    "html": "<p><a href=\"https://x.test/a%C2%A0b\">https://x.test/a b</a></p>\n"
+    "html": "<p><a href=\"https://x.test/a%C2%A0b\">https://x.test/a b</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://x.test/a%C2%A0b\">https://x.test/a b</a></p>\n"
   },
   {
     "source": "*x/y*",
@@ -9997,23 +10322,28 @@
   },
   {
     "source": "http://a.b/`x`",
-    "html": "<p><a href=\"http://a.b/%60x%60\">http://a.b/`x`</a></p>\n"
+    "html": "<p><a href=\"http://a.b/%60x%60\">http://a.b/`x`</a></p>\n",
+    "nativeHtml": "<p><a href=\"http://a.b/`x`\">http://a.b/`x`</a></p>\n"
   },
   {
     "source": "http://a.b/`x y`",
-    "html": "<p><a href=\"http://a.b/%60x\">http://a.b/`x</a> y`</p>\n"
+    "html": "<p><a href=\"http://a.b/%60x\">http://a.b/`x</a> y`</p>\n",
+    "nativeHtml": "<p><a href=\"http://a.b/`x\">http://a.b/`x</a> y`</p>\n"
   },
   {
     "source": "http://x.y/a\\>b",
-    "html": "<p><a href=\"http://x.y/a%5C%3Eb\">http://x.y/a\\&gt;b</a></p>\n"
+    "html": "<p><a href=\"http://x.y/a%5C%3Eb\">http://x.y/a\\&gt;b</a></p>\n",
+    "nativeHtml": "<p><a href=\"http://x.y/a\\>b\">http://x.y/a\\&gt;b</a></p>\n"
   },
   {
     "source": "http://a.b/[x](y)",
-    "html": "<p><a href=\"http://a.b/%5Bx%5D(y)\">http://a.b/[x](y)</a></p>\n"
+    "html": "<p><a href=\"http://a.b/%5Bx%5D(y)\">http://a.b/[x](y)</a></p>\n",
+    "nativeHtml": "<p><a href=\"http://a.b/[x](y)\">http://a.b/[x](y)</a></p>\n"
   },
   {
     "source": "http://x.test/a^b",
-    "html": "<p><a href=\"http://x.test/a%5Eb\">http://x.test/a^b</a></p>\n"
+    "html": "<p><a href=\"http://x.test/a%5Eb\">http://x.test/a^b</a></p>\n",
+    "nativeHtml": "<p><a href=\"http://x.test/a^b\">http://x.test/a^b</a></p>\n"
   },
   {
     "source": "a@b.c1http://x.y",
@@ -10033,27 +10363,33 @@
   },
   {
     "source": "http://a.b/`x y` more `z`",
-    "html": "<p><a href=\"http://a.b/%60x\">http://a.b/`x</a> y<code>more</code>z`</p>\n"
+    "html": "<p><a href=\"http://a.b/%60x\">http://a.b/`x</a> y<code>more</code>z`</p>\n",
+    "nativeHtml": "<p><a href=\"http://a.b/`x\">http://a.b/`x</a> y<code>more</code>z`</p>\n"
   },
   {
     "source": "http://a.b/`x y` tail",
-    "html": "<p><a href=\"http://a.b/%60x\">http://a.b/`x</a> y` tail</p>\n"
+    "html": "<p><a href=\"http://a.b/%60x\">http://a.b/`x</a> y` tail</p>\n",
+    "nativeHtml": "<p><a href=\"http://a.b/`x\">http://a.b/`x</a> y` tail</p>\n"
   },
   {
     "source": "http://a.b/``x y`` more ``z``",
-    "html": "<p><a href=\"http://a.b/%60%60x\">http://a.b/``x</a> y<code>more</code>z``</p>\n"
+    "html": "<p><a href=\"http://a.b/%60%60x\">http://a.b/``x</a> y<code>more</code>z``</p>\n",
+    "nativeHtml": "<p><a href=\"http://a.b/``x\">http://a.b/``x</a> y<code>more</code>z``</p>\n"
   },
   {
     "source": "http://a.b/[x](y \"t\")",
-    "html": "<p><a href=\"http://a.b/%5Bx%5D(y\">http://a.b/[x](y</a> &quot;t&quot;)</p>\n"
+    "html": "<p><a href=\"http://a.b/%5Bx%5D(y\">http://a.b/[x](y</a> &quot;t&quot;)</p>\n",
+    "nativeHtml": "<p><a href=\"http://a.b/[x](y\">http://a.b/[x](y</a> &quot;t&quot;)</p>\n"
   },
   {
     "source": "http://a.b/[x](y \"a b\") next",
-    "html": "<p><a href=\"http://a.b/%5Bx%5D(y\">http://a.b/[x](y</a> &quot;a b&quot;) next</p>\n"
+    "html": "<p><a href=\"http://a.b/%5Bx%5D(y\">http://a.b/[x](y</a> &quot;a b&quot;) next</p>\n",
+    "nativeHtml": "<p><a href=\"http://a.b/[x](y\">http://a.b/[x](y</a> &quot;a b&quot;) next</p>\n"
   },
   {
     "source": "http://a.b/![x](y)",
-    "html": "<p><a href=\"http://a.b/!%5Bx%5D(y)\">http://a.b/![x](y)</a></p>\n"
+    "html": "<p><a href=\"http://a.b/!%5Bx%5D(y)\">http://a.b/![x](y)</a></p>\n",
+    "nativeHtml": "<p><a href=\"http://a.b/![x](y)\">http://a.b/![x](y)</a></p>\n"
   },
   {
     "source": "<https://example.com/_v1_/index>",
@@ -10073,7 +10409,8 @@
   },
   {
     "source": "(see https://a.com/x|y&amp;z)",
-    "html": "<p>(see <a href=\"https://a.com/x%7Cy&amp;amp;z\">https://a.com/x|y&amp;amp;z</a>)</p>\n"
+    "html": "<p>(see <a href=\"https://a.com/x%7Cy&amp;amp;z\">https://a.com/x|y&amp;amp;z</a>)</p>\n",
+    "nativeHtml": "<p>(see <a href=\"https://a.com/x|y&amp;amp;z\">https://a.com/x|y&amp;amp;z</a>)</p>\n"
   },
   {
     "source": "<https://foo.bar/baz bim>\n",
@@ -10089,11 +10426,13 @@
   },
   {
     "source": "\\<https://example.com>",
-    "html": "<p>&lt;<a href=\"https://example.com%3E\">https://example.com&gt;</a></p>\n"
+    "html": "<p>&lt;<a href=\"https://example.com%3E\">https://example.com&gt;</a></p>\n",
+    "nativeHtml": "<p>&lt;<a href=\"https://example.com>\">https://example.com&gt;</a></p>\n"
   },
   {
     "source": "<https://example.com?find=\\*>\n",
-    "html": "<p><a href=\"https://example.com?find=%5C*\">https://example.com?find=\\*</a></p>\n"
+    "html": "<p><a href=\"https://example.com?find=%5C*\">https://example.com?find=\\*</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://example.com?find=\\*\">https://example.com?find=\\*</a></p>\n"
   },
   {
     "source": "<http://foo.bar.baz>\n",
@@ -10129,7 +10468,8 @@
   },
   {
     "source": "<https://example.com/\\[\\>\n",
-    "html": "<p><a href=\"https://example.com/%5C[%5C\">https://example.com/\\[\\</a></p>\n"
+    "html": "<p><a href=\"https://example.com/%5C[%5C\">https://example.com/\\[\\</a></p>\n",
+    "nativeHtml": "<p><a href=\"https://example.com/\\[\\\">https://example.com/\\[\\</a></p>\n"
   },
   {
     "source": "<foo@bar.example.com>\n",
@@ -10165,11 +10505,13 @@
   },
   {
     "source": "http://a.b/`x text http://c.d` tail",
-    "html": "<p><a href=\"http://a.b/%60x\">http://a.b/`x</a> text <a href=\"http://c.d%60\">http://c.d`</a> tail</p>\n"
+    "html": "<p><a href=\"http://a.b/%60x\">http://a.b/`x</a> text <a href=\"http://c.d%60\">http://c.d`</a> tail</p>\n",
+    "nativeHtml": "<p><a href=\"http://a.b/`x\">http://a.b/`x</a> text <a href=\"http://c.d`\">http://c.d`</a> tail</p>\n"
   },
   {
     "source": "http://a.b/`x code` http://c.d `end`",
-    "html": "<p><a href=\"http://a.b/%60x\">http://a.b/`x</a> code<code>http://c.d</code>end`</p>\n"
+    "html": "<p><a href=\"http://a.b/%60x\">http://a.b/`x</a> code<code>http://c.d</code>end`</p>\n",
+    "nativeHtml": "<p><a href=\"http://a.b/`x\">http://a.b/`x</a> code<code>http://c.d</code>end`</p>\n"
   },
   {
     "source": "[a](/foo[) http://a.b",
@@ -10178,7 +10520,8 @@
   },
   {
     "source": "[x](http://a.b/`x y`) http://c.d",
-    "html": "<p>[x](<a href=\"http://a.b/%60x\">http://a.b/`x</a> y`) <a href=\"http://c.d\">http://c.d</a></p>\n"
+    "html": "<p>[x](<a href=\"http://a.b/%60x\">http://a.b/`x</a> y`) <a href=\"http://c.d\">http://c.d</a></p>\n",
+    "nativeHtml": "<p>[x](<a href=\"http://a.b/`x\">http://a.b/`x</a> y`) <a href=\"http://c.d\">http://c.d</a></p>\n"
   },
   {
     "source": "[ b\n\nhttp://a.b",
@@ -10242,7 +10585,8 @@
   },
   {
     "source": "| a | b |\n|---|---|\n| http://a.b/x\\|y | z |\n",
-    "html": "<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><a href=\"http://a.b/x%7Cy\">http://a.b/x|y</a></td>\n<td>z</td>\n</tr>\n</tbody>\n</table>\n"
+    "html": "<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><a href=\"http://a.b/x%7Cy\">http://a.b/x|y</a></td>\n<td>z</td>\n</tr>\n</tbody>\n</table>\n",
+    "nativeHtml": "<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><a href=\"http://a.b/x%7Cy\">http://a.b/x|y</a></td>\n<td>z</td>\n</tr>\n</tbody>\n</table>\n"
   },
   {
     "source": "> a\n>www.example.com\n",
@@ -10262,7 +10606,8 @@
   },
   {
     "source": "http://a.b/]*.*\n",
-    "html": "<p><a href=\"http://a.b/%5D\">http://a.b/]</a><em>.</em></p>\n"
+    "html": "<p><a href=\"http://a.b/%5D\">http://a.b/]</a><em>.</em></p>\n",
+    "nativeHtml": "<p><a href=\"http://a.b/]\">http://a.b/]</a><em>.</em></p>\n"
   },
   {
     "source": "a@b\\.test\n",
@@ -10314,15 +10659,18 @@
   },
   {
     "source": "http://﻿a.b\n",
-    "html": "<p><a href=\"http://%EF%BB%BFa.b\">http://﻿a.b</a></p>\n"
+    "html": "<p><a href=\"http://%EF%BB%BFa.b\">http://﻿a.b</a></p>\n",
+    "nativeHtml": "<p><a href=\"http://﻿a.b\">http://﻿a.b</a></p>\n"
   },
   {
     "source": "http:// a.b\n",
-    "html": "<p><a href=\"http://%E2%80%A8a.b\">http:// a.b</a></p>\n"
+    "html": "<p><a href=\"http://%E2%80%A8a.b\">http:// a.b</a></p>\n",
+    "nativeHtml": "<p><a href=\"http://%E2%80%A8a.b\">http:// a.b</a></p>\n"
   },
   {
     "source": "http:// a.b\n",
-    "html": "<p><a href=\"http://%E2%80%A9a.b\">http:// a.b</a></p>\n"
+    "html": "<p><a href=\"http://%E2%80%A9a.b\">http:// a.b</a></p>\n",
+    "nativeHtml": "<p><a href=\"http://%E2%80%A9a.b\">http:// a.b</a></p>\n"
   },
   {
     "source": "Look!https://example.com/x\n",
@@ -10354,7 +10702,8 @@
   },
   {
     "source": "|http://a.b/c|d\n|---|\n",
-    "html": "<p>|<a href=\"http://a.b/c%7Cd\">http://a.b/c|d</a>\n|---|</p>\n"
+    "html": "<p>|<a href=\"http://a.b/c%7Cd\">http://a.b/c|d</a>\n|---|</p>\n",
+    "nativeHtml": "<p>|<a href=\"http://a.b/c|d\">http://a.b/c|d</a>\n|---|</p>\n"
   },
   {
     "source": "see http://a.b/?p=$1 and www.example.com\n",
@@ -10366,7 +10715,8 @@
   },
   {
     "source": "http://a.b/\\<\n",
-    "html": "<p><a href=\"http://a.b/%5C\">http://a.b/\\</a>&lt;</p>\n"
+    "html": "<p><a href=\"http://a.b/%5C\">http://a.b/\\</a>&lt;</p>\n",
+    "nativeHtml": "<p><a href=\"http://a.b/\\\">http://a.b/\\</a>&lt;</p>\n"
   },
   {
     "source": "<code>a<!---->@b.test</code>\n",
@@ -10426,6 +10776,7 @@
   },
   {
     "source": "</a href=\"http://x.y\">",
-    "html": "<p>&lt;/a href=&quot;<a href=\"http://x.y%22%3E\">http://x.y&quot;&gt;</a></p>\n"
+    "html": "<p>&lt;/a href=&quot;<a href=\"http://x.y%22%3E\">http://x.y&quot;&gt;</a></p>\n",
+    "nativeHtml": "<p>&lt;/a href=&quot;<a href=\"http://x.y&quot;&gt;\">http://x.y&quot;&gt;</a></p>\n"
   }
 ]

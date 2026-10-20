@@ -39,7 +39,7 @@ cases! {
     link_with_a_title: "[q](<> \"t q\")\n" => "[q]( \"t q\")\n",
     image_with_a_title: "![a *b* `c` [d](u)](<> (paren))\n" => "![a b c d]( \"paren\")\n",
     quoted_empty_title: "> [a](/u\n>\"\")\n" => "> [a](/u \"\")\n",
-    quoted_quote_destination: "> [a](\n> \"\")\n" => "> [a](%22%22)\n",
+    quoted_quote_destination: "> [a](\n> \"\")\n" => "> [a](\"\")\n",
     an_empty_title: "[q](<> \"\")\n" => "[q]( \"\")\n",
     a_reference_with_a_title: "[w][r]\n\n[r]: <> \"t\"\n" => "[w]( \"t\")\n",
 }

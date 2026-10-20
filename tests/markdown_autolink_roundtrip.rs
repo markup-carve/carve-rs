@@ -61,17 +61,17 @@ fn markdown_autolink_fallback_keeps_literal_destination_brackets() {
     let cases = [
         (
             "<https://example.com/\\[\\>\n",
-            "[https://example.com/\\\\\\[\\\\](https://example.com/%5C[%5C)\n",
+            "[https://example.com/\\\\\\[\\\\](https://example.com/\\[\\\\)\n",
             &["markdown-paragraph", "markdown-autolink"][..],
         ),
         (
             "<https://e.com/a\\b>\n",
-            "[https://e.com/a\\\\b](https://e.com/a%5Cb)\n",
+            "[https://e.com/a\\\\b](https://e.com/a\\b)\n",
             &["markdown-paragraph", "markdown-autolink"],
         ),
         (
             "<https://e.com/a`b>\n",
-            "[https://e.com/a\\`b](https://e.com/a%60b)\n",
+            "[https://e.com/a\\`b](https://e.com/a`b)\n",
             &["markdown-paragraph", "markdown-autolink"],
         ),
         (
@@ -91,12 +91,12 @@ fn markdown_autolink_fallback_keeps_literal_destination_brackets() {
         ),
         (
             "see https://example.com/[a]b here\n",
-            "see [https://example.com/[a]b](https://example.com/%5Ba%5Db) here\n",
+            "see [https://example.com/[a]b](https://example.com/[a]b) here\n",
             &["markdown-paragraph", "markdown-bare-autolink"],
         ),
         (
             "https://e.com/a]b\n",
-            "[https://e.com/a\\]b](https://e.com/a%5Db)\n",
+            "[https://e.com/a\\]b](https://e.com/a]b)\n",
             &["markdown-paragraph", "markdown-bare-autolink"],
         ),
     ];

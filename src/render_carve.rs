@@ -7870,8 +7870,9 @@ fn escape_destination_escapes(text: &str) -> String {
     let bytes = text.as_bytes();
     let mut out = String::new();
     for (i, ch) in text.char_indices() {
-        let escapable =
-            ch == '\\' && matches!(bytes.get(i + 1), Some(b'(') | Some(b')') | Some(b'\\'));
+        let escapable = ch == '\\'
+            && (i + 1 == bytes.len()
+                || matches!(bytes.get(i + 1), Some(b'(') | Some(b')') | Some(b'\\')));
         if marked.contains(&i) || escapable {
             out.push('\\');
         }
@@ -7896,8 +7897,9 @@ pub(crate) fn escape_destination(text: &str) -> String {
     let bytes = text.as_bytes();
     let mut out = String::new();
     for (i, ch) in text.char_indices() {
-        let escapable =
-            ch == '\\' && matches!(bytes.get(i + 1), Some(b'(') | Some(b')') | Some(b'\\'));
+        let escapable = ch == '\\'
+            && (i + 1 == bytes.len()
+                || matches!(bytes.get(i + 1), Some(b'(') | Some(b')') | Some(b'\\')));
         if marked.contains(&i) || escapable {
             out.push('\\');
         }

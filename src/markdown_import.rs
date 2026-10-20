@@ -171,15 +171,7 @@ pub(crate) fn markdown_autolink_destination(destination: &str, email: bool) -> S
 }
 
 pub(crate) fn markdown_bare_link_destination(destination: &str) -> String {
-    let mut encoded = String::new();
-    for byte in destination.bytes() {
-        if byte >= 0x7f || matches!(byte, b'[' | b']') {
-            encoded.push_str(&format!("%{byte:02X}"));
-        } else {
-            encoded.push(byte as char);
-        }
-    }
-    encode_markdown_destination(&encoded, false)
+    encode_markdown_destination(destination, false)
 }
 
 fn encode_markdown_destination(destination: &str, email: bool) -> String {
@@ -192,10 +184,7 @@ fn encode_markdown_destination(destination: &str, email: bool) -> String {
         encoded.push_str("mailto:");
     }
     for ch in destination.chars() {
-        if ch.is_whitespace()
-            || ch.is_control()
-            || matches!(ch, '"' | '<' | '>' | '\\' | '`' | '^' | '{' | '|' | '}')
-        {
+        if ch.is_whitespace() || ch.is_control() {
             let mut buffer = [0; 4];
             for byte in ch.encode_utf8(&mut buffer).bytes() {
                 encoded.push('%');
@@ -566,6 +555,7 @@ fn markdown_to_carve_with_carriers(
                 .map(|source| inline.restore(source))
                 .unwrap_or((None, Vec::new()));
             if let Some(value) = restored {
+                let value = restore_table_email_brackets(value, markdown);
                 losses.extend(
                     dropped
                         .into_iter()
@@ -828,6 +818,39 @@ fn normalize_imported_reference_links(document: &mut Document) {
         !matches!(block, BlockNode::LinkReferenceDefinition(def)
             if !normalize.preserved.contains(&crate::parse::label_key(&def.label).to_uppercase()))
     });
+}
+
+fn encode_table_destination_pipes(document: &mut Document) {
+    use crate::include_walk::{visit_block_children, visit_inline_children, SubtreeVisitor};
+    struct Encode {
+        in_table: bool,
+    }
+    impl SubtreeVisitor for Encode {
+        fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
+            for block in blocks {
+                let previous = self.in_table;
+                if matches!(block, BlockNode::Table(_)) {
+                    self.in_table = true;
+                }
+                visit_block_children(block, self);
+                self.in_table = previous;
+            }
+        }
+        fn inlines(&mut self, inlines: &mut Vec<InlineNode>) {
+            for inline in inlines {
+                if self.in_table {
+                    match inline {
+                        InlineNode::Link(link) => link.href = link.href.replace('|', "%7C"),
+                        InlineNode::Image(image) => image.src = image.src.replace('|', "%7C"),
+                        InlineNode::AutoLink(link) => link.href = link.href.replace('|', "%7C"),
+                        _ => {}
+                    }
+                }
+                visit_inline_children(inline, self);
+            }
+        }
+    }
+    Encode { in_table: false }.blocks(&mut document.children);
 }
 
 fn preserve_html_code_for_writing(
@@ -1401,6 +1424,11 @@ fn markdown_to_ast_with_code_lines(
                     *dest_url = dest_url.replace("\\|", "|").into();
                     table_autolink = true;
                 }
+                Event::Start(Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. }) => {
+                    if !source[range.clone()].contains(r"\\\|") {
+                        *dest_url = dest_url.replace("\\|", "|").into();
+                    }
+                }
                 Event::Text(text) if table_autolink => *text = text.replace("\\|", "|").into(),
                 Event::InlineHtml(html) => *html = html.replace("\\|", "|").into(),
                 _ => {}
@@ -1622,11 +1650,12 @@ fn markdown_to_ast_with_code_lines(
             .into_values()
             .map(BlockNode::LinkReferenceDefinition),
     );
-    normalize_imported_reference_links(&mut document);
     crate::ast_json::hydrate_resolved_empty_references(&mut document);
     if needs_email_walk {
         crate::markdown_gfm_autolinks::link_email_text(&mut document);
     }
+    encode_table_destination_pipes(&mut document);
+    normalize_imported_reference_links(&mut document);
     if let Some(code_lines) = code_lines {
         *code_lines = locations;
     }
@@ -1694,6 +1723,32 @@ fn stripped_line_end(source: &str, text_end: usize) -> Option<(&str, usize)> {
 /// (carve-rs#1877). Derived `Clone` and `Drop` recurse over the tree and have no
 /// ceiling to consult, so the only place to stop it is before it exists.
 const MAX_IMPORT_LEVELS: usize = crate::render::MAX_RENDER_DEPTH + 2;
+
+fn restore_table_email_brackets(value: String, markdown: &str) -> String {
+    if !markdown.contains("\\|") || !value.contains("mailto:") {
+        return value;
+    }
+    static AFTER_CLOSER: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static IN_REFERENCE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let after_closer = AFTER_CLOSER.get_or_init(|| {
+        regex::Regex::new(r"\]\[(\[[^\]\n]*\]\(mailto:[^)\n]*%7C[^)\n]*\))\[\]")
+            .expect("table email bracket regex")
+    });
+    let value = after_closer
+        .replace_all(&value, |caps: &regex::Captures<'_>| {
+            format!(r"]\[{}[\]", &caps[1])
+        })
+        .into_owned();
+    let in_reference = IN_REFERENCE.get_or_init(|| {
+        regex::Regex::new(r"\\\[([^\]\n]+)\]\[(\[[^\]\n]*\]\(mailto:[^)\n]*%7C[^)\n]*\))\]")
+            .expect("table email reference regex")
+    });
+    in_reference
+        .replace_all(&value, |caps: &regex::Captures<'_>| {
+            format!(r"[{}]\[{}\]", &caps[1], &caps[2])
+        })
+        .into_owned()
+}
 
 // pulldown tests email syntax before removing a table's pipe escape.
 fn normalize_table_email_autolinks<'a>(source: &'a str, options: Options) -> Cow<'a, str> {
@@ -1788,7 +1843,9 @@ fn normalize_table_email_autolinks<'a>(source: &'a str, options: Options) -> Cow
         output.push_str(&source[copied..value.start()]);
         output.push_str(&format!(
             "[{label}]({})",
-            markdown_destination(&address, true).replace('&', "%26")
+            markdown_destination(&address, true)
+                .replace('|', "%7C")
+                .replace('&', "%26")
         ));
         copied = value.end();
     }
@@ -4002,8 +4059,8 @@ mod destination_encoding_tests {
             ("[x](mailto:a@b.example)", "<p><a href=\"mailto:a@b.example\">x</a></p>"),
             ("<foo@bar.example.com>", "<p><a href=\"mailto:foo@bar.example.com\">foo@bar.example.com</a></p>"),
             ("<foo+special@Bar.baz-bar0.com>", "<p><a href=\"mailto:foo+special@Bar.baz-bar0.com\">foo+special@Bar.baz-bar0.com</a></p>"),
-            ("<https://example.com?find=\\*>", "<p><a href=\"https://example.com?find=%5C*\">https://example.com?find=\\*</a></p>"),
-            ("<https://foo.bar.`baz>`", "<p><a href=\"https://foo.bar.%60baz\">https://foo.bar.`baz</a>`</p>"),
+            ("<https://example.com?find=\\*>", "<p><a href=\"https://example.com?find=\\*\">https://example.com?find=\\*</a></p>"),
+            ("<https://foo.bar.`baz>`", "<p><a href=\"https://foo.bar.`baz\">https://foo.bar.`baz</a>`</p>"),
             ("[x](<a b>)", "<p><a href=\"a%20b\">x</a></p>"),
             ("[x](<é/中?q=a&b=c>)", "<p><a href=\"é/中?q=a&amp;b=c\">x</a></p>"),
             ("a ![x](<a b>)", "<p>a <img src=\"a%20b\" alt=\"x\"></p>"),

@@ -862,9 +862,8 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
             {
                 let mut marked = String::new();
                 for ch in dest_url.chars() {
-                    if !ch.is_ascii()
-                        && !ch.is_whitespace()
-                        && !ch.is_control()
+                    if (!ch.is_ascii() && !ch.is_whitespace() && !ch.is_control()
+                        || matches!(ch, '\\' | '`' | '^' | '{' | '}' | '"' | '<' | '>'))
                         && !matches!(ch, '\u{E000}' | '\u{E001}')
                     {
                         marked.push_str(&format!("{unicode_marker}{}END", unicode_chars.len()));
@@ -880,7 +879,13 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
         let mut expected = String::new();
         pulldown_cmark::html::push_html(&mut expected, reference_events.into_iter());
         for (index, ch) in unicode_chars.into_iter().enumerate() {
-            expected = expected.replace(&format!("{unicode_marker}{index}END"), &ch.to_string());
+            let rendered = match ch {
+                '"' => "&quot;".to_owned(),
+                '<' => "&lt;".to_owned(),
+                '>' => "&gt;".to_owned(),
+                _ => ch.to_string(),
+            };
+            expected = expected.replace(&format!("{unicode_marker}{index}END"), &rendered);
         }
         expected = restore_destination_brackets(&expected)
             .replace(

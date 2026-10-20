@@ -2210,10 +2210,10 @@
     "attributes": [
       {
         "tag": "a",
-        "href": "u%3Ccode%3Ea%3C/code%3E"
+        "href": "u<code>a</code>"
       }
     ],
-    "nativeHtml": "<p>x<a href=\"u%3Ccode%3Ea%3C/code%3E\">^1</a></p>\n"
+    "nativeHtml": "<p>x<a href=\"u&lt;code&gt;a&lt;/code&gt;\">^1</a></p>\n"
   },
   {
     "markdown": "[^x](u)",
@@ -2244,10 +2244,10 @@
     "attributes": [
       {
         "tag": "a",
-        "href": "u%3Ccode%3Ea%3C/code%3E"
+        "href": "u<code>a</code>"
       }
     ],
-    "nativeHtml": "<p><a href=\"u%3Ccode%3Ea%3C/code%3E\">x</a></p>\n"
+    "nativeHtml": "<p><a href=\"u&lt;code&gt;a&lt;/code&gt;\">x</a></p>\n"
   },
   {
     "markdown": "[x](\n<code>a</code>)",
@@ -2343,10 +2343,10 @@
     "attributes": [
       {
         "tag": "a",
-        "href": "u%3Ccode%3Ea%3C/code%3E"
+        "href": "u<code>a</code>"
       }
     ],
-    "nativeHtml": "<p><a href=\"u%3Ccode%3Ea%3C/code%3E\">x</a></p>\n"
+    "nativeHtml": "<p><a href=\"u&lt;code&gt;a&lt;/code&gt;\">x</a></p>\n"
   },
   {
     "markdown": "x ![i](u<code>a</code>\n)",
@@ -2360,11 +2360,11 @@
     "attributes": [
       {
         "tag": "img",
-        "src": "u%3Ccode%3Ea%3C/code%3E",
+        "src": "u<code>a</code>",
         "alt": "i"
       }
     ],
-    "nativeHtml": "<p>x <img src=\"u%3Ccode%3Ea%3C/code%3E\" alt=\"i\" /></p>\n"
+    "nativeHtml": "<p>x <img src=\"u&lt;code&gt;a&lt;/code&gt;\" alt=\"i\" /></p>\n"
   },
   {
     "markdown": "[x](u\n)",

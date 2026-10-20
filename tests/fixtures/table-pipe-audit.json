@@ -136,7 +136,7 @@
     "name": "url3",
     "source": "| [a](/a\\\\\\|b) | z |\n|---|---|\n",
     "contains": [
-      "href=\"/a%5C%7Cb\""
+      "href=\"/a\\%7Cb\""
     ],
     "cells": 2,
     "excludes": [
@@ -184,7 +184,7 @@
     "name": "url4",
     "source": "| [a](/a\\\\\\\\|b) | z |\n|---|---|\n",
     "contains": [
-      "href=\"/a%5C%7Cb\""
+      "href=\"/a\\%7Cb\""
     ],
     "cells": 2,
     "excludes": [
@@ -232,7 +232,7 @@
     "name": "url5",
     "source": "| [a](/a\\\\\\\\\\|b) | z |\n|---|---|\n",
     "contains": [
-      "href=\"/a%5C%5C%7Cb\""
+      "href=\"/a\\\\%7Cb\""
     ],
     "cells": 2,
     "excludes": [
@@ -280,7 +280,7 @@
     "name": "url6",
     "source": "| [a](/a\\\\\\\\\\\\|b) | z |\n|---|---|\n",
     "contains": [
-      "href=\"/a%5C%5C%7Cb\""
+      "href=\"/a\\\\%7Cb\""
     ],
     "cells": 2,
     "excludes": [
@@ -328,7 +328,7 @@
     "name": "url7",
     "source": "| [a](/a\\\\\\\\\\\\\\|b) | z |\n|---|---|\n",
     "contains": [
-      "href=\"/a%5C%5C%5C%7Cb\""
+      "href=\"/a\\\\\\%7Cb\""
     ],
     "cells": 2,
     "excludes": [
@@ -376,7 +376,7 @@
     "name": "url8",
     "source": "| [a](/a\\\\\\\\\\\\\\\\|b) | z |\n|---|---|\n",
     "contains": [
-      "href=\"/a%5C%5C%5C%7Cb\""
+      "href=\"/a\\\\\\%7Cb\""
     ],
     "cells": 2,
     "excludes": [
@@ -1727,7 +1727,7 @@
     "name": "email-autolink-backticks",
     "source": "| <a`\\|b`c@x.com> | z |\n|---|---|\n",
     "contains": [
-      "href=\"mailto:a%60%7Cb%60c@x.com\">a`|b`c@x.com</a>"
+      "href=\"mailto:a`%7Cb`c@x.com\">a`|b`c@x.com</a>"
     ],
     "cells": 2,
     "excludes": [
