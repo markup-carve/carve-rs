@@ -10,6 +10,8 @@ use std::{collections::BTreeSet, sync::OnceLock};
 pub(crate) struct Assessment {
     pub diagnostics: Vec<MigrationDiagnostic>,
     pub complete: bool,
+    /// Source lines of table rows whose cells past the header width held content.
+    pub extra_cell_lines: Vec<usize>,
 }
 
 const BRACKET_OPEN_SENTINEL: &str = "\u{E000}";
@@ -73,16 +75,27 @@ fn bare_link_events<'a>(label: &str, prefix: &str) -> [Event<'a>; 3] {
     ]
 }
 
+fn angle_email() -> &'static regex::Regex {
+    static ANGLE_EMAIL: OnceLock<regex::Regex> = OnceLock::new();
+    ANGLE_EMAIL.get_or_init(|| regex::Regex::new(r"<([A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*)>").unwrap())
+}
+
 fn email_events<'a>(
     events: Vec<(Event<'a>, usize)>,
     line_starts: &[usize],
-    diagnostics: &mut Vec<MigrationDiagnostic>,
+    diagnostics: &mut Vec<(usize, MigrationDiagnostic)>,
 ) -> Vec<Event<'a>> {
     use crate::markdown_gfm_autolinks::{bare_links, Mode};
     let mut result = Vec::new();
     let mut input = events.into_iter().peekable();
     let mut opaque = 0usize;
+    let mut in_table = false;
     while let Some((event, origin)) = input.next() {
+        match &event {
+            Event::Start(Tag::Table(_)) => in_table = true,
+            Event::End(TagEnd::Table) => in_table = false,
+            _ => {}
+        }
         if opaque == 0 {
             if let Event::Text(first) = &event {
                 let mut text = first.to_string();
@@ -91,6 +104,36 @@ fn email_events<'a>(
                     text.push_str(next);
                     original.push(input.next().unwrap().0);
                 }
+                if in_table && text.contains('|') {
+                    let angle = angle_email();
+                    if angle
+                        .captures_iter(&text)
+                        .any(|found| found[1].contains('|'))
+                    {
+                        // A cell's `\|` is already a pipe when GFM reads the autolink.
+                        let mut cursor = 0;
+                        for found in angle.captures_iter(&text).filter(|f| f[1].contains('|')) {
+                            let whole = found.get(0).unwrap();
+                            if cursor < whole.start() {
+                                result.push(Event::Text(
+                                    text[cursor..whole.start()].to_owned().into(),
+                                ));
+                            }
+                            result.extend(bare_link_events(&found[1], "mailto:"));
+                            diagnostics.push(positioned(
+                                "autolink",
+                                line_starts,
+                                origin + whole.start(),
+                                MigrationFidelity::Normalized,
+                            ));
+                            cursor = whole.end();
+                        }
+                        if cursor < text.len() {
+                            result.push(Event::Text(text[cursor..].to_owned().into()));
+                        }
+                        continue;
+                    }
+                }
                 let links = bare_links(&text, Mode::Email);
                 if links.is_empty() {
                     result.extend(original);
@@ -98,14 +141,15 @@ fn email_events<'a>(
                 }
                 let mut cursor = 0;
                 for link in links {
-                    if cursor < link.start {
-                        result.push(Event::Text(text[cursor..link.start].to_owned().into()));
+                    let start = link.start;
+                    if cursor < start {
+                        result.push(Event::Text(text[cursor..start].to_owned().into()));
                     }
                     result.extend(bare_link_events(&text[link.start..link.end], link.prefix));
-                    diagnostics.push(diagnostic(
+                    diagnostics.push(positioned(
                         "bare-autolink",
                         line_starts,
-                        origin + link.start,
+                        origin + start,
                         MigrationFidelity::Normalized,
                     ));
                     cursor = link.end;
@@ -128,6 +172,15 @@ fn email_events<'a>(
         result.push(event);
     }
     result
+}
+
+fn positioned(
+    construct: &str,
+    line_starts: &[usize],
+    offset: usize,
+    fidelity: MigrationFidelity,
+) -> (usize, MigrationDiagnostic) {
+    (offset, diagnostic(construct, line_starts, offset, fidelity))
 }
 
 fn diagnostic(
@@ -182,6 +235,34 @@ fn table_row_pipe_escapes(row: &str, start: usize) -> (Vec<usize>, bool) {
         }
     }
     (escapes, doubled_boundary)
+}
+
+/// Cells of a pipe row split on unescaped pipes, as GFM reads them.
+fn table_row_cells(row: &str) -> Vec<&str> {
+    let bytes = row.as_bytes();
+    let mut cells = Vec::new();
+    let mut start = 0;
+    let mut column = 0;
+    while column < bytes.len() {
+        match bytes[column] {
+            b'\\' => column += 2,
+            b'|' => {
+                cells.push(&row[start..column]);
+                start = column + 1;
+                column += 1;
+            }
+            _ => column += 1,
+        }
+    }
+    cells.push(&row[start..]);
+    let trimmed = row.trim();
+    if trimmed.starts_with('|') && !cells.is_empty() {
+        cells.remove(0);
+    }
+    if trimmed.ends_with('|') && !trimmed.ends_with("\\|") && !cells.is_empty() {
+        cells.pop();
+    }
+    cells
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -239,6 +320,9 @@ fn shape(html: &str, list_marker: Option<&str>) -> Vec<Shape> {
                         | "tr"
                 ) {
                     children.retain(|child| !layout(child));
+                }
+                if tag == "tbody" && children.is_empty() {
+                    return Vec::new();
                 }
                 if tag == "li" {
                     for index in 0..children.len().saturating_sub(1) {
@@ -382,6 +466,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
         return Assessment {
             diagnostics: Vec::new(),
             complete: false,
+            extra_cell_lines: Vec::new(),
         };
     }
     // Parser offsets refer to this normalized input; normalization never adds a line.
@@ -425,7 +510,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
             complete = false;
         }
         definition_spans.push(span);
-        diagnostics.push(diagnostic(
+        diagnostics.push(positioned(
             "reference-definition",
             &line_starts,
             strikes.original_range(definition.span.clone()).start,
@@ -443,6 +528,8 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
     let mut html_block = false;
     let mut html_fragments = 0usize;
     let mut table_pipe_escapes = BTreeSet::new();
+    let mut table_width = 0usize;
+    let mut extra_cell_lines = Vec::new();
     static REWRITE: OnceLock<regex::Regex> = OnceLock::new();
     let rewrite = REWRITE.get_or_init(|| regex::Regex::new(r"&(?:#[xX][\da-fA-F]+|#\d+|[A-Za-z][A-Za-z\d]+);|\\[!\x22#$%&'()*+,\-./:;<=>?@\[\]\\^_`{|}~]").unwrap());
     for (event, range) in parser.into_offset_iter() {
@@ -451,6 +538,9 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
         }
         let event = strikes.restore(event, &range);
         let range = strikes.original_range(range);
+        if let Event::Start(Tag::Table(alignments)) = &event {
+            table_width = alignments.len();
+        }
         if matches!(event, Event::Start(Tag::TableHead | Tag::TableRow)) {
             let end = source[range.start..]
                 .find('\n')
@@ -458,6 +548,15 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
             let row = &source[range.start..end];
             let (escapes, doubled_boundary) = table_row_pipe_escapes(row, range.start);
             table_pipe_escapes.extend(escapes);
+            if !doubled_boundary
+                && table_row_cells(row)
+                    .iter()
+                    .skip(table_width)
+                    .any(|cell| !cell.trim().is_empty())
+            {
+                complete = false;
+                extra_cell_lines.push(line_starts.partition_point(|start| *start <= range.start));
+            }
             if doubled_boundary
                 || (matches!(event, Event::Start(Tag::TableRow)) && !row.contains('|'))
             {
@@ -496,7 +595,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                 && input.starts_with(|character: char| character.is_ascii_punctuation())
                 && !table_pipe_escapes.contains(&(range.start - 1))
             {
-                diagnostics.push(diagnostic(
+                diagnostics.push(positioned(
                     "escape",
                     &line_starts,
                     range.start - 1,
@@ -531,7 +630,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                     events.extend(
                         bare_link_events(&label, link.prefix).map(|event| (event, link.start)),
                     );
-                    diagnostics.push(diagnostic(
+                    diagnostics.push(positioned(
                         "bare-autolink",
                         &line_starts,
                         link.start,
@@ -685,7 +784,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                     {
                         continue;
                     }
-                    diagnostics.push(diagnostic(
+                    diagnostics.push(positioned(
                         if matched.as_str().starts_with('&') {
                             "entity"
                         } else {
@@ -745,7 +844,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                 let ordered = lists.last() == Some(&true);
                 if ordered || !reaches {
                     if ordered && reaches {
-                        diagnostics.push(diagnostic(
+                        diagnostics.push(positioned(
                             "ordered-task",
                             &line_starts,
                             range.start,
@@ -764,7 +863,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                     }
                     continue;
                 }
-                diagnostics.push(diagnostic(
+                diagnostics.push(positioned(
                     "bullet-task",
                     &line_starts,
                     range.start,
@@ -780,7 +879,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
             _ => {}
         }
         if let Some((construct, fidelity)) = assessment {
-            diagnostics.push(diagnostic(construct, &line_starts, range.start, fidelity));
+            diagnostics.push(positioned(construct, &line_starts, range.start, fidelity));
         }
         events.push((event, range.start));
         if paren_list {
@@ -836,7 +935,16 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
         let mut unicode_chars = Vec::new();
         let mut lone_image_paragraph_end = None;
         let mut in_table = false;
+        let mut table_autolink = false;
         for (index, event) in events.iter().enumerate() {
+            table_autolink = match event {
+                Event::Start(Tag::Link {
+                    link_type: LinkType::Autolink | LinkType::Email,
+                    ..
+                }) => in_table,
+                Event::End(TagEnd::Link) => false,
+                _ => table_autolink,
+            };
             if matches!(event, Event::Start(Tag::Table(_))) {
                 in_table = true;
             } else if matches!(event, Event::End(TagEnd::Table)) {
@@ -874,6 +982,15 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                 continue;
             }
             let mut event = event.clone();
+            if table_autolink {
+                match &mut event {
+                    Event::Start(Tag::Link { dest_url, .. }) => {
+                        *dest_url = dest_url.replace("\\|", "|").into();
+                    }
+                    Event::Text(text) => *text = text.replace("\\|", "|").into(),
+                    _ => {}
+                }
+            }
             match &mut event {
                 Event::Start(
                     Tag::Link {
@@ -960,22 +1077,76 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
         complete = authored_ordered_delimiters == ordered_delimiters(&document.children)
             && shape(&expected, Some(&expected_list_marker)) == shape(&actual, None);
     }
-    diagnostics.sort_by_key(|row| {
-        row.path
-            .as_ref()
-            .and_then(|path| path.strip_prefix("line:"))
-            .and_then(|line| line.parse::<usize>().ok())
-            .unwrap_or(0)
+    diagnostics.sort_by_key(|(offset, row)| {
+        (
+            row.path
+                .as_ref()
+                .and_then(|path| path.strip_prefix("line:"))
+                .and_then(|line| line.parse::<usize>().ok())
+                .unwrap_or(0),
+            *offset,
+        )
     });
+    let diagnostics: Vec<_> = diagnostics.into_iter().map(|(_, row)| row).collect();
     Assessment {
         diagnostics: if complete { diagnostics } else { Vec::new() },
         complete,
+        extra_cell_lines,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn table_pipe_shapes_are_assessed_completely() {
+        for source in [
+            "| <https://example.com/a\\|b> | z |\n|---|---|\n",
+            "| a \\| b | z |\n|---|---|\n",
+            "| [l](https://e.com/a\\|x) | z |\n|---|---|\n",
+            "| <a\\|b@example.com> | z |\n|---|---|\n",
+            "| <https://e.com/a\\|b> | z |\n|---|---|\n\ntext <https://e.com/a\\|b>\n",
+        ] {
+            let result = crate::migrate_markdown(source);
+            assert!(
+                result
+                    .report
+                    .diagnostics
+                    .iter()
+                    .all(|row| row.code != "fidelity-unverified"),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn table_body_cells_past_the_header_are_reported_as_dropped() {
+        for source in [
+            "| h |\n|---|\n| <https://e.com/a\\|b> | extra |\n",
+            "| a | b |\n|---|---|\n| <https://example.com/a|b> | z |\n",
+        ] {
+            let result = crate::migrate_markdown(source);
+            let actual: Vec<_> = result
+                .report
+                .diagnostics
+                .iter()
+                .map(|row| (row.code.as_str(), row.path.as_deref(), row.fidelity))
+                .collect();
+            assert_eq!(
+                actual,
+                vec![
+                    ("fidelity-unverified", None, MigrationFidelity::Dropped),
+                    (
+                        "markdown-table-extra-cells",
+                        Some("line:3"),
+                        MigrationFidelity::Dropped
+                    ),
+                ],
+                "{source}"
+            );
+        }
+    }
 
     #[test]
     fn table_pipe_assessment_matches_row_level_unescaping() {

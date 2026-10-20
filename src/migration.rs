@@ -262,6 +262,7 @@ fn assess_markdown_migration(
             },
         });
     }
+    let extra_cell_lines = assessment.extra_cell_lines;
     let mut result = assessed(source, value, SourceFormat::Markdown, !losses.is_empty());
     if result
         .report
@@ -303,6 +304,21 @@ fn assess_markdown_migration(
                     _ => MigrationConfidence::Exact,
                 },
                 path: loss.line.map(|line| format!("line:{line}")),
+            }
+        }));
+    result
+        .report
+        .diagnostics
+        .extend(extra_cell_lines.into_iter().map(|line| {
+            MigrationDiagnostic {
+                code: "markdown-table-extra-cells".to_owned(),
+                message:
+                    "GFM ignores body cells beyond the header width; their content was omitted"
+                        .to_owned(),
+                severity: HtmlImportSeverity::Warning,
+                fidelity: MigrationFidelity::Dropped,
+                confidence: MigrationConfidence::Exact,
+                path: Some(format!("line:{line}")),
             }
         }));
     // Reported, not a loss: the block's content survives byte-exact, and the
