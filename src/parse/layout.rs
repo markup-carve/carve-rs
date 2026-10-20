@@ -270,7 +270,7 @@ fn eligible_layout_text(source: &str) -> bool {
     if has_markers
         && source.char_indices().any(|(at, c)| {
             !c.is_ascii()
-                && (!c.is_alphanumeric() || super::followed_by_grapheme_extender(bytes, at))
+                && (!is_alphanumeric(c) || super::followed_by_grapheme_extender(bytes, at))
         })
     {
         return false;
@@ -295,12 +295,22 @@ fn starts_with_line_marker(rest: &[u8]) -> bool {
         && rest.get(digits + 1) == Some(&b' ')
 }
 
+mod alphanumeric;
 mod other_or_separator;
+
+/// Alphabetic or General_Category N, for a non-ASCII `c`.
+fn is_alphanumeric(c: char) -> bool {
+    in_ranges(&alphanumeric::RANGES, c)
+}
 
 /// General_Category C* or Z* (unassigned included), for a non-ASCII `c`.
 fn is_other_or_separator(c: char) -> bool {
+    in_ranges(&other_or_separator::RANGES, c)
+}
+
+fn in_ranges(ranges: &[(u32, u32)], c: char) -> bool {
     let c = c as u32;
-    other_or_separator::RANGES
+    ranges
         .binary_search_by(|&(start, end)| {
             if end < c {
                 std::cmp::Ordering::Less
@@ -1867,6 +1877,20 @@ mod layout_plain_scan_tests {
         for c in (0x80..=0x10FFFF).filter_map(char::from_u32) {
             assert_eq!(
                 is_other_or_separator(c),
+                class.is_match(c.encode_utf8(&mut buf)),
+                "U+{:04X}",
+                c as u32
+            );
+        }
+    }
+
+    #[test]
+    fn alphanumeric_table_matches_the_unicode_class() {
+        let class = regex::Regex::new(r"\A[\p{Alphabetic}\pN]\z").unwrap();
+        let mut buf = [0; 4];
+        for c in (0x80..=0x10FFFF).filter_map(char::from_u32) {
+            assert_eq!(
+                is_alphanumeric(c),
                 class.is_match(c.encode_utf8(&mut buf)),
                 "U+{:04X}",
                 c as u32
