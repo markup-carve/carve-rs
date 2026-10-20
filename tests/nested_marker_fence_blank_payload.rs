@@ -45,7 +45,7 @@ fn closed_nested_marker_fence_keeps_its_blank_payload() {
 }
 
 #[test]
-fn unused_nested_continuation_leaves_blank_outside_fence() {
+fn refused_nested_continuation_keeps_the_blank_as_payload() {
     for lead in ["- - ", "1. - ", "- - - "] {
         for fence in ["```", "~~~", "```=html"] {
             for blanks in 1..=2 {
@@ -54,26 +54,15 @@ fn unused_nested_continuation_leaves_blank_outside_fence() {
                     " ".repeat(lead.len() - 2),
                     "\n".repeat(blanks)
                 );
-                let expected_raw = if fence == "```=html" {
-                    match lead {
-                        "- - " => "<ul>\n  <li>\n    <ul>\n      <li>\n        \n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail</p>",
-                        "1. - " => "<ol>\n  <li>\n    <ul>\n      <li>\n        \n      </li>\n    </ul>\n  </li>\n</ol>\n<p>tail</p>",
-                        _ => "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>\n            \n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail</p>",
-                    }
-                } else {
-                    ""
-                };
+                let deleted = format!("{lead}{fence}\n{}tail", "\n".repeat(blanks));
                 for html in [
                     to_html(&source),
                     to_html_with_options(&source, &Options::default().with_positions(true)),
                 ] {
-                    if fence == "```=html" {
-                        assert_eq!(html, expected_raw, "{source:?}");
-                    } else {
-                        assert!(
-                            html.contains("<pre><code></code></pre>"),
-                            "{source:?}: {html}"
-                        );
+                    assert_eq!(html, to_html(&deleted), "{source:?}");
+                    if fence != "```=html" {
+                        let payload = format!("<pre><code>{}</code></pre>", "\n".repeat(blanks));
+                        assert!(html.contains(&payload), "{source:?}: {html}");
                     }
                     assert!(html.ends_with("<p>tail</p>"), "{source:?}: {html}");
                 }
@@ -91,7 +80,7 @@ fn wide_nested_marker_uses_its_marker_column_for_continuation() {
             to_html_with_options(&source, &Options::default().with_positions(true)),
         ] {
             assert!(
-                html.contains("<pre><code></code></pre>"),
+                html.contains("<pre><code>\n</code></pre>"),
                 "{source:?}: {html}"
             );
             assert!(html.ends_with("<p>tail</p>"), "{source:?}: {html}");

@@ -11,6 +11,14 @@
 mod a_fence_run_that_dedents_out_of_a_child_keeps_the_outer_item_tight;
 #[path = "../folded_fence_closer_shapes.rs"]
 mod folded_fence_closer_shapes;
+#[path = "../nested_colon_div_plus_attachment.rs"]
+mod nested_colon_div_plus_attachment;
+#[path = "../nested_fence_attached_block_extent.rs"]
+mod nested_fence_attached_block_extent;
+#[path = "../refused_plus_open_fence_payload.rs"]
+mod refused_plus_open_fence_payload;
+#[path = "../ruled_plus_shapes.rs"]
+mod ruled_plus_shapes;
 
 #[path = "../raw_payload_termination.rs"]
 mod raw_payload_termination;
