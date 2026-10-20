@@ -14414,6 +14414,22 @@ fn widen_item_over_children(item: &mut ListItem) {
     item.pos = Some(pos.clone());
 }
 
+/// Move a list span's start back across the indentation that placed the list.
+/// `base_indent` is in tab-expanded columns, so a tab shared with the parent's
+/// content column is narrower in the source; the start never passes the first
+/// source column of its own line, cursor line `at` (carve-rs#2967).
+fn reclaim_placing_indent(
+    pos: &mut Pos,
+    cur: &LineCursor<'_>,
+    at: Option<usize>,
+    base_indent: usize,
+) {
+    let floor = at
+        .and_then(|i| cur.source_col(i))
+        .map_or(1, |stripped| document_column(stripped, 0));
+    pos.start_column = pos.start_column.saturating_sub(base_indent).max(floor);
+}
+
 fn parse_list(
     cur: &mut LineCursor,
     options: &Options<'_>,
@@ -16311,9 +16327,19 @@ fn parse_list(
     // and the run before it is not placing indentation to reclaim
     // (markup-carve/carve#1980, corpus 461-...-sibling-4).
     if base_indent > 0 && !cur.sublists_carry_authored_base {
+        // Items run in line order, so one forward walk finds each item's line.
+        let mut at = span_start;
         for item in &mut items {
             if let Some(pos) = &mut item.pos {
-                pos.start_column = pos.start_column.saturating_sub(base_indent);
+                while at < cur.pos
+                    && cur
+                        .source_line(at)
+                        .is_some_and(|line| line < pos.start_line)
+                {
+                    at += 1;
+                }
+                let line = (cur.source_line(at) == Some(pos.start_line)).then_some(at);
+                reclaim_placing_indent(pos, cur, line, base_indent);
             }
         }
     }
@@ -16343,7 +16369,8 @@ fn parse_list(
     }
     if base_indent > 0 && !cur.sublists_carry_authored_base {
         if let Some(pos) = &mut list_pos {
-            pos.start_column = pos.start_column.saturating_sub(base_indent);
+            let line = (cur.source_line(span_start) == Some(pos.start_line)).then_some(span_start);
+            reclaim_placing_indent(pos, cur, line, base_indent);
         }
     }
     boxed_list_node(List {
