@@ -39,8 +39,12 @@ fn vector_parse_and_render_premises() {
             if !expected.is_empty() && rule == "list-marker-below-content-column" {
                 let line = expected[0]["line"].as_u64().unwrap() as usize;
                 let marker = source.lines().nth(line - 1).unwrap().trim();
+                let after_blank = source
+                    .lines()
+                    .nth(line - 2)
+                    .is_some_and(|l| l.trim().is_empty());
                 assert!(
-                    html.contains(marker),
+                    after_blank || html.contains(marker),
                     "{name}: folded marker absent from render: {html}"
                 );
             }
@@ -99,6 +103,12 @@ fn marker_positions_and_payloads() {
         ("10. c\n   a. d\n", vec![(2, 4)]),
         ("10. c\n   \\- d\n", vec![]),
         ("10. c\n   `a\n   - d`\n", vec![]),
+        ("10. c\r\n\r\n   - d\r\n", vec![(3, 4)]),
+        ("> 10. c\n>\n>    - d\n", vec![(3, 6)]),
+        ("100. c\n\n\t- d\n", vec![(3, 2)]),
+        ("10. c\n\n   a. d\n", vec![(3, 4)]),
+        ("10. c\n\n   `a\n   - d`\n", vec![]),
+        ("1. a\n\n 2. b\n", vec![]),
     ] {
         let actual: Vec<_> = lint_carve(source)
             .into_iter()

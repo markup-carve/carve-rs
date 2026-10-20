@@ -504,6 +504,41 @@ pub(super) fn collect(
                 emit(out, &rows, ln, at, len, "list-marker-below-content-column", &format!("This list marker starts at column {column}, below the list item's content column {}, so it folds into the item's paragraph as text. Indent it to column {} to nest it under the item, or start it at column {} to begin a new item at the item's own level.", host.content, host.content, host.base));
             }
         }
+        if containing.is_none()
+            && ln > 1
+            && !ignored.contains(&ln)
+            && marker_shaped.is_match(view)
+            && quoted_view(rows[index - 1].text, owner.map_or(0, |i| i.quotes))
+                .0
+                .trim()
+                .is_empty()
+            && !out
+                .iter()
+                .any(|w| w.rule == "ordered-list-split-by-indent" && w.line == ln)
+        {
+            let host = items
+                .iter()
+                .filter(|i| i.first == ln)
+                .min_by_key(|i| i.base)
+                .and_then(|opened| {
+                    items
+                        .iter()
+                        .filter(|i| {
+                            i.first < ln
+                                && i.quotes == opened.quotes
+                                && i.base < opened.base
+                                && opened.base < i.content
+                                && rows[i.last..index]
+                                    .iter()
+                                    .all(|r| quoted_view(r.text, i.quotes).0.trim().is_empty())
+                        })
+                        .max_by_key(|i| i.content)
+                });
+            if let Some(host) = host {
+                let len = marker_shaped.find(view).unwrap().len() - 1;
+                emit(out, &rows, ln, at, len, "list-marker-below-content-column", &format!("This list marker starts at column {column} after a blank line, below the content column {} of the list item above, so it starts a separate list instead of nesting. Indent it to column {} to nest it under the item, or start it at column {} to put it at the item's own level.", host.content, host.content, host.base));
+            }
+        }
         let run = view
             .chars()
             .next()
