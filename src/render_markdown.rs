@@ -1213,7 +1213,7 @@ fn render_list_item(
             out.pop();
         } else if out.ends_with('\n')
             && !out.ends_with("\n\n")
-            && swallowed_by_a_lazy_line(&out, opener)
+            && swallowed_by_a_lazy_line(&out, &rendered)
         {
             out.push('\n');
         }
@@ -1235,14 +1235,14 @@ fn render_list_item(
 /// The tail has to be able to TAKE lazy text, which a bare marker and a heading
 /// cannot, so those stay glued and the item stays tight.
 ///
-/// `below` is the opening block after unwrapping unlabelled divs. Checking the
-/// wrapper itself would omit the separator and merge its paragraph into the
-/// preceding nested item (carve-rs#2136).
-fn swallowed_by_a_lazy_line(above_text: &str, below: &BlockNode) -> bool {
-    if !matches!(
-        below,
-        BlockNode::Paragraph(_) | BlockNode::Table(_) | BlockNode::DefinitionList(_)
-    ) {
+/// `rendered` is the block's own output, so a div wrapper is judged by the
+/// paragraph it opens with (carve-rs#2136).
+fn swallowed_by_a_lazy_line(above_text: &str, rendered: &str) -> bool {
+    // Decided from the emitted first line, so an image, a figure or a wrapper
+    // that opens with text counts as well (carve-rs#2973). A setext underline
+    // cannot be lazy text, so a thematic break leaves the item above it alone.
+    let first = rendered.split('\n').next().unwrap_or_default();
+    if first.trim().is_empty() || thematic_break_line(first) || opens_an_interrupter(first) {
         return false;
     }
     let tail = above_text
@@ -1258,6 +1258,25 @@ fn swallowed_by_a_lazy_line(above_text: &str, below: &BlockNode) -> bool {
     }
     let text = marker_content(tail);
     !text.is_empty() && !text.starts_with(['#', '>', '|', '`', '~', '='])
+}
+
+/// Whether `line` opens a block that interrupts a paragraph in CommonMark.
+fn opens_an_interrupter(line: &str) -> bool {
+    let hashes = line.len() - line.trim_start_matches('#').len();
+    let bullet = line
+        .strip_prefix(['-', '*', '+'])
+        .or_else(|| line.strip_prefix("1.").or_else(|| line.strip_prefix("1)")));
+    line.starts_with('>')
+        || ((1..=6).contains(&hashes)
+            && (line.len() == hashes || line[hashes..].starts_with([' ', '\t'])))
+        || line.starts_with("```")
+        || line.starts_with("~~~")
+        || bullet.is_some_and(|rest| {
+            rest.starts_with([' ', '\t']) && !rest.trim_start_matches([' ', '\t']).is_empty()
+        })
+        || (line.starts_with('*')
+            && line.matches('*').count() >= 3
+            && line.chars().all(|c| matches!(c, '*' | ' ' | '\t')))
 }
 
 /// A line's content with one list marker removed, for the marker lines a nested

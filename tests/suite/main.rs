@@ -2409,5 +2409,7 @@ mod nested_marker_fence_blank_payload;
 mod lint_list_column_traps;
 #[path = "../lint_new_rules.rs"]
 mod lint_new_rules;
+#[path = "../markdown_blank_below_a_nested_list_before_an_image.rs"]
+mod markdown_blank_below_a_nested_list_before_an_image;
 #[path = "../markdown_figure_in_a_tight_item.rs"]
 mod markdown_figure_in_a_tight_item;
