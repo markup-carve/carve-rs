@@ -1424,6 +1424,8 @@ mod markdown_hard_break_backslash;
 mod markdown_html_block_in_container;
 #[path = "../markdown_import_regressions.rs"]
 mod markdown_import_regressions;
+#[path = "../markdown_import_scales_linearly.rs"]
+mod markdown_import_scales_linearly;
 #[path = "../markdown_inline_html_edges.rs"]
 mod markdown_inline_html_edges;
 #[path = "../markdown_list_tightness_reads_back.rs"]

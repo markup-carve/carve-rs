@@ -5,7 +5,16 @@ use crate::{
 use html5ever::tendril::TendrilSink;
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
 use pulldown_cmark::{CodeBlockKind, Event, LinkType, Options, Parser, Tag, TagEnd};
-use std::{collections::BTreeSet, sync::OnceLock};
+use std::{cell::Cell, collections::BTreeSet, sync::OnceLock};
+
+thread_local! {
+    static ATTRIBUTE_OPENER_BYTES: Cell<u64> = const { Cell::new(0) };
+}
+
+#[doc(hidden)]
+pub fn take_attribute_opener_scan_bytes() -> u64 {
+    ATTRIBUTE_OPENER_BYTES.with(|count| count.replace(0))
+}
 
 pub(crate) struct Assessment {
     pub diagnostics: Vec<MigrationDiagnostic>,
@@ -25,11 +34,25 @@ const BRACKET_CLOSE_ENCODED: &str = "%EE%80%81";
 fn restore_destination_brackets(html: &str) -> String {
     let mut out = String::with_capacity(html.len());
     let mut rest = html;
-    while let Some(at) = [" href=\"", " src=\""]
-        .iter()
-        .filter_map(|attr| rest.find(attr).map(|i| i + attr.len()))
-        .min()
-    {
+    let mut inspected = 0u64;
+    loop {
+        let bytes = rest.as_bytes();
+        let mut at = 0;
+        while at < bytes.len()
+            && !(bytes[at] == b' '
+                && (rest[at..].starts_with(" href=\"") || rest[at..].starts_with(" src=\"")))
+        {
+            at += 1;
+        }
+        inspected += at as u64 + u64::from(at < bytes.len());
+        if at == bytes.len() {
+            break;
+        }
+        at += if rest[at..].starts_with(" href=\"") {
+            7
+        } else {
+            6
+        };
         out.push_str(&rest[..at]);
         rest = &rest[at..];
         let end = rest.find('"').unwrap_or(rest.len());
@@ -40,6 +63,7 @@ fn restore_destination_brackets(html: &str) -> String {
         );
         rest = &rest[end..];
     }
+    ATTRIBUTE_OPENER_BYTES.with(|count| count.set(count.get() + inspected));
     out.push_str(rest);
     out
 }
