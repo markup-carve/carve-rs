@@ -1341,8 +1341,14 @@ pub(crate) fn restore_carrier_markers(carve: &str, lift: &CarrierLift) -> String
             .as_ref()
             .map(|title| format!(" \"{}\"", title.replace('\\', "\\\\").replace('"', "\\\"")))
             .unwrap_or_default();
+        // A document with no block before it writes no blank line above it.
+        if source_with_definitions.trim_start_matches('\n').is_empty() {
+            source_with_definitions.clear();
+        } else {
+            source_with_definitions.push('\n');
+        }
         source_with_definitions.push_str(&format!(
-            "\n[{label}]: {}{title}\n",
+            "[{label}]: {}{title}\n",
             crate::render_carve::escape_destination(&definition.dest)
         ));
     }
