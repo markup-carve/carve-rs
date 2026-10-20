@@ -7,6 +7,80 @@
 use carve::ast::{BlockNode, Document, FigureTarget, Pos};
 use carve::Options;
 
+#[test]
+fn nested_marker_attached_blocks_keep_source_positions() {
+    let options = Options::default().with_positions(true);
+
+    let source = "> > q\n> +\n> para\n";
+    let doc = carve::parse_with_options(source, &options);
+    let BlockNode::BlockQuote(outer) = &doc.children[0] else {
+        panic!("outer quote")
+    };
+    let BlockNode::BlockQuote(inner) = &outer.children[0] else {
+        panic!("inner quote")
+    };
+    let BlockNode::Paragraph(para) = &inner.children[1] else {
+        panic!("attached paragraph")
+    };
+    let pos = para.pos.as_ref().expect("paragraph position");
+    assert_eq!((pos.start_offset, pos.start_column), (12, 3));
+
+    let source = "> > q\n> +\n> - a\n";
+    let doc = carve::parse_with_options(source, &options);
+    let BlockNode::BlockQuote(outer) = &doc.children[0] else {
+        panic!("outer quote")
+    };
+    let BlockNode::BlockQuote(inner) = &outer.children[0] else {
+        panic!("inner quote")
+    };
+    let BlockNode::List(list) = &inner.children[1] else {
+        panic!("attached list")
+    };
+    assert_eq!(list.pos.as_ref().expect("list position").start_offset, 12);
+    let item = &list.items[0];
+    assert_eq!(item.pos.as_ref().expect("item position").start_offset, 12);
+    let BlockNode::Paragraph(para) = &item.children[0] else {
+        panic!("item paragraph")
+    };
+    assert_eq!(
+        para.pos
+            .as_ref()
+            .expect("item paragraph position")
+            .start_offset,
+        14
+    );
+
+    let source = "> > q\n> +\npara\n";
+    let doc = carve::parse_with_options(source, &options);
+    let BlockNode::BlockQuote(outer) = &doc.children[0] else {
+        panic!("outer quote")
+    };
+    let BlockNode::BlockQuote(inner) = &outer.children[0] else {
+        panic!("inner quote")
+    };
+    let BlockNode::Paragraph(para) = &inner.children[1] else {
+        panic!("attached paragraph")
+    };
+    assert_eq!(
+        para.pos.as_ref().expect("paragraph position").start_offset,
+        10
+    );
+
+    let source = "x[^a]\n\n> [^a]: n\n> +\n> para\n";
+    let doc = carve::parse_with_options(source, &options);
+    let note = doc.footnote_defs.get("a").expect("footnote body");
+    let BlockNode::Paragraph(para) = &note[1] else {
+        panic!("note paragraph")
+    };
+    assert_eq!(
+        para.pos
+            .as_ref()
+            .expect("note paragraph position")
+            .start_offset,
+        23
+    );
+}
+
 fn parse_with_positions(source: &str) -> Document {
     let options = Options {
         positions: true,

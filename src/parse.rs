@@ -12730,6 +12730,20 @@ impl QuotedFenceClosers {
     }
 }
 
+// A quote's own prefix is transparent to its nested marker's column-zero
+// attachment check. Keep the source column on the line for AST positions.
+fn quote_attachment_column(cur: &LineCursor<'_>, start: usize, at: usize) -> Option<isize> {
+    let column = cur.source_col(at);
+    if cur.carried_reach(at).is_none()
+        && column == cur.source_col(start)
+        && cur.lines.at(start).starts_with('>')
+    {
+        Some(0)
+    } else {
+        column
+    }
+}
+
 #[inline(never)]
 fn collect_blockquote_body(
     cur: &mut LineCursor,
@@ -12872,7 +12886,10 @@ fn collect_blockquote_body(
                 && cur.peek().is_some_and(|next| {
                     !is_blank_line(next) && strip_blockquote_prefix(next).is_none()
                 })
-                && attaches_flush_left(cur.source_col(cur.pos), cur.lines.line(cur.pos).as_ref());
+                && attaches_flush_left(
+                    quote_attachment_column(cur, span_start, cur.pos),
+                    cur.lines.line(cur.pos).as_ref(),
+                );
             let mut deepest = stripped;
             let mut levels = 0;
             if first_block {
@@ -12908,7 +12925,7 @@ fn collect_blockquote_body(
                         inner.push_at(stripped.to_string(), source_line, column);
                     }
                 }
-                let attach_col = cur.source_col(cur.pos);
+                let attach_col = quote_attachment_column(cur, span_start, cur.pos);
                 let end = attached_block_lines(
                     cur.lines,
                     cur.pos,
@@ -12948,13 +12965,7 @@ fn collect_blockquote_body(
                 || stripped.contains(") ");
             // The quote marker (and its optional space) is a pure prefix, so the
             // quoted line's columns are knowable in the document.
-            let stripped_at = if cur.carried_reach(at).is_none()
-                && inner.lines.last().is_some_and(|last| last.text == "+")
-            {
-                Some(0)
-            } else {
-                stripped_col(cur.source_col(at), line, stripped)
-            };
+            let stripped_at = stripped_col(cur.source_col(at), line, stripped);
             if let Some(width) = literal_quote_body {
                 if exact_colon_fence_len(stripped) == Some(width) {
                     literal_quote_body = None;
@@ -13123,16 +13134,19 @@ fn collect_blockquote_body(
         }
         if cur.carried_reach(cur.pos).is_none()
             && inner.lines.last().is_some_and(|last| last.text == "+")
-            && attaches_flush_left(cur.source_col(cur.pos), cur.lines.line(cur.pos).as_ref())
+            && attaches_flush_left(
+                quote_attachment_column(cur, span_start, cur.pos),
+                cur.lines.line(cur.pos).as_ref(),
+            )
         {
-            let first_col = cur.source_col(cur.pos);
+            let attach_col = quote_attachment_column(cur, span_start, cur.pos);
             let end = attached_block_lines(
                 cur.lines,
                 cur.pos,
                 &mut cur.comment_closer_last_index,
                 &mut cur.code_closer_last_index,
                 options,
-                first_col,
+                attach_col,
                 &mut |next, _| is_blank_line(next),
             );
             let start = cur.pos;
@@ -13140,7 +13154,7 @@ fn collect_blockquote_body(
                 inner.push_at(
                     cur.lines.at(cur.pos).to_string(),
                     cur.source_line(cur.pos),
-                    Some(0),
+                    cur.source_col(cur.pos),
                 );
                 cur.consume();
             }
@@ -13172,7 +13186,7 @@ fn collect_blockquote_body(
             cur.consume();
             let mut attached = LineBuffer::default();
             let cursor_lines = cur.lines;
-            let attach_first_col = cur.source_col(cur.pos);
+            let attach_first_col = quote_attachment_column(cur, span_start, cur.pos);
             let attach_end = attached_block_lines(
                 cursor_lines,
                 cur.pos,
