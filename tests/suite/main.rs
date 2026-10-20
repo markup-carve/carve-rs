@@ -1122,6 +1122,8 @@ mod display_math_on_a_marker_line_takes_its_caption;
 #[path = "../quote_note_first_block.rs"]
 mod quote_note_first_block;
 
+#[path = "../a_markdown_assessor_completes_autolink_shapes.rs"]
+mod a_markdown_assessor_completes_autolink_shapes;
 #[path = "../a_markdown_destination_keeps_what_carve_reads_literally.rs"]
 mod a_markdown_destination_keeps_what_carve_reads_literally;
 #[path = "../destination_parens.rs"]
