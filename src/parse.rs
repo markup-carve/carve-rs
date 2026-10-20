@@ -2406,6 +2406,39 @@ fn extract_footnote_defs(
                 // Measure indentation inside the note's existing quote host.
                 // A further quote marker is note content and stays in the body.
                 let content = |raw| strip_indented_quote_levels(raw, &quote_indents);
+                if quote_depth > 0
+                    && raw_def_line.starts_with('>')
+                    && quote_indents.iter().all(|&indent| indent == 0)
+                    && lines.get(i).is_some_and(|raw| raw.starts_with('>'))
+                    && lines.get(i).and_then(|raw| content(raw)) == Some("+")
+                {
+                    let start = i + 1;
+                    let attached: Vec<&str> = lines[start..]
+                        .iter()
+                        .map_while(|raw| content(raw).filter(|line| !is_blank_line(line)))
+                        .take_while(|line| *line != "+")
+                        .collect();
+                    if !attached.is_empty() {
+                        let count =
+                            attached_one_block_lines(CursorLines::Slice(&attached), options);
+                        def_lines.push(String::new());
+                        def_line_map.push(None);
+                        if positions {
+                            def_col_map.push(None);
+                        }
+                        for (offset, line) in attached.into_iter().take(count).enumerate() {
+                            def_lines.push(line.to_string());
+                            def_line_map.push(Some(first_source_line + start + offset));
+                            if positions {
+                                def_col_map.push(Some(
+                                    (lines[start + offset].chars().count() - line.chars().count())
+                                        as isize,
+                                ));
+                            }
+                        }
+                        i = start + count;
+                    }
+                }
                 let marker_note = detect_list_marker_full(inside)
                     .is_some_and(|marker| parse_footnote_def_line(marker.content).is_some());
                 let track_note_opacity = *body_opacity_candidates
@@ -12794,6 +12827,47 @@ fn collect_blockquote_body(
             // asks for nested depth, so a deep quote does not rescan its chain
             // on every ordinary line.
             let prior_quoted_at = last_quoted_at.replace(at);
+            // A line carried by an item or note body is below document column 0.
+            // Its marker is consumed by that host; the following line remains
+            // available for the nested quote's ordinary lazy continuation.
+            if cur.carried_reach(at) == Some(true)
+                && trim_ascii(stripped) == "+"
+                && inner
+                    .lines
+                    .last()
+                    .is_some_and(|last| strip_blockquote_prefix(&last.text).is_some())
+            {
+                continue;
+            }
+            // Pass a marker at this quote's content column to the nested
+            // quote's collector. It owns the extent of the attached block.
+            if cur.carried_reach(at).is_none()
+                && !cur.in_item_body
+                && trim_ascii(stripped) == "+"
+                && prior_quoted_at.is_some()
+                && inner.lines.last().is_some_and(|last| {
+                    strip_blockquote_prefix(&last.text).is_some()
+                        || is_definition_placeholder(&last.text)
+                })
+            {
+                if cur
+                    .peek()
+                    .and_then(strip_blockquote_prefix)
+                    .is_some_and(|next| !is_blank_line(next))
+                    && inner.lines.last().is_some_and(|last| {
+                        is_definition_placeholder(innermost_marker_content(&last.text))
+                    })
+                {
+                    cur.consume();
+                    continue;
+                }
+                if cur.peek().map_or(true, is_blank_line) {
+                    continue;
+                }
+                inner.push_at("+".to_string(), source_line, Some(0));
+                para_open = ParaOpen::Closed;
+                continue;
+            }
             let first_block = stripped.trim_end_matches([' ', '\t']).ends_with('+')
                 && cur.peek().is_some_and(|next| {
                     !is_blank_line(next) && strip_blockquote_prefix(next).is_none()
@@ -12874,7 +12948,13 @@ fn collect_blockquote_body(
                 || stripped.contains(") ");
             // The quote marker (and its optional space) is a pure prefix, so the
             // quoted line's columns are knowable in the document.
-            let stripped_at = stripped_col(cur.source_col(at), line, stripped);
+            let stripped_at = if cur.carried_reach(at).is_none()
+                && inner.lines.last().is_some_and(|last| last.text == "+")
+            {
+                Some(0)
+            } else {
+                stripped_col(cur.source_col(at), line, stripped)
+            };
             if let Some(width) = literal_quote_body {
                 if exact_colon_fence_len(stripped) == Some(width) {
                     literal_quote_body = None;
@@ -13040,6 +13120,34 @@ fn collect_blockquote_body(
                 inner.push_at(stripped.to_string(), source_line, stripped_at);
             }
             continue;
+        }
+        if cur.carried_reach(cur.pos).is_none()
+            && inner.lines.last().is_some_and(|last| last.text == "+")
+            && attaches_flush_left(cur.source_col(cur.pos), cur.lines.line(cur.pos).as_ref())
+        {
+            let first_col = cur.source_col(cur.pos);
+            let end = attached_block_lines(
+                cur.lines,
+                cur.pos,
+                &mut cur.comment_closer_last_index,
+                &mut cur.code_closer_last_index,
+                options,
+                first_col,
+                &mut |next, _| is_blank_line(next),
+            );
+            let start = cur.pos;
+            while cur.pos < end {
+                inner.push_at(
+                    cur.lines.at(cur.pos).to_string(),
+                    cur.source_line(cur.pos),
+                    Some(0),
+                );
+                cur.consume();
+            }
+            if end > start {
+                inner.push_synthetic_blank();
+                continue;
+            }
         }
         // Continuation marker (Carve, PART 9 §17): a lone `+` at column 0 after
         // a quoted line attaches the FOLLOWING flush-left block to the quote --
