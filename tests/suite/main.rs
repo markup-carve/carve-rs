@@ -2397,5 +2397,7 @@ mod nested_fence_continuation_blank_payload;
 #[path = "../nested_marker_fence_blank_payload.rs"]
 mod nested_marker_fence_blank_payload;
 
+#[path = "../lint_list_column_traps.rs"]
+mod lint_list_column_traps;
 #[path = "../lint_new_rules.rs"]
 mod lint_new_rules;

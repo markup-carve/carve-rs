@@ -143,6 +143,8 @@ struct Item {
     quotes: usize,
     deepest: usize,
     marker_line_note: bool,
+    paragraph_lines: BTreeSet<usize>,
+    text_starts: BTreeSet<(usize, usize)>,
 }
 struct Fence {
     first: usize,
@@ -160,6 +162,7 @@ pub(super) fn collect(
 ) -> bool {
     let mut recovered_metadata = false;
     let rows = lines(source);
+    collect_ordered_splits(doc, &rows, out);
     let mut blocks: Vec<_> = doc.children.iter().map(|b| (b, 0)).collect();
     for body in doc.footnote_defs.values() {
         blocks.extend(body.iter().map(|b| (b, 1)));
@@ -183,6 +186,10 @@ pub(super) fn collect(
     let mut fences = Vec::new();
     let marker = regex::Regex::new(
         r"^([ \t]*)([-*]|(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-zA-Z])[.)])(\{[^{}\r\n]*\})?( +)(?:\[[ xX_?>-]\] +)?",
+    )
+    .unwrap();
+    let marker_shaped = regex::Regex::new(
+        r"^(?:[-+*](?: +\[[ xX\-_>?]\])?|\([0-9A-Za-z]+\)|[0-9A-Za-z]+[.)]|\.)[ \t]",
     )
     .unwrap();
     let colon = regex::Regex::new(r"^(:{3,})(?:[ \t]|$)").unwrap();
@@ -297,6 +304,29 @@ pub(super) fn collect(
                     rest = &rest[m.get(0).unwrap().end()..];
                 }
                 let marker_tail = &row.text[at + m.get(0).unwrap().end()..];
+                let mut paragraph_lines = BTreeSet::new();
+                let mut text_starts = BTreeSet::new();
+                for child in &item.children {
+                    let BlockNode::Paragraph(paragraph) = child else {
+                        continue;
+                    };
+                    if let Some(pos) = &paragraph.pos {
+                        paragraph_lines.extend((pos.start_line + 1)..=pos.end_line);
+                    }
+                    let mut pending: Vec<_> = paragraph
+                        .children
+                        .iter()
+                        .map(|inline| (inline, 0))
+                        .collect();
+                    while let Some((inline, depth)) = pending.pop() {
+                        if let InlineNode::Text(text) = inline {
+                            if let Some(pos) = &text.pos {
+                                text_starts.insert((pos.start_line, pos.start_column));
+                            }
+                        }
+                        push_inline_children(inline, depth, &mut pending);
+                    }
+                }
                 items.push(Item {
                     first: p.start_line,
                     last: p.end_line,
@@ -305,6 +335,8 @@ pub(super) fn collect(
                     quotes: row.text[..at].matches('>').count(),
                     deepest,
                     marker_line_note: note_marker.is_match(marker_tail),
+                    paragraph_lines,
+                    text_starts,
                 });
             }
         }
@@ -455,6 +487,23 @@ pub(super) fn collect(
         let owner = containing.or(ended);
         let (view, at) = quoted_view(row.text, owner.map_or(0, |i| i.quotes));
         let column = visual(&row.text[..at]);
+        if !ignored.contains(&ln) && marker_shaped.is_match(view) {
+            let marker_column = row.column(at);
+            if let Some(host) = active
+                .iter()
+                .copied()
+                .filter(|item| {
+                    item.paragraph_lines.contains(&ln)
+                        && item.text_starts.contains(&(ln, marker_column))
+                        && item.base < column
+                        && column < item.content
+                })
+                .max_by_key(|item| item.content)
+            {
+                let len = marker_shaped.find(view).unwrap().len() - 1;
+                emit(out, &rows, ln, at, len, "list-marker-below-content-column", &format!("This list marker starts at column {column}, below the list item's content column {}, so it folds into the item's paragraph as text. Indent it to column {} to nest it under the item, or start it at column {} to begin a new item at the item's own level.", host.content, host.content, host.base));
+            }
+        }
         let run = view
             .chars()
             .next()
@@ -833,4 +882,113 @@ pub(super) fn collect(
         }
     }
     recovered_metadata
+}
+
+fn collect_ordered_splits(doc: &Document, rows: &[Line<'_>], out: &mut Vec<LintWarning>) {
+    let ordered_marker =
+        regex::Regex::new(r"^(?:[ \t]*> ?)*[ \t]*(\([0-9A-Za-z]+\)|[0-9A-Za-z]+[.)]|\.)[ \t]")
+            .unwrap();
+    let first_marker = |list: &List| {
+        let line = list.items.first()?.pos.as_ref()?.start_line;
+        let row = rows.get(line - 1)?;
+        let marker = ordered_marker.captures(row.text)?.get(1)?;
+        let offset = marker.start();
+        Some((line, offset, visual(&row.text[..offset])))
+    };
+    let mut containers: Vec<&[BlockNode]> = vec![&doc.children];
+    containers.extend(doc.footnote_defs.values().map(Vec::as_slice));
+    while let Some(blocks) = containers.pop() {
+        for pair in blocks.windows(2) {
+            let (BlockNode::List(before), BlockNode::List(after)) = (&pair[0], &pair[1]) else {
+                continue;
+            };
+            if !before.ordered
+                || !after.ordered
+                || before.bare_marker
+                || after.bare_marker
+                || before.ol_type != after.ol_type
+                || before.delim != after.delim
+                || after.start.unwrap_or(1) != before.start.unwrap_or(1) + before.items.len()
+            {
+                continue;
+            }
+            let (Some(before_pos), Some(after_pos)) = (&before.pos, &after.pos) else {
+                continue;
+            };
+            if rows
+                .get(before_pos.end_line..after_pos.start_line.saturating_sub(1))
+                .map_or(true, |between| {
+                    between.iter().any(|row| {
+                        let mut rest = row.text;
+                        while let Some(after_quote) =
+                            rest.trim_start_matches([' ', '\t']).strip_prefix('>')
+                        {
+                            rest = after_quote.strip_prefix(' ').unwrap_or(after_quote);
+                        }
+                        !rest.trim().is_empty()
+                    })
+                })
+            {
+                continue;
+            }
+            let (Some((_, _, first)), Some((line, offset, second))) =
+                (first_marker(before), first_marker(after))
+            else {
+                continue;
+            };
+            if first == second {
+                continue;
+            }
+            let start = before.start.unwrap_or(1);
+            let next = after.start.unwrap_or(1);
+            let suffix = if before.ol_type.is_some() {
+                ".".to_string()
+            } else {
+                format!(", or write {{start={start}}} on the line above and use the auto-numbered . marker.")
+            };
+            emit(out, rows, line, offset, 1, "ordered-list-split-by-indent", &format!("This ordered list continues the numbering of the list above ({start}, then {next}), but its marker starts at column {second} and the list above starts at column {first}, so they are two lists. Start the markers at the same column{suffix}"));
+        }
+        for block in blocks {
+            match block {
+                BlockNode::List(list) => {
+                    containers.extend(list.items.iter().map(|item| item.children.as_slice()))
+                }
+                BlockNode::BlockQuote(node) => containers.push(&node.children),
+                BlockNode::Admonition(node) => containers.push(&node.children),
+                BlockNode::Directive(node) => containers.push(&node.children),
+                BlockNode::Div(node) => containers.push(&node.children),
+                BlockNode::Section(node) => containers.push(&node.children),
+                BlockNode::LineBlock(node) => containers.push(&node.children),
+                BlockNode::FigureGroup(node) => containers.push(&node.children),
+                BlockNode::DefinitionList(node) => containers.extend(
+                    node.items
+                        .iter()
+                        .flat_map(|item| item.definitions.iter())
+                        .map(|def| def.children.as_slice()),
+                ),
+                BlockNode::Table(node) => containers.extend(
+                    node.rows
+                        .iter()
+                        .flat_map(|row| &row.cells)
+                        .filter_map(|cell| cell.blocks.as_deref()),
+                ),
+                BlockNode::Figure(node) => match &*node.target {
+                    FigureTarget::BlockQuote(quote) => containers.push(&quote.children),
+                    FigureTarget::Table(table) => containers.extend(
+                        table
+                            .rows
+                            .iter()
+                            .flat_map(|row| &row.cells)
+                            .filter_map(|cell| cell.blocks.as_deref()),
+                    ),
+                    _ => {}
+                },
+                BlockNode::BlockExtension(node) => {
+                    containers.push(std::slice::from_ref(&node.fallback))
+                }
+                BlockNode::ExtensionCarrier(node) => containers.push(&node.children),
+                _ => {}
+            }
+        }
+    }
 }

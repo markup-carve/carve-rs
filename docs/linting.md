@@ -70,8 +70,10 @@ walk left it as a cell of its own.
 | --- | --- | --- |
 | `unclosed-code-fence` | A code or raw fence reaches a container boundary, a continuation marker, or the end of the document without a closer | Add a closing fence where the code should stop |
 | `continuation-marker-refused` | A `+` in a list item or definition description is followed by a blank line or the end of the document | Attach a block or delete the `+` |
+| `list-marker-below-content-column` | A marker shaped like a list item folds into a list item's paragraph below its content column | Indent it to the content column to nest it, or align it with the item's marker to start a sibling |
+| `ordered-list-split-by-indent` | Consecutive ordered lists continue numbering at different marker columns | Align the markers, or use `{start=N}` with bare `.` markers for decimal lists |
 
-Both rules warn without an automatic fix.
+These rules warn without an automatic fix.
 
 A bare key one edit from the consumed key its block reads triggers
 `consumed-key-near-miss`: `{tabel}` on a `csv` or `tsv` fence, or `{lose}` on a
