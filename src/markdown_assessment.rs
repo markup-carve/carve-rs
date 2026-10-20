@@ -160,6 +160,30 @@ fn diagnostic(
     }
 }
 
+fn table_row_pipe_escapes(row: &str, start: usize) -> (Vec<usize>, bool) {
+    let bytes = row.as_bytes();
+    let mut escapes = Vec::new();
+    let mut doubled_boundary = false;
+    let mut column = 0;
+    while column < bytes.len() {
+        if bytes[column] != b'\\' {
+            column += 1;
+            continue;
+        }
+        let first = column;
+        while column < bytes.len() && bytes[column] == b'\\' {
+            column += 1;
+        }
+        if bytes.get(column) == Some(&b'|') && (column - first) % 2 == 1 {
+            escapes.push(start + column - 1);
+            column += 1;
+        } else if bytes.get(column) == Some(&b'|') && column - first > 0 {
+            doubled_boundary = true;
+        }
+    }
+    (escapes, doubled_boundary)
+}
+
 #[derive(Debug, PartialEq, Eq)]
 enum Shape {
     Text(String),
@@ -418,6 +442,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
     let mut code_needs_ending = false;
     let mut html_block = false;
     let mut html_fragments = 0usize;
+    let mut table_pipe_escapes = BTreeSet::new();
     static REWRITE: OnceLock<regex::Regex> = OnceLock::new();
     let rewrite = REWRITE.get_or_init(|| regex::Regex::new(r"&(?:#[xX][\da-fA-F]+|#\d+|[A-Za-z][A-Za-z\d]+);|\\[!\x22#$%&'()*+,\-./:;<=>?@\[\]\\^_`{|}~]").unwrap());
     for (event, range) in parser.into_offset_iter() {
@@ -426,6 +451,19 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
         }
         let event = strikes.restore(event, &range);
         let range = strikes.original_range(range);
+        if matches!(event, Event::Start(Tag::TableHead | Tag::TableRow)) {
+            let end = source[range.start..]
+                .find('\n')
+                .map_or(source.len(), |offset| range.start + offset);
+            let row = &source[range.start..end];
+            let (escapes, doubled_boundary) = table_row_pipe_escapes(row, range.start);
+            table_pipe_escapes.extend(escapes);
+            if doubled_boundary
+                || (matches!(event, Event::Start(Tag::TableRow)) && !row.contains('|'))
+            {
+                complete = false;
+            }
+        }
         if matches!(
             &event,
             Event::Start(
@@ -456,6 +494,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                     % 2
                     == 1
                 && input.starts_with(|character: char| character.is_ascii_punctuation())
+                && !table_pipe_escapes.contains(&(range.start - 1))
             {
                 diagnostics.push(diagnostic(
                     "escape",
@@ -639,6 +678,11 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
 
                 for matched in rewrite.find_iter(input) {
                     if text.as_ref() == input {
+                        continue;
+                    }
+                    if matched.as_str() == "\\|"
+                        && table_pipe_escapes.contains(&(range.start + matched.start()))
+                    {
                         continue;
                     }
                     diagnostics.push(diagnostic(
@@ -932,6 +976,88 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn table_pipe_assessment_matches_row_level_unescaping() {
+        let table = [
+            ("markdown-table", "line:1", MigrationFidelity::Preserved),
+            ("markdown-table-row", "line:1", MigrationFidelity::Preserved),
+            (
+                "markdown-table-cell",
+                "line:1",
+                MigrationFidelity::Preserved,
+            ),
+            ("markdown-table-row", "line:3", MigrationFidelity::Preserved),
+            (
+                "markdown-table-cell",
+                "line:3",
+                MigrationFidelity::Preserved,
+            ),
+        ];
+        for (source, extra) in [
+            ("| h |\n| --- |\n| a\\| |", None),
+            ("| h |\n| --- |\n| `a\\|b` |", Some("markdown-code-span")),
+            ("| h |\n| --- |\n| a\\|", None),
+            ("| h |\n| --- |\n| a\\|b\\|c |", None),
+        ] {
+            let mut expected = table.to_vec();
+            if let Some(code) = extra {
+                expected.push((code, "line:3", MigrationFidelity::Preserved));
+            }
+            let result = crate::migrate_markdown(source);
+            let actual: Vec<_> = result
+                .report
+                .diagnostics
+                .iter()
+                .map(|row| {
+                    (
+                        row.code.as_str(),
+                        row.path.as_deref().unwrap_or(""),
+                        row.fidelity,
+                    )
+                })
+                .collect();
+            assert_eq!(actual, expected, "{source}");
+        }
+        for source in [
+            "| h |\n| --- |\n| a\\\\|",
+            "| h | x |\n| --- | --- |\n| a\\\\| b |",
+            "| a\\\\| b |\n| --- |\n| x |",
+        ] {
+            let result = crate::migrate_markdown(source);
+            let actual: Vec<_> = result
+                .report
+                .diagnostics
+                .iter()
+                .map(|row| (row.code.as_str(), row.path.as_deref(), row.fidelity))
+                .collect();
+            assert_eq!(
+                actual,
+                vec![("fidelity-unverified", None, MigrationFidelity::Dropped)],
+                "{source}"
+            );
+        }
+        let result = crate::migrate_markdown("a\\|b");
+        let actual: Vec<_> = result
+            .report
+            .diagnostics
+            .iter()
+            .map(|row| {
+                (
+                    row.code.as_str(),
+                    row.path.as_deref().unwrap_or(""),
+                    row.fidelity,
+                )
+            })
+            .collect();
+        assert_eq!(
+            actual,
+            vec![
+                ("markdown-paragraph", "line:1", MigrationFidelity::Preserved),
+                ("markdown-escape", "line:1", MigrationFidelity::Normalized),
+            ]
+        );
+    }
 
     #[test]
     fn inline_link_with_literal_destination_pipe_is_assessed() {
