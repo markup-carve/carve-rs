@@ -1314,6 +1314,11 @@ fn absorbs_below(above_text: &str, below: &BlockNode) -> bool {
     match below {
         BlockNode::BlockQuote(_) => tail.starts_with('>'),
         BlockNode::Table(_) => tail.starts_with(['>', '|']),
+        BlockNode::Figure(figure) => match &*figure.target {
+            FigureTarget::BlockQuote(_) => tail.starts_with('>'),
+            FigureTarget::Table(_) => tail.starts_with(['>', '|']),
+            _ => false,
+        },
         _ => false,
     }
 }
@@ -1344,6 +1349,18 @@ fn interrupts_a_paragraph(node: &BlockNode, rendered: &str) -> bool {
                 return false;
             }
             !bare_marker_line(rendered.split('\n').next().unwrap_or_default())
+        }
+        // A figure writes its target first, so the target's opener decides
+        // (carve-rs#2968). Its first line is checked so a carrier written
+        // ahead of the target keeps the blank.
+        BlockNode::Figure(figure) => {
+            let first = rendered.split('\n').next().unwrap_or_default();
+            match &*figure.target {
+                FigureTarget::BlockQuote(_) => first.starts_with('>'),
+                FigureTarget::CodeBlock(_) => first.starts_with("```") || first.starts_with("~~~"),
+                FigureTarget::Table(_) => first.starts_with('|') && has_delimiter_row(rendered),
+                FigureTarget::Image(_) | FigureTarget::Paragraph(_) => false,
+            }
         }
         _ => false,
     }
