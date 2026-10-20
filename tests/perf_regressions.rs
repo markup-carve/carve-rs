@@ -2023,6 +2023,9 @@ fn invalid_autolink_prefixes_before_a_closer_scale_near_linearly() {
     }
 }
 
+/// Both sizes sit where the per-byte cost has flattened past the allocator knee.
+/// At 4096/16384 a linear parse read up to 2.46x on some runners, because only the
+/// large sample paid for fresh pages (carve-rs#2955).
 #[test]
 fn invalid_crossref_targets_share_failed_ranges() {
     for prefix in ["</#a ", "</#"] {
@@ -2030,8 +2033,8 @@ fn invalid_crossref_targets_share_failed_ranges() {
             |source| drop(carve::to_html(source)),
             |n| format!("{} x>", prefix.repeat(n)),
             prefix,
-            4096,
-            16384,
+            131_072,
+            524_288,
         );
     }
 }
