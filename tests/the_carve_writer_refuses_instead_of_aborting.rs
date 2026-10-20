@@ -40,14 +40,14 @@ fn ladder(depth: usize) -> String {
 fn one_level_past_the_cap_is_a_refusal_and_not_an_abort() {
     on_big_stack(|| {
         let error = try_to_carve_with_options(&ladder(201), &Options::default())
-            .expect_err("the writer cannot spell the flattened code node");
+            .expect_err("the writer cannot spell a tight item past the nesting cap");
         let CarveWriteError::Render(error) = error else {
             panic!("a default `Options` carries no profile, so this is the writer's own refusal");
         };
         assert_eq!(
             error.to_string(),
-            "the Carve renderer cannot spell code: a line of the value starts with whitespace, \
-                 which the block layer strips"
+            "the Carve renderer cannot spell document: content nested past the parser nesting \
+                 limit of 200 has no spelling that reads back"
         );
 
         // AND THE INFALLIBLE ENTRY POINT LEAVES THE SOURCE AS AUTHORED. It has
