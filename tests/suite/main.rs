@@ -1274,6 +1274,8 @@ mod html_import;
 mod html_import_authored_heading_id;
 #[path = "../html_import_checkbox_type_case.rs"]
 mod html_import_checkbox_type_case;
+#[path = "../html_import_deep_nesting_fits_a_small_stack.rs"]
+mod html_import_deep_nesting_fits_a_small_stack;
 #[path = "../html_import_definition_list.rs"]
 mod html_import_definition_list;
 #[path = "../html_import_details_and_quote.rs"]

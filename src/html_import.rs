@@ -3140,68 +3140,11 @@ impl<'a> Importer<'a> {
         let tag = Self::tag(h).unwrap();
         let attrs = self.attrs(h, path);
         if tag == "template" && Self::carrier(h, crate::roundtrip::ABBREVIATIONS).is_some() {
-            self.charge_subtree(h, depth)?;
-            let payload = if let NodeData::Element {
-                template_contents, ..
-            } = &h.data
-            {
-                template_contents
-                    .borrow()
-                    .as_ref()
-                    .filter(|content| {
-                        content
-                            .children
-                            .borrow()
-                            .iter()
-                            .all(|child| matches!(child.data, NodeData::Text { .. }))
-                    })
-                    .map(Self::text)
-                    .unwrap_or_default()
-            } else {
-                String::new()
-            };
-            let mut parsed = crate::parse(&payload);
-            if parsed.frontmatter_raw.is_none()
-                && parsed.frontmatter.is_empty()
-                && parsed.footnote_defs.is_empty()
-                && !parsed.children.is_empty()
-                && parsed
-                    .children
-                    .iter()
-                    .all(|node| matches!(node, BlockNode::AbbreviationDef(_)))
-            {
-                self.carrier_definitions.extend(
-                    std::mem::take(&mut parsed.children)
-                        .into_iter()
-                        .map(|node| match node {
-                            BlockNode::AbbreviationDef(mut def) => {
-                                def.pos = None;
-                                BlockNode::AbbreviationDef(def)
-                            }
-                            _ => unreachable!(),
-                        }),
-                );
-                return Ok(Vec::new());
-            }
-            self.diag(
-                HtmlImportDiagnosticCode::AttributeDropped,
-                "Dropped invalid abbreviation carrier".into(),
-                HtmlImportSeverity::Warning,
-                path,
-                h,
-            );
-            return Ok(Vec::new());
+            return self.block_abbreviation_template(h, path, depth);
         }
         let children = h.children.borrow();
         if tag == FOOTNOTE_PLACEMENT_TAG {
-            return Ok(vec![BlockNode::Directive(Directive {
-                attrs: None,
-                kind: "footnotes".to_string(),
-                title: None,
-                label: None,
-                children: Vec::new(),
-                pos: None,
-            })]);
+            return self.block_footnotes();
         }
         if tag == "html" || tag == "head" || tag == "body" {
             // No attribute report here, and deliberately none: `fragment_top_level`
@@ -3212,524 +3155,38 @@ impl<'a> Importer<'a> {
             return self.blocks(&children, path, depth + 1);
         }
         if matches!(tag.as_str(), "h1" | "h2" | "h3" | "h4" | "h5" | "h6") {
-            let mut attrs = attrs;
-            self.heading_depth += 1;
-            let inlines = self.inlines(&children, path, depth + 1);
-            self.heading_depth -= 1;
-            let inlines = inlines?;
-            // AN EMPTY HEADING IS DROPPED, WITH ONE ROW (markup-carve/carve#2419).
-            // It has no Carve spelling at all - `inline_content` is one-or-more -
-            // so the writer wrote a bare marker, which re-reads as a paragraph and
-            // breaks `parse(html_to_carve(h)) == html_to_ast(h)`. Dropping it is
-            // what this contract already does to every other empty container, and
-            // it carries nothing a reader loses.
-            //
-            // REPORTED WHETHER OR NOT IT CARRIED ATTRIBUTES, unlike the paragraph
-            // below: a bare empty `<p>` leaves silently because it carries
-            // nothing (carve#2423), while the ruling here names one row for the
-            // heading either way.
-            if inlines.is_empty() || is_layout_only(&inlines) {
-                let message = if inlines.is_empty() {
-                    format!("Dropped <{tag}> holding no content")
-                } else {
-                    format!("Dropped whitespace-only <{tag}> holding no content character")
-                };
-                self.diag(
-                    HtmlImportDiagnosticCode::ElementDropped,
-                    message,
-                    HtmlImportSeverity::Warning,
-                    path,
-                    h,
-                );
-                return Ok(Vec::new());
-            }
-            if let Some(held) = attrs.as_mut().filter(|held| held.id.is_some()) {
-                if Self::reads_generated_section(h) {
-                    held.id = None;
-                } else if self.writing || Self::reads_explicit_id(h) {
-                    // Authored. A non-empty order is exhaustive, so every
-                    // imported slot has to be carried - and carried in the
-                    // element's OWN attribute order, which is the order the
-                    // writer has to spell to render these bytes back.
-                    //
-                    // ON THE WRITING EXIT, OR WHERE A CARRIER RECORDED IT. `order`
-                    // is a source-layout field and an import read no source, so
-                    // the published tree records none (markup-carve/carve#1647)
-                    // unless the explicit-id carrier says the slot was authored;
-                    // see `Importer::writing` for why the writer needs it.
-                    held.order = Self::slot_order_from_element(h, held);
-                }
-            }
-            let attrs = attrs.filter(|held| *held != Attrs::default());
-            return Ok(vec![BlockNode::Heading(Heading {
-                attrs,
-                level: tag[1..].parse().unwrap(),
-                children: inlines,
-                pos: None,
-            })]);
+            return self.block_heading(h, path, depth, &tag, attrs, &children);
         }
         if tag == "p" {
-            let inlines = self.inlines(&children, path, depth + 1)?;
-            // PART 11 §7: a block element holding nothing but LAYOUT builds no
-            // node, and the drop is REPORTED because it is a real loss - an
-            // element the input had contributes nothing. Keeping owes no report,
-            // since a kept character survives the write intact.
-            //
-            // WHY THE PARAGRAPH AND NOT EVERY BLOCK. §7's argument is that the
-            // node left behind is UNSPELLABLE, so the two import exits disagree
-            // about it. A heading spells its own marker and a list item its own
-            // bullet, so neither is that shape; the paragraph is, and it is the
-            // shape all three of §7's rows are written over.
-            if is_layout_only(&inlines) {
-                self.diag(
-                    HtmlImportDiagnosticCode::ElementDropped,
-                    format!("Dropped whitespace-only <{tag}> holding no content character"),
-                    HtmlImportSeverity::Warning,
-                    path,
-                    h,
-                );
-                return Ok(Vec::new());
-            }
-            /*
-             * CARVE SOURCE CANNOT SPELL A PARAGRAPH HOLDING ONLY AN IMAGE, so
-             * the writer loses it and PART 12 section 16 says the writing exit
-             * reports that (carve-rs#1331).
-             *
-             * `resources/examples/edge-cases.md` rules the shape: "a paragraph
-             * whose whole content is one image is still the standalone image
-             * shape, not a wrapped one". So `![G](g.jpg)` re-reads as a BLOCK
-             * image, the `<p>` the author wrote is gone from the source, and
-             * `html_to_ast` keeps a paragraph the re-parsed source does not -
-             * the one carve-out `docs/html-import.md` allows to
-             * `parse(html_to_carve(h)) == html_to_ast(h)`.
-             *
-             * NOT A CHANGE OF OUTPUT, because there is no other output to
-             * write. carve-js measured an indented ` ![G](g.jpg)` as a
-             * paragraph holding one image and rejected it as a spelling anyway;
-             * this engine reads it as a block image at every indent, so there
-             * is not even a near miss to reach for.
-             */
-            // THE AUTHOR'S PARAGRAPH IS TRIMMED TOO (carve-rs#1336). The
-            // synthesized wrapper beside it already was, and the reason given -
-            // that the wrapper is not an element the document contains - is real
-            // but is not the deciding one. PART 11 section 7's principle is:
-            // whitespace that is layout is not content, wherever it sits. Left
-            // untrimmed, `<p>` newline `  <img>` newline `</p>` kept two spaces
-            // in the tree that the writer drops, so the two exits disagreed
-            // about characters no reader can act on.
-            let inlines = trim_edge_whitespace(inlines);
-            // No spelling holds an empty paragraph, and its attribute line
-            // would land on the next block, so the row covers the attributes.
-            if inlines.is_empty() && attrs.is_some() {
-                self.diag(
-                    HtmlImportDiagnosticCode::ElementDropped,
-                    format!("Dropped <{tag}> holding no content"),
-                    HtmlImportSeverity::Warning,
-                    path,
-                    h,
-                );
-                return Ok(Vec::new());
-            }
-            // A bare one carries nothing, and the writer writes nothing for it.
-            if inlines.is_empty() {
-                return Ok(Vec::new());
-            }
-            let candidate = lone_image(&inlines).map(|image| {
-                (
-                    attrs.is_some(),
-                    overwritten_attr_names(attrs.as_ref(), image.attrs.as_ref()),
-                )
-            });
-            let mut paragraph = Paragraph {
-                attrs,
-                children: inlines,
-                at_content_column: true,
-                block_image: false,
-                pos: None,
-            };
-            if let Some((attributed, overwritten)) = candidate {
-                paragraph.pos = Some(candidate_mark(self.lone_image_paragraphs.len()));
-                self.lone_image_paragraphs.push(LoneImageParagraph {
-                    node: h.clone(),
-                    path: path.to_string(),
-                    attributed,
-                    overwritten,
-                });
-            }
-            return Ok(vec![BlockNode::Paragraph(paragraph)]);
+            return self.block_paragraph(h, path, depth, &tag, attrs, &children);
         }
         if tag == "blockquote" {
-            return Ok(vec![BlockNode::BlockQuote(BlockQuote {
-                attrs,
-                children: self.blocks(&children, path, depth + 1)?,
-                // An imported quote has no authored spelling: HTML records the
-                // element, never how someone typed it.
-                fenced: false,
-                pos: None,
-            })]);
+            return self.block_quote(path, depth, attrs, &children);
         }
         if tag == "pre" {
-            let code = children
-                .iter()
-                .find(|n| Self::tag(n).as_deref() == Some("code"))
-                .unwrap_or(h);
-            let lang = self.code_language(h, code);
-            let content = self.code_text(h, path, depth, true, (Some(code), lang.as_deref()))?;
-            return Ok(vec![BlockNode::CodeBlock(CodeBlock {
-                attrs,
-                lang,
-                title: None,
-                label: Self::reads_code_label(h),
-                content,
-                pos: None,
-            })]);
+            return self.block_pre(h, path, depth, attrs, &children);
         }
         if tag == "hr" {
-            return Ok(vec![BlockNode::ThematicBreak(ThematicBreak {
-                // PART 10 §13a `data-char`: without it a rendered `***` imports
-                // back as `---`, silently, because both render the same `<hr>`.
-                marker: Self::reads_break_char(h),
-                attrs,
-                pos: None,
-            })]);
+            return self.block_hr(h, attrs);
         }
         if tag == "ul" || tag == "ol" {
-            let ordered = tag == "ol";
-            let mut list_items: Vec<Handle> = Vec::new();
-            let mut stray: Vec<Handle> = Vec::new();
-            let mut stray_paths: Vec<String> = Vec::new();
-            for (i, child) in children.iter().enumerate() {
-                if Self::tag(child).as_deref() == Some("li") {
-                    list_items.push(child.clone());
-                    continue;
-                }
-                let p = Self::child_path(path, child, i);
-                if let Some(stray_tag) = Self::tag(child) {
-                    // An ACTIVE element is not kept and must not be reported as
-                    // if it were: the ordinary walk drops it with the
-                    // `element-dropped` every other site gives it, and a
-                    // position note beside that would tell the reader the
-                    // content survived ahead of the list when it did not.
-                    if !matches!(
-                        stray_tag.as_str(),
-                        "script" | "style" | "template" | "noscript"
-                    ) {
-                        self.diag(
-                            HtmlImportDiagnosticCode::ElementUnwrapped,
-                            format!(
-                                "A <{stray_tag}> inside <{tag}> kept its content but not its place among the items: it is emitted as blocks ahead of the list"
-                            ),
-                            HtmlImportSeverity::Warning,
-                            &p,
-                            child,
-                        );
-                    }
-                // `is_layout_space` AND NOT `str::trim`: `trim` is
-                // `char::is_whitespace`, so a stray U+00A0 read as blank and the
-                // move went UNDECLARED while the same move for an ordinary word
-                // was reported (markup-carve/carve-rs#1342). The character was
-                // kept either way - what was missing is the row saying it left
-                // its place among the items, which is the part a reader cannot
-                // see from the output.
-                } else if matches!(&child.data, NodeData::Comment { .. }) {
-                    self.diag(
-                        HtmlImportDiagnosticCode::ElementUnwrapped,
-                        format!(
-                            "An HTML comment directly inside <{tag}> kept its text but not its place among the items: it is emitted as a comment ahead of the list"
-                        ),
-                        HtmlImportSeverity::Info,
-                        &p,
-                        child,
-                    );
-                } else if !Self::text(child).chars().all(is_layout_space) {
-                    self.diag(
-                        HtmlImportDiagnosticCode::ElementUnwrapped,
-                        format!(
-                            "Text directly inside <{tag}> kept its content but not its place among the items: it is emitted as a paragraph ahead of the list"
-                        ),
-                        HtmlImportSeverity::Warning,
-                        &p,
-                        child,
-                    );
-                }
-                stray.push(child.clone());
-                stray_paths.push(p);
-            }
-            let mut before = if stray.is_empty() {
-                Vec::new()
-            } else {
-                self.blocks_at(&stray, Some(&stray_paths), path, depth + 1)?
-            };
-            // No item, no list: an empty list has no spelling, and its attributes
-            // would be an attribute line with no block under it (carve#2367).
-            if list_items.is_empty() {
-                self.diag(
-                    HtmlImportDiagnosticCode::ElementDropped,
-                    format!("Dropped <{tag}> holding no item"),
-                    HtmlImportSeverity::Warning,
-                    path,
-                    h,
-                );
-                return Ok(before);
-            }
-            let mut items = Vec::new();
-            for (i, li) in list_items.iter().enumerate() {
-                let p = format!("{path}/li[{}]", i + 1);
-                let li_children = li.children.borrow();
-                let checkbox = li_children.iter().enumerate().find(|(_, child)| {
-                    Self::tag(child).as_deref() == Some("input")
-                        && Self::attr(child, "type")
-                            .is_some_and(|value| value.eq_ignore_ascii_case("checkbox"))
-                });
-                // PART 10 §11's carrier, read before the marker text so an
-                // ordered item keeps the state character it was written with
-                // rather than defaulting to the box.
-                let task_state = Self::reads_task_state(li)
-                    .then(|| Self::attr(li, "data-task-state"))
-                    .flatten()
-                    .and_then(|state| state.chars().next())
-                    // The box already says done; `x` is never a stored state.
-                    .filter(|state| *state != 'x');
-                // UNSPELLABLE BEHIND AN ORDERED MARKER. `task_marker` in
-                // `resources/spec/03-blocks-core.ebnf` hangs off
-                // `unordered_item` alone, so no Carve source carries a box on an
-                // ordered item and the writer dropped both the box and the
-                // characters it was read from (carve-rs#1890). The bracket pair
-                // is kept as text, the way the Markdown importer keeps it
-                // (carve-rs#1886), and the row says what could not be spelled.
-                // The AST holds the box either way; only a writer loses it
-                // (PART 12 §16), so this runs on the writing exit alone.
-                let ordered_task = ordered && checkbox.is_some() && self.writing;
-                if let Some((j, input)) = checkbox {
-                    let input_path = Self::child_path(&p, input, j);
-                    if ordered_task {
-                        self.diag(
-                            HtmlImportDiagnosticCode::StructureUnspellable,
-                            ORDERED_TASK_ITEM_UNSPELLABLE.into(),
-                            HtmlImportSeverity::Warning,
-                            &input_path,
-                            input,
-                        );
-                    }
-                    if let Some(kept) = self.attrs(input, &input_path) {
-                        let names: Vec<String> = Self::attr_names(&kept)
-                            .into_iter()
-                            .filter(|name| {
-                                !matches!(
-                                    name.as_str(),
-                                    "type" | "checked" | "disabled" | "aria-label"
-                                )
-                            })
-                            .collect();
-                        if !names.is_empty() {
-                            self.diag(
-                                HtmlImportDiagnosticCode::AttributeDropped,
-                                format!(
-                                    "Dropped {} on <input>: a task item's checkbox has no attribute slot",
-                                    names.join(", ")
-                                ),
-                                HtmlImportSeverity::Warning,
-                                &input_path,
-                                input,
-                            );
-                        }
-                    }
-                }
-                // CONSUMED INTO THE MARKER, so it is not walked as content and
-                // leaves no `element-unwrapped` or `attribute-dropped` behind
-                // it - reporting the `type` and `checked` lost would name a
-                // loss that no longer happens.
-                //
-                // The siblings after it keep the index they have in the
-                // DOCUMENT rather than the one they take in the filtered array,
-                // which is why the paths are computed here and handed to
-                // `blocks_at`: rebuilding an index from a list something was
-                // lifted out of renumbers every sibling after the hole
-                // (PART 12 §16, markup-carve/carve#1554).
-                //
-                // An ordered item's box is the one case where it is not
-                // consumed but SUBSTITUTED: a text node standing where the
-                // `<input>` stood, so the bracket pair reaches the item's own
-                // inline run and keeps the position the marker had among the
-                // siblings.
-                let (content, content_paths): (Vec<Handle>, Vec<String>) = li_children
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(j, child)| {
-                        let path = Self::child_path(&p, child, j);
-                        if !checkbox.is_some_and(|(_, input)| Rc::ptr_eq(input, child)) {
-                            return Some((child.clone(), path));
-                        }
-                        ordered_task.then(|| {
-                            let checked = Self::attr(child, "checked").is_some();
-                            (text_node(&task_marker_text(checked, task_state)), path)
-                        })
-                    })
-                    .unzip();
-                items.push(ListItem {
-                    attrs: self.attrs(li, &p),
-                    checked: (!ordered_task)
-                        .then(|| checkbox.map(|(_, input)| Self::attr(input, "checked").is_some()))
-                        .flatten(),
-                    task_state: if ordered_task { None } else { task_state },
-                    children: self.blocks_at(&content, Some(&content_paths), &p, depth + 1)?,
-                    pos: None,
-                });
-            }
-            let implied = !list_items.iter().any(|li| self.holds_paragraph(li))
-                && !items.iter().any(|item| {
-                    item.children.windows(2).any(|pair| {
-                        matches!(pair[0], BlockNode::Paragraph(_))
-                            && matches!(pair[1], BlockNode::Paragraph(_))
-                    })
-                });
-            // PART 10 §13a `data-carve-tight` wins over what the `<p>`s imply.
-            let tight = Self::reads_tight(h).unwrap_or(implied);
-            let start = if ordered {
-                Self::attr(h, "start")
-                    .and_then(|s| s.parse().ok())
-                    .filter(|v| *v != 1)
-            } else {
-                None
-            };
-            // PART 19 §1's base class, which the renderer writes back.
-            let task_list = !ordered && items.iter().all(|item| item.checked.is_some());
-            let mut attrs = if task_list {
-                Self::without_structural_class(attrs, "task-list")
-            } else {
-                attrs
-            };
-            let ol_type = if ordered {
-                self.ordered_list_type(h, start.unwrap_or(1), items.len(), &mut attrs, path)
-            } else {
-                None
-            };
-            before.push(BlockNode::List(List {
-                attrs,
-                ordered,
-                start,
-                ol_type,
-                bare_marker: false,
-                // PART 10 §12, the only place the delimiter survives a render.
-                delim: (ordered && (Self::reads_delim(h) || Self::reads_ordered_marker(h)))
-                    .then_some(')'),
-                // PART 10 §13a `data-marker`: the bullet a `<ul>` was authored
-                // with, which the element itself does not spell.
-                bullet_char: (!ordered).then(|| Self::reads_bullet_char(h)).flatten(),
-                tight,
-                items,
-                pos: None,
-            }));
-            return Ok(before);
+            return self.block_list(h, path, depth, &tag, attrs, &children);
         }
         if tag == "details" {
-            return Ok(vec![BlockNode::Admonition(
-                self.details(h, path, depth, attrs)?,
-            )]);
+            return self.block_details(h, path, depth, attrs);
         }
         if tag == "dl" {
             return self.definition_list(h, path, depth, attrs);
         }
         if tag == "table" {
-            let table = self.table(h, path, depth, attrs)?;
-            if self.writing && matches!(&table, BlockNode::Table(table) if table.rows.is_empty()) {
-                return Ok(Vec::new());
-            }
-            return Ok(vec![table]);
+            return self.block_table(h, path, depth, attrs);
         }
         if tag == "div" && Self::carrier(h, crate::roundtrip::LINE_BLOCK).is_some() {
             return self.carried_line_block(&children, path, depth, attrs);
         }
         let carried_div = tag == "div" && Self::carrier(h, crate::roundtrip::DIV).is_some();
         if tag == "div" {
-            if let Some(math) = Self::carve_math(h, attrs.as_ref()).filter(|_| !carried_div) {
-                // Charged because this arm returns without walking the children
-                // `blocks` would have counted one by one - the same reason the
-                // `<math>` arm charges by hand. Which arm an element takes must
-                // not change what `max_nodes` and `max_depth` see. Only a div
-                // whose classes already carry the pair reaches here, and
-                // `carve_math` tests them before it reads any text, so a plain
-                // div pays for nothing.
-                //
-                // At `depth + 1`, which is where the skipped traversal would
-                // have started: the ordinary arm below hands the children to
-                // `blocks` at `depth + 1`. Charging from `depth` undercounts by
-                // one, and a math div then imported at a `max_depth` its own
-                // twin was rejected at - measured, not assumed, by the depth
-                // half of `the_block_recognition_costs_the_same_budget_as_the_
-                // div_it_replaces`.
-                self.charge_subtree(h, depth + 1)?;
-                return Ok(vec![BlockNode::Paragraph(Paragraph {
-                    attrs: None,
-                    children: vec![InlineNode::Math(math)],
-                    at_content_column: true,
-                    block_image: false,
-                    pos: None,
-                })]);
-            }
-            if let Some(kind) = Self::container_from(&tag, &attrs).filter(|_| !carried_div) {
-                let attrs = Self::without_structural_class(attrs, &kind);
-                // A Tier-2 container carries a title the same way a callout
-                // does, and renders it with no generated id - so the lift has to
-                // reach this arm as well, not only the `<aside>` one below.
-                //
-                // A DIRECTIVE HAS NO TITLE SLOT (CARVE-P12-057 closes the node
-                // without one), so nothing is lifted out of a generated-content
-                // container: a `<p class="admonition-title">` inside one stays
-                // the ordinary paragraph it reads as, rather than being lifted
-                // into a field that does not exist and dropped on the way.
-                let generated = crate::ast::is_generated_content_kind(&kind);
-                let (mut title, body, body_paths) =
-                    self.admonition_title(&children, path, depth, true)?;
-                let (label, body, body_paths) = self.container_label(body, body_paths, depth)?;
-                let mut children = self.blocks_at(&body, Some(&body_paths), path, depth + 1)?;
-                self.keep_title_spellable(&mut title, &mut children, path, h);
-                if generated {
-                    return Ok(vec![BlockNode::Directive(Directive {
-                        attrs,
-                        kind,
-                        title,
-                        label,
-                        children,
-                        pos: None,
-                    })]);
-                }
-                return Ok(vec![BlockNode::Admonition(Admonition {
-                    attrs,
-                    kind,
-                    title,
-                    label,
-                    children,
-                    pos: None,
-                })]);
-            }
-            // THE LABEL IS LIFTED FIRST, because it is half of the test below.
-            // `container_label` takes back PART 9 §10's grouping `[label]` from
-            // the `<p class="div-label">` the renderer degraded it to, and the
-            // `container_from` arm above has had that lift since
-            // markup-carve/carve-rs#1310. This arm never got one, so a `<div>`
-            // that DID survive still came back with its label as a paragraph -
-            // `<div id="foo">` round-tripped to a fence wrapping
-            // `{.div-label}` + `g`. The two changes compose here rather than
-            // overlap: the widened test below is what lets the fence survive at
-            // all, and this is what puts the label back on its opener.
-            let body_paths: Vec<String> = children
-                .iter()
-                .enumerate()
-                .map(|(i, child)| Self::child_path(path, child, i))
-                .collect();
-            let (label, body, body_paths) =
-                self.container_label(children.to_vec(), body_paths, depth)?;
-            let blocks = self.blocks_at(&body, Some(&body_paths), path, depth + 1)?;
-            if attrs.is_none() && label.is_none() && !carried_div {
-                return Ok(blocks);
-            }
-            return Ok(vec![BlockNode::Div(Div {
-                attrs,
-                label,
-                children: blocks,
-                pos: None,
-            })]);
+            return self.block_div(h, path, depth, &tag, attrs, &children, carried_div);
         }
         // This engine's own composite-figure shape (PART 9 §4c) comes back as
         // the node it left as. Only the exact own-output classes take these
@@ -3741,126 +3198,857 @@ impl<'a> Importer<'a> {
             return self.figure_panel(h, path, depth, attrs, true);
         }
         if tag == "figure" {
-            let carried = attrs.clone();
-            // Where the report stood before the rebuild ran. A rebuild
-            // `roundtrip` then REJECTS has to leave no trace: every row
-            // `figure_panel` and the walk under it pushed describes a tree this
-            // mode is about to throw away, and the element it preserves instead
-            // loses nothing to report. The node BUDGET stays spent - the
-            // subtree was walked, and a figure buys no free walk the rest of
-            // the importer does not give.
-            let reported = self.diagnostics.len();
-            let unspellable = self.unspellable.len();
-            let displaced = self.displaced_figure_attrs.len();
-            let rebuilt = self.figure_panel_captioned(h, path, depth, attrs, false);
-            // A LIMIT REACHED INSIDE THE REBUILD IS NOT THE DOCUMENT'S ERROR
-            // in this mode. Before the per-target rule, `roundtrip` preserved a
-            // figure WITHOUT walking it, so a body 200 levels deep imported
-            // fine as an opaque block; failing the whole document for it now
-            // would be a regression bought with the fix. The element that
-            // cannot be walked is exactly the element no rebuild can reproduce,
-            // so it takes the same exit as one whose target has no spelling.
-            //
-            // Only `DepthLimit` and `NodeLimit` reach here - the other two
-            // variants are raised by the WRITER, after this walk is over - so
-            // nothing but a budget is being swallowed. The nodes already
-            // counted stay counted: the subtree was walked, and refunding them
-            // would sell one budget once per figure.
-            let mut detached = false;
-            let blocks = match rebuilt {
-                // A CAPTION LINE THE TARGET WOULD ABSORB IS NOT WRITTEN IN ANY
-                // MODE (ruling markup-carve/carve-php#1731). `roundtrip` keeps
-                // the bytes for such a target, below; `safe` and `semantic`
-                // cannot preserve, so the rebuilt figure is taken back apart
-                // here and the arm at the foot of this block declares what the
-                // unwrap cost.
-                Ok((blocks, _)) if self.opts.mode != HtmlImportMode::Roundtrip => {
-                    let (blocks, declared) = self.unwrap_absorbed_caption(h, path, blocks);
-                    // The detach names the `<figcaption>` and what it cost. The
-                    // generic row below names the WRAPPER, and both would be
-                    // about the same event - so the arm that already spoke says
-                    // so rather than letting one shape report twice.
-                    detached = declared;
-                    blocks
-                }
-                // A FIGURE IS THE CAPTIONED WRAPPER (PART 9 §4b). An element
-                // carrying no `<figcaption>`, or one whose caption spells
-                // nothing, never reaches the rebuild-or-preserve decision at
-                // all: it is not a figure to rebuild and not one to preserve,
-                // so it unwraps to its content with `element-unwrapped` in
-                // EVERY mode. `docs/html-import.md` states that as the behavior
-                // this rule leaves untouched, and carve-js pins it; without the
-                // arm, `roundtrip` preserved every uncaptioned `<figure>` and
-                // the two engines disagreed on exactly that shape.
-                Ok((blocks, false)) => blocks,
-                Ok((blocks, true)) if Self::roundtrip_keeps_rebuilt_figure(h, &blocks) => blocks,
-                Err(error) if self.opts.mode != HtmlImportMode::Roundtrip => return Err(error),
-                _ => {
-                    self.diagnostics.truncate(reported);
-                    self.unspellable.truncate(unspellable);
-                    self.displaced_figure_attrs.truncate(displaced);
-                    self.keep_raw(h, path, &tag);
-                    return Ok(vec![BlockNode::RawBlock(RawBlock {
-                        attrs: None,
-                        format: "html".into(),
-                        content: Self::html(h),
-                        pos: None,
-                    })]);
-                }
+            return self.block_figure(h, path, depth, &tag, attrs);
+        }
+        self.block_fallback(h, path, depth, &tag, attrs, &children)
+    }
+
+    #[inline(never)]
+    #[allow(clippy::needless_return, clippy::needless_borrow)]
+    fn block_footnotes(&self) -> Result<Vec<BlockNode>, HtmlImportError> {
+        return Ok(vec![BlockNode::Directive(Directive {
+            attrs: None,
+            kind: "footnotes".to_string(),
+            title: None,
+            label: None,
+            children: Vec::new(),
+            pos: None,
+        })]);
+    }
+
+    #[inline(never)]
+    #[allow(clippy::needless_return, clippy::needless_borrow)]
+    fn block_quote(
+        &mut self,
+        path: &str,
+        depth: usize,
+        attrs: Option<Attrs>,
+        children: &[Handle],
+    ) -> Result<Vec<BlockNode>, HtmlImportError> {
+        return Ok(vec![BlockNode::BlockQuote(BlockQuote {
+            attrs,
+            children: self.blocks(&children, path, depth + 1)?,
+            // An imported quote has no authored spelling: HTML records the
+            // element, never how someone typed it.
+            fenced: false,
+            pos: None,
+        })]);
+    }
+
+    #[inline(never)]
+    #[allow(clippy::needless_return, clippy::needless_borrow)]
+    fn block_hr(
+        &self,
+        h: &Handle,
+        attrs: Option<Attrs>,
+    ) -> Result<Vec<BlockNode>, HtmlImportError> {
+        return Ok(vec![BlockNode::ThematicBreak(ThematicBreak {
+            // PART 10 §13a `data-char`: without it a rendered `***` imports
+            // back as `---`, silently, because both render the same `<hr>`.
+            marker: Self::reads_break_char(h),
+            attrs,
+            pos: None,
+        })]);
+    }
+
+    #[inline(never)]
+    #[allow(clippy::needless_return, clippy::needless_borrow)]
+    fn block_details(
+        &mut self,
+        h: &Handle,
+        path: &str,
+        depth: usize,
+        attrs: Option<Attrs>,
+    ) -> Result<Vec<BlockNode>, HtmlImportError> {
+        return Ok(vec![BlockNode::Admonition(
+            self.details(h, path, depth, attrs)?,
+        )]);
+    }
+
+    #[inline(never)]
+    #[allow(clippy::needless_return, clippy::needless_borrow)]
+    fn block_abbreviation_template(
+        &mut self,
+        h: &Handle,
+        path: &str,
+        depth: usize,
+    ) -> Result<Vec<BlockNode>, HtmlImportError> {
+        self.charge_subtree(h, depth)?;
+        let payload = if let NodeData::Element {
+            template_contents, ..
+        } = &h.data
+        {
+            template_contents
+                .borrow()
+                .as_ref()
+                .filter(|content| {
+                    content
+                        .children
+                        .borrow()
+                        .iter()
+                        .all(|child| matches!(child.data, NodeData::Text { .. }))
+                })
+                .map(Self::text)
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+        let mut parsed = crate::parse(&payload);
+        if parsed.frontmatter_raw.is_none()
+            && parsed.frontmatter.is_empty()
+            && parsed.footnote_defs.is_empty()
+            && !parsed.children.is_empty()
+            && parsed
+                .children
+                .iter()
+                .all(|node| matches!(node, BlockNode::AbbreviationDef(_)))
+        {
+            self.carrier_definitions
+                .extend(
+                    std::mem::take(&mut parsed.children)
+                        .into_iter()
+                        .map(|node| match node {
+                            BlockNode::AbbreviationDef(mut def) => {
+                                def.pos = None;
+                                BlockNode::AbbreviationDef(def)
+                            }
+                            _ => unreachable!(),
+                        }),
+                );
+            return Ok(Vec::new());
+        }
+        self.diag(
+            HtmlImportDiagnosticCode::AttributeDropped,
+            "Dropped invalid abbreviation carrier".into(),
+            HtmlImportSeverity::Warning,
+            path,
+            h,
+        );
+        return Ok(Vec::new());
+    }
+
+    #[inline(never)]
+    fn block_table(
+        &mut self,
+        h: &Handle,
+        path: &str,
+        depth: usize,
+        attrs: Option<Attrs>,
+    ) -> Result<Vec<BlockNode>, HtmlImportError> {
+        self.table(h, path, depth, attrs).map(|table| {
+            if self.writing && matches!(&table, BlockNode::Table(table) if table.rows.is_empty()) {
+                Vec::new()
+            } else {
+                vec![table]
+            }
+        })
+    }
+
+    #[inline(never)]
+    #[allow(clippy::needless_return, clippy::needless_borrow)]
+    fn block_pre(
+        &mut self,
+        h: &Handle,
+        path: &str,
+        depth: usize,
+        attrs: Option<Attrs>,
+        children: &[Handle],
+    ) -> Result<Vec<BlockNode>, HtmlImportError> {
+        let code = children
+            .iter()
+            .find(|n| Self::tag(n).as_deref() == Some("code"))
+            .unwrap_or(h);
+        let lang = self.code_language(h, code);
+        let content = self.code_text(h, path, depth, true, (Some(code), lang.as_deref()))?;
+        return Ok(vec![BlockNode::CodeBlock(CodeBlock {
+            attrs,
+            lang,
+            title: None,
+            label: Self::reads_code_label(h),
+            content,
+            pos: None,
+        })]);
+    }
+
+    // carve-rs#2978: keep each recursive debug frame within the 12 KiB budget.
+    #[inline(never)]
+    #[allow(clippy::needless_return, clippy::needless_borrow)]
+    fn block_heading(
+        &mut self,
+        h: &Handle,
+        path: &str,
+        depth: usize,
+        tag: &String,
+        attrs: Option<Attrs>,
+        children: &[Handle],
+    ) -> Result<Vec<BlockNode>, HtmlImportError> {
+        let mut attrs = attrs;
+        self.heading_depth += 1;
+        let inlines = self.inlines(&children, path, depth + 1);
+        self.heading_depth -= 1;
+        let inlines = inlines?;
+        // AN EMPTY HEADING IS DROPPED, WITH ONE ROW (markup-carve/carve#2419).
+        // It has no Carve spelling at all - `inline_content` is one-or-more -
+        // so the writer wrote a bare marker, which re-reads as a paragraph and
+        // breaks `parse(html_to_carve(h)) == html_to_ast(h)`. Dropping it is
+        // what this contract already does to every other empty container, and
+        // it carries nothing a reader loses.
+        //
+        // REPORTED WHETHER OR NOT IT CARRIED ATTRIBUTES, unlike the paragraph
+        // below: a bare empty `<p>` leaves silently because it carries
+        // nothing (carve#2423), while the ruling here names one row for the
+        // heading either way.
+        if inlines.is_empty() || is_layout_only(&inlines) {
+            let message = if inlines.is_empty() {
+                format!("Dropped <{tag}> holding no content")
+            } else {
+                format!("Dropped whitespace-only <{tag}> holding no content character")
             };
-            match blocks.as_slice() {
-                [BlockNode::Figure(f)] => {
-                    if matches!(*f.target, FigureTarget::Table(_)) {
-                        // THE SENTENCE NO LONGER CLAIMS THE FIGURE'S ATTRIBUTES
-                        // SURVIVE, because after the ruling below they may not:
-                        // the table writes its OWN attribute line, and where the
-                        // two set the same name the table's wins. It said "the
-                        // written table carries the caption and the figure's
-                        // attributes", which was a false report on exactly the
-                        // shape this row is attached to. carve-php recorded that
-                        // it could not adopt this wording for that reason
-                        // (markup-carve/carve-php#1729); the text is now the one
-                        // carve-js and carve-php already share, so one shape
-                        // reads the same from all three.
-                        self.unspellable.push((
-                            h.clone(),
-                            path.to_owned(),
-                            "A figure wrapping a table has no Carve spelling; the caption is \
-                             written on the table, which renders <caption> inside it"
-                                .into(),
-                            HtmlImportDiagnosticCode::StructureUnspellable,
-                        ));
-                    }
-                    self.record_displaced_figure_attrs(h, path, f);
-                }
-                // ALREADY DECLARED, and by the row that can say where the
-                // text went. The wrapper is gone either way, but its
-                // attributes were not lost - they rode onto the table - so the
-                // generic pair would report a drop that did not happen.
-                _ if detached => {}
-                _ => {
+            self.diag(
+                HtmlImportDiagnosticCode::ElementDropped,
+                message,
+                HtmlImportSeverity::Warning,
+                path,
+                h,
+            );
+            return Ok(Vec::new());
+        }
+        if let Some(held) = attrs.as_mut().filter(|held| held.id.is_some()) {
+            if Self::reads_generated_section(h) {
+                held.id = None;
+            } else if self.writing || Self::reads_explicit_id(h) {
+                // Authored. A non-empty order is exhaustive, so every
+                // imported slot has to be carried - and carried in the
+                // element's OWN attribute order, which is the order the
+                // writer has to spell to render these bytes back.
+                //
+                // ON THE WRITING EXIT, OR WHERE A CARRIER RECORDED IT. `order`
+                // is a source-layout field and an import read no source, so
+                // the published tree records none (markup-carve/carve#1647)
+                // unless the explicit-id carrier says the slot was authored;
+                // see `Importer::writing` for why the writer needs it.
+                held.order = Self::slot_order_from_element(h, held);
+            }
+        }
+        let attrs = attrs.filter(|held| *held != Attrs::default());
+        return Ok(vec![BlockNode::Heading(Heading {
+            attrs,
+            level: tag[1..].parse().unwrap(),
+            children: inlines,
+            pos: None,
+        })]);
+    }
+
+    #[inline(never)]
+    #[allow(clippy::needless_return, clippy::needless_borrow)]
+    fn block_paragraph(
+        &mut self,
+        h: &Handle,
+        path: &str,
+        depth: usize,
+        tag: &String,
+        attrs: Option<Attrs>,
+        children: &[Handle],
+    ) -> Result<Vec<BlockNode>, HtmlImportError> {
+        let inlines = self.inlines(&children, path, depth + 1)?;
+        // PART 11 §7: a block element holding nothing but LAYOUT builds no
+        // node, and the drop is REPORTED because it is a real loss - an
+        // element the input had contributes nothing. Keeping owes no report,
+        // since a kept character survives the write intact.
+        //
+        // WHY THE PARAGRAPH AND NOT EVERY BLOCK. §7's argument is that the
+        // node left behind is UNSPELLABLE, so the two import exits disagree
+        // about it. A heading spells its own marker and a list item its own
+        // bullet, so neither is that shape; the paragraph is, and it is the
+        // shape all three of §7's rows are written over.
+        if is_layout_only(&inlines) {
+            self.diag(
+                HtmlImportDiagnosticCode::ElementDropped,
+                format!("Dropped whitespace-only <{tag}> holding no content character"),
+                HtmlImportSeverity::Warning,
+                path,
+                h,
+            );
+            return Ok(Vec::new());
+        }
+        /*
+         * CARVE SOURCE CANNOT SPELL A PARAGRAPH HOLDING ONLY AN IMAGE, so
+         * the writer loses it and PART 12 section 16 says the writing exit
+         * reports that (carve-rs#1331).
+         *
+         * `resources/examples/edge-cases.md` rules the shape: "a paragraph
+         * whose whole content is one image is still the standalone image
+         * shape, not a wrapped one". So `![G](g.jpg)` re-reads as a BLOCK
+         * image, the `<p>` the author wrote is gone from the source, and
+         * `html_to_ast` keeps a paragraph the re-parsed source does not -
+         * the one carve-out `docs/html-import.md` allows to
+         * `parse(html_to_carve(h)) == html_to_ast(h)`.
+         *
+         * NOT A CHANGE OF OUTPUT, because there is no other output to
+         * write. carve-js measured an indented ` ![G](g.jpg)` as a
+         * paragraph holding one image and rejected it as a spelling anyway;
+         * this engine reads it as a block image at every indent, so there
+         * is not even a near miss to reach for.
+         */
+        // THE AUTHOR'S PARAGRAPH IS TRIMMED TOO (carve-rs#1336). The
+        // synthesized wrapper beside it already was, and the reason given -
+        // that the wrapper is not an element the document contains - is real
+        // but is not the deciding one. PART 11 section 7's principle is:
+        // whitespace that is layout is not content, wherever it sits. Left
+        // untrimmed, `<p>` newline `  <img>` newline `</p>` kept two spaces
+        // in the tree that the writer drops, so the two exits disagreed
+        // about characters no reader can act on.
+        let inlines = trim_edge_whitespace(inlines);
+        // No spelling holds an empty paragraph, and its attribute line
+        // would land on the next block, so the row covers the attributes.
+        if inlines.is_empty() && attrs.is_some() {
+            self.diag(
+                HtmlImportDiagnosticCode::ElementDropped,
+                format!("Dropped <{tag}> holding no content"),
+                HtmlImportSeverity::Warning,
+                path,
+                h,
+            );
+            return Ok(Vec::new());
+        }
+        // A bare one carries nothing, and the writer writes nothing for it.
+        if inlines.is_empty() {
+            return Ok(Vec::new());
+        }
+        let candidate = lone_image(&inlines).map(|image| {
+            (
+                attrs.is_some(),
+                overwritten_attr_names(attrs.as_ref(), image.attrs.as_ref()),
+            )
+        });
+        let mut paragraph = Paragraph {
+            attrs,
+            children: inlines,
+            at_content_column: true,
+            block_image: false,
+            pos: None,
+        };
+        if let Some((attributed, overwritten)) = candidate {
+            paragraph.pos = Some(candidate_mark(self.lone_image_paragraphs.len()));
+            self.lone_image_paragraphs.push(LoneImageParagraph {
+                node: h.clone(),
+                path: path.to_string(),
+                attributed,
+                overwritten,
+            });
+        }
+        return Ok(vec![BlockNode::Paragraph(paragraph)]);
+    }
+
+    #[inline(never)]
+    #[allow(clippy::needless_return, clippy::needless_borrow)]
+    fn block_list(
+        &mut self,
+        h: &Handle,
+        path: &str,
+        depth: usize,
+        tag: &String,
+        attrs: Option<Attrs>,
+        children: &[Handle],
+    ) -> Result<Vec<BlockNode>, HtmlImportError> {
+        let ordered = tag == "ol";
+        let mut list_items: Vec<Handle> = Vec::new();
+        let mut stray: Vec<Handle> = Vec::new();
+        let mut stray_paths: Vec<String> = Vec::new();
+        for (i, child) in children.iter().enumerate() {
+            if Self::tag(child).as_deref() == Some("li") {
+                list_items.push(child.clone());
+                continue;
+            }
+            let p = Self::child_path(path, child, i);
+            if let Some(stray_tag) = Self::tag(child) {
+                // An ACTIVE element is not kept and must not be reported as
+                // if it were: the ordinary walk drops it with the
+                // `element-dropped` every other site gives it, and a
+                // position note beside that would tell the reader the
+                // content survived ahead of the list when it did not.
+                if !matches!(
+                    stray_tag.as_str(),
+                    "script" | "style" | "template" | "noscript"
+                ) {
                     self.diag(
+                            HtmlImportDiagnosticCode::ElementUnwrapped,
+                            format!(
+                                "A <{stray_tag}> inside <{tag}> kept its content but not its place among the items: it is emitted as blocks ahead of the list"
+                            ),
+                            HtmlImportSeverity::Warning,
+                            &p,
+                            child,
+                        );
+                }
+            // `is_layout_space` AND NOT `str::trim`: `trim` is
+            // `char::is_whitespace`, so a stray U+00A0 read as blank and the
+            // move went UNDECLARED while the same move for an ordinary word
+            // was reported (markup-carve/carve-rs#1342). The character was
+            // kept either way - what was missing is the row saying it left
+            // its place among the items, which is the part a reader cannot
+            // see from the output.
+            } else if matches!(&child.data, NodeData::Comment { .. }) {
+                self.diag(
                         HtmlImportDiagnosticCode::ElementUnwrapped,
-                        format!("Unwrapped unsupported <{tag}> element"),
+                        format!(
+                            "An HTML comment directly inside <{tag}> kept its text but not its place among the items: it is emitted as a comment ahead of the list"
+                        ),
                         HtmlImportSeverity::Info,
-                        path,
-                        h,
+                        &p,
+                        child,
                     );
-                    self.report_unplaceable_attrs(
-                        h,
-                        carried,
-                        tag.as_str(),
-                        "the figure did not survive as a figure",
-                        path,
+            } else if !Self::text(child).chars().all(is_layout_space) {
+                self.diag(
+                        HtmlImportDiagnosticCode::ElementUnwrapped,
+                        format!(
+                            "Text directly inside <{tag}> kept its content but not its place among the items: it is emitted as a paragraph ahead of the list"
+                        ),
+                        HtmlImportSeverity::Warning,
+                        &p,
+                        child,
+                    );
+            }
+            stray.push(child.clone());
+            stray_paths.push(p);
+        }
+        let mut before = if stray.is_empty() {
+            Vec::new()
+        } else {
+            self.blocks_at(&stray, Some(&stray_paths), path, depth + 1)?
+        };
+        // No item, no list: an empty list has no spelling, and its attributes
+        // would be an attribute line with no block under it (carve#2367).
+        if list_items.is_empty() {
+            self.diag(
+                HtmlImportDiagnosticCode::ElementDropped,
+                format!("Dropped <{tag}> holding no item"),
+                HtmlImportSeverity::Warning,
+                path,
+                h,
+            );
+            return Ok(before);
+        }
+        let mut items = Vec::new();
+        for (i, li) in list_items.iter().enumerate() {
+            let p = format!("{path}/li[{}]", i + 1);
+            let li_children = li.children.borrow();
+            let checkbox = li_children.iter().enumerate().find(|(_, child)| {
+                Self::tag(child).as_deref() == Some("input")
+                    && Self::attr(child, "type")
+                        .is_some_and(|value| value.eq_ignore_ascii_case("checkbox"))
+            });
+            // PART 10 §11's carrier, read before the marker text so an
+            // ordered item keeps the state character it was written with
+            // rather than defaulting to the box.
+            let task_state = Self::reads_task_state(li)
+                .then(|| Self::attr(li, "data-task-state"))
+                .flatten()
+                .and_then(|state| state.chars().next())
+                // The box already says done; `x` is never a stored state.
+                .filter(|state| *state != 'x');
+            // UNSPELLABLE BEHIND AN ORDERED MARKER. `task_marker` in
+            // `resources/spec/03-blocks-core.ebnf` hangs off
+            // `unordered_item` alone, so no Carve source carries a box on an
+            // ordered item and the writer dropped both the box and the
+            // characters it was read from (carve-rs#1890). The bracket pair
+            // is kept as text, the way the Markdown importer keeps it
+            // (carve-rs#1886), and the row says what could not be spelled.
+            // The AST holds the box either way; only a writer loses it
+            // (PART 12 §16), so this runs on the writing exit alone.
+            let ordered_task = ordered && checkbox.is_some() && self.writing;
+            if let Some((j, input)) = checkbox {
+                let input_path = Self::child_path(&p, input, j);
+                if ordered_task {
+                    self.diag(
+                        HtmlImportDiagnosticCode::StructureUnspellable,
+                        ORDERED_TASK_ITEM_UNSPELLABLE.into(),
+                        HtmlImportSeverity::Warning,
+                        &input_path,
+                        input,
                     );
                 }
+                if let Some(kept) = self.attrs(input, &input_path) {
+                    let names: Vec<String> = Self::attr_names(&kept)
+                        .into_iter()
+                        .filter(|name| {
+                            !matches!(
+                                name.as_str(),
+                                "type" | "checked" | "disabled" | "aria-label"
+                            )
+                        })
+                        .collect();
+                    if !names.is_empty() {
+                        self.diag(
+                                HtmlImportDiagnosticCode::AttributeDropped,
+                                format!(
+                                    "Dropped {} on <input>: a task item's checkbox has no attribute slot",
+                                    names.join(", ")
+                                ),
+                                HtmlImportSeverity::Warning,
+                                &input_path,
+                                input,
+                            );
+                    }
+                }
             }
-            let mut blocks = blocks;
-            if let Some(BlockNode::Figure(figure)) = blocks.first_mut() {
-                share_figure_attrs(figure);
-            }
+            // CONSUMED INTO THE MARKER, so it is not walked as content and
+            // leaves no `element-unwrapped` or `attribute-dropped` behind
+            // it - reporting the `type` and `checked` lost would name a
+            // loss that no longer happens.
+            //
+            // The siblings after it keep the index they have in the
+            // DOCUMENT rather than the one they take in the filtered array,
+            // which is why the paths are computed here and handed to
+            // `blocks_at`: rebuilding an index from a list something was
+            // lifted out of renumbers every sibling after the hole
+            // (PART 12 §16, markup-carve/carve#1554).
+            //
+            // An ordered item's box is the one case where it is not
+            // consumed but SUBSTITUTED: a text node standing where the
+            // `<input>` stood, so the bracket pair reaches the item's own
+            // inline run and keeps the position the marker had among the
+            // siblings.
+            let (content, content_paths): (Vec<Handle>, Vec<String>) = li_children
+                .iter()
+                .enumerate()
+                .filter_map(|(j, child)| {
+                    let path = Self::child_path(&p, child, j);
+                    if !checkbox.is_some_and(|(_, input)| Rc::ptr_eq(input, child)) {
+                        return Some((child.clone(), path));
+                    }
+                    ordered_task.then(|| {
+                        let checked = Self::attr(child, "checked").is_some();
+                        (text_node(&task_marker_text(checked, task_state)), path)
+                    })
+                })
+                .unzip();
+            items.push(ListItem {
+                attrs: self.attrs(li, &p),
+                checked: (!ordered_task)
+                    .then(|| checkbox.map(|(_, input)| Self::attr(input, "checked").is_some()))
+                    .flatten(),
+                task_state: if ordered_task { None } else { task_state },
+                children: self.blocks_at(&content, Some(&content_paths), &p, depth + 1)?,
+                pos: None,
+            });
+        }
+        let implied = !list_items.iter().any(|li| self.holds_paragraph(li))
+            && !items.iter().any(|item| {
+                item.children.windows(2).any(|pair| {
+                    matches!(pair[0], BlockNode::Paragraph(_))
+                        && matches!(pair[1], BlockNode::Paragraph(_))
+                })
+            });
+        // PART 10 §13a `data-carve-tight` wins over what the `<p>`s imply.
+        let tight = Self::reads_tight(h).unwrap_or(implied);
+        let start = if ordered {
+            Self::attr(h, "start")
+                .and_then(|s| s.parse().ok())
+                .filter(|v| *v != 1)
+        } else {
+            None
+        };
+        // PART 19 §1's base class, which the renderer writes back.
+        let task_list = !ordered && items.iter().all(|item| item.checked.is_some());
+        let mut attrs = if task_list {
+            Self::without_structural_class(attrs, "task-list")
+        } else {
+            attrs
+        };
+        let ol_type = if ordered {
+            self.ordered_list_type(h, start.unwrap_or(1), items.len(), &mut attrs, path)
+        } else {
+            None
+        };
+        before.push(BlockNode::List(List {
+            attrs,
+            ordered,
+            start,
+            ol_type,
+            bare_marker: false,
+            // PART 10 §12, the only place the delimiter survives a render.
+            delim: (ordered && (Self::reads_delim(h) || Self::reads_ordered_marker(h)))
+                .then_some(')'),
+            // PART 10 §13a `data-marker`: the bullet a `<ul>` was authored
+            // with, which the element itself does not spell.
+            bullet_char: (!ordered).then(|| Self::reads_bullet_char(h)).flatten(),
+            tight,
+            items,
+            pos: None,
+        }));
+        return Ok(before);
+    }
+
+    #[inline(never)]
+    #[allow(clippy::needless_return, clippy::needless_borrow)]
+    #[allow(clippy::too_many_arguments)]
+    fn block_div(
+        &mut self,
+        h: &Handle,
+        path: &str,
+        depth: usize,
+        tag: &String,
+        attrs: Option<Attrs>,
+        children: &[Handle],
+        carried_div: bool,
+    ) -> Result<Vec<BlockNode>, HtmlImportError> {
+        if let Some(math) = Self::carve_math(h, attrs.as_ref()).filter(|_| !carried_div) {
+            return self.block_div_math(h, depth, math);
+        }
+        if let Some(kind) = Self::container_from(&tag, &attrs).filter(|_| !carried_div) {
+            return self.block_div_container(h, path, depth, attrs, children, kind);
+        }
+        // THE LABEL IS LIFTED FIRST, because it is half of the test below.
+        // `container_label` takes back PART 9 §10's grouping `[label]` from
+        // the `<p class="div-label">` the renderer degraded it to, and the
+        // `container_from` arm above has had that lift since
+        // markup-carve/carve-rs#1310. This arm never got one, so a `<div>`
+        // that DID survive still came back with its label as a paragraph -
+        // `<div id="foo">` round-tripped to a fence wrapping
+        // `{.div-label}` + `g`. The two changes compose here rather than
+        // overlap: the widened test below is what lets the fence survive at
+        // all, and this is what puts the label back on its opener.
+        let body_paths: Vec<String> = children
+            .iter()
+            .enumerate()
+            .map(|(i, child)| Self::child_path(path, child, i))
+            .collect();
+        let (label, body, body_paths) =
+            self.container_label(children.to_vec(), body_paths, depth)?;
+        let blocks = self.blocks_at(&body, Some(&body_paths), path, depth + 1)?;
+        if attrs.is_none() && label.is_none() && !carried_div {
             return Ok(blocks);
         }
+        return Ok(vec![BlockNode::Div(Div {
+            attrs,
+            label,
+            children: blocks,
+            pos: None,
+        })]);
+    }
+
+    #[inline(never)]
+    #[allow(clippy::needless_return, clippy::needless_borrow)]
+    fn block_div_math(
+        &mut self,
+        h: &Handle,
+        depth: usize,
+        math: Math,
+    ) -> Result<Vec<BlockNode>, HtmlImportError> {
+        // Charged because this arm returns without walking the children
+        // `blocks` would have counted one by one - the same reason the
+        // `<math>` arm charges by hand. Which arm an element takes must
+        // not change what `max_nodes` and `max_depth` see. Only a div
+        // whose classes already carry the pair reaches here, and
+        // `carve_math` tests them before it reads any text, so a plain
+        // div pays for nothing.
+        //
+        // At `depth + 1`, which is where the skipped traversal would
+        // have started: the ordinary arm below hands the children to
+        // `blocks` at `depth + 1`. Charging from `depth` undercounts by
+        // one, and a math div then imported at a `max_depth` its own
+        // twin was rejected at - measured, not assumed, by the depth
+        // half of `the_block_recognition_costs_the_same_budget_as_the_
+        // div_it_replaces`.
+        self.charge_subtree(h, depth + 1)?;
+        return Ok(vec![BlockNode::Paragraph(Paragraph {
+            attrs: None,
+            children: vec![InlineNode::Math(math)],
+            at_content_column: true,
+            block_image: false,
+            pos: None,
+        })]);
+    }
+
+    #[inline(never)]
+    #[allow(clippy::needless_return, clippy::needless_borrow)]
+    fn block_div_container(
+        &mut self,
+        h: &Handle,
+        path: &str,
+        depth: usize,
+        attrs: Option<Attrs>,
+        children: &[Handle],
+        kind: String,
+    ) -> Result<Vec<BlockNode>, HtmlImportError> {
+        let attrs = Self::without_structural_class(attrs, &kind);
+        // A Tier-2 container carries a title the same way a callout
+        // does, and renders it with no generated id - so the lift has to
+        // reach this arm as well, not only the `<aside>` one below.
+        //
+        // A DIRECTIVE HAS NO TITLE SLOT (CARVE-P12-057 closes the node
+        // without one), so nothing is lifted out of a generated-content
+        // container: a `<p class="admonition-title">` inside one stays
+        // the ordinary paragraph it reads as, rather than being lifted
+        // into a field that does not exist and dropped on the way.
+        let generated = crate::ast::is_generated_content_kind(&kind);
+        let (mut title, body, body_paths) = self.admonition_title(&children, path, depth, true)?;
+        let (label, body, body_paths) = self.container_label(body, body_paths, depth)?;
+        let mut children = self.blocks_at(&body, Some(&body_paths), path, depth + 1)?;
+        self.keep_title_spellable(&mut title, &mut children, path, h);
+        if generated {
+            return Ok(vec![BlockNode::Directive(Directive {
+                attrs,
+                kind,
+                title,
+                label,
+                children,
+                pos: None,
+            })]);
+        }
+        return Ok(vec![BlockNode::Admonition(Admonition {
+            attrs,
+            kind,
+            title,
+            label,
+            children,
+            pos: None,
+        })]);
+    }
+
+    #[inline(never)]
+    #[allow(clippy::needless_return, clippy::needless_borrow)]
+    fn block_figure(
+        &mut self,
+        h: &Handle,
+        path: &str,
+        depth: usize,
+        tag: &String,
+        attrs: Option<Attrs>,
+    ) -> Result<Vec<BlockNode>, HtmlImportError> {
+        let carried = attrs.clone();
+        // Where the report stood before the rebuild ran. A rebuild
+        // `roundtrip` then REJECTS has to leave no trace: every row
+        // `figure_panel` and the walk under it pushed describes a tree this
+        // mode is about to throw away, and the element it preserves instead
+        // loses nothing to report. The node BUDGET stays spent - the
+        // subtree was walked, and a figure buys no free walk the rest of
+        // the importer does not give.
+        let reported = self.diagnostics.len();
+        let unspellable = self.unspellable.len();
+        let displaced = self.displaced_figure_attrs.len();
+        let rebuilt = self.figure_panel_captioned(h, path, depth, attrs, false);
+        // A LIMIT REACHED INSIDE THE REBUILD IS NOT THE DOCUMENT'S ERROR
+        // in this mode. Before the per-target rule, `roundtrip` preserved a
+        // figure WITHOUT walking it, so a body 200 levels deep imported
+        // fine as an opaque block; failing the whole document for it now
+        // would be a regression bought with the fix. The element that
+        // cannot be walked is exactly the element no rebuild can reproduce,
+        // so it takes the same exit as one whose target has no spelling.
+        //
+        // Only `DepthLimit` and `NodeLimit` reach here - the other two
+        // variants are raised by the WRITER, after this walk is over - so
+        // nothing but a budget is being swallowed. The nodes already
+        // counted stay counted: the subtree was walked, and refunding them
+        // would sell one budget once per figure.
+        let mut detached = false;
+        let blocks = match rebuilt {
+            // A CAPTION LINE THE TARGET WOULD ABSORB IS NOT WRITTEN IN ANY
+            // MODE (ruling markup-carve/carve-php#1731). `roundtrip` keeps
+            // the bytes for such a target, below; `safe` and `semantic`
+            // cannot preserve, so the rebuilt figure is taken back apart
+            // here and the arm at the foot of this block declares what the
+            // unwrap cost.
+            Ok((blocks, _)) if self.opts.mode != HtmlImportMode::Roundtrip => {
+                let (blocks, declared) = self.unwrap_absorbed_caption(h, path, blocks);
+                // The detach names the `<figcaption>` and what it cost. The
+                // generic row below names the WRAPPER, and both would be
+                // about the same event - so the arm that already spoke says
+                // so rather than letting one shape report twice.
+                detached = declared;
+                blocks
+            }
+            // A FIGURE IS THE CAPTIONED WRAPPER (PART 9 §4b). An element
+            // carrying no `<figcaption>`, or one whose caption spells
+            // nothing, never reaches the rebuild-or-preserve decision at
+            // all: it is not a figure to rebuild and not one to preserve,
+            // so it unwraps to its content with `element-unwrapped` in
+            // EVERY mode. `docs/html-import.md` states that as the behavior
+            // this rule leaves untouched, and carve-js pins it; without the
+            // arm, `roundtrip` preserved every uncaptioned `<figure>` and
+            // the two engines disagreed on exactly that shape.
+            Ok((blocks, false)) => blocks,
+            Ok((blocks, true)) if Self::roundtrip_keeps_rebuilt_figure(h, &blocks) => blocks,
+            Err(error) if self.opts.mode != HtmlImportMode::Roundtrip => return Err(error),
+            _ => {
+                self.diagnostics.truncate(reported);
+                self.unspellable.truncate(unspellable);
+                self.displaced_figure_attrs.truncate(displaced);
+                self.keep_raw(h, path, &tag);
+                return Ok(vec![BlockNode::RawBlock(RawBlock {
+                    attrs: None,
+                    format: "html".into(),
+                    content: Self::html(h),
+                    pos: None,
+                })]);
+            }
+        };
+        match blocks.as_slice() {
+            [BlockNode::Figure(f)] => {
+                if matches!(*f.target, FigureTarget::Table(_)) {
+                    // THE SENTENCE NO LONGER CLAIMS THE FIGURE'S ATTRIBUTES
+                    // SURVIVE, because after the ruling below they may not:
+                    // the table writes its OWN attribute line, and where the
+                    // two set the same name the table's wins. It said "the
+                    // written table carries the caption and the figure's
+                    // attributes", which was a false report on exactly the
+                    // shape this row is attached to. carve-php recorded that
+                    // it could not adopt this wording for that reason
+                    // (markup-carve/carve-php#1729); the text is now the one
+                    // carve-js and carve-php already share, so one shape
+                    // reads the same from all three.
+                    self.unspellable.push((
+                        h.clone(),
+                        path.to_owned(),
+                        "A figure wrapping a table has no Carve spelling; the caption is \
+                             written on the table, which renders <caption> inside it"
+                            .into(),
+                        HtmlImportDiagnosticCode::StructureUnspellable,
+                    ));
+                }
+                self.record_displaced_figure_attrs(h, path, f);
+            }
+            // ALREADY DECLARED, and by the row that can say where the
+            // text went. The wrapper is gone either way, but its
+            // attributes were not lost - they rode onto the table - so the
+            // generic pair would report a drop that did not happen.
+            _ if detached => {}
+            _ => {
+                self.diag(
+                    HtmlImportDiagnosticCode::ElementUnwrapped,
+                    format!("Unwrapped unsupported <{tag}> element"),
+                    HtmlImportSeverity::Info,
+                    path,
+                    h,
+                );
+                self.report_unplaceable_attrs(
+                    h,
+                    carried,
+                    tag.as_str(),
+                    "the figure did not survive as a figure",
+                    path,
+                );
+            }
+        }
+        let mut blocks = blocks;
+        if let Some(BlockNode::Figure(figure)) = blocks.first_mut() {
+            share_figure_attrs(figure);
+        }
+        return Ok(blocks);
+    }
+
+    #[inline(never)]
+    #[allow(clippy::needless_return, clippy::needless_borrow)]
+    fn block_fallback(
+        &mut self,
+        h: &Handle,
+        path: &str,
+        depth: usize,
+        tag: &String,
+        attrs: Option<Attrs>,
+        children: &[Handle],
+    ) -> Result<Vec<BlockNode>, HtmlImportError> {
         // A RENDERED CALLOUT, before the unwrap claims it. `<aside>` reaches
         // here rather than the `<div>` arm above, and unwrapping it dropped the
         // `Admonition` node outright - the construct did not degrade, it left.
@@ -4397,6 +4585,7 @@ impl<'a> Importer<'a> {
     /// A group is a run of terms followed by a run of definitions, which is the
     /// same grouping the parser builds from `::` and `:` lines, so an imported
     /// list and a hand-written one produce the same tree.
+    #[inline(never)]
     fn definition_list(
         &mut self,
         h: &Handle,
@@ -4404,6 +4593,16 @@ impl<'a> Importer<'a> {
         depth: usize,
         attrs: Option<Attrs>,
     ) -> Result<Vec<BlockNode>, HtmlImportError> {
+        let entries = self.definition_list_collect(h, path, depth)?;
+        self.definition_list_entries(h, path, attrs, entries)
+    }
+    #[inline(never)]
+    fn definition_list_collect(
+        &mut self,
+        h: &Handle,
+        path: &str,
+        depth: usize,
+    ) -> Result<Vec<(String, Handle, usize, String)>, HtmlImportError> {
         let mut entries: Vec<(String, Handle, usize, String)> = Vec::new();
         for (i, child) in h.children.borrow().iter().enumerate() {
             let Some(tag) = Self::tag(child) else {
@@ -4453,6 +4652,17 @@ impl<'a> Importer<'a> {
             }
         }
 
+        Ok(entries)
+    }
+
+    #[inline(never)]
+    fn definition_list_entries(
+        &mut self,
+        h: &Handle,
+        path: &str,
+        attrs: Option<Attrs>,
+        entries: Vec<(String, Handle, usize, String)>,
+    ) -> Result<Vec<BlockNode>, HtmlImportError> {
         let mut before: Vec<BlockNode> = Vec::new();
         let mut items: Vec<DefinitionItem> = Vec::new();
         let mut terms: Vec<DefinitionTerm> = Vec::new();
@@ -4616,6 +4826,7 @@ impl<'a> Importer<'a> {
         }));
         Ok(before)
     }
+
     fn dropped_in_dl(&mut self, node: &Handle, tag: &str, path: &str) {
         self.diag(
             HtmlImportDiagnosticCode::ElementDropped,
@@ -5147,6 +5358,16 @@ impl<'a> Importer<'a> {
                 caption_at = blocks.len();
             }
         }
+        Self::figure_from_caption(blocks, caption, caption_at, attrs)
+    }
+
+    #[inline(never)]
+    fn figure_from_caption(
+        mut blocks: Vec<BlockNode>,
+        caption: Option<Vec<InlineNode>>,
+        caption_at: usize,
+        attrs: Option<Attrs>,
+    ) -> Result<(Vec<BlockNode>, bool), HtmlImportError> {
         let Some(caption) = caption else {
             return Ok((blocks, false));
         };
@@ -5725,6 +5946,41 @@ impl<'a> Importer<'a> {
             }
             built.push(row);
         }
+        self.table_from_cells(
+            h,
+            path,
+            depth,
+            attrs,
+            trs,
+            sections,
+            section_nodes,
+            source_cells,
+            caption_node,
+            list_form,
+            leading_header_rows,
+            own_alignment,
+            built,
+        )
+    }
+
+    #[inline(never)]
+    #[allow(clippy::too_many_arguments)]
+    fn table_from_cells(
+        &mut self,
+        h: &Handle,
+        path: &str,
+        depth: usize,
+        attrs: Option<Attrs>,
+        trs: Vec<(Handle, Option<usize>)>,
+        mut sections: Sections,
+        section_nodes: Vec<(Handle, String)>,
+        source_cells: fn(&Handle) -> Vec<Handle>,
+        caption_node: Option<(usize, Handle)>,
+        list_form: bool,
+        leading_header_rows: usize,
+        own_alignment: Vec<Vec<(Option<TableAlign>, Option<TableVerticalAlign>)>>,
+        mut built: Vec<Vec<BuiltCell>>,
+    ) -> Result<BlockNode, HtmlImportError> {
         Self::drop_inherited_cell_alignment(&mut built, leading_header_rows);
         // A `<tr>`'s own attributes have a slot - `TableRow::attrs`, which the
         // writer spells on the closing pipe and every renderer emits on the
@@ -6712,126 +6968,11 @@ impl<'a> Importer<'a> {
             return Ok(Vec::new());
         }
         if tag == "q" {
-            let attrs = self.attrs(h, path);
-            let (open, close) = if self.quote_depth % 2 == 0 {
-                ('\u{201c}', '\u{201d}')
-            } else {
-                ('\u{2018}', '\u{2019}')
-            };
-            self.quote_depth += 1;
-            let inner = self.inlines(&h.children.borrow(), path, depth + 1);
-            self.quote_depth -= 1;
-            let mut quoted = vec![InlineNode::text(open.to_string())];
-            quoted.extend(inner?);
-            quoted.push(InlineNode::text(close.to_string()));
-            // An id or a class on the element still has a home, and a span is
-            // the one that keeps it without inventing a node for the quotation
-            // itself.
-            if attrs.is_some() {
-                return Ok(vec![InlineNode::Span(Span {
-                    attrs,
-                    children: quoted,
-                    injected: false,
-                    pos: None,
-                })]);
-            }
-            return Ok(quoted);
+            return self.inline_quote(h, path, depth);
         }
         if tag == "math" {
-            // MathML -> `math`, as carve#1210's D6 rules it: a three-tier
-            // lookup for TeX the producer already put in the source, and no
-            // MathML-to-TeX converter in any engine.
-            //
-            // THE DECISION IS THE THIRD TIER, and it is a drop rather than a
-            // degrade. MathML's children are a token stream, so concatenating
-            // them is not a lossy rendering of the equation but a different
-            // value: the children of `<math><mfrac><mn>1</mn><mn>2</mn></mfrac>
-            // </math>` concatenate to `12`, one half arriving as twelve. A
-            // plausible wrong value survives review, where a missing equation
-            // and a warning naming it do not. That is the line between math and
-            // the embeds at the end of this method: a `<video>`'s children ARE
-            // fallback content the author wrote for exactly this case.
-            //
-            // `roundtrip` keeps the whole element instead, by falling through
-            // to the raw arm below. Carve's own HTML spells math as a `<span>`,
-            // so a `<math>` reaching that mode is foreign markup by definition
-            // and its contract is to preserve it verbatim.
-            if let Some((tier, content)) = self.math_tex(h) {
-                // The subtree is charged here because the mapping returns
-                // without walking it. `max_nodes` and `max_depth` must not
-                // depend on which branch an element takes.
-                self.charge_subtree(h, depth)?;
-                let attrs = self.attrs(h, path);
-                // Reported on the tier that SUPPLIED the content, not on which
-                // one was available: an annotation holding only whitespace
-                // falls through to `alttext`, and reading the presence of the
-                // element would make that fall-through the one tier-2 read
-                // that says nothing.
-                //
-                // `encoding-assumed` is the code because the loss is in the
-                // OUTPUT: MathML never states what `alttext` holds, so the
-                // math node may carry something that is not TeX at all.
-                // `element-unwrapped` would describe a structural event the
-                // consumer cannot act on (carve#1235).
-                if tier == 2 {
-                    self.diag(
-                        HtmlImportDiagnosticCode::EncodingAssumed,
-                        "Read <math> through its alttext: MathML does not declare the encoding of alttext, so TeX is assumed".into(),
-                        HtmlImportSeverity::Info,
-                        path,
-                        h,
-                    );
-                } else if tier == 3 {
-                    self.diag(
-                        HtmlImportDiagnosticCode::EncodingAssumed,
-                        "Read <math> through its fallback image's alt: nothing declares the encoding of alt, so TeX is assumed".into(),
-                        HtmlImportSeverity::Info,
-                        path,
-                        h,
-                    );
-                }
-                if let Some(image) = fallback_image(h, &self.sibling_index) {
-                    if Self::attr(&image, "alt").as_deref().map(str::trim) == Some(content.as_str())
-                    {
-                        self.formula_images.insert(node_key(&image));
-                    }
-                }
-                return Ok(vec![InlineNode::Math(Math {
-                    cell_wraps: None,
-                    attrs,
-                    display: Self::attr(h, "display").as_deref() == Some("block"),
-                    content,
-                    label: None,
-                    number: None,
-                    pos: None,
-                })]);
-            }
-            if self.opts.mode != HtmlImportMode::Roundtrip
-                || (self.cell_depth > 0 && Self::html(h).contains(['\r', '\n']))
-            {
-                self.charge_subtree(h, depth)?;
-                if self.opts.mode != HtmlImportMode::Roundtrip {
-                    if let Some(text) = linear_math_text(h) {
-                        self.diag(
-                            HtmlImportDiagnosticCode::ElementUnwrapped,
-                            "Imported <math> as its text: no TeX annotation and no alttext, and its tokens read in order".into(),
-                            HtmlImportSeverity::Warning,
-                            path,
-                            h,
-                        );
-                        return Ok(vec![InlineNode::text(text)]);
-                    }
-                }
-                // No attribute walk on the way out: the element and everything
-                // riding on it is gone, and this warning covers all of it.
-                self.diag(
-                    HtmlImportDiagnosticCode::ElementDropped,
-                    "Dropped <math>: no TeX annotation and no alttext, and its children are a token stream, not an equation".into(),
-                    HtmlImportSeverity::Warning,
-                    path,
-                    h,
-                );
-                return Ok(Vec::new());
+            if let Some(nodes) = self.inline_math(h, path, depth)? {
+                return Ok(nodes);
             }
         }
         let attrs = self.attrs(h, path);
@@ -6839,6 +6980,169 @@ impl<'a> Importer<'a> {
             return self.code_span(h, path, depth, attrs);
         }
         let children = self.inlines(&h.children.borrow(), path, depth + 1)?;
+        self.inline_from_children(h, path, &tag, attrs, children)
+    }
+
+    /// Recognize footnote pairs, record each reference site for `inline` to
+    /// read as a footnote reference, detach the note blocks, and return their
+    /// bodies keyed by valid carrier labels or numbered fallbacks.
+    /// Navigation ids identify pairs; carrier metadata supplies source labels.
+    ///
+    /// `heuristic` is the word-processor adapters' licence: with it a mutual
+    /// anchor pair alone binds. Without it - `generic` and the editor adapters -
+    /// only an anchor the producer MARKED with `role="doc-noteref"` opens a
+    /// pair, which is authored DPUB-ARIA semantics rather than a guess, so a
+    /// role-less document imports exactly as it did before. That is what lets
+    /// Pandoc 2.11+ output import its footnotes without naming an adapter, and
+    /// it is what the shared fixtures are written over (carve-rs#1313).
+    #[inline(never)]
+    fn inline_math(
+        &mut self,
+        h: &Handle,
+        path: &str,
+        depth: usize,
+    ) -> Result<Option<Vec<InlineNode>>, HtmlImportError> {
+        // MathML -> `math`, as carve#1210's D6 rules it: a three-tier
+        // lookup for TeX the producer already put in the source, and no
+        // MathML-to-TeX converter in any engine.
+        //
+        // THE DECISION IS THE THIRD TIER, and it is a drop rather than a
+        // degrade. MathML's children are a token stream, so concatenating
+        // them is not a lossy rendering of the equation but a different
+        // value: the children of `<math><mfrac><mn>1</mn><mn>2</mn></mfrac>
+        // </math>` concatenate to `12`, one half arriving as twelve. A
+        // plausible wrong value survives review, where a missing equation
+        // and a warning naming it do not. That is the line between math and
+        // the embeds at the end of this method: a `<video>`'s children ARE
+        // fallback content the author wrote for exactly this case.
+        //
+        // `roundtrip` keeps the whole element instead, by falling through
+        // to the raw arm below. Carve's own HTML spells math as a `<span>`,
+        // so a `<math>` reaching that mode is foreign markup by definition
+        // and its contract is to preserve it verbatim.
+        if let Some((tier, content)) = self.math_tex(h) {
+            // The subtree is charged here because the mapping returns
+            // without walking it. `max_nodes` and `max_depth` must not
+            // depend on which branch an element takes.
+            self.charge_subtree(h, depth)?;
+            let attrs = self.attrs(h, path);
+            // Reported on the tier that SUPPLIED the content, not on which
+            // one was available: an annotation holding only whitespace
+            // falls through to `alttext`, and reading the presence of the
+            // element would make that fall-through the one tier-2 read
+            // that says nothing.
+            //
+            // `encoding-assumed` is the code because the loss is in the
+            // OUTPUT: MathML never states what `alttext` holds, so the
+            // math node may carry something that is not TeX at all.
+            // `element-unwrapped` would describe a structural event the
+            // consumer cannot act on (carve#1235).
+            if tier == 2 {
+                self.diag(
+                        HtmlImportDiagnosticCode::EncodingAssumed,
+                        "Read <math> through its alttext: MathML does not declare the encoding of alttext, so TeX is assumed".into(),
+                        HtmlImportSeverity::Info,
+                        path,
+                        h,
+                    );
+            } else if tier == 3 {
+                self.diag(
+                        HtmlImportDiagnosticCode::EncodingAssumed,
+                        "Read <math> through its fallback image's alt: nothing declares the encoding of alt, so TeX is assumed".into(),
+                        HtmlImportSeverity::Info,
+                        path,
+                        h,
+                    );
+            }
+            if let Some(image) = fallback_image(h, &self.sibling_index) {
+                if Self::attr(&image, "alt").as_deref().map(str::trim) == Some(content.as_str()) {
+                    self.formula_images.insert(node_key(&image));
+                }
+            }
+            return Ok(Some(vec![InlineNode::Math(Math {
+                cell_wraps: None,
+                attrs,
+                display: Self::attr(h, "display").as_deref() == Some("block"),
+                content,
+                label: None,
+                number: None,
+                pos: None,
+            })]));
+        }
+        if self.opts.mode != HtmlImportMode::Roundtrip
+            || (self.cell_depth > 0 && Self::html(h).contains(['\r', '\n']))
+        {
+            self.charge_subtree(h, depth)?;
+            if self.opts.mode != HtmlImportMode::Roundtrip {
+                if let Some(text) = linear_math_text(h) {
+                    self.diag(
+                            HtmlImportDiagnosticCode::ElementUnwrapped,
+                            "Imported <math> as its text: no TeX annotation and no alttext, and its tokens read in order".into(),
+                            HtmlImportSeverity::Warning,
+                            path,
+                            h,
+                        );
+                    return Ok(Some(vec![InlineNode::text(text)]));
+                }
+            }
+            // No attribute walk on the way out: the element and everything
+            // riding on it is gone, and this warning covers all of it.
+            self.diag(
+                    HtmlImportDiagnosticCode::ElementDropped,
+                    "Dropped <math>: no TeX annotation and no alttext, and its children are a token stream, not an equation".into(),
+                    HtmlImportSeverity::Warning,
+                    path,
+                    h,
+                );
+            return Ok(Some(Vec::new()));
+        }
+        Ok(None)
+    }
+
+    #[inline(never)]
+    #[allow(clippy::needless_return, clippy::needless_borrow)]
+    fn inline_quote(
+        &mut self,
+        h: &Handle,
+        path: &str,
+        depth: usize,
+    ) -> Result<Vec<InlineNode>, HtmlImportError> {
+        let attrs = self.attrs(h, path);
+        let (open, close) = if self.quote_depth % 2 == 0 {
+            ('\u{201c}', '\u{201d}')
+        } else {
+            ('\u{2018}', '\u{2019}')
+        };
+        self.quote_depth += 1;
+        let inner = self.inlines(&h.children.borrow(), path, depth + 1);
+        self.quote_depth -= 1;
+        let mut quoted = vec![InlineNode::text(open.to_string())];
+        quoted.extend(inner?);
+        quoted.push(InlineNode::text(close.to_string()));
+        // An id or a class on the element still has a home, and a span is
+        // the one that keeps it without inventing a node for the quotation
+        // itself.
+        if attrs.is_some() {
+            return Ok(vec![InlineNode::Span(Span {
+                attrs,
+                children: quoted,
+                injected: false,
+                pos: None,
+            })]);
+        }
+        return Ok(quoted);
+    }
+
+    #[inline(never)]
+    #[allow(clippy::needless_return, clippy::needless_borrow)]
+    fn inline_from_children(
+        &mut self,
+        h: &Handle,
+        path: &str,
+        tag: &String,
+        attrs: Option<Attrs>,
+        children: Vec<InlineNode>,
+    ) -> Result<Vec<InlineNode>, HtmlImportError> {
         if tag == "a" && Self::reads_xref(h) {
             let node = InlineNode::CrossRef(CrossRef {
                 target: Self::attr(h, "href").unwrap()[1..].to_owned(),
@@ -7168,18 +7472,6 @@ impl<'a> Importer<'a> {
         Ok(vec![node])
     }
 
-    /// Recognize footnote pairs, record each reference site for `inline` to
-    /// read as a footnote reference, detach the note blocks, and return their
-    /// bodies keyed by valid carrier labels or numbered fallbacks.
-    /// Navigation ids identify pairs; carrier metadata supplies source labels.
-    ///
-    /// `heuristic` is the word-processor adapters' licence: with it a mutual
-    /// anchor pair alone binds. Without it - `generic` and the editor adapters -
-    /// only an anchor the producer MARKED with `role="doc-noteref"` opens a
-    /// pair, which is authored DPUB-ARIA semantics rather than a guess, so a
-    /// role-less document imports exactly as it did before. That is what lets
-    /// Pandoc 2.11+ output import its footnotes without naming an adapter, and
-    /// it is what the shared fixtures are written over (carve-rs#1313).
     fn adapter_footnotes(
         &mut self,
         root: &Handle,
