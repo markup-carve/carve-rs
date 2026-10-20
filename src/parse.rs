@@ -17000,6 +17000,28 @@ fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
 /// item, which is what made that repetition cost the line's whole indent again
 /// at every level (carve-rs#2301).
 fn detect_list_marker_full_at(line: &str, indent: usize) -> Option<ListMarker<'_>> {
+    let trimmed = trim_ascii_start(line);
+    let bytes = trimmed.as_bytes();
+    // Plain ASCII bullets need no task, ordered-marker, or attribute checks.
+    // Keep decorated markers on the general path.
+    if matches!(bytes.first(), Some(b'-' | b'*'))
+        && bytes.get(1) == Some(&b' ')
+        && bytes.get(2).is_some_and(u8::is_ascii_alphanumeric)
+    {
+        let marker_start = line.len() - trimmed.len();
+        return Some(ListMarker {
+            indent,
+            ordered: false,
+            checked: None,
+            task_state: None,
+            start: None,
+            ol_type: None,
+            content: trim_ascii_end(&trimmed[2..]),
+            attrs: None,
+            delim: None,
+            marker: &line[marker_start..marker_start + 1],
+        });
+    }
     if let Some(task) = detect_task(line) {
         return Some(ListMarker {
             indent,
