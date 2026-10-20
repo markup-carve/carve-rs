@@ -112,7 +112,35 @@ fn column_zero_continuations_scale_near_linearly() {
 /// Take the timing lock, ignoring poisoning: a panic in one perf test must not
 /// cascade into every other one reporting a lock error instead of its result.
 fn perf_guard() -> std::sync::MutexGuard<'static, ()> {
+    pin_glibc_trim_threshold();
     PERF_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Keep freed heap in the process so both samples of a ratio reuse warm pages.
+///
+/// A parse allocates a constant ~400-630 bytes per input byte, but glibc hands a
+/// freed heap top back to the OS once it passes a threshold that scales with
+/// past allocations. That put the small sample on reused pages and the large one
+/// on fresh ones, so linear shapes read 1.7x to 2.6x depending on the runner CPU
+/// (carve-rs#2955, carve-rs#2975). Pinning the threshold, which also stops the
+/// dynamic mmap threshold, brought them to 0.97x to 1.09x; a quadratic still
+/// reads ~4x.
+fn pin_glibc_trim_threshold() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    {
+        static PINNED: std::sync::Once = std::sync::Once::new();
+        PINNED.call_once(|| {
+            extern "C" {
+                fn mallopt(param: i32, value: i32) -> i32;
+            }
+            const M_TRIM_THRESHOLD: i32 = -1;
+            // SAFETY: mallopt only adjusts allocator tuning; i32::MAX is a valid
+            // threshold and the call is made once, before any timed work.
+            unsafe {
+                mallopt(M_TRIM_THRESHOLD, i32::MAX);
+            }
+        });
+    }
 }
 
 /// Wall-clock ceiling for the DoS guards below.
