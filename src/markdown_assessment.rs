@@ -791,7 +791,13 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
         }
         let mut unicode_chars = Vec::new();
         let mut lone_image_paragraph_end = None;
+        let mut in_table = false;
         for (index, event) in events.iter().enumerate() {
+            if matches!(event, Event::Start(Tag::Table(_))) {
+                in_table = true;
+            } else if matches!(event, Event::End(TagEnd::Table)) {
+                in_table = false;
+            }
             let lone_image = matches!(event, Event::Start(Tag::Paragraph))
                 && matches!(events.get(index + 1), Some(Event::Start(Tag::Image { .. })))
                 && {
@@ -863,7 +869,8 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                 let mut marked = String::new();
                 for ch in dest_url.chars() {
                     if (!ch.is_ascii() && !ch.is_whitespace() && !ch.is_control()
-                        || matches!(ch, '\\' | '`' | '^' | '{' | '}' | '"' | '<' | '>'))
+                        || matches!(ch, '\\' | '`' | '^' | '{' | '}' | '"' | '<' | '>')
+                        || (ch == '|' && !in_table))
                         && !matches!(ch, '\u{E000}' | '\u{E001}')
                     {
                         marked.push_str(&format!("{unicode_marker}{}END", unicode_chars.len()));
@@ -925,6 +932,25 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inline_link_with_literal_destination_pipe_is_assessed() {
+        let result = crate::migrate_markdown("[c](/a|b)");
+        assert_eq!(result.value, "[c](/a|b)\n");
+        assert_eq!(result.report.diagnostics.len(), 2);
+        for (row, code) in result
+            .report
+            .diagnostics
+            .iter()
+            .zip(["markdown-paragraph", "markdown-link"])
+        {
+            assert_eq!(row.code, code);
+            assert_eq!(row.severity, HtmlImportSeverity::Info);
+            assert_eq!(row.fidelity, MigrationFidelity::Preserved);
+            assert_eq!(row.confidence, MigrationConfidence::Exact);
+            assert_eq!(row.path.as_deref(), Some("line:1"));
+        }
+    }
 
     #[test]
     fn ordinary_constructs_have_exact_source_locations() {
