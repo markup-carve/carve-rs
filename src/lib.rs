@@ -40,6 +40,8 @@ mod index_budget;
 mod inline_carriers;
 pub mod lint;
 mod markdown_assessment;
+#[doc(hidden)]
+pub use markdown_assessment::take_attribute_opener_scan_bytes;
 mod markdown_gfm_autolinks;
 pub mod markdown_import;
 mod markdown_strike;
