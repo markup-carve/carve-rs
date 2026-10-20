@@ -23304,6 +23304,34 @@ fn split_table_cells_seeded(
     seed_len: Option<usize>,
     open_run_at: usize,
 ) -> RowSplit {
+    if seed_len.is_none()
+        && content.is_ascii()
+        && !content
+            .as_bytes()
+            .iter()
+            .any(|&byte| byte == b'\\' || byte == b'`')
+    {
+        let mut cells = Vec::new();
+        let mut start = 0;
+        for (at, _) in content.match_indices('|') {
+            cells.push(CellSlice {
+                text: content[start..at].to_string(),
+                start,
+                end: at,
+            });
+            start = at + 1;
+        }
+        cells.push(CellSlice {
+            text: content[start..].to_string(),
+            start,
+            end: content.len(),
+        });
+        return RowSplit {
+            open_run_at: cells.len() - 1,
+            cells,
+            open_len: None,
+        };
+    }
     let mut cells = Vec::new();
     let mut buf = String::new();
     let mut open_len: Option<usize> = if open_run_at == 0 { seed_len } else { None };
