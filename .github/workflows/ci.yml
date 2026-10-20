@@ -103,12 +103,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # PRs RUN THE SUITE ON STABLE ONLY; the MSRV leg runs the suite on
-        # pushes to main. What a pull request gets instead is the `msrv` job
-        # below, which compiles against 1.75 without running ~4500 tests a
-        # second time - so a pull request that breaks the floor is caught
-        # before merge without doubling the expensive half of this job.
-        toolchain: ${{ github.event_name == 'push' && fromJSON('["stable", "1.75"]') || fromJSON('["stable"]') }}
+        # Both legs run on pull requests: a toolchain-dependent failure (the
+        # Unicode tables differ between 1.75 and stable) must fail the PR, not
+        # main after the merge.
+        toolchain: ["stable", "1.75"]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -189,9 +187,8 @@ jobs:
           rm -rf target/release
           python3 tools/sync-implemented.py --check
 
-  # DOES THE FLOOR STILL COMPILE? Asked on every pull request, unlike the
-  # `test` matrix above, and cheap enough to be: compiling against 1.75 is a
-  # fraction of running the suite against it.
+  # DOES THE FLOOR STILL COMPILE? Compile-only and cheap, so it reports a
+  # broken floor before the 1.75 test leg above finishes.
   #
   # The case this exists for is a DEPENDENCY BUMP. `rust-version = "1.75"`
   # binds this crate, not the tree beneath it, so a transitive dependency can
