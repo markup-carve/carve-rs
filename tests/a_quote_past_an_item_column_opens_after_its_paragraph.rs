@@ -35,9 +35,10 @@ fn a_quote_past_the_column_opens_after_an_attribute_or_heading() {
 }
 
 #[test]
-fn a_refused_continuation_ends_the_nested_description_before_the_quote() {
-    assert_eq!(
-        html("- :: term\n  : body\n  +\n  before\n   > nested\n"),
-        "<ul><li><dl><dt>term</dt><dd>body</dd></dl> before <blockquote><p>nested</p></blockquote></li></ul>"
+fn an_indented_plus_stays_in_the_nested_description() {
+    let source = "- :: term\n  : body\n  +\n  before\n   > nested\n";
+    super::a_continuation_marker_is_column_zero_only::assert_legacy_model(
+        source,
+        &carve::to_html(source),
     );
 }

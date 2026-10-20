@@ -77,6 +77,8 @@ attribute, with its name in `attribute` and no `format`.
 Markdown export reports `definition-list-flattened` for a nested definition
 list it cannot carry and `list-style-dropped` when it writes an alphabetic or
 roman ordered list as decimal. The latter row names the style in `style`.
+Carve output reports `list-tightness-lost` when a nested item's blocks require
+the writer to make that item loose.
 A link destination, an autolink destination and an image source each take their
 own row on the targets that emit a destination, in both safe modes. The emitted
 value does not change: `href=""` is what it always was, and the row is what

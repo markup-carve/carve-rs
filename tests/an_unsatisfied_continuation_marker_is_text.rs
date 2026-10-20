@@ -57,8 +57,8 @@ fn a_wide_outer_marker_widens_the_band() {
 /// sub-list's - so the marker is satisfied, attaches nothing and renders
 /// nothing. Column 1 reaches neither; columns 3 and 4 were already text.
 #[test]
-fn a_marker_column_still_consumes_the_marker() {
-    for (column, keeps) in [(0, false), (1, true), (2, false), (3, true), (4, true)] {
+fn only_column_zero_consumes_the_marker() {
+    for (column, keeps) in [(0, false), (1, true), (2, true), (3, true), (4, true)] {
         let source = format!("- x\n  - L\n{}+\n", " ".repeat(column));
         let html = to_html(&source);
         assert_eq!(html.contains("\n+</li>"), keeps, "column {column}: {html}");

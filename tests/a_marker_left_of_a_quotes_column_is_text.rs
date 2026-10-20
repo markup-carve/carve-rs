@@ -23,11 +23,9 @@ const CONSUMED: &str = "<ul>\n  <li>x\n    <blockquote><p>q</p></blockquote>\n  
 const KEPT: &str = "<ul>\n  <li>x\n    <blockquote><p>q\n+</p></blockquote>\n  </li>\n</ul>";
 
 #[test]
-fn the_marker_column_of_each_container_still_consumes_the_marker() {
-    // Column 0 is the list's marker column, column 2 the quote's. Both were
-    // already consuming and must keep doing so.
+fn only_column_zero_consumes_the_marker() {
     assert_eq!(with_marker_at(0), CONSUMED);
-    assert_eq!(with_marker_at(2), CONSUMED);
+    assert_eq!(with_marker_at(2), KEPT);
 }
 
 #[test]

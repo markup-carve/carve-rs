@@ -223,6 +223,14 @@ fn record_table_header_loss(code: &'static str, message: &str, pos: Option<&Pos>
     });
 }
 
+pub(crate) fn record_list_tightness_lost(pos: Option<&Pos>) {
+    record_table_header_loss(
+        "list-tightness-lost",
+        "Wrote a nested list item loose to preserve its blocks",
+        pos,
+    );
+}
+
 pub(crate) fn record_raw_drop(format: &str, node_type: RawNodeType, pos: Option<Pos>) {
     COLLECTOR.with(|slot| {
         let mut slot = slot.borrow_mut();

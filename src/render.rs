@@ -2302,7 +2302,11 @@ fn render_list_item(
     }
     out.push('>');
     let task_name = if item.checked.is_some() {
-        match item.children.first() {
+        match item
+            .children
+            .iter()
+            .find(|child| !matches!(child, BlockNode::Comment(_)))
+        {
             Some(BlockNode::Paragraph(p)) => {
                 plain_inlines_typography(&p.children, options.smart_typography)
                     .split_ascii_whitespace()

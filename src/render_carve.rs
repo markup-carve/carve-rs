@@ -2577,6 +2577,17 @@ fn render_item_blocks(
                 || closes_a_merging_run_above
                 || folds_into_the_paragraph_above)
         {
+            if ctx.list_depth > 1 {
+                if !matches!(block, BlockNode::Comment(_) | BlockNode::CodeBlock(_))
+                    && !matches!(prev, Some(BlockNode::Comment(_) | BlockNode::CodeBlock(_)))
+                {
+                    out.push('\n');
+                }
+                out.push_str(&rendered);
+                prev = Some(block);
+                prev_at_marker_column = false;
+                continue;
+            }
             out.push_str(&at_marker_column(session, "+"));
             out.push('\n');
             out.push_str(&at_marker_column(session, &rendered));
@@ -3114,6 +3125,14 @@ fn with_block_attrs(attrs: &Option<Attrs>, body: &str) -> String {
     }
 }
 
+fn nested_tight_item_loses_tightness(item: &ListItem) -> bool {
+    item.children.windows(2).any(|pair| {
+        matches!(pair[1], BlockNode::Paragraph(_))
+            && (matches!(pair[0], BlockNode::Paragraph(_) | BlockNode::BlockQuote(_))
+                || matches!(&pair[0], BlockNode::List(list) if list.items.last().is_some_and(|item| !item.children.is_empty())))
+    })
+}
+
 fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveContext) -> String {
     ctx.list_depth += 1;
     let mut out = String::new();
@@ -3139,6 +3158,11 @@ fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveContext) -> 
         // O(depth^2), and `05-lists-5` came back with four spaces where it was
         // written with two (carve-rs#594, the same defect carve-js fixed in its
         // #653).
+        let loosen_item =
+            node.tight && ctx.list_depth > 1 && nested_tight_item_loses_tightness(item);
+        if loosen_item {
+            crate::render_loss::record_list_tightness_lost(item.pos.as_ref());
+        }
         let mut prefix = if node.ordered {
             let marker = if node.bare_marker {
                 String::new()
@@ -3170,7 +3194,13 @@ fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveContext) -> 
                 .unwrap_or_default()
         } else {
             at_item_content_column(ctx, |ctx| {
-                render_item_blocks(session, &item.children, node.tight, item.pos.as_ref(), ctx)
+                render_item_blocks(
+                    session,
+                    &item.children,
+                    node.tight && !loosen_item,
+                    item.pos.as_ref(),
+                    ctx,
+                )
             })
         };
         // EMPTINESS is the only thing that earns `+`. A second, text-shaped test

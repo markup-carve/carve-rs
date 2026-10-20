@@ -120,6 +120,7 @@ impl LineBuffer {
             marker_colon_rebased: false,
             marker_tail: None,
             reached,
+            in_quoted_body: false,
             sublists_carry_authored_base: false,
         }
     }
@@ -127,6 +128,7 @@ impl LineBuffer {
 
 #[derive(Clone)]
 pub(super) struct MappedSource {
+    pub(super) in_quoted_body: bool,
     pub(super) source: String,
     pub(super) line_map: Vec<Option<usize>>,
     /// Codepoints stripped from the front of each line - a blockquote marker, a list
@@ -186,6 +188,7 @@ impl MappedSource {
             marker_colon_rebased: false,
             marker_tail: None,
             reached: vec![false],
+            in_quoted_body: false,
             sublists_carry_authored_base: false,
         }
     }
@@ -329,6 +332,7 @@ pub(super) fn remap_source(source: String, original: &MappedSource) -> MappedSou
             marker_colon_rebased: original.marker_colon_rebased,
             marker_tail: None,
             reached: original.reached[..source_line_count.min(original.reached.len())].to_vec(),
+            in_quoted_body: original.in_quoted_body,
             sublists_carry_authored_base: original.sublists_carry_authored_base,
         };
     }
@@ -342,6 +346,7 @@ pub(super) fn remap_source(source: String, original: &MappedSource) -> MappedSou
         marker_colon_rebased: false,
         marker_tail: None,
         reached: Vec::new(),
+        in_quoted_body: false,
         sublists_carry_authored_base: false,
         source,
     }

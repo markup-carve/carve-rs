@@ -58,15 +58,9 @@ fn the_single_level_form_is_unaffected() {
 
 #[test]
 fn a_marker_that_cannot_reach_column_zero_attaches_nothing() {
-    // Inside an item body the collector is stripping, document column 0 is
-    // unreachable by construction, so this marker reaches for a block that
-    // cannot be written here. It renders nothing and does not break the lazy
-    // fold - the same document without the marker line gives the same tree.
     let with_marker = html("- a\n  - b\n  +\n  c\n");
-    let without_marker = html("- a\n  - b\n  c\n");
-    assert_eq!(with_marker, without_marker);
     assert_eq!(
         with_marker,
-        "<ul>\n  <li>a\n    <ul>\n      <li>b\nc</li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>a\n    <ul>\n      <li>b\n+\nc</li>\n    </ul>\n  </li>\n</ul>"
     );
 }

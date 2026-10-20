@@ -7,6 +7,8 @@
 //! A new `tests/*.rs` needs a line here; `registry::every_test_file_is_compiled`
 //! fails until it has one.
 
+#[path = "../a_continuation_marker_is_column_zero_only.rs"]
+mod a_continuation_marker_is_column_zero_only;
 #[path = "../a_fence_run_that_dedents_out_of_a_child_keeps_the_outer_item_tight.rs"]
 mod a_fence_run_that_dedents_out_of_a_child_keeps_the_outer_item_tight;
 #[path = "../folded_fence_closer_shapes.rs"]

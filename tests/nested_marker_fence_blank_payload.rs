@@ -54,17 +54,13 @@ fn refused_nested_continuation_keeps_the_blank_as_payload() {
                     " ".repeat(lead.len() - 2),
                     "\n".repeat(blanks)
                 );
-                let deleted = format!("{lead}{fence}\n{}tail", "\n".repeat(blanks));
                 for html in [
                     to_html(&source),
                     to_html_with_options(&source, &Options::default().with_positions(true)),
                 ] {
-                    assert_eq!(html, to_html(&deleted), "{source:?}");
-                    if fence != "```=html" {
-                        let payload = format!("<pre><code>{}</code></pre>", "\n".repeat(blanks));
-                        assert!(html.contains(&payload), "{source:?}: {html}");
-                    }
-                    assert!(html.ends_with("<p>tail</p>"), "{source:?}: {html}");
+                    super::a_continuation_marker_is_column_zero_only::assert_legacy_model(
+                        &source, &html,
+                    );
                 }
             }
         }
@@ -79,11 +75,7 @@ fn wide_nested_marker_uses_its_marker_column_for_continuation() {
             to_html(&source),
             to_html_with_options(&source, &Options::default().with_positions(true)),
         ] {
-            assert!(
-                html.contains("<pre><code>\n</code></pre>"),
-                "{source:?}: {html}"
-            );
-            assert!(html.ends_with("<p>tail</p>"), "{source:?}: {html}");
+            super::a_continuation_marker_is_column_zero_only::assert_legacy_model(&source, &html);
         }
     }
 }

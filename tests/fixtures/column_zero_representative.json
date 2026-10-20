@@ -1,0 +1,1002 @@
+[
+  {
+    "source": "- - +\n```\nx\n```",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <pre><code>x\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  },
+  {
+    "source": "> - - +\n> ```\n> x\n> ```",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>\n          <pre><code>x\n</code></pre>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "> > - +\n> tail",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li></li>\n    </ul>\n  </blockquote>\n  <p>tail</p>\n</blockquote>"
+  },
+  {
+    "source": "- ```\n  +\ntail",
+    "html": "<ul>\n  <li>\n    <pre><code>+\n</code></pre>\n  </li>\n</ul>\n<p>tail</p>"
+  },
+  {
+    "source": "- a\n\n  +\ntail",
+    "html": "<ul>\n  <li><p>a</p>\n    <p>+\ntail</p>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n\n  +\n```\nx\n```",
+    "html": "<ul>\n  <li><p>a</p>\n    <p>+</p>\n  </li>\n</ul>\n<pre><code>x\n</code></pre>"
+  },
+  {
+    "source": "- a\n\n  +\n| a |\n| b |",
+    "html": "<ul>\n  <li><p>a</p>\n    <p>+</p>\n  </li>\n</ul>\n<table>\n  <tbody>\n    <tr><td>a</td></tr>\n    <tr><td>b</td></tr>\n  </tbody>\n</table>"
+  },
+  {
+    "source": "- a\n\n  +\n> z",
+    "html": "<ul>\n  <li><p>a</p>\n    <p>+</p>\n  </li>\n</ul>\n<blockquote><p>z</p></blockquote>"
+  },
+  {
+    "source": "- a\n\n  +\n- s",
+    "html": "<ul>\n  <li><p>a</p>\n    <p>+</p>\n  </li>\n  <li><p>s</p></li>\n</ul>"
+  },
+  {
+    "source": "> - ```\n>   +\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <pre><code>+\n</code></pre>\n    </li>\n  </ul>\n  <p>tail</p>\n</blockquote>"
+  },
+  {
+    "source": "> > - ```\n> >   +\n> > tail",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>\n        <pre><code>+\n</code></pre>\n      </li>\n    </ul>\n    <p>tail</p>\n  </blockquote>\n</blockquote>"
+  },
+  {
+    "source": "1. ```\n   +\ntail",
+    "html": "<ol>\n  <li>\n    <pre><code>+\n</code></pre>\n  </li>\n</ol>\n<p>tail</p>"
+  },
+  {
+    "source": "1. a\n\n   +\ntail",
+    "html": "<ol>\n  <li><p>a</p>\n    <p>+\ntail</p>\n  </li>\n</ol>"
+  },
+  {
+    "source": "1. a\n\n   +\n```\nx\n```",
+    "html": "<ol>\n  <li><p>a</p>\n    <p>+</p>\n  </li>\n</ol>\n<pre><code>x\n</code></pre>"
+  },
+  {
+    "source": "1. a\n\n   +\n| a |\n| b |",
+    "html": "<ol>\n  <li><p>a</p>\n    <p>+</p>\n  </li>\n</ol>\n<table>\n  <tbody>\n    <tr><td>a</td></tr>\n    <tr><td>b</td></tr>\n  </tbody>\n</table>"
+  },
+  {
+    "source": "1. a\n\n   +\n> z",
+    "html": "<ol>\n  <li><p>a</p>\n    <p>+</p>\n  </li>\n</ol>\n<blockquote><p>z</p></blockquote>"
+  },
+  {
+    "source": "1. a\n\n   +\n- s",
+    "html": "<ol>\n  <li><p>a</p>\n    <p>+</p>\n  </li>\n</ol>\n<ul>\n  <li>s</li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - ```\n+\ntail",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>\n        <pre><code>\n</code></pre>\n      </li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - ```\n\n+\ntail",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>\n        <pre><code>\n\n</code></pre>\n      </li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - ```\n+\n```\nx\n```",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>\n        <pre><code>\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>x\n</code></pre>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - ```\n\n+\n```\nx\n```",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>\n        <pre><code>\n\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>x\n</code></pre>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - ```\n+\n| a |\n| b |",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>\n        <pre><code>\n</code></pre>\n      </li>\n    </ul>\n    <table>\n      <tbody>\n        <tr><td>a</td></tr>\n        <tr><td>b</td></tr>\n      </tbody>\n    </table>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - ```\n\n+\n| a |\n| b |",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>\n        <pre><code>\n\n</code></pre>\n      </li>\n    </ul>\n    <table>\n      <tbody>\n        <tr><td>a</td></tr>\n        <tr><td>b</td></tr>\n      </tbody>\n    </table>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - ```\n+\n> z",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>\n        <pre><code>\n</code></pre>\n      </li>\n    </ul>\n    <blockquote><p>z</p></blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - ```\n\n+\n> z",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>\n        <pre><code>\n\n</code></pre>\n      </li>\n    </ul>\n    <blockquote><p>z</p></blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - ```\n+\n- s",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>\n        <pre><code>\n\n</code></pre>\n      </li>\n    </ul>\n  </li>\n  <li>s</li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - ```\n\n+\n- s",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>\n        <pre><code>\n\n\n</code></pre>\n      </li>\n    </ul>\n  </li>\n  <li>s</li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - ```\n +\ntail",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>+\ntail</p>"
+  },
+  {
+    "source": "- a\n  - ```\n +\n```\nx\n```",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>+</p>\n<pre><code>x\n</code></pre>"
+  },
+  {
+    "source": "- a\n  - ```\n +\n| a |\n| b |",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>+</p>\n<table>\n  <tbody>\n    <tr><td>a</td></tr>\n    <tr><td>b</td></tr>\n  </tbody>\n</table>"
+  },
+  {
+    "source": "- a\n  - ```\n +\n> z",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>+</p>\n<blockquote><p>z</p></blockquote>"
+  },
+  {
+    "source": "- a\n  - ```\n +\n- s",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>+\n- s</p>"
+  },
+  {
+    "source": "- a\n  - b\n  +\ntail",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n+\ntail</li>\n    </ul>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - b\n  +\n```\nx\n```",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n+</li>\n    </ul>\n  </li>\n</ul>\n<pre><code>x\n</code></pre>"
+  },
+  {
+    "source": "- a\n  - b\n  +\n| a |\n| b |",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n+</li>\n    </ul>\n  </li>\n</ul>\n<table>\n  <tbody>\n    <tr><td>a</td></tr>\n    <tr><td>b</td></tr>\n  </tbody>\n</table>"
+  },
+  {
+    "source": "- a\n  - b\n  +\n> z",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n+</li>\n    </ul>\n  </li>\n</ul>\n<blockquote><p>z</p></blockquote>"
+  },
+  {
+    "source": "- a\n  - b\n  +\n- s",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n+</li>\n    </ul>\n  </li>\n  <li>s</li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - ```\n    +\ntail",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>\n        <pre><code>+\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail</p>"
+  },
+  {
+    "source": "- a\n  - b\n\n    +\ntail",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li><p>b</p>\n        <p>+\ntail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - ```\n    +\n```\nx\n```",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>\n        <pre><code>+\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>x\n</code></pre>"
+  },
+  {
+    "source": "- a\n  - b\n\n    +\n```\nx\n```",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li><p>b</p>\n        <p>+</p>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>x\n</code></pre>"
+  },
+  {
+    "source": "- a\n  - ```\n    +\n| a |\n| b |",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>\n        <pre><code>+\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<table>\n  <tbody>\n    <tr><td>a</td></tr>\n    <tr><td>b</td></tr>\n  </tbody>\n</table>"
+  },
+  {
+    "source": "- a\n  - b\n\n    +\n| a |\n| b |",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li><p>b</p>\n        <p>+</p>\n      </li>\n    </ul>\n  </li>\n</ul>\n<table>\n  <tbody>\n    <tr><td>a</td></tr>\n    <tr><td>b</td></tr>\n  </tbody>\n</table>"
+  },
+  {
+    "source": "- a\n  - ```\n    +\n> z",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>\n        <pre><code>+\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<blockquote><p>z</p></blockquote>"
+  },
+  {
+    "source": "- a\n  - b\n\n    +\n> z",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li><p>b</p>\n        <p>+</p>\n      </li>\n    </ul>\n  </li>\n</ul>\n<blockquote><p>z</p></blockquote>"
+  },
+  {
+    "source": "- a\n  - ```\n    +\n- s",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>\n        <pre><code>+\n</code></pre>\n      </li>\n    </ul>\n  </li>\n  <li>s</li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - b\n\n    +\n- s",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li><p>b</p>\n        <p>+</p>\n      </li>\n    </ul>\n  </li>\n  <li>s</li>\n</ul>"
+  },
+  {
+    "source": "> - a\n>   - ```\n> +\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>\n          <pre><code>\n</code></pre>\n        </li>\n      </ul>\n      tail\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "> - a\n>   - b\n>   +\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>b\n+\ntail</li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "> > - a\n> >   - ```\n> > +\n> > tail",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <ul>\n          <li>\n            <pre><code>\n</code></pre>\n          </li>\n        </ul>\n        tail\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>"
+  },
+  {
+    "source": "> > - a\n> >   - b\n> >   +\n> > tail",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <ul>\n          <li>b\n+\ntail</li>\n        </ul>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n+\ntail",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code>\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n\n+\ntail",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code>\n\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n+\n```\nx\n```",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code>\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n    <pre><code>x\n</code></pre>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n\n+\n```\nx\n```",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code>\n\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n    <pre><code>x\n</code></pre>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n+\n| a |\n| b |",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code>\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n    <table>\n      <tbody>\n        <tr><td>a</td></tr>\n        <tr><td>b</td></tr>\n      </tbody>\n    </table>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n\n+\n| a |\n| b |",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code>\n\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n    <table>\n      <tbody>\n        <tr><td>a</td></tr>\n        <tr><td>b</td></tr>\n      </tbody>\n    </table>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n+\n> z",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code>\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n    <blockquote><p>z</p></blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n\n+\n> z",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code>\n\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n    <blockquote><p>z</p></blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n+\n- s",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code>\n\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n  <li>s</li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n\n+\n- s",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code>\n\n\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n  <li>s</li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n +\ntail",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code></code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>+\ntail</p>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n +\n```\nx\n```",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code></code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>+</p>\n<pre><code>x\n</code></pre>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n +\n| a |\n| b |",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code></code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>+</p>\n<table>\n  <tbody>\n    <tr><td>a</td></tr>\n    <tr><td>b</td></tr>\n  </tbody>\n</table>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n +\n> z",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code></code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>+</p>\n<blockquote><p>z</p></blockquote>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n +\n- s",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code></code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>+\n- s</p>"
+  },
+  {
+    "source": "- a\n  - b\n    - c\n  +\ntail",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>c\n+\ntail</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - b\n    - c\n  +\n```\nx\n```",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>c\n+</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>x\n</code></pre>"
+  },
+  {
+    "source": "- a\n  - b\n    - c\n  +\n| a |\n| b |",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>c\n+</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<table>\n  <tbody>\n    <tr><td>a</td></tr>\n    <tr><td>b</td></tr>\n  </tbody>\n</table>"
+  },
+  {
+    "source": "- a\n  - b\n    - c\n  +\n> z",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>c\n+</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<blockquote><p>z</p></blockquote>"
+  },
+  {
+    "source": "- a\n  - b\n    - c\n  +\n- s",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>c\n+</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n  <li>s</li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n   +\ntail",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code></code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n    +\ntail\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n   +\n```\nx\n```",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code></code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n    +\n  </li>\n</ul>\n<pre><code>x\n</code></pre>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n   +\n| a |\n| b |",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code></code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n    +\n  </li>\n</ul>\n<table>\n  <tbody>\n    <tr><td>a</td></tr>\n    <tr><td>b</td></tr>\n  </tbody>\n</table>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n   +\n> z",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code></code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n    +\n  </li>\n</ul>\n<blockquote><p>z</p></blockquote>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n   +\n- s",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code></code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n    +\n  </li>\n  <li>s</li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - b\n    - c\n    +\ntail",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>c\n+\ntail</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - b\n    - c\n    +\n```\nx\n```",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>c\n+</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>x\n</code></pre>"
+  },
+  {
+    "source": "- a\n  - b\n    - c\n    +\n| a |\n| b |",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>c\n+</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<table>\n  <tbody>\n    <tr><td>a</td></tr>\n    <tr><td>b</td></tr>\n  </tbody>\n</table>"
+  },
+  {
+    "source": "- a\n  - b\n    - c\n    +\n> z",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>c\n+</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<blockquote><p>z</p></blockquote>"
+  },
+  {
+    "source": "- a\n  - b\n    - c\n    +\n- s",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>c\n+</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n  <li>s</li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n     +\ntail",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code></code></pre>\n          </li>\n        </ul>\n        +\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail</p>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n      +\ntail",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code>+\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail</p>"
+  },
+  {
+    "source": "- a\n  - b\n    - c\n\n      +\ntail",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li><p>c</p>\n            <p>+\ntail</p>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n      +\n```\nx\n```",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code>+\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>x\n</code></pre>"
+  },
+  {
+    "source": "- a\n  - b\n    - c\n\n      +\n```\nx\n```",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li><p>c</p>\n            <p>+</p>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>x\n</code></pre>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n      +\n| a |\n| b |",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code>+\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<table>\n  <tbody>\n    <tr><td>a</td></tr>\n    <tr><td>b</td></tr>\n  </tbody>\n</table>"
+  },
+  {
+    "source": "- a\n  - b\n    - c\n\n      +\n| a |\n| b |",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li><p>c</p>\n            <p>+</p>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<table>\n  <tbody>\n    <tr><td>a</td></tr>\n    <tr><td>b</td></tr>\n  </tbody>\n</table>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n      +\n> z",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code>+\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<blockquote><p>z</p></blockquote>"
+  },
+  {
+    "source": "- a\n  - b\n    - c\n\n      +\n> z",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li><p>c</p>\n            <p>+</p>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<blockquote><p>z</p></blockquote>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n      +\n- s",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code>+\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n  <li>s</li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - b\n    - c\n\n      +\n- s",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li><p>c</p>\n            <p>+</p>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n  <li>s</li>\n</ul>"
+  },
+  {
+    "source": "> - a\n>   - b\n>     - c\n>   +\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>b\n          <ul>\n            <li>c\n+\ntail</li>\n          </ul>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "> > - a\n> >   - b\n> >     - c\n> >   +\n> > tail",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <ul>\n          <li>b\n            <ul>\n              <li>c\n+\ntail</li>\n            </ul>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>"
+  },
+  {
+    "source": "- - a\n  - a\n+\n```\nx\n```",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a</li>\n    </ul>\n    <pre><code>x\n</code></pre>\n  </li>\n</ul>"
+  },
+  {
+    "source": "> - - a\n>   - a\n> +\n> ```\n> x\n> ```",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a</li>\n      </ul>\n      <pre><code>x\n</code></pre>\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "- - a\n  - a\n+\n%% c\ntail",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a</li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "> - - a\n>   - a\n> +\n> %% c\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a</li>\n      </ul>\n      tail\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "- - a\n  - a\n+\n- s\n  more\ntail",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a</li>\n    </ul>\n  </li>\n  <li>s\nmore\ntail</li>\n</ul>"
+  },
+  {
+    "source": "> - - a\n>   - a\n> +\n> - s\n>   more\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a</li>\n      </ul>\n    </li>\n    <li>s\nmore\ntail</li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "- - a\n  - a\n+\ntail",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a</li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "> - - a\n>   - a\n> +\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a</li>\n      </ul>\n      tail\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "- - a\n  - a\n\n+\n```\nx\n```",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a</li>\n    </ul>\n    <pre><code>x\n</code></pre>\n  </li>\n</ul>"
+  },
+  {
+    "source": "> - - a\n>   - a\n\n> +\n> ```\n> x\n> ```",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a</li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<blockquote>\n  <p>+</p>\n  <pre><code>x\n</code></pre>\n</blockquote>"
+  },
+  {
+    "source": "- - a\n  - a\n\n+\n%% c\ntail",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a</li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "> - - a\n>   - a\n\n> +\n> %% c\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a</li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<blockquote>\n  <p>+</p>\n  <p>tail</p>\n</blockquote>"
+  },
+  {
+    "source": "- - a\n  - a\n\n+\n- s\n  more\ntail",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a</li>\n    </ul>\n  </li>\n  <li>s\nmore\ntail</li>\n</ul>"
+  },
+  {
+    "source": "> - - a\n>   - a\n\n> +\n> - s\n>   more\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a</li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<blockquote><p>+\n- s\nmore\ntail</p></blockquote>"
+  },
+  {
+    "source": "- - a\n  - a\n\n+\ntail",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a</li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "> - - a\n>   - a\n\n> +\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a</li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<blockquote><p>+\ntail</p></blockquote>"
+  },
+  {
+    "source": "- - a\n  - a\n    more\n+\n```\nx\n```",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a\nmore</li>\n    </ul>\n    <pre><code>x\n</code></pre>\n  </li>\n</ul>"
+  },
+  {
+    "source": "> - - a\n>   - a\n>     more\n> +\n> ```\n> x\n> ```",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a\nmore</li>\n      </ul>\n      <pre><code>x\n</code></pre>\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "- - a\n  - a\n    more\n+\n%% c\ntail",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a\nmore</li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "> - - a\n>   - a\n>     more\n> +\n> %% c\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a\nmore</li>\n      </ul>\n      tail\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "- - a\n  - a\n    more\n+\n- s\n  more\ntail",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a\nmore</li>\n    </ul>\n  </li>\n  <li>s\nmore\ntail</li>\n</ul>"
+  },
+  {
+    "source": "> - - a\n>   - a\n>     more\n> +\n> - s\n>   more\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a\nmore</li>\n      </ul>\n    </li>\n    <li>s\nmore\ntail</li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "- - a\n  - a\n    more\n+\ntail",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a\nmore</li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "> - - a\n>   - a\n>     more\n> +\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a\nmore</li>\n      </ul>\n      tail\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "- - a\n  - a\n    more\n\n+\n```\nx\n```",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a\nmore</li>\n    </ul>\n    <pre><code>x\n</code></pre>\n  </li>\n</ul>"
+  },
+  {
+    "source": "> - - a\n>   - a\n>     more\n\n> +\n> ```\n> x\n> ```",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a\nmore</li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<blockquote>\n  <p>+</p>\n  <pre><code>x\n</code></pre>\n</blockquote>"
+  },
+  {
+    "source": "- - a\n  - a\n    more\n\n+\n%% c\ntail",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a\nmore</li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "> - - a\n>   - a\n>     more\n\n> +\n> %% c\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a\nmore</li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<blockquote>\n  <p>+</p>\n  <p>tail</p>\n</blockquote>"
+  },
+  {
+    "source": "- - a\n  - a\n    more\n\n+\n- s\n  more\ntail",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a\nmore</li>\n    </ul>\n  </li>\n  <li>s\nmore\ntail</li>\n</ul>"
+  },
+  {
+    "source": "> - - a\n>   - a\n>     more\n\n> +\n> - s\n>   more\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a\nmore</li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<blockquote><p>+\n- s\nmore\ntail</p></blockquote>"
+  },
+  {
+    "source": "- - a\n  - a\n    more\n\n+\ntail",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a\nmore</li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "> - - a\n>   - a\n>     more\n\n> +\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a\nmore</li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<blockquote><p>+\ntail</p></blockquote>"
+  },
+  {
+    "source": "- 1. a\n  - a\n+\n```\nx\n```",
+    "html": "<ul>\n  <li>\n    <ol>\n      <li>a</li>\n    </ol>\n    <ul>\n      <li>a</li>\n    </ul>\n    <pre><code>x\n</code></pre>\n  </li>\n</ul>"
+  },
+  {
+    "source": "> - 1. a\n>   - a\n> +\n> ```\n> x\n> ```",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ol>\n        <li>a</li>\n      </ol>\n      <ul>\n        <li>a</li>\n      </ul>\n      <pre><code>x\n</code></pre>\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "- 1. a\n  - a\n+\n%% c\ntail",
+    "html": "<ul>\n  <li>\n    <ol>\n      <li>a</li>\n    </ol>\n    <ul>\n      <li>a</li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "> - 1. a\n>   - a\n> +\n> %% c\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ol>\n        <li>a</li>\n      </ol>\n      <ul>\n        <li>a</li>\n      </ul>\n      tail\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "- 1. a\n  - a\n+\n- s\n  more\ntail",
+    "html": "<ul>\n  <li>\n    <ol>\n      <li>a</li>\n    </ol>\n    <ul>\n      <li>a</li>\n    </ul>\n  </li>\n  <li>s\nmore\ntail</li>\n</ul>"
+  },
+  {
+    "source": "> - 1. a\n>   - a\n> +\n> - s\n>   more\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ol>\n        <li>a</li>\n      </ol>\n      <ul>\n        <li>a</li>\n      </ul>\n    </li>\n    <li>s\nmore\ntail</li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "- 1. a\n  - a\n+\ntail",
+    "html": "<ul>\n  <li>\n    <ol>\n      <li>a</li>\n    </ol>\n    <ul>\n      <li>a</li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "> - 1. a\n>   - a\n> +\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ol>\n        <li>a</li>\n      </ol>\n      <ul>\n        <li>a</li>\n      </ul>\n      tail\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "- 1. a\n  - a\n\n+\n```\nx\n```",
+    "html": "<ul>\n  <li>\n    <ol>\n      <li>a</li>\n    </ol>\n    <ul>\n      <li>a</li>\n    </ul>\n    <pre><code>x\n</code></pre>\n  </li>\n</ul>"
+  },
+  {
+    "source": "> - 1. a\n>   - a\n\n> +\n> ```\n> x\n> ```",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ol>\n        <li>a</li>\n      </ol>\n      <ul>\n        <li>a</li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<blockquote>\n  <p>+</p>\n  <pre><code>x\n</code></pre>\n</blockquote>"
+  },
+  {
+    "source": "- 1. a\n  - a\n\n+\n%% c\ntail",
+    "html": "<ul>\n  <li>\n    <ol>\n      <li>a</li>\n    </ol>\n    <ul>\n      <li>a</li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "> - 1. a\n>   - a\n\n> +\n> %% c\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ol>\n        <li>a</li>\n      </ol>\n      <ul>\n        <li>a</li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<blockquote>\n  <p>+</p>\n  <p>tail</p>\n</blockquote>"
+  },
+  {
+    "source": "- 1. a\n  - a\n\n+\n- s\n  more\ntail",
+    "html": "<ul>\n  <li>\n    <ol>\n      <li>a</li>\n    </ol>\n    <ul>\n      <li>a</li>\n    </ul>\n  </li>\n  <li>s\nmore\ntail</li>\n</ul>"
+  },
+  {
+    "source": "> - 1. a\n>   - a\n\n> +\n> - s\n>   more\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ol>\n        <li>a</li>\n      </ol>\n      <ul>\n        <li>a</li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<blockquote><p>+\n- s\nmore\ntail</p></blockquote>"
+  },
+  {
+    "source": "- 1. a\n  - a\n\n+\ntail",
+    "html": "<ul>\n  <li>\n    <ol>\n      <li>a</li>\n    </ol>\n    <ul>\n      <li>a</li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "> - 1. a\n>   - a\n\n> +\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ol>\n        <li>a</li>\n      </ol>\n      <ul>\n        <li>a</li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<blockquote><p>+\ntail</p></blockquote>"
+  },
+  {
+    "source": "- 1. a\n  - a\n    more\n+\n```\nx\n```",
+    "html": "<ul>\n  <li>\n    <ol>\n      <li>a</li>\n    </ol>\n    <ul>\n      <li>a\nmore</li>\n    </ul>\n    <pre><code>x\n</code></pre>\n  </li>\n</ul>"
+  },
+  {
+    "source": "> - 1. a\n>   - a\n>     more\n> +\n> ```\n> x\n> ```",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ol>\n        <li>a</li>\n      </ol>\n      <ul>\n        <li>a\nmore</li>\n      </ul>\n      <pre><code>x\n</code></pre>\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "- 1. a\n  - a\n    more\n+\n%% c\ntail",
+    "html": "<ul>\n  <li>\n    <ol>\n      <li>a</li>\n    </ol>\n    <ul>\n      <li>a\nmore</li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "> - 1. a\n>   - a\n>     more\n> +\n> %% c\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ol>\n        <li>a</li>\n      </ol>\n      <ul>\n        <li>a\nmore</li>\n      </ul>\n      tail\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "- 1. a\n  - a\n    more\n+\n- s\n  more\ntail",
+    "html": "<ul>\n  <li>\n    <ol>\n      <li>a</li>\n    </ol>\n    <ul>\n      <li>a\nmore</li>\n    </ul>\n  </li>\n  <li>s\nmore\ntail</li>\n</ul>"
+  },
+  {
+    "source": "> - 1. a\n>   - a\n>     more\n> +\n> - s\n>   more\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ol>\n        <li>a</li>\n      </ol>\n      <ul>\n        <li>a\nmore</li>\n      </ul>\n    </li>\n    <li>s\nmore\ntail</li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "- 1. a\n  - a\n    more\n+\ntail",
+    "html": "<ul>\n  <li>\n    <ol>\n      <li>a</li>\n    </ol>\n    <ul>\n      <li>a\nmore</li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "> - 1. a\n>   - a\n>     more\n> +\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ol>\n        <li>a</li>\n      </ol>\n      <ul>\n        <li>a\nmore</li>\n      </ul>\n      tail\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "- 1. a\n  - a\n    more\n\n+\n```\nx\n```",
+    "html": "<ul>\n  <li>\n    <ol>\n      <li>a</li>\n    </ol>\n    <ul>\n      <li>a\nmore</li>\n    </ul>\n    <pre><code>x\n</code></pre>\n  </li>\n</ul>"
+  },
+  {
+    "source": "> - 1. a\n>   - a\n>     more\n\n> +\n> ```\n> x\n> ```",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ol>\n        <li>a</li>\n      </ol>\n      <ul>\n        <li>a\nmore</li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<blockquote>\n  <p>+</p>\n  <pre><code>x\n</code></pre>\n</blockquote>"
+  },
+  {
+    "source": "- 1. a\n  - a\n    more\n\n+\n%% c\ntail",
+    "html": "<ul>\n  <li>\n    <ol>\n      <li>a</li>\n    </ol>\n    <ul>\n      <li>a\nmore</li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "> - 1. a\n>   - a\n>     more\n\n> +\n> %% c\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ol>\n        <li>a</li>\n      </ol>\n      <ul>\n        <li>a\nmore</li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<blockquote>\n  <p>+</p>\n  <p>tail</p>\n</blockquote>"
+  },
+  {
+    "source": "- 1. a\n  - a\n    more\n\n+\n- s\n  more\ntail",
+    "html": "<ul>\n  <li>\n    <ol>\n      <li>a</li>\n    </ol>\n    <ul>\n      <li>a\nmore</li>\n    </ul>\n  </li>\n  <li>s\nmore\ntail</li>\n</ul>"
+  },
+  {
+    "source": "> - 1. a\n>   - a\n>     more\n\n> +\n> - s\n>   more\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ol>\n        <li>a</li>\n      </ol>\n      <ul>\n        <li>a\nmore</li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<blockquote><p>+\n- s\nmore\ntail</p></blockquote>"
+  },
+  {
+    "source": "- 1. a\n  - a\n    more\n\n+\ntail",
+    "html": "<ul>\n  <li>\n    <ol>\n      <li>a</li>\n    </ol>\n    <ul>\n      <li>a\nmore</li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "> - 1. a\n>   - a\n>     more\n\n> +\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ol>\n        <li>a</li>\n      </ol>\n      <ul>\n        <li>a\nmore</li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<blockquote><p>+\ntail</p></blockquote>"
+  },
+  {
+    "source": "1. - a\n  - a\n+\n```\nx\n```",
+    "html": "<ol>\n  <li>\n    <ul>\n      <li>a\n- a</li>\n    </ul>\n    <pre><code>x\n</code></pre>\n  </li>\n</ol>"
+  },
+  {
+    "source": "> 1. - a\n>   - a\n> +\n> ```\n> x\n> ```",
+    "html": "<blockquote>\n  <ol>\n    <li>\n      <ul>\n        <li>a\n- a</li>\n      </ul>\n      <pre><code>x\n</code></pre>\n    </li>\n  </ol>\n</blockquote>"
+  },
+  {
+    "source": "1. - a\n  - a\n+\n%% c\ntail",
+    "html": "<ol>\n  <li>\n    <ul>\n      <li>a\n- a</li>\n    </ul>\n    tail\n  </li>\n</ol>"
+  },
+  {
+    "source": "> 1. - a\n>   - a\n> +\n> %% c\n> tail",
+    "html": "<blockquote>\n  <ol>\n    <li>\n      <ul>\n        <li>a\n- a</li>\n      </ul>\n      tail\n    </li>\n  </ol>\n</blockquote>"
+  },
+  {
+    "source": "1. - a\n  - a\n+\n- s\n  more\ntail",
+    "html": "<ol>\n  <li>\n    <ul>\n      <li>a\n- a</li>\n    </ul>\n  </li>\n</ol>\n<ul>\n  <li>s\nmore\ntail</li>\n</ul>"
+  },
+  {
+    "source": "> 1. - a\n>   - a\n> +\n> - s\n>   more\n> tail",
+    "html": "<blockquote>\n  <ol>\n    <li>\n      <ul>\n        <li>a\n- a</li>\n      </ul>\n    </li>\n  </ol>\n  <ul>\n    <li>s\nmore\ntail</li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "1. - a\n  - a\n+\ntail",
+    "html": "<ol>\n  <li>\n    <ul>\n      <li>a\n- a</li>\n    </ul>\n    tail\n  </li>\n</ol>"
+  },
+  {
+    "source": "> 1. - a\n>   - a\n> +\n> tail",
+    "html": "<blockquote>\n  <ol>\n    <li>\n      <ul>\n        <li>a\n- a</li>\n      </ul>\n      tail\n    </li>\n  </ol>\n</blockquote>"
+  },
+  {
+    "source": "1. - a\n  - a\n\n+\n```\nx\n```",
+    "html": "<ol>\n  <li>\n    <ul>\n      <li>a\n- a</li>\n    </ul>\n    <pre><code>x\n</code></pre>\n  </li>\n</ol>"
+  },
+  {
+    "source": "> 1. - a\n>   - a\n\n> +\n> ```\n> x\n> ```",
+    "html": "<blockquote>\n  <ol>\n    <li>\n      <ul>\n        <li>a\n- a</li>\n      </ul>\n    </li>\n  </ol>\n</blockquote>\n<blockquote>\n  <p>+</p>\n  <pre><code>x\n</code></pre>\n</blockquote>"
+  },
+  {
+    "source": "1. - a\n  - a\n\n+\n%% c\ntail",
+    "html": "<ol>\n  <li>\n    <ul>\n      <li>a\n- a</li>\n    </ul>\n    tail\n  </li>\n</ol>"
+  },
+  {
+    "source": "> 1. - a\n>   - a\n\n> +\n> %% c\n> tail",
+    "html": "<blockquote>\n  <ol>\n    <li>\n      <ul>\n        <li>a\n- a</li>\n      </ul>\n    </li>\n  </ol>\n</blockquote>\n<blockquote>\n  <p>+</p>\n  <p>tail</p>\n</blockquote>"
+  },
+  {
+    "source": "1. - a\n  - a\n\n+\n- s\n  more\ntail",
+    "html": "<ol>\n  <li>\n    <ul>\n      <li>a\n- a</li>\n    </ul>\n  </li>\n</ol>\n<ul>\n  <li>s\nmore\ntail</li>\n</ul>"
+  },
+  {
+    "source": "> 1. - a\n>   - a\n\n> +\n> - s\n>   more\n> tail",
+    "html": "<blockquote>\n  <ol>\n    <li>\n      <ul>\n        <li>a\n- a</li>\n      </ul>\n    </li>\n  </ol>\n</blockquote>\n<blockquote><p>+\n- s\nmore\ntail</p></blockquote>"
+  },
+  {
+    "source": "1. - a\n  - a\n\n+\ntail",
+    "html": "<ol>\n  <li>\n    <ul>\n      <li>a\n- a</li>\n    </ul>\n    tail\n  </li>\n</ol>"
+  },
+  {
+    "source": "> 1. - a\n>   - a\n\n> +\n> tail",
+    "html": "<blockquote>\n  <ol>\n    <li>\n      <ul>\n        <li>a\n- a</li>\n      </ul>\n    </li>\n  </ol>\n</blockquote>\n<blockquote><p>+\ntail</p></blockquote>"
+  },
+  {
+    "source": "1. - a\n  - a\n    more\n+\n```\nx\n```",
+    "html": "<ol>\n  <li>\n    <ul>\n      <li>a\n- a\nmore</li>\n    </ul>\n    <pre><code>x\n</code></pre>\n  </li>\n</ol>"
+  },
+  {
+    "source": "> 1. - a\n>   - a\n>     more\n> +\n> ```\n> x\n> ```",
+    "html": "<blockquote>\n  <ol>\n    <li>\n      <ul>\n        <li>a\n- a\nmore</li>\n      </ul>\n      <pre><code>x\n</code></pre>\n    </li>\n  </ol>\n</blockquote>"
+  },
+  {
+    "source": "1. - a\n  - a\n    more\n+\n%% c\ntail",
+    "html": "<ol>\n  <li>\n    <ul>\n      <li>a\n- a\nmore</li>\n    </ul>\n    tail\n  </li>\n</ol>"
+  },
+  {
+    "source": "> 1. - a\n>   - a\n>     more\n> +\n> %% c\n> tail",
+    "html": "<blockquote>\n  <ol>\n    <li>\n      <ul>\n        <li>a\n- a\nmore</li>\n      </ul>\n      tail\n    </li>\n  </ol>\n</blockquote>"
+  },
+  {
+    "source": "1. - a\n  - a\n    more\n+\n- s\n  more\ntail",
+    "html": "<ol>\n  <li>\n    <ul>\n      <li>a\n- a\nmore</li>\n    </ul>\n  </li>\n</ol>\n<ul>\n  <li>s\nmore\ntail</li>\n</ul>"
+  },
+  {
+    "source": "> 1. - a\n>   - a\n>     more\n> +\n> - s\n>   more\n> tail",
+    "html": "<blockquote>\n  <ol>\n    <li>\n      <ul>\n        <li>a\n- a\nmore</li>\n      </ul>\n    </li>\n  </ol>\n  <ul>\n    <li>s\nmore\ntail</li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "1. - a\n  - a\n    more\n+\ntail",
+    "html": "<ol>\n  <li>\n    <ul>\n      <li>a\n- a\nmore</li>\n    </ul>\n    tail\n  </li>\n</ol>"
+  },
+  {
+    "source": "> 1. - a\n>   - a\n>     more\n> +\n> tail",
+    "html": "<blockquote>\n  <ol>\n    <li>\n      <ul>\n        <li>a\n- a\nmore</li>\n      </ul>\n      tail\n    </li>\n  </ol>\n</blockquote>"
+  },
+  {
+    "source": "1. - a\n  - a\n    more\n\n+\n```\nx\n```",
+    "html": "<ol>\n  <li>\n    <ul>\n      <li>a\n- a\nmore</li>\n    </ul>\n    <pre><code>x\n</code></pre>\n  </li>\n</ol>"
+  },
+  {
+    "source": "> 1. - a\n>   - a\n>     more\n\n> +\n> ```\n> x\n> ```",
+    "html": "<blockquote>\n  <ol>\n    <li>\n      <ul>\n        <li>a\n- a\nmore</li>\n      </ul>\n    </li>\n  </ol>\n</blockquote>\n<blockquote>\n  <p>+</p>\n  <pre><code>x\n</code></pre>\n</blockquote>"
+  },
+  {
+    "source": "1. - a\n  - a\n    more\n\n+\n%% c\ntail",
+    "html": "<ol>\n  <li>\n    <ul>\n      <li>a\n- a\nmore</li>\n    </ul>\n    tail\n  </li>\n</ol>"
+  },
+  {
+    "source": "> 1. - a\n>   - a\n>     more\n\n> +\n> %% c\n> tail",
+    "html": "<blockquote>\n  <ol>\n    <li>\n      <ul>\n        <li>a\n- a\nmore</li>\n      </ul>\n    </li>\n  </ol>\n</blockquote>\n<blockquote>\n  <p>+</p>\n  <p>tail</p>\n</blockquote>"
+  },
+  {
+    "source": "1. - a\n  - a\n    more\n\n+\n- s\n  more\ntail",
+    "html": "<ol>\n  <li>\n    <ul>\n      <li>a\n- a\nmore</li>\n    </ul>\n  </li>\n</ol>\n<ul>\n  <li>s\nmore\ntail</li>\n</ul>"
+  },
+  {
+    "source": "> 1. - a\n>   - a\n>     more\n\n> +\n> - s\n>   more\n> tail",
+    "html": "<blockquote>\n  <ol>\n    <li>\n      <ul>\n        <li>a\n- a\nmore</li>\n      </ul>\n    </li>\n  </ol>\n</blockquote>\n<blockquote><p>+\n- s\nmore\ntail</p></blockquote>"
+  },
+  {
+    "source": "1. - a\n  - a\n    more\n\n+\ntail",
+    "html": "<ol>\n  <li>\n    <ul>\n      <li>a\n- a\nmore</li>\n    </ul>\n    tail\n  </li>\n</ol>"
+  },
+  {
+    "source": "> 1. - a\n>   - a\n>     more\n\n> +\n> tail",
+    "html": "<blockquote>\n  <ol>\n    <li>\n      <ul>\n        <li>a\n- a\nmore</li>\n      </ul>\n    </li>\n  </ol>\n</blockquote>\n<blockquote><p>+\ntail</p></blockquote>"
+  },
+  {
+    "source": "* - a\n  - a\n+\n```\nx\n```",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a</li>\n    </ul>\n    <pre><code>x\n</code></pre>\n  </li>\n</ul>"
+  },
+  {
+    "source": "> * - a\n>   - a\n> +\n> ```\n> x\n> ```",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a</li>\n      </ul>\n      <pre><code>x\n</code></pre>\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "* - a\n  - a\n+\n%% c\ntail",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a</li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "> * - a\n>   - a\n> +\n> %% c\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a</li>\n      </ul>\n      tail\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "* - a\n  - a\n+\n- s\n  more\ntail",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a</li>\n    </ul>\n  </li>\n</ul>\n<ul>\n  <li>s\nmore\ntail</li>\n</ul>"
+  },
+  {
+    "source": "> * - a\n>   - a\n> +\n> - s\n>   more\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a</li>\n      </ul>\n    </li>\n  </ul>\n  <ul>\n    <li>s\nmore\ntail</li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "* - a\n  - a\n+\ntail",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a</li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "> * - a\n>   - a\n> +\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a</li>\n      </ul>\n      tail\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "* - a\n  - a\n\n+\n```\nx\n```",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a</li>\n    </ul>\n    <pre><code>x\n</code></pre>\n  </li>\n</ul>"
+  },
+  {
+    "source": "> * - a\n>   - a\n\n> +\n> ```\n> x\n> ```",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a</li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<blockquote>\n  <p>+</p>\n  <pre><code>x\n</code></pre>\n</blockquote>"
+  },
+  {
+    "source": "* - a\n  - a\n\n+\n%% c\ntail",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a</li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "> * - a\n>   - a\n\n> +\n> %% c\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a</li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<blockquote>\n  <p>+</p>\n  <p>tail</p>\n</blockquote>"
+  },
+  {
+    "source": "* - a\n  - a\n\n+\n- s\n  more\ntail",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a</li>\n    </ul>\n  </li>\n</ul>\n<ul>\n  <li>s\nmore\ntail</li>\n</ul>"
+  },
+  {
+    "source": "> * - a\n>   - a\n\n> +\n> - s\n>   more\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a</li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<blockquote><p>+\n- s\nmore\ntail</p></blockquote>"
+  },
+  {
+    "source": "* - a\n  - a\n\n+\ntail",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a</li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "> * - a\n>   - a\n\n> +\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a</li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<blockquote><p>+\ntail</p></blockquote>"
+  },
+  {
+    "source": "* - a\n  - a\n    more\n+\n```\nx\n```",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a\nmore</li>\n    </ul>\n    <pre><code>x\n</code></pre>\n  </li>\n</ul>"
+  },
+  {
+    "source": "> * - a\n>   - a\n>     more\n> +\n> ```\n> x\n> ```",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a\nmore</li>\n      </ul>\n      <pre><code>x\n</code></pre>\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "* - a\n  - a\n    more\n+\n%% c\ntail",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a\nmore</li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "> * - a\n>   - a\n>     more\n> +\n> %% c\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a\nmore</li>\n      </ul>\n      tail\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "* - a\n  - a\n    more\n+\n- s\n  more\ntail",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a\nmore</li>\n    </ul>\n  </li>\n</ul>\n<ul>\n  <li>s\nmore\ntail</li>\n</ul>"
+  },
+  {
+    "source": "> * - a\n>   - a\n>     more\n> +\n> - s\n>   more\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a\nmore</li>\n      </ul>\n    </li>\n  </ul>\n  <ul>\n    <li>s\nmore\ntail</li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "* - a\n  - a\n    more\n+\ntail",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a\nmore</li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "> * - a\n>   - a\n>     more\n> +\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a\nmore</li>\n      </ul>\n      tail\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "* - a\n  - a\n    more\n\n+\n```\nx\n```",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a\nmore</li>\n    </ul>\n    <pre><code>x\n</code></pre>\n  </li>\n</ul>"
+  },
+  {
+    "source": "> * - a\n>   - a\n>     more\n\n> +\n> ```\n> x\n> ```",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a\nmore</li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<blockquote>\n  <p>+</p>\n  <pre><code>x\n</code></pre>\n</blockquote>"
+  },
+  {
+    "source": "* - a\n  - a\n    more\n\n+\n%% c\ntail",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a\nmore</li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "> * - a\n>   - a\n>     more\n\n> +\n> %% c\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a\nmore</li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<blockquote>\n  <p>+</p>\n  <p>tail</p>\n</blockquote>"
+  },
+  {
+    "source": "* - a\n  - a\n    more\n\n+\n- s\n  more\ntail",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a\nmore</li>\n    </ul>\n  </li>\n</ul>\n<ul>\n  <li>s\nmore\ntail</li>\n</ul>"
+  },
+  {
+    "source": "> * - a\n>   - a\n>     more\n\n> +\n> - s\n>   more\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a\nmore</li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<blockquote><p>+\n- s\nmore\ntail</p></blockquote>"
+  },
+  {
+    "source": "* - a\n  - a\n    more\n\n+\ntail",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>a\nmore</li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "> * - a\n>   - a\n>     more\n\n> +\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a</li>\n        <li>a\nmore</li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<blockquote><p>+\ntail</p></blockquote>"
+  },
+  {
+    "source": "> - a\n>   - b\n> +\n> para",
+    "html": "<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>b</li>\n      </ul>\n      para\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "> - a\n>+\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>a\n      tail\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "> - a\n> +\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>a\n      tail\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "> - a\n>  +\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>a\n+\ntail</li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "> - a\n>   +\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>a\n+\ntail</li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "> > - a\n> >+\n> > tail",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        tail\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>"
+  },
+  {
+    "source": "> > - a\n>> +\n> > tail",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        tail\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>"
+  },
+  {
+    "source": "> > - a\n> > +\n> > tail",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        tail\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>"
+  },
+  {
+    "source": "> > - a\n> >  +\n> > tail",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n+\ntail</li>\n    </ul>\n  </blockquote>\n</blockquote>"
+  },
+  {
+    "source": "- > +\ntail",
+    "html": "<ul>\n  <li>\n    <blockquote><p>tail</p></blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "> - +\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>tail</li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "[^a]: +\ntail",
+    "html": ""
+  },
+  {
+    "source": ": +\ntail",
+    "html": "<p>: +\ntail</p>"
+  },
+  {
+    "source": "- a\n  - - +\n    para",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>\n        <ul>\n          <li></li>\n        </ul>\n        para\n      </li>\n    </ul>\n  </li>\n</ul>"
+  },
+  {
+    "source": ">x\n> +\nq",
+    "html": "<p>&gt;x</p>\n<blockquote><p>q</p></blockquote>"
+  },
+  {
+    "source": "> 1. a\n> +\n> tail",
+    "html": "<blockquote>\n  <ol>\n    <li>a\n      tail\n    </li>\n  </ol>\n</blockquote>"
+  },
+  {
+    "source": "> > 1. a\n> > +\n> > tail",
+    "html": "<blockquote>\n  <blockquote>\n    <ol>\n      <li>a\n        tail\n      </li>\n    </ol>\n  </blockquote>\n</blockquote>"
+  },
+  {
+    "source": "> 1. - +\n> tail",
+    "html": "<blockquote>\n  <ol>\n    <li>\n      <ul>\n        <li>tail</li>\n      </ul>\n    </li>\n  </ol>\n</blockquote>"
+  },
+  {
+    "source": "> - > +\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <blockquote><p>tail</p></blockquote>\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "> - ```\n> +\n> tail",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <pre><code></code></pre>\n      tail\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n    x\n   +\ntail",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code></code></pre>\n          </li>\n        </ul>\n        x\n+\ntail\n      </li>\n    </ul>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n    x\n    y\n    z\n   +\ntail",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code></code></pre>\n          </li>\n        </ul>\n        x\ny\nz\n+\ntail\n      </li>\n    </ul>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n    x\n    y\n    z\n    w\n    v\n   +\ntail",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code></code></pre>\n          </li>\n        </ul>\n        x\ny\nz\nw\nv\n+\ntail\n      </li>\n    </ul>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - ```\n\n\n\n\n\n+\ntail",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>\n        <pre><code>\n\n\n\n\n\n</code></pre>\n      </li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - ```\n\n\n\n\n\n\n\n\n+\ntail",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>\n        <pre><code>\n\n\n\n\n\n\n\n\n</code></pre>\n      </li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n\n\n\n\n\n+\ntail",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code>\n\n\n\n\n\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  - b\n    - ```\n\n\n\n\n\n\n\n\n+\ntail",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>\n            <pre><code>\n\n\n\n\n\n\n\n\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "source": "See [^n].\n\n[^n]:\n    > q\n    +\n    %% c\n    para\n",
+    "html": "<p>See [^n].</p>\n<p>[^n]:\n&gt; q\n+</p>\n<p>para</p>"
+  }
+]

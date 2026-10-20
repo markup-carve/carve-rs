@@ -114,7 +114,7 @@ fn a_marker_inside_a_nested_list_attaches_nothing() {
     // they took the same ruling.
     assert_eq!(
         carve::to_html("- a\n  - b\n  +\n  {.x}\n  > q\n"),
-        "<ul>\n  <li>a\n    <ul>\n      <li>b</li>\n    </ul>\n    <blockquote class=\"x\"><p>q</p></blockquote>\n  </li>\n</ul>"
+        "<ul>\n  <li>a\n    <ul>\n      <li>b\n+</li>\n    </ul>\n    <blockquote class=\"x\"><p>q</p></blockquote>\n  </li>\n</ul>"
     );
 }
 

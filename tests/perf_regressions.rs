@@ -85,6 +85,30 @@ fn selected_carve_region_scales_near_linearly() {
     );
 }
 
+#[test]
+fn column_zero_continuations_scale_near_linearly() {
+    let scaling = measure_scaling_at(
+        &|lines| {
+            let unit = concat!(
+                "- a\n  - b\n  +\n> - a\n>   - b\n> +\n> tail\n\n- ```\n  +\n",
+                "  ```\n- a\n  - b\n    - ```\n      +\n    ```\n> > - a\n> > +\n> > tail\n\n",
+            );
+            unit.repeat(lines / 20)
+        },
+        20_000,
+        40_000,
+    );
+    eprintln!(
+        "column-zero stress: 20000 lines {:.3}s, 40000 lines {:.3}s",
+        scaling.small_secs, scaling.large_secs
+    );
+    assert!(
+        scaling.large_secs / scaling.small_secs < 3.6,
+        "column-zero stress took {:.2}x longer on double the lines",
+        scaling.large_secs / scaling.small_secs
+    );
+}
+
 /// Take the timing lock, ignoring poisoning: a panic in one perf test must not
 /// cascade into every other one reporting a lock error instead of its result.
 fn perf_guard() -> std::sync::MutexGuard<'static, ()> {

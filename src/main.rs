@@ -293,11 +293,12 @@ fn main() -> ExitCode {
                     allowed_render_losses.push("table-header-cell-demoted")
                 }
                 Some("list-style-dropped") => allowed_render_losses.push("list-style-dropped"),
+                Some("list-tightness-lost") => allowed_render_losses.push("list-tightness-lost"),
                 Some("list-delimiter-changed") => {
                     allowed_render_losses.push("list-delimiter-changed")
                 }
                 _ => {
-                    eprintln!("carve: --allow-loss expects raw-format-dropped, ruby-flattened, editorial-comment-flattened, carrier-attribute-dropped, definition-list-flattened, list-style-dropped, list-delimiter-changed, table-span-flattened, table-header-row-demoted, table-header-row-hoisted or table-header-cell-demoted");
+                    eprintln!("carve: --allow-loss expects raw-format-dropped, ruby-flattened, editorial-comment-flattened, carrier-attribute-dropped, definition-list-flattened, list-style-dropped, list-tightness-lost, list-delimiter-changed, table-span-flattened, table-header-row-demoted, table-header-row-hoisted or table-header-cell-demoted");
                     return ExitCode::from(2);
                 }
             },
@@ -1991,6 +1992,7 @@ fn print_usage() {
          --allow-loss CODE           accept raw-format-dropped, ruby-flattened,\n                              \
          editorial-comment-flattened, carrier-attribute-dropped\n                              \
          definition-list-flattened, list-style-dropped,\n                              \
+         list-tightness-lost,\n                              \
          list-delimiter-changed, table-span-flattened,\n                              \
          table-header-row-demoted, table-header-row-hoisted\n                              \
          or table-header-cell-demoted\n  \

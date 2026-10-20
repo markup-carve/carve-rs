@@ -387,7 +387,7 @@ pub fn to_ansi_with_report(
     })
 }
 
-/// Canonical Carve preserves raw nodes, so this checked result is lossless.
+/// Canonical Carve reports nested list items whose tightness cannot be kept.
 pub fn to_carve_with_report(
     source: &str,
     checked_options: CheckedRenderOptions,
