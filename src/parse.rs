@@ -170,6 +170,12 @@ fn needs_source_ending_map() -> bool {
 /// a second copy: scan ONE CODE POINT AT A TIME, and answer from a SET of
 /// occupied code points rather than from the document's text joined.
 fn pick_definition_placeholders(source: &str) -> [char; 2] {
+    // Only a collision with the preferred pair needs the occupied set.
+    if source.is_ascii()
+        || (!source.contains(PLACEHOLDER_DEFAULTS[0]) && !source.contains(PLACEHOLDER_DEFAULTS[1]))
+    {
+        return PLACEHOLDER_DEFAULTS;
+    }
     pick_sentinel_run(
         &occupied_private_use(source),
         u32::from(PLACEHOLDER_DEFAULTS[0]),
