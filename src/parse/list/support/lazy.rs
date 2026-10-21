@@ -2,7 +2,6 @@ use super::*;
 
 /// AND NOTHING CLOSES MEANS THE CONTAINER GOES ON COLLECTING (PART 1 S4,
 /// markup-carve/carve#980).
-
 pub(crate) fn fold_lazy_run_and_resume(
     cur: &mut LineCursor,
     nested: &mut MappedSource,

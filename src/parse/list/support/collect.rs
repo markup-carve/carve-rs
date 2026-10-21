@@ -8,7 +8,6 @@ use super::*;
 /// written at a DESCENDANT's column looked like ordinary over-indented content
 /// to every frame above the innermost one, and the item that ended was the
 /// wrong one (markup-carve/carve-rs#1518).
-
 pub(crate) fn collect_indented_block_mapped_with(
     cur: &mut LineCursor,
     parent_indent: usize,
