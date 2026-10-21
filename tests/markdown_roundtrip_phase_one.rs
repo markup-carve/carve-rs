@@ -53,6 +53,28 @@ fn roundtrip(source: &str) -> String {
 }
 
 #[test]
+fn detached_separator_after_list_term_does_not_import_an_empty_item_plus() {
+    let source = include_str!("spec/tests/corpus/620-generated-container-documents.crv");
+    let exported = roundtrip(source);
+    assert!(exported.contains("- <!-- carve: :: t -->"));
+    assert!(exported.contains("\n  <!-- carve: -->\n\n:  head"));
+
+    for source in [
+        "- :: another\n:  outside\n\nend\n",
+        "* :: another\n:  outside\n",
+        "1. :: another\n:  outside\n",
+        "- :: another\n  : body\n:  outside\n",
+        "> - :: another\n> :  outside\n",
+    ] {
+        roundtrip(source);
+    }
+
+    let authored_plus = "- <!-- carve: :: t -->\n  **t**\n\n  \\+\n\n  <!-- carve: -->\n";
+    let imported = migrate_markdown(authored_plus);
+    assert!(imported.value.contains("  +\n"), "{}", imported.value);
+}
+
+#[test]
 fn definition_lists_keep_terms_without_definitions_and_consecutive_terms() {
     for source in [
         ":: Carve\n",

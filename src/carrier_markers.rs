@@ -1677,7 +1677,32 @@ fn restore_definition_lines(lines: &[RestoredLine]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut definition_host: Option<String> = None;
     let mut first = false;
-    for line in lines {
+    for (index, line) in lines.iter().enumerate() {
+        // The Markdown importer spells an item emptied by a term carrier as
+        // `+`. It is not authored content when the next carrier closes that
+        // definition list, and leaving it here folds it into the term.
+        if line.kind.is_none()
+            && line.text == "+"
+            && index > 0
+            && lines[index - 1].kind == Some(false)
+            && lines[index - 1].text.starts_with(":: ")
+            && host_opens_list(&lines[index - 1].lead)
+            && {
+                let opener = &lines[index - 1];
+                let marker = opener.lead.split_whitespace().last().unwrap_or_default();
+                let host = opener
+                    .lead
+                    .trim_end()
+                    .strip_suffix(marker)
+                    .unwrap_or_default();
+                line.lead == host
+                    && lines.get(index + 1).is_some_and(|next| {
+                        next.kind == Some(false) && next.lead == host && next.text.is_empty()
+                    })
+            }
+        {
+            continue;
+        }
         let marker = line.kind.is_some();
         if marker
             && (line.text.starts_with(":: ") || line.text == ":" || line.text.is_empty())
@@ -1861,4 +1886,52 @@ fn separate_carrier_lines(items: &[RestoredLine]) -> Vec<RestoredLine> {
     }
 
     out
+}
+
+#[cfg(test)]
+mod detached_term_tests {
+    use super::{restore_definition_lines, RestoredLine};
+
+    #[test]
+    fn repeated_empty_list_term_carriers_drop_only_the_local_placeholder() {
+        let mut lines = Vec::new();
+        for index in 0..4096 {
+            lines.push(RestoredLine {
+                lead: "- ".to_owned(),
+                text: format!(":: term{index}"),
+                kind: Some(false),
+            });
+            lines.push(RestoredLine {
+                lead: String::new(),
+                text: "+".to_owned(),
+                kind: None,
+            });
+            lines.push(RestoredLine {
+                lead: String::new(),
+                text: String::new(),
+                kind: Some(false),
+            });
+            lines.push(RestoredLine {
+                lead: String::new(),
+                text: format!("after{index}"),
+                kind: None,
+            });
+        }
+        let restored = restore_definition_lines(&lines);
+        assert_eq!(
+            restored
+                .iter()
+                .filter(|line| line.starts_with("- :: term"))
+                .count(),
+            4096
+        );
+        assert_eq!(
+            restored
+                .iter()
+                .filter(|line| line.starts_with("after"))
+                .count(),
+            4096
+        );
+        assert!(!restored.iter().any(|line| line == "+"));
+    }
 }
