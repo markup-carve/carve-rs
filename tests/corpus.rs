@@ -971,19 +971,7 @@ const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 /// that fixes the rule rather than left behind as a declaration that no longer
 /// declares anything.
 ///
-const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[(
-    "616-a-line-is-read-in-the-container-whose-column-it-reaches-7",
-    "a marker below the description column opens a sibling list (spec #3458), carve-rs#2988",
-    r#"<ul>
-  <li>
-    <dl>
-      <dt>t</dt>
-      <dd>para
-- li</dd>
-    </dl>
-  </li>
-</ul>"#,
-)];
+const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[];
 
 fn check_pair(slug: &str) {
     let slug = &resolve_slug(slug);

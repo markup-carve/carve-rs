@@ -1431,6 +1431,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                         && decision.refusal.is_none()
                 }))
             && indent != strip_cols
+            && !(is_list_marker(trim_ascii_start(line))
+                && open_definition_body_column
+                    .is_some_and(|column| indent >= strip_cols && indent < column))
             && !(indent > strip_cols
                 && item_block_opener_with_invisible_arms(trim_ascii_start(line), true)
                 && detect_fence_open(trim_ascii_start(line)).is_none())

@@ -579,6 +579,8 @@ mod a_tab_closer_below_a_raised_fence_closes_it;
 mod an_authored_footnote_reference_id_replaces_the_generated_one;
 #[path = "../description_list_owner_rulings.rs"]
 mod description_list_owner_rulings;
+#[path = "../description_sibling_list_column.rs"]
+mod description_sibling_list_column;
 #[path = "../empty_destinations.rs"]
 mod empty_destinations;
 #[path = "../nested_paragraph_owner_columns.rs"]
