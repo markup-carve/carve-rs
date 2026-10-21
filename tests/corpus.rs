@@ -971,35 +971,10 @@ const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 /// that fixes the rule rather than left behind as a declaration that no longer
 /// declares anything.
 ///
-const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
-    (
-        "154-under-indented-definition-attaches-over-indented-definition-folds",
-        "a separator one column past the item folds into the open term (spec #3458), carve-rs#2986",
-        r#"<ul>
-  <li>one
-    <dl>
-      <dt>term</dt>
-      <dd>def</dd>
-    </dl>
-  </li>
-</ul>"#,
-    ),
-    (
-        "154-under-indented-definition-attaches-over-indented-definition-folds-2",
-        "a column-0 separator ends the item (spec #3458), carve-rs#2986",
-        r#"<ul>
-  <li>one
-    <dl>
-      <dt>term</dt>
-      <dd>def</dd>
-    </dl>
-  </li>
-</ul>"#,
-    ),
-    (
-        "616-a-line-is-read-in-the-container-whose-column-it-reaches-7",
-        "a marker below the description column opens a sibling list (spec #3458), carve-rs#2988",
-        r#"<ul>
+const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[(
+    "616-a-line-is-read-in-the-container-whose-column-it-reaches-7",
+    "a marker below the description column opens a sibling list (spec #3458), carve-rs#2988",
+    r#"<ul>
   <li>
     <dl>
       <dt>t</dt>
@@ -1008,8 +983,7 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     </dl>
   </li>
 </ul>"#,
-    ),
-];
+)];
 
 fn check_pair(slug: &str) {
     let slug = &resolve_slug(slug);

@@ -1706,11 +1706,14 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // moves 31 `+` documents between the buckets, one net into the lossy set:
     // 384-6, 616-18, 630-8 and rows of 632 and 634 become strict; 327-5, rows
     // of 435, 627, 629, 632-13, 633-2 and 634-13 report a loss.
-    const STRICT: usize = 2193;
+    // Corpus 154's one-column separator now folds into the term and produces
+    // a soft break, which ProseMirror reports as degraded. The column-zero
+    // control, 154-2, stays strict; 154-3 was already reported lossy.
+    const STRICT: usize = 2192;
     // Spec 894ff32e adds 616-25, whose marked quote soft break reports a loss.
     // The eight parsed CSV/TSV tables lose their source fence in ProseMirror;
     // the bridge reports that loss instead of claiming a strict round trip.
-    const LOSSY: usize = 761;
+    const LOSSY: usize = 762;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in
