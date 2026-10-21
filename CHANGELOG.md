@@ -11,6 +11,115 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-10-21
+
+### Breaking
+
+- `carve --safe` leaves includes literal. `carve flatten --safe` and `carve flatten --no-includes` refuse to run with exit 2. Pipelines that flattened untrusted input must choose whether to allow file reads (#2911, #2912).
+- Public struct literals need the new `Options.align_tables`, `Options.lint_includes`, `IncludeWarning.included_by`, `IncludeResult.included`, and `LintWarning.file` and `.included_by` fields. The new code-include and lint modes use these fields (#2888, #2890, #2900).
+- `IncludeDenial` gains a `NonText` variant for invalid UTF-8 includes. Exhaustive matches need another arm (#2885).
+
+### Includes and safety
+
+- Convert a {table} csv/tsv code include as an authored fence. (#2893)
+- Keep a region marker on its line through fmt. (#2899)
+- Fix the include-root help line and document it for lint. (#2906)
+- Refuse a repeated include option and see through a leading BOM. (#2910)
+- Report a lint include cycle closed by a code include, with no chain at top level. (#2913)
+- Keep definitions inside a region and report the authored fragment. (#2914)
+- Lint a CR/CRLF CSV include over the content the renderer converts. (#2915)
+- Keep a @lines or @region Carve include linear in its line count. (#2917)
+- Keep a code include's blank last line and end its span after the last line. (#2919)
+- Find region markers in every container when keeping definitions in place. (#2922)
+
+### Lint
+
+- Lint a bare key one edit from a consumed key. (#2905)
+- Lint an unclosed code fence and a refused continuation marker. (#2941)
+- Lint the two ordered-list column traps of explicit numbers. (#2962)
+- Lint: report a list marker below the content column after a blank line. (#2969)
+
+### Formatting and migration
+
+- Report dropped BBCode quote user IDs. (#2886)
+- Resolve Markdown heading fragments during migration. (#2891)
+- Report dropped quote attribution fields as bbcode-quote-field-dropped. (#2892)
+- Use ruled BBCode quote field-loss code. (#2894)
+- Report case-only fragment rewrites as link-fragment-case-rewritten fixups. (#2898)
+- Keep fmt idempotent on a block comment under a term-led list item. (#2916)
+- Read a BBCode quote attribution the way the spec rules it. (#2920)
+- Fix: keep Markdown destination brackets and unwrap a lone image in the assessor. (#2924)
+- Keep a Markdown destination as written, and a bracketed autolink in angle form. (#2931)
+- Keep a Markdown autolink's brackets in its destination. (#2935)
+- Keep a Markdown destination's characters as Carve reads them. (#2944)
+- Assess a literal pipe in a Markdown link destination. (#2950)
+- Assess a table pipe escape at the row level, as GFM unescapes it. (#2953)
+- Fix: assess table pipe shapes completely and report dropped extra cells. (#2957)
+- Read a backslash run before a table pipe like cmark-gfm. (#2964)
+- Fix: make two Markdown imports a fmt fixed point. (#2976)
+- Perf: scan destination attributes in one pass during Markdown assessment. (#2980)
+- Fix(markdown): keep an item tight above a captioned quote or fence. (#2981)
+- Fix(markdown): keep the blank below a nested list before an image. (#2982)
+- Fix: keep HTML import's recursive frames small enough for a 2 MiB stack. (#2985)
+- Fix empty list term carrier in Markdown roundtrip. (#3028)
+
+### Parsing
+
+- Fix: honor nested fence host boundary. (#2879)
+- Keep list items tight across attached captions. (#2881)
+- Attach captionable hosts in list items. (#2889)
+- Keep a list tight across a caption's blank line after a nested list. (#2923)
+- Read container documents by their ownership clauses. (#2926)
+- Keep the outer item tight when a fence run dedents out of a child. (#2927)
+- Keep the blank after an unterminated fence in a nested list item. (#2929)
+- Loosen the outer item when a fence run folds after a continuing child paragraph. (#2932)
+- Attach the block after a + below a nested item's open fence. (#2938)
+- Skip a refused + under an open fence, end an open div at a +, and keep a folded child open. (#2939)
+- Read a + under an outer quote prefix as the nested quote's marker. (#2943)
+- Read a continuation marker only at column 0 or right after a block opener. (#2951)
+- Fix(parser): start a tab-placed sublist on a real column. (#2979)
+- Fix(parser): count a stripped authored base in codepoints. (#2984)
+- Fix: keep a description separator out of an item's definition list below its column. (#2995)
+- Fix: read an empty link definition past an item's content column. (#2996)
+- Fix: open a table after an invisible definition in a list item. (#2997)
+- Fix: continue the deepest open paragraph after a nested list below a description. (#2998)
+- Read the continuation marker at relative column 0. (#3003)
+- Keep matched fences outside footnotes after comments. (#3004)
+- Keep below-column fence closers in definition descriptions. (#3008)
+- Fix ruled continuation ownership in nested containers. (#3014)
+- Keep description fences within their closing container. (#3016)
+- Fix nested description and list ownership by column. (#3017)
+- Keep quoted definitions within their list owner. (#3018)
+- Open sibling list below a hosted description column. (#3021)
+- Keep literal plus at safe column after nested task fences. (#3022)
+- Place marker-line definition terms at the item content column. (#3024)
+- Let folded fence text loosen later list paragraphs. (#3032)
+- Keep deep nested description fence with its owner. (#3035)
+- Release deeper list markers to the surviving description. (#3038)
+- Collect overindented quoted note bodies at their authored base. (#3039)
+- Keep outer-column fences outside nested list items. (#3042)
+- Bound description fence search at footnote definitions. (#3044)
+
+### Source positions
+
+- Fix authored spans for nested fences and quotes. (#3030)
+
+### Performance and internals
+
+- Check grapheme extenders without the regex engine. (#2930)
+- Allow Unicode text on borrowed HTML layout route. (#2933)
+- Pin the layout guard's alphanumeric check to a generated table. (#2945)
+- Speed up short plain text in Rust AST parsing. (#2954)
+- Speed up plain ASCII table row splitting. (#2961)
+- Perf: skip occupied sentinel scan when defaults are free. (#2974)
+- Speed up plain AST list marker detection. (#2994)
+- Split Rust list parsing into focused modules. (#3006)
+- Split remaining Rust parser regions into modules. (#3007)
+- Perf(parser): shortcut short Unicode plain text. (#3012)
+- Move Rust block parsing helpers into modules. (#3013)
+- Extract Rust parser cursor and source positions. (#3015)
+- Separate Rust parser column tracking and unit tests. (#3019)
+
 ## [0.1.10] - 2026-10-16
 
 ### Breaking
