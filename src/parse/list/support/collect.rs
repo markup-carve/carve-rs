@@ -1071,6 +1071,21 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 }
             }
         }
+        // A closed fence at this item's own column starts after the nested
+        // child. Leave it for the parent item to collect as its next block.
+        if indent == strip_cols
+            && nested_item_columns
+                .last()
+                .is_some_and(|&(_, child)| child > indent)
+            && fence.is_none()
+            && comment_fence.is_none()
+            && colon_open.is_empty()
+            && detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
+                list_code_fence_closer_ahead(cur, open, strip_cols, parent_indent)
+            })
+        {
+            break;
+        }
         let is_marker = detect_list_marker_full_at(line, indent).is_some();
         if stop_at_content_column_marker
             && is_marker

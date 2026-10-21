@@ -587,6 +587,8 @@ mod description_sibling_list_column;
 mod empty_destinations;
 #[path = "../nested_paragraph_owner_columns.rs"]
 mod nested_paragraph_owner_columns;
+#[path = "../outer_item_fence_column.rs"]
+mod outer_item_fence_column;
 #[path = "../overindented_quoted_note_reach.rs"]
 mod overindented_quoted_note_reach;
 #[path = "../roundtrip_import_consumes_an_invalid_span_carrier.rs"]
