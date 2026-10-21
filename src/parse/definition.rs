@@ -628,6 +628,7 @@ pub(in crate::parse) fn collect_definition_body(
     options: &Options<'_>,
 ) -> MappedSource {
     let container = IndentContainer {
+        marker_column: content_column.saturating_sub(2),
         content_column,
         owner: continuation_marker::Kind::Description,
     };
@@ -689,7 +690,7 @@ pub(in crate::parse) fn collect_definition_body(
     // block written PAST the column as §10 I5's below-column lazy text
     // (markup-carve/carve#1911, corpus 444-7 against 430-3).
     let mut reached: Vec<bool> = Vec::new();
-    while let Some(line) = cur.peek() {
+    run_indented_body!(cur.lines, cur.pos, container, |line, admission| {
         if let Some((open, has_closer)) = retained_fence {
             let payload_floor = if open.content_col == 0 {
                 content_column
@@ -717,7 +718,7 @@ pub(in crate::parse) fn collect_definition_body(
         if is_definition_placeholder(line) && indent_columns(line) < content_column {
             break;
         }
-        if is_blank_line(line) {
+        if admission.kind == ContainerLine::Blank {
             retained_below_comment = false;
             paragraph_column = None;
             paragraph_marker_column = None;
@@ -1410,7 +1411,7 @@ pub(in crate::parse) fn collect_definition_body(
             }
             _ => break,
         }
-    }
+    });
     debug_assert_eq!(col_map.len(), lines.len());
     debug_assert_eq!(reached.len(), lines.len());
     MappedSource {

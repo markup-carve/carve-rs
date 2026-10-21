@@ -437,6 +437,7 @@ pub(in crate::parse) fn extract_footnote_defs(
             };
             let body_indent = footnote_body_floor(lines[def_start_line - first_source_line]);
             let container = IndentContainer {
+                marker_column: indent_columns(first),
                 content_column: body_indent,
                 owner: continuation_marker::Kind::Footnote,
             };
@@ -491,115 +492,119 @@ pub(in crate::parse) fn extract_footnote_defs(
             // An authored quote may be deeper than the item's content column.
             // Its prefix is still a container for note-body lines.
             if !in_container && !authored_quote_def {
-                while i < lines.len() {
-                    let line = lines[i];
-                    let column = indent_columns(line);
-                    if retained_below_comment {
-                        if let Some(open) = note_fence {
-                            if column < body_indent
-                                && !is_blank_line(line)
-                                && !is_fence_close(trim_ascii_start(line), open)
-                                && !lines[i..]
-                                    .iter()
-                                    .any(|next| is_fence_close(trim_ascii_start(next), open))
-                            {
-                                break;
+                run_indented_body!(
+                    CursorLines::Slice(&lines),
+                    i,
+                    container,
+                    |line, admission| {
+                        let column = indent_columns(line);
+                        if retained_below_comment {
+                            if let Some(open) = note_fence {
+                                if column < body_indent
+                                    && !is_blank_line(line)
+                                    && !is_fence_close(trim_ascii_start(line), open)
+                                    && !lines[i..]
+                                        .iter()
+                                        .any(|next| is_fence_close(trim_ascii_start(next), open))
+                                {
+                                    break;
+                                }
+                                def_lines.push(line.to_owned());
+                                def_line_map.push(Some(first_source_line + i));
+                                if positions {
+                                    def_col_map.push(Some(0));
+                                }
+                                if is_fence_close(trim_ascii_start(line), open) {
+                                    note_fence = None;
+                                    retained_below_comment = false;
+                                }
+                                i += 1;
+                                continue;
                             }
-                            def_lines.push(line.to_owned());
-                            def_line_map.push(Some(first_source_line + i));
-                            if positions {
-                                def_col_map.push(Some(0));
-                            }
-                            if is_fence_close(trim_ascii_start(line), open) {
-                                note_fence = None;
-                                retained_below_comment = false;
-                            }
-                            i += 1;
-                            continue;
                         }
-                    }
-                    let below_comment = column < body_indent
-                        && trim_ascii_start(line).starts_with("%%")
-                        && !is_definition_placeholder(line);
-                    if below_comment
-                        && column == 0
-                        && below_comment_span.is_none()
-                        && detect_comment_fence_line_any_column(line).is_some_and(|open| {
-                            comment_fence_closers
-                                .get(&open.fence_len)
-                                .is_some_and(|&last| last > i)
-                        })
-                    {
-                        break;
-                    }
-                    let empty_fence =
-                        detect_comment_fence_line_any_column(line).is_some_and(|open| {
-                            lines.get(i + 1).is_some_and(|next| {
-                                is_comment_fence_close_any_column(next, open.fence_len)
+                        let below_comment = column < body_indent
+                            && trim_ascii_start(line).starts_with("%%")
+                            && !is_definition_placeholder(line);
+                        if below_comment
+                            && column == 0
+                            && below_comment_span.is_none()
+                            && detect_comment_fence_line_any_column(line).is_some_and(|open| {
+                                comment_fence_closers
+                                    .get(&open.fence_len)
+                                    .is_some_and(|&last| last > i)
                             })
-                        });
-                    let after_comment = i + 1 + usize::from(empty_fence);
-                    if below_comment
-                        && column == 0
-                        && !open_term
-                        && (!nested || def_lines.len() == 1)
-                        && (is_line_comment_any_column(line) || empty_fence)
-                        && body.iter().all(|line| is_blank_line(line))
-                        && lines.get(after_comment).is_some_and(|next| {
-                            let follower_column = indent_columns(next);
-                            (follower_column == 0 || follower_column >= body_indent)
-                                && detect_fence_open(trim_ascii_start(next)).is_none()
-                        })
-                        && source.match_indices(&format!("[^{label}]")).count() <= 1
-                    {
-                        break;
-                    }
-                    if below_comment_span.is_some() || (below_comment && note_fence.is_none()) {
-                        if below_comment_span.is_none()
-                            && !retained_below_comment
-                            && ((parse_footnote_def_line(first).is_some()
-                                && column == 0
-                                && def_lines.len() == 1)
-                                || (!open_term
-                                    && !body_ends_with_open_paragraph(
-                                        &def_lines.join("\n"),
-                                        options,
-                                    )))
                         {
                             break;
                         }
-                        let matched_span_line = below_comment_span.is_some();
-                        if let Some(width) = below_comment_span {
-                            if is_comment_fence_close_any_column(line, width) {
-                                below_comment_span = None;
-                            }
-                        } else if let Some(open) = detect_comment_fence_line_any_column(line) {
-                            if comment_fence_closers
-                                .get(&open.fence_len)
-                                .is_some_and(|&last| last > i)
-                            {
-                                below_comment_span = Some(open.fence_len);
-                            }
-                        }
-                        let matched_span_line = matched_span_line || below_comment_span.is_some();
-                        let kept = if trim_ascii_start(line).starts_with("%%")
+                        let empty_fence =
+                            detect_comment_fence_line_any_column(line).is_some_and(|open| {
+                                lines.get(i + 1).is_some_and(|next| {
+                                    is_comment_fence_close_any_column(next, open.fence_len)
+                                })
+                            });
+                        let after_comment = i + 1 + usize::from(empty_fence);
+                        if below_comment
+                            && column == 0
                             && !open_term
-                            && !matched_span_line
+                            && (!nested || def_lines.len() == 1)
+                            && (is_line_comment_any_column(line) || empty_fence)
+                            && body.iter().all(|line| is_blank_line(line))
+                            && lines.get(after_comment).is_some_and(|next| {
+                                let follower_column = indent_columns(next);
+                                (follower_column == 0 || follower_column >= body_indent)
+                                    && detect_fence_open(trim_ascii_start(next)).is_none()
+                            })
+                            && source.match_indices(&format!("[^{label}]")).count() <= 1
                         {
-                            trim_ascii_start(line).to_owned()
-                        } else {
-                            line.to_owned()
-                        };
-                        def_line_map.push(Some(first_source_line + i));
-                        if positions {
-                            def_col_map.push(stripped_col(Some(0), line, &kept));
+                            break;
                         }
-                        def_lines.push(kept);
-                        retained_below_comment = true;
-                        i += 1;
-                        continue;
-                    }
-                    if retained_below_comment
+                        if below_comment_span.is_some() || (below_comment && note_fence.is_none()) {
+                            if below_comment_span.is_none()
+                                && !retained_below_comment
+                                && ((parse_footnote_def_line(first).is_some()
+                                    && column == 0
+                                    && def_lines.len() == 1)
+                                    || (!open_term
+                                        && !body_ends_with_open_paragraph(
+                                            &def_lines.join("\n"),
+                                            options,
+                                        )))
+                            {
+                                break;
+                            }
+                            let matched_span_line = below_comment_span.is_some();
+                            if let Some(width) = below_comment_span {
+                                if is_comment_fence_close_any_column(line, width) {
+                                    below_comment_span = None;
+                                }
+                            } else if let Some(open) = detect_comment_fence_line_any_column(line) {
+                                if comment_fence_closers
+                                    .get(&open.fence_len)
+                                    .is_some_and(|&last| last > i)
+                                {
+                                    below_comment_span = Some(open.fence_len);
+                                }
+                            }
+                            let matched_span_line =
+                                matched_span_line || below_comment_span.is_some();
+                            let kept = if trim_ascii_start(line).starts_with("%%")
+                                && !open_term
+                                && !matched_span_line
+                            {
+                                trim_ascii_start(line).to_owned()
+                            } else {
+                                line.to_owned()
+                            };
+                            def_line_map.push(Some(first_source_line + i));
+                            if positions {
+                                def_col_map.push(stripped_col(Some(0), line, &kept));
+                            }
+                            def_lines.push(kept);
+                            retained_below_comment = true;
+                            i += 1;
+                            continue;
+                        }
+                        if retained_below_comment
                         && column < body_indent
                         && !is_blank_line(line)
                         // A matched fence interrupts at this column. Keeping it
@@ -626,307 +631,316 @@ pub(in crate::parse) fn extract_footnote_defs(
                                             },
                                         )
                                 }) || ends_with_empty_comment_fence(&def_lines))))
-                    {
-                        let kept = trim_ascii_start(line).to_owned();
-                        if def_lines.last().is_some_and(|last| {
-                            is_line_comment_any_column(last)
-                                || detect_comment_fence_line_any_column(last).is_some_and(|open| {
-                                    !lines[i..].iter().any(|next| {
-                                        is_comment_fence_close_any_column(next, open.fence_len)
-                                    })
-                                })
-                        }) || ends_with_empty_comment_fence(&def_lines)
                         {
-                            if let Some(mut open) = detect_fence_open(&kept) {
-                                open.content_col = 0;
-                                note_fence = Some(open);
+                            let kept = trim_ascii_start(line).to_owned();
+                            if def_lines.last().is_some_and(|last| {
+                                is_line_comment_any_column(last)
+                                    || detect_comment_fence_line_any_column(last).is_some_and(
+                                        |open| {
+                                            !lines[i..].iter().any(|next| {
+                                                is_comment_fence_close_any_column(
+                                                    next,
+                                                    open.fence_len,
+                                                )
+                                            })
+                                        },
+                                    )
+                            }) || ends_with_empty_comment_fence(&def_lines)
+                            {
+                                if let Some(mut open) = detect_fence_open(&kept) {
+                                    open.content_col = 0;
+                                    note_fence = Some(open);
+                                }
                             }
-                        }
-                        def_line_map.push(Some(first_source_line + i));
-                        if positions {
-                            def_col_map.push(stripped_col(Some(0), line, &kept));
-                        }
-                        def_lines.push(kept);
-                        if note_fence.is_none() {
-                            retained_below_comment = false;
-                        }
-                        i += 1;
-                        continue;
-                    }
-                    if is_blank_line(line) || column >= body_indent {
-                        retained_below_comment = false;
-                    }
-                    if parse_footnote_def_line(line).is_some() {
-                        break;
-                    }
-                    if is_blank_line(line) {
-                        if let Some(open) = note_fence {
-                            let (residue, consumed, synthetic) =
-                                slice_columns_mapped(line, open.content_col, true);
-                            def_lines.push(residue);
                             def_line_map.push(Some(first_source_line + i));
                             if positions {
-                                def_col_map.push(Some(consumed as isize - synthetic as isize));
+                                def_col_map.push(stripped_col(Some(0), line, &kept));
+                            }
+                            def_lines.push(kept);
+                            if note_fence.is_none() {
+                                retained_below_comment = false;
                             }
                             i += 1;
                             continue;
                         }
-                        let after_run = container.blank_run_end(CursorLines::Slice(&lines), i + 1);
-                        if after_run < lines.len()
-                            && match container.classify(lines[after_run], || {
-                                decision_at(first_source_line + after_run)
-                            }) {
-                                ContainerLine::Content => true,
-                                ContainerLine::OwnedContinuation => {
-                                    is_plus_marker(lines[after_run])
-                                }
-                                _ => false,
-                            }
-                        {
-                            while i < after_run {
+                        if is_blank_line(line) || column >= body_indent {
+                            retained_below_comment = false;
+                        }
+                        if parse_footnote_def_line(line).is_some() {
+                            break;
+                        }
+                        if admission.kind == ContainerLine::Blank {
+                            if let Some(open) = note_fence {
                                 let (residue, consumed, synthetic) =
-                                    slice_columns_mapped(lines[i], body_indent, true);
+                                    slice_columns_mapped(line, open.content_col, true);
                                 def_lines.push(residue);
                                 def_line_map.push(Some(first_source_line + i));
                                 if positions {
                                     def_col_map.push(Some(consumed as isize - synthetic as isize));
                                 }
                                 i += 1;
+                                continue;
                             }
+                            let after_run =
+                                container.blank_run_end(CursorLines::Slice(&lines), i + 1);
+                            if after_run < lines.len()
+                                && match container.classify(lines[after_run], || {
+                                    decision_at(first_source_line + after_run)
+                                }) {
+                                    ContainerLine::Content => true,
+                                    ContainerLine::OwnedContinuation => {
+                                        is_plus_marker(lines[after_run])
+                                    }
+                                    _ => false,
+                                }
+                            {
+                                while i < after_run {
+                                    let (residue, consumed, synthetic) =
+                                        slice_columns_mapped(lines[i], body_indent, true);
+                                    def_lines.push(residue);
+                                    def_line_map.push(Some(first_source_line + i));
+                                    if positions {
+                                        def_col_map
+                                            .push(Some(consumed as isize - synthetic as isize));
+                                    }
+                                    i += 1;
+                                }
+                                continue;
+                            }
+                            break;
+                        }
+                        // Form B: a lone `+` attaches the following flush-left block
+                        // to the note with no indentation (the same continuation
+                        // marker lists, block quotes and definition bodies use); the
+                        // attached block ends at a blank line, another `+`, or the
+                        // next footnote definition.
+                        if is_plus_marker(trim_ascii_start(line))
+                            && column < body_indent
+                            && container.owns_continuation(line, decision_at(first_source_line + i))
+                        {
+                            i += 1;
+                            let mut attached: Vec<String> = Vec::new();
+                            let attached_start = i;
+                            let end = attached_block_lines_classified(
+                                CursorLines::Slice(&lines),
+                                i,
+                                &mut comment_closers,
+                                &mut closer_index,
+                                options,
+                                &mut |a, _| {
+                                    is_blank_line(a)
+                                        || is_plus_marker(a)
+                                        || parse_footnote_def_line(a).is_some()
+                                },
+                            );
+                            while i < end {
+                                let a = lines[i];
+                                attached.push(slice_columns(a, column, true));
+                                i += 1;
+                            }
+                            if !attached.is_empty() {
+                                def_lines.push(String::new());
+                                def_line_map.push(None);
+                                if positions {
+                                    def_col_map.push(None);
+                                }
+                                let attached_len = attached.len();
+                                def_lines.extend(attached);
+                                def_line_map.extend(
+                                    (attached_start..attached_start + attached_len)
+                                        .map(|line_idx| Some(first_source_line + line_idx)),
+                                );
+                                if positions {
+                                    def_col_map
+                                        .extend((0..attached_len).map(|_| Some(column as isize)));
+                                }
+                            }
+                            continue;
+                        }
+                        // COLUMNS, not a byte count. §16 asks for >= 2 columns and
+                        // §24 C1 gives a tab a column value, so a bare tab reaches
+                        // the body's column exactly as two spaces do. Counting
+                        // bytes made this half disagree with the dedent below, which
+                        // has always used `strip_leading_columns`: a bare tab
+                        // counted as one and was refused (carve#796).
+                        if indent_columns(line) >= body_indent {
+                            // Strip EXACTLY the body's own indent, not all leading
+                            // whitespace. A full trim flattened everything the
+                            // relative indentation says: a nested list marker
+                            // landed at its parent's column and the sublist became
+                            // siblings, and a code block's interior indentation -
+                            // which is content, not layout - was eaten with it
+                            // (#611). Every other container strips its own prefix
+                            // and leaves the rest, which is why the same two lines
+                            // nest in a quote, a div and a list item.
+                            let dedented = strip_leading_columns(line, body_indent);
+                            let trimmed: &str = &dedented;
+                            // A CODE FENCE inside the body is opaque, so a
+                            // definition-shaped line in it is content. Every engine
+                            // already agrees about that at the top level - none
+                            // registers `[r]: /u` written inside ``` - and the
+                            // top-level pass in `extract_link_defs` tracks fences
+                            // for exactly this reason. Without the state here the
+                            // line was consumed as a definition and vanished from
+                            // the code block.
+                            if let Some(open) = note_fence {
+                                if is_fence_close(trimmed, open) {
+                                    note_fence = None;
+                                }
+                            } else if let Some(mut open) = detect_fence_open(trimmed) {
+                                open.content_col = indent_columns(line);
+                                note_fence = Some(open);
+                            } else if let Some((label_part, target_part, mut def)) = (!open_term
+                                || indent_columns(trimmed) == 0)
+                                .then(|| parse_link_def_line_with_value(trim_ascii_start(trimmed)))
+                                .flatten()
+                            {
+                                // A LINK DEFINITION inside the body is
+                                // document-level metadata like any other, so it is
+                                // collected and the line renders nothing - the same
+                                // answer §16 already gives a definition inside a
+                                // list item or a quote.
+                                //
+                                // LAST one wins among note bodies, which is what
+                                // `extract_link_defs` does for the document; a
+                                // top-level definition still beats both, and that
+                                // precedence is applied by the caller.
+                                if !label_part.starts_with(['@', '^'])
+                                    && !target_part.trim().is_empty()
+                                {
+                                    // The DOCUMENT line, so the hoisted node gets a
+                                    // `pos` like every other definition (§4, §10).
+                                    // `first_source_line` is 1-BASED - it is built as
+                                    // a newline count plus one - while `LinkDef.line`
+                                    // is the 0-based index `extract_link_defs`
+                                    // records, so the conversion is explicit here
+                                    // rather than off by one (carve-rs#636).
+                                    def.line = Some(first_source_line + i - 1);
+                                    def.raw_label = Some(label_part.to_string());
+                                    note_link_defs.insert(label_key(label_part), def);
+                                    // A BLOCK'S EXTENT ENDS AT A DEFINITION IT CAN
+                                    // ONLY TAKE AS TEXT (carve#1918). Dropping the
+                                    // line erased the column it stood at, so a
+                                    // nested note opened above kept its floor live
+                                    // and a trailing line further down reached a
+                                    // body that had already ended
+                                    // (markup-carve/carve#1971). The placeholder
+                                    // renders nothing and stands at the definition's
+                                    // own column, which is the signal the recursive
+                                    // pass reads.
+                                    def_lines.push(format!(
+                                        "{}{}",
+                                        " ".repeat(indent_columns(trimmed)),
+                                        definition_placeholder()
+                                    ));
+                                    def_line_map.push(Some(first_source_line + i));
+                                    if positions {
+                                        def_col_map.push(stripped_col(Some(0), line, trimmed));
+                                    }
+                                    i += 1;
+                                    continue;
+                                }
+                            }
+                            // A NESTED NOTE DEFINITION IS AT THE BODY'S OWN COLUMN.
+                            // carve#1918 puts a line STRICTLY BETWEEN two open content
+                            // columns at the outer of them, and inside a note body the
+                            // outer one is the body itself - which the dedent above has
+                            // already moved to column 0. The line above absorbs that
+                            // residual for a link definition; a footnote definition kept
+                            // it, so the recursive pass saw an indented line, left it as
+                            // text, and the note never registered (band 447 row 14).
+                            //
+                            // BETWEEN, not merely indented: a line AT OR PAST the nested
+                            // note's own body column is that note's, and one under no
+                            // nested note reaches nothing to be between. Absorbing there
+                            // too hoisted a line every other engine keeps in the body.
+                            let residual = indent_columns(trimmed);
+                            let flush = trim_ascii_start(trimmed);
+                            if residual == 0 || is_blank_line(trimmed) {
+                                open_term = term_start_column(flush).is_some();
+                            }
+                            let is_note_def = parse_footnote_def_line(flush).is_some();
+                            // A DEFINITION OPENS THE NESTED BODY; A BLOCK CLOSES IT.
+                            // Plain prose is that body's own lazy continuation and
+                            // leaves it open, so the flag survives it - closing on
+                            // every non-definition line lost three documents the
+                            // oracle registers.
+                            //
+                            // AN OPAQUE PAYLOAD IS NOT ABSORBED, and the closer has
+                            // to be read at ANY column to say so: `detect_fence_open`
+                            // above only sees a flush fence, so an INDENTED one left
+                            // the flag standing and the dedent ate a column of the
+                            // code block.
+                            //
+                            // NO UPPER BOUND on the residual. A first version
+                            // absorbed only strictly BELOW the nested note's own
+                            // floor, reading an at-or-past line as that note's. A
+                            // footnote definition registers wherever it lands and is
+                            // hoisted either way, so the oracle takes it at every
+                            // column - the bound only withheld 50 it accepts.
+                            // A FENCE PAYLOAD IS OPAQUE, state and all. The flush
+                            // arm below would otherwise re-open the body on a
+                            // payload LINE inside the fence, and the absorb would
+                            // then eat a column from a definition-shaped line of
+                            // code. `note_fence` is updated above for this line, so
+                            // it already covers the opener and the closer.
+                            if !is_note_def && item_block_opener(flush) {
+                                body_open_below = false;
+                            } else if residual == 0 {
+                                body_open_below = true;
+                            }
+                            // No `residual > 0` on the absorb: at column 0 `flush`
+                            // IS `trimmed`, so the arm could never return anything
+                            // different there.
+                            //
+                            // ONLY UP TO THE OPEN SIBLING'S BODY FLOOR. `body_open_below`
+                            // is set exactly when a preceding nested note sits at this
+                            // body's own column 0 (residual 0), so its body floor is two.
+                            // A later note that reaches that floor (`residual >= 2`) is
+                            // INSIDE the sibling, not a same-level sibling itself: leaving
+                            // it flush hoisted it to this body's column 0, collapsing the
+                            // two-level dedent into one so a trailing line below the inner
+                            // note's own content column was still claimed by it instead of
+                            // falling to the reachable ancestor (markup-carve/carve#1946,
+                            // carve-php#1895). Keeping the residual nests it, matching the
+                            // per-marker body column carve-js#1664 measures.
+                            let trimmed: &str = if body_open_below
+                                && is_note_def
+                                && note_fence.is_none()
+                                && residual < 2
+                            {
+                                flush
+                            } else {
+                                trimmed
+                            };
+                            def_lines.push(trimmed.to_string());
+                            def_line_map.push(Some(first_source_line + i));
+                            if positions {
+                                def_col_map.push(stripped_col(Some(0), line, trimmed));
+                            }
+                            i += 1;
+                            continue;
+                        }
+                        // A COMMENT DELIMITER CLOSING A SPAN THIS BODY ALREADY HOLDS
+                        // IS NOT A COMMENT THAT ENDS THE BODY - see
+                        // `body_open_comment_run`. This host hides the payload
+                        // already at a delimiter REACHING the body's floor; the band
+                        // below it is what this covers.
+                        if detect_comment_fence_line_any_column(line).is_some()
+                            && closes_a_held_comment_span(&def_lines, line)
+                        {
+                            let kept = kept_comment_delimiter(line);
+                            if positions {
+                                def_col_map.push(stripped_col(Some(0), line, &kept));
+                            }
+                            def_lines.push(kept);
+                            def_line_map.push(Some(first_source_line + i));
+                            i += 1;
                             continue;
                         }
                         break;
                     }
-                    // Form B: a lone `+` attaches the following flush-left block
-                    // to the note with no indentation (the same continuation
-                    // marker lists, block quotes and definition bodies use); the
-                    // attached block ends at a blank line, another `+`, or the
-                    // next footnote definition.
-                    if is_plus_marker(trim_ascii_start(line))
-                        && column < body_indent
-                        && container.owns_continuation(line, decision_at(first_source_line + i))
-                    {
-                        i += 1;
-                        let mut attached: Vec<String> = Vec::new();
-                        let attached_start = i;
-                        let end = attached_block_lines_classified(
-                            CursorLines::Slice(&lines),
-                            i,
-                            &mut comment_closers,
-                            &mut closer_index,
-                            options,
-                            &mut |a, _| {
-                                is_blank_line(a)
-                                    || is_plus_marker(a)
-                                    || parse_footnote_def_line(a).is_some()
-                            },
-                        );
-                        while i < end {
-                            let a = lines[i];
-                            attached.push(slice_columns(a, column, true));
-                            i += 1;
-                        }
-                        if !attached.is_empty() {
-                            def_lines.push(String::new());
-                            def_line_map.push(None);
-                            if positions {
-                                def_col_map.push(None);
-                            }
-                            let attached_len = attached.len();
-                            def_lines.extend(attached);
-                            def_line_map.extend(
-                                (attached_start..attached_start + attached_len)
-                                    .map(|line_idx| Some(first_source_line + line_idx)),
-                            );
-                            if positions {
-                                def_col_map
-                                    .extend((0..attached_len).map(|_| Some(column as isize)));
-                            }
-                        }
-                        continue;
-                    }
-                    // COLUMNS, not a byte count. §16 asks for >= 2 columns and
-                    // §24 C1 gives a tab a column value, so a bare tab reaches
-                    // the body's column exactly as two spaces do. Counting
-                    // bytes made this half disagree with the dedent below, which
-                    // has always used `strip_leading_columns`: a bare tab
-                    // counted as one and was refused (carve#796).
-                    if indent_columns(line) >= body_indent {
-                        // Strip EXACTLY the body's own indent, not all leading
-                        // whitespace. A full trim flattened everything the
-                        // relative indentation says: a nested list marker
-                        // landed at its parent's column and the sublist became
-                        // siblings, and a code block's interior indentation -
-                        // which is content, not layout - was eaten with it
-                        // (#611). Every other container strips its own prefix
-                        // and leaves the rest, which is why the same two lines
-                        // nest in a quote, a div and a list item.
-                        let dedented = strip_leading_columns(line, body_indent);
-                        let trimmed: &str = &dedented;
-                        // A CODE FENCE inside the body is opaque, so a
-                        // definition-shaped line in it is content. Every engine
-                        // already agrees about that at the top level - none
-                        // registers `[r]: /u` written inside ``` - and the
-                        // top-level pass in `extract_link_defs` tracks fences
-                        // for exactly this reason. Without the state here the
-                        // line was consumed as a definition and vanished from
-                        // the code block.
-                        if let Some(open) = note_fence {
-                            if is_fence_close(trimmed, open) {
-                                note_fence = None;
-                            }
-                        } else if let Some(mut open) = detect_fence_open(trimmed) {
-                            open.content_col = indent_columns(line);
-                            note_fence = Some(open);
-                        } else if let Some((label_part, target_part, mut def)) = (!open_term
-                            || indent_columns(trimmed) == 0)
-                            .then(|| parse_link_def_line_with_value(trim_ascii_start(trimmed)))
-                            .flatten()
-                        {
-                            // A LINK DEFINITION inside the body is
-                            // document-level metadata like any other, so it is
-                            // collected and the line renders nothing - the same
-                            // answer §16 already gives a definition inside a
-                            // list item or a quote.
-                            //
-                            // LAST one wins among note bodies, which is what
-                            // `extract_link_defs` does for the document; a
-                            // top-level definition still beats both, and that
-                            // precedence is applied by the caller.
-                            if !label_part.starts_with(['@', '^']) && !target_part.trim().is_empty()
-                            {
-                                // The DOCUMENT line, so the hoisted node gets a
-                                // `pos` like every other definition (§4, §10).
-                                // `first_source_line` is 1-BASED - it is built as
-                                // a newline count plus one - while `LinkDef.line`
-                                // is the 0-based index `extract_link_defs`
-                                // records, so the conversion is explicit here
-                                // rather than off by one (carve-rs#636).
-                                def.line = Some(first_source_line + i - 1);
-                                def.raw_label = Some(label_part.to_string());
-                                note_link_defs.insert(label_key(label_part), def);
-                                // A BLOCK'S EXTENT ENDS AT A DEFINITION IT CAN
-                                // ONLY TAKE AS TEXT (carve#1918). Dropping the
-                                // line erased the column it stood at, so a
-                                // nested note opened above kept its floor live
-                                // and a trailing line further down reached a
-                                // body that had already ended
-                                // (markup-carve/carve#1971). The placeholder
-                                // renders nothing and stands at the definition's
-                                // own column, which is the signal the recursive
-                                // pass reads.
-                                def_lines.push(format!(
-                                    "{}{}",
-                                    " ".repeat(indent_columns(trimmed)),
-                                    definition_placeholder()
-                                ));
-                                def_line_map.push(Some(first_source_line + i));
-                                if positions {
-                                    def_col_map.push(stripped_col(Some(0), line, trimmed));
-                                }
-                                i += 1;
-                                continue;
-                            }
-                        }
-                        // A NESTED NOTE DEFINITION IS AT THE BODY'S OWN COLUMN.
-                        // carve#1918 puts a line STRICTLY BETWEEN two open content
-                        // columns at the outer of them, and inside a note body the
-                        // outer one is the body itself - which the dedent above has
-                        // already moved to column 0. The line above absorbs that
-                        // residual for a link definition; a footnote definition kept
-                        // it, so the recursive pass saw an indented line, left it as
-                        // text, and the note never registered (band 447 row 14).
-                        //
-                        // BETWEEN, not merely indented: a line AT OR PAST the nested
-                        // note's own body column is that note's, and one under no
-                        // nested note reaches nothing to be between. Absorbing there
-                        // too hoisted a line every other engine keeps in the body.
-                        let residual = indent_columns(trimmed);
-                        let flush = trim_ascii_start(trimmed);
-                        if residual == 0 || is_blank_line(trimmed) {
-                            open_term = term_start_column(flush).is_some();
-                        }
-                        let is_note_def = parse_footnote_def_line(flush).is_some();
-                        // A DEFINITION OPENS THE NESTED BODY; A BLOCK CLOSES IT.
-                        // Plain prose is that body's own lazy continuation and
-                        // leaves it open, so the flag survives it - closing on
-                        // every non-definition line lost three documents the
-                        // oracle registers.
-                        //
-                        // AN OPAQUE PAYLOAD IS NOT ABSORBED, and the closer has
-                        // to be read at ANY column to say so: `detect_fence_open`
-                        // above only sees a flush fence, so an INDENTED one left
-                        // the flag standing and the dedent ate a column of the
-                        // code block.
-                        //
-                        // NO UPPER BOUND on the residual. A first version
-                        // absorbed only strictly BELOW the nested note's own
-                        // floor, reading an at-or-past line as that note's. A
-                        // footnote definition registers wherever it lands and is
-                        // hoisted either way, so the oracle takes it at every
-                        // column - the bound only withheld 50 it accepts.
-                        // A FENCE PAYLOAD IS OPAQUE, state and all. The flush
-                        // arm below would otherwise re-open the body on a
-                        // payload LINE inside the fence, and the absorb would
-                        // then eat a column from a definition-shaped line of
-                        // code. `note_fence` is updated above for this line, so
-                        // it already covers the opener and the closer.
-                        if !is_note_def && item_block_opener(flush) {
-                            body_open_below = false;
-                        } else if residual == 0 {
-                            body_open_below = true;
-                        }
-                        // No `residual > 0` on the absorb: at column 0 `flush`
-                        // IS `trimmed`, so the arm could never return anything
-                        // different there.
-                        //
-                        // ONLY UP TO THE OPEN SIBLING'S BODY FLOOR. `body_open_below`
-                        // is set exactly when a preceding nested note sits at this
-                        // body's own column 0 (residual 0), so its body floor is two.
-                        // A later note that reaches that floor (`residual >= 2`) is
-                        // INSIDE the sibling, not a same-level sibling itself: leaving
-                        // it flush hoisted it to this body's column 0, collapsing the
-                        // two-level dedent into one so a trailing line below the inner
-                        // note's own content column was still claimed by it instead of
-                        // falling to the reachable ancestor (markup-carve/carve#1946,
-                        // carve-php#1895). Keeping the residual nests it, matching the
-                        // per-marker body column carve-js#1664 measures.
-                        let trimmed: &str = if body_open_below
-                            && is_note_def
-                            && note_fence.is_none()
-                            && residual < 2
-                        {
-                            flush
-                        } else {
-                            trimmed
-                        };
-                        def_lines.push(trimmed.to_string());
-                        def_line_map.push(Some(first_source_line + i));
-                        if positions {
-                            def_col_map.push(stripped_col(Some(0), line, trimmed));
-                        }
-                        i += 1;
-                        continue;
-                    }
-                    // A COMMENT DELIMITER CLOSING A SPAN THIS BODY ALREADY HOLDS
-                    // IS NOT A COMMENT THAT ENDS THE BODY - see
-                    // `body_open_comment_run`. This host hides the payload
-                    // already at a delimiter REACHING the body's floor; the band
-                    // below it is what this covers.
-                    if detect_comment_fence_line_any_column(line).is_some()
-                        && closes_a_held_comment_span(&def_lines, line)
-                    {
-                        let kept = kept_comment_delimiter(line);
-                        if positions {
-                            def_col_map.push(stripped_col(Some(0), line, &kept));
-                        }
-                        def_lines.push(kept);
-                        def_line_map.push(Some(first_source_line + i));
-                        i += 1;
-                        continue;
-                    }
-                    break;
-                }
+                );
             } else if !nested {
                 // A BLOCK OPENER AT A DD-HOSTED NOTE'S OWN FLOOR REACHES THE NOTE
                 // BODY (markup-carve/carve#1974). The per-marker note floor that

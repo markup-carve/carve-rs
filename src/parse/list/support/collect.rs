@@ -65,6 +65,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
 ) -> MappedSource {
     let authored_base_at_start = cur.peek().is_some_and(is_blank_line);
     let container = IndentContainer {
+        marker_column: parent_indent,
         content_column: strip_cols,
         owner: continuation_marker::Kind::List,
     };
@@ -225,7 +226,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         });
     let mut nested_folded_fence = false;
     let mut nested_blank_run: Option<(usize, usize, bool)> = None;
-    while let Some(line) = cur.peek() {
+    run_indented_body!(cur.lines, cur.pos, container, |line, admission| {
         after_definition_blank |= is_blank_line(line);
         let follows_first_block = !lead_is_continuation
             && cur.pos.checked_sub(1).is_some_and(|previous| {
@@ -346,7 +347,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         if is_definition_placeholder(line) && indent_columns(line) < strip_cols {
             break;
         }
-        if is_blank_line(line) {
+        if admission.kind == ContainerLine::Blank {
             // A nested marker-line fence keeps one separator before a plus at
             // its marker column. A direct item fence keeps every payload blank.
             if active_nested_fence.is_some()
@@ -1711,7 +1712,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             }));
         }
         cur.consume();
-    }
+    });
     // Preserve the last physical blank through `str::lines()`, including
     // payload owned by an unfinished descendant fence.
     let mut source = lines.join("\n");
