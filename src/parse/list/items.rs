@@ -1785,6 +1785,55 @@ pub(crate) fn parse_list(
             pos: span_of(cur, item_at, cur.pos, options),
         });
     }
+    finish_list(
+        cur,
+        options,
+        deferred,
+        ListFinish {
+            deferred_start,
+            span_start,
+            first_marker,
+            start,
+            ol_type,
+            tight,
+            pending_attrs,
+            pending_attrs_pos,
+        },
+        items,
+    )
+}
+
+struct ListFinish<'a> {
+    deferred_start: usize,
+    span_start: usize,
+    first_marker: ListMarker<'a>,
+    start: Option<usize>,
+    ol_type: Option<OrderedListType>,
+    tight: bool,
+    pending_attrs: Option<Attrs>,
+    pending_attrs_pos: Option<Pos>,
+}
+
+fn finish_list(
+    cur: &LineCursor,
+    options: &Options<'_>,
+    deferred: &mut [ItemBody],
+    finish: ListFinish<'_>,
+    mut items: Vec<ListItem>,
+) -> Box<BlockNode> {
+    let ListFinish {
+        deferred_start,
+        span_start,
+        first_marker,
+        start,
+        ol_type,
+        tight,
+        pending_attrs,
+        pending_attrs_pos,
+    } = finish;
+    let base_indent = first_marker.indent;
+    let is_ordered = first_marker.ordered;
+    let first_delim = first_marker.delim;
     // Indentation that places a list at this cursor level belongs to each item.
     // `MappedSource` anchors the stripped marker at the content column, so move
     // the start back across that placing indentation before offsets are filled.
