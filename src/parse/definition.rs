@@ -1418,3 +1418,57 @@ mod definition_past_fence_work {
         );
     }
 }
+
+pub(in crate::parse) fn detect_abbreviation_def(line: &str) -> Option<AbbreviationDef> {
+    let rest = line.strip_prefix("*[")?;
+    let (abbr, expansion) = rest.split_once("]:")?;
+    let expansion = expansion.strip_prefix(' ')?;
+    // THE SEPARATOR IS A RUN, AND IT IS ASCII SPACES. PART 5 spells it
+    // `space+`: a tab is still not a separator, so `*[HTML]:<TAB>x` stayed a
+    // paragraph at the `strip_prefix` above, but a run of spaces is one
+    // separator rather than a separator plus content (carve#892).
+    //
+    // The first character that is not a space ENDS the separator and BEGINS the
+    // content, which is the half this engine had wrong: the expansion was
+    // `trim()`ed, so a no-break space or a tab after the run was eaten and
+    // `*[HTML]: <NBSP>Hyper Text` expanded to a title the author did not write.
+    // An `abbreviation_expansion` is a raw string, so both survive into it.
+    //
+    // Trimmed with `trim_start_matches(' ')` and not a whitespace `trim_start`
+    // for exactly that reason - the terminal is the ASCII space, not the
+    // Unicode property.
+    let expansion = expansion.trim_start_matches(' ');
+    // ASCII, because `letter` is: the grammar enumerates it as `a`..`z` plus
+    // `A`..`Z`, and `digit` as `0`..`9`. `char::is_alphanumeric` is
+    // Unicode-aware, so `*[ß]:` and `*[日本]:` were definitions here and
+    // paragraph text in carve-js and carve-php - and a definition renders
+    // nothing, so the document lost either the line or the expansion when it
+    // moved (carve#791). Same reading that makes `*[e.g.]:` a paragraph, which
+    // all three already agree on, and the same ASCII rule
+    // `is_attr_ident_start` below applies to attribute identifiers.
+    if abbr.is_empty() || !abbr.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return None;
+    }
+    // `abbreviation_expansion = {character - newline}+` - ONE or more. An empty
+    // expansion is not a definition, and consuming the line DELETED it from the
+    // document (carve-js keeps it as `<p>*[A]:</p>`).
+    //
+    // Deliberately `is_empty()` and not a trimmed test: a space is a character,
+    // so `*[A]:··` has a one-character expansion and IS a definition. That is
+    // the production as written, and it is what carve-js does.
+    if expansion.is_empty() {
+        return None;
+    }
+    Some(AbbreviationDef {
+        abbr: abbr.to_string(),
+        // Only the TRAILING side is trimmed here: the leading run was consumed
+        // above as the separator it is. The TERMINAL is space-or-tab, the one
+        // whitespace definition (PART 7, carve#977) - `trim_end` is the Unicode
+        // White_Space property, which ate a trailing NO-BREAK SPACE, VERTICAL
+        // TAB or FORM FEED out of the expansion, all three of them content. The
+        // note that used to stand here deferred this to carve#926; PART 7 is
+        // where the terminal was settled.
+        expansion: trim_ascii_end(expansion).to_string(),
+        pos: None,
+    })
+}

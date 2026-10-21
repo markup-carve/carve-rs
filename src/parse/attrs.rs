@@ -728,3 +728,464 @@ pub(crate) fn inline_is_attributable(node: &InlineNode) -> bool {
             | InlineNode::CriticDelete(_)
     )
 }
+
+/// First byte of an attribute identifier (id/class/key): a letter or `_`
+/// (matches `is_identifier`'s first-char rule). Non-ASCII bytes are never a
+/// start here (`is_identifier` uses `is_ascii_alphabetic`).
+#[inline]
+fn is_attr_ident_start(b: u8) -> bool {
+    b.is_ascii_alphabetic() || b == b'_'
+}
+
+#[inline]
+fn is_css_ident_start(b: u8) -> bool {
+    is_attr_ident_start(b) || b.is_ascii_digit()
+}
+
+/// Continuation byte of an attribute identifier: a letter, digit, `_`, or `-`
+/// (matches `is_identifier`'s tail rule). Non-ASCII → false, ending the run.
+#[inline]
+pub(in crate::parse) fn is_attr_ident_part(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_' || b == b'-'
+}
+
+/// Whether the attribute payload following the `{` at `brace` provably cannot
+/// parse -- i.e. `read_attrs_at`'s scan+`parse_attrs` would return `None`.
+///
+/// It walks the SAME token grammar `attr_tokens`/`parse_attrs` accept and bails
+/// at the first byte that cannot continue a valid token, so a doomed payload is
+/// rejected in O(1) per opener instead of the char walk running to a far `}`
+/// (O(n²) on `[x]{`×n + `}`, `[x]{a `×n + `}`, `[x]{.a `×n + `}`, `[x]{k= `×n +
+/// `}`, …). It is a pure SKIP filter: it returns `true` ONLY when the payload is
+/// provably invalid; on a `}` (a candidate close), a newline, a quote, an
+/// escape, a `key=<value>` with a real value, or any non-ASCII byte, it returns
+/// `false` and the full scan/`parse_attrs` path decides. Every accepted block and
+/// its output, is byte-identical. A nested `{`/`[` (or any other invalid
+/// boundary byte) ends the walk, so each byte is visited O(1) times -> O(n)
+/// total. Deferring on non-ASCII keeps it correct without decoding chars (only
+/// the ASCII pathological shapes need the O(1) bail; a non-ASCII payload is rare
+/// and still handled correctly by the full scan). Mirrors carve-js
+/// `spanAttrProvablyInvalid`, matched to carve-rs's first-`}` (non-balancing)
+/// acceptance.
+fn attr_payload_provably_invalid(bytes: &[u8], brace: usize) -> bool {
+    let n = bytes.len();
+    let mut i = brace + 1;
+    while i < n {
+        let c = bytes[i];
+        // Defer non-ASCII content to the full parser.
+        if !c.is_ascii() {
+            return false;
+        }
+        match c {
+            // A candidate close at a token boundary: let the real scan decide.
+            b'}' => return false,
+            // A newline ends an inline block (read_attrs_at bails); defer.
+            b'\n' => return false,
+            // Skip space, tab, and carriage return; line feed defers above.
+            b' ' | b'\t' | b'\r' => i += 1,
+            // Quotes and escapes are subtle -- defer.
+            b'"' | b'\'' | b'\\' => return false,
+            // `#id` / `.class`: an identifier MUST follow, else the token (and
+            // the whole payload) is invalid (§14).
+            b'#' | b'.' => {
+                match bytes.get(i + 1) {
+                    Some(&d) if is_css_ident_start(d) => {}
+                    _ => return true,
+                }
+                i += 2;
+                while i < n && is_attr_ident_part(bytes[i]) {
+                    i += 1;
+                }
+            }
+            // `:TAG` / `:` semantic language attribute. The full parser owns
+            // the structural subtag envelope; this fast path only avoids
+            // rejecting the newly claimed token before it gets there.
+            b':' => return false,
+            // A bareword: a boolean attribute, or the name in `key=value`.
+            _ if is_attr_ident_start(c) => {
+                i += 1;
+                while i < n && is_attr_ident_part(bytes[i]) {
+                    i += 1;
+                }
+                if bytes.get(i) == Some(&b'=') {
+                    // `key=` with an EMPTY value (EOF, `}`, or ASCII whitespace
+                    // next) leaves a dangling `=` -> invalid. A bare value
+                    // (>=1 non-space) or a quoted value: defer (a valid bare
+                    // value is consumed whole by the scan -> linear). Non-ASCII
+                    // after `=` (a value byte) also defers.
+                    match bytes.get(i + 1) {
+                        None => return true,
+                        Some(&b'}') => return true,
+                        Some(b' ' | b'\t' | b'\r' | b'\n') => return true,
+                        _ => return false,
+                    }
+                }
+                // else continue to the next token.
+            }
+            // Any other ASCII byte cannot begin a valid token at a boundary
+            // (`[`, `{`, `(`, a digit, `-`, `+`, `=`, `,`, …): invalid.
+            _ => return true,
+        }
+    }
+    // Ran off the end without a `}`: the scan would fail too.
+    true
+}
+
+/// Read an inline attribute block `{...}` at `start` (which must index a `{`).
+///
+/// `last_close_brace` is the index of the last `}` in `bytes` (or `None` if
+/// there is none). A block can only close on a `}`, so when no `}` lies at or
+/// after `start` the scan could only walk to end-of-text and fail -- it is
+/// skipped in O(1). This keeps a run of unclosed `{`-attribute openers
+/// (`[x]{`×n, `*a*{`×n, `:a:{`×n, …) linear instead of O(n^2). Callers scanning
+/// a fresh slice (block attributes, table cells) pass that slice's own last-`}`
+/// index. Skipping only elides a call that would return `None`, so output is
+/// byte-identical.
+/// The INLINE `attributes` production, whose interior is SPACE-ONLY.
+///
+/// Every whitespace slot of the inline block takes `space` (PART 4 THE INLINE
+/// INTERIOR IS SPACE-ONLY, carve#906): the run after `{`, the run between two
+/// attributes, the run before `}`, the boundary after an unquoted value, and
+/// the blessed empty block `{ }`. All five sit AFTER the first non-whitespace
+/// character of their line, which is where PART 7's rule already says a tab is
+/// not syntax.
+pub(in crate::parse) fn read_attrs_at(
+    bytes: &[u8],
+    start: usize,
+    last_close_brace: Option<usize>,
+) -> Option<(Attrs, usize)> {
+    read_attrs_at_with(bytes, start, last_close_brace, true)
+}
+
+/// `read_attrs_at`, with the interior's whitespace rule as a parameter.
+///
+/// `space_only` is TRUE for the inline production and FALSE for the
+/// block-attribute LINE, which keeps `whitespace` at all three of its slots -
+/// and that distinction is the ruling rather than an omission. The block line
+/// is the one construct whose interior can hold a leading indentation run:
+/// after a `continuation`, the next line's leading whitespace IS indentation,
+/// and the rule that narrows the inline block is the same rule that protects
+/// this one.
+fn read_attrs_at_with(
+    bytes: &[u8],
+    start: usize,
+    last_close_brace: Option<usize>,
+    space_only: bool,
+) -> Option<(Attrs, usize)> {
+    if bytes.get(start) != Some(&b'{') {
+        return None;
+    }
+    if last_close_brace.map_or(true, |p| p < start) {
+        return None;
+    }
+    // Reject, in O(1) per opener, a payload that provably cannot parse before the
+    // char walk below runs to a far `}`. Without this, a run of never-validating
+    // openers whose only `}` lies far ahead (`[x]{`×n + `}`, `[x]{a `×n + `}`, …)
+    // walks to that `}` AND re-parses the whole tail at every opener -- O(n^2).
+    // The filter only reports "invalid" where `parse_attrs` would return `None`
+    // too, so output is byte-identical.
+    if attr_payload_provably_invalid(bytes, start) {
+        return None;
+    }
+    let mut i = start + 1;
+    let mut quote: Option<u8> = None;
+    let mut escaped = false;
+    while i < bytes.len() {
+        // An inline attribute block is single-line (grammar): a newline before
+        // the closing `}` means this is not an inline attr -- the `{` stays
+        // literal (`[x]{.a\n.b}` is text). Matches carve-js. Block-attribute
+        // lines, which may span lines, are read by a separate path.
+        if bytes[i] == b'\n' {
+            return None;
+        }
+        if escaped {
+            escaped = false;
+            i += 1;
+            continue;
+        }
+        if bytes[i] == b'\\' {
+            escaped = true;
+            i += 1;
+            continue;
+        }
+        if let Some(q) = quote {
+            if bytes[i] == q {
+                quote = None;
+            }
+            i += 1;
+            continue;
+        }
+        if bytes[i] == b'"' || bytes[i] == b'\'' {
+            quote = Some(bytes[i]);
+            i += 1;
+            continue;
+        }
+        if bytes[i] == b'}' {
+            break;
+        }
+        i += 1;
+    }
+    if i >= bytes.len() {
+        return None;
+    }
+    let inner = std::str::from_utf8(&bytes[start + 1..i]).ok()?;
+    Some((parse_attrs_with(inner, space_only)?, i + 1))
+}
+
+/// A generic attribute name starts with a letter or underscore. Explicit id
+/// and class shorthands use the wider `is_css_identifier` preservation rule.
+fn is_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+pub(crate) fn is_css_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_alphanumeric() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+/// Whether a name can be written as a BOOLEAN attribute -- a bare word with no
+/// value. Narrower than [`is_identifier`] by exactly one character: a leading
+/// `_` is legal in an id, a class and a key, and refused here.
+///
+/// `{_x_}` is BOTH a boolean attribute named `_x_` and a forced underline, and
+/// alone on a line the attribute reading won: the block below came out as
+/// `<p _x_="">`, and with no block below the line rendered NOTHING -- five
+/// characters kept in the source and gone from the output. The bare form gives
+/// the collision up (markup-carve/carve#1450). HTML has no underscore-first
+/// boolean attribute to lose, and every other form ends in something other than
+/// `_}`, so none of them collides.
+fn is_boolean_attr_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_alphabetic())
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+pub(in crate::parse) fn parse_attrs(src: &str) -> Option<Attrs> {
+    parse_attrs_with(src, true)
+}
+
+fn parse_attrs_with(src: &str, space_only: bool) -> Option<Attrs> {
+    // A TAB AT ANY OF THE FIVE INLINE POSITIONS MAKES THE BLOCK UNRECOGNIZED,
+    // and its braces show. One test rather than five, because all five are the
+    // same question - is this interior character syntax or not - and narrowing
+    // them one at a time is how the executable spec left `[x]{<TAB>}` a valid
+    // EMPTY block after its separator had already been narrowed. Inside a
+    // QUOTED value the character is content and does not move.
+    {
+        let mut quote: Option<char> = None;
+        let mut escaped = false;
+        for ch in src.chars() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            match quote {
+                Some(q) => {
+                    if ch == '\\' {
+                        escaped = true;
+                    } else if ch == q {
+                        quote = None;
+                    }
+                }
+                None => match ch {
+                    '\\' => escaped = true,
+                    '"' | '\'' => quote = Some(ch),
+                    '\t' => return None,
+                    '\r' | '\n' if space_only => return None,
+                    _ => {}
+                },
+            }
+        }
+    }
+    if src.trim().is_empty() {
+        return None;
+    }
+    let mut attrs = Attrs::default();
+    for token in attr_tokens(src)? {
+        if let Some(tag) = token.strip_prefix(':') {
+            if !is_language_tag(tag) {
+                return None;
+            }
+            if !attrs.key_values.contains_key("lang") {
+                attrs.order.push(AttrSlot::Key("lang".to_string()));
+            }
+            attrs.key_values.insert("lang".to_string(), tag.to_string());
+        } else if let Some(id) = token.strip_prefix('#') {
+            if !is_css_identifier(id) {
+                return None;
+            }
+            if attrs.id.is_none() {
+                attrs.order.push(AttrSlot::Id);
+            }
+            attrs.id = Some(id.to_string());
+        } else if let Some(class) = token.strip_prefix('.') {
+            if !is_css_identifier(class) {
+                return None;
+            }
+            if attrs.classes.is_empty() {
+                attrs.order.push(AttrSlot::Class);
+            }
+            attrs.classes.push(class.to_string());
+        } else if let Some((key, value)) = token.split_once('=') {
+            if !is_identifier(key) {
+                return None;
+            }
+            if value.is_empty() {
+                return None;
+            }
+            // A quoted value unescapes ANY backslash-escaped ASCII punctuation
+            // (grammar: escaped_char = '\' ascii_punctuation), not just \" / \'.
+            // Route it through the same scan link/image titles use, matching
+            // carve-js / carve-php. A bare value carries no escapes.
+            let value = if let Some(inner) = value
+                .strip_prefix('"')
+                .and_then(|v| v.strip_suffix('"'))
+                .or_else(|| value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
+            {
+                unescape_title(inner)
+            } else {
+                if value.chars().any(|ch| {
+                    matches!(ch, '}' | '|' | '"' | '\'' | '\\' | ' ' | '\t' | '\r' | '\n')
+                }) {
+                    return None;
+                }
+                value.to_string()
+            };
+            if key == "id" {
+                // `id=value` is the same attribute as `#id`: it feeds the id
+                // slot, last-wins (§15), instead of emitting a second `id="…"`
+                // (invalid HTML). `id` never enters key_values, so a bare `id`
+                // boolean (below) cannot leave a stale duplicate. Matches
+                // carve-php.
+                if attrs.id.is_none() {
+                    attrs.order.push(AttrSlot::Id);
+                }
+                attrs.id = Some(value);
+            } else if key == "class" {
+                // `class=value` is a SPELLING OF THE CLASS SLOT, the same way
+                // `id=value` above is a spelling of the id slot (CARVE-P4-007):
+                // it appends to `classes` in source order and never enters
+                // `key_values`, so `{class=a .b}` is one `class="a b"` instead of
+                // two `class` attributes on one element (carve#2439). The two
+                // spellings stay distinct in SOURCE, because `.` reads the
+                // `explicit_identifier` a fence word does while a value reaches
+                // past it - `-col` is a class only the key-value form can spell.
+                // ONE `Class` entry for the merged slot, the way the `.` branch
+                // above records it: every class renders in a single `class`
+                // attribute, so a second entry would make the writer spell an
+                // attribute that does not exist.
+                if attrs.classes.is_empty() {
+                    attrs.order.push(AttrSlot::Class);
+                }
+                attrs.classes.push(value);
+            } else {
+                if !attrs.key_values.contains_key(key) {
+                    attrs.order.push(AttrSlot::Key(key.to_string()));
+                }
+                attrs.key_values.insert(key.to_string(), value);
+            }
+        } else if is_boolean_attr_name(&token) {
+            if token == "id" {
+                // A bare boolean `id` also feeds the id slot (value ""), last-wins
+                // and single -- `{id id=j}` -> `id="j"`, `{id}` -> `id=""`.
+                if attrs.id.is_none() {
+                    attrs.order.push(AttrSlot::Id);
+                }
+                attrs.id = Some(String::new());
+            } else if token == "class" {
+                // And a bare boolean `class` feeds the class slot, because PART 4
+                // gives it the SAME empty-string AST value as `class=""` - which
+                // the branch above folds - so leaving it here would make two
+                // spellings of one documented value build different trees, and
+                // would keep the second `class` attribute CARVE-P4-007 removes.
+                if attrs.classes.is_empty() {
+                    attrs.order.push(AttrSlot::Class);
+                }
+                attrs.classes.push(String::new());
+            } else {
+                // Boolean attribute: a bare word with no value, rendered name="".
+                // (Matched last so `k=v` is a key/value, not a bare `k`.)
+                if !attrs.key_values.contains_key(&token) {
+                    attrs.order.push(AttrSlot::Key(token.clone()));
+                }
+                attrs.key_values.insert(token, String::new());
+            }
+        } else {
+            return None;
+        }
+    }
+    Some(attrs)
+}
+
+fn is_language_tag(tag: &str) -> bool {
+    tag.is_empty()
+        || tag.split('-').all(|subtag| {
+            !subtag.is_empty()
+                && subtag.len() <= 8
+                && subtag.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        })
+}
+
+fn attr_tokens(src: &str) -> Option<Vec<String>> {
+    let mut tokens = Vec::new();
+    let mut buf = String::new();
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    let mut closed_quote = false;
+    for ch in src.chars() {
+        if escaped {
+            buf.push('\\');
+            buf.push(ch);
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' && quote.is_some() {
+            escaped = true;
+            continue;
+        }
+        if let Some(q) = quote {
+            buf.push(ch);
+            if ch == q {
+                quote = None;
+                closed_quote = true;
+            }
+            continue;
+        }
+        if ch == '"' || ch == '\'' {
+            if closed_quote || !matches!(buf.split_once('='), Some((_, ""))) {
+                return None;
+            }
+            quote = Some(ch);
+            buf.push(ch);
+            continue;
+        }
+        // NO SPLIT ON A SIGIL. `attribute_list` is
+        // `attribute, {space+, attribute}` (PART 7): a separator is required,
+        // so `{.a.b}`, `{#i.c}` and `{.a#i}` are not attribute blocks and stay
+        // literal. This branch used to break a class or id token at the next
+        // `#` or `.`, manufacturing two attributes where the source has one
+        // malformed one - `.a.b` now stays one token and fails `is_identifier`,
+        // which is what makes the whole block literal.
+        if matches!(ch, ' ' | '\t' | '\r' | '\n') {
+            closed_quote = false;
+            if !buf.is_empty() {
+                tokens.push(std::mem::take(&mut buf));
+            }
+        } else {
+            if closed_quote {
+                return None;
+            }
+            buf.push(ch);
+        }
+    }
+    if quote.is_some() || escaped {
+        return None;
+    }
+    if !buf.is_empty() {
+        tokens.push(buf);
+    }
+    Some(tokens)
+}
