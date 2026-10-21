@@ -1113,7 +1113,7 @@ pub(in crate::parse) fn collect_definition_body(
             }
             // The line cannot belong to this description below its body column.
             // Leave a list opener to the surviving outer container.
-            if column == 0
+            if column < content_column
                 && cur.reached.and_then(|r| r.get(cur.pos)).copied() == Some(true)
                 && is_list_marker(trim_ascii_start(line))
             {

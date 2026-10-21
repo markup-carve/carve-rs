@@ -114,6 +114,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let mut open_definition_body_column = marker_content
         .and_then(definition_body_content_col)
         .map(|column| strip_cols + column);
+    // A nested description may end while an outer description still owns the
+    // next marker. Keep that surviving body's column alongside the innermost.
+    let mut surviving_definition_body_column = open_definition_body_column;
     let mut after_definition_blank = false;
     let mut marker_definition_has_description = !marker_is_definition_term;
     let mut marker_description_code_admitted = false;
@@ -513,8 +516,12 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && definition_list_column.is_some_and(|column| indent <= column)
         {
             definition_list_column = None;
+            surviving_definition_body_column = None;
         }
         if term {
+            if definition_list_column.is_some_and(|column| indent <= column) {
+                surviving_definition_body_column = None;
+            }
             open_definition_body_column = None;
             definition_list_column = Some(match definition_list_column {
                 Some(column) if !after_definition_blank => column.min(indent),
@@ -522,11 +529,17 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             });
         } else if description {
             open_definition_body_column = definition_body_content_col(line);
+            if let Some(column) = open_definition_body_column {
+                surviving_definition_body_column = Some(
+                    surviving_definition_body_column.map_or(column, |outer| outer.min(column)),
+                );
+            }
         } else if !description
             && definition_list_column.is_some()
             && item_block_opener(trim_ascii_start(line))
         {
             definition_list_column = None;
+            surviving_definition_body_column = None;
         }
         after_definition_blank = false;
         // CARVE-P2-017: a separator below the list column cannot open a dd.
@@ -1065,7 +1078,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && fence.is_none()
             && comment_fence.is_none()
             && colon_open.is_empty()
-            && !open_definition_body_column.is_some_and(|column| indent >= column)
+            && !surviving_definition_body_column.is_some_and(|column| indent >= column)
             && !collected_body_ends_in_a_quote_fold(&lines, &line_map)
         {
             break;
