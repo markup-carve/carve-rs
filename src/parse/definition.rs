@@ -955,18 +955,18 @@ pub(in crate::parse) fn collect_definition_body(
                                 cur.pos + 1,
                                 open.fence_char,
                                 open.fence_len,
-                            ) && item_body_fence_has_closer(
-                                cur.lines.range(cur.pos + 1..cur.lines.len()),
-                                open,
-                                content_column,
-                                |line, indent| {
-                                    indent < content_column
-                                        && (is_definition_list_start(strip_lazy(line))
-                                            || strip_definition_marker(strip_lazy(line)).is_some()
-                                            || indent == 0
-                                                && strip_blockquote_prefix(line).is_some())
-                                },
-                            ))
+                            ) && {
+                                let closers = past_body_closers.get_or_insert_with(|| {
+                                    definition_body_closer_index(cur, cur.pos + 1, content_column)
+                                });
+                                let next = cur.pos + 1;
+                                next < closers.end
+                                    && closers.exact_in_body.code_in(
+                                        next - closers.start..closers.end - closers.start,
+                                        open.fence_char,
+                                        open.fence_len,
+                                    )
+                            })
                     });
                 // The nested description's `+` already separates its next
                 // block. A manufactured blank here would make it attach none.
@@ -1278,7 +1278,8 @@ pub(in crate::parse) fn collect_definition_body(
                     content_column,
                     |line, indent| {
                         indent < content_column
-                            && (is_definition_list_start(strip_lazy(line))
+                            && (is_definition_placeholder(line)
+                                || is_definition_list_start(strip_lazy(line))
                                 || strip_definition_marker(strip_lazy(line)).is_some())
                     },
                 )
@@ -1431,6 +1432,7 @@ struct DefinitionBodyCloserIndex {
     start: usize,
     end: usize,
     in_body: ScopedFenceClosers,
+    exact_in_body: ScopedFenceClosers,
     below_body: ScopedFenceClosers,
 }
 
@@ -1440,6 +1442,7 @@ fn definition_body_closer_index(
     content_column: usize,
 ) -> DefinitionBodyCloserIndex {
     let mut in_body = Vec::new();
+    let mut exact_in_body = Vec::new();
     let mut below_body = Vec::new();
     let mut pending_blank = false;
     for line in cur.lines.range(start..cur.lines.len()) {
@@ -1448,12 +1451,14 @@ fn definition_body_closer_index(
         if is_blank_line(line) {
             pending_blank = true;
             in_body.push("");
+            exact_in_body.push("");
             below_body.push("");
             continue;
         }
         let indent = indent_columns(line);
         if indent < content_column
             && (pending_blank
+                || is_definition_placeholder(line)
                 || is_definition_list_start(strip_lazy(line))
                 || strip_definition_marker(strip_lazy(line)).is_some()
                 || indent == 0 && strip_blockquote_prefix(line).is_some())
@@ -1462,6 +1467,11 @@ fn definition_body_closer_index(
         }
         pending_blank = false;
         in_body.push(if indent >= content_column {
+            trim_ascii_start(line)
+        } else {
+            ""
+        });
+        exact_in_body.push(if indent == content_column {
             trim_ascii_start(line)
         } else {
             ""
@@ -1476,6 +1486,7 @@ fn definition_body_closer_index(
         start,
         end: start + in_body.len(),
         in_body: ScopedFenceClosers::new(in_body.into_iter()),
+        exact_in_body: ScopedFenceClosers::new(exact_in_body.into_iter()),
         below_body: ScopedFenceClosers::new(below_body.into_iter()),
     }
 }
@@ -1537,5 +1548,26 @@ mod definition_past_fence_work {
             large.1 <= small.1 * 6,
             "scan work grew too fast: {small:?}, {large:?}"
         );
+    }
+
+    #[test]
+    fn footnote_boundary_fence_probes_have_bounded_work() {
+        let measure = |count| {
+            let mut source = String::from(":: t\n: a\n");
+            for _ in 0..count {
+                source.push_str("  ```lang\n");
+            }
+            source.push_str("[^n]: note\npayload\n  ```\n");
+            DEFINITION_PAST_FENCE_SCAN_LINES.with(|work| work.set(0));
+            let _ = crate::to_html(&source);
+            (
+                source.len(),
+                DEFINITION_PAST_FENCE_SCAN_LINES.with(|work| work.get()),
+            )
+        };
+        let small = measure(32);
+        let large = measure(128);
+        assert!(small.1 <= small.0 * 8 && large.1 <= large.0 * 8);
+        assert!(large.1 <= small.1 * 6, "{small:?}, {large:?}");
     }
 }
