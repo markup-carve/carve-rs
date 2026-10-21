@@ -230,6 +230,7 @@ pub(in crate::parse) fn place_item_chunk(
         in_group: false,
         attrs: None,
         drop_empty_paragraphs: false,
+        suppress_tree_looseness: false,
         widen_list: false,
     });
 }
@@ -293,20 +294,22 @@ pub(in crate::parse) fn resolve_pending_bodies(
         pending.into_iter().map(|body| (0usize, body)).collect();
     while let Some((slot, entry)) = work.pop() {
         let mut nested = Vec::new();
-        let (children, item) = match entry.body {
+        let (children, item, loose_inside_chunk) = match entry.body {
             Body::Colon(body) => {
                 // The body parses under the state its OPENER stood in, not the
                 // state the worklist happens to be in - see `ContainerBody`.
                 let _depth = DepthScope::set(body.depth);
                 let _group = FigureGroupScope::set(body.in_group);
-                (parse_colon_view(body.inner, options, &mut nested), None)
+                (
+                    parse_colon_view(body.inner, options, &mut nested),
+                    None,
+                    false,
+                )
             }
             Body::Item(body) => {
                 let target = (body.item, body.widen_list);
-                (
-                    parse_item_body_into(body, options, &mut nested),
-                    Some(target),
-                )
+                let (children, loose) = parse_item_body_into(body, options, &mut nested);
+                (children, Some(target), loose)
             }
         };
         let child_slot = arena.len();
@@ -316,6 +319,7 @@ pub(in crate::parse) fn resolve_pending_bodies(
             index: entry.index,
             item,
             child_slot,
+            loose_inside_chunk,
         });
         work.extend(nested.into_iter().map(|body| (child_slot, body)));
     }
@@ -324,7 +328,9 @@ pub(in crate::parse) fn resolve_pending_bodies(
         let node = &mut arena[link.slot][link.index];
         match link.item {
             None => fill_container_children(node, children),
-            Some((item, widen_list)) => append_item_children(node, item, children, widen_list),
+            Some((item, widen_list)) => {
+                append_item_children(node, item, children, widen_list, link.loose_inside_chunk)
+            }
         }
     }
     *out = std::mem::take(&mut arena[0]);
@@ -374,6 +380,9 @@ pub(in crate::parse) fn parse_blocks(
             CommentBlock::Consumed(None) => continue,
             CommentBlock::Consumed(Some(node)) => {
                 out.push(*node);
+                if let Some(extents) = cur.block_extents.as_mut() {
+                    extents.push((comment_start, cur.pos));
+                }
                 cur.last_block_start = Some(comment_start);
                 if pending_attrs.is_none() {
                     if let Some(starts) = cur.block_starts.as_mut() {
@@ -409,6 +418,9 @@ pub(in crate::parse) fn parse_blocks(
             parse_block(cur, options, &mut item_bodies)
         };
         if let Some(node) = parsed {
+            if let Some(extents) = cur.block_extents.as_mut() {
+                extents.push((start_line, cur.pos));
+            }
             if pending_attrs.is_none() {
                 if let Some(starts) = cur.block_starts.as_mut() {
                     starts.push(start_line);

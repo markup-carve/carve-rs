@@ -508,6 +508,7 @@ pub(in crate::parse) fn body_as_read(
         marker_colon_rebased: false,
         marker_tail: None,
         reached,
+        opaque_blank_lines: Vec::new(),
         in_quoted_body: false,
         sublists_carry_authored_base: false,
     };
@@ -1423,6 +1424,7 @@ pub(in crate::parse) fn collect_definition_body(
         marker_colon_rebased: false,
         marker_tail: None,
         reached,
+        opaque_blank_lines: Vec::new(),
         in_quoted_body: false,
         sublists_carry_authored_base: false,
     }

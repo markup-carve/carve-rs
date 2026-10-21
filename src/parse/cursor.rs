@@ -209,6 +209,10 @@ pub(in crate::parse) struct LineCursor<'a> {
     /// Every line this cursor started a block on with no block attributes
     /// pending, recorded only for [`document_block_starts`].
     pub(in crate::parse) block_starts: Option<Vec<usize>>,
+    /// Parsed top-level block extents in this cursor's line coordinates.
+    /// Collected only when a list item needs to derive looseness from the
+    /// blocks it actually accepted, including opaque fence payloads.
+    pub(in crate::parse) block_extents: Option<Vec<(usize, usize)>>,
     pub(in crate::parse) closed_initial_container_end: Option<usize>,
     pub(in crate::parse) at_document_level: bool,
     pub(in crate::parse) in_quoted_body: bool,
@@ -279,6 +283,7 @@ impl<'a> LineCursor<'a> {
             pos: 0,
             last_block_start: None,
             block_starts: None,
+            block_extents: None,
             closed_initial_container_end: None,
             at_document_level: false,
             in_quoted_body: false,

@@ -1627,9 +1627,6 @@ mod shared_colon_work_tests {
             COMMENT_INDEX_LINES.with(|work| work.set(0));
             assert_eq!(colon_fences_left_open(&source), 0);
             assert!(COMMENT_INDEX_LINES.with(Cell::get) <= lines);
-            COMMENT_INDEX_LINES.with(|work| work.set(0));
-            assert!(!continuation_source_loosens(&source, false));
-            assert!(COMMENT_INDEX_LINES.with(Cell::get) <= lines);
             let refs: Vec<_> = source.lines().collect();
             COMMENT_INDEX_LINES.with(|work| work.set(0));
             assert_eq!(

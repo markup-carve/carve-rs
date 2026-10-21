@@ -89,6 +89,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let mut col_map: Vec<Option<isize>> = Vec::new();
     // See `MappedSource::reached`.
     let mut reached: Vec<bool> = Vec::new();
+    let mut opaque_blank_lines: Vec<usize> = Vec::new();
     // Strip authored code once before a nested strip changes its source columns.
     let mut authored_code_base: Option<usize> = None;
     let mut colon_open: Vec<usize> = Vec::new();
@@ -402,6 +403,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             if fence.is_some() && !folded_code_span {
                 let (residue, consumed, synthetic) =
                     slice_columns_mapped(line, authored_code_base.unwrap_or(strip_cols), true);
+                opaque_blank_lines.push(lines.len());
                 lines.push(residue);
                 if cur.line_map.is_some() {
                     line_map.push(cur.source_line(cur.pos));
@@ -449,6 +451,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                     for at in cur.pos..k {
                         let (residue, consumed, synthetic) =
                             slice_columns_mapped(cur.lines.at(at), strip_cols, true);
+                        opaque_blank_lines.push(lines.len());
                         lines.push(residue);
                         reached.push(false);
                         if building_maps {
@@ -465,6 +468,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             // The residue stays for a descendant's open fence, which this
             // frame does not track; a blank line reads as blank either way.
             let (residue, consumed, synthetic) = slice_columns_mapped(line, strip_cols, true);
+            if active_nested_fence.is_some() || nested_fence.is_some() || comment_fence.is_some() {
+                opaque_blank_lines.push(lines.len());
+            }
             lines.push(residue);
             if building_maps {
                 line_map.push(cur.source_line(cur.pos));
@@ -1731,6 +1737,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         marker_colon_rebased: false,
         marker_tail: None,
         reached,
+        opaque_blank_lines,
         in_quoted_body: false,
         sublists_carry_authored_base: false,
     }

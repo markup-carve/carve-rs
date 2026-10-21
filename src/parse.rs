@@ -780,6 +780,7 @@ fn parse_with_options_mode_and_index(
                         Vec::new()
                     },
                     reached: Vec::new(),
+                    opaque_blank_lines: Vec::new(),
                     authored_base_at_start: false,
                     item_marker_at_start: false,
                     marker_colon_rebased: false,
@@ -1282,6 +1283,26 @@ fn parse_blocks_with_options_at_level_into_reached_with_start(
     scope: ParseScope,
     pending: &mut Vec<PendingBody>,
 ) -> (Vec<BlockNode>, ProbeRootBoundary) {
+    parse_blocks_with_options_at_level_into_reached_recording(
+        source,
+        reached,
+        marker_tail,
+        options,
+        scope,
+        pending,
+        None,
+    )
+}
+
+fn parse_blocks_with_options_at_level_into_reached_recording(
+    source: &str,
+    reached: &[bool],
+    marker_tail: Option<MarkerTail>,
+    options: &Options<'_>,
+    scope: ParseScope,
+    pending: &mut Vec<PendingBody>,
+    extents: Option<&mut Vec<(usize, usize)>>,
+) -> (Vec<BlockNode>, ProbeRootBoundary) {
     let mut lines: Vec<&str> = source.lines().collect();
     // `lines()` already drops a single trailing newline; nothing more to do.
     let _ = &mut lines;
@@ -1315,7 +1336,13 @@ fn parse_blocks_with_options_at_level_into_reached_with_start(
     cursor.in_quoted_body = scope.in_quoted_body;
     cursor.reached = Some(reached);
     cursor.marker_tail = marker_tail;
+    if extents.is_some() {
+        cursor.block_extents = Some(Vec::new());
+    }
     let blocks = parse_blocks(&mut cursor, options, pending);
+    if let Some(extents) = extents {
+        extents.extend(cursor.block_extents.take().unwrap_or_default());
+    }
     (
         blocks,
         ProbeRootBoundary {
@@ -1361,6 +1388,26 @@ fn parse_mapped_source_at_level_into(
     in_quoted_body: bool,
     pending: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
+    parse_mapped_source_at_level_into_recording(
+        source,
+        options,
+        at_document_level,
+        in_item_body,
+        in_quoted_body,
+        pending,
+        None,
+    )
+}
+
+fn parse_mapped_source_at_level_into_recording(
+    source: &MappedSource,
+    options: &Options<'_>,
+    at_document_level: bool,
+    in_item_body: bool,
+    in_quoted_body: bool,
+    pending: &mut Vec<PendingBody>,
+    extents: Option<&mut Vec<(usize, usize)>>,
+) -> Vec<BlockNode> {
     if !options.source_lines
         && !options.positions
         && !needs_source_ending_map()
@@ -1374,6 +1421,7 @@ fn parse_mapped_source_at_level_into(
             in_item_body,
             in_quoted_body,
             pending,
+            extents,
         );
     }
     parse_positioned_mapped_source(
@@ -1383,6 +1431,7 @@ fn parse_mapped_source_at_level_into(
         in_item_body,
         in_quoted_body,
         pending,
+        extents,
     )
 }
 
@@ -1394,11 +1443,15 @@ fn parse_unpositioned_mapped_source(
     in_item_body: bool,
     in_quoted_body: bool,
     pending: &mut Vec<PendingBody>,
+    extents: Option<&mut Vec<(usize, usize)>>,
 ) -> Vec<BlockNode> {
     // The ladder builds its own containers inside-out and hands back finished
     // nodes, so it contributes nothing to `pending` - and must not, because it
     // WRAPS the blocks it parsed, which would move any index recorded in them.
     if let Some(blocks) = parse_eof_closed_colon_ladder(source, options) {
+        if let Some(extents) = extents {
+            extents.extend(blocks.iter().map(|_| (0, source.source.lines().count())));
+        }
         return blocks;
     }
     if source.sublists_carry_authored_base
@@ -1415,9 +1468,10 @@ fn parse_unpositioned_mapped_source(
             in_item_body,
             in_quoted_body,
             pending,
+            extents,
         );
     }
-    parse_blocks_with_options_at_level_into_reached(
+    parse_blocks_with_options_at_level_into_reached_recording(
         &source.source,
         &source.reached,
         source.marker_tail,
@@ -1428,7 +1482,9 @@ fn parse_unpositioned_mapped_source(
             in_quoted_body: in_quoted_body || source.in_quoted_body,
         },
         pending,
+        extents,
     )
+    .0
 }
 
 #[inline(never)]
@@ -1439,6 +1495,7 @@ fn parse_positioned_mapped_source(
     in_item_body: bool,
     in_quoted_body: bool,
     pending: &mut Vec<PendingBody>,
+    extents: Option<&mut Vec<(usize, usize)>>,
 ) -> Vec<BlockNode> {
     let lines: Vec<&str> = source.source.lines().collect();
     // The mapped source carries the widths its container already stripped, so a
@@ -1459,7 +1516,14 @@ fn parse_positioned_mapped_source(
     cursor.reached = Some(source.reached.as_slice());
     cursor.sublists_carry_authored_base = source.sublists_carry_authored_base;
     cursor.marker_tail = source.marker_tail;
-    parse_blocks(&mut cursor, options, pending)
+    if extents.is_some() {
+        cursor.block_extents = Some(Vec::new());
+    }
+    let blocks = parse_blocks(&mut cursor, options, pending);
+    if let Some(extents) = extents {
+        extents.extend(cursor.block_extents.take().unwrap_or_default());
+    }
+    blocks
 }
 
 #[inline(never)]
@@ -2129,6 +2193,10 @@ struct ItemBody {
     /// (invisible) block, and the prepass leaves an empty paragraph where its
     /// line was. The item must not carry it.
     drop_empty_paragraphs: bool,
+    /// The collector refused a continuation marker in this marker-line body.
+    /// That refusal does not create the L1 paragraph gap the accepted blocks
+    /// alone would otherwise suggest.
+    suppress_tree_looseness: bool,
     /// The list took its own span from its ITEMS rather than from the cursor
     /// (`span_across_items`), so widening the last item moves the list's end
     /// with it. `parse_list` cannot know which it used until the loop is over,
@@ -2240,6 +2308,9 @@ struct ResolvedBody {
     item: Option<(usize, bool)>,
     /// The slot the blocks themselves landed in.
     child_slot: usize,
+    /// A blank separated accepted paragraph-shaped blocks inside this item
+    /// chunk. Computed from parsed block extents, not fence-shaped source text.
+    loose_inside_chunk: bool,
 }
 
 fn trailing_verbatim_pos(mut block: &BlockNode) -> Option<&Pos> {
@@ -2304,6 +2375,7 @@ fn append_item_children(
     item: usize,
     children: Vec<BlockNode>,
     widen_list: bool,
+    loose_inside_chunk: bool,
 ) {
     let BlockNode::List(list) = node else {
         debug_assert!(
@@ -2312,6 +2384,9 @@ fn append_item_children(
         );
         return;
     };
+    if loose_inside_chunk {
+        list.tight = false;
+    }
     let last = list.items.len().saturating_sub(1);
     // `parse_list` recorded the index against the items it had built.
     let Some(target) = list.items.get_mut(item) else {
@@ -2344,20 +2419,39 @@ fn parse_item_body_into(
     body: ItemBody,
     options: &Options<'_>,
     nested: &mut Vec<PendingBody>,
-) -> Vec<BlockNode> {
+) -> (Vec<BlockNode>, bool) {
     let ItemBody {
         chunk,
         depth,
         in_group,
         attrs,
         drop_empty_paragraphs,
+        suppress_tree_looseness,
         ..
     } = body;
+    let mut loose_inside_chunk = false;
     let mut children = match chunk {
         Chunk::Source(source) => {
             let _depth = DepthScope::set(depth);
             let _group = FigureGroupScope::set(in_group);
-            parse_mapped_source_at_level_into(&source, options, false, true, false, nested)
+            let mut extents = Vec::new();
+            let children = parse_mapped_source_at_level_into_recording(
+                &source,
+                options,
+                false,
+                true,
+                false,
+                nested,
+                Some(&mut extents),
+            );
+            loose_inside_chunk = !suppress_tree_looseness
+                && item_chunk_tree_looseness(
+                    &source.source,
+                    &source.opaque_blank_lines,
+                    &children,
+                    &extents,
+                );
+            children
         }
         Chunk::Parsed { blocks, carried } => {
             nested.extend(carried);
@@ -2368,7 +2462,40 @@ fn parse_item_body_into(
         drop_empty_item_paragraphs(&mut children, nested);
     }
     apply_held_item_attrs(&mut children, attrs);
-    children
+    (children, loose_inside_chunk)
+}
+
+/// A blank can loosen this item only when the next accepted child is
+/// paragraph-shaped. The parser's block extents keep payload blanks inside
+/// their fence, so a second source-level fence classifier is unnecessary.
+fn item_chunk_tree_looseness(
+    source: &str,
+    opaque_blank_lines: &[usize],
+    children: &[BlockNode],
+    extents: &[(usize, usize)],
+) -> bool {
+    if children.len() != extents.len() {
+        // The nesting-cap fallback returns flattened paragraphs before the
+        // ordinary block loop can record their individual extents.
+        return false;
+    }
+    let lines: Vec<&str> = source.lines().collect();
+    let mut previous_end = 0;
+    let mut previous_start = 0;
+    for (child, &(start, end)) in children.iter().zip(extents) {
+        if block_is_paragraph_shaped(child)
+            && (previous_start..start)
+                .rev()
+                .take_while(|&line| lines.get(line).is_some_and(|text| is_blank_line(text)))
+                .any(|line| opaque_blank_lines.binary_search(&line).is_err())
+            && (previous_end > 0 || start > 1)
+        {
+            return true;
+        }
+        previous_start = start;
+        previous_end = end;
+    }
+    false
 }
 
 /// The empty paragraph a collected definition leaves behind, dropped - and the
@@ -2423,9 +2550,29 @@ fn apply_held_item_attrs(children: &mut [BlockNode], attrs: Option<Attrs>) {
 fn item_body(
     deferred: &mut Vec<ItemBody>,
     item: usize,
+    source: MappedSource,
+    attrs: Option<Attrs>,
+    drop_empty_paragraphs: bool,
+    options: &Options<'_>,
+) -> Vec<BlockNode> {
+    item_body_with_layout_suppression(
+        deferred,
+        item,
+        source,
+        attrs,
+        drop_empty_paragraphs,
+        false,
+        options,
+    )
+}
+
+fn item_body_with_layout_suppression(
+    deferred: &mut Vec<ItemBody>,
+    item: usize,
     mut source: MappedSource,
     attrs: Option<Attrs>,
     drop_empty_paragraphs: bool,
+    suppress_tree_looseness: bool,
     options: &Options<'_>,
 ) -> Vec<BlockNode> {
     rebase_overindented_blocks(&mut source, false, options);
@@ -2436,6 +2583,7 @@ fn item_body(
         in_group: IN_FIGURE_GROUP.with(Cell::get),
         attrs,
         drop_empty_paragraphs,
+        suppress_tree_looseness,
         widen_list: false,
     });
     Vec::new()
@@ -2458,17 +2606,48 @@ fn parse_item_chunk(
     source: &MappedSource,
     options: &Options<'_>,
     carried: &mut Vec<PendingBody>,
-) -> Vec<BlockNode> {
+) -> (Vec<BlockNode>, bool) {
+    let mut extents = Vec::new();
     if !source
         .source
         .lines()
         .any(|line| line.starts_with([' ', '\t']))
     {
-        return parse_mapped_source_at_level_into(source, options, false, true, false, carried);
+        let children = parse_mapped_source_at_level_into_recording(
+            source,
+            options,
+            false,
+            true,
+            false,
+            carried,
+            Some(&mut extents),
+        );
+        let loose = item_chunk_tree_looseness(
+            &source.source,
+            &source.opaque_blank_lines,
+            &children,
+            &extents,
+        );
+        return (children, loose);
     }
     let mut rebased = source.clone();
     rebase_overindented_blocks(&mut rebased, false, options);
-    parse_mapped_source_at_level_into(&rebased, options, false, true, false, carried)
+    let children = parse_mapped_source_at_level_into_recording(
+        &rebased,
+        options,
+        false,
+        true,
+        false,
+        carried,
+        Some(&mut extents),
+    );
+    let loose = item_chunk_tree_looseness(
+        &rebased.source,
+        &rebased.opaque_blank_lines,
+        &children,
+        &extents,
+    );
+    (children, loose)
 }
 
 fn try_extension_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode> {
