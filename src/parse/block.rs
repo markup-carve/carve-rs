@@ -294,7 +294,7 @@ pub(in crate::parse) fn resolve_pending_bodies(
         pending.into_iter().map(|body| (0usize, body)).collect();
     while let Some((slot, entry)) = work.pop() {
         let mut nested = Vec::new();
-        let (children, item, loose_inside_chunk) = match entry.body {
+        let (children, item, loose_inside_chunk, layout) = match entry.body {
             Body::Colon(body) => {
                 // The body parses under the state its OPENER stood in, not the
                 // state the worklist happens to be in - see `ContainerBody`.
@@ -304,12 +304,13 @@ pub(in crate::parse) fn resolve_pending_bodies(
                     parse_colon_view(body.inner, options, &mut nested),
                     None,
                     false,
+                    None,
                 )
             }
             Body::Item(body) => {
                 let target = (body.item, body.widen_list);
-                let (children, loose) = parse_item_body_into(body, options, &mut nested);
-                (children, Some(target), loose)
+                let (children, loose, layout) = parse_item_body_into(body, options, &mut nested);
+                (children, Some(target), loose, layout)
             }
         };
         let child_slot = arena.len();
@@ -320,16 +321,34 @@ pub(in crate::parse) fn resolve_pending_bodies(
             item,
             child_slot,
             loose_inside_chunk,
+            layout,
         });
         work.extend(nested.into_iter().map(|body| (child_slot, body)));
     }
     for link in links.into_iter().rev() {
-        let children = std::mem::take(&mut arena[link.child_slot]);
+        let mut children = std::mem::take(&mut arena[link.child_slot]);
+        let mut loose_inside_chunk = link.loose_inside_chunk;
+        if let Some(layout) = link.layout {
+            loose_inside_chunk |= layout.outer_plus_after_blank
+                && children
+                    .iter()
+                    .any(|child| matches!(child, BlockNode::List(_)));
+            loose_inside_chunk |= item_chunk_tree_looseness(
+                &layout.source,
+                &layout.opaque_blank_lines,
+                layout.discarded_outer_blank,
+                &children,
+                &layout.extents,
+            );
+            if layout.discarded_outer_blank && !loose_inside_chunk {
+                mark_nested_discarded_gap(&mut children);
+            }
+        }
         let node = &mut arena[link.slot][link.index];
         match link.item {
             None => fill_container_children(node, children),
             Some((item, widen_list)) => {
-                append_item_children(node, item, children, widen_list, link.loose_inside_chunk)
+                append_item_children(node, item, children, widen_list, loose_inside_chunk)
             }
         }
     }

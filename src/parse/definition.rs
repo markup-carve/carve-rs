@@ -509,6 +509,8 @@ pub(in crate::parse) fn body_as_read(
         marker_tail: None,
         reached,
         opaque_blank_lines: Vec::new(),
+        discarded_outer_blank: false,
+        outer_plus_after_blank: false,
         in_quoted_body: false,
         sublists_carry_authored_base: false,
     };
@@ -1425,6 +1427,8 @@ pub(in crate::parse) fn collect_definition_body(
         marker_tail: None,
         reached,
         opaque_blank_lines: Vec::new(),
+        discarded_outer_blank: false,
+        outer_plus_after_blank: false,
         in_quoted_body: false,
         sublists_carry_authored_base: false,
     }

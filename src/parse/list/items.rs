@@ -664,7 +664,7 @@ pub(crate) fn parse_list(
                     );
                 }
                 let nested_sublist = marker.indent >= content_col;
-                if nested_sublist && sublist_source_loosens_outer_item(&nested.source) {
+                if nested_sublist && nested.outer_plus_after_blank {
                     tight = false;
                 }
                 let held = pending_attrs.take();
@@ -684,13 +684,7 @@ pub(crate) fn parse_list(
                         ));
                 }
                 let nested_children = item_body_with_layout_suppression(
-                    deferred,
-                    last_item,
-                    nested,
-                    held,
-                    false,
-                    nested_sublist,
-                    options,
+                    deferred, last_item, nested, held, false, false, options,
                 );
                 // The blank BEFORE this sub-list is consumed by it and must not
                 // survive to loosen a later sibling marker (§17 L2: a blank
@@ -1269,10 +1263,9 @@ pub(crate) fn parse_list(
             // (carve-rs#490). #476 fixed the attribute-block, quote and heading
             // leads beside this one and left the sub-list lead open, because
             // carve-php agreed with this engine at the time and carve-js did not.
-            // Content at or past the SUB-LIST's content column is the sub-list's
-            // own business - `sublist_source_loosens_outer_item` is the same
-            // non-propagating test the following-line sub-list path uses, not the
-            // blanket `continuation_source_loosens` the other leads can afford.
+            // The bare nested marker is a separate event: its following blank
+            // reaches the outer content column before the deferred child tree
+            // exists, so carry this boundary into the list's tightness now.
             let blank_after_bare_nested_marker = nested_lead_is_continuation
                 && cur.lines.line(item_at + 1).is_some_and(is_blank_line)
                 && cur.lines.line(item_at + 2).is_some_and(|line| {
@@ -1280,7 +1273,7 @@ pub(crate) fn parse_list(
                         && (is_plus_marker(trim_ascii_start(line))
                             || line_starts_paragraph(trim_ascii_start(line)))
                 });
-            if sublist_source_loosens_outer_item(&stream.source) || blank_after_bare_nested_marker {
+            if blank_after_bare_nested_marker {
                 tight = false;
             }
             if sublist_source_trailing_invisible_separation(&stream.source) {
@@ -1313,7 +1306,7 @@ pub(crate) fn parse_list(
                 stream,
                 None,
                 false,
-                true,
+                false,
                 options,
             );
             items.push(ListItem {

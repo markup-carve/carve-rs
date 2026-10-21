@@ -90,6 +90,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     // See `MappedSource::reached`.
     let mut reached: Vec<bool> = Vec::new();
     let mut opaque_blank_lines: Vec<usize> = Vec::new();
+    let mut discarded_outer_blank = false;
+    let mut outer_plus_after_blank = false;
     // Strip authored code once before a nested strip changes its source columns.
     let mut authored_code_base: Option<usize> = None;
     let mut colon_open: Vec<usize> = Vec::new();
@@ -266,6 +268,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 || definition_ended_paragraph && indent_columns(line) == strip_cols)
             && container.owns_continuation(line, cur.continuation_decision(cur.pos))
         {
+            outer_plus_after_blank |= lines.last().is_some_and(|prior| is_blank_line(prior));
             break;
         }
         if nested_bare_marker_then_plain(cur, strip_cols)
@@ -281,6 +284,13 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         if nested_blank_run.is_some_and(|(end, _, _)| cur.pos >= end) {
             nested_blank_run = None;
         }
+        outer_plus_after_blank |= trim_ascii(line) == "+"
+            && indent_columns(line) == strip_cols
+            && lines.last().is_some_and(|prior| is_blank_line(prior))
+            && cur.continuation_decision(cur.pos).is_some_and(|decision| {
+                decision.owner == Some(continuation_marker::Kind::List)
+                    && decision.refusal.is_none()
+            });
         if trim_ascii(line) == "+"
             && cur
                 .continuation_decision(cur.pos)
@@ -373,6 +383,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             if let Some((end, kept, applies)) = nested_blank_run.as_mut() {
                 if *applies && cur.pos < *end {
                     if *kept >= 1 {
+                        discarded_outer_blank = true;
                         cur.consume();
                         continue;
                     }
@@ -1738,6 +1749,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         marker_tail: None,
         reached,
         opaque_blank_lines,
+        discarded_outer_blank,
+        outer_plus_after_blank,
         in_quoted_body: false,
         sublists_carry_authored_base: false,
     }

@@ -781,6 +781,8 @@ fn parse_with_options_mode_and_index(
                     },
                     reached: Vec::new(),
                     opaque_blank_lines: Vec::new(),
+                    discarded_outer_blank: false,
+                    outer_plus_after_blank: false,
                     authored_base_at_start: false,
                     item_marker_at_start: false,
                     marker_colon_rebased: false,
@@ -2311,6 +2313,16 @@ struct ResolvedBody {
     /// A blank separated accepted paragraph-shaped blocks inside this item
     /// chunk. Computed from parsed block extents, not fence-shaped source text.
     loose_inside_chunk: bool,
+    /// Recheck the gap after nested list bodies have filled their hollow nodes.
+    layout: Option<ItemLayout>,
+}
+
+struct ItemLayout {
+    source: String,
+    opaque_blank_lines: Vec<usize>,
+    discarded_outer_blank: bool,
+    outer_plus_after_blank: bool,
+    extents: Vec<(usize, usize)>,
 }
 
 fn trailing_verbatim_pos(mut block: &BlockNode) -> Option<&Pos> {
@@ -2419,7 +2431,7 @@ fn parse_item_body_into(
     body: ItemBody,
     options: &Options<'_>,
     nested: &mut Vec<PendingBody>,
-) -> (Vec<BlockNode>, bool) {
+) -> (Vec<BlockNode>, bool, Option<ItemLayout>) {
     let ItemBody {
         chunk,
         depth,
@@ -2430,6 +2442,7 @@ fn parse_item_body_into(
         ..
     } = body;
     let mut loose_inside_chunk = false;
+    let mut layout = None;
     let mut children = match chunk {
         Chunk::Source(source) => {
             let _depth = DepthScope::set(depth);
@@ -2444,13 +2457,25 @@ fn parse_item_body_into(
                 nested,
                 Some(&mut extents),
             );
-            loose_inside_chunk = !suppress_tree_looseness
-                && item_chunk_tree_looseness(
-                    &source.source,
-                    &source.opaque_blank_lines,
-                    &children,
-                    &extents,
-                );
+            if !suppress_tree_looseness {
+                if drop_empty_paragraphs {
+                    loose_inside_chunk = item_chunk_tree_looseness(
+                        &source.source,
+                        &source.opaque_blank_lines,
+                        source.discarded_outer_blank,
+                        &children,
+                        &extents,
+                    );
+                } else {
+                    layout = Some(ItemLayout {
+                        source: source.source,
+                        opaque_blank_lines: source.opaque_blank_lines,
+                        discarded_outer_blank: source.discarded_outer_blank,
+                        outer_plus_after_blank: source.outer_plus_after_blank,
+                        extents,
+                    });
+                }
+            }
             children
         }
         Chunk::Parsed { blocks, carried } => {
@@ -2462,7 +2487,7 @@ fn parse_item_body_into(
         drop_empty_item_paragraphs(&mut children, nested);
     }
     apply_held_item_attrs(&mut children, attrs.map(|value| *value));
-    (children, loose_inside_chunk)
+    (children, loose_inside_chunk, layout)
 }
 
 /// A blank can loosen this item only when the next accepted child is
@@ -2471,6 +2496,7 @@ fn parse_item_body_into(
 fn item_chunk_tree_looseness(
     source: &str,
     opaque_blank_lines: &[usize],
+    discarded_outer_blank: bool,
     children: &[BlockNode],
     extents: &[(usize, usize)],
 ) -> bool {
@@ -2482,18 +2508,101 @@ fn item_chunk_tree_looseness(
     let lines: Vec<&str> = source.lines().collect();
     let mut previous_end = 0;
     let mut previous_start = 0;
+    let mut previous_child = None;
     for (child, &(start, end)) in children.iter().zip(extents) {
+        let mut opaque_trailing = 0usize;
+        let mut visible_trailing = 0usize;
+        for line in (previous_start..start)
+            .rev()
+            .take_while(|&line| lines.get(line).is_some_and(|text| is_blank_line(text)))
+        {
+            if opaque_blank_lines.binary_search(&line).is_ok() {
+                opaque_trailing += 1;
+            } else {
+                visible_trailing += 1;
+            }
+        }
+        let trailing_blank = visible_trailing > 0
+            || (matches!(child, BlockNode::Paragraph(node) if node.at_content_column)
+                && previous_child
+                    .is_some_and(|prior| opaque_trailing > trailing_payload_blank_count(prior)))
+            || (visible_trailing + opaque_trailing > 0
+                && lines
+                    .get(start)
+                    .is_some_and(|line| trim_ascii_start(line).starts_with('+')));
+        let blank_before_invisible = (previous_start..start)
+            .rev()
+            .find(|&line| {
+                !lines.get(line).is_some_and(|text| {
+                    is_definition_placeholder(text) || is_line_comment_any_column(text)
+                })
+            })
+            .is_some_and(|line| {
+                lines.get(line).is_some_and(|text| is_blank_line(text))
+                    && opaque_blank_lines.binary_search(&line).is_err()
+            });
         if block_is_paragraph_shaped(child)
-            && (previous_start..start)
-                .rev()
-                .take_while(|&line| lines.get(line).is_some_and(|text| is_blank_line(text)))
-                .any(|line| opaque_blank_lines.binary_search(&line).is_err())
+            && (trailing_blank || blank_before_invisible || discarded_outer_blank)
             && (previous_end > 0 || start > 1)
         {
             return true;
         }
         previous_start = start;
         previous_end = end;
+        previous_child = Some(child);
+    }
+    false
+}
+
+fn trailing_payload_blank_count(mut block: &BlockNode) -> usize {
+    loop {
+        block = match block {
+            BlockNode::CodeBlock(node) => return payload_blank_count(&node.content),
+            BlockNode::RawBlock(node) => return payload_blank_count(&node.content),
+            BlockNode::Comment(_) | BlockNode::LineBlock(_) => return usize::MAX,
+            BlockNode::BlockQuote(node) => match node.children.last() {
+                Some(child) => child,
+                None => return 0,
+            },
+            BlockNode::Div(node) => match node.children.last() {
+                Some(child) => child,
+                None => return 0,
+            },
+            BlockNode::List(node) => {
+                match node.items.last().and_then(|item| item.children.last()) {
+                    Some(child) => child,
+                    None => return 0,
+                }
+            }
+            _ => return 0,
+        };
+    }
+}
+
+fn payload_blank_count(content: &str) -> usize {
+    let trailing = content
+        .bytes()
+        .rev()
+        .take_while(|&byte| byte == b'\n')
+        .count();
+    trailing.saturating_sub(usize::from(trailing < content.len()))
+}
+
+fn mark_nested_discarded_gap(children: &mut [BlockNode]) -> bool {
+    for block in children.iter_mut().rev() {
+        let BlockNode::List(list) = block else {
+            continue;
+        };
+        let Some(item) = list.items.last_mut() else {
+            continue;
+        };
+        if item.children.len() > 1 && item.children.last().is_some_and(block_is_paragraph_shaped) {
+            list.tight = false;
+            return true;
+        }
+        if mark_nested_discarded_gap(&mut item.children) {
+            return true;
+        }
     }
     false
 }
@@ -2625,6 +2734,7 @@ fn parse_item_chunk(
         let loose = item_chunk_tree_looseness(
             &source.source,
             &source.opaque_blank_lines,
+            source.discarded_outer_blank,
             &children,
             &extents,
         );
@@ -2644,6 +2754,7 @@ fn parse_item_chunk(
     let loose = item_chunk_tree_looseness(
         &rebased.source,
         &rebased.opaque_blank_lines,
+        rebased.discarded_outer_blank,
         &children,
         &extents,
     );

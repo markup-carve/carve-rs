@@ -121,6 +121,8 @@ impl LineBuffer {
             marker_tail: None,
             reached,
             opaque_blank_lines: Vec::new(),
+            discarded_outer_blank: false,
+            outer_plus_after_blank: false,
             in_quoted_body: false,
             sublists_carry_authored_base: false,
         }
@@ -159,6 +161,11 @@ pub(super) struct MappedSource {
     /// Local line indices for accepted blanks still owned by a descendant
     /// fence. The list's layout decision must not count these as block gaps.
     pub(super) opaque_blank_lines: Vec<usize>,
+    /// A second blank in a nested fence run was consumed while the outer
+    /// separator remained pending for a later paragraph.
+    pub(super) discarded_outer_blank: bool,
+    /// A blank before an accepted `+` at this source's outer content column.
+    pub(super) outer_plus_after_blank: bool,
     /// Whether an over-indented sublist in this source carries its own authored
     /// base, so its span begins AT ITS MARKER rather than at the placing indent.
     ///
@@ -193,6 +200,8 @@ impl MappedSource {
             marker_tail: None,
             reached: vec![false],
             opaque_blank_lines: Vec::new(),
+            discarded_outer_blank: false,
+            outer_plus_after_blank: false,
             in_quoted_body: false,
             sublists_carry_authored_base: false,
         }
@@ -263,6 +272,8 @@ impl MappedSource {
                     .into_iter()
                     .map(|line| line + line_offset),
             );
+            self.discarded_outer_blank |= other.discarded_outer_blank;
+            self.outer_plus_after_blank |= other.outer_plus_after_blank;
         }
     }
 
@@ -292,6 +303,8 @@ impl MappedSource {
                 .into_iter()
                 .map(|line| line + line_offset),
         );
+        self.discarded_outer_blank |= other.discarded_outer_blank;
+        self.outer_plus_after_blank |= other.outer_plus_after_blank;
     }
 }
 
@@ -357,6 +370,8 @@ pub(super) fn remap_source(source: String, original: &MappedSource) -> MappedSou
                 .copied()
                 .filter(|&line| line < source_line_count)
                 .collect(),
+            discarded_outer_blank: original.discarded_outer_blank,
+            outer_plus_after_blank: original.outer_plus_after_blank,
             in_quoted_body: original.in_quoted_body,
             sublists_carry_authored_base: original.sublists_carry_authored_base,
         };
@@ -372,6 +387,8 @@ pub(super) fn remap_source(source: String, original: &MappedSource) -> MappedSou
         marker_tail: None,
         reached: Vec::new(),
         opaque_blank_lines: Vec::new(),
+        discarded_outer_blank: false,
+        outer_plus_after_blank: false,
         in_quoted_body: false,
         sublists_carry_authored_base: false,
         source,

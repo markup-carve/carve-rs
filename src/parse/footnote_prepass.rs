@@ -1251,6 +1251,8 @@ pub(in crate::parse) fn extract_footnote_defs(
                     marker_tail: None,
                     reached: vec![true; def_lines.len()],
                     opaque_blank_lines: Vec::new(),
+                    discarded_outer_blank: false,
+                    outer_plus_after_blank: false,
                     // A FOOTNOTE BODY carries authored base for its sublists, so
                     // a list marker past the body's content column anchors its
                     // span at the marker (markup-carve/carve#1980).
@@ -1337,6 +1339,8 @@ pub(in crate::parse) fn extract_footnote_defs(
             marker_tail: None,
             reached: Vec::new(),
             opaque_blank_lines: Vec::new(),
+            discarded_outer_blank: false,
+            outer_plus_after_blank: false,
             in_quoted_body: false,
             sublists_carry_authored_base: false,
             line_map: body_line_map,
