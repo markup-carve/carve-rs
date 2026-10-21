@@ -2188,7 +2188,7 @@ struct ItemBody {
     /// A block-attribute set held from an EARLIER chunk, for this one's first
     /// VISIBLE block. The recursive form applied it to the blocks in hand; the
     /// worklist applies it the moment they exist, which is the same block.
-    attrs: Option<Attrs>,
+    attrs: Option<Box<Attrs>>,
     /// A collected definition written on the marker line is the item's first
     /// (invisible) block, and the prepass leaves an empty paragraph where its
     /// line was. The item must not carry it.
@@ -2461,7 +2461,7 @@ fn parse_item_body_into(
     if drop_empty_paragraphs {
         drop_empty_item_paragraphs(&mut children, nested);
     }
-    apply_held_item_attrs(&mut children, attrs);
+    apply_held_item_attrs(&mut children, attrs.map(|value| *value));
     (children, loose_inside_chunk)
 }
 
@@ -2581,7 +2581,7 @@ fn item_body_with_layout_suppression(
         chunk: Chunk::Source(source),
         depth: NESTING_DEPTH.with(Cell::get),
         in_group: IN_FIGURE_GROUP.with(Cell::get),
-        attrs,
+        attrs: attrs.map(Box::new),
         drop_empty_paragraphs,
         suppress_tree_looseness,
         widen_list: false,
