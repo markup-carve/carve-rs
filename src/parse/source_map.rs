@@ -245,7 +245,7 @@ impl MappedSource {
             other
                 .reached
                 .resize(other.source.matches('\n').count() + 1, false);
-            let line_offset = self.line_count();
+            let line_offset = self.reached.len();
             if !self.source.is_empty() {
                 self.source.push('\n');
             } else {
@@ -274,7 +274,7 @@ impl MappedSource {
         let mut other_reached = other.reached;
         other_reached.resize(lines, false);
         self.pad_reached();
-        let line_offset = self.line_count();
+        let line_offset = self.reached.len();
         if !self.source.is_empty() {
             self.source.push('\n');
         } else {
