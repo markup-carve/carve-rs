@@ -1958,6 +1958,9 @@ fn render_blocks(
         };
         ctx.paragraph_starts_after_caption_host = ctx.after_caption_host;
         let mut text = render_block(session, block, ctx);
+        if item.is_some() {
+            guard_literal_plus_after_nested_list(previous_emitted, block, &mut text);
+        }
         let moved = !writes_nothing(&text)
             && item.is_some_and(|item| {
                 region_marker_at_item_marker_column(block, previous_emitted, moved_marker, item)
@@ -2482,6 +2485,26 @@ fn adjacent_blocks_merge(left: &BlockNode, right: &BlockNode) -> bool {
     }
 }
 
+fn guard_literal_plus_after_nested_list(
+    previous: Option<&BlockNode>,
+    block: &BlockNode,
+    rendered: &mut String,
+) {
+    // A plus below a nested task fence is literal at one column beyond the
+    // outer item's content column. At that column the spec reader keeps the
+    // paragraph beside the task item, without adding an idle escape.
+    if matches!(previous, Some(BlockNode::List(list)) if list.items.last().is_some_and(|item|
+        item.checked.is_some() && matches!(item.children.last(), Some(BlockNode::CodeBlock(_)))))
+        && matches!(block, BlockNode::Paragraph(_))
+    {
+        if rendered == "+" || rendered.starts_with("+\n") {
+            rendered.insert(0, ' ');
+        } else if rendered == "\\+" || rendered.starts_with("\\+\n") {
+            rendered.replace_range(..2, " +");
+        }
+    }
+}
+
 fn render_item_blocks(
     session: &RenderSession,
     blocks: &[BlockNode],
@@ -2514,7 +2537,8 @@ fn render_item_blocks(
         };
         let next = blocks.get(index + 1);
         let guard_start = ctx.footnote_guard_types.len();
-        let rendered = render_block(session, block, ctx);
+        let mut rendered = render_block(session, block, ctx);
+        guard_literal_plus_after_nested_list(prev, block, &mut rendered);
         escape_window::leave(session, recorded);
         if writes_nothing(&rendered) {
             continue;
