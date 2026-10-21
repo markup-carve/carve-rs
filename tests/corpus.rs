@@ -30,6 +30,7 @@ const IMPLEMENTED: &[&str] = &[
     "a-folded-fence-run-leaves-a-later-paragraph-loose",
     "a-folded-child-fence-keeps-the-below-column-line-in-its-paragraph",
     "a-lazily-folded-fence-opener-line-does-not-keep-a-list-tight",
+    "a-lazy-colon-shaped-line-in-a-quote-paragraph-keeps-no-indentation",
     "an-unclosed-fence-run-with-no-closer-in-its-item-does-not-hide-a-blank-line",
     "a-refused-marker-leaves-an-open-fence-s-blank-payload",
     "an-indented-plus-below-a-nested-fence-stays-content-at-every-depth",

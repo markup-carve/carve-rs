@@ -1717,7 +1717,9 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // the bridge reports that loss instead of claiming a strict round trip.
     // Spec 54528118 adds corpus 639, 640, 641 and 641-2. All four report
     // existing source loss through the bridge; the strict set is unchanged.
-    const LOSSY: usize = 768;
+    // Spec #3506 adds the three 642 lazy colon-shaped quote cases. All three
+    // report existing source loss through the bridge.
+    const LOSSY: usize = 771;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in
