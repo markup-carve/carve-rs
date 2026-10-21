@@ -813,4 +813,35 @@ mod tests {
             previous = Some(counters);
         }
     }
+
+    #[test]
+    fn repeated_tight_quote_markers_have_linear_classification_work() {
+        let pattern = ["> - a", ">+", "> tail", "> > - b", "> >+", "> > end"];
+        let mut previous = None;
+        for count in [2_000, 8_000, 32_000] {
+            let source = pattern
+                .iter()
+                .cycle()
+                .take(count)
+                .copied()
+                .collect::<Vec<_>>()
+                .join("\n");
+            LINES_CLASSIFIED.with(|c| c.set(0));
+            STACK_ENTRIES_EXAMINED.with(|c| c.set(0));
+            FOLLOWER_PROBES.with(|c| c.set(0));
+            let _document = super::super::parse(&source);
+            let counters = (
+                LINES_CLASSIFIED.with(std::cell::Cell::get),
+                STACK_ENTRIES_EXAMINED.with(std::cell::Cell::get),
+                FOLLOWER_PROBES.with(std::cell::Cell::get),
+            );
+            assert!(counters.0 > 0 && counters.0 <= count as u64, "{counters:?}");
+            if let Some((lines, entries, probes)) = previous {
+                assert!(counters.0 <= lines * 5, "classified lines: {counters:?}");
+                assert!(counters.1 <= entries * 5, "stack entries: {counters:?}");
+                assert!(counters.2 <= probes * 5, "follower probes: {counters:?}");
+            }
+            previous = Some(counters);
+        }
+    }
 }
