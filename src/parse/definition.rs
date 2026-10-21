@@ -631,9 +631,9 @@ pub(in crate::parse) fn collect_definition_body(
     let mut nested_definition_open = seed.lines().any(is_definition_list_start);
     let mut nested_definition_column = seed
         .lines()
-        .filter(|line| is_definition_list_start(trim_ascii_start(line)))
-        .map(indent_columns)
-        .last();
+        .rev()
+        .find(|line| is_definition_list_start(trim_ascii_start(line)))
+        .map(indent_columns);
     let mut paragraph_column = seed
         .lines()
         .last()
