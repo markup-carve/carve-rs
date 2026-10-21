@@ -1715,7 +1715,9 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // Spec 894ff32e adds 616-25, whose marked quote soft break reports a loss.
     // The eight parsed CSV/TSV tables lose their source fence in ProseMirror;
     // the bridge reports that loss instead of claiming a strict round trip.
-    const LOSSY: usize = 764;
+    // Spec 54528118 adds corpus 639, 640, 641 and 641-2. All four report
+    // existing source loss through the bridge; the strict set is unchanged.
+    const LOSSY: usize = 768;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in
