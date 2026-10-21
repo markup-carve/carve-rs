@@ -388,9 +388,22 @@ pub(in crate::parse) fn parse_inline_context_with_pairs(
     if options.extensions.is_empty()
         && !bytes.is_empty()
         && bytes.len() <= 64
-        && bytes
-            .iter()
-            .all(|&b| b.is_ascii_alphanumeric() || b == b' ')
+        && {
+            // Keep the ASCII check cheap. Only a Unicode byte needs the
+            // character scan for letters and combining marks.
+            match bytes
+                .iter()
+                .find(|&&b| !(b.is_ascii_alphanumeric() || b == b' '))
+            {
+                None => true,
+                Some(&b) if !b.is_ascii() => text.chars().all(|c| {
+                    c.is_alphanumeric()
+                        || c == ' '
+                        || unicode_normalization::char::is_combining_mark(c)
+                }),
+                _ => false,
+            }
+        }
         && (!bytes.contains(&b' ') || CELL_WRAPS.with(|wraps| wraps.borrow().is_empty()))
     {
         let mapped = positions
