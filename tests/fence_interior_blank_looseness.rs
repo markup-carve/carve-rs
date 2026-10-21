@@ -31,3 +31,29 @@ fn no_interior_blank_stays_tight() {
         "<ul>\n  <li>\n    <pre><code>code\n</code></pre>\n  </li>\n  <li>c</li>\n</ul>"
     );
 }
+
+#[test]
+fn folded_fence_text_before_a_blank_leaves_two_item_paragraphs() {
+    for run in ["```", "~~~"] {
+        let before_closer = format!("- h\n  {run}\n\n  b\n{run}\n");
+        let after_letter = format!("- o\n  {run}\nx\n\n  t\n");
+        let first = carve::to_html(&before_closer);
+        let second = carve::to_html(&after_letter);
+        assert!(first.contains("<li><p>h"), "{run}: {first}");
+        assert!(first.contains("<p>b"), "{run}: {first}");
+        assert!(second.contains("<li><p>o"), "{run}: {second}");
+        assert!(second.contains("<p>t"), "{run}: {second}");
+    }
+}
+
+#[test]
+fn folded_fence_canonical_neighbors_keep_their_ownership() {
+    assert_eq!(
+        carve::to_html("- o\n  ```\n```\n\n  t\n"),
+        "<ul>\n  <li><p>o\n<code>\n</code></p>\n    <p>t</p>\n  </li>\n</ul>"
+    );
+    assert_eq!(
+        carve::to_html("- o\n  - h\n    ```\n```\n"),
+        "<ul>\n  <li>o\n    <ul>\n      <li>h\n<code>\n</code></li>\n    </ul>\n  </li>\n</ul>"
+    );
+}
