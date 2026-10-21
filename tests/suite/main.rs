@@ -141,6 +141,8 @@ mod a_default_list_marker_is_not_recorded;
 
 #[path = "../exact_case_lookups.rs"]
 mod exact_case_lookups;
+#[path = "../table_after_invisible_definition.rs"]
+mod table_after_invisible_definition;
 #[path = "../table_body_source.rs"]
 mod table_body_source;
 #[path = "../table_width_precision.rs"]

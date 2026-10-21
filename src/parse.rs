@@ -8264,8 +8264,11 @@ fn rebase_body_blocks(
     // behind by a child whose own column it fell short of. See the guard
     // below for what only counting the paragraph cost (carve-rs#1415).
     let mut block_at_minimum = false;
+    let mut paragraph_after_invisible_base = None;
+    let mut invisible_end = None;
     while i < lines.len() {
         if is_blank_line(&lines[i]) {
+            paragraph_after_invisible_base = None;
             last_literal_base = None;
             opaque_quote_tail = false;
             after_blank = true;
@@ -8364,6 +8367,8 @@ fn rebase_body_blocks(
             && paragraph_open
             && base > 0
             && item_block_opener(&local_at_base)
+            && !(paragraph_after_invisible_base.is_some_and(|column| base >= column)
+                && is_table_start(&local_at_base))
             && !(source.reached.get(i).copied().unwrap_or(false)
                 && strip_blockquote_prefix(&local_at_base).is_some())
             && !closed_fence_below_descendant
@@ -8608,6 +8613,7 @@ fn rebase_body_blocks(
                     .get(&open.fence_len)
                     .and_then(|at| at.get(at.partition_point(|&at| at <= i)).copied());
                 i = close.map_or(i + 1, |at| at + 1);
+                invisible_end = i.checked_sub(1);
                 after_blank = false;
                 paragraph_open = false;
                 block_at_minimum = term_boundary
@@ -8954,6 +8960,17 @@ fn rebase_body_blocks(
         {
             let paragraph = line_starts_paragraph(&opener);
             if !description_tail && !include_sublists {
+                let follows_invisible = i > 0
+                    && (is_collected_definition_placeholder(&lines[i - 1])
+                        || is_line_comment_any_column(&lines[i - 1])
+                        || invisible_end == Some(i - 1));
+                paragraph_after_invisible_base = if paragraph && follows_invisible {
+                    Some(base)
+                } else if paragraph && paragraph_open {
+                    paragraph_after_invisible_base
+                } else {
+                    None
+                };
                 paragraph_open = paragraph;
             }
             if paragraph {
@@ -8975,6 +8992,7 @@ fn rebase_body_blocks(
         }
 
         paragraph_open = false;
+        paragraph_after_invisible_base = None;
 
         let mut end = i;
         let code = detect_fence_open(&opener);
