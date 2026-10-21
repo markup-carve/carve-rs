@@ -1358,6 +1358,8 @@ mod language_attribute;
 mod lazy_fold_before_an_abbreviation;
 #[path = "../lazy_framing_never_leaks.rs"]
 mod lazy_framing_never_leaks;
+#[path = "../lazy_line_after_description_sibling_list.rs"]
+mod lazy_line_after_description_sibling_list;
 #[path = "../leftover_plus_line_test.rs"]
 mod leftover_plus_line_test;
 #[path = "../line_block_and_arrow.rs"]

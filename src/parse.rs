@@ -15138,6 +15138,16 @@ fn parse_list(
                             collected_body_takes_the_lazy_line(&rebased.source, below, options)
                         },
                         |cur| {
+                            // PART 9 §10 I2 keeps the paragraph owner across a collection restart.
+                            nested_columns.lazy_paragraph_owner = cur
+                                .pos
+                                .checked_sub(1)
+                                .filter(|&at| {
+                                    let prior = cur.lines.at(at);
+                                    line_starts_paragraph(trim_ascii_start(prior))
+                                        && !item_block_opener(trim_ascii_start(prior))
+                                })
+                                .and_then(|_| nested_columns.last().map(|&(_, column)| column));
                             collect_indented_block_mapped_with_columns(
                                 cur,
                                 sub_indent - 1,
@@ -18858,6 +18868,7 @@ fn collect_indented_block_mapped_with(
 struct NestedCollectionState {
     columns: Vec<(usize, usize)>,
     fence_seen: bool,
+    lazy_paragraph_owner: Option<usize>,
 }
 
 impl std::ops::Deref for NestedCollectionState {
@@ -18937,6 +18948,7 @@ fn collect_indented_block_mapped_with_columns(
     let mut marker_description_has_lazy_tail = false;
     let mut marker_description_is_paragraph = false;
     let mut nested_paragraph_column = None;
+    let mut carried_lazy_owner = nested_item_columns.lazy_paragraph_owner.take();
     // A quote between the item's content column and the marker note's body
     // column belongs to the item and can take a flush-left lazy line.
     let mut marker_note_intermediate_quote_open = false;
@@ -19328,6 +19340,14 @@ fn collect_indented_block_mapped_with_columns(
         }
         nested_refused_fence = false;
         let indent = indent_columns(line);
+        let plain_nested_lazy = fence.is_none()
+            && comment_fence.is_none()
+            && colon_open.is_empty()
+            && indent >= strip_cols
+            && line_starts_paragraph(trim_ascii_start(line))
+            && detect_list_marker_full_at(line, indent).is_none()
+            && !item_block_opener_with_invisible_arms(trim_ascii_start(line), true)
+            && !is_reference_definition(trim_ascii_start(line));
         if indent == strip_cols
             && (item_block_opener(trim_ascii_start(line))
                 || detect_comment_fence_line_any_column(line).is_some())
@@ -19744,6 +19764,7 @@ fn collect_indented_block_mapped_with_columns(
                     )
             });
         if indent <= parent_indent
+            && !(plain_nested_lazy && carried_lazy_owner.is_some_and(|owner| indent < owner))
             && !comment_retains_owner
             && !retained_item_fence
             && !(marker_note_intermediate_quote_open
@@ -20299,6 +20320,29 @@ fn collect_indented_block_mapped_with_columns(
         };
         let mut sliced = sliced;
         let mut trimmed_after_slice = 0usize;
+        // PART 9 §10 I2 carries the deepest open paragraph across plain lazy lines.
+        let marker_paragraph_owner = (nested_paragraph_column.is_none() && plain_nested_lazy)
+            .then(|| {
+                lines.last().map_or(carried_lazy_owner, |prior| {
+                    if detect_list_marker_full(prior).is_some()
+                        && paragraph_owner_column(prior, 0).is_some()
+                    {
+                        nested_item_columns.last().map(|&(_, column)| column)
+                    } else if prior.starts_with(LAZY)
+                        || (carried_lazy_owner.is_some()
+                            && line_starts_paragraph(trim_ascii_start(prior)))
+                    {
+                        carried_lazy_owner
+                    } else {
+                        None
+                    }
+                })
+            })
+            .flatten()
+            .filter(|&owner| indent < owner);
+        if let Some(owner) = marker_paragraph_owner {
+            nested_paragraph_column = Some(owner);
+        }
         // CARVE-P0-015: a below-child run is a lazy fold even when the outer item reaches its column.
         if nested_folded_fence
             && fence.is_none()
@@ -20553,6 +20597,11 @@ fn collect_indented_block_mapped_with_columns(
             );
         }
         lines.push(sliced);
+        carried_lazy_owner = marker_paragraph_owner
+            .or_else(|| carried_lazy_owner.filter(|&owner| plain_nested_lazy && indent >= owner));
+        if marker_paragraph_owner.is_some() {
+            nested_paragraph_column = None;
+        }
         if building_maps {
             line_map.push(cur.source_line(cur.pos));
         }
