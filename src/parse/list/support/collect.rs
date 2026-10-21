@@ -347,7 +347,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         if is_definition_placeholder(line) && indent_columns(line) < strip_cols {
             break;
         }
-        if admission.kind == ContainerLine::Blank {
+        if admission.blank {
             // A nested marker-line fence keeps one separator before a plus at
             // its marker column. A direct item fence keeps every payload blank.
             if active_nested_fence.is_some()

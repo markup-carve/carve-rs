@@ -20,7 +20,7 @@ pub(super) enum ContainerLine {
 
 #[derive(Clone, Copy)]
 pub(super) struct ContainerAdmission {
-    pub kind: ContainerLine,
+    pub blank: bool,
     pub preceding_blanks: usize,
 }
 
@@ -41,7 +41,7 @@ macro_rules! run_indented_body {
             }
             let $line = source.at($index);
             let $admission = ContainerAdmission {
-                kind: $container.physical_kind($line),
+                blank: is_blank_line($line),
                 preceding_blanks,
             };
             debug_assert!($admission.preceding_blanks <= $index);
@@ -89,21 +89,6 @@ impl IndentContainer {
             ContainerLine::Below
         } else {
             ContainerLine::Outside
-        }
-    }
-
-    pub(super) fn physical_kind(self, line: &str) -> ContainerLine {
-        if is_blank_line(line) {
-            ContainerLine::Blank
-        } else {
-            let column = indent_columns(line);
-            if column >= self.content_column {
-                ContainerLine::Content
-            } else if column >= self.marker_column {
-                ContainerLine::Below
-            } else {
-                ContainerLine::Outside
-            }
         }
     }
 }

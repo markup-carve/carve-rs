@@ -669,7 +669,7 @@ pub(in crate::parse) fn extract_footnote_defs(
                         if parse_footnote_def_line(line).is_some() {
                             break;
                         }
-                        if admission.kind == ContainerLine::Blank {
+                        if admission.blank {
                             if let Some(open) = note_fence {
                                 let (residue, consumed, synthetic) =
                                     slice_columns_mapped(line, open.content_col, true);

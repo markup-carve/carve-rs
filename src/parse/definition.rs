@@ -718,7 +718,7 @@ pub(in crate::parse) fn collect_definition_body(
         if is_definition_placeholder(line) && indent_columns(line) < content_column {
             break;
         }
-        if admission.kind == ContainerLine::Blank {
+        if admission.blank {
             retained_below_comment = false;
             paragraph_column = None;
             paragraph_marker_column = None;
