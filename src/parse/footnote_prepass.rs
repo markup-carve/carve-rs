@@ -487,7 +487,9 @@ pub(in crate::parse) fn extract_footnote_defs(
                     }
                 }
             }
-            if !in_container {
+            // An authored quote may be deeper than the item's content column.
+            // Its prefix is still a container for note-body lines.
+            if !in_container && !authored_quote_def {
                 while i < lines.len() {
                     let line = lines[i];
                     let column = indent_columns(line);
@@ -953,7 +955,13 @@ pub(in crate::parse) fn extract_footnote_defs(
                 // A quote at an item's or a description's content column
                 // (`- > - para` / `  >   [^f]: n`) is a host level too; its
                 // continuation lines repeat the same indentation before `>`.
-                let structural_len = stripped.structural.len();
+                // The column scanner did not strip an overindented quote, so
+                // use its authored prefix through the definition marker.
+                let structural_len = if authored_quote_def {
+                    raw_def_line.len() - def_line.len()
+                } else {
+                    stripped.structural.len()
+                };
                 let mut quote_indents = Vec::new();
                 let mut inside = raw_def_line;
                 // A marker in front of the quote (`- > [^f]: n`) stands for the

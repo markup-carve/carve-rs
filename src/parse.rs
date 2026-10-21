@@ -262,9 +262,12 @@ fn list_marker_since_blank(lines: &[&str]) -> Vec<bool> {
     lines
         .iter()
         .map(|line| {
-            if is_blank_line(line) {
+            let unquoted = without_blockquote_prefixes(line);
+            if is_blank_line(unquoted) {
                 seen = false;
-            } else if detect_list_marker_full(line).is_some() {
+            } else if detect_list_marker_full(line).is_some()
+                || detect_list_marker_full(unquoted).is_some()
+            {
                 seen = true;
             }
             seen
