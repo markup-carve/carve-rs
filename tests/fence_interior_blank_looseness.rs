@@ -43,7 +43,24 @@ fn folded_fence_text_before_a_blank_leaves_two_item_paragraphs() {
         assert!(first.contains("<p>b"), "{run}: {first}");
         assert!(second.contains("<li><p>o"), "{run}: {second}");
         assert!(second.contains("<p>t"), "{run}: {second}");
+        if run == "```" {
+            assert_eq!(
+                second.trim_end(),
+                "<ul>\n  <li><p>o\n<code>\nx</code></p>\n    <p>t</p>\n  </li>\n</ul>"
+            );
+        }
     }
+}
+
+#[test]
+fn unclosed_folded_fence_without_a_later_closer_still_leaves_two_paragraphs() {
+    let html = carve::to_html("- h\n  ```\n\n  b\n");
+    assert!(html.contains("<li><p>h"), "{html}");
+    assert!(html.contains("<p>b"), "{html}");
+    assert_eq!(
+        carve::to_html("- h\n  ```\n\n  b\n```\n").trim_end(),
+        "<ul>\n  <li><p>h\n<code></code></p>\n    <p>b\n<code></code></p>\n  </li>\n</ul>"
+    );
 }
 
 #[test]
