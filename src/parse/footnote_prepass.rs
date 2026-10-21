@@ -673,10 +673,9 @@ pub(in crate::parse) fn extract_footnote_defs(
                         }
                         let after_run = container.blank_run_end(CursorLines::Slice(&lines), i + 1);
                         if after_run < lines.len()
-                            && match container.classify(
-                                lines[after_run],
-                                decision_at(first_source_line + after_run),
-                            ) {
+                            && match container.classify(lines[after_run], || {
+                                decision_at(first_source_line + after_run)
+                            }) {
                                 ContainerLine::Content => true,
                                 ContainerLine::OwnedContinuation => {
                                     is_plus_marker(lines[after_run])

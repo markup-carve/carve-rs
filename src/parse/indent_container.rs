@@ -39,13 +39,14 @@ impl IndentContainer {
     pub(super) fn classify(
         self,
         line: &str,
-        decision: Option<continuation_marker::Decision>,
+        decision: impl FnOnce() -> Option<continuation_marker::Decision>,
     ) -> ContainerLine {
         if is_blank_line(line) {
             ContainerLine::Blank
         } else if indent_columns(line) >= self.content_column {
             ContainerLine::Content
-        } else if self.owns_continuation(line, decision) {
+        } else if is_plus_marker(trim_ascii_start(line)) && self.owns_continuation(line, decision())
+        {
             ContainerLine::OwnedContinuation
         } else {
             ContainerLine::Outside

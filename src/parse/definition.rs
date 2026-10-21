@@ -1391,7 +1391,7 @@ pub(in crate::parse) fn collect_definition_body(
         let look = container.blank_run_end(cur.lines, cur.pos) - cur.pos;
         match cur.lines.line(cur.pos + look) {
             Some(after)
-                if container.classify(after, cur.continuation_decision(cur.pos + look))
+                if container.classify(after, || cur.continuation_decision(cur.pos + look))
                     == ContainerLine::Content =>
             {
                 folded_a_lazy_line = false;
