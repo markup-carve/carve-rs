@@ -832,7 +832,10 @@ pub(in crate::parse) fn collect_definition_body(
             retained_below_comment = false;
         }
         // Form B: `+` pull-left continuation.
+        // A nested description at this column owns its own `+`. Keep it in
+        // the outer body's stream so the inner description can pull the block.
         if is_plus_marker(trim_ascii_start(line))
+            && !(nested_definition_open && column == content_column)
             && cur.continuation_decision(cur.pos).is_some_and(|decision| {
                 decision.owner == Some(continuation_marker::Kind::Description)
                     && decision.refusal.is_none()
@@ -954,7 +957,13 @@ pub(in crate::parse) fn collect_definition_body(
                                 },
                             ))
                     });
-                if accept_fence_opener && paragraph_open {
+                // The nested description's `+` already separates its next
+                // block. A manufactured blank here would make it attach none.
+                if accept_fence_opener
+                    && paragraph_open
+                    && !(nested_definition_open
+                        && lines.last().is_some_and(|line| is_plus_marker(line)))
+                {
                     // The blank is MANUFACTURED, so it stands for no source
                     // line and takes no column. Pushing the sliced line's own
                     // column before the blank gave the blank that column and

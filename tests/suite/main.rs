@@ -511,6 +511,8 @@ mod a_mention_name_the_grammar_rejects_is_unspellable;
 mod a_multi_line_comment_in_a_table_cell_is_dropped;
 #[path = "../a_nested_container_in_a_description_body_folds_a_flush_left_line.rs"]
 mod a_nested_container_in_a_description_body_folds_a_flush_left_line;
+#[path = "../a_nested_description_plus_owns_its_fence.rs"]
+mod a_nested_description_plus_owns_its_fence;
 #[path = "../a_nested_emphasis_keeps_its_nesting_in_markdown.rs"]
 mod a_nested_emphasis_keeps_its_nesting_in_markdown;
 #[path = "../a_nested_item_lead_fence_stops_at_host_boundary.rs"]
