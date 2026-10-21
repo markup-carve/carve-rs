@@ -117,6 +117,7 @@ impl Drop for PlaceholderGuard {
 
 thread_local! {
     static UNTERMINATED_SOURCE_LINE: Cell<Option<usize>> = const { Cell::new(None) };
+    static LAST_NONBLANK_SOURCE_LINE: Cell<Option<usize>> = const { Cell::new(None) };
     static LINT_EVENTS: RefCell<Option<Vec<LintEvent>>> = const { RefCell::new(None) };
 }
 
@@ -159,22 +160,35 @@ fn note_lint_event(event: LintEvent) {
 }
 
 /// Retain the physical EOF through container collection and nested parses.
-struct SourceEndingGuard(Option<usize>);
+struct SourceEndingGuard(Option<usize>, Option<usize>);
 
 impl SourceEndingGuard {
     fn install(source: &str) -> Self {
         let last = (!source.is_empty() && !source.ends_with('\n')).then(|| source.lines().count());
-        Self(UNTERMINATED_SOURCE_LINE.with(|slot| slot.replace(last)))
+        let nonblank = source
+            .lines()
+            .enumerate()
+            .filter(|(_, line)| !is_blank_line(line))
+            .map(|(at, _)| at + 1)
+            .last();
+        Self(
+            UNTERMINATED_SOURCE_LINE.with(|slot| slot.replace(last)),
+            LAST_NONBLANK_SOURCE_LINE.with(|slot| slot.replace(nonblank)),
+        )
     }
 
     fn fragment() -> Self {
-        Self(UNTERMINATED_SOURCE_LINE.with(|slot| slot.replace(None)))
+        Self(
+            UNTERMINATED_SOURCE_LINE.with(|slot| slot.replace(None)),
+            LAST_NONBLANK_SOURCE_LINE.with(|slot| slot.replace(None)),
+        )
     }
 }
 
 impl Drop for SourceEndingGuard {
     fn drop(&mut self) {
         UNTERMINATED_SOURCE_LINE.with(|slot| slot.set(self.0));
+        LAST_NONBLANK_SOURCE_LINE.with(|slot| slot.set(self.1));
     }
 }
 

@@ -1665,6 +1665,7 @@ pub(in crate::parse) fn parse_fence(
     // the author wrote it, not just its content. A blank final payload has no
     // codepoint except its line ending, which belongs to an open fence.
     let mut pos = span_of(cur, span_start, cur.pos, options);
+    let lint_pos = pos.clone();
     if !closed
         && !unterminated
         && content_lines
@@ -1672,12 +1673,16 @@ pub(in crate::parse) fn parse_fence(
             .is_some_and(|line| is_blank_line(strip_lazy(line)))
     {
         if let Some(pos) = pos.as_mut() {
-            pos.end_line += 1;
-            pos.end_column = 1;
+            if LAST_NONBLANK_SOURCE_LINE
+                .with(|slot| slot.get().is_some_and(|last| pos.end_line < last))
+            {
+                pos.end_line += 1;
+                pos.end_column = 1;
+            }
         }
     }
     if !closed {
-        if let Some(pos) = pos.clone() {
+        if let Some(pos) = lint_pos {
             let marker = std::iter::repeat(open.fence_char as char)
                 .take(open.fence_len)
                 .collect();
