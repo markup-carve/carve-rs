@@ -764,9 +764,9 @@ pub(crate) fn trailing_marker_line_content(body: &str) -> Option<String> {
 
 #[cfg(test)]
 thread_local! {
-    static PARAGRAPH_BODY_PROBES: Cell<usize> = const { Cell::new(0) };
+    pub(crate) static PARAGRAPH_BODY_PROBES: Cell<usize> = const { Cell::new(0) };
     /// Calls into `parse_blocks`, the nested parse every container body takes.
-    static BLOCK_SEQUENCE_PARSES: Cell<usize> = const { Cell::new(0) };
+    pub(crate) static BLOCK_SEQUENCE_PARSES: Cell<usize> = const { Cell::new(0) };
 }
 
 /// PART 1 S4's one question, asked of a container's WHOLE body: does the last
