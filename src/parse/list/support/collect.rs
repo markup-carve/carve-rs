@@ -108,6 +108,10 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     });
     let marker_is_definition_term =
         marker_content.is_some_and(|content| is_definition_list_start(trim_ascii_start(content)));
+    // A term on the item's marker line opens at the MARKER column. Later
+    // terms in the body open at their own authored columns.
+    let mut definition_list_column = marker_is_definition_term.then_some(parent_indent);
+    let mut after_definition_blank = false;
     let mut marker_definition_has_description = !marker_is_definition_term;
     let mut marker_description_code_admitted = false;
     let mut marker_description_has_inline_code = false;
@@ -212,6 +216,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let mut nested_folded_fence = false;
     let mut nested_blank_run: Option<(usize, usize, bool)> = None;
     while let Some(line) = cur.peek() {
+        after_definition_blank |= is_blank_line(line);
         let follows_first_block = !lead_is_continuation
             && cur.pos.checked_sub(1).is_some_and(|previous| {
                 cur.continuation_decision(previous)
@@ -485,6 +490,40 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && detect_list_marker_full_at(line, indent).is_none()
             && !item_block_opener_with_invisible_arms(trim_ascii_start(line), true)
             && !is_reference_definition(trim_ascii_start(line));
+        let term = indent >= strip_cols
+            && fence.is_none()
+            && comment_fence.is_none()
+            && colon_open.is_empty()
+            && is_definition_list_start(trim_ascii_start(line));
+        let description = strip_description_prefix(trim_ascii_start(line)).is_some()
+            && fence.is_none()
+            && comment_fence.is_none()
+            && colon_open.is_empty();
+        if after_definition_blank
+            && !term
+            && !(description && definition_list_column == Some(indent))
+            && definition_list_column.is_some_and(|column| indent <= column)
+        {
+            definition_list_column = None;
+        }
+        if term {
+            definition_list_column = Some(match definition_list_column {
+                Some(column) if !after_definition_blank => column.min(indent),
+                _ => indent,
+            });
+        } else if !description
+            && definition_list_column.is_some()
+            && item_block_opener(trim_ascii_start(line))
+        {
+            definition_list_column = None;
+        }
+        after_definition_blank = false;
+        // CARVE-P2-017: a separator below the list column cannot open a dd.
+        let below_definition_separator =
+            definition_list_column.is_some_and(|column| indent < column) && description;
+        if below_definition_separator && indent == 0 {
+            break;
+        }
         if indent == strip_cols
             && (item_block_opener(trim_ascii_start(line))
                 || detect_comment_fence_line_any_column(line).is_some())
@@ -1133,7 +1172,10 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 marker_description_is_paragraph = false;
                 marker_term_paragraph_open = true;
                 marker_term_open = true;
-            } else if let Some(body) = strip_description_prefix(trim_ascii_start(line)) {
+            } else if let Some(body) = (!below_definition_separator)
+                .then(|| strip_description_prefix(trim_ascii_start(line)))
+                .flatten()
+            {
                 marker_definition_has_description = true;
                 marker_description_code_admitted = false;
                 marker_description_has_inline_code = trim_ascii_start(line).contains('`');
@@ -1396,6 +1438,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         if (lazy_code_line
             || framed_comment_payload
             || lazy_list_marker
+            || below_definition_separator
             || definition_band_inline_closer
             || (definition_comment_band
                 && detect_fence_open(trim_ascii_start(line)).is_none()

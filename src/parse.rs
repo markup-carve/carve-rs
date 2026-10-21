@@ -535,8 +535,11 @@ fn probe_blocks_at_document_level_with_start(
             &[],
             None,
             options,
-            true,
-            false,
+            ParseScope {
+                at_document_level: true,
+                in_item_body: false,
+                in_quoted_body: false,
+            },
             pending,
         );
         root_start = start;
@@ -1546,10 +1549,20 @@ fn parse_blocks_with_options_at_level_into(
         &[],
         None,
         options,
-        at_document_level,
-        in_item_body,
+        ParseScope {
+            at_document_level,
+            in_item_body,
+            in_quoted_body: false,
+        },
         pending,
     )
+}
+
+#[derive(Clone, Copy)]
+struct ParseScope {
+    at_document_level: bool,
+    in_item_body: bool,
+    in_quoted_body: bool,
 }
 
 /// The same parse, told which of `source`'s lines reached the content column of
@@ -1559,8 +1572,7 @@ fn parse_blocks_with_options_at_level_into_reached(
     reached: &[bool],
     marker_tail: Option<MarkerTail>,
     options: &Options<'_>,
-    at_document_level: bool,
-    in_item_body: bool,
+    scope: ParseScope,
     pending: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
     parse_blocks_with_options_at_level_into_reached_with_start(
@@ -1568,8 +1580,7 @@ fn parse_blocks_with_options_at_level_into_reached(
         reached,
         marker_tail,
         options,
-        at_document_level,
-        in_item_body,
+        scope,
         pending,
     )
     .0
@@ -1580,8 +1591,7 @@ fn parse_blocks_with_options_at_level_into_reached_with_start(
     reached: &[bool],
     marker_tail: Option<MarkerTail>,
     options: &Options<'_>,
-    at_document_level: bool,
-    in_item_body: bool,
+    scope: ParseScope,
     pending: &mut Vec<PendingBody>,
 ) -> (Vec<BlockNode>, ProbeRootBoundary) {
     let mut lines: Vec<&str> = source.lines().collect();
@@ -1610,8 +1620,11 @@ fn parse_blocks_with_options_at_level_into_reached_with_start(
         want_lines.then_some(line_map.as_slice()),
         options.positions.then_some(col_map.as_slice()),
     );
-    cursor.at_document_level = at_document_level;
-    cursor.in_item_body = in_item_body;
+    cursor.at_document_level = scope.at_document_level;
+    cursor.in_item_body = scope.in_item_body;
+    // Quote X2 also applies in the unpositioned fast path. Losing this bit
+    // makes a separator under an open quoted term look like a document line.
+    cursor.in_quoted_body = scope.in_quoted_body;
     cursor.reached = Some(reached);
     cursor.marker_tail = marker_tail;
     let blocks = parse_blocks(&mut cursor, options, pending);
@@ -2876,8 +2889,11 @@ fn parse_unpositioned_mapped_source(
         &source.reached,
         source.marker_tail,
         options,
-        at_document_level,
-        in_item_body,
+        ParseScope {
+            at_document_level,
+            in_item_body,
+            in_quoted_body: in_quoted_body || source.in_quoted_body,
+        },
         pending,
     )
 }

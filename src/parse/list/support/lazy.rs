@@ -6,10 +6,19 @@ pub(crate) fn fold_lazy_run_and_resume(
     cur: &mut LineCursor,
     nested: &mut MappedSource,
     content_col: usize,
+    options: &Options<'_>,
     open: impl FnMut(&MappedSource, bool) -> bool,
     resume: impl FnMut(&mut LineCursor) -> MappedSource,
 ) {
-    fold_lazy_run_and_resume_in_band(cur, nested, content_col, (0, 0), false, open, resume);
+    fold_lazy_run_and_resume_in_band(
+        cur,
+        nested,
+        content_col,
+        (0, 0),
+        (false, options),
+        open,
+        resume,
+    );
 }
 
 pub(crate) fn fold_lazy_run_and_resume_in_band(
@@ -17,13 +26,15 @@ pub(crate) fn fold_lazy_run_and_resume_in_band(
     nested: &mut MappedSource,
     content_col: usize,
     lazy_scope: (usize, usize),
-    frame_band_lines: bool,
+    frame: (bool, &Options<'_>),
     mut open: impl FnMut(&MappedSource, bool) -> bool,
     mut resume: impl FnMut(&mut LineCursor) -> MappedSource,
 ) {
+    let (frame_band_lines, options) = frame;
     let (lazy_column, list_base) = lazy_scope;
     let mut pending_chunks = Vec::new();
     let mut staged = LineBuffer::default().into_source();
+    let mut flush_separator_follows_other_block = false;
     loop {
         // A COMMENT BELOW THE CONTENT COLUMN ENDS NOTHING. §10 I5's first
         // exception keeps it invisible and paragraph-closing at any column, and
@@ -92,6 +103,9 @@ pub(crate) fn fold_lazy_run_and_resume_in_band(
             }
             let before_resume = cur.pos;
             let resumed = resume(cur);
+            if !frame_band_lines && body_ends_in_definition_list(&resumed.source, options) {
+                flush_separator_follows_other_block = false;
+            }
             if frame_band_lines {
                 pending_chunks.push(std::mem::replace(
                     &mut staged,
@@ -116,6 +130,22 @@ pub(crate) fn fold_lazy_run_and_resume_in_band(
             && matched_comment_before(cur).is_some_and(|at| marked_quote_before_comment(cur, at))
         {
             break;
+        }
+        // CARVE-P2-017: a flush separator leaves an item's definition list.
+        // Quote X2 keeps an open quoted paragraph's lazy continuation.
+        if !frame_band_lines
+            && !flush_separator_follows_other_block
+            && !cur.in_quoted_body
+            && cur.peek().is_some_and(|line| {
+                indent_columns(line) == 0 && strip_description_prefix(line).is_some()
+            })
+        {
+            if body_ends_in_definition_list(&nested.source, options)
+                && !definition_list_is_marker_line_only(nested)
+            {
+                break;
+            }
+            flush_separator_follows_other_block = true;
         }
         // A marker between the host's base and content columns can fold into
         // an open paragraph inside a raised colon container (carve#2474).
@@ -170,6 +200,9 @@ pub(crate) fn fold_lazy_run_and_resume_in_band(
         }
         let before_resume = cur.pos;
         let resumed = resume(cur);
+        if !frame_band_lines && body_ends_in_definition_list(&resumed.source, options) {
+            flush_separator_follows_other_block = false;
+        }
         if frame_band_lines {
             pending_chunks.push(std::mem::replace(
                 &mut staged,

@@ -749,6 +749,91 @@ pub(crate) fn collected_body_takes_the_lazy_line(
     nested_ends_with_open_paragraph(src, trailing_below_column, trailing_below_column, options)
 }
 
+pub(crate) fn body_ends_in_definition_list(body: &str, options: &Options<'_>) -> bool {
+    #[cfg(test)]
+    BODY_ENDS_DEFINITION_PROBE_BYTES.with(|work| work.set(work.get() + body.len() as u64));
+    matches!(
+        probe_blocks(body, options).last(),
+        Some(BlockNode::DefinitionList(_))
+    )
+}
+
+/// A list opened on the item's marker line starts at the marker column.
+/// A later term in the collected body can open a list at its own column.
+pub(crate) fn definition_list_is_marker_line_only(body: &MappedSource) -> bool {
+    if !body.item_marker_at_start {
+        return false;
+    }
+    let mut lines = body.source.lines();
+    lines.next().is_some_and(is_definition_list_start)
+        && !lines.any(|line| is_definition_list_start(trim_ascii_start(line)))
+}
+
+#[cfg(test)]
+mod description_separator_probe_work {
+    use super::BODY_ENDS_DEFINITION_PROBE_BYTES;
+
+    fn work_for(count: usize, repeated_items: bool) -> (usize, u64) {
+        let mut source = String::new();
+        if repeated_items {
+            for index in 0..count {
+                source.push_str(&format!("- item {index}\n  :: term\n: tail\n"));
+            }
+        } else {
+            source.push_str("- item\n");
+            for index in 0..count {
+                source.push_str(&format!("  :: term {index}\n   tail\n"));
+            }
+            source.push_str(": tail\n");
+        }
+        BODY_ENDS_DEFINITION_PROBE_BYTES.with(|work| work.set(0));
+        let _ = crate::to_html(&source);
+        let bytes = BODY_ENDS_DEFINITION_PROBE_BYTES.with(|work| work.get());
+        (source.len(), bytes)
+    }
+
+    fn repeated_separator_work(count: usize) -> (usize, u64) {
+        let mut source = String::from("- :: term\n");
+        for index in 0..count {
+            source.push_str(&format!(": tail\n  :: term {index}\n"));
+        }
+        BODY_ENDS_DEFINITION_PROBE_BYTES.with(|work| work.set(0));
+        let _ = crate::to_html(&source);
+        let bytes = BODY_ENDS_DEFINITION_PROBE_BYTES.with(|work| work.get());
+        (source.len(), bytes)
+    }
+
+    #[test]
+    fn definition_tail_probes_have_bounded_work() {
+        for repeated_items in [false, true] {
+            let mut measurements = Vec::new();
+            for count in [32, 64, 128, 256] {
+                let (input, probed) = work_for(count, repeated_items);
+                assert!(
+                    probed <= (input * 4) as u64,
+                    "items={repeated_items} count={count}: {probed} probe bytes for {input} input bytes"
+                );
+                measurements.push(probed);
+            }
+            assert!(
+                measurements[3] <= measurements[0] * 12,
+                "items={repeated_items}: 8x input used more than 12x probe bytes: {measurements:?}"
+            );
+        }
+        let measurements =
+            [32, 64, 128, 256]
+                .map(repeated_separator_work)
+                .map(|(input, probed)| {
+                    assert!(probed <= (input * 4) as u64);
+                    probed
+                });
+        assert!(
+            measurements[3] <= measurements[0] * 12,
+            "repeated separators: 8x input used more than 12x probe bytes: {measurements:?}"
+        );
+    }
+}
+
 /// Whether the last consumed content belongs below this container's column.
 /// A comment closer inherits its opener's column (CARVE-P9-053). The cursor
 /// keeps that column even when position tracking is disabled.
@@ -784,6 +869,7 @@ thread_local! {
     pub(crate) static PARAGRAPH_BODY_PROBES: Cell<usize> = const { Cell::new(0) };
     /// Calls into `parse_blocks`, the nested parse every container body takes.
     pub(crate) static BLOCK_SEQUENCE_PARSES: Cell<usize> = const { Cell::new(0) };
+    pub(crate) static BODY_ENDS_DEFINITION_PROBE_BYTES: Cell<u64> = const { Cell::new(0) };
 }
 
 /// PART 1 S4's one question, asked of a container's WHOLE body: does the last

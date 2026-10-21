@@ -218,28 +218,25 @@ fn two_columns_in_folds_as_well() {
 }
 
 #[test]
-fn an_under_indented_definition_still_attaches() {
-    // The documented exception: a definition marker attaches to the term above
-    // it from ANY column, so it keeps dedenting to the body's column 0 rather
-    // than folding as text (corpus 154).
+fn an_under_indented_description_folds_into_the_term() {
+    // CARVE-P2-017: one column below the definition list folds into its term.
     assert_eq!(
         carve::to_html("- one\n  :: term\n :  def\n"),
-        "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n      <dd>def</dd>\n    </dl>\n  </li>\n</ul>"
+        "<ul>\n  <li>one\n    <dl>\n      <dt>term\n:  def</dt>\n    </dl>\n  </li>\n</ul>"
     );
 }
 
 #[test]
-fn a_below_column_definition_term_folds_but_its_definition_still_attaches() {
+fn a_below_column_term_and_separator_each_fold_into_their_owner() {
     // The TERM is not lenient: one column in it is text like any other opener.
     assert_eq!(
         carve::to_html("- - a\n :: term"),
         "<ul>\n  <li>\n    <ul>\n      <li>a\n:: term</li>\n    </ul>\n  </li>\n</ul>"
     );
-    // Its DEFINITION is: `:  def` attaches to the term above it from any
-    // column, which is corpus 154 and the reason the two are separated here.
+    // The separator below the definition list's column folds into its term.
     assert_eq!(
         carve::to_html("- one\n  :: term\n :  def\n"),
-        "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n      <dd>def</dd>\n    </dl>\n  </li>\n</ul>"
+        "<ul>\n  <li>one\n    <dl>\n      <dt>term\n:  def</dt>\n    </dl>\n  </li>\n</ul>"
     );
 }
 

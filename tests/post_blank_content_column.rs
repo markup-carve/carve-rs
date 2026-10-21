@@ -120,43 +120,38 @@ fn cc_final_deflist_nests_at_content_column() {
     );
 }
 
-// --- lenient def-attach: a `:  ` definition line below the term's content
-// column still attaches as a `<dd>` (carve#295 follow-through). A definition
-// marker is NOT subject to the column-0-exits rule that ends a list item;
-// only a blank line before it ends the entry. Matches carve-php / carve-js. ---
+// --- CARVE-P2-017: a description separator below its definition list's
+// column cannot attach. At column zero it ends the item and remains paragraph
+// text (carve#3451). ---
 
 #[test]
-fn cc_def_below_content_column_attaches_as_dd() {
-    // Term nested at content column 2; the `:  def` at column 0 is below it but
-    // still attaches to the open definition (it does NOT orphan to a paragraph).
+fn cc_def_below_content_column_ends_the_item() {
     assert_eq!(
         carve::to_html("- one\n  :: term\n:  def\n"),
-        "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n      <dd>def</dd>\n    </dl>\n  </li>\n</ul>"
+        "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n    </dl>\n  </li>\n</ul>\n<p>:  def</p>"
     );
 }
 
 #[test]
-fn cc_multiple_defs_below_content_column_attach() {
+fn cc_multiple_defs_below_content_column_stay_in_the_paragraph() {
     assert_eq!(
         carve::to_html("- one\n  :: term\n:  d1\n:  d2\n"),
-        "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n      <dd>d1</dd>\n      <dd>d2</dd>\n    </dl>\n  </li>\n</ul>"
+        "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n    </dl>\n  </li>\n</ul>\n<p>:  d1\n:  d2</p>"
     );
 }
 
 #[test]
 fn cc_def_below_content_column_lazy_body_folds() {
-    // A flush-left line after the below-content def lazily continues its body.
+    // A flush-left line continues the document paragraph.
     assert_eq!(
         carve::to_html("- one\n  :: term\n:  def\nmore\n"),
-        "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n      <dd>def\nmore</dd>\n    </dl>\n  </li>\n</ul>"
+        "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n    </dl>\n  </li>\n</ul>\n<p>:  def\nmore</p>"
     );
 }
 
 #[test]
 fn cc_def_below_content_column_after_blank_ends_entry() {
-    // A blank line before the `:  def` ends the entry: the def orphans to a
-    // top-level paragraph (the blank is a genuine terminator, not a separator
-    // here because the term's content column is not reached).
+    // A blank line also leaves the below-column separator at document level.
     assert_eq!(
         carve::to_html("- one\n  :: term\n\n:  def\n"),
         "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n    </dl>\n  </li>\n</ul>\n<p>:  def</p>"

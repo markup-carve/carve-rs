@@ -293,7 +293,7 @@ pub(crate) fn parse_list(
                             &mut nested,
                             content_col,
                             (content_col.saturating_sub(1), base_indent),
-                            item_rejected_fence_owner,
+                            (item_rejected_fence_owner, options),
                             |src, below| {
                                 if let Some(open) = latest_owner.get() {
                                     return open;
@@ -606,7 +606,7 @@ pub(crate) fn parse_list(
                         &mut nested,
                         content_col,
                         lazy_scope,
-                        false,
+                        (false, options),
                         |src, below| {
                             if !src.source.contains("```") && !src.source.contains("~~~") {
                                 return collected_body_takes_the_lazy_line(
@@ -975,6 +975,7 @@ pub(crate) fn parse_list(
                     cur,
                     &mut stream,
                     content_col,
+                    options,
                     |src, below| {
                         !after_blank
                             && (nested_ends_with_open_paragraph_rebased(src, below, below, options)
@@ -1424,7 +1425,7 @@ pub(crate) fn parse_list(
                     &mut stream,
                     content_col,
                     (lazy_column, list_base),
-                    false,
+                    (false, options),
                     |src, _below| {
                         if swallowed_blank_separator
                             || literal_comment_handoff
