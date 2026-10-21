@@ -824,6 +824,7 @@ mod description_separator_probe_work {
             [32, 64, 128, 256]
                 .map(repeated_separator_work)
                 .map(|(input, probed)| {
+                    assert!(probed > 0, "repeated separators did not reach the probe");
                     assert!(probed <= (input * 4) as u64);
                     probed
                 });
