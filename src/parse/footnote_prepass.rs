@@ -436,6 +436,10 @@ pub(in crate::parse) fn extract_footnote_defs(
                 Vec::new()
             };
             let body_indent = footnote_body_floor(lines[def_start_line - first_source_line]);
+            let container = IndentContainer {
+                content_column: body_indent,
+                owner: continuation_marker::Kind::Footnote,
+            };
             let mut note_fence: Option<FenceOpen> = None;
             // The body column of the note a NESTED definition opened inside this
             // one, live only while that note is the block a line lands in. See
@@ -452,10 +456,7 @@ pub(in crate::parse) fn extract_footnote_defs(
             // The same block bound is used by a later standalone `+` in a note.
             if trim_ascii(first) == "+"
                 && !in_container
-                && decision_at(def_start_line).is_some_and(|decision| {
-                    decision.owner == Some(continuation_marker::Kind::Footnote)
-                        && decision.refusal.is_none()
-                })
+                && container.owns_continuation(first, decision_at(def_start_line))
                 && lines.get(i).is_some_and(|line| !is_blank_line(line))
             {
                 let end = attached_block_lines_classified(
@@ -670,20 +671,18 @@ pub(in crate::parse) fn extract_footnote_defs(
                             i += 1;
                             continue;
                         }
-                        let mut after_run = i + 1;
-                        while after_run < lines.len() && is_blank_line(lines[after_run]) {
-                            after_run += 1;
-                        }
+                        let after_run = container.blank_run_end(CursorLines::Slice(&lines), i + 1);
                         if after_run < lines.len()
-                            && (indent_columns(lines[after_run]) >= body_indent
-                                || (is_plus_marker(lines[after_run])
-                                    && decision_at(first_source_line + after_run).is_some_and(
-                                        |decision| {
-                                            decision.owner
-                                                == Some(continuation_marker::Kind::Footnote)
-                                                && decision.refusal.is_none()
-                                        },
-                                    )))
+                            && match container.classify(
+                                lines[after_run],
+                                decision_at(first_source_line + after_run),
+                            ) {
+                                ContainerLine::Content => true,
+                                ContainerLine::OwnedContinuation => {
+                                    is_plus_marker(lines[after_run])
+                                }
+                                _ => false,
+                            }
                         {
                             while i < after_run {
                                 let (residue, consumed, synthetic) =
@@ -706,10 +705,7 @@ pub(in crate::parse) fn extract_footnote_defs(
                     // next footnote definition.
                     if is_plus_marker(trim_ascii_start(line))
                         && column < body_indent
-                        && decision_at(first_source_line + i).is_some_and(|decision| {
-                            decision.owner == Some(continuation_marker::Kind::Footnote)
-                                && decision.refusal.is_none()
-                        })
+                        && container.owns_continuation(line, decision_at(first_source_line + i))
                     {
                         i += 1;
                         let mut attached: Vec<String> = Vec::new();

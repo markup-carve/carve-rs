@@ -627,6 +627,10 @@ pub(in crate::parse) fn collect_definition_body(
     content_column: usize,
     options: &Options<'_>,
 ) -> MappedSource {
+    let container = IndentContainer {
+        content_column,
+        owner: continuation_marker::Kind::Description,
+    };
     let mut lines: Vec<String> = Vec::new();
     let mut nested_definition_open = seed.lines().any(is_definition_list_start);
     let mut nested_definition_column = seed
@@ -843,10 +847,7 @@ pub(in crate::parse) fn collect_definition_body(
         // the outer body's stream so the inner description can pull the block.
         if is_plus_marker(trim_ascii_start(line))
             && nested_definition_column != Some(column)
-            && cur.continuation_decision(cur.pos).is_some_and(|decision| {
-                decision.owner == Some(continuation_marker::Kind::Description)
-                    && decision.refusal.is_none()
-            })
+            && container.owns_continuation(line, cur.continuation_decision(cur.pos))
         {
             cur.consume();
             let mut attached = LineBuffer::default();
@@ -1387,12 +1388,12 @@ pub(in crate::parse) fn collect_definition_body(
         // Blank line: absorb it as a paragraph separator ONLY when a later line
         // still continues the definition (form A); otherwise leave it for the
         // entry separator / outer block stream.
-        let mut look = 0usize;
-        while matches!(cur.lines.line(cur.pos + look), Some(l) if is_blank_line(l)) {
-            look += 1;
-        }
+        let look = container.blank_run_end(cur.lines, cur.pos) - cur.pos;
         match cur.lines.line(cur.pos + look) {
-            Some(after) if !is_blank_line(after) && indent_columns(after) >= content_column => {
+            Some(after)
+                if container.classify(after, cur.continuation_decision(cur.pos + look))
+                    == ContainerLine::Content =>
+            {
                 folded_a_lazy_line = false;
                 for _ in 0..look {
                     let (residue, consumed, synthetic) =

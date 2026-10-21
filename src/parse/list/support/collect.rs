@@ -64,6 +64,10 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     options: &Options<'_>,
 ) -> MappedSource {
     let authored_base_at_start = cur.peek().is_some_and(is_blank_line);
+    let container = IndentContainer {
+        content_column: strip_cols,
+        owner: continuation_marker::Kind::List,
+    };
     // ONE COLLECTOR FOR BOTH PATHS. Without a `line_map` there is nothing to
     // map, so both maps stay empty and the rest of the walk is the walk the
     // separate plain collector used to run line for line. Keeping it as a second
@@ -258,10 +262,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         if is_plus_marker(trim_ascii_start(line))
             && (indent_columns(line) == parent_indent
                 || definition_ended_paragraph && indent_columns(line) == strip_cols)
-            && cur.continuation_decision(cur.pos).is_some_and(|decision| {
-                decision.owner == Some(continuation_marker::Kind::List)
-                    && decision.refusal.is_none()
-            })
+            && container.owns_continuation(line, cur.continuation_decision(cur.pos))
         {
             break;
         }
@@ -355,18 +356,11 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                         detect_fence_open(innermost_marker_content(content)).is_some()
                     }))
             {
-                let mut end = cur.pos + 1;
-                while end < cur.lines.len() && is_blank_line(cur.lines.at(end)) {
-                    end += 1;
-                }
+                let end = container.blank_run_end(cur.lines, cur.pos + 1);
                 let applies = cur.lines.line(end).is_some_and(|next| {
                     !is_blank_line(next)
                         && indent_columns(next) >= strip_cols
-                        && !(is_plus_marker(trim_ascii_start(next))
-                            && cur.continuation_decision(end).is_some_and(|decision| {
-                                decision.owner == Some(continuation_marker::Kind::List)
-                                    && decision.refusal.is_none()
-                            }))
+                        && !container.owns_continuation(next, cur.continuation_decision(end))
                         && !active_nested_fence.is_some_and(|open| {
                             indent_columns(next) == open.content_col
                                 && is_fence_close(trim_ascii_start(next), open)
@@ -1457,10 +1451,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                     .any(|(at, &(base, _))| {
                         base == indent && (at == 0 || nested_item_columns[at - 1].1 <= base)
                     })
-                && cur.continuation_decision(cur.pos).is_some_and(|decision| {
-                    decision.owner == Some(continuation_marker::Kind::List)
-                        && decision.refusal.is_none()
-                }))
+                && container.owns_continuation(line, cur.continuation_decision(cur.pos)))
             && indent != strip_cols
             && !(is_list_marker(trim_ascii_start(line))
                 && open_definition_body_column
