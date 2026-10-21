@@ -1077,6 +1077,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && nested_item_columns
                 .last()
                 .is_some_and(|&(_, child)| child > indent)
+            && !lines
+                .last()
+                .is_some_and(|previous| is_plus_marker(trim_ascii_start(previous)))
             && fence.is_none()
             && comment_fence.is_none()
             && colon_open.is_empty()

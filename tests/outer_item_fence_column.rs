@@ -3,6 +3,17 @@ fn html(source: &str) -> String {
 }
 
 #[test]
+fn a_continuation_marker_keeps_a_closed_fence_in_the_child_item() {
+    let source = include_str!(
+        "spec/tests/corpus/632-a-continuation-marker-uses-its-container-column-26.crv"
+    );
+    let expected = include_str!(
+        "spec/tests/corpus/632-a-continuation-marker-uses-its-container-column-26.html"
+    );
+    assert_eq!(html(source), expected.trim_end());
+}
+
+#[test]
 fn a_fence_at_the_outer_content_column_belongs_to_outer_item() {
     let source = "- outer\n  - inner\n  ```\n+\n  ```\nnext\n";
     let expected = "<ul>\n  <li>outer\n    <ul>\n      <li>inner</li>\n    </ul>\n    <pre><code></code></pre>\n  </li>\n</ul>\n<p>+\n<code>\nnext</code></p>";
