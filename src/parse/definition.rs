@@ -629,6 +629,11 @@ pub(in crate::parse) fn collect_definition_body(
 ) -> MappedSource {
     let mut lines: Vec<String> = Vec::new();
     let mut nested_definition_open = seed.lines().any(is_definition_list_start);
+    let mut nested_definition_column = seed
+        .lines()
+        .filter(|line| is_definition_list_start(trim_ascii_start(line)))
+        .map(indent_columns)
+        .last();
     let mut paragraph_column = seed
         .lines()
         .last()
@@ -837,7 +842,7 @@ pub(in crate::parse) fn collect_definition_body(
         // A nested description at this column owns its own `+`. Keep it in
         // the outer body's stream so the inner description can pull the block.
         if is_plus_marker(trim_ascii_start(line))
-            && !(nested_definition_open && column == content_column)
+            && nested_definition_column != Some(column)
             && cur.continuation_decision(cur.pos).is_some_and(|decision| {
                 decision.owner == Some(continuation_marker::Kind::Description)
                     && decision.refusal.is_none()
@@ -901,6 +906,8 @@ pub(in crate::parse) fn collect_definition_body(
                 // the margin, which is what makes the two spellings agree.
                 let mut sliced = slice_columns(line, content_column.min(indent), true);
                 if !opens_descendant_here
+                    && !(nested_definition_column == Some(indent)
+                        && is_plus_marker(trim_ascii_start(line)))
                     && !is_line_comment_any_column(line)
                     && detect_comment_fence_line_any_column(line).is_none()
                     && detect_fence_open(trim_ascii_start(line)).is_none()
@@ -1044,6 +1051,7 @@ pub(in crate::parse) fn collect_definition_body(
                     let local = trim_ascii_start(&sliced);
                     if is_definition_list_start(local) {
                         nested_definition_open = true;
+                        nested_definition_column = Some(indent);
                     }
                     if nested_definition_open {
                         if let Some(body) = strip_description_prefix(local) {
