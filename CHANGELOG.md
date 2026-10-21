@@ -119,6 +119,11 @@ which the published crate does not carry.
 - Move Rust block parsing helpers into modules. (#3013)
 - Extract Rust parser cursor and source positions. (#3015)
 - Separate Rust parser column tracking and unit tests. (#3019)
+- Split parser inline and prepass modules by responsibility. (#3047)
+- Extract list finalization from the parser loop. (#3050)
+- Derive list item looseness from parsed child ownership instead of rescanning source lines. (#3046)
+- Share indentation-body admission across list, description, and footnote collectors. (#3049)
+- Pin the spec corpus to carve `54528118` and cover four new fence and container cases. (#3048)
 
 ## [0.1.10] - 2026-10-16
 
