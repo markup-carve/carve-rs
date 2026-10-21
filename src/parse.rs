@@ -1456,7 +1456,10 @@ fn at_content_column<'a>(bare: &'a str, structural: &str, content_col: usize) ->
     if content_col > 0 && (structural.is_empty() || quoted_only) {
         let at = bare.strip_prefix(&" ".repeat(content_col)).unwrap_or(bare);
         let authored = at.trim_start_matches([' ', '\t']);
-        if authored.starts_with('[') && authored.contains("]: ") {
+        if authored.starts_with('[')
+            && (parse_link_def_line_with_value(authored).is_some()
+                || parse_footnote_def_line(authored).is_some())
+        {
             authored
         } else {
             at

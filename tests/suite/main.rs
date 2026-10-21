@@ -1156,6 +1156,8 @@ mod empty_container_body;
 mod empty_footnote_definition_position;
 #[path = "../empty_item_paragraph_test.rs"]
 mod empty_item_paragraph_test;
+#[path = "../empty_link_definition_authored_base.rs"]
+mod empty_link_definition_authored_base;
 #[path = "../empty_raw_inline_refuses.rs"]
 mod empty_raw_inline_refuses;
 #[path = "../empty_reference_label.rs"]
