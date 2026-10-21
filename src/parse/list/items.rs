@@ -80,6 +80,10 @@ pub(crate) fn parse_list(
     // to SAY so rather than inherit: an item after a marker-line heading read the
     // heading's answer and refused a lazy line of its own (carve-rs#2120).
     let mut item_paragraph_open = ParagraphOpen::Known(true);
+    // A refused fence stays paragraph text but still affects lazy-line
+    // ownership. Its blank separators count when the second paragraph reaches
+    // the item's content column.
+    let mut item_unopened_fence_span = false;
     let mut item_unclosed_fence_base = None;
     let mut item_rejected_fence_owner = false;
     // An empty first-block item has no paragraph for a below-column line to continue.
@@ -403,7 +407,12 @@ pub(crate) fn parse_list(
                     let first_visible = nested_children
                         .iter()
                         .find(|block| !matches!(block, BlockNode::Comment(_)));
-                    if pending_blank && first_visible.is_some_and(block_is_paragraph_shaped) {
+                    let blank_can_loosen = !item_unopened_fence_span
+                        || item_unclosed_fence_base.is_some_and(|base| base <= content_col);
+                    if pending_blank
+                        && blank_can_loosen
+                        && first_visible.is_some_and(block_is_paragraph_shaped)
+                    {
                         tight = false;
                     }
                     // A blank ABSORBED inside the collected continuation (e.g. a
@@ -411,7 +420,7 @@ pub(crate) fn parse_list(
                     // loosens the item when a plain paragraph follows the blank
                     // (§17 L1). The outer `pending_blank` only sees a blank BEFORE
                     // this chunk, so this covers the blank-after / blank-both case.
-                    if continuation_source_loosens(&nested.source, false) {
+                    if blank_can_loosen && continuation_source_loosens(&nested.source, false) {
                         tight = false;
                     }
                     // An INVISIBLE continuation is not the item's second block
@@ -790,9 +799,7 @@ pub(crate) fn parse_list(
         };
         // A new item carries none of the previous item's fence state.
         item_open_fence = None;
-        // A refused fence stays paragraph text. Track it for lazy-line
-        // ownership, while a later blank can still separate item paragraphs.
-        let mut item_unopened_fence_span = false;
+        item_unopened_fence_span = false;
         item_unclosed_fence_base = None;
         item_rejected_fence_owner = false;
         let item_source_line = cur.source_line(cur.pos);

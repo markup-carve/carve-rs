@@ -1,11 +1,8 @@
-//! A fence line an item's lead paragraph absorbs, because no closer is written
-//! in the item, opens no block but still opens a SPAN that runs to the item's
-//! end. A blank line inside that span is interior to it, so it separates no two
-//! blocks and cannot make the item loose (§17). A blank before the next sibling
-//! is outside the item and still loosens (carve-rs#1800).
+//! A fence line absorbed as item paragraph text opens no block. Under the
+//! current spec, a later blank can separate a second item paragraph and make
+//! the item loose (carve#3495). A blank before the next sibling also loosens.
 //!
-//! Every row is the executable reference's reading at the 0.1.6 tag, which spec
-//! main shares.
+//! Every row follows the current executable reference.
 
 /// Record a row that did not render as expected, so one run names every row
 /// that moved instead of stopping at the first.
@@ -20,31 +17,31 @@ fn row(source: &str, expected: &str, moved: &mut Vec<String>) {
 }
 
 #[test]
-fn a_blank_inside_an_unopened_fence_span_leaves_the_item_tight() {
+fn a_blank_after_folded_fence_text_leaves_two_loose_paragraphs() {
     let mut moved = Vec::new();
     row(
         "- a\n  ```\n  b\n\n  z\n",
-        "<ul>\n  <li>a\n<code>\nb</code>\n    z\n  </li>\n</ul>",
+        "<ul>\n  <li><p>a\n<code>\nb</code></p>\n    <p>z</p>\n  </li>\n</ul>",
         &mut moved,
     );
     row(
         "- a\n  ```\n  b\n\n  z\n- c\n",
-        "<ul>\n  <li>a\n<code>\nb</code>\n    z\n  </li>\n  <li>c</li>\n</ul>",
+        "<ul>\n  <li><p>a\n<code>\nb</code></p>\n    <p>z</p>\n  </li>\n  <li><p>c</p></li>\n</ul>",
         &mut moved,
     );
     row(
         "1. a\n   ```\n   b\n\n   z\n",
-        "<ol>\n  <li>a\n<code>\nb</code>\n    z\n  </li>\n</ol>",
+        "<ol>\n  <li><p>a\n<code>\nb</code></p>\n    <p>z</p>\n  </li>\n</ol>",
         &mut moved,
     );
     row(
         "- a\n  ~~~\n  b\n\n  z\n\n  w\n",
-        "<ul>\n  <li>a\n~~~\nb\n    z\n    w\n  </li>\n</ul>",
+        "<ul>\n  <li><p>a\n~~~\nb</p>\n    <p>z</p>\n    <p>w</p>\n  </li>\n</ul>",
         &mut moved,
     );
     row(
         "- a\n  p\n  ```\n  b\n\n  z\n",
-        "<ul>\n  <li>a\np\n<code>\nb</code>\n    z\n  </li>\n</ul>",
+        "<ul>\n  <li><p>a\np\n<code>\nb</code></p>\n    <p>z</p>\n  </li>\n</ul>",
         &mut moved,
     );
     assert!(moved.is_empty(), "rows moved:\n{}", moved.join("\n"));
