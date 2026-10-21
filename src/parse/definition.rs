@@ -1013,12 +1013,10 @@ pub(in crate::parse) fn collect_definition_body(
                 {
                     sliced.insert_str(0, LAZY);
                 }
+                // A tab can leave more synthetic spaces than consumed source
+                // characters. Keep that signed difference for the later rebase.
                 let sliced_col = cur.source_col(cur.pos).map(|c| {
-                    c + line
-                        .chars()
-                        .count()
-                        .saturating_sub(strip_lazy(&sliced).chars().count())
-                        as isize
+                    c + line.chars().count() as isize - strip_lazy(&sliced).chars().count() as isize
                 });
                 col_map.push(sliced_col);
                 if fence.open.is_some()

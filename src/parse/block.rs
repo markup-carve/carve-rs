@@ -1655,9 +1655,27 @@ pub(in crate::parse) fn parse_fence(
         cur.consume();
         content_lines.push(line.to_string());
     }
+    // Container collection can synthesize a final separator. The original
+    // line map distinguishes that separator from an authored payload break.
+    let unterminated = UNTERMINATED_SOURCE_LINE.with(|slot| {
+        slot.get()
+            .is_some_and(|last| last_payload_line == Some(last))
+    });
     // The span covers the opener, the body and the closer - the whole block as
-    // the author wrote it, not just its content.
-    let pos = span_of(cur, span_start, cur.pos, options);
+    // the author wrote it, not just its content. A blank final payload has no
+    // codepoint except its line ending, which belongs to an open fence.
+    let mut pos = span_of(cur, span_start, cur.pos, options);
+    if !closed
+        && !unterminated
+        && content_lines
+            .last()
+            .is_some_and(|line| is_blank_line(strip_lazy(line)))
+    {
+        if let Some(pos) = pos.as_mut() {
+            pos.end_line += 1;
+            pos.end_column = 1;
+        }
+    }
     if !closed {
         if let Some(pos) = pos.clone() {
             let marker = std::iter::repeat(open.fence_char as char)
@@ -1676,12 +1694,6 @@ pub(in crate::parse) fn parse_fence(
         .map(|l| strip_lazy(l))
         .collect::<Vec<_>>()
         .join("\n");
-    // Container collection can synthesize a final separator. The original
-    // line map distinguishes that separator from an authored payload break.
-    let unterminated = UNTERMINATED_SOURCE_LINE.with(|slot| {
-        slot.get()
-            .is_some_and(|last| last_payload_line == Some(last))
-    });
     if !content_lines.is_empty() && !unterminated {
         content.push('\n');
     }

@@ -12,6 +12,28 @@ pub(in crate::parse) fn parse_blockquote(
         drop(source);
         children.extend(blocks);
     }
+    if options.positions {
+        let original = cur.lines.at(span_start);
+        if let Some(after_outer) = strip_blockquote_prefix(original) {
+            if strip_blockquote_prefix(after_outer).is_some_and(is_plus_marker) {
+                if let (Some(line), Some(column), Some(BlockNode::BlockQuote(inner))) = (
+                    cur.source_line(span_start),
+                    cur.source_col(span_start),
+                    children.first_mut(),
+                ) {
+                    if let Some(pos) = inner.pos.as_mut() {
+                        if pos.start_line > line {
+                            let outer_width = original[..original.len() - after_outer.len()]
+                                .chars()
+                                .count();
+                            pos.start_line = line;
+                            pos.start_column = document_column(column, outer_width);
+                        }
+                    }
+                }
+            }
+        }
+    }
     finish_blockquote(cur, options, span_start, children)
 }
 

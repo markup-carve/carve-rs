@@ -1224,3 +1224,86 @@ fn standalone_display_math_places_its_paragraph() {
         "$$`\\int_0^1 x\\,dx`"
     );
 }
+
+fn positioned_nodes<'a>(
+    node: &'a serde_json::Value,
+    kind: &str,
+    out: &mut Vec<&'a serde_json::Value>,
+) {
+    match node {
+        serde_json::Value::Object(fields) => {
+            if fields.get("type").and_then(serde_json::Value::as_str) == Some(kind) {
+                out.push(node);
+            }
+            for value in fields.values() {
+                positioned_nodes(value, kind, out);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                positioned_nodes(item, kind, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn last_position(source: &str, kind: &str) -> serde_json::Value {
+    let doc = parse_with_positions(source);
+    let ast: serde_json::Value = serde_json::from_str(&carve::to_json(&doc)).unwrap();
+    let mut nodes = Vec::new();
+    positioned_nodes(&ast, kind, &mut nodes);
+    nodes.last().expect("positioned node")["pos"].clone()
+}
+
+#[test]
+fn blank_open_fence_payload_reaches_its_authored_line_ending() {
+    for (suffix, end_line, end_offset) in [(5, 3, 9), (6, 4, 19), (7, 3, 10)] {
+        let source = std::fs::read_to_string(format!(
+            "tests/spec/tests/corpus/626-an-indented-plus-below-a-nested-fence-stays-content-at-every-depth-{suffix}.crv"
+        ))
+        .unwrap();
+        for kind in ["code_block", "list_item", "list"] {
+            let pos = last_position(&source, kind);
+            assert_eq!(
+                (
+                    pos["endLine"].as_u64(),
+                    pos["endColumn"].as_u64(),
+                    pos["endOffset"].as_u64()
+                ),
+                (Some(end_line), Some(1), Some(end_offset)),
+                "{suffix}: {kind}: {pos}"
+            );
+        }
+    }
+}
+
+#[test]
+fn refused_plus_keeps_inner_quote_at_its_first_marker() {
+    let source = "> > +\n> b\n";
+    let pos = last_position(source, "block_quote");
+    assert_eq!(
+        (
+            pos["startLine"].as_u64(),
+            pos["startColumn"].as_u64(),
+            pos["startOffset"].as_u64()
+        ),
+        (Some(1), Some(3), Some(2)),
+        "{pos}"
+    );
+}
+
+#[test]
+fn tabbed_description_fence_starts_at_its_first_backtick() {
+    let source = ":: t\n: a\n\t```\n  ```\n";
+    let pos = last_position(source, "code_block");
+    assert_eq!(
+        (
+            pos["startLine"].as_u64(),
+            pos["startColumn"].as_u64(),
+            pos["startOffset"].as_u64()
+        ),
+        (Some(3), Some(2), Some(10)),
+        "{pos}"
+    );
+}
