@@ -59,6 +59,29 @@ thread_local! {
     static PLACEHOLDERS: Cell<[char; 2]> = Cell::new(PLACEHOLDER_DEFAULTS);
 }
 
+#[cfg(test)]
+mod footnote_comment_fence_work {
+    use super::FOOTNOTE_FENCE_CLOSER_LOOKUPS;
+
+    #[test]
+    fn repeated_note_comments_use_bounded_index_lookups() {
+        for count in [32, 64, 128] {
+            let mut source = String::new();
+            for index in 0..count {
+                source.push_str(&format!(
+                    "[^n{index}]: note\n%% comment\n```\ncode\n```\n\n"
+                ));
+            }
+            FOOTNOTE_FENCE_CLOSER_LOOKUPS.with(|work| work.set(0));
+            let html = crate::to_html(&source);
+            assert_eq!(html.matches("<pre><code>").count(), count);
+            let lookups = FOOTNOTE_FENCE_CLOSER_LOOKUPS.with(|work| work.get());
+            assert!(lookups >= count as u64, "{count}: {lookups} lookups");
+            assert!(lookups <= count as u64 * 2, "{count}: {lookups} lookups");
+        }
+    }
+}
+
 /// Install `chars` for the duration of one parse, restoring the previous pair on
 /// drop (panic unwind included), the discipline [`DepthGuard`] keeps.
 struct PlaceholderGuard([char; 2]);
@@ -2045,6 +2068,14 @@ fn extract_footnote_defs(
                     if retained_below_comment
                         && column < body_indent
                         && !is_blank_line(line)
+                        // A matched fence interrupts at this column. Keeping it
+                        // with an unreferenced note removes its visible block.
+                        && !detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
+                            #[cfg(test)]
+                            FOOTNOTE_FENCE_CLOSER_LOOKUPS
+                                .with(|count| count.set(count.get() + 1));
+                            closer_maxima.closes_after(i, open)
+                        })
                         && (column > 0
                             || !item_block_opener(trim_ascii_start(line))
                             || (detect_fence_open(trim_ascii_start(line)).is_some()
@@ -11400,6 +11431,9 @@ thread_local! {
         const { std::cell::Cell::new(0) };
     /// Lines pushed into a collected item body, counting every re-collection.
     pub(crate) static BODY_LINES_COLLECTED: std::cell::Cell<u64> =
+        const { std::cell::Cell::new(0) };
+    /// Footnote comment followers looked up in the indexed fence closers.
+    static FOOTNOTE_FENCE_CLOSER_LOOKUPS: std::cell::Cell<u64> =
         const { std::cell::Cell::new(0) };
 }
 

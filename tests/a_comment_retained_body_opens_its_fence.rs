@@ -82,11 +82,10 @@ fn a_comment_keeps_the_footnote_list_body_open_for_a_fence() {
 }
 
 #[test]
-fn a_retained_footnote_fence_keeps_its_indented_and_marker_payload() {
+fn a_matched_fence_after_a_footnote_comment_keeps_its_payload_outside_the_note() {
     let source = "[^c]: para\n%% c\n```\n  x\n- y\n```\nsee [^c]\n";
     let rendered = carve::to_html(source);
-    assert!(rendered.contains("<pre><code>  x\n- y\n</code></pre>"));
-    assert!(rendered.starts_with("<p>see <a "));
+    assert!(rendered.starts_with("<pre><code>  x\n- y\n</code></pre>\n<p>see <a "));
     assert!(rendered.contains("<li id=\"fn1\">"));
 }
 

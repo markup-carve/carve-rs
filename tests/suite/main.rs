@@ -47,6 +47,8 @@ mod a_folded_marker_or_quote_does_not_move_the_base;
 mod a_matched_comment_fence_ends_or_keeps_a_note_by_column;
 #[path = "../a_matched_comment_keeps_its_payload_in_a_list_description.rs"]
 mod a_matched_comment_keeps_its_payload_in_a_list_description;
+#[path = "../a_matched_fence_after_a_footnote_comment_is_visible.rs"]
+mod a_matched_fence_after_a_footnote_comment_is_visible;
 #[path = "../a_nested_note_on_a_marker_line_keeps_its_column.rs"]
 mod a_nested_note_on_a_marker_line_keeps_its_column;
 #[path = "../a_quote_on_a_container_marker_line_hosts_its_definitions.rs"]
