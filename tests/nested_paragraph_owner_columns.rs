@@ -97,18 +97,18 @@ fn attribute_below_a_bullet_item_column_is_text() {
 }
 
 #[test]
-fn bullet_below_a_description_in_a_bullet_item_folds() {
+fn bullet_below_a_description_in_a_bullet_item_opens_beside_it() {
     assert_eq!(
         html("- :: t\n  : para\n   - li\n"),
-        "<ul><li><dl><dt>t</dt><dd>para - li</dd></dl></li></ul>"
+        "<ul><li><dl><dt>t</dt><dd>para</dd></dl><ul><li>li</li></ul></li></ul>"
     );
 }
 
 #[test]
-fn bullet_below_a_description_in_an_ordered_item_folds() {
+fn bullet_below_a_description_in_an_ordered_item_opens_beside_it() {
     assert_eq!(
         html("1. :: t\n   : para\n    - li\n"),
-        "<ol><li><dl><dt>t</dt><dd>para - li</dd></dl></li></ol>"
+        "<ol><li><dl><dt>t</dt><dd>para</dd></dl><ul><li>li</li></ul></li></ol>"
     );
 }
 
