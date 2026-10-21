@@ -123,13 +123,28 @@ pub(crate) fn parse_list(
             );
             pending_attrs = None;
             let attached_comment = cur.peek().is_some_and(is_line_comment_any_column);
-            if let Some(block) = parse_continuation_block(
+            let attached = parse_continuation_block(
                 cur,
                 options,
                 base_indent,
                 Some(content_col),
                 marker_column,
-            ) {
+            );
+            if attached.is_none()
+                && cur.peek().is_some_and(is_plus_marker)
+                && cur.continuation_decision(cur.pos).is_some_and(|decision| {
+                    decision.owner == Some(continuation_marker::Kind::List)
+                        && decision.refusal == Some(continuation_marker::Refusal::Blank)
+                })
+            {
+                let mut bodies = Vec::new();
+                if let Some(block) = parse_block(cur, options, &mut bodies) {
+                    if let Some(last_item) = items.len().checked_sub(1) {
+                        place_item_chunk(deferred, last_item, vec![*block], Vec::new());
+                    }
+                }
+            }
+            if let Some(block) = attached {
                 // Hoisted definitions leave no paragraph node behind (carve#801).
                 let is_empty_paragraph = matches!(
                     &block,

@@ -356,6 +356,11 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 let applies = cur.lines.line(end).is_some_and(|next| {
                     !is_blank_line(next)
                         && indent_columns(next) >= strip_cols
+                        && !(is_plus_marker(trim_ascii_start(next))
+                            && cur.continuation_decision(end).is_some_and(|decision| {
+                                decision.owner == Some(continuation_marker::Kind::List)
+                                    && decision.refusal.is_none()
+                            }))
                         && !active_nested_fence.is_some_and(|open| {
                             indent_columns(next) == open.content_col
                                 && is_fence_close(trim_ascii_start(next), open)

@@ -1,0 +1,594 @@
+[
+  {
+    "name": "1a open nested fence",
+    "source": "- - ```\n\n  +\n  x\n",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <pre><code>\n</code></pre>\n        x\n      </li>\n    </ul>\n  </li>\n</ul>",
+    "ast": {
+      "type": "document",
+      "children": [
+        {
+          "type": "list",
+          "ordered": false,
+          "tight": false,
+          "items": [
+            {
+              "type": "list_item",
+              "children": [
+                {
+                  "type": "list",
+                  "ordered": false,
+                  "tight": true,
+                  "items": [
+                    {
+                      "type": "list_item",
+                      "children": [
+                        {
+                          "type": "code_block",
+                          "content": "\n"
+                        },
+                        {
+                          "type": "paragraph",
+                          "children": [
+                            {
+                              "type": "text",
+                              "value": "x"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "1a tilde fence",
+    "source": "- - ~~~\n\n  +\n  x\n",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <pre><code>\n</code></pre>\n        x\n      </li>\n    </ul>\n  </li>\n</ul>",
+    "ast": {
+      "type": "document",
+      "children": [
+        {
+          "type": "list",
+          "ordered": false,
+          "tight": false,
+          "items": [
+            {
+              "type": "list_item",
+              "children": [
+                {
+                  "type": "list",
+                  "ordered": false,
+                  "tight": true,
+                  "items": [
+                    {
+                      "type": "list_item",
+                      "children": [
+                        {
+                          "type": "code_block",
+                          "content": "\n"
+                        },
+                        {
+                          "type": "paragraph",
+                          "children": [
+                            {
+                              "type": "text",
+                              "value": "x"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "1a two blank lines",
+    "source": "- - ```\n\n\n  +\n  x\n",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <pre><code>\n\n</code></pre>\n        x\n      </li>\n    </ul>\n  </li>\n</ul>",
+    "ast": {
+      "type": "document",
+      "children": [
+        {
+          "type": "list",
+          "ordered": false,
+          "tight": false,
+          "items": [
+            {
+              "type": "list_item",
+              "children": [
+                {
+                  "type": "list",
+                  "ordered": false,
+                  "tight": true,
+                  "items": [
+                    {
+                      "type": "list_item",
+                      "children": [
+                        {
+                          "type": "code_block",
+                          "content": "\n\n"
+                        },
+                        {
+                          "type": "paragraph",
+                          "children": [
+                            {
+                              "type": "text",
+                              "value": "x"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "1b refused second marker",
+    "source": "- a\n\n  ```\n+\n+\n\ntail\n",
+    "html": "<ul>\n  <li>a\n    <pre><code></code></pre>\n    +\n  </li>\n</ul>\n<p>tail</p>",
+    "ast": {
+      "type": "document",
+      "children": [
+        {
+          "type": "list",
+          "ordered": false,
+          "tight": true,
+          "items": [
+            {
+              "type": "list_item",
+              "children": [
+                {
+                  "type": "paragraph",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "a"
+                    }
+                  ]
+                },
+                {
+                  "type": "code_block",
+                  "content": ""
+                },
+                {
+                  "type": "paragraph",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "+"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "text",
+              "value": "tail"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "1b letter control",
+    "source": "- a\n\n  ```\n+\nz\n\ntail\n",
+    "html": "<ul>\n  <li>a\n    <pre><code></code></pre>\n    z\n  </li>\n</ul>\n<p>tail</p>",
+    "ast": {
+      "type": "document",
+      "children": [
+        {
+          "type": "list",
+          "ordered": false,
+          "tight": true,
+          "items": [
+            {
+              "type": "list_item",
+              "children": [
+                {
+                  "type": "paragraph",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "a"
+                    }
+                  ]
+                },
+                {
+                  "type": "code_block",
+                  "content": ""
+                },
+                {
+                  "type": "paragraph",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "z"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "text",
+              "value": "tail"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "2 one quote",
+    "source": " > - a\n >+\n > tail\n",
+    "html": "<p>&gt; - a\n&gt;+\n&gt; tail</p>",
+    "ast": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "text",
+              "value": "> - a"
+            },
+            {
+              "type": "soft_break"
+            },
+            {
+              "type": "text",
+              "value": ">+"
+            },
+            {
+              "type": "soft_break"
+            },
+            {
+              "type": "text",
+              "value": "> tail"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "2 one quote at column zero",
+    "source": "> - a\n>+\n> tail\n",
+    "html": "<blockquote>\n  <ul>\n    <li>a\n      tail\n    </li>\n  </ul>\n</blockquote>",
+    "ast": {
+      "type": "document",
+      "children": [
+        {
+          "type": "block_quote",
+          "children": [
+            {
+              "type": "list",
+              "ordered": false,
+              "tight": true,
+              "items": [
+                {
+                  "type": "list_item",
+                  "children": [
+                    {
+                      "type": "paragraph",
+                      "children": [
+                        {
+                          "type": "text",
+                          "value": "a"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "paragraph",
+                      "children": [
+                        {
+                          "type": "text",
+                          "value": "tail"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "2 two quotes tight last",
+    "source": "> > - a\n> >+\n> > tail\n",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        tail\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>",
+    "ast": {
+      "type": "document",
+      "children": [
+        {
+          "type": "block_quote",
+          "children": [
+            {
+              "type": "block_quote",
+              "children": [
+                {
+                  "type": "list",
+                  "ordered": false,
+                  "tight": true,
+                  "items": [
+                    {
+                      "type": "list_item",
+                      "children": [
+                        {
+                          "type": "paragraph",
+                          "children": [
+                            {
+                              "type": "text",
+                              "value": "a"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "paragraph",
+                          "children": [
+                            {
+                              "type": "text",
+                              "value": "tail"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "2 two quotes tight first",
+    "source": "> > - a\n>> +\n> > tail\n",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        tail\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>",
+    "ast": {
+      "type": "document",
+      "children": [
+        {
+          "type": "block_quote",
+          "children": [
+            {
+              "type": "block_quote",
+              "children": [
+                {
+                  "type": "list",
+                  "ordered": false,
+                  "tight": true,
+                  "items": [
+                    {
+                      "type": "list_item",
+                      "children": [
+                        {
+                          "type": "paragraph",
+                          "children": [
+                            {
+                              "type": "text",
+                              "value": "a"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "paragraph",
+                          "children": [
+                            {
+                              "type": "text",
+                              "value": "tail"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "2 spaced quote control",
+    "source": "> - a\n> +\n> tail\n",
+    "html": "<blockquote>\n  <ul>\n    <li>a\n      tail\n    </li>\n  </ul>\n</blockquote>",
+    "ast": {
+      "type": "document",
+      "children": [
+        {
+          "type": "block_quote",
+          "children": [
+            {
+              "type": "list",
+              "ordered": false,
+              "tight": true,
+              "items": [
+                {
+                  "type": "list_item",
+                  "children": [
+                    {
+                      "type": "paragraph",
+                      "children": [
+                        {
+                          "type": "text",
+                          "value": "a"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "paragraph",
+                      "children": [
+                        {
+                          "type": "text",
+                          "value": "tail"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "4 nested open fence",
+    "source": "- a\n  - ```\n    x\n\n  +\n  > q\n",
+    "html": "<ul>\n  <li><p>a</p>\n    <ul>\n      <li>\n        <pre><code>x\n\n</code></pre>\n        <blockquote><p>q</p></blockquote>\n      </li>\n    </ul>\n  </li>\n</ul>",
+    "ast": {
+      "type": "document",
+      "children": [
+        {
+          "type": "list",
+          "ordered": false,
+          "tight": false,
+          "items": [
+            {
+              "type": "list_item",
+              "children": [
+                {
+                  "type": "paragraph",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "a"
+                    }
+                  ]
+                },
+                {
+                  "type": "list",
+                  "ordered": false,
+                  "tight": true,
+                  "items": [
+                    {
+                      "type": "list_item",
+                      "children": [
+                        {
+                          "type": "code_block",
+                          "content": "x\n\n"
+                        },
+                        {
+                          "type": "block_quote",
+                          "children": [
+                            {
+                              "type": "paragraph",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "value": "q"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "4 nested closed fence",
+    "source": "- a\n  - ```\n    x\n    ```\n\n  +\n  > q\n",
+    "html": "<ul>\n  <li><p>a</p>\n    <ul>\n      <li>\n        <pre><code>x\n</code></pre>\n        <blockquote><p>q</p></blockquote>\n      </li>\n    </ul>\n  </li>\n</ul>",
+    "ast": {
+      "type": "document",
+      "children": [
+        {
+          "type": "list",
+          "ordered": false,
+          "tight": false,
+          "items": [
+            {
+              "type": "list_item",
+              "children": [
+                {
+                  "type": "paragraph",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "a"
+                    }
+                  ]
+                },
+                {
+                  "type": "list",
+                  "ordered": false,
+                  "tight": true,
+                  "items": [
+                    {
+                      "type": "list_item",
+                      "children": [
+                        {
+                          "type": "code_block",
+                          "content": "x\n"
+                        },
+                        {
+                          "type": "block_quote",
+                          "children": [
+                            {
+                              "type": "paragraph",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "value": "q"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

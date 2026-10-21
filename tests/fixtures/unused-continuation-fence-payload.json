@@ -125,6 +125,6 @@
   },
   {
     "source": "- a\n\n  ```\n+\n+\n\ntail\n",
-    "html": "<ul>\n  <li>a\n    <pre><code></code></pre>\n  </li>\n</ul>\n<p>tail</p>"
+    "html": "<ul>\n  <li>a\n    <pre><code></code></pre>\n    +\n  </li>\n</ul>\n<p>tail</p>"
   }
 ]

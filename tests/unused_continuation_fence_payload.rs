@@ -5,10 +5,7 @@ fn an_unused_continuation_marker_preserves_fence_payload() {
     ))
     .unwrap();
     let source_line_attrs = regex::Regex::new(r#" data-source-line="\d+""#).unwrap();
-    for (index, case) in cases.into_iter().enumerate() {
-        if index == 31 {
-            continue; // pending markup-carve/carve#3482: carve-js and the spec model disagree
-        }
+    for case in cases {
         let source = case["source"].as_str().unwrap();
         let html = case["html"].as_str().unwrap();
         assert_eq!(carve::to_html(source).trim(), html.trim(), "{source}");

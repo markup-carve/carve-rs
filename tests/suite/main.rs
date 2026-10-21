@@ -2013,6 +2013,8 @@ mod nested_empty_list_tail;
 #[path = "../short_caption_conversion_reports.rs"]
 mod short_caption_conversion_reports;
 
+#[path = "../ruled_continuation_owners.rs"]
+mod ruled_continuation_owners;
 #[path = "../unused_continuation_fence_payload.rs"]
 mod unused_continuation_fence_payload;
 

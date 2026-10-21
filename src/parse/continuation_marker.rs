@@ -261,6 +261,15 @@ fn local_column(line: &str, depth: usize) -> (usize, bool) {
     )
 }
 
+fn tight_quote_prefix(line: &str, depth: usize) -> bool {
+    let Some((_, at)) = quote_prefix(line, Some(depth)) else {
+        return false;
+    };
+    line.as_bytes()[..line.len().min(at + 1)]
+        .windows(2)
+        .any(|pair| pair[0] == b'>' && !matches!(pair[1], b' ' | b'\t'))
+}
+
 impl Classifier {
     fn step(&mut self) {
         let index = self.scanned;
@@ -296,6 +305,12 @@ impl Classifier {
         }
         let (local, has_tab) = local_column(line, depth);
         let marker_column = if depth > 0 && has_tab { local } else { column };
+        let relative_quote_column = depth > 0 && (has_tab || tight_quote_prefix(line, depth));
+        let owner_column = if relative_quote_column {
+            local
+        } else {
+            marker_column
+        };
         if is_plus_marker(body) {
             let mut deepest_quote = 0;
             let mut list_at_column = false;
@@ -327,12 +342,12 @@ impl Classifier {
             for (at, entry) in self.stack.iter().enumerate().rev() {
                 #[cfg(test)]
                 STACK_ENTRIES_EXAMINED.with(|c| c.set(c.get() + 1));
-                let entry_column = if depth > 0 && has_tab {
+                let entry_column = if relative_quote_column {
                     entry.local_column
                 } else {
                     entry.column
                 };
-                if entry_column == marker_column
+                if entry_column == owner_column
                     && entry.depth == depth
                     && (depth == 0
                         || depth >= deepest_quote
@@ -382,7 +397,7 @@ impl Classifier {
                 FOLLOWER_PROBES.with(|c| c.set(c.get() + 1));
             }
             let follower_col = follower.map_or(usize::MAX, |line| {
-                if depth > 0 && has_tab {
+                if relative_quote_column {
                     local_column(line, depth).0
                 } else {
                     source_column(line, Some(depth))
@@ -392,7 +407,7 @@ impl Classifier {
             let follower_depth = follower.map(|line| quote_body(line).0);
             let sibling = owner.is_some_and(|entry| {
                 entry.kind == Kind::List || entry.kind == Kind::Quote && has_ancestor_list
-            }) && follower_col == marker_column
+            }) && follower_col == owner_column
                 && detect_list_marker_full(follower_body).is_some();
             let first_block_at_document = first_block_quote
                 && follower.is_some_and(|line| {
@@ -423,21 +438,17 @@ impl Classifier {
                 && follower_depth.is_some_and(|next_depth| next_depth > depth)
             {
                 Some(Refusal::Right)
-            } else if !first_block_at_document && follower_col < marker_column {
+            } else if !first_block_at_document && follower_col < owner_column {
                 Some(Refusal::Left)
-            } else if !first_block_at_document && follower_col > marker_column {
+            } else if !first_block_at_document && follower_col > owner_column {
                 Some(Refusal::Right)
             } else if sibling && self.held_owner != owner {
                 Some(Refusal::Sibling)
             } else if depth == 0
                 && deepest_quote > 0
                 && owner.is_some_and(|entry| entry.kind == Kind::Description)
-                && follower_col == marker_column
+                && follower_col == owner_column
                 && detect_list_marker_full(follower_body).is_some()
-                || self.pending_blank
-                    && self
-                        .marker_fence
-                        .is_some_and(|(_, fence_marker)| fence_marker == marker_column)
             {
                 Some(Refusal::WrongColumn)
             } else {
@@ -702,6 +713,9 @@ mod tests {
             ("- a\n+\n- inner", 2, Kind::List, Some(Refusal::Sibling)),
             ("- a\n+\n", 2, Kind::List, Some(Refusal::Document)),
             ("> - a\n> +\n> > q", 2, Kind::List, Some(Refusal::Right)),
+            ("> - a\n>+\n> tail", 2, Kind::List, None),
+            ("> > - a\n> >+\n> > tail", 2, Kind::List, None),
+            ("> > - a\n>> +\n> > tail", 2, Kind::List, None),
             ("> > q\n> +\n> para", 2, Kind::Quote, None),
             ("> - a\n> \n> +\n> tail", 3, Kind::List, None),
             (

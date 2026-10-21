@@ -43,16 +43,7 @@ fn column_zero_model_rows() {
         .unwrap_or_else(|_| include_str!("fixtures/column_zero_representative.json").to_string());
     let rows: Vec<Row> = serde_json::from_str(&data).unwrap();
     let mut differences = Vec::new();
-    // Pending markup-carve/carve#3482: carve-js and the spec model disagree on `>+` here.
-    let pending = [
-        "> - a\n>+\n> tail",
-        "> > - a\n> >+\n> > tail",
-        "> > - a\n>> +\n> > tail",
-    ];
-    for row in rows
-        .iter()
-        .filter(|row| !pending.contains(&row.source.as_str()))
-    {
+    for row in &rows {
         let actual = carve::to_html(&row.source);
         if normalize(&actual) != normalize(&row.html)
             || normalize(&carve::to_html_with_options(
