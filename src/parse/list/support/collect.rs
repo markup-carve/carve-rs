@@ -238,15 +238,18 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             });
         if follows_first_block {
             let start = cur.pos;
-            let end = attached_block_lines_classified(
-                cur.lines,
-                start,
-                &mut cur.comment_closer_last_index,
-                &mut cur.code_closer_last_index,
-                options,
-                &mut |next, _| is_blank_line(next) || is_plus_marker(next),
-            )
-            .max(start + 1);
+            let end = attached_indented_block_end(cur.lines, start, strip_cols, options)
+                .unwrap_or_else(|| {
+                    attached_block_lines_classified(
+                        cur.lines,
+                        start,
+                        &mut cur.comment_closer_last_index,
+                        &mut cur.code_closer_last_index,
+                        options,
+                        &mut |next, _| is_blank_line(next) || is_plus_marker(next),
+                    )
+                })
+                .max(start + 1);
             while cur.pos < end {
                 let (body, consumed, synthetic) =
                     slice_columns_mapped(cur.lines.at(cur.pos), strip_cols, true);

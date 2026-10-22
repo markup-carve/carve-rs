@@ -646,9 +646,13 @@ impl Classifier {
         let mut first_block_owner = None;
         let mut list_opener_on_line = false;
         let mut description_on_line = false;
+        // Openers on this line; a task box counts as one.
+        let mut openers_on_line = 0usize;
+        let mut quote_marker_column = None;
         for _ in 0..32 {
             if let Some(marker) = detect_list_marker_full(inner) {
                 list_opener_on_line = true;
+                openers_on_line += 1 + usize::from(marker.checked.is_some());
                 let width = (marker.content.as_ptr() as usize) - (inner.as_ptr() as usize);
                 entry.kind = Kind::List;
                 entry.content_column = entry.column + width;
@@ -663,6 +667,8 @@ impl Classifier {
                 continue;
             }
             if let Some(quoted) = strip_blockquote_prefix(inner) {
+                openers_on_line += 1;
+                quote_marker_column.get_or_insert(entry.column);
                 entry.kind = Kind::Quote;
                 entry.content_column = entry.column;
                 entry.hosted_quote = list_opener_on_line || description_on_line;
@@ -756,8 +762,12 @@ impl Classifier {
                         && entry.depth < owner.depth
                         && entry.content_column == opener_column
                         && follower.is_some_and(|line| {
-                            // CARVE-P9-067: a quote takes any non-list block at its own column.
-                            if owner.kind == Kind::Quote {
+                            // CARVE-P9-067: a lone `- > +` takes any non-list block at its own
+                            // column; a stacked opener keeps the paragraph-only test (carve#3421).
+                            if owner.kind == Kind::Quote
+                                && openers_on_line == 2
+                                && quote_marker_column == Some(entry.content_column)
+                            {
                                 detect_list_marker_full(line.trim_start()).is_none()
                             } else {
                                 !item_block_opener(line.trim_start())

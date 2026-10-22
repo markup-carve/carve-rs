@@ -51,3 +51,39 @@ fn a_list_item_at_the_quote_column_is_not_pulled() {
         "<ul><li>a<ul><li><blockquote><p>+-b</p></blockquote></li></ul></li></ul>"
     );
 }
+
+#[test]
+fn an_attached_colon_fence_closes_at_its_indented_closer() {
+    for (source, expected) in [
+        (
+            "- > +\n  ::: n\n  b\n  :::\n\nz\n",
+            "<ul><li><blockquote><divclass=\"n\"><p>b</p></div></blockquote></li></ul><p>z</p>",
+        ),
+        (
+            "- a\n  - > +\n    ::: n\n    b\n    :::\n\nz\n",
+            "<ul><li>a<ul><li><blockquote><divclass=\"n\"><p>b</p></div></blockquote></li></ul></li></ul><p>z</p>",
+        ),
+    ] {
+        assert_eq!(flat(source), expected, "{source:?}");
+    }
+}
+
+#[test]
+fn a_stacked_opener_keeps_the_paragraph_only_test() {
+    for (source, expected) in [
+        (
+            "- - > +\n    # h\n",
+            "<ul><li><ul><li><blockquote><p>+</p></blockquote><h1id=\"h\">h</h1></li></ul></li></ul>",
+        ),
+        (
+            "- > > +\n  > q\n",
+            "<ul><li><blockquote><blockquote><p>+q</p></blockquote></blockquote></li></ul>",
+        ),
+        (
+            "- [ ] > +\n      # h\n",
+            "<ulclass=\"task-list\"><li><inputtype=\"checkbox\"disabled><blockquote><p>+#h</p></blockquote></li></ul>",
+        ),
+    ] {
+        assert_eq!(flat(source), expected, "{source:?}");
+    }
+}
