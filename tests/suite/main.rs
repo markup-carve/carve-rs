@@ -1147,6 +1147,8 @@ mod description_fence_paragraph_boundary;
 mod description_separator_columns;
 #[path = "../display_math_on_a_marker_line_takes_its_caption.rs"]
 mod display_math_on_a_marker_line_takes_its_caption;
+#[path = "../first_block_marker_list_boundary.rs"]
+mod first_block_marker_list_boundary;
 #[path = "../quote_note_first_block.rs"]
 mod quote_note_first_block;
 

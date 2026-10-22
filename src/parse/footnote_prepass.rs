@@ -466,7 +466,11 @@ pub(in crate::parse) fn extract_footnote_defs(
                     &mut comment_closers,
                     &mut closer_index,
                     options,
-                    &mut |line, _| is_blank_line(line) || is_plus_marker(line),
+                    &mut |line, _| {
+                        is_blank_line(line)
+                            || is_plus_marker(line)
+                            || (indent_columns(line) == 0 && is_list_marker(line))
+                    },
                 );
                 if end > i {
                     def_lines[0].clear();

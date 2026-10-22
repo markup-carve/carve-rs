@@ -305,6 +305,7 @@ pub(in crate::parse) fn parse_definition_list(
                 let mut boundary = |a: &str, _| {
                     is_blank_line(a)
                         || is_plus_marker(a)
+                        || (indent_columns(a) == 0 && is_list_marker(a))
                         || strip_lazy(a).strip_prefix(":: ").is_some()
                         || strip_definition_marker(strip_lazy(a)).is_some()
                 };
