@@ -114,6 +114,7 @@ which the published crate does not carry.
 - Open a block below a description list item at an authored base in the description, not as item text. (#3077, markup-carve/carve#3450)
 - Attach a quote after `> +` to a quoted description or footnote, as in a quoted list item. (#3068, markup-carve/carve#3525)
 - A `> +` on an item's marker line attaches a heading, fence or table at the quote's column, pulls no list item there, and its refused `+` takes a lazy line like a letter. (#3075, markup-carve/carve#3421, markup-carve/carve#3529)
+- A stacked `- - > +` or `- > > +` refuses a follower at an outer item's column, so the `+` folds it in like a letter (`+ b`). (#3079, markup-carve/carve#3421)
 - Attach the block at its column to a `> +` that opens a quote on its own line in a list item or description. (markup-carve/carve#3421)
 
 ### Source positions

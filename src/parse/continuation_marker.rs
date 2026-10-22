@@ -649,6 +649,7 @@ impl Classifier {
         // Openers on this line; a task box counts as one.
         let mut openers_on_line = 0usize;
         let mut quote_marker_column = None;
+        let mut inner_quote_marker_column = None;
         for _ in 0..32 {
             if let Some(marker) = detect_list_marker_full(inner) {
                 list_opener_on_line = true;
@@ -669,6 +670,7 @@ impl Classifier {
             if let Some(quoted) = strip_blockquote_prefix(inner) {
                 openers_on_line += 1;
                 quote_marker_column.get_or_insert(entry.column);
+                inner_quote_marker_column = Some(entry.column);
                 entry.kind = Kind::Quote;
                 entry.content_column = entry.column;
                 entry.hosted_quote = list_opener_on_line || description_on_line;
@@ -759,6 +761,11 @@ impl Classifier {
                     #[cfg(test)]
                     STACK_ENTRIES_EXAMINED.with(|c| c.set(c.get() + 1));
                     entry.kind == Kind::List
+                        // A stacked quote opener takes only column 0 or its line's column (carve#3421);
+                        // the column of its innermost `>` awaits a ruling and keeps its reading.
+                        && !(owner.kind == Kind::Quote
+                            && openers_on_line > 2
+                            && inner_quote_marker_column != Some(entry.content_column))
                         && entry.depth < owner.depth
                         && entry.content_column == opener_column
                         && follower.is_some_and(|line| {

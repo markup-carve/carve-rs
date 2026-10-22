@@ -13,6 +13,8 @@ mod a_continuation_marker_is_column_zero_only;
 mod a_fence_run_that_dedents_out_of_a_child_keeps_the_outer_item_tight;
 #[path = "../a_quote_first_block_plus_reads_its_follower_by_column.rs"]
 mod a_quote_first_block_plus_reads_its_follower_by_column;
+#[path = "../a_stacked_quote_plus_refuses_an_outer_item_column.rs"]
+mod a_stacked_quote_plus_refuses_an_outer_item_column;
 #[path = "../a_tab_placed_sublist_starts_on_a_real_column.rs"]
 mod a_tab_placed_sublist_starts_on_a_real_column;
 #[path = "../an_opener_in_a_description_in_an_item_is_not_overindented.rs"]
