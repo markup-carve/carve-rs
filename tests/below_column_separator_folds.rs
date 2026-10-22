@@ -54,3 +54,27 @@ fn nested_item_marker_column_does_not_fold_into_its_term() {
         assert!(!rendered.contains("<dt>term\n:: next</dt>"), "{rendered}");
     }
 }
+
+#[test]
+fn separator_at_a_nested_marker_column_ends_the_nested_item() {
+    assert_eq!(
+        html("- - a\n    :: m\n  : l\n  : l\n"),
+        "<ul>\n  <li>\n    <ul>\n      <li>a\n        <dl>\n          <dt>m</dt>\n        </dl>\n      </li>\n    </ul>\n    : l\n: l\n  </li>\n</ul>"
+    );
+    for source in [
+        "- x\n  - a\n    :: m\n  : l\n",
+        "> - - a\n>     :: m\n>   : l\n",
+    ] {
+        let rendered = html(source);
+        let flat = rendered.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(flat.contains("<dt>m</dt> </dl> </li> </ul> : l </li>"), "{rendered}");
+    }
+}
+
+#[test]
+fn flush_separator_leaves_a_definition_list_that_ends_a_nested_item() {
+    assert_eq!(
+        html("- x\n  - a\n    :: m\n: l\n"),
+        "<ul>\n  <li>x\n    <ul>\n      <li>a\n        <dl>\n          <dt>m</dt>\n        </dl>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>: l</p>"
+    );
+}

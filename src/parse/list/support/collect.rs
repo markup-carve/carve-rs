@@ -569,6 +569,17 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         if below_definition_separator && indent == 0 {
             break;
         }
+        // At a nested item's marker column the separator ends that item instead of
+        // folding into its term (CARVE-P2-017, carve#3473).
+        let separator_at_nested_marker = below_definition_separator
+            && indent == strip_cols
+            && definition_list_column.is_some_and(|list| {
+                marker_line_columns.last() == Some(&list)
+                    || nested_item_columns.iter().any(|&(base, _)| base == indent)
+                        && nested_item_columns
+                            .iter()
+                            .any(|&(_, content)| content == list)
+            });
         if indent == strip_cols
             && (item_block_opener(trim_ascii_start(line))
                 || detect_comment_fence_line_any_column(line).is_some())
@@ -1511,7 +1522,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         if (lazy_code_line
             || framed_comment_payload
             || lazy_list_marker
-            || below_definition_separator
+            || below_definition_separator && !separator_at_nested_marker
             || definition_band_inline_closer
             || (definition_comment_band
                 && detect_fence_open(trim_ascii_start(line)).is_none()
