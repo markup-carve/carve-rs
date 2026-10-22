@@ -755,7 +755,14 @@ impl Classifier {
                     entry.kind == Kind::List
                         && entry.depth < owner.depth
                         && entry.content_column == opener_column
-                        && follower.is_some_and(|line| !item_block_opener(line.trim_start()))
+                        && follower.is_some_and(|line| {
+                            // CARVE-P9-067: a quote takes any non-list block at its own column.
+                            if owner.kind == Kind::Quote {
+                                detect_list_marker_full(line.trim_start()).is_none()
+                            } else {
+                                !item_block_opener(line.trim_start())
+                            }
+                        })
                 })
                 || follower.is_some_and(|line| {
                     source_column(line, Some(0)) == 0 && detect_list_marker_full(line).is_none()

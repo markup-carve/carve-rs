@@ -544,13 +544,21 @@ pub(crate) fn nested_bare_marker_then_plain(cur: &LineCursor<'_>, content_col: u
 }
 
 pub(crate) fn refused_first_block_below_column(cur: &LineCursor<'_>, content_col: usize) -> bool {
+    let Some(line) = cur.peek() else {
+        return false;
+    };
     cur.pos > 0
-        && cur.peek().is_some_and(|line| {
-            indent_columns(line) < content_col && detect_list_marker_full(line).is_none()
-        })
+        && indent_columns(line) < content_col
+        && detect_list_marker_full(line).is_none()
         && cur
             .continuation_decision(cur.pos - 1)
-            .is_some_and(|decision| decision.first_block && decision.refusal.is_some())
+            .is_some_and(|decision| {
+                // A refused first-block `+` in a quote is text, so a lazy line folds into it.
+                decision.first_block
+                    && decision.refusal.is_some()
+                    && (decision.owner != Some(crate::parse::continuation_marker::Kind::Quote)
+                        || is_blank_line(line))
+            })
 }
 
 /// How far to dedent a collected line, given the container's content column.
