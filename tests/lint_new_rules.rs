@@ -51,6 +51,6 @@ fn unclosed_code_fence_vectors() {
 fn continuation_marker_refused_vectors() {
     check(
         include_str!("fixtures/lint-rule-vectors/continuation-marker-refused.json"),
-        30,
+        37,
     );
 }
