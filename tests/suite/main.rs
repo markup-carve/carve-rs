@@ -13,6 +13,8 @@ mod a_continuation_marker_is_column_zero_only;
 mod a_fence_run_that_dedents_out_of_a_child_keeps_the_outer_item_tight;
 #[path = "../a_tab_placed_sublist_starts_on_a_real_column.rs"]
 mod a_tab_placed_sublist_starts_on_a_real_column;
+#[path = "../an_opener_in_a_description_in_an_item_is_not_overindented.rs"]
+mod an_opener_in_a_description_in_an_item_is_not_overindented;
 #[path = "../folded_fence_closer_shapes.rs"]
 mod folded_fence_closer_shapes;
 #[path = "../nested_colon_div_plus_attachment.rs"]

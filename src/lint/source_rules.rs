@@ -274,6 +274,7 @@ pub(super) fn collect(
     let mut items = Vec::new();
     let mut fences = Vec::new();
     let mut definition_hosts = Vec::new();
+    let mut descriptions: Vec<(usize, usize, usize)> = Vec::new();
     let mut attached = BTreeSet::new();
     let mut payload = BTreeSet::new();
     let marker = regex::Regex::new(
@@ -434,6 +435,29 @@ pub(super) fn collect(
         }
         if let BlockNode::DefinitionList(list) = block {
             for item in &list.items {
+                for def in &item.definitions {
+                    let Some(pos) = def.pos.as_ref() else {
+                        continue;
+                    };
+                    let Some(row) = rows.get(pos.start_line.saturating_sub(1)) else {
+                        continue;
+                    };
+                    let at = row
+                        .text
+                        .char_indices()
+                        .nth(pos.start_column.saturating_sub(1))
+                        .map_or(row.text.len(), |(at, _)| at);
+                    let rest = &row.text[at..];
+                    let width = rest.len() - rest[1..].trim_start_matches([' ', '\t']).len();
+                    if rest.starts_with(':') && width > 1 {
+                        let last = def
+                            .children
+                            .iter()
+                            .filter_map(|child| block_pos(child).map(|p| p.end_line))
+                            .fold(pos.end_line, usize::max);
+                        descriptions.push((pos.start_line, last, visual(&row.text[..at + width])));
+                    }
+                }
                 attached.extend(
                     item.terms
                         .iter()
@@ -760,6 +784,18 @@ pub(super) fn collect(
                 .all(|r| quoted_view(r.text, i.quotes).0.is_empty())
         });
         let candidate = containing.or(adjacent);
+        // A description inside the item is the innermost container, so its content column places the block.
+        if candidate.is_some_and(|i| {
+            descriptions.iter().any(|&(first, last, content)| {
+                first >= i.first
+                    && first < ln
+                    && ln <= last
+                    && content > i.content
+                    && column >= content
+            })
+        }) {
+            continue;
+        }
         let rule = candidate.and_then(|i| {
             if column > i.content && !continuing_run {
                 Some("list-item-block-overindented")
