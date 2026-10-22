@@ -117,7 +117,7 @@ which the published crate does not carry.
 - A `> +` on an item's marker line attaches a heading, fence or table at the quote's column, pulls no list item there, and its refused `+` takes a lazy line like a letter. (#3075, markup-carve/carve#3421, markup-carve/carve#3529)
 - A stacked `- - > +` or `- > > +` refuses a follower at an outer item's column, so the `+` folds it in like a letter (`+ b`). (#3079, markup-carve/carve#3421)
 - A stacked quote `+` takes a block at the innermost `>`'s column and a column-0 quote as a nested quote, attaches a column-0 block inside a host quote, and a wrapped attribute at an item's or description's column keeps its later lines at any column. (#3081, markup-carve/carve#3421)
-- A first-block `+` inside a colon div reads the same with and without source positions, so a stacked quote `+` there attaches its follower in plain rendering too. (markup-carve/carve#3421)
+- A first-block `+` inside a colon div reads the same with and without source positions, so a stacked quote `+` there attaches its follower in plain rendering too. (#3083, markup-carve/carve#3421)
 - Attach the block at its column to a `> +` that opens a quote on its own line in a list item or description. (markup-carve/carve#3421)
 
 ### Source positions
