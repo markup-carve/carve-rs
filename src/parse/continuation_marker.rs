@@ -516,12 +516,6 @@ impl Classifier {
                 } else {
                     Some(Refusal::Left)
                 }
-            } else if depth > 0
-                && owner
-                    .is_some_and(|entry| matches!(entry.kind, Kind::Footnote | Kind::Description))
-                && follower_depth.is_some_and(|next_depth| next_depth > depth)
-            {
-                Some(Refusal::Right)
             } else if !first_block_attaches
                 && (follower_depth.is_some_and(|next_depth| next_depth < depth)
                     || follower_col < owner_column)
@@ -815,12 +809,7 @@ mod tests {
                 Kind::Footnote,
                 Some(Refusal::WrongColumn),
             ),
-            (
-                "> :: t\n> : a\n> +\n> > q",
-                3,
-                Kind::Description,
-                Some(Refusal::Right),
-            ),
+            ("> :: t\n> : a\n> +\n> > q", 3, Kind::Description, None),
             (
                 ":: term\n:  detail\n  - a\n    1. ordered\n      * [ ] task\n+\n- item",
                 6,

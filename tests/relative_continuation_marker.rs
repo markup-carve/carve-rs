@@ -280,9 +280,21 @@ fn a_lazy_nested_item_before_a_refused_plus_still_precedes_a_list() {
 }
 
 #[test]
-fn a_quoted_footnote_refuses_a_deeper_quote_after_plus() {
+fn a_quoted_footnote_attaches_a_deeper_quote_after_plus() {
     let source = "> [^a]: x\n> +\n> > r\n\n[^a]\n";
     let html = carve::to_html(source);
-    assert!(html.contains("<p>+</p>"), "{html}");
-    assert!(html.contains("<blockquote><p>r</p></blockquote>"), "{html}");
+    assert!(!html.contains("<p>+</p>"), "{html}");
+    assert!(
+        html.contains("<li id=\"fn1\">\n      <p>x</p>\n      <blockquote><p>r</p></blockquote>"),
+        "{html}"
+    );
+}
+
+#[test]
+fn a_quoted_description_attaches_a_deeper_quote_after_plus() {
+    let html = carve::to_html("> :: t\n> : a\n> +\n> > q\n");
+    assert!(
+        html.contains("<dd>\n      <p>a</p>\n      <blockquote><p>q</p></blockquote>\n    </dd>"),
+        "{html}"
+    );
 }

@@ -105,6 +105,7 @@ which the published crate does not carry.
 - Keep outer-column fences outside nested list items. (#3042)
 - Bound description fence search at footnote definitions. (#3044)
 - Keep column-zero lists outside first-block footnotes and descriptions. (#3053, markup-carve/carve#3482)
+- Attach a quote after `> +` to a quoted description or footnote, as in a quoted list item. (markup-carve/carve#3525)
 
 ### Source positions
 
