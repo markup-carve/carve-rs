@@ -99,6 +99,7 @@ which the published crate does not carry.
 - Collect overindented quoted note bodies at their authored base. (#3039)
 - Keep outer-column fences outside nested list items. (#3042)
 - Bound description fence search at footnote definitions. (#3044)
+- Keep column-zero lists outside first-block footnotes and descriptions. (#3053, markup-carve/carve#3482)
 
 ### Source positions
 
