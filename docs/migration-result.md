@@ -47,6 +47,17 @@ form resolved. Confidence follows the opener, `inferred` for a bare `---` and
 `structure-unspellable`. This deliberately fails closed at the worst-case
 outcome: byte differences are not evidence of semantic fidelity.
 
+Markdown reports each GFM table body row with cells past the header width as
+`markdown-table-extra-cells`, warning/dropped/exact, at `line:N`. GFM ignores
+those cells, so the import omits their content.
+
+When a Markdown link fragment misses a heading id only by case and matches
+exactly one heading, single-file and folder migration rewrite it to that id and
+report `link-fragment-case-rewritten`, info/normalized/inferred. The row's
+`path` is `link:` followed by the destination before the rewrite. Folder
+migration adds the row to the file's `diagnostics`. An ambiguous or unmatched
+fragment stays as written and adds no row.
+
 Markdown reports `raw-code-fallback` with warning severity, degraded fidelity
 and exact confidence when a code payload needs raw HTML to preserve its
 content or structure in Carve source. The HTML output keeps the code payload;
