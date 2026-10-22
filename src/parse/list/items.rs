@@ -976,22 +976,30 @@ pub(crate) fn parse_list(
                     && end > start
                     && strip_blockquote_prefix(trim_ascii_start(cur.lines.at(start))).is_some();
                 if quote_follower {
+                    // The marker line keeps opening the quotes; only its `+` goes.
+                    let stripped = cur.lines.line(item_at).and_then(|line| {
+                        stripped_col(cur.source_col(item_at), line, marker.content)
+                    });
                     stream = MappedSource::new_line_at(
-                        format!("{quote_prefix}{}", trim_ascii_start(cur.lines.at(start))),
-                        cur.source_line(start),
-                        None,
+                        trim_ascii_end(quote_prefix).to_string(),
+                        cur.source_line(item_at),
+                        stripped,
                     );
                     stream.item_marker_at_start = true;
                     stream.in_quoted_body = cur.in_quoted_body;
-                    cur.consume();
                 }
                 while quote_follower && cur.pos < end {
                     let line = cur.lines.at(cur.pos);
-                    let (body, _, _) = slice_columns_mapped(line, follower_indent, true);
+                    let (body, consumed, synthetic) =
+                        slice_columns_mapped(line, follower_indent, true);
                     stream.push_newline_at(
                         format!("{quote_prefix}{body}"),
                         cur.source_line(cur.pos),
-                        None,
+                        cur.source_col(cur.pos).map(|col| {
+                            col + consumed as isize
+                                - synthetic as isize
+                                - quote_prefix.chars().count() as isize
+                        }),
                     );
                     cur.consume();
                 }
