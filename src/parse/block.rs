@@ -606,6 +606,14 @@ pub(in crate::parse) fn parse_block(
         CommentBlock::Consumed(node) => return node,
     }
     let line = cur.peek()?;
+    // Ordinary prose cannot open a core block. Alphabetic list markers are
+    // the one exception, so check them before skipping the block probes.
+    if options.extensions.is_empty()
+        && line.as_bytes().first().is_some_and(u8::is_ascii_alphabetic)
+        && !is_list_marker(line)
+    {
+        return Some(boxed_block(cur, options, parse_paragraph));
+    }
     if let Some(fence_marker) = detect_fence_open(line) {
         return Some(parse_fenced_block(cur, fence_marker, options));
     }

@@ -552,11 +552,23 @@ pub(in crate::parse) fn parse_inline_context_with_pairs(
                 continue;
             }
         }
-        if options.extensions.is_empty() && (c.is_ascii_alphanumeric() || c == b' ' || c == b'\t') {
+        if options.extensions.is_empty()
+            && (c.is_ascii_alphanumeric()
+                || matches!(c, b')' | b',' | b';' | b'?')
+                || (c == b'.'
+                    && (i == 0 || bytes[i - 1] != b'.')
+                    && bytes.get(i + 1) != Some(&b'.'))
+                || c == b' '
+                || c == b'\t')
+        {
             let start = i;
             i += 1;
             while i < bytes.len()
                 && (bytes[i].is_ascii_alphanumeric()
+                    || matches!(bytes[i], b')' | b',' | b';' | b'?')
+                    || (bytes[i] == b'.'
+                        && bytes.get(i - 1) != Some(&b'.')
+                        && bytes.get(i + 1) != Some(&b'.'))
                     || bytes[i] == b'\t'
                     || (bytes[i] == b' ' && !(wraps_live && cell_wrap_at(base + i).is_some())))
             {
