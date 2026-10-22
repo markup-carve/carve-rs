@@ -902,6 +902,10 @@ const IMPLEMENTED: &[&str] = &[
     "the-combined-bold-italic-token-does-not-open-after-an-underscore-or-a-slash",
     "the-combined-bold-italic-token-does-not-open-inside-an-open-bare-italic-or-bold",
     "csv-and-tsv-table-bodies",
+    "a-separate-plus-after-content-attaches-a-list-to-a-note-or-description",
+    "a-comment-line-leaves-a-description-s-list-item-open-for-a-fence",
+    "a-quote-prefixed-plus-takes-one-space-after-each-quote-marker-and-attaches-a-quote",
+    "a-quote-opened-on-its-own-line-in-an-item-takes-the-first-block-form",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
@@ -959,19 +963,7 @@ fn expected_corpus_size() -> usize {
 /// Empty is the normal end state: the pin catching up is what retires an entry,
 /// and the `assert_ne!` in `check_pair` is what forces the deletion rather than
 /// leaving a declaration that no longer declares anything.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
-    // markup-carve/carve#3421; spec PR markup-carve/carve#3521 is not pinned yet.
-    (
-        "630-a-continuation-marker-stands-alone-at-column-zero-or-right-after-a-block-opener-11",
-        "glued quote prefix is text",
-        "<p>&gt;&gt;+\nq</p>",
-    ),
-    (
-        "630-a-continuation-marker-stands-alone-at-column-zero-or-right-after-a-block-opener-12",
-        "glued quote prefix is text",
-        "<p>&gt;+\nq</p>",
-    ),
-];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 
 /// Pairs this engine renders differently from the pinned corpus because it has
 /// not reached the rule yet - the mirror of [`AHEAD_OF_PIN`].
@@ -1760,4 +1752,20 @@ corpus_test!(
 corpus_test!(
     c_task_item_takes_a_first_block_continuation_marker_after_its_checkbox,
     "a-task-item-takes-a-first-block-continuation-marker-after-its-checkbox"
+);
+corpus_test!(
+    c_separate_plus_after_content_attaches_a_list_to_a_note_or_description,
+    "a-separate-plus-after-content-attaches-a-list-to-a-note-or-description"
+);
+corpus_test!(
+    c_comment_line_leaves_a_description_s_list_item_open_for_a_fence,
+    "a-comment-line-leaves-a-description-s-list-item-open-for-a-fence"
+);
+corpus_test!(
+    c_quote_prefixed_plus_takes_one_space_after_each_quote_marker_and_attaches_a_quote,
+    "a-quote-prefixed-plus-takes-one-space-after-each-quote-marker-and-attaches-a-quote"
+);
+corpus_test!(
+    c_quote_opened_on_its_own_line_in_an_item_takes_the_first_block_form,
+    "a-quote-opened-on-its-own-line-in-an-item-takes-the-first-block-form"
 );
