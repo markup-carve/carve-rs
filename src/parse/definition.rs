@@ -93,6 +93,7 @@ pub(in crate::parse) fn fold_term(
         }
         let Some(next) = cur.peek() else { break };
         if is_blank_line(next)
+            || next.starts_with(ITEM_PARAGRAPH)
             || is_definition_list_start(strip_lazy(next))
             || strip_lazy(next)
                 .strip_prefix(":: ")
@@ -270,7 +271,10 @@ pub(in crate::parse) fn parse_definition_list(
                     look += 1;
                 }
                 match cur.lines.line(cur.pos + look) {
-                    Some(after) if strip_definition_marker(strip_lazy(after)).is_some() => {
+                    Some(after)
+                        if !after.starts_with(ITEM_PARAGRAPH)
+                            && strip_definition_marker(strip_lazy(after)).is_some() =>
+                    {
                         for _ in 0..look {
                             cur.consume();
                         }
@@ -281,7 +285,10 @@ pub(in crate::parse) fn parse_definition_list(
             let Some(line) = cur.peek() else {
                 break;
             };
-            let Some((def, definition_column)) = strip_definition_marker(strip_lazy(line)) else {
+            let Some((def, definition_column)) = (!line.starts_with(ITEM_PARAGRAPH))
+                .then(|| strip_definition_marker(strip_lazy(line)))
+                .flatten()
+            else {
                 break;
             };
             if is_blank_line(def) {
