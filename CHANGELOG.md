@@ -103,7 +103,7 @@ which the published crate does not carry.
 - Let folded fence text loosen later list paragraphs. (#3032)
 - Keep deep nested description fence with its owner. (#3035)
 - Release deeper list markers to the surviving description. (#3038)
-- Keep a separator at or past the owning item's content column, below its definition list, as interruptible item text. (markup-carve/carve#3474)
+- Keep a separator at or past the owning item's content column, below its definition list, as interruptible item text. (#3078, markup-carve/carve#3474)
 - End a nested item at its marker column under an open term, and leave a definition list that ends a nested item at a flush separator. (#3070, markup-carve/carve#3473)
 - Collect overindented quoted note bodies at their authored base. (#3039)
 - Keep outer-column fences outside nested list items. (#3042)
