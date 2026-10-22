@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use super::{
     detect_fence_open, detect_list_marker_full, indent_columns, is_blank_line, is_fence_close,
     is_plus_marker, item_block_opener, leading_ws, note_lint_event, strip_blockquote_prefix,
-    FenceOpen, LintEvent,
+    strip_description_prefix, FenceOpen, LintEvent,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -407,7 +407,7 @@ impl Classifier {
                 self.stack[..at].iter().any(|entry| {
                     #[cfg(test)]
                     STACK_ENTRIES_EXAMINED.with(|c| c.set(c.get() + 1));
-                    entry.kind == Kind::List
+                    matches!(entry.kind, Kind::List | Kind::Description)
                         && owner.is_some_and(|owner| entry.depth <= owner.depth)
                 })
             });
@@ -645,6 +645,7 @@ impl Classifier {
         let mut entry = Entry::new(Kind::List, (column, local), depth, 0, false);
         let mut first_block_owner = None;
         let mut list_opener_on_line = false;
+        let mut description_on_line = false;
         for _ in 0..32 {
             if let Some(marker) = detect_list_marker_full(inner) {
                 list_opener_on_line = true;
@@ -664,7 +665,7 @@ impl Classifier {
             if let Some(quoted) = strip_blockquote_prefix(inner) {
                 entry.kind = Kind::Quote;
                 entry.content_column = entry.column;
-                entry.hosted_quote = list_opener_on_line;
+                entry.hosted_quote = list_opener_on_line || description_on_line;
                 self.stack.push(entry);
                 entry.depth += 1;
                 entry.column += inner.len() - quoted.len();
@@ -693,6 +694,18 @@ impl Classifier {
             self.stack.push(entry);
             if first_block {
                 first_block_owner = Some(entry);
+            }
+            if entry.kind == Kind::Description {
+                if let Some(content) = strip_description_prefix(inner)
+                    .filter(|content| strip_blockquote_prefix(content).is_some())
+                {
+                    let width = (content.as_ptr() as usize) - (inner.as_ptr() as usize);
+                    entry.column += width;
+                    entry.local_column += width;
+                    inner = content;
+                    description_on_line = true;
+                    continue;
+                }
             }
             break;
         }

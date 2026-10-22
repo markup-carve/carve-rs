@@ -1337,12 +1337,12 @@ pub(in crate::parse) fn collect_blockquote_body(
             {
                 inner.push_synthetic_blank();
             }
-            // The enclosing host already consumed an accepted carried marker.
             if cur.carried_reach(at) == Some(true)
                 && is_plus_marker(stripped)
-                && cur
-                    .continuation_decision(at)
-                    .is_some_and(|decision| decision.refusal.is_none())
+                && cur.continuation_decision(at).is_some_and(|decision| {
+                    decision.refusal.is_none()
+                        && decision.owner != Some(continuation_marker::Kind::Quote)
+                })
                 && inner
                     .lines
                     .last()
@@ -1352,8 +1352,7 @@ pub(in crate::parse) fn collect_blockquote_body(
             }
             // Pass a marker at this quote's content column to the nested
             // quote's collector. It owns the extent of the attached block.
-            if cur.carried_reach(at).is_none()
-                && !cur.in_item_body
+            if cur.carried_reach(at) != Some(false)
                 && is_plus_marker(stripped)
                 && cur.continuation_decision(at).is_some_and(|decision| {
                     decision.owner == Some(continuation_marker::Kind::Quote)
@@ -1376,7 +1375,11 @@ pub(in crate::parse) fn collect_blockquote_body(
                     cur.consume();
                     continue;
                 }
-                inner.push_at("+".to_string(), source_line, Some(0));
+                if cur.carried_reach(at) == Some(true) {
+                    inner.push_reached_at("+".to_string(), source_line, Some(0));
+                } else {
+                    inner.push_at("+".to_string(), source_line, Some(0));
+                }
                 para_open = ParaOpen::Closed;
                 continue;
             }
