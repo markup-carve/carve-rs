@@ -110,7 +110,7 @@ which the published crate does not carry.
 - Keep column-zero lists outside first-block footnotes and descriptions. (#3053, markup-carve/carve#3482)
 - Keep an empty unterminated nested fence empty before a column-0 `+`. (#3072, #3071)
 - Read a hosted nested quote with `> +` like its top-level twin, in list items and descriptions. (#3076, markup-carve/carve#3418)
-- Open a block below a description list item at an authored base in the description, not as item text. (markup-carve/carve#3450)
+- Open a block below a description list item at an authored base in the description, not as item text. (#3077, markup-carve/carve#3450)
 - Attach a quote after `> +` to a quoted description or footnote, as in a quoted list item. (#3068, markup-carve/carve#3525)
 - Attach the block at its column to a `> +` that opens a quote on its own line in a list item or description. (markup-carve/carve#3421)
 
