@@ -2460,6 +2460,8 @@ mod lint_description_separator_below_content_column;
 mod lint_list_column_traps;
 #[path = "../lint_new_rules.rs"]
 mod lint_new_rules;
+#[path = "../lint_quote_plus_before_sibling_list.rs"]
+mod lint_quote_plus_before_sibling_list;
 #[path = "../markdown_blank_below_a_nested_list_before_an_image.rs"]
 mod markdown_blank_below_a_nested_list_before_an_image;
 #[path = "../markdown_figure_in_a_tight_item.rs"]

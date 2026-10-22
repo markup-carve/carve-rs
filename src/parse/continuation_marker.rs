@@ -474,7 +474,9 @@ impl Classifier {
             let follower_body = follower.map(|line| quote_body(line).1).unwrap_or("");
             let follower_depth = follower.map(|line| quote_body(line).0);
             let sibling = owner.is_some_and(|entry| {
-                entry.kind == Kind::List || entry.kind == Kind::Quote && has_ancestor_list
+                entry.kind == Kind::List
+                    || entry.kind == Kind::Quote
+                        && (has_ancestor_list || depth > 0 && deepest_quote == depth)
             }) && follower_depth == Some(depth)
                 && follower_col == owner_column
                 && detect_list_marker_full(follower_body).is_some();

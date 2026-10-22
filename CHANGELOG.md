@@ -42,6 +42,7 @@ which the published crate does not carry.
 - Lint: report the first-block `+` of a footnote or description refused above a column-0 list as `continuation-marker-refused`. (#3057; markup-carve/carve#3482)
 - Lint: do not report a block at the content column of a description inside a list item as overindented. (#3062)
 - Lint: say what a refused first-block `+` leaves behind and report a refused first-block `> +`. (#3061; markup-carve/carve#3524)
+- Lint: report a quote-prefixed `+` that a list item at the same quote level leaves as text, as carve-js does. (markup-carve/carve#3421)
 
 ### Formatting and migration
 
