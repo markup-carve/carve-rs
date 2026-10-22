@@ -419,6 +419,7 @@ fn collect_parser_events(
                         "the next block starts right of its column and follows the column rules"
                     }
                     "right" => "the next block starts right of its column",
+                    "unclaimed" => "no open container claims it",
                     _ => "its column names no open container",
                 };
                 // PART 9 §17 L4: a refused first-block `+` adds no block to an item or a

@@ -88,6 +88,7 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
         {
             break;
         }
+        report_unclaimed_document_plus(cur, line);
         cur.consume();
         let trimmed = trim_ascii_end(trim_ascii_start(line));
         suppress_colon_interrupt |= is_invalid_colon_fence_opener_text(trimmed);
@@ -254,6 +255,41 @@ fn code_fence_closer_ahead(cur: &mut LineCursor<'_>, open: FenceOpen) -> bool {
         .range(cur.pos + 1..cur.lines.len())
         .take_while(|l| is_blank_line(l) || leading_ws(l) >= strip)
         .any(|l| is_fence_close(&l[leading_ws(l).min(strip)..], open))
+}
+
+/// `q` / `+` / `- s`: no open container claims a document-level `+`, which lint
+/// reports when a block follows it and not before paragraph text (carve#3421).
+fn report_unclaimed_document_plus(cur: &mut LineCursor<'_>, line: &str) {
+    if !cur.at_document_level
+        || cur.colon_view.is_some()
+        || !line.starts_with('+')
+        || !line[1..].bytes().all(|b| matches!(b, b' ' | b'\t'))
+    {
+        return;
+    }
+    let Some(follower) = cur.lines.line(cur.pos + 1) else {
+        return;
+    };
+    let Some(source_line) = cur.source_line(cur.pos) else {
+        return;
+    };
+    let block = !follower.starts_with([' ', '\t'])
+        && (detect_list_marker_full(follower).is_some()
+            || !follower.starts_with('%') && {
+                cur.pos += 1;
+                let interrupts = interrupts_paragraph_in_band(cur, follower, false);
+                cur.pos -= 1;
+                interrupts
+            });
+    if block {
+        note_lint_event(LintEvent::Marker {
+            line: source_line,
+            column: 1,
+            host: "document",
+            reason: "unclaimed",
+            first_block: false,
+        });
+    }
 }
 
 pub(super) fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {

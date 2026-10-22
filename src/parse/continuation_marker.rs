@@ -40,9 +40,10 @@ pub(super) fn refusal_name(reason: Refusal) -> &'static str {
     }
 }
 
-fn host(kind: Option<Kind>) -> &'static str {
+fn host(kind: Option<Kind>, quote_depth: usize) -> &'static str {
     match kind {
         Some(Kind::Quote) => "block quote",
+        None if quote_depth > 0 => "block quote",
         Some(Kind::Description) => "description body",
         Some(Kind::Footnote) => "footnote",
         _ => "list item",
@@ -57,6 +58,8 @@ pub(super) struct Decision {
     pub quote_depth: usize,
     pub after_quote_blank: bool,
     pub sibling_interrupt: bool,
+    /// No container is open: a document-level `+` (carve#3421).
+    pub unclaimed: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -179,14 +182,16 @@ pub(super) fn decision(source_line: usize) -> Option<Decision> {
         }
         let found = classifier.decisions.get(index).copied().flatten();
         if let Some(decision) = found {
-            if let Some(reason) = decision.refusal {
+            // A document-level `+` no container claims is reported by the paragraph
+            // reader, and only before a block (carve#3421).
+            if let Some(reason) = decision.refusal.filter(|_| !decision.unclaimed) {
                 if !classifier.reported[index] {
                     classifier.reported[index] = true;
                     let line = &classifier.lines[index];
                     note_lint_event(LintEvent::Marker {
                         line: index + 1,
                         column: column_at(line, line.rfind('+').unwrap_or(0)) + 1,
-                        host: host(decision.owner),
+                        host: host(decision.owner, decision.quote_depth),
                         reason: refusal_name(reason),
                         first_block: decision.first_block,
                     });
@@ -559,6 +564,7 @@ impl Classifier {
                         && local == 0
                         && index > 0
                         && quote_body(&self.lines[index - 1]).0 >= depth,
+                unclaimed: owner.is_none() && depth == 0 && self.stack.is_empty(),
             });
             if refusal.is_none() {
                 self.held_owner = owner;
@@ -814,6 +820,7 @@ impl Classifier {
                 quote_depth: depth,
                 after_quote_blank: false,
                 sibling_interrupt: false,
+                unclaimed: false,
             });
             if refusal.is_none() {
                 self.held_owner = Some(owner);

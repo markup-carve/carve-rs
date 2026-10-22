@@ -2472,6 +2472,8 @@ mod lint_list_column_traps;
 mod lint_new_rules;
 #[path = "../lint_quote_plus_before_sibling_list.rs"]
 mod lint_quote_plus_before_sibling_list;
+#[path = "../lint_reports_a_document_plus_only_before_a_block.rs"]
+mod lint_reports_a_document_plus_only_before_a_block;
 #[path = "../markdown_blank_below_a_nested_list_before_an_image.rs"]
 mod markdown_blank_below_a_nested_list_before_an_image;
 #[path = "../markdown_figure_in_a_tight_item.rs"]
