@@ -571,6 +571,47 @@ pub(crate) fn attached_block_lines_classified(
     start + attached_one_block_lines(lines.window(start..end, &materialized), options)
 }
 
+/// One past a colon block attached by a first-block `+` whose opener sits at or
+/// past `floor`, measured on the lines it owns with its indentation stripped:
+/// an indented colon fence's closer is only read as one there. `None` for any
+/// other line.
+pub(crate) fn attached_indented_block_end(
+    lines: CursorLines<'_>,
+    start: usize,
+    floor: usize,
+    options: &Options<'_>,
+) -> Option<usize> {
+    let first = lines.line(start)?;
+    let column = indent_columns(first);
+    if column == 0 || column < floor || !trim_ascii_start(first).starts_with(":::") {
+        return None;
+    }
+    let mut stop = start;
+    while stop < lines.len() {
+        let line = lines.at(stop);
+        if !is_blank_line(line) && indent_columns(line) < column {
+            break;
+        }
+        stop += 1;
+    }
+    let owned: Vec<String> = lines
+        .range(start..stop)
+        .map(|line| slice_columns_mapped(line, column, true).0)
+        .collect();
+    let owned: Vec<&str> = owned.iter().map(String::as_str).collect();
+    Some(
+        start
+            + attached_block_lines_classified(
+                CursorLines::Slice(&owned),
+                0,
+                &mut None,
+                &mut None,
+                options,
+                &mut |_, _| false,
+            ),
+    )
+}
+
 /// Parse one attached block, stopping at the host's next marker or sibling item.
 pub(crate) fn parse_continuation_block(
     cur: &mut LineCursor,

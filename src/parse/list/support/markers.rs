@@ -603,10 +603,30 @@ pub(crate) fn collected_body_takes_the_lazy_line(
 pub(crate) fn body_ends_in_definition_list(body: &str, options: &Options<'_>) -> bool {
     #[cfg(test)]
     BODY_ENDS_DEFINITION_PROBE_BYTES.with(|work| work.set(work.get() + body.len() as u64));
-    matches!(
-        probe_blocks(body, options).last(),
-        Some(BlockNode::DefinitionList(_))
-    )
+    let last = probe_blocks(body, options).pop();
+    // A flush separator also leaves a definition list that ends a nested item
+    // (CARVE-P2-017, carve#3473). Only a term or separator line ends that list:
+    // a lazy line below it may belong to an outer block instead.
+    let nested_tail = body
+        .lines()
+        .rev()
+        .find(|line| !is_blank_line(line))
+        .map(trim_ascii_start)
+        .is_some_and(|line| {
+            is_definition_list_start(line) || strip_description_prefix(line).is_some()
+        });
+    ends_in_definition_list(last.as_ref(), nested_tail)
+}
+
+fn ends_in_definition_list(block: Option<&BlockNode>, nested: bool) -> bool {
+    match block {
+        Some(BlockNode::DefinitionList(_)) => true,
+        Some(BlockNode::List(list)) if nested => list
+            .items
+            .last()
+            .is_some_and(|item| ends_in_definition_list(item.children.last(), nested)),
+        _ => false,
+    }
 }
 
 /// A list opened on the item's marker line starts at the marker column.

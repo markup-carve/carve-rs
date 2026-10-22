@@ -42,6 +42,7 @@ which the published crate does not carry.
 - Lint: report the first-block `+` of a footnote or description refused above a column-0 list as `continuation-marker-refused`. (#3057; markup-carve/carve#3482)
 - Lint: do not report a block at the content column of a description inside a list item as overindented. (#3062)
 - Lint: say what a refused first-block `+` leaves behind and report a refused first-block `> +`. (#3061; markup-carve/carve#3524)
+- Lint: report a quote-prefixed `+` that a list item at the same quote level leaves as text, as carve-js does. (markup-carve/carve#3421)
 
 ### Formatting and migration
 
@@ -102,11 +103,18 @@ which the published crate does not carry.
 - Let folded fence text loosen later list paragraphs. (#3032)
 - Keep deep nested description fence with its owner. (#3035)
 - Release deeper list markers to the surviving description. (#3038)
+- Keep a separator at or past the owning item's content column, below its definition list, as interruptible item text. (#3078, markup-carve/carve#3474)
+- End a nested item at its marker column under an open term, and leave a definition list that ends a nested item at a flush separator. (#3070, markup-carve/carve#3473)
 - Collect overindented quoted note bodies at their authored base. (#3039)
 - Keep outer-column fences outside nested list items. (#3042)
 - Bound description fence search at footnote definitions. (#3044)
 - Keep column-zero lists outside first-block footnotes and descriptions. (#3053, markup-carve/carve#3482)
+- Keep an empty unterminated nested fence empty before a column-0 `+`. (#3072, #3071)
+- Read a hosted nested quote with `> +` like its top-level twin, in list items and descriptions. (#3076, markup-carve/carve#3418)
+- Open a block below a description list item at an authored base in the description, not as item text. (#3077, markup-carve/carve#3450)
 - Attach a quote after `> +` to a quoted description or footnote, as in a quoted list item. (#3068, markup-carve/carve#3525)
+- A `> +` on an item's marker line attaches a heading, fence or table at the quote's column, pulls no list item there, and its refused `+` takes a lazy line like a letter. (#3075, markup-carve/carve#3421, markup-carve/carve#3529)
+- A stacked `- - > +` or `- > > +` refuses a follower at an outer item's column, so the `+` folds it in like a letter (`+ b`). (#3079, markup-carve/carve#3421)
 - Attach the block at its column to a `> +` that opens a quote on its own line in a list item or description. (markup-carve/carve#3421)
 
 ### Source positions

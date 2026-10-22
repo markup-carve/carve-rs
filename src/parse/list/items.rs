@@ -937,18 +937,21 @@ pub(crate) fn parse_list(
             let mut continuation_has_content = false;
             if first_block_quote_attaches {
                 let start = cur.pos;
-                let end = attached_block_lines_classified(
-                    cur.lines,
-                    start,
-                    &mut cur.comment_closer_last_index,
-                    &mut cur.code_closer_last_index,
-                    options,
-                    &mut |line, at| {
-                        at > start
-                            && detect_list_marker_full(line)
-                                .is_some_and(|marker| marker.indent <= base_indent)
-                    },
-                );
+                let end = attached_indented_block_end(cur.lines, start, content_col, options)
+                    .unwrap_or_else(|| {
+                        attached_block_lines_classified(
+                            cur.lines,
+                            start,
+                            &mut cur.comment_closer_last_index,
+                            &mut cur.code_closer_last_index,
+                            options,
+                            &mut |line, at| {
+                                at > start
+                                    && detect_list_marker_full(line)
+                                        .is_some_and(|marker| marker.indent <= base_indent)
+                            },
+                        )
+                    });
                 while cur.pos < end {
                     let line = cur.lines.at(cur.pos);
                     let (body, consumed, synthetic) = slice_columns_mapped(line, content_col, true);

@@ -491,6 +491,7 @@ pub(in crate::parse) fn rebase_body_blocks(
     let mut paragraph_open = false;
     // The open paragraph is the container's own, not a descendant's.
     let mut own_paragraph = false;
+    let mut item_separator_paragraph = false;
     let mut opaque_quote_tail = false;
     // A code-shaped run outside the preceding verse's bases is inline text.
     // Keep its authored column through repeated rebase passes.
@@ -514,8 +515,12 @@ pub(in crate::parse) fn rebase_body_blocks(
             opaque_quote_tail = false;
             after_blank = true;
             paragraph_open = false;
+            item_separator_paragraph = false;
             i += 1;
             continue;
+        }
+        if !paragraph_open {
+            item_separator_paragraph = false;
         }
         let base = indent_columns(&lines[i]);
         let local_at_base = strip_leading_columns(&lines[i], base);
@@ -613,6 +618,7 @@ pub(in crate::parse) fn rebase_body_blocks(
             && !(source.reached.get(i).copied().unwrap_or(false)
                 && strip_blockquote_prefix(&local_at_base).is_some())
             && !closed_fence_below_descendant
+            && !(item_separator_paragraph && source.reached.get(i).copied().unwrap_or(false))
         {
             i += 1;
             continue;
@@ -1198,7 +1204,8 @@ pub(in crate::parse) fn rebase_body_blocks(
                 block_at_minimum = true;
                 continue;
             }
-            paragraph_open = line_starts_paragraph(&lines[i]);
+            paragraph_open = line_starts_paragraph(strip_lazy(&lines[i]));
+            item_separator_paragraph = lines[i].starts_with(ITEM_PARAGRAPH);
             own_paragraph = paragraph_open;
             if paragraph_open {
                 term_boundary = false;

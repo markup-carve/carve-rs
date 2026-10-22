@@ -238,15 +238,18 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             });
         if follows_first_block {
             let start = cur.pos;
-            let end = attached_block_lines_classified(
-                cur.lines,
-                start,
-                &mut cur.comment_closer_last_index,
-                &mut cur.code_closer_last_index,
-                options,
-                &mut |next, _| is_blank_line(next) || is_plus_marker(next),
-            )
-            .max(start + 1);
+            let end = attached_indented_block_end(cur.lines, start, strip_cols, options)
+                .unwrap_or_else(|| {
+                    attached_block_lines_classified(
+                        cur.lines,
+                        start,
+                        &mut cur.comment_closer_last_index,
+                        &mut cur.code_closer_last_index,
+                        options,
+                        &mut |next, _| is_blank_line(next) || is_plus_marker(next),
+                    )
+                })
+                .max(start + 1);
             while cur.pos < end {
                 let (body, consumed, synthetic) =
                     slice_columns_mapped(cur.lines.at(cur.pos), strip_cols, true);
@@ -311,9 +314,11 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             if indent_columns(line) > 0 {
                 *fence = active_nested_fence.or(nested_fence);
             }
+            // An empty nested fence keeps no manufactured payload line.
             if indent_columns(line) == 0
                 && !cur.in_item_body
                 && !lines.last().is_some_and(|prior| is_blank_line(prior))
+                && !(lines.is_empty() && active_nested_fence.is_some())
             {
                 lines.push(String::new());
                 reached.push(false);
@@ -566,6 +571,41 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             || (definition_list_column.is_some_and(|column| indent < column) && description);
         if below_definition_separator && indent == 0 {
             break;
+        }
+        // At a nested item's marker column the separator ends that item instead of
+        // folding into its term (CARVE-P2-017, carve#3473).
+        let separator_at_nested_marker = below_definition_separator
+            && indent == strip_cols
+            && definition_list_column.is_some_and(|list| {
+                marker_line_columns.last() == Some(&list)
+                    || nested_item_columns.iter().any(|&(base, _)| base == indent)
+                        && nested_item_columns
+                            .iter()
+                            .any(|&(_, content)| content == list)
+            });
+        // At or past the column of the item that owns the list it is item paragraph text (carve#3474).
+        let nested_owner_content = definition_list_column.and_then(|list| {
+            marker_line_columns
+                .iter()
+                .copied()
+                .chain(nested_item_columns.iter().map(|&(_, content)| content))
+                .filter(|&content| content <= list)
+                .max()
+        });
+        let separator_in_own_item = below_definition_separator
+            && !separator_at_nested_marker
+            && indent >= strip_cols
+            && nested_owner_content.is_none();
+        // Past a nested owner's content column the nested collector decides.
+        let separator_for_nested_item = below_definition_separator
+            && !separator_at_nested_marker
+            && nested_owner_content.is_some_and(|content| indent >= content);
+        if separator_in_own_item {
+            definition_list_column = None;
+            surviving_definition_body_column = None;
+            open_definition_body_column = None;
+            marker_term_open = false;
+            marker_term_paragraph_open = false;
         }
         if indent == strip_cols
             && (item_block_opener(trim_ascii_start(line))
@@ -1510,6 +1550,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             || framed_comment_payload
             || lazy_list_marker
             || below_definition_separator
+                && !separator_at_nested_marker
+                && !separator_in_own_item
+                && !separator_for_nested_item
             || definition_band_inline_closer
             || (definition_comment_band
                 && detect_fence_open(trim_ascii_start(line)).is_none()
@@ -1519,6 +1562,12 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && !sliced.starts_with(LAZY)
         {
             sliced.insert_str(0, LAZY);
+        }
+        if separator_in_own_item {
+            if let Some(rest) = sliced.strip_prefix(LAZY) {
+                sliced = rest.to_string();
+            }
+            sliced.insert_str(0, ITEM_PARAGRAPH);
         }
         definition_ended_paragraph = is_collected_definition_placeholder(&sliced)
             || is_quoted_definition_placeholder(&sliced);

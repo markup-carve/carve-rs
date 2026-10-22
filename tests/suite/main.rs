@@ -11,6 +11,10 @@
 mod a_continuation_marker_is_column_zero_only;
 #[path = "../a_fence_run_that_dedents_out_of_a_child_keeps_the_outer_item_tight.rs"]
 mod a_fence_run_that_dedents_out_of_a_child_keeps_the_outer_item_tight;
+#[path = "../a_quote_first_block_plus_reads_its_follower_by_column.rs"]
+mod a_quote_first_block_plus_reads_its_follower_by_column;
+#[path = "../a_stacked_quote_plus_refuses_an_outer_item_column.rs"]
+mod a_stacked_quote_plus_refuses_an_outer_item_column;
 #[path = "../a_tab_placed_sublist_starts_on_a_real_column.rs"]
 mod a_tab_placed_sublist_starts_on_a_real_column;
 #[path = "../an_opener_in_a_description_in_an_item_is_not_overindented.rs"]
@@ -47,6 +51,10 @@ mod a_definition_in_a_quote_under_an_item_leaves_no_lazy_paragraph;
 mod a_flush_comment_after_a_nested_note_marker_leaves_no_body_open;
 #[path = "../a_folded_marker_or_quote_does_not_move_the_base.rs"]
 mod a_folded_marker_or_quote_does_not_move_the_base;
+#[path = "../a_folded_separator_stays_interruptible.rs"]
+mod a_folded_separator_stays_interruptible;
+#[path = "../a_hosted_nested_quote_reads_like_its_top_level_twin.rs"]
+mod a_hosted_nested_quote_reads_like_its_top_level_twin;
 #[path = "../a_matched_comment_fence_ends_or_keeps_a_note_by_column.rs"]
 mod a_matched_comment_fence_ends_or_keeps_a_note_by_column;
 #[path = "../a_matched_comment_keeps_its_payload_in_a_list_description.rs"]
@@ -2448,8 +2456,12 @@ mod nested_fence_continuation_blank_payload;
 #[path = "../nested_marker_fence_blank_payload.rs"]
 mod nested_marker_fence_blank_payload;
 
+#[path = "../a_quote_below_a_description_item_opens_in_the_description.rs"]
+mod a_quote_below_a_description_item_opens_in_the_description;
 #[path = "../a_tab_indented_quote_in_an_item_starts_on_its_marker.rs"]
 mod a_tab_indented_quote_in_an_item_starts_on_its_marker;
+#[path = "../an_empty_nested_fence_before_a_column_zero_plus_keeps_no_payload.rs"]
+mod an_empty_nested_fence_before_a_column_zero_plus_keeps_no_payload;
 #[path = "../description_fence_note_boundary.rs"]
 mod description_fence_note_boundary;
 #[path = "../lint_description_separator_below_content_column.rs"]
@@ -2458,6 +2470,8 @@ mod lint_description_separator_below_content_column;
 mod lint_list_column_traps;
 #[path = "../lint_new_rules.rs"]
 mod lint_new_rules;
+#[path = "../lint_quote_plus_before_sibling_list.rs"]
+mod lint_quote_plus_before_sibling_list;
 #[path = "../markdown_blank_below_a_nested_list_before_an_image.rs"]
 mod markdown_blank_below_a_nested_list_before_an_image;
 #[path = "../markdown_figure_in_a_tight_item.rs"]
