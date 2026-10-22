@@ -416,17 +416,22 @@ fn collect_parser_events(
                     "right" => "the next block starts right of its column",
                     _ => "its column names no open container",
                 };
-                // A refused note `+` above a list stays text in the note (carve#3482).
-                let effect = if *first_block && !(*reason == "list" && *host == "footnote") {
-                    match *host {
-                        "block quote" => "The quote stays empty.",
-                        "description body" => "The description stays empty.",
-                        "footnote" => "The footnote stays empty.",
-                        _ => "The item stays empty.",
+                // PART 9 §17 L4: a refused first-block `+` adds no block to an item or a
+                // description, and stays text in a quote or a note.
+                let effect = match (*first_block, *host) {
+                    (true, "list item" | "description body") => {
+                        let name = if *host == "list item" {
+                            "item"
+                        } else {
+                            "description"
+                        };
+                        if *reason == "right" {
+                            format!("It adds no block to the {name}, and the next line follows the ordinary column rules.")
+                        } else {
+                            format!("The {name} stays empty.")
+                        }
                     }
-                    .to_string()
-                } else {
-                    format!("It remains text in the {host}.")
+                    _ => format!("It remains text in the {host}."),
                 };
                 (
                     *line,

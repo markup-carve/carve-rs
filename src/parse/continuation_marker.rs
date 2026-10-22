@@ -373,10 +373,10 @@ impl Classifier {
                 && depth > 0
                 && local == 0
                 && !inner_list_open
-                && self
-                    .lines
-                    .get(index + 1)
-                    .is_some_and(|line| quote_body(line).0 < depth)
+                && self.lines.get(index + 1).map_or(true, |line| {
+                    let (next_depth, body) = quote_body(line);
+                    next_depth < depth || is_blank_line(body)
+                })
                 && !index.checked_sub(1).is_some_and(|prior| {
                     quote_body(&self.lines[prior]).0 > 0
                         && source_column(&self.lines[prior], None) > marker_column
@@ -428,6 +428,18 @@ impl Classifier {
                 Some(Refusal::Document)
             } else if is_blank_line(follower_body) {
                 Some(Refusal::Blank)
+            } else if first_block_quote && !first_block_at_document {
+                // CARVE-P9-067: the quote's first-block form refuses a column-0 list and any other column.
+                let follower_column = follower.map_or(0, |line| source_column(line, Some(0)));
+                if follower_column == 0
+                    && follower.is_some_and(|line| detect_list_marker_full(line).is_some())
+                {
+                    Some(Refusal::List)
+                } else if follower_column > source_column(&self.lines[index], Some(0)) {
+                    Some(Refusal::Right)
+                } else {
+                    Some(Refusal::Left)
+                }
             } else if !first_block_at_document
                 && follower_depth.is_some_and(|next_depth| next_depth < depth)
             {
