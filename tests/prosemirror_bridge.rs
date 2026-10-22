@@ -1711,7 +1711,8 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // control, 154-2, stays strict; 154-3 was already reported lossy.
     // The sibling list in corpus 616-7 now survives the bridge without loss.
     // Spec adc80975 adds six strict corpus 637/638 rows and three lossy rows.
-    const STRICT: usize = 2199;
+    // Spec #3507 adds corpus 643 and 643-2; both round trip strictly.
+    const STRICT: usize = 2201;
     // Spec 894ff32e adds 616-25, whose marked quote soft break reports a loss.
     // The eight parsed CSV/TSV tables lose their source fence in ProseMirror;
     // the bridge reports that loss instead of claiming a strict round trip.

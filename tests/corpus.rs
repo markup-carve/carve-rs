@@ -18,6 +18,7 @@ const IMPLEMENTED: &[&str] = &[
     "a-continuation-marker-stands-alone-at-column-zero-or-right-after-a-block-opener",
     "a-continuation-marker-uses-its-container-column",
     "a-first-block-marker-on-an-indented-opener-reads-two-columns",
+    "a-first-block-marker-does-not-pull-a-column-zero-list-into-a-note-or-description",
     "a-refused-continuation-plus-remains-text",
     "a-refused-plus-without-the-inner-quote-prefix-renders-as-text",
     "a-task-item-takes-a-first-block-continuation-marker-after-its-checkbox",
