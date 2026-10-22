@@ -411,11 +411,13 @@ fn collect_parser_events(
                     "blank" => "a blank line follows it",
                     "document" => "it reaches the end of the document",
                     "sibling" => "the next list item is a sibling",
+                    "list" => "the first-block form does not attach a list",
                     "left" => "the next block starts left of its column",
                     "right" => "the next block starts right of its column",
                     _ => "its column names no open container",
                 };
-                let effect = if *first_block {
+                // A refused note `+` above a list stays text in the note (carve#3482).
+                let effect = if *first_block && !(*reason == "list" && *host == "footnote") {
                     match *host {
                         "block quote" => "The quote stays empty.",
                         "description body" => "The description stays empty.",

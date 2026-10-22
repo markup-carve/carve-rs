@@ -25,6 +25,7 @@ pub(super) enum Refusal {
     Left,
     Right,
     Sibling,
+    List,
 }
 
 pub(super) fn refusal_name(reason: Refusal) -> &'static str {
@@ -35,6 +36,7 @@ pub(super) fn refusal_name(reason: Refusal) -> &'static str {
         Refusal::Left => "left",
         Refusal::Right => "right",
         Refusal::Sibling => "sibling",
+        Refusal::List => "list",
     }
 }
 
@@ -663,10 +665,17 @@ impl Classifier {
             let sibling = matches!(owner.kind, Kind::List | Kind::Quote)
                 && (follower_column == owner.column || opener_column == column)
                 && detect_list_marker_full(follower_body).is_some();
+            // CARVE-P9-067: a note's or a description's first-block form pulls no column-0 list.
+            let column_zero_list = matches!(owner.kind, Kind::Footnote | Kind::Description)
+                && follower.is_some_and(|line| {
+                    source_column(line, Some(0)) == 0 && detect_list_marker_full(line).is_some()
+                });
             let refusal = if follower.is_none() {
                 Some(Refusal::Document)
             } else if is_blank_line(follower_body) {
                 Some(Refusal::Blank)
+            } else if column_zero_list {
+                Some(Refusal::List)
             } else if sibling {
                 Some(Refusal::Sibling)
             } else if !at_column && follower_column < owner.column {
