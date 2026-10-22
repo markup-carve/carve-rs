@@ -39,6 +39,7 @@ which the published crate does not carry.
 - Lint the two ordered-list column traps of explicit numbers. (#2962)
 - Lint: report a list marker below the content column after a blank line. (#2969)
 - Lint a description separator below its definition list column. (#3056)
+- Lint: report the first-block `+` of a footnote or description refused above a column-0 list as `continuation-marker-refused`. (#3057; markup-carve/carve#3482)
 - Lint: do not report a block at the content column of a description inside a list item as overindented. (#3062)
 - Lint: say what a refused first-block `+` leaves behind and report a refused first-block `> +`. (#3061; markup-carve/carve#3524)
 
