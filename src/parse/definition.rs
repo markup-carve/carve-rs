@@ -657,6 +657,7 @@ pub(in crate::parse) fn collect_definition_body(
         .lines()
         .last()
         .is_some_and(|line| is_list_marker(trim_ascii_start(line)));
+    let mut owner_item_opens_block = paragraph_owner_is_item;
     let mut descendant_marker_fence: Option<(FenceOpen, usize)> = None;
     let mut descendant_block_ended = false;
     // A lazy fold leaves a paragraph open. Rechecking by parsing all collected
@@ -751,6 +752,7 @@ pub(in crate::parse) fn collect_definition_body(
                     || item_block_opener_with_invisible_arms(trim_ascii_start(line), true))
             {
                 paragraph_owner_is_item = is_list_marker(trim_ascii_start(line));
+                owner_item_opens_block = lines.last().is_some_and(|prior| is_blank_line(prior));
                 paragraph_column = paragraph_owner_column(trim_ascii_start(line), column)
                     .filter(|owner| *owner > content_column);
                 paragraph_marker_column = is_list_marker(trim_ascii_start(line)).then_some(column);
@@ -759,6 +761,7 @@ pub(in crate::parse) fn collect_definition_body(
                 && is_list_marker(trim_ascii_start(line))
             {
                 paragraph_owner_is_item = true;
+                owner_item_opens_block = lines.last().is_some_and(|prior| is_blank_line(prior));
                 paragraph_column = paragraph_owner_column(trim_ascii_start(line), column)
                     .filter(|owner| *owner > content_column);
                 opens_descendant_here = paragraph_column.is_some();
@@ -768,6 +771,7 @@ pub(in crate::parse) fn collect_definition_body(
                     || strip_definition_marker(trim_ascii_start(line)).is_some())
             {
                 paragraph_owner_is_item = is_list_marker(trim_ascii_start(line));
+                owner_item_opens_block = lines.last().is_some_and(|prior| is_blank_line(prior));
                 paragraph_column = paragraph_owner_column(trim_ascii_start(line), column)
                     .filter(|owner| *owner > content_column);
                 paragraph_marker_column = is_list_marker(trim_ascii_start(line)).then_some(column);
@@ -919,7 +923,12 @@ pub(in crate::parse) fn collect_definition_body(
                     && detect_fence_open(trim_ascii_start(line)).is_none()
                     && paragraph_column.is_some_and(|owner| indent < owner)
                     && indent != content_column
+                    // An item past the body column does not reach an opener below its own column (carve#3450).
                     && (paragraph_owner_is_item
+                        && (is_list_marker(trim_ascii_start(line))
+                            || owner_item_opens_block
+                                && paragraph_marker_column
+                                    .is_some_and(|marker| marker <= content_column))
                         || !item_block_opener_with_invisible_arms(trim_ascii_start(line), true))
                 {
                     sliced = format!("{LAZY}{}", trim_ascii_start(&sliced));
