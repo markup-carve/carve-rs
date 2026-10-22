@@ -1714,7 +1714,8 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // Spec #3507 adds corpus 643 and 643-2; both round trip strictly.
     // Corpus 630-11 and 630-12 now read glued quote prefixes as text. Their
     // soft breaks are reported as lossy by the bridge (carve#3421).
-    const STRICT: usize = 2199;
+    // Spec 3214cb62 adds 50 rows (corpus 644-656): 34 strict, 16 lossy.
+    const STRICT: usize = 2233;
     // Spec 894ff32e adds 616-25, whose marked quote soft break reports a loss.
     // The eight parsed CSV/TSV tables lose their source fence in ProseMirror;
     // the bridge reports that loss instead of claiming a strict round trip.
@@ -1722,7 +1723,7 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // existing source loss through the bridge; the strict set is unchanged.
     // Spec #3506 adds the three 642 lazy colon-shaped quote cases. All three
     // report existing source loss through the bridge.
-    const LOSSY: usize = 773;
+    const LOSSY: usize = 789;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in

@@ -902,6 +902,19 @@ const IMPLEMENTED: &[&str] = &[
     "the-combined-bold-italic-token-does-not-open-after-an-underscore-or-a-slash",
     "the-combined-bold-italic-token-does-not-open-inside-an-open-bare-italic-or-bold",
     "csv-and-tsv-table-bodies",
+    "a-comment-line-leaves-a-description-s-list-item-open-for-a-fence",
+    "a-first-block-plus-refuses-a-follower-at-an-intervening-column",
+    "a-hosted-quote-s-first-block-plus-attaches-any-non-list-block-at-column-zero",
+    "a-quote-follower-below-stacked-quote-openers-in-an-item-is-read-at-its-raw-column",
+    "a-quote-opened-on-an-item-s-marker-line-attaches-a-quote-at-its-own-depth",
+    "a-quote-opened-on-its-own-line-in-an-item-takes-the-first-block-form",
+    "a-quote-prefixed-plus-takes-one-space-after-each-quote-marker-and-attaches-a-quote",
+    "a-quote-s-first-block-plus-refuses-a-list-follower-in-every-host",
+    "a-separate-plus-after-content-attaches-a-list-to-a-note-or-description",
+    "a-stacked-first-block-plus-takes-a-follower-only-at-column-zero-or-its-line-s-column",
+    "a-wrapped-attribute-line-interrupts-like-a-one-line-attribute-line",
+    "a-wrapped-attribute-line-opened-at-a-container-s-column-is-one-construct",
+    "the-column-of-the-quote-that-owns-a-first-block-plus-stays-eligible-at-every-depth",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
@@ -959,19 +972,7 @@ fn expected_corpus_size() -> usize {
 /// Empty is the normal end state: the pin catching up is what retires an entry,
 /// and the `assert_ne!` in `check_pair` is what forces the deletion rather than
 /// leaving a declaration that no longer declares anything.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
-    // markup-carve/carve#3421; spec PR markup-carve/carve#3521 is not pinned yet.
-    (
-        "630-a-continuation-marker-stands-alone-at-column-zero-or-right-after-a-block-opener-11",
-        "glued quote prefix is text",
-        "<p>&gt;&gt;+\nq</p>",
-    ),
-    (
-        "630-a-continuation-marker-stands-alone-at-column-zero-or-right-after-a-block-opener-12",
-        "glued quote prefix is text",
-        "<p>&gt;+\nq</p>",
-    ),
-];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 
 /// Pairs this engine renders differently from the pinned corpus because it has
 /// not reached the rule yet - the mirror of [`AHEAD_OF_PIN`].

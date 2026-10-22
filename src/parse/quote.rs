@@ -1281,6 +1281,9 @@ pub(in crate::parse) fn collect_blockquote_body(
     let mut description_line = false;
     let mut literal_quote_body = None;
     let mut last_quoted_at = None;
+    // The quoted line that opened a list item, not text in a paragraph or a fence.
+    let mut item_opened_at = None;
+    let mut list_open = false;
     while let Some(line) = cur.peek() {
         let quote_line = if cur.colon_view.is_some_and(|view| view.marker_hosted) {
             trim_ascii_start(line)
@@ -1288,6 +1291,11 @@ pub(in crate::parse) fn collect_blockquote_body(
             line
         };
         if let Some(stripped) = strip_blockquote_prefix(quote_line) {
+            let marker =
+                in_fence.is_none() && detect_list_marker_full(trim_ascii_start(stripped)).is_some();
+            item_opened_at = (marker && (!para_open.get() || list_open)).then_some(cur.pos);
+            // A sibling item may follow an item's own line, whose lead leaves a paragraph open.
+            list_open = item_opened_at.is_some();
             if !may_have_term && stripped.contains(":: ") {
                 let trimmed = trim_ascii_start(stripped);
                 may_have_term = (inner.lines.is_empty()
@@ -1763,6 +1771,42 @@ pub(in crate::parse) fn collect_blockquote_body(
                 table = TableRun::default();
                 last_nested = false;
             }
+            continue;
+        }
+        // A hosted stacked `- > +` attaches a non-list block at column 0 before the
+        // host quote ends (carve#3421): it joins the body as the unhosted twin reads.
+        if last_quoted_at == cur.pos.checked_sub(1)
+            && item_opened_at == last_quoted_at
+            && !line.starts_with([' ', '\t'])
+            && item_block_opener(line)
+            && detect_list_marker_full(line).is_none()
+            && last_quoted_at.is_some_and(|prior| {
+                strip_blockquote_prefix(cur.lines.at(prior))
+                    .is_some_and(|body| detect_list_marker_full(trim_ascii_start(body)).is_some())
+                    && cur.continuation_decision(prior).is_some_and(|decision| {
+                        decision.first_block
+                            && decision.refusal.is_none()
+                            && decision.owner == Some(continuation_marker::Kind::Quote)
+                    })
+            })
+        {
+            let end = attached_block_lines_classified(
+                cur.lines,
+                cur.pos,
+                &mut cur.comment_closer_last_index,
+                &mut cur.code_closer_last_index,
+                options,
+                &mut |next, _| is_blank_line(next) || is_plus_marker(next),
+            )
+            .max(cur.pos + 1);
+            while cur.pos < end {
+                let text = cur.lines.at(cur.pos).to_string();
+                inner.push_at(text, cur.source_line(cur.pos), cur.source_col(cur.pos));
+                cur.pos += 1;
+            }
+            para_open = ParaOpen::Closed;
+            table = TableRun::default();
+            last_nested = false;
             continue;
         }
         // Lazy continuation: a non-`>` line folds into an OPEN paragraph. A

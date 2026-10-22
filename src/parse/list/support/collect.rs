@@ -1786,6 +1786,33 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             }));
         }
         cur.consume();
+        // A wrapped attribute opened at the content column is one construct: its
+        // later lines belong to it at any column (carve#3421).
+        let wrapped_attribute = (indent == strip_cols
+            && !opaque_here
+            && fence.is_none()
+            && trim_ascii_start(line).starts_with('{')
+            && parse_standalone_attrs(trim_ascii_start(line)).is_none())
+        .then(|| {
+            standalone_attrs_block_len_iter(
+                std::iter::once(trim_ascii_start(line))
+                    .chain((cur.pos..cur.lines.len()).map_while(|i| cur.lines.line(i))),
+            )
+        })
+        .flatten();
+        if wrapped_attribute.is_some_and(|count| count > 1) {
+            closed_code_leaf = true;
+        }
+        for _ in 1..wrapped_attribute.unwrap_or(1) {
+            let next = cur.lines.at(cur.pos);
+            lines.push(trim_ascii_start(next).to_owned());
+            reached.push(indent_columns(next) >= strip_cols);
+            if building_maps {
+                line_map.push(cur.source_line(cur.pos));
+                col_map.push(None);
+            }
+            cur.consume();
+        }
     });
     // Preserve the last physical blank through `str::lines()`, including
     // payload owned by an unfinished descendant fence.

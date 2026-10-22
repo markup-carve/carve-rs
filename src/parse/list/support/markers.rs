@@ -164,12 +164,17 @@ pub(crate) fn content_column_attr_block<'a>(
     let mut normalized = vec![content.to_string()];
     let mut met_closer = false;
     for line in rest {
-        if is_blank_line(line) || indent_columns(line) < content_col {
+        if is_blank_line(line) {
             break;
         }
         #[cfg(test)]
         ATTRS_LOOKAHEAD_BYTES.with(|work| work.set(work.get() + line.len()));
-        let fragment = slice_columns(line, content_col, false);
+        // The opener's later lines belong to it at any column (carve#3421).
+        let fragment = if indent_columns(line) < content_col {
+            trim_ascii_start(line).to_string()
+        } else {
+            slice_columns(line, content_col, false)
+        };
         if !valid_wrapped_attr_continuation(&fragment) {
             return ContentColumnAttrBlock::NoneWithin(normalized.len());
         }

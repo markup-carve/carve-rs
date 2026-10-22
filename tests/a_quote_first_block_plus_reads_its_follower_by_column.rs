@@ -69,11 +69,11 @@ fn an_attached_colon_fence_closes_at_its_indented_closer() {
 }
 
 #[test]
-fn a_stacked_opener_keeps_the_paragraph_only_test() {
+fn a_stacked_opener_takes_any_block_at_its_owning_quote_column() {
     for (source, expected) in [
         (
             "- - > +\n    # h\n",
-            "<ul><li><ul><li><blockquote><p>+</p></blockquote><h1id=\"h\">h</h1></li></ul></li></ul>",
+            "<ul><li><ul><li><blockquote><h1id=\"h\">h</h1></blockquote></li></ul></li></ul>",
         ),
         (
             "- > > +\n  > q\n",
@@ -81,7 +81,7 @@ fn a_stacked_opener_keeps_the_paragraph_only_test() {
         ),
         (
             "- [ ] > +\n      # h\n",
-            "<ulclass=\"task-list\"><li><inputtype=\"checkbox\"disabled><blockquote><p>+#h</p></blockquote></li></ul>",
+            "<ulclass=\"task-list\"><li><inputtype=\"checkbox\"disabled><blockquote><h1id=\"h\">h</h1></blockquote></li></ul>",
         ),
     ] {
         assert_eq!(flat(source), expected, "{source:?}");

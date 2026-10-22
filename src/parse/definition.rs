@@ -1128,6 +1128,28 @@ pub(in crate::parse) fn collect_definition_body(
                 line_map.push(cur.source_line(cur.pos));
                 reached.push(true);
                 cur.consume();
+                // A wrapped attribute opened at the body's column is one construct:
+                // its later lines belong to it at any column (carve#3421).
+                let opener = lines.last().map_or("", |line| trim_ascii_start(line));
+                let wrapped_attribute = (indent == content_column
+                    && fence.open.is_none()
+                    && opener.starts_with('{')
+                    && parse_standalone_attrs(opener).is_none())
+                .then(|| {
+                    standalone_attrs_block_len_iter(
+                        std::iter::once(opener)
+                            .chain((cur.pos..cur.lines.len()).map_while(|i| cur.lines.line(i))),
+                    )
+                })
+                .flatten();
+                for _ in 1..wrapped_attribute.unwrap_or(1) {
+                    let next = cur.lines.at(cur.pos);
+                    lines.push(trim_ascii_start(next).to_owned());
+                    line_map.push(cur.source_line(cur.pos));
+                    col_map.push(None);
+                    reached.push(indent_columns(next) >= content_column);
+                    cur.consume();
+                }
                 continue;
             }
             // An unfinished nested marker fence owns no below-column line.

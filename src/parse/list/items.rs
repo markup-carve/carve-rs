@@ -952,9 +952,58 @@ pub(crate) fn parse_list(
                             },
                         )
                     });
+                // A quote follower at an eligible raw column opens a block in the
+                // innermost quote, which owns the `+` (`- > > +` / `> q` nests three
+                // deep, carve#3421): it takes the `+` line's place behind its prefix.
+                let quote_prefix = &marker.content[..marker.content.len() - innermost.len()];
+                let quote_column = cur.lines.line(item_at).map_or(content_col, |lead| {
+                    let offset =
+                        (marker.content.as_ptr() as usize).saturating_sub(lead.as_ptr() as usize);
+                    lead.get(..offset)
+                        .map_or(0, |before| {
+                            before.chars().fold(0, |column, ch| {
+                                if ch == '\t' {
+                                    column + 4 - column % 4
+                                } else {
+                                    column + 1
+                                }
+                            })
+                        })
+                        .max(content_col)
+                });
+                let follower_indent = cur.lines.line(start).map_or(0, indent_columns);
+                let quote_follower = !quote_prefix.is_empty()
+                    && end > start
+                    && strip_blockquote_prefix(trim_ascii_start(cur.lines.at(start))).is_some();
+                if quote_follower {
+                    stream = MappedSource::new_line_at(
+                        format!("{quote_prefix}{}", trim_ascii_start(cur.lines.at(start))),
+                        cur.source_line(start),
+                        None,
+                    );
+                    stream.item_marker_at_start = true;
+                    stream.in_quoted_body = cur.in_quoted_body;
+                    cur.consume();
+                }
+                while quote_follower && cur.pos < end {
+                    let line = cur.lines.at(cur.pos);
+                    let (body, _, _) = slice_columns_mapped(line, follower_indent, true);
+                    stream.push_newline_at(
+                        format!("{quote_prefix}{body}"),
+                        cur.source_line(cur.pos),
+                        None,
+                    );
+                    cur.consume();
+                }
                 while cur.pos < end {
                     let line = cur.lines.at(cur.pos);
-                    let (body, consumed, synthetic) = slice_columns_mapped(line, content_col, true);
+                    // A task's quote opens past its checkbox, and owns a follower at its column.
+                    let column = if indent_columns(line) >= quote_column {
+                        quote_column
+                    } else {
+                        content_col
+                    };
+                    let (body, consumed, synthetic) = slice_columns_mapped(line, column, true);
                     stream.push_newline_at(
                         body,
                         cur.source_line(cur.pos),

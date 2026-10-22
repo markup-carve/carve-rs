@@ -279,6 +279,28 @@ fn column_at(line: &str, end: usize) -> usize {
     col
 }
 
+/// A follower's column after the opener line's `levels` host quote prefixes, or `usize::MAX`
+/// when its `>` markers sit elsewhere: an indented `>` is no host prefix (`> a` / `  > b`).
+fn stacked_follower_column(follower: &str, line: &str, levels: usize) -> usize {
+    let (mut follower_at, mut line_at) = (0, 0);
+    for _ in 0..levels {
+        let (Some(follower_end), Some(line_end)) = (
+            quote_prefix_end(follower, follower_at),
+            quote_prefix_end(line, line_at),
+        ) else {
+            return usize::MAX;
+        };
+        let marker = |text: &str, from: usize| from + text[from..].find('>').unwrap_or(0);
+        if column_at(follower, marker(follower, follower_at))
+            != column_at(line, marker(line, line_at))
+        {
+            return usize::MAX;
+        }
+        (follower_at, line_at) = (follower_end, line_end);
+    }
+    source_column(follower, Some(levels))
+}
+
 fn source_column(line: &str, levels: Option<usize>) -> usize {
     quote_prefix(line, levels).map_or(usize::MAX, |(_, at)| {
         column_at(line, at + leading_ws(&line[at..]))
@@ -654,7 +676,6 @@ impl Classifier {
         let mut description_on_line = false;
         // Openers on this line; a task box counts as one.
         let mut openers_on_line = 0usize;
-        let mut quote_marker_column = None;
         let mut inner_quote_marker_column = None;
         for _ in 0..32 {
             if let Some(marker) = detect_list_marker_full(inner) {
@@ -675,7 +696,6 @@ impl Classifier {
             }
             if let Some(quoted) = strip_blockquote_prefix(inner) {
                 openers_on_line += 1;
-                quote_marker_column.get_or_insert(entry.column);
                 inner_quote_marker_column = Some(entry.column);
                 entry.kind = Kind::Quote;
                 entry.content_column = entry.column;
@@ -761,35 +781,35 @@ impl Classifier {
                 follower.map_or(usize::MAX, |line| source_column(line, Some(owner.depth)));
             let opener_column =
                 follower.map_or(usize::MAX, |line| source_column(line, Some(depth)));
-            let at_column = follower_column == owner.column
-                || opener_column == column
-                || self.stack.iter().any(|entry| {
-                    #[cfg(test)]
-                    STACK_ENTRIES_EXAMINED.with(|c| c.set(c.get() + 1));
-                    entry.kind == Kind::List
-                        // A stacked quote opener takes only column 0 or its line's column (carve#3421);
-                        // the column of its innermost `>` awaits a ruling and keeps its reading.
-                        && !(owner.kind == Kind::Quote
-                            && openers_on_line > 2
-                            && inner_quote_marker_column != Some(entry.content_column))
-                        && entry.depth < owner.depth
-                        && entry.content_column == opener_column
-                        && follower.is_some_and(|line| {
-                            // CARVE-P9-067: a lone `- > +` takes any non-list block at its own
-                            // column; a stacked opener keeps the paragraph-only test (carve#3421).
-                            if owner.kind == Kind::Quote
-                                && openers_on_line == 2
-                                && quote_marker_column == Some(entry.content_column)
-                            {
-                                detect_list_marker_full(line.trim_start()).is_none()
-                            } else {
-                                !item_block_opener(line.trim_start())
-                            }
-                        })
+            // A stacked quote opener (`- > +`, `- > > +`, `- - > +`) takes a non-list follower at
+            // column 0, its line's column, or the column of the innermost `>`, which owns the `+`;
+            // an intervening opener's column is refused (carve#3421).
+            let stacked_quote = owner.kind == Kind::Quote && openers_on_line >= 2;
+            let at_column = if stacked_quote {
+                follower.is_some_and(|line| {
+                    let raw = stacked_follower_column(line, &self.lines[index], depth);
+                    detect_list_marker_full(follower_body).is_none()
+                        && (raw == 0
+                            || raw == column
+                            || Some(raw) == inner_quote_marker_column
+                            // No host prefix in line with the opener's: read at column 0.
+                            || raw == usize::MAX && source_column(line, Some(0)) == 0)
                 })
-                || follower.is_some_and(|line| {
-                    source_column(line, Some(0)) == 0 && detect_list_marker_full(line).is_none()
-                });
+            } else {
+                follower_column == owner.column
+                    || opener_column == column
+                    || self.stack.iter().any(|entry| {
+                        #[cfg(test)]
+                        STACK_ENTRIES_EXAMINED.with(|c| c.set(c.get() + 1));
+                        entry.kind == Kind::List
+                            && entry.depth < owner.depth
+                            && entry.content_column == opener_column
+                            && follower.is_some_and(|line| !item_block_opener(line.trim_start()))
+                    })
+                    || follower.is_some_and(|line| {
+                        source_column(line, Some(0)) == 0 && detect_list_marker_full(line).is_none()
+                    })
+            };
             let sibling = matches!(owner.kind, Kind::List | Kind::Quote)
                 && (follower_column == owner.column || opener_column == column)
                 && detect_list_marker_full(follower_body).is_some();
@@ -874,7 +894,7 @@ mod tests {
             ),
             ("> - foo\n>   - +\n>     > q", 2, Kind::List, None),
             ("- > a  \n  +  \n  b  ", 2, Kind::Quote, None),
-            ("- a\n\t- > +\n  b", 2, Kind::Quote, None),
+            ("- a\n\t- > +\n  b", 2, Kind::Quote, Some(Refusal::Right)),
             ("- a\n\t- > +\n  # h", 2, Kind::Quote, Some(Refusal::Right)),
             ("> - > a\n>   +\n>   b", 2, Kind::Quote, None),
             (

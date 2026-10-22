@@ -29,6 +29,8 @@ mod nested_fence_attached_block_extent;
 mod refused_plus_open_fence_payload;
 #[path = "../ruled_plus_shapes.rs"]
 mod ruled_plus_shapes;
+#[path = "../the_carve_3421_batch_rulings_read_like_carve_js.rs"]
+mod the_carve_3421_batch_rulings_read_like_carve_js;
 
 #[path = "../raw_payload_termination.rs"]
 mod raw_payload_termination;
