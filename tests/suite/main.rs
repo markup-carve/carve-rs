@@ -2450,6 +2450,8 @@ mod nested_marker_fence_blank_payload;
 
 #[path = "../a_tab_indented_quote_in_an_item_starts_on_its_marker.rs"]
 mod a_tab_indented_quote_in_an_item_starts_on_its_marker;
+#[path = "../an_empty_nested_fence_before_a_column_zero_plus_keeps_no_payload.rs"]
+mod an_empty_nested_fence_before_a_column_zero_plus_keeps_no_payload;
 #[path = "../description_fence_note_boundary.rs"]
 mod description_fence_note_boundary;
 #[path = "../lint_description_separator_below_content_column.rs"]

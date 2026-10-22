@@ -311,9 +311,11 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             if indent_columns(line) > 0 {
                 *fence = active_nested_fence.or(nested_fence);
             }
+            // An empty nested fence keeps no manufactured payload line.
             if indent_columns(line) == 0
                 && !cur.in_item_body
                 && !lines.last().is_some_and(|prior| is_blank_line(prior))
+                && !(lines.is_empty() && active_nested_fence.is_some())
             {
                 lines.push(String::new());
                 reached.push(false);
