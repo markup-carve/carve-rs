@@ -59,6 +59,8 @@ mod a_nested_note_on_a_marker_line_keeps_its_column;
 mod a_quote_on_a_container_marker_line_hosts_its_definitions;
 #[path = "../a_quote_past_an_item_column_opens_after_its_paragraph.rs"]
 mod a_quote_past_an_item_column_opens_after_its_paragraph;
+#[path = "../a_quote_plus_on_its_own_line_in_an_item_attaches_at_its_column.rs"]
+mod a_quote_plus_on_its_own_line_in_an_item_attaches_at_its_column;
 #[path = "../a_quoted_note_paragraph_keeps_its_definition_shaped_line.rs"]
 mod a_quoted_note_paragraph_keeps_its_definition_shaped_line;
 #[path = "../a_retained_comment_after_a_list_term_keeps_its_code_block.rs"]

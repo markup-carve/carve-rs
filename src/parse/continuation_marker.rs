@@ -481,7 +481,11 @@ impl Classifier {
             let first_block_attaches = first_block_quote
                 && ((index == 0 || quote_body(&self.lines[index - 1]).0 < depth)
                     && follower.is_some_and(|line| {
-                        source_column(line, Some(0)) == 0
+                        let column = source_column(line, Some(0));
+                        // CARVE-P9-067: inside an item the follower may also sit at the quote line's column.
+                        (column == 0
+                            || quote_body(line).0 == 0
+                                && column == source_column(&self.lines[index], Some(0)))
                             && detect_list_marker_full(follower_body).is_none()
                     })
                     || follower_depth == Some(depth)

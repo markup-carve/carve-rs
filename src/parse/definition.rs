@@ -974,12 +974,13 @@ pub(in crate::parse) fn collect_definition_body(
                                     )
                             })
                     });
-                // The nested description's `+` already separates its next
+                // The nested description's `+`, or a quote's `> +`, already separates its next
                 // block. A manufactured blank here would make it attach none.
                 if accept_fence_opener
                     && paragraph_open
                     && !(nested_definition_open
                         && lines.last().is_some_and(|line| is_plus_marker(line)))
+                    && !lines.last().is_some_and(|line| quote_opens_with_plus(line))
                 {
                     // The blank is MANUFACTURED, so it stands for no source
                     // line and takes no column. Pushing the sliced line's own
@@ -1443,6 +1444,17 @@ struct DefinitionBodyCloserIndex {
     in_body: ScopedFenceClosers,
     exact_in_body: ScopedFenceClosers,
     below_body: ScopedFenceClosers,
+}
+
+/// `> +` (or stacked `> > +`): the quote's first-block marker, whose next block it attaches.
+fn quote_opens_with_plus(line: &str) -> bool {
+    let Some(mut rest) = strip_blockquote_prefix(trim_ascii_start(line)) else {
+        return false;
+    };
+    while let Some(inner) = strip_blockquote_prefix(rest) {
+        rest = inner;
+    }
+    is_plus_marker(rest)
 }
 
 fn definition_body_closer_index(
