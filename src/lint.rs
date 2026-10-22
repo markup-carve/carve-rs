@@ -413,6 +413,11 @@ fn collect_parser_events(
                     "sibling" => "the next list item is a sibling",
                     "list" => "the first-block form does not attach a list",
                     "left" => "the next block starts left of its column",
+                    "right"
+                        if *first_block && !matches!(*host, "list item" | "description body") =>
+                    {
+                        "the next block starts right of its column and follows the column rules"
+                    }
                     "right" => "the next block starts right of its column",
                     _ => "its column names no open container",
                 };

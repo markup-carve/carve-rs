@@ -101,6 +101,7 @@ fn a_merging_run_that_opens_an_item_spells_no_literal_marker() {
     // Inside a quote the blank-line spelling keeps both quotes in the item;
     // `> +` would now attach `> z` outside it (markup-carve/carve#3421).
     assert_eq!(fmt("> - > p\n>\n>   > z\n"), "> - > p\n>\n>   > z\n");
+    assert!(keeps_its_html("> - a\n>   > q\n>\n>   > r\n"));
     for src in ["- > p\n\n  > z\n", "- | a |\n\n  | z |\n"] {
         assert!(
             !fmt(src).contains("<li>+"),

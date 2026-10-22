@@ -68,6 +68,7 @@ which the published crate does not carry.
 
 ### Parsing
 
+- A quote-prefixed `+` needs one space after each `>`: `>+`, `>>+` and `>> +` read as text, and a `> +` attaches a following quote to the item, description, note or inner quote at its column. Lint names the right host for a quote-prefixed `+` inside a list item (markup-carve/carve#3421).
 - Fold a `::` below a nested definition list's column into the open term, and end a quoted item at a `:` on its marker column. (#3060)
 - Fix: honor nested fence host boundary. (#2879)
 - Keep list items tight across attached captions. (#2881)

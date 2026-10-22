@@ -1,6 +1,41 @@
 use carve::lint_carve;
 
 #[test]
+fn quoted_plus_in_a_list_item_has_no_false_refusal() {
+    for source in ["- a\n  > q\n  > > +\n  > > x\n", "- a\n  >\n  > +\n  > x\n"] {
+        let warnings = lint_carve(source);
+        assert!(
+            warnings
+                .iter()
+                .all(|warning| warning.rule != "continuation-marker-refused"),
+            "{source:?}: {warnings:?}"
+        );
+        if source.contains("> > +") {
+            let html = carve::to_html(source);
+            assert!(
+                html.contains("<blockquote><p>+\nx</p></blockquote>"),
+                "{html}"
+            );
+        }
+    }
+}
+
+#[test]
+fn first_block_refusals_name_the_quote_and_footnote() {
+    for (source, host) in [("[^a]: +\n", "footnote"), ("> +\n", "block quote")] {
+        let warning = lint_carve(source)
+            .into_iter()
+            .find(|warning| warning.rule == "continuation-marker-refused")
+            .unwrap();
+        assert!(
+            warning.message.contains("remains text in the"),
+            "{warning:?}"
+        );
+        assert!(warning.message.contains(host), "{warning:?}");
+    }
+}
+
+#[test]
 fn source_rules_report_the_shared_triggers() {
     for (rule, source) in [
         ("bidi-control-in-source", "a\u{202e}b\n"),
@@ -11,6 +46,7 @@ fn source_rules_report_the_shared_triggers() {
         ),
         ("raw-block-syntax", "```raw html\nx\n```\n"),
         ("blockquote-marker-without-space", ">quoted\n"),
+        ("blockquote-marker-without-space", ">+\n"),
         ("block-marker-as-text", "  ::: note\n"),
         ("fence-delimiter-indentation", "  ```\n  x\n  ```\n"),
         ("list-item-body-detached", "1. item\n\n  # heading\n"),
@@ -422,4 +458,14 @@ fn region_marker_rendering_warning() {
             "{source:?}"
         );
     }
+}
+
+#[test]
+fn a_refused_item_first_block_right_explains_the_column_once() {
+    let warnings = lint_carve("- +\n    x\n");
+    let warning = warnings
+        .iter()
+        .find(|warning| warning.rule == "continuation-marker-refused")
+        .unwrap();
+    assert_eq!(warning.message.matches("follows the").count(), 1);
 }

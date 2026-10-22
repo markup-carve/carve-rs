@@ -205,6 +205,32 @@ pub(super) fn document_column(source_line: usize) -> Option<usize> {
     })
 }
 
+pub(super) fn preceding_nested_list_marker(source_line: usize) -> bool {
+    CLASSIFIER.with(|slot| {
+        let slot = slot.borrow();
+        let Some(classifier) = slot.as_ref() else {
+            return false;
+        };
+        for line in classifier
+            .lines
+            .iter()
+            .take(source_line.saturating_sub(1))
+            .rev()
+            .skip_while(|line| is_blank_line(line))
+        {
+            if is_blank_line(line) || detect_fence_open(line.trim_start()).is_some() {
+                break;
+            }
+            if indent_columns(line) > 0
+                && detect_list_marker_full(line.trim_start_matches([' ', '\t'])).is_some()
+            {
+                return true;
+            }
+        }
+        false
+    })
+}
+
 fn quote_prefix_end(line: &str, start: usize) -> Option<usize> {
     let bytes = line.as_bytes();
     let mut at = start;
@@ -215,8 +241,10 @@ fn quote_prefix_end(line: &str, start: usize) -> Option<usize> {
         return None;
     }
     at += 1;
-    if bytes.get(at).is_some_and(|b| *b == b' ' || *b == b'\t') {
-        at += 1;
+    match bytes.get(at) {
+        None => {}
+        Some(b' ') => at += 1,
+        _ => return None,
     }
     Some(at)
 }
@@ -313,6 +341,20 @@ impl Classifier {
         } else {
             marker_column
         };
+        // A deeper quote opened inside a list has no marker owner at this depth.
+        if depth > 0
+            && local == 0
+            && index > 0
+            && quote_body(&self.lines[index - 1]).0 > 0
+            && quote_body(&self.lines[index - 1]).0 < depth
+            && self
+                .stack
+                .iter()
+                .any(|entry| entry.kind == Kind::List && entry.depth == 0)
+            && is_plus_marker(body)
+        {
+            return;
+        }
         if is_plus_marker(body) {
             let mut deepest_quote = 0;
             let mut list_at_column = false;
@@ -324,7 +366,7 @@ impl Classifier {
                 if entry.kind == Kind::Quote {
                     deepest_quote = deepest_quote.max(entry.depth);
                 }
-                if depth > 0 && entry.kind == Kind::List && entry.depth >= depth {
+                if depth > 0 && entry.kind == Kind::List && entry.depth == depth {
                     inner_list_open = true;
                     inner_list_blocks_quote |= entry.column >= marker_column;
                 }
@@ -374,16 +416,40 @@ impl Classifier {
                 && local == 0
                 && !inner_list_open
                 && self.lines.get(index + 1).map_or(true, |line| {
-                    let (next_depth, body) = quote_body(line);
-                    next_depth < depth || is_blank_line(body)
+                    let (next_depth, next_body) = quote_body(line);
+                    next_depth < depth
+                        || is_blank_line(next_body)
+                        || next_depth == depth
+                            && self
+                                .stack
+                                .iter()
+                                .any(|entry| entry.kind == Kind::List && entry.depth == 0)
+                            && index > 0
+                            && quote_body(&self.lines[index - 1]).0 >= depth
                 })
                 && !index.checked_sub(1).is_some_and(|prior| {
                     quote_body(&self.lines[prior]).0 > 0
                         && source_column(&self.lines[prior], None) > marker_column
                 })
-                && !index
-                    .checked_sub(1)
-                    .is_some_and(|prior| is_blank_line(&self.lines[prior]));
+                && !index.checked_sub(1).is_some_and(|prior| {
+                    quote_body(&self.lines[prior]).0 >= depth
+                        && is_blank_line(quote_body(&self.lines[prior]).1)
+                        && !self
+                            .stack
+                            .iter()
+                            .any(|entry| entry.kind == Kind::List && entry.depth == 0)
+                })
+                && !index.checked_sub(1).is_some_and(|prior| {
+                    is_blank_line(&self.lines[prior])
+                        && self.lines[..prior]
+                            .iter()
+                            .rev()
+                            .find(|line| !is_blank_line(line))
+                            .is_some_and(|line| {
+                                let (prior_depth, prior_body) = quote_body(line);
+                                prior_depth > 0 && detect_list_marker_full(prior_body).is_some()
+                            })
+                });
             if first_block_quote {
                 owner = Some(Entry::new(
                     Kind::Quote,
@@ -409,12 +475,22 @@ impl Classifier {
             let follower_depth = follower.map(|line| quote_body(line).0);
             let sibling = owner.is_some_and(|entry| {
                 entry.kind == Kind::List || entry.kind == Kind::Quote && has_ancestor_list
-            }) && follower_col == owner_column
+            }) && follower_depth == Some(depth)
+                && follower_col == owner_column
                 && detect_list_marker_full(follower_body).is_some();
-            let first_block_at_document = first_block_quote
-                && follower.is_some_and(|line| {
-                    source_column(line, Some(0)) == 0 && detect_list_marker_full(line).is_none()
-                });
+            let first_block_attaches = first_block_quote
+                && ((index == 0 || quote_body(&self.lines[index - 1]).0 < depth)
+                    && follower.is_some_and(|line| {
+                        source_column(line, Some(0)) == 0
+                            && detect_list_marker_full(follower_body).is_none()
+                    })
+                    || follower_depth == Some(depth)
+                        && self
+                            .stack
+                            .iter()
+                            .any(|entry| entry.kind == Kind::List && entry.depth == 0)
+                        && index > 0
+                        && quote_body(&self.lines[index - 1]).0 >= depth);
             let refusal = if owner.is_none()
                 || inner_list_open
                     && owner.is_some_and(|entry| {
@@ -428,7 +504,7 @@ impl Classifier {
                 Some(Refusal::Document)
             } else if is_blank_line(follower_body) {
                 Some(Refusal::Blank)
-            } else if first_block_quote && !first_block_at_document {
+            } else if first_block_quote && !first_block_attaches {
                 // CARVE-P9-067: the quote's first-block form refuses a column-0 list and any other column.
                 let follower_column = follower.map_or(0, |line| source_column(line, Some(0)));
                 if follower_column == 0
@@ -440,21 +516,18 @@ impl Classifier {
                 } else {
                     Some(Refusal::Left)
                 }
-            } else if !first_block_at_document
-                && follower_depth.is_some_and(|next_depth| next_depth < depth)
-            {
-                Some(Refusal::Left)
             } else if depth > 0
-                && owner.is_some_and(|entry| {
-                    entry.kind == Kind::List && !has_ancestor_list
-                        || matches!(entry.kind, Kind::Footnote | Kind::Description)
-                })
+                && owner
+                    .is_some_and(|entry| matches!(entry.kind, Kind::Footnote | Kind::Description))
                 && follower_depth.is_some_and(|next_depth| next_depth > depth)
             {
                 Some(Refusal::Right)
-            } else if !first_block_at_document && follower_col < owner_column {
+            } else if !first_block_attaches
+                && (follower_depth.is_some_and(|next_depth| next_depth < depth)
+                    || follower_col < owner_column)
+            {
                 Some(Refusal::Left)
-            } else if !first_block_at_document && follower_col > owner_column {
+            } else if !first_block_attaches && follower_col > owner_column {
                 Some(Refusal::Right)
             } else if sibling && self.held_owner != owner {
                 Some(Refusal::Sibling)
@@ -733,10 +806,7 @@ mod tests {
             ("- +\nfirst\n+\n- inner", 3, Kind::List, None),
             ("- a\n+\n- inner", 2, Kind::List, Some(Refusal::Sibling)),
             ("- a\n+\n", 2, Kind::List, Some(Refusal::Document)),
-            ("> - a\n> +\n> > q", 2, Kind::List, Some(Refusal::Right)),
-            ("> - a\n>+\n> tail", 2, Kind::List, None),
-            ("> > - a\n> >+\n> > tail", 2, Kind::List, None),
-            ("> > - a\n>> +\n> > tail", 2, Kind::List, None),
+            ("> - a\n> +\n> > q", 2, Kind::List, None),
             ("> > q\n> +\n> para", 2, Kind::Quote, None),
             ("> - a\n> \n> +\n> tail", 3, Kind::List, None),
             (
@@ -785,6 +855,18 @@ mod tests {
             let actual = decision(marker_line).expect(source);
             assert_eq!(actual.owner, Some(owner), "{source:?} {actual:?}");
             assert_eq!(actual.refusal, refusal, "{source:?}");
+        }
+    }
+
+    #[test]
+    fn glued_quote_plus_has_no_continuation_decision() {
+        for source in [
+            "> - a\n>+\n> tail",
+            "> > - a\n> >+\n> > tail",
+            "> > - a\n>> +\n> > tail",
+        ] {
+            let _guard = Guard::install(source);
+            assert!(decision(2).is_none(), "{source:?}");
         }
     }
 

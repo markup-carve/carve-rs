@@ -2649,6 +2649,16 @@ fn render_item_blocks(
                 || closes_a_merging_run_above
                 || folds_into_the_paragraph_above)
         {
+            if ctx.quote_depth > 0
+                && matches!(prev, Some(BlockNode::BlockQuote(_)))
+                && matches!(block, BlockNode::BlockQuote(_))
+            {
+                out.push('\n');
+                out.push_str(&rendered);
+                prev = Some(block);
+                prev_at_marker_column = false;
+                continue;
+            }
             if ctx.list_depth > 1 || ctx.indented_host_depth > 0 {
                 if !matches!(block, BlockNode::Comment(_) | BlockNode::CodeBlock(_))
                     && !matches!(prev, Some(BlockNode::Comment(_) | BlockNode::CodeBlock(_)))

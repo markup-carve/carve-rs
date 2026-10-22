@@ -893,7 +893,7 @@
   },
   {
     "source": "> - a\n>+\n> tail",
-    "html": "<blockquote>\n  <ul>\n    <li>a\n      tail\n    </li>\n  </ul>\n</blockquote>"
+    "html": "<blockquote>\n  <ul>\n    <li>a\n&gt;+\ntail</li>\n  </ul>\n</blockquote>"
   },
   {
     "source": "> - a\n> +\n> tail",
@@ -909,11 +909,11 @@
   },
   {
     "source": "> > - a\n> >+\n> > tail",
-    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        tail\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>"
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n&gt;+\ntail</li>\n    </ul>\n  </blockquote>\n</blockquote>"
   },
   {
     "source": "> > - a\n>> +\n> > tail",
-    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        tail\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>"
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n&gt;&gt; +\ntail</li>\n    </ul>\n  </blockquote>\n</blockquote>"
   },
   {
     "source": "> > - a\n> > +\n> > tail",

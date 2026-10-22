@@ -282,7 +282,7 @@
   {
     "name": "2 one quote at column zero",
     "source": "> - a\n>+\n> tail\n",
-    "html": "<blockquote>\n  <ul>\n    <li>a\n      tail\n    </li>\n  </ul>\n</blockquote>",
+    "html": "<blockquote>\n  <ul>\n    <li>a\n&gt;+\ntail</li>\n  </ul>\n</blockquote>",
     "ast": {
       "type": "document",
       "children": [
@@ -303,12 +303,17 @@
                         {
                           "type": "text",
                           "value": "a"
-                        }
-                      ]
-                    },
-                    {
-                      "type": "paragraph",
-                      "children": [
+                        },
+                        {
+                          "type": "soft_break"
+                        },
+                        {
+                          "type": "text",
+                          "value": ">+"
+                        },
+                        {
+                          "type": "soft_break"
+                        },
                         {
                           "type": "text",
                           "value": "tail"
@@ -327,7 +332,7 @@
   {
     "name": "2 two quotes tight last",
     "source": "> > - a\n> >+\n> > tail\n",
-    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        tail\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n&gt;+\ntail</li>\n    </ul>\n  </blockquote>\n</blockquote>",
     "ast": {
       "type": "document",
       "children": [
@@ -351,12 +356,17 @@
                             {
                               "type": "text",
                               "value": "a"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "paragraph",
-                          "children": [
+                            },
+                            {
+                              "type": "soft_break"
+                            },
+                            {
+                              "type": "text",
+                              "value": ">+"
+                            },
+                            {
+                              "type": "soft_break"
+                            },
                             {
                               "type": "text",
                               "value": "tail"
@@ -377,7 +387,7 @@
   {
     "name": "2 two quotes tight first",
     "source": "> > - a\n>> +\n> > tail\n",
-    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        tail\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n&gt;&gt; +\ntail</li>\n    </ul>\n  </blockquote>\n</blockquote>",
     "ast": {
       "type": "document",
       "children": [
@@ -401,12 +411,17 @@
                             {
                               "type": "text",
                               "value": "a"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "paragraph",
-                          "children": [
+                            },
+                            {
+                              "type": "soft_break"
+                            },
+                            {
+                              "type": "text",
+                              "value": ">> +"
+                            },
+                            {
+                              "type": "soft_break"
+                            },
                             {
                               "type": "text",
                               "value": "tail"

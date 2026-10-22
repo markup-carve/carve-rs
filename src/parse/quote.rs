@@ -1328,7 +1328,11 @@ pub(in crate::parse) fn collect_blockquote_body(
                         previous = rest;
                         nested = true;
                     }
-                    nested && is_plus_marker(innermost_marker_content(previous))
+                    nested
+                        && is_plus_marker(innermost_marker_content(previous))
+                        && cur
+                            .continuation_decision(prior)
+                            .is_some_and(|decision| decision.refusal.is_none())
                 })
             {
                 inner.push_synthetic_blank();
@@ -1419,7 +1423,9 @@ pub(in crate::parse) fn collect_blockquote_body(
                 let quoted_follower = cur
                     .peek()
                     .is_some_and(|next| strip_blockquote_prefix(next).is_some());
-                let keep_levels = if quoted_follower {
+                let keep_levels = if prior_levels > 0 {
+                    levels
+                } else if quoted_follower {
                     levels.saturating_sub(follower_nested_levels + 1)
                 } else {
                     levels
@@ -1446,10 +1452,15 @@ pub(in crate::parse) fn collect_blockquote_body(
                 );
                 while cur.pos < end {
                     let next = cur.lines.at(cur.pos);
+                    let kept = if prior_levels > 0 {
+                        strip_blockquote_prefix(next).unwrap_or(next)
+                    } else {
+                        next
+                    };
                     inner.push_at(
-                        next.to_string(),
+                        kept.to_string(),
                         cur.source_line(cur.pos),
-                        cur.source_col(cur.pos),
+                        stripped_col(cur.source_col(cur.pos), next, kept),
                     );
                     cur.pos += 1;
                 }
@@ -1597,6 +1608,12 @@ pub(in crate::parse) fn collect_blockquote_body(
                     ParaOpen::Closed
                 } else if in_description {
                     ParaOpen::from_line(trim_ascii_start(description_content), inherited_absorption)
+                } else if is_plus_marker(innermost_marker_content(stripped))
+                    && cur
+                        .continuation_decision(at)
+                        .is_some_and(|decision| decision.refusal.is_some())
+                {
+                    ParaOpen::from_line("x", inherited_absorption)
                 } else {
                     ParaOpen::from_line(stripped, inherited_absorption)
                 };

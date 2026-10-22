@@ -15,6 +15,34 @@ fn attaches_list_to_quote() {
 }
 
 #[test]
+fn glued_quote_markers_are_paragraph_text() {
+    for source in [">+", ">>+", ">> +"] {
+        assert_eq!(
+            carve::to_html(source),
+            format!("<p>{}</p>", source.replace('>', "&gt;"))
+        );
+    }
+    assert_eq!(
+        carve::to_html("> >+"),
+        "<blockquote><p>&gt;+</p></blockquote>"
+    );
+}
+
+#[test]
+fn quote_level_marker_attaches_a_quote_and_survives_a_blank_quote_line() {
+    for (source, expected) in [
+        ("> > q\n> +\n> > r", "<blockquote>\n  <blockquote>\n    <p>q</p>\n    <blockquote><p>r</p></blockquote>\n  </blockquote>\n</blockquote>"),
+        ("> - a\n> +\n> > r", "<blockquote>\n  <ul>\n    <li>a\n      <blockquote><p>r</p></blockquote>\n    </li>\n  </ul>\n</blockquote>"),
+        ("> > - a\n> +\n> para", "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a</li>\n    </ul>\n    <p>para</p>\n  </blockquote>\n</blockquote>"),
+        ("> - a\n>\n> +\n> para", "<blockquote>\n  <ul>\n    <li>a\n      para\n    </li>\n  </ul>\n</blockquote>"),
+        ("> a\n> +\n> > q", "<blockquote>\n  <p>a\n+</p>\n  <blockquote><p>q</p></blockquote>\n</blockquote>"),
+        ("> > q\n> > +\n> > - s", "<blockquote>\n  <blockquote><p>q\n+\n- s</p></blockquote>\n</blockquote>"),
+    ] {
+        assert_eq!(carve::to_html(source), expected, "{source:?}");
+    }
+}
+
+#[test]
 fn attaches_fenced_code_to_quote() {
     assert_eq!(
         carve::to_html("> quoted\n+\n```\ncode\n```"),

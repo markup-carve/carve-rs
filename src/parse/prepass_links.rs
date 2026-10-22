@@ -422,14 +422,7 @@ pub(in crate::parse) fn strip_blockquote_prefix(line: &str) -> Option<&str> {
     if rest.is_empty() {
         return Some(rest);
     }
-    // Quote-marker runs may omit spaces only when their last content is `+`.
-    rest.strip_prefix(' ').or_else(|| {
-        let mut tail = rest;
-        while let Some(next) = tail.strip_prefix('>') {
-            tail = next.strip_prefix(' ').unwrap_or(next);
-        }
-        is_plus_marker(tail).then_some(rest)
-    })
+    rest.strip_prefix(' ')
 }
 
 /// Hoist every authored `[label]: /url` definition into the document as a

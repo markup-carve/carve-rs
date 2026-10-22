@@ -73,7 +73,10 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
                     && cur
                         .continuation_decision(span_start)
                         .is_some_and(|decision| {
-                            (decision.owner.is_some() || span_start > 0)
+                            (decision.owner.is_some()
+                                || cur
+                                    .source_line(span_start)
+                                    .is_some_and(continuation_marker::preceding_nested_list_marker))
                                 && decision.sibling_interrupt
                         })
                     && is_list_marker(line)

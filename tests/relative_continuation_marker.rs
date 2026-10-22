@@ -41,6 +41,29 @@ fn a_sibling_list_interrupts_a_refused_plus_paragraph() {
 }
 
 #[test]
+fn refused_plus_after_nested_ordered_items_precedes_a_list() {
+    for middle in [
+        "  1. ```\n+",
+        "  1. b\n\n+",
+        "  1. ```\n\n+",
+        "  1. b\n    1. c\n\n+",
+        "  1. b\n    1. ```\n\n+",
+    ] {
+        let source = format!("1. a\n\n{middle}\n- s\n");
+        let html = carve::to_html(&source);
+        assert!(
+            html.contains("<p>+</p>\n<ul>\n  <li>s</li>\n</ul>"),
+            "{source:?}: {html}"
+        );
+    }
+}
+
+#[test]
+fn refused_plus_after_a_paragraph_can_fold_a_list_marker() {
+    assert_eq!(carve::to_html("a\n\n+\n- b"), "<p>a</p>\n<p>+\n- b</p>");
+}
+
+#[test]
 fn a_marker_at_the_inner_quotes_column_separates_its_paragraphs() {
     let source = "> > q\n> +\n> para";
     let expected = "<blockquote>\n  <blockquote>\n    <p>q</p>\n    <p>para</p>\n  </blockquote>\n</blockquote>";
@@ -69,10 +92,10 @@ fn a_dangling_plus_in_a_nested_quote_remains_text() {
 }
 
 #[test]
-fn a_plus_below_an_inner_quoted_task_item_stays_lazy_text() {
+fn a_plus_below_an_inner_quoted_task_item_attaches_to_the_quote() {
     let source = "> > - [ ] a\n> +\n> tail";
     let html = carve::to_html(source);
-    assert!(html.contains("a\n+\ntail</li>"), "{html}");
+    assert!(html.contains("</ul>\n    <p>tail</p>"), "{html}");
 }
 
 #[test]
@@ -100,6 +123,20 @@ fn a_refused_quoted_plus_after_a_closed_block_can_precede_a_list() {
 fn a_refused_quoted_plus_after_a_blank_folds_the_list_line() {
     let html = carve::to_html("> - a\n\n> +\n> - s");
     assert!(html.contains("<p>+\n- s</p>"), "{html}");
+}
+
+#[test]
+fn a_quote_marker_after_a_document_blank_does_not_claim_a_closed_list() {
+    let html = carve::to_html("> - a\n\n> +\n> tail");
+    assert!(html.contains("<p>+\ntail</p>"), "{html}");
+}
+
+#[test]
+fn a_quote_first_block_after_a_paragraph_blank_attaches() {
+    assert_eq!(
+        carve::to_html("a\n\n> +\nq"),
+        "<p>a</p>\n<blockquote><p>q</p></blockquote>"
+    );
 }
 
 #[test]
@@ -234,4 +271,18 @@ fn a_refused_plus_keeps_the_same_below_column_code_run_as_prose() {
         carve::to_html(source),
         carve::to_html(&ordinary).replace("ordinary", "+")
     );
+}
+
+#[test]
+fn a_lazy_nested_item_before_a_refused_plus_still_precedes_a_list() {
+    let source = "- a\n  - b\nlazy\n\n+\n- s\n";
+    assert!(carve::to_html(source).ends_with("<p>+</p>\n<ul>\n  <li>s</li>\n</ul>"));
+}
+
+#[test]
+fn a_quoted_footnote_refuses_a_deeper_quote_after_plus() {
+    let source = "> [^a]: x\n> +\n> > r\n\n[^a]\n";
+    let html = carve::to_html(source);
+    assert!(html.contains("<p>+</p>"), "{html}");
+    assert!(html.contains("<blockquote><p>r</p></blockquote>"), "{html}");
 }
