@@ -1145,6 +1145,9 @@ mod description_column_closes_overindented_code_fences;
 mod description_fence_paragraph_boundary;
 #[path = "../description_separator_columns.rs"]
 mod description_separator_columns;
+#[rustfmt::skip]
+#[path = "../below_column_separator_folds.rs"]
+mod below_column_separator_folds;
 #[path = "../display_math_on_a_marker_line_takes_its_caption.rs"]
 mod display_math_on_a_marker_line_takes_its_caption;
 #[path = "../first_block_marker_list_boundary.rs"]

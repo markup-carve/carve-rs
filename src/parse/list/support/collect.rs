@@ -518,6 +518,13 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && comment_fence.is_none()
             && colon_open.is_empty()
             && is_definition_list_start(trim_ascii_start(line));
+        let below_definition_term = indent > parent_indent
+            && indent < strip_cols
+            && definition_list_column.is_some_and(|column| indent < column)
+            && fence.is_none()
+            && comment_fence.is_none()
+            && colon_open.is_empty()
+            && is_definition_list_start(trim_ascii_start(line));
         let description = strip_description_prefix(trim_ascii_start(line)).is_some()
             && fence.is_none()
             && comment_fence.is_none()
@@ -530,7 +537,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             definition_list_column = None;
             surviving_definition_body_column = None;
         }
-        if term {
+        if term && !below_definition_term {
             if definition_list_column.is_some_and(|column| indent <= column) {
                 surviving_definition_body_column = None;
             }
@@ -555,8 +562,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         }
         after_definition_blank = false;
         // CARVE-P2-017: a separator below the list column cannot open a dd.
-        let below_definition_separator =
-            definition_list_column.is_some_and(|column| indent < column) && description;
+        let below_definition_separator = below_definition_term
+            || (definition_list_column.is_some_and(|column| indent < column) && description);
         if below_definition_separator && indent == 0 {
             break;
         }
@@ -868,6 +875,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         }
         if indent < strip_cols
             && is_definition_list_start(trim_ascii_start(line))
+            && !below_definition_term
             && fence.is_none()
             && comment_fence.is_none()
             && colon_open.is_empty()
@@ -1226,7 +1234,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && colon_open.is_empty()
             && indent <= strip_cols
         {
-            if is_definition_list_start(trim_ascii_start(line)) {
+            if is_definition_list_start(trim_ascii_start(line)) && !below_definition_term {
                 nested_paragraph_column = None;
                 marker_definition_has_description = false;
                 marker_description_code_admitted = false;

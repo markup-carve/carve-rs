@@ -2,8 +2,6 @@ use carve::lint_carve;
 use serde_json::Value;
 
 const RULE: &str = "description-separator-below-content-column";
-const BLOCKED_BY_3055: &[&str] = &["double-colon", "quoted-outer-column", "term-marker-range"];
-
 fn findings(source: &str) -> Vec<carve::LintWarning> {
     lint_carve(source)
         .into_iter()
@@ -36,14 +34,7 @@ fn shared_vectors() {
                         .iter()
                         .all(|phrase| warning.message.contains(phrase.as_str().unwrap()))
             });
-        if BLOCKED_BY_3055.contains(&name) {
-            assert!(
-                !matches,
-                "{name}: delete this #3055 entry once the parser fix lands"
-            );
-        } else {
-            assert!(matches, "{name}: actual {actual:?}, expected {expected:?}");
-        }
+        assert!(matches, "{name}: actual {actual:?}, expected {expected:?}");
         if name != "within-description" && name != "correct-document" {
             assert_eq!(
                 warnings.len(),
@@ -87,22 +78,6 @@ fn marker_ranges() {
         ),
     ] {
         let actual = findings(source);
-        if BLOCKED_BY_3055.contains(&name) {
-            assert_ne!(
-                actual
-                    .iter()
-                    .map(|warning| (
-                        warning.line,
-                        warning.column,
-                        source.get(warning.start..warning.end),
-                        warning.message.contains(&format!("column {target}"))
-                    ))
-                    .collect::<Vec<_>>(),
-                vec![(line, column, Some(marker), true)],
-                "{name}: delete this #3055 entry once the parser fix lands"
-            );
-            continue;
-        }
         assert_eq!(actual.len(), 1, "{name}");
         let warning = &actual[0];
         assert_eq!((warning.line, warning.column), (line, column), "{name}");
