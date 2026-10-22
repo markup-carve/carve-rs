@@ -5460,7 +5460,7 @@ mod tests {
     #[test]
     fn djot_shallower_attributes_close_the_previous_quote_paragraph() {
         let controls: serde_json::Value = serde_json::from_str(include_str!(
-            "../tests/fixtures/djot-quote-attribute-boundaries.json"
+            "../../tests/fixtures/djot-quote-attribute-boundaries.json"
         ))
         .unwrap();
         for control in controls.as_array().unwrap() {

@@ -171,7 +171,7 @@ mod tests {
 
     #[test]
     fn unicode_18_grapheme_break_cases() {
-        let cases = include_str!("../tests/fixtures/grapheme-break-18.txt");
+        let cases = include_str!("../../tests/fixtures/grapheme-break-18.txt");
         let mut count = 0;
         for line in cases.lines() {
             let tokens = line

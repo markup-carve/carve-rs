@@ -136,14 +136,16 @@ src/
 ├── main.rs            # the `carve` CLI
 ├── parse.rs, parse/   # block and inline parsing
 ├── ast.rs             # AST node types
-├── render*.rs         # HTML, Markdown, plain text, ANSI, Carve
-├── html_import.rs     # HTML, Markdown, Djot and BBCode importers
-├── markdown_import.rs
+├── render*.rs, render/            # HTML, Markdown, plain text, ANSI, Carve
+├── html_import.rs, html_import/   # HTML importer
+├── djot_migrate.rs, djot_migrate/ # Djot importer
+├── markdown_import.rs, markdown_import/ # Markdown importer
 ├── extensions/        # opt-in extensions
 ├── prosemirror/       # editor bridge
 ├── includes.rs        # file inclusion (behind the `fs` feature)
 ├── profile.rs         # allowed constructs for untrusted input
-└── source_patch.rs    # source-preserving patches
+├── source/            # source-preserving layout and patch helpers
+└── table/             # table measurement and span helpers
 tests/                 # integration tests plus the corpus runners
 tests/spec/            # git submodule: markup-carve/carve
 tools/                 # the Python guards CI runs

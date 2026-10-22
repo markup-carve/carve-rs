@@ -42,17 +42,17 @@ pub(crate) fn cached_djot_regex(
     cache.get_or_init(|| regex::Regex::new(pattern).unwrap())
 }
 
-#[path = "djot_emphasis.rs"]
+#[path = "djot_migrate/djot_emphasis.rs"]
 mod emphasis;
 
-#[path = "djot_import_normalize.rs"]
+#[path = "djot_migrate/djot_import_normalize.rs"]
 mod normalize;
 
-#[path = "djot_div_classes.rs"]
+#[path = "djot_migrate/djot_div_classes.rs"]
 mod div_classes;
-#[path = "djot_heading_targets.rs"]
+#[path = "djot_migrate/djot_heading_targets.rs"]
 mod heading_targets;
-#[path = "djot_tight_definition_descriptions.rs"]
+#[path = "djot_migrate/djot_tight_definition_descriptions.rs"]
 mod tight_definition_descriptions;
 
 use std::collections::{HashMap, HashSet};

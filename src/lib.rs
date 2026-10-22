@@ -54,22 +54,32 @@ mod render;
 mod render_ansi;
 mod render_carve;
 mod render_carve_error;
+#[path = "render/render_depth.rs"]
 mod render_depth;
+#[path = "render/render_loss.rs"]
 mod render_loss;
 mod render_markdown;
 mod render_plain;
+#[path = "render/render_text.rs"]
 mod render_text;
 mod roundtrip;
 mod sentinel_run;
+#[path = "source/source_layout.rs"]
 mod source_layout;
+#[path = "source/source_patch.rs"]
 mod source_patch;
+#[path = "source/source_positions.rs"]
 mod source_positions;
 mod stamp;
 pub mod stream;
+#[path = "table/table_display_width.rs"]
 mod table_display_width;
+#[path = "table/table_source_metadata.rs"]
 mod table_source_metadata;
+#[path = "table/table_spans.rs"]
 mod table_spans;
 mod table_unicode_18_data;
+#[path = "table/table_width.rs"]
 mod table_width;
 mod translit_map;
 mod wire_fields;

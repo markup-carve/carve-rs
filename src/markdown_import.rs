@@ -31,9 +31,9 @@ use crate::ast::*;
 use crate::render_carve;
 
 #[cfg(test)]
-#[path = "markdown_native_destination_tests.rs"]
+#[path = "markdown_import/markdown_native_destination_tests.rs"]
 mod native_destination_tests;
-#[path = "markdown_native_destinations.rs"]
+#[path = "markdown_import/markdown_native_destinations.rs"]
 mod native_destinations;
 
 pub(crate) struct MarkdownImportLoss {

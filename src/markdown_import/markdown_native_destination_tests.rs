@@ -63,7 +63,7 @@ fn shape(html: &str) -> Value {
 #[test]
 fn native_markdown_destinations_match_shared_controls() {
     let rows: Value = serde_json::from_str(include_str!(
-        "../tests/fixtures/markdown-native-destinations.json"
+        "../../tests/fixtures/markdown-native-destinations.json"
     ))
     .unwrap();
     let mut failures = Vec::new();
