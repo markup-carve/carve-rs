@@ -172,6 +172,11 @@ impl Drop for Guard {
     }
 }
 
+/// Whether `decision` can answer: the document holds a `+` to classify.
+pub(super) fn active() -> bool {
+    CLASSIFIER.with(|slot| slot.borrow().is_some())
+}
+
 pub(super) fn decision(source_line: usize) -> Option<Decision> {
     CLASSIFIER.with(|slot| {
         let mut slot = slot.borrow_mut();

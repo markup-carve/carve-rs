@@ -146,3 +146,17 @@ fn the_owning_quote_column_stays_eligible_and_an_intervening_one_is_refused() {
         ),
     ]);
 }
+
+#[test]
+fn a_stacked_plus_in_a_colon_div_attaches_without_position_tracking() {
+    check(&[
+        (
+            "> ::: a\n> ::: b\n> x\n> :::\n> - > +\n# h\n",
+            "<blockquote><divclass=\"a\"><divclass=\"b\"><p>x</p></div><ul><li><blockquote><h1id=\"h\">h</h1></blockquote></li></ul></div></blockquote>",
+        ),
+        (
+            "::: a\n- > +\n# h\n:::\n",
+            "<divclass=\"a\"><ul><li><blockquote><h1id=\"h\">h</h1></blockquote></li></ul></div>",
+        ),
+    ]);
+}

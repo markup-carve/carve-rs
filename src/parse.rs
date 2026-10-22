@@ -1807,7 +1807,10 @@ fn parse_colon_view(
     if !COLON_CACHE_ENABLED.with(Cell::get)
         && NESTING_DEPTH.with(|depth| depth.get() < MAX_NESTING_DEPTH)
     {
-        let want_lines = options.source_lines || options.positions || needs_source_ending_map();
+        let want_lines = options.source_lines
+            || options.positions
+            || needs_source_ending_map()
+            || continuation_marker::active();
         let line_map: Vec<_> = source.iter().map(|line| line.source_line()).collect();
         let col_map: Vec<_> = source.iter().map(|line| line.stripped).collect();
         let mut cursor = LineCursor::from_lines(
@@ -1818,9 +1821,12 @@ fn parse_colon_view(
         cursor.colon_view = Some(&view);
         return parse_blocks(&mut cursor, options, pending);
     }
+    // A colon body read without source lines cannot ask a `+` for its decision,
+    // so the plain path is only taken when there is none to ask.
     if !options.source_lines
         && !options.positions
         && !needs_source_ending_map()
+        && !continuation_marker::active()
         && NESTING_DEPTH.with(|depth| depth.get() < MAX_NESTING_DEPTH)
     {
         let mut cursor = LineCursor::from_lines(lines, None, None);
