@@ -33,6 +33,24 @@ fn library_sources() -> Vec<PathBuf> {
     let mut out = Vec::new();
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
     walk(&root, &root, &mut out);
+    let test_modules: BTreeSet<PathBuf> = out
+        .iter()
+        .flat_map(|source_path| {
+            let source = std::fs::read_to_string(source_path).expect("source is readable");
+            let lines: Vec<_> = source.lines().collect();
+            lines
+                .windows(3)
+                .filter_map(|lines| {
+                    if lines[0] != "#[cfg(test)]" || !lines[2].starts_with("mod ") {
+                        return None;
+                    }
+                    let relative = lines[1].strip_prefix("#[path = \"")?.strip_suffix("\"]")?;
+                    Some(source_path.parent().unwrap().join(relative))
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    out.retain(|path| !test_modules.contains(path));
     out.sort();
     out
 }
@@ -41,20 +59,24 @@ fn library_sources() -> Vec<PathBuf> {
 /// the imported spelling as well as the fully qualified one.
 fn opens_a_file(line: &str) -> bool {
     let code = line.split("//").next().unwrap_or(line);
-    code.contains("fs::") || code.contains("File::open") || code.contains("File::create")
+    code.match_indices("fs::").any(|(at, _)| {
+        at == 0
+            || !matches!(code.as_bytes()[at - 1], b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_')
+    }) || code.contains("File::open")
+        || code.contains("File::create")
 }
 
 /// The shipped lines of a file: everything outside a `#[cfg(test)]` module.
 ///
-/// Test modules are skipped STRUCTURALLY rather than listed, because what the
+/// Inline test modules are skipped STRUCTURALLY rather than listed, because what the
 /// feature promises is about a shipped build - a corpus reader in a unit test
 /// is not in one at all. Listing them instead would have put three entries in
 /// the inventory below that say nothing about the guarantee.
 ///
-/// The shape relied on is this crate's own: `#[cfg(test)]` then `mod ... {` at
-/// column zero, closed by a `}` at column zero. A test module written some
-/// other way would be scanned rather than skipped, which fails loudly and is
-/// the safe direction for this gate to be wrong in.
+/// File-backed test modules declared with `#[cfg(test)]` and `#[path]` are
+/// excluded by `library_sources`. Inline modules use `#[cfg(test)]` then
+/// `mod ... {` at column zero, closed by a `}` at column zero. Another shape
+/// is scanned rather than skipped, so an unknown filesystem call fails loudly.
 fn shipped_lines(source: &str) -> Vec<&str> {
     let mut out = Vec::new();
     let mut in_test_module = false;
@@ -72,7 +94,9 @@ fn shipped_lines(source: &str) -> Vec<&str> {
         }
         if pending_test_attr {
             pending_test_attr = false;
-            if line.starts_with("mod ") || line.starts_with("pub mod ") {
+            if (line.starts_with("mod ") || line.starts_with("pub mod "))
+                && line.trim_end().ends_with('{')
+            {
                 in_test_module = true;
                 continue;
             }
@@ -80,6 +104,13 @@ fn shipped_lines(source: &str) -> Vec<&str> {
         out.push(line);
     }
     out
+}
+
+#[test]
+fn file_backed_test_declarations_do_not_hide_shipped_lines() {
+    let source = "#[cfg(test)]\nmod tests;\nlet data = std::fs::read(\"x\");\n";
+    assert!(shipped_lines(source).iter().any(|line| opens_a_file(line)));
+    assert!(!opens_a_file("pub(crate) use inline_crossrefs::*;"));
 }
 
 #[test]
