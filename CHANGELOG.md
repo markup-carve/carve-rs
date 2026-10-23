@@ -126,7 +126,7 @@ which the published crate does not carry.
 - An unclosed fence-shaped line below a quote that an item's marker line opens (`- - > x` / `   ```) is lazy text of the quote's paragraph. (#3095, markup-carve/carve#3421)
 - A quote `+` four or more levels deep takes a follower carrying its first marker into the innermost quote, a misaligned `>` below a hosted stacked `+` is no host prefix, and a fence attached below an indented quote `+` closes only at its own column. (#3096, markup-carve/carve#3421)
 - A quote marker past the column below a quoted list `+` it refused (`- a` / `  > - - +` / `   > q`) is item text, not a quote. (#3097, markup-carve/carve#3421)
-- A nested item takes a column-0 paragraph after its marker line's quote ends in a list `+`, a column-0 fence attached to a nested first-block `+` keeps its payload, and an aligned quote marker carries a deep quote `+` follower in an item. (#PRNUM, markup-carve/carve#3421)
+- A nested item takes a column-0 paragraph after its marker line's quote ends in a list `+`, a column-0 fence attached to a nested first-block `+` keeps its payload, and an aligned quote marker carries a deep quote `+` follower in an item. (#3098, markup-carve/carve#3421)
 - Attach the block at its column to a `> +` that opens a quote on its own line in a list item or description. (markup-carve/carve#3421)
 
 ### Source positions
