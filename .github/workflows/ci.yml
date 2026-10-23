@@ -267,6 +267,22 @@ jobs:
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps
 
+  semver:
+    name: Public API compatibility report
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          package: carve-lang
+          baseline-rev: e05191f660461533edfe9d7e1bbef3a5fcb01b1f
+          release-type: patch
+
   seam-matrix:
     name: Seam matrix covers every shape family
     runs-on: ubuntu-latest
