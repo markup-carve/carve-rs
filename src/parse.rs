@@ -200,7 +200,7 @@ impl Drop for SourceEndingGuard {
     }
 }
 
-fn needs_source_ending_map() -> bool {
+pub(in crate::parse) fn needs_source_ending_map() -> bool {
     UNTERMINATED_SOURCE_LINE.with(|slot| slot.get().is_some())
 }
 

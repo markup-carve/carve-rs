@@ -1487,6 +1487,7 @@ pub(in crate::parse) fn collect_blockquote_body(
                     options,
                     &mut |next, _| is_blank_line(next) || is_plus_marker(next),
                 );
+                let attached_start = cur.pos;
                 while cur.pos < end {
                     let next = cur.lines.at(cur.pos);
                     let kept = if prior_levels > 0 || own_marker_follower {
@@ -1500,6 +1501,19 @@ pub(in crate::parse) fn collect_blockquote_body(
                         stripped_col(cur.source_col(cur.pos), next, kept),
                     );
                     cur.pos += 1;
+                }
+                // An unclosed fence the `+` attached keeps an empty last line, as the spec
+                // model and carve-js read it, unless the document ends on its last line
+                // (carve#3421).
+                if attached_start < end
+                    && !(cur.eof() && crate::parse::needs_source_ending_map())
+                    && detect_fence_open(trim_ascii_start(cur.lines.at(attached_start)))
+                        .is_some_and(|open| {
+                            !(attached_start + 1..end)
+                                .any(|at| is_fence_close(trim_ascii_start(cur.lines.at(at)), open))
+                        })
+                {
+                    inner.push_at(String::new(), None, None);
                 }
                 inner.push_synthetic_blank();
                 para_open = ParaOpen::Closed;
