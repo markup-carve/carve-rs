@@ -200,8 +200,13 @@ impl Drop for SourceEndingGuard {
     }
 }
 
-pub(in crate::parse) fn needs_source_ending_map() -> bool {
+fn needs_source_ending_map() -> bool {
     UNTERMINATED_SOURCE_LINE.with(|slot| slot.get().is_some())
+}
+
+/// Whether `line` is the document's last line and ends without a newline.
+pub(in crate::parse) fn is_unterminated_source_line(line: Option<usize>) -> bool {
+    line.is_some_and(|line| UNTERMINATED_SOURCE_LINE.with(|slot| slot.get() == Some(line)))
 }
 
 /// Two private-use code points `source` does not contain.

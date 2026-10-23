@@ -11,6 +11,9 @@ fn the_fence_payload_ends_with_an_empty_line() {
         ("> +\n```\nx\n\npara\n", "x\n\n"),
         ("- > +\n  ```\n  x\n- b\n", "x\n\n"),
         ("- a\n  > +\n  ```\nx\n```\n", "x\n```\n\n"),
+        ("> > +\n> ```\n> x\n", "x\n\n"),
+        ("- > +\n  ```\n  x\n- b", "x\n\n"),
+        ("> +\n```\nx", "x"),
         ("> +\n```\nx\n```\n", "x\n"),
         ("> ```\n> x\n\npara\n", "x\n"),
     ] {
