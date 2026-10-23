@@ -47,3 +47,4 @@
 3085: large source modules split. The public API diff against 0.1.10 shows no removed or moved path.
 3088: doc comments only on the public AST and crate root; no code moved.
 3089: Djot definition-list conversion and Carve writer repair split into child modules. Internal only; the public API diff against e05191f shows no removed or moved path.
+3105: doc comments on the public API, `missing_docs` denied inside the crate, and Djot and Carve writer modules split. The rustdoc JSON diff against 0.1.11 shows no changed public item.

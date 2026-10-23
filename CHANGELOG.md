@@ -11,9 +11,11 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-10-23
+
 ### Fixes
 
-- A stacked quote's first-block `+` takes a list at the owning quote's column (markup-carve/carve#3544).
+- A stacked quote's first-block `+` takes a list at the owning quote's column, so `carve fmt` keeps the backslash before a refused `+` in that shape instead of writing a nested list (#3106, markup-carve/carve#3544).
 
 ## [0.1.11] - 2026-10-23
 
