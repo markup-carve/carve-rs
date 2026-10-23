@@ -129,7 +129,7 @@ which the published crate does not carry.
 - A quote marker past the column below a quoted list `+` it refused (`- a` / `  > - - +` / `   > q`) is item text, not a quote. (#3097, markup-carve/carve#3421)
 - A nested item takes a column-0 paragraph after its marker line's quote ends in a list `+`, a column-0 fence attached to a nested first-block `+` keeps its payload, and an aligned quote marker carries a deep quote `+` follower in an item. (#3098, markup-carve/carve#3421)
 - An unclosed fence a first-block `+` attaches ends with the attached block when a blank line follows, and takes the rest of its container only when none does. (#3101, markup-carve/carve#3421)
-- An unclosed fence a quote's first-block `+` attaches keeps an empty last line unless the document ends on its last line. (#PRNUM, markup-carve/carve#3421)
+- An unclosed fence a quote's first-block `+` attaches keeps an empty last line unless the document ends on its last line. (#3102, markup-carve/carve#3421)
 - Attach the block at its column to a `> +` that opens a quote on its own line in a list item or description. (markup-carve/carve#3421)
 
 ### Source positions
