@@ -817,7 +817,12 @@ impl Classifier {
                             || raw == column
                             || Some(raw) == inner_quote_marker_column
                             // No host prefix in line with the opener's: read at column 0.
-                            || raw == usize::MAX && source_column(line, Some(0)) == 0)
+                            || raw == usize::MAX
+                                && source_column(line, Some(0)) == 0
+                                // Below an indented host quote, a column-0 block has left
+                                // the item that holds it (carve#3421).
+                                && (leading_ws(&self.lines[index]) == 0
+                                    || !item_block_opener(line)))
                 })
             } else {
                 follower_column == owner.column
@@ -869,6 +874,18 @@ impl Classifier {
             } else {
                 None
             };
+            // As below an indented quote line: carve-js reports nothing for this `+`.
+            if stacked_quote
+                && refusal.is_some()
+                && leading_ws(&self.lines[index]) > 0
+                && follower.is_some_and(|line| {
+                    !line.starts_with([' ', '\t'])
+                        && item_block_opener(line)
+                        && detect_list_marker_full(line).is_none()
+                })
+            {
+                self.reported[index] = true;
+            }
             self.decisions[index] = Some(Decision {
                 owner: Some(owner.kind),
                 refusal,

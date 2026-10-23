@@ -122,6 +122,7 @@ which the published crate does not carry.
 - A quote `+` on its own line in an item takes no column-0 block that has left the item, a hosted stacked `+` attaches a column-0 block at any quote depth and after a sibling item's lazy line, and a quoted `- +` ends the quote only when it opened an item. (#3090, markup-carve/carve#3421)
 - A wrapped attribute opened at a nested item's column is one construct for the outer item too, so `- a` / `  - b` / `    {.c` / `}` / `para` ends the list before `para`. (#3091, markup-carve/carve#3421)
 - A wrapped attribute opened past a description's column is paragraph text, and a list marker below the column of an empty `- +` item starts a list instead of folding into the item. (#3092, markup-carve/carve#3421)
+- A stacked quote `+` takes any block at its innermost `>` column, takes no column-0 block below an indented host quote, and stays text when nothing follows it in its body. (#PRNUM, markup-carve/carve#3421)
 - Attach the block at its column to a `> +` that opens a quote on its own line in a list item or description. (markup-carve/carve#3421)
 
 ### Source positions

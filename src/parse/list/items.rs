@@ -929,7 +929,9 @@ pub(crate) fn parse_list(
                     detect_list_marker_full(line)
                         .is_some_and(|next| next.indent == content_col.saturating_sub(1))
                 });
+            // With no line left in this body to take, the `+` stays text (carve#3421).
             let first_block_quote_attaches = is_plus_marker(innermost)
+                && cur.peek().is_some()
                 && cur.continuation_decision(item_at).is_some_and(|decision| {
                     decision.owner == Some(continuation_marker::Kind::Quote)
                         && decision.refusal.is_none()
@@ -972,9 +974,16 @@ pub(crate) fn parse_list(
                         .max(content_col)
                 });
                 let follower_indent = cur.lines.line(start).map_or(0, indent_columns);
+                // The innermost `>` owns the `+`, so a block at its column opens in that quote.
+                let innermost_marker_column = quote_prefix
+                    .trim_end()
+                    .rfind('>')
+                    .map(|at| quote_column + at);
                 let quote_follower = !quote_prefix.is_empty()
                     && end > start
-                    && strip_blockquote_prefix(trim_ascii_start(cur.lines.at(start))).is_some();
+                    && (strip_blockquote_prefix(trim_ascii_start(cur.lines.at(start))).is_some()
+                        || quote_prefix.len() > 2
+                            && Some(follower_indent) == innermost_marker_column);
                 if quote_follower {
                     // The marker line keeps opening the quotes; only its `+` goes.
                     let stripped = cur.lines.line(item_at).and_then(|line| {

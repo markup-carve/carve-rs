@@ -1436,6 +1436,8 @@ pub(in crate::parse) fn collect_blockquote_body(
             };
             if first_block
                 && is_plus_marker(deepest)
+                // With no line left to take, the `+` stays text (carve#3421).
+                && !cur.eof()
                 && (levels > prior_levels || (levels == 0 && inner.lines.is_empty()))
             {
                 // Preserve a nested quote marker for its own parse. The

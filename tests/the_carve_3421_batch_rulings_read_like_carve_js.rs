@@ -228,3 +228,41 @@ fn a_wrapped_attribute_in_a_nested_item_is_one_construct_for_the_outer_item() {
         ),
     ]);
 }
+
+#[test]
+fn stacked_quote_plus_readings_shared_by_the_spec_model_and_carve_js() {
+    check(&[
+        (
+            "- > > +\n    # h\n",
+            "<ul><li><blockquote><blockquote><h1id=\"h\">h</h1></blockquote></blockquote></li></ul>",
+        ),
+        (
+            "- > > +\n    ```\nx\n```\n",
+            "<ul><li><blockquote><blockquote><pre><code>x</code></pre></blockquote></blockquote></li></ul>",
+        ),
+        (
+            "- a\n  > - > +\n# h\n",
+            "<ul><li>a<blockquote><ul><li><blockquote><p>+</p></blockquote></li></ul></blockquote></li></ul><sectionid=\"h\"><h1>h</h1></section>",
+        ),
+        (
+            "- a\n  > - > +\nb\n",
+            "<ul><li>a<blockquote><ul><li><blockquote><p>b</p></blockquote></li></ul></blockquote></li></ul>",
+        ),
+        (
+            "> > - a\n> > - > +\n# h\n",
+            "<blockquote><blockquote><ul><li>a</li><li><blockquote><p>+</p></blockquote></li></ul></blockquote></blockquote><sectionid=\"h\"><h1>h</h1></section>",
+        ),
+        (
+            "> - a\n> > q\n> - > +\n# h\n",
+            "<blockquote><ul><li>a</li></ul><blockquote><p>q-&gt;+</p></blockquote><h1id=\"h\">h</h1></blockquote>",
+        ),
+        (
+            "> > q\n> - > +\n# h\n",
+            "<blockquote><blockquote><p>q-&gt;+</p></blockquote></blockquote><sectionid=\"h\"><h1>h</h1></section>",
+        ),
+    ]);
+    let lint = carve::lint_carve("- a\n  > - > +\n# h\n");
+    assert!(lint
+        .iter()
+        .all(|warning| warning.rule != "continuation-marker-refused"));
+}
