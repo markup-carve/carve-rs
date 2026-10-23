@@ -500,8 +500,13 @@ pub(crate) fn attached_block_end(
     let mut unclosed_fence = false;
     while end < lines.len() {
         let line = lines.at(end);
-        if unclosed_fence && is_blank_line(line) {
-            break;
+        if unclosed_fence {
+            // The unclosed fence's payload: no opener inside it opens anything.
+            if is_blank_line(line) || is_boundary(line, end) {
+                break;
+            }
+            end += 1;
+            continue;
         }
         if let Some(open) = in_fence {
             if is_fence_close(line, open) {

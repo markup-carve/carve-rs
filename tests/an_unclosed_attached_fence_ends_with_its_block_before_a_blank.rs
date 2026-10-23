@@ -31,6 +31,10 @@ fn the_unclosed_fence_reads_like_the_references() {
             "- +\n```\nx\n\n```\n",
             "<ul><li><pre><code>x</code></pre></li></ul>",
         ),
+        (
+            "- +\n```\nx\n~~~\n- y\n\n~~~\n",
+            "<ul><li><pre><code>x~~~</code></pre></li><li>y</li></ul><pre><code></code></pre>",
+        ),
     ] {
         assert_eq!(flat(source), expected, "{source:?}");
     }
