@@ -69,6 +69,11 @@ fn a_follower_inside_the_quote_keeps_its_reading() {
             "<blockquote><ul><li>b</li></ul></blockquote>",
         ),
         ("- - +\nb\n", "<ul><li><ul><li>b</li></ul></li></ul>"),
+        ("> a\n> - +\nb\n", "<blockquote><p>a-+b</p></blockquote>"),
+        (
+            "> > a\n> > - +\nb\n",
+            "<blockquote><blockquote><p>a-+b</p></blockquote></blockquote>",
+        ),
     ] {
         assert_eq!(flat(source), expected, "{source:?}");
     }

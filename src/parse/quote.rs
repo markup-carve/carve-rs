@@ -1283,6 +1283,8 @@ pub(in crate::parse) fn collect_blockquote_body(
     let mut last_quoted_at = None;
     // The quoted line that opened a list item, not text in a paragraph or a fence.
     let mut item_opened_at = None;
+    // The quoted line that opened a block at any depth, not text in a paragraph or a fence.
+    let mut block_opened_at = None;
     let mut list_open = false;
     while let Some(line) = cur.peek() {
         let quote_line = if cur.colon_view.is_some_and(|view| view.marker_hosted) {
@@ -1291,9 +1293,16 @@ pub(in crate::parse) fn collect_blockquote_body(
             line
         };
         if let Some(stripped) = strip_blockquote_prefix(quote_line) {
-            let marker =
-                in_fence.is_none() && detect_list_marker_full(trim_ascii_start(stripped)).is_some();
-            item_opened_at = (marker && (!para_open.get() || list_open)).then_some(cur.pos);
+            let marker = detect_list_marker_full(trim_ascii_start(stripped)).is_some();
+            // Resolved only for a list or quote line ending in `+`, so plain quoted prose
+            // pays no paragraph resolution here.
+            let plus_line = trim_ascii_end(stripped).ends_with('+')
+                && (marker || stripped.starts_with('>'))
+                && in_fence.is_none();
+            let opens =
+                (marker || plus_line) && in_fence.is_none() && (!para_open.get() || list_open);
+            block_opened_at = (opens && plus_line).then_some(cur.pos);
+            item_opened_at = (opens && marker).then_some(cur.pos);
             // A sibling item may follow an item's own line, whose lead leaves a paragraph open.
             list_open = item_opened_at.is_some();
             if !may_have_term && stripped.contains(":: ") {
@@ -1833,6 +1842,7 @@ pub(in crate::parse) fn collect_blockquote_body(
         // A first-block list `+` (`- +`, `- - +`) leaves no paragraph open, so a line
         // without the quote's marker ends the quote (carve#3421).
         if last_quoted_at == cur.pos.checked_sub(1)
+            && block_opened_at == last_quoted_at
             && inner.lines.last().is_some_and(|last| {
                 let mut body = trim_ascii_start(&last.text);
                 while let Some(rest) = strip_blockquote_prefix(body) {
