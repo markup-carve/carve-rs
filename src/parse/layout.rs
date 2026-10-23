@@ -351,6 +351,14 @@ fn try_layout_into(
     }
 
     let mut lines: Vec<&str> = source.lines().collect();
+    // A wrapped attribute is one construct across lines (carve#3421); the tree
+    // parser owns where its closer belongs.
+    if lines.iter().any(|line| {
+        let text = trim_ascii_start(line);
+        text.starts_with('{') && !trim_ascii_end(text).ends_with('}')
+    }) {
+        return None;
+    }
     if lines
         .iter()
         .any(|line| trim_ascii_end(line).len() != line.len())
