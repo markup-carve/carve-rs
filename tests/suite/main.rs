@@ -21,6 +21,8 @@ mod a_refused_list_plus_and_a_past_column_wrapped_attribute_keep_their_readings;
 mod a_stacked_quote_plus_refuses_an_outer_item_column;
 #[path = "../a_tab_placed_sublist_starts_on_a_real_column.rs"]
 mod a_tab_placed_sublist_starts_on_a_real_column;
+#[path = "../a_wrapped_dangling_attribute_is_reported_like_the_one_line_form.rs"]
+mod a_wrapped_dangling_attribute_is_reported_like_the_one_line_form;
 #[path = "../an_opener_in_a_description_in_an_item_is_not_overindented.rs"]
 mod an_opener_in_a_description_in_an_item_is_not_overindented;
 #[path = "../an_unclosed_fence_below_a_marker_line_quote_is_lazy_text.rs"]

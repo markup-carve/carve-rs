@@ -1147,7 +1147,10 @@ pub(in crate::parse) fn collect_definition_body(
                     let next = cur.lines.at(cur.pos);
                     lines.push(trim_ascii_start(next).to_owned());
                     line_map.push(cur.source_line(cur.pos));
-                    col_map.push(None);
+                    col_map.push(
+                        cur.source_col(cur.pos)
+                            .map(|col| col + leading_ws(next) as isize),
+                    );
                     reached.push(true);
                     cur.consume();
                 }

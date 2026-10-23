@@ -1905,7 +1905,11 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             reached.push(true);
             if building_maps {
                 line_map.push(cur.source_line(cur.pos));
-                col_map.push(None);
+                col_map.push(
+                    cur.source_col(cur.pos).map(|col| {
+                        col + leading_ws(next) as isize - (indent - strip_cols) as isize
+                    }),
+                );
             }
             cur.consume();
         }
