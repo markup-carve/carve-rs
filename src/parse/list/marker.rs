@@ -523,7 +523,14 @@ pub(crate) fn attached_block_end(
                 });
             let closed =
                 possible && (end + 1..lines.len()).any(|at| is_fence_close(lines.at(at), open));
-            if !closed && (end + 1..lines.len()).any(|at| is_blank_line(lines.at(at))) {
+            // Read from the end: the tail past the last blank line is short in practice,
+            // and a scan forward from every unclosed opener would be quadratic.
+            if !closed
+                && (end + 1..lines.len())
+                    .rev()
+                    .find(|&at| is_blank_line(lines.at(at)))
+                    .is_some()
+            {
                 unclosed_fence = true;
                 end += 1;
                 continue;
