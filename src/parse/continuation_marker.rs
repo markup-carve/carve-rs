@@ -523,6 +523,11 @@ impl Classifier {
                             && (source_column(&self.lines[index], Some(0)) == 0
                                 || !item_block_opener(line))
                             || quote_body(line).0 == 0
+                                && column == source_column(&self.lines[index], Some(0))
+                            // The quote's own first marker, in line with it (`  > > > +` /
+                            // `  > q`), carries the follower into the innermost quote.
+                            || column > 0
+                                && quote_body(line).0 > 0
                                 && column == source_column(&self.lines[index], Some(0)))
                             && detect_list_marker_full(follower_body).is_none()
                     })

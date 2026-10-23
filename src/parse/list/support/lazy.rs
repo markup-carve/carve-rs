@@ -560,6 +560,18 @@ pub(crate) fn refused_first_block_below_column(cur: &LineCursor<'_>, content_col
                     && decision.refusal.is_some()
                     && if decision.owner == Some(crate::parse::continuation_marker::Kind::Quote) {
                         is_blank_line(line) && !list_marker
+                    } else if decision.owner == Some(crate::parse::continuation_marker::Kind::List)
+                        && !list_marker
+                        && indent_columns(line) == 0
+                        && line_starts_paragraph(trim_ascii_start(line))
+                        && {
+                            // A quote opened behind the item's own marker ends at its list
+                            // `+`, and the item takes the paragraph line (`- > - +` / `b`).
+                            let prior = trim_ascii_start(cur.lines.at(cur.pos - 1));
+                            !prior.starts_with('>') && prior.contains('>')
+                        }
+                    {
+                        false
                     } else {
                         !list_marker
                             || decision.owner == Some(crate::parse::continuation_marker::Kind::List)
@@ -567,8 +579,11 @@ pub(crate) fn refused_first_block_below_column(cur: &LineCursor<'_>, content_col
                                 && {
                                     // Not a quote opened behind this item's own marker, whose
                                     // list `+` leaves the marker line's item to take the line.
-                                    let prior = trim_ascii_start(cur.lines.at(cur.pos - 1));
-                                    prior.starts_with('>') || !prior.contains('>')
+                                    let raw = cur.lines.at(cur.pos - 1);
+                                    let prior = trim_ascii_start(raw);
+                                    prior.starts_with('>')
+                                        || !prior.contains('>')
+                                        || indent_columns(line) <= indent_columns(raw)
                                 }
                     }
             })

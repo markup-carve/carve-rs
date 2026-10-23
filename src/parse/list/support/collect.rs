@@ -789,19 +789,37 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 break;
             }
             if indent == 0 {
-                // THE MAPS MOVE WITH THE LINE. This collector keeps `line_map`
-                // and `col_map` parallel to `lines`, and a push that skips them
-                // desynchronises all three - which does not fail here but panics
-                // later, where a slice of the map is taken by the line range.
-                lines.push(slice_columns(line, 0, true).to_string());
-                if cur.line_map.is_some() {
-                    line_map.push(cur.source_line(cur.pos));
+                // A fence takes its payload and closer along (carve#3421): the first block
+                // is the whole fence, not its opener line.
+                let end = if detect_fence_open(line).is_some() {
+                    attached_block_lines_classified(
+                        cur.lines,
+                        cur.pos,
+                        &mut cur.comment_closer_last_index,
+                        &mut cur.code_closer_last_index,
+                        options,
+                        &mut |next, _| is_blank_line(next) || is_plus_marker(next),
+                    )
+                    .max(cur.pos + 1)
+                } else {
+                    cur.pos + 1
+                };
+                while cur.pos < end {
+                    let line = cur.lines.at(cur.pos);
+                    // THE MAPS MOVE WITH THE LINE. This collector keeps `line_map`
+                    // and `col_map` parallel to `lines`, and a push that skips them
+                    // desynchronises all three - which does not fail here but panics
+                    // later, where a slice of the map is taken by the line range.
+                    lines.push(slice_columns(line, 0, true).to_string());
+                    if cur.line_map.is_some() {
+                        line_map.push(cur.source_line(cur.pos));
+                    }
+                    reached.push(false);
+                    if building_maps {
+                        col_map.push(cur.source_col(cur.pos));
+                    }
+                    cur.consume();
                 }
-                reached.push(false);
-                if building_maps {
-                    col_map.push(cur.source_col(cur.pos));
-                }
-                cur.consume();
                 continue;
             }
             if indent < strip_cols

@@ -102,3 +102,31 @@ fn an_indented_quote_marker_below_the_quote_is_item_text() {
         assert_eq!(flat(source), expected, "{source:?}");
     }
 }
+
+#[test]
+fn a_nested_item_and_its_first_block_readings() {
+    for (source, expected) in [
+        (
+            "- a\n  - > - +\nb\n",
+            "<ul><li>a<ul><li><blockquote><ul><li></li></ul></blockquote>b</li></ul></li></ul>",
+        ),
+        (
+            "- a\n  - > - +\n b\n",
+            "<ul><li>a<ul><li><blockquote><ul><li></li></ul></blockquote></li></ul></li></ul><p>b</p>",
+        ),
+        (
+            "- a\n  - > - +\n - s\n",
+            "<ul><li>a<ul><li><blockquote><ul><li></li></ul></blockquote></li></ul></li></ul><ul><li>s</li></ul>",
+        ),
+        (
+            "- a\n  - - +\n```\nx\n```\n",
+            "<ul><li>a<ul><li><ul><li><pre><code>x</code></pre></li></ul></li></ul></li></ul>",
+        ),
+        (
+            "- a\n  > > > +\n  > q\n",
+            "<ul><li>a<blockquote><blockquote><blockquote><p>q</p></blockquote></blockquote></blockquote></li></ul>",
+        ),
+    ] {
+        assert_eq!(flat(source), expected, "{source:?}");
+    }
+}
