@@ -1,7 +1,7 @@
 use super::*;
 
 #[derive(Clone, Copy)]
-pub(super) struct DefinitionFrame {
+struct DefinitionFrame {
     source: usize,
     target: usize,
     body: bool,
@@ -113,11 +113,7 @@ pub(super) fn definition_term_block_boundaries(source: &str) -> String {
     lines.join("\n")
 }
 
-pub(super) fn finish_definition_frame(
-    frame: DefinitionFrame,
-    lines: &mut [String],
-    empty_term: &str,
-) {
+fn finish_definition_frame(frame: DefinitionFrame, lines: &mut [String], empty_term: &str) {
     if !frame.body {
         lines[frame.term_end].push_str(&format!("\n{}:  {empty_term}", " ".repeat(frame.target)));
     }
@@ -129,7 +125,7 @@ pub(super) fn convert_definition_lists(source: &str, empty_term: &str) -> String
     convert_definition_lists_at(source, empty_term, 0)
 }
 
-pub(super) fn convert_definition_lists_at(source: &str, empty_term: &str, depth: usize) -> String {
+fn convert_definition_lists_at(source: &str, empty_term: &str, depth: usize) -> String {
     if depth >= crate::parse::MAX_NESTING_DEPTH {
         return convert_root_definition_lists(source, empty_term);
     }
@@ -223,11 +219,7 @@ pub(super) fn convert_definition_lists_at(source: &str, empty_term: &str, depth:
     result.join("\n")
 }
 
-pub(super) fn convert_unquoted_definition_lists(
-    source: &str,
-    empty_term: &str,
-    depth: usize,
-) -> String {
+fn convert_unquoted_definition_lists(source: &str, empty_term: &str, depth: usize) -> String {
     let gate = cached_regex!(r"(?m)^[ \t]*(?:(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})\))[ \t]+)+[:{]").unwrap();
     if !gate.is_match(source) {
         return convert_root_definition_lists(source, empty_term);
@@ -389,7 +381,7 @@ pub(super) fn convert_unquoted_definition_lists(
     result.join("\n")
 }
 
-pub(super) fn convert_root_definition_lists(source: &str, empty_term: &str) -> String {
+fn convert_root_definition_lists(source: &str, empty_term: &str) -> String {
     let _paragraph_cache = ParagraphCacheScope::new(source);
     let mut lines: Vec<String> = source.split('\n').map(str::to_owned).collect();
     let mut removed_blanks = HashSet::new();

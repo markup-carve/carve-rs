@@ -63,7 +63,7 @@ pub(super) fn render_carve_once(session: &RenderSession, doc: &Document) -> Stri
 /// CARVE-P9-078: past the nesting cap the writer refuses rather than emit source
 /// that reads back as a different document. Records the refusal and returns
 /// false when `output_tree` is not the document's tree.
-pub(super) fn refuse_unless_it_reads_back(output_tree: Option<&Document>, doc: &Document) -> bool {
+fn refuse_unless_it_reads_back(output_tree: Option<&Document>, doc: &Document) -> bool {
     if output_tree.is_some_and(|tree| *tree == comparable_document(doc.clone())) {
         return true;
     }
@@ -79,7 +79,7 @@ pub(super) fn note_unspellable_list_nesting() {
 
 /// The conservative form of the units that need it, and the minimal form of
 /// every other unit (PART 11 §2b).
-pub(super) fn narrow_escalation(
+fn narrow_escalation(
     session: &RenderSession,
     doc: &Document,
     conservative: String,
@@ -191,7 +191,7 @@ pub(super) fn narrow_escalation(
 /// the window instead of the document. The caller re-verifies the finished
 /// state against the whole document and repeats the search with `local` off
 /// when it does not hold, which is the search as it was before windows.
-pub(super) struct Probe<'a> {
+struct Probe<'a> {
     doc: &'a Document,
     tree: &'a Document,
     /// A window longer than this saves nothing over the whole document.
@@ -218,7 +218,7 @@ const ESCAPE_SEARCH_PARSE_FACTOR: usize = 16;
 const ESCAPE_SEARCH_PROBE_FACTOR: usize = 4;
 
 /// A probe's answer, with the whole-document candidate it rendered, if any.
-pub(super) enum Verdict {
+enum Verdict {
     Holds,
     Fails(Option<String>),
 }
@@ -316,7 +316,7 @@ impl Probe<'_> {
 /// control render, the unit-level result is kept. The search is bounded because
 /// every load-bearing occurrence can require another full render and parse.
 /// Where the budget binds, remaining occurrences stay escaped as §2 requires.
-pub(super) fn narrow_occurrences(session: &RenderSession, probe: &Probe, best: &mut String) {
+fn narrow_occurrences(session: &RenderSession, probe: &Probe, best: &mut String) {
     let unit_scoped = best.clone();
     session
         .relaxed_occurrences
@@ -396,7 +396,7 @@ pub(super) fn narrow_occurrences(session: &RenderSession, probe: &Probe, best: &
 
 /// Hand `group` its bare form where the document still holds, halving the group
 /// on failure.
-pub(super) fn relax_occurrences(
+fn relax_occurrences(
     session: &RenderSession,
     probe: &Probe,
     local: bool,
@@ -455,7 +455,7 @@ pub(super) fn relax_occurrences(
 /// is answered without a parse. The halving produces such repeats constantly:
 /// when one half of a failed group moves no bytes, the other half renders the
 /// group's candidate again.
-pub(super) fn candidate_holds(
+fn candidate_holds(
     candidate: &str,
     best: &str,
     rejected: Option<&str>,
@@ -474,7 +474,7 @@ pub(super) fn candidate_holds(
     comparable_tree(candidate).as_ref() == Some(conservative_tree)
 }
 
-pub(super) fn set_relaxed(session: &RenderSession, group: &[Occurrence], relaxed: bool) {
+fn set_relaxed(session: &RenderSession, group: &[Occurrence], relaxed: bool) {
     session.relaxed_occurrences.with(|cell| {
         if let Some(set) = cell.borrow_mut().as_mut() {
             for key in group {
@@ -501,7 +501,7 @@ pub(super) fn set_relaxed(session: &RenderSession, group: &[Occurrence], relaxed
 /// budget runs out and returns the state it has reached, which is verified like
 /// every other -- the escalation is wider than §2b's minimum there, never
 /// narrower, and no document's output can be wrong for it.
-pub(super) fn relax_units(
+fn relax_units(
     session: &RenderSession,
     probe: &Probe,
     local: bool,
@@ -553,7 +553,7 @@ pub(super) fn relax_units(
     );
 }
 
-pub(super) fn set_escalated(session: &RenderSession, units: &[usize], escalated: bool) {
+fn set_escalated(session: &RenderSession, units: &[usize], escalated: bool) {
     session.escalated_units.with(|cell| {
         if let Some(set) = cell.borrow_mut().as_mut() {
             for unit in units {
