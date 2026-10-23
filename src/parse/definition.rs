@@ -569,7 +569,8 @@ pub(in crate::parse) fn body_ends_with_an_attribute_line(source: &str) -> bool {
     let mut start = end;
     loop {
         if standalone_attrs_block_len(&lines[start..]) == Some(end - start + 1) {
-            return true;
+            // A wrapped opener past the body's column is paragraph text (carve#3421).
+            return start == end || leading_ws(raw_lines[start]) == 0;
         }
         if start == 0 || is_blank_line(lines[start - 1]) {
             return false;

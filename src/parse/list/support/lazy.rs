@@ -547,17 +547,30 @@ pub(crate) fn refused_first_block_below_column(cur: &LineCursor<'_>, content_col
     let Some(line) = cur.peek() else {
         return false;
     };
+    let list_marker = detect_list_marker_full(line).is_some();
     cur.pos > 0
         && indent_columns(line) < content_col
-        && detect_list_marker_full(line).is_none()
         && cur
             .continuation_decision(cur.pos - 1)
             .is_some_and(|decision| {
                 // A refused first-block `+` in a quote is text, so a lazy line folds into it.
+                // A list's refused `+` leaves its item empty, so not even a marker folds
+                // (carve#3421).
                 decision.first_block
                     && decision.refusal.is_some()
-                    && (decision.owner != Some(crate::parse::continuation_marker::Kind::Quote)
-                        || is_blank_line(line))
+                    && if decision.owner == Some(crate::parse::continuation_marker::Kind::Quote) {
+                        is_blank_line(line) && !list_marker
+                    } else {
+                        !list_marker
+                            || decision.owner == Some(crate::parse::continuation_marker::Kind::List)
+                                && indent_columns(line) > 0
+                                && {
+                                    // Not a quote opened behind this item's own marker, whose
+                                    // list `+` leaves the marker line's item to take the line.
+                                    let prior = trim_ascii_start(cur.lines.at(cur.pos - 1));
+                                    prior.starts_with('>') || !prior.contains('>')
+                                }
+                    }
             })
 }
 
