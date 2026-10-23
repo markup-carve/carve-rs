@@ -1283,6 +1283,8 @@ pub(in crate::parse) fn collect_blockquote_body(
     let mut last_quoted_at = None;
     // The quoted line that opened a list item, not text in a paragraph or a fence.
     let mut item_opened_at = None;
+    // The quoted line that opened a block at any depth, not text in a paragraph or a fence.
+    let mut block_opened_at = None;
     let mut list_open = false;
     while let Some(line) = cur.peek() {
         let quote_line = if cur.colon_view.is_some_and(|view| view.marker_hosted) {
@@ -1291,11 +1293,27 @@ pub(in crate::parse) fn collect_blockquote_body(
             line
         };
         if let Some(stripped) = strip_blockquote_prefix(quote_line) {
-            let marker =
-                in_fence.is_none() && detect_list_marker_full(trim_ascii_start(stripped)).is_some();
-            item_opened_at = (marker && (!para_open.get() || list_open)).then_some(cur.pos);
-            // A sibling item may follow an item's own line, whose lead leaves a paragraph open.
-            list_open = item_opened_at.is_some();
+            let marker = detect_list_marker_full(trim_ascii_start(stripped)).is_some();
+            // Resolved only for a list or quote line ending in `+`, so plain quoted prose
+            // pays no paragraph resolution here.
+            let plus_line = trim_ascii_end(stripped).ends_with('+')
+                && (marker || stripped.starts_with('>'))
+                && in_fence.is_none();
+            let opens =
+                (marker || plus_line) && in_fence.is_none() && (!para_open.get() || list_open);
+            block_opened_at = (opens && plus_line).then_some(cur.pos);
+            item_opened_at = (opens && marker).then_some(cur.pos);
+            // A sibling item may follow its list's lines, whose lead leaves a paragraph open,
+            // until a block or paragraph at the quote's column ends the list.
+            if item_opened_at.is_some() {
+                list_open = true;
+            } else if in_fence.is_none()
+                && !is_blank_line(stripped)
+                && !stripped.starts_with([' ', '\t'])
+                && (!list_open || !para_open.get())
+            {
+                list_open = false;
+            }
             if !may_have_term && stripped.contains(":: ") {
                 let trimmed = trim_ascii_start(stripped);
                 may_have_term = (inner.lines.is_empty()
@@ -1775,19 +1793,42 @@ pub(in crate::parse) fn collect_blockquote_body(
         }
         // A hosted stacked `- > +` attaches a non-list block at column 0 before the
         // host quote ends (carve#3421): it joins the body as the unhosted twin reads.
+        // In a nested quote (`> > - > +`) the block joins the nested body behind its markers.
+        let pull_shape = last_quoted_at == cur.pos.checked_sub(1)
+            && !line.starts_with([' ', '\t'])
+            && item_block_opener(line)
+            && detect_list_marker_full(line).is_none();
+        let nested_prefix = last_quoted_at
+            .filter(|_| pull_shape)
+            .map_or(usize::MAX, |prior| {
+                let mut body = strip_blockquote_prefix(cur.lines.at(prior)).unwrap_or("");
+                let mut levels = 0;
+                while let Some(rest) = strip_blockquote_prefix(body) {
+                    body = rest;
+                    levels += 1;
+                }
+                if detect_list_marker_full(trim_ascii_start(body)).is_some() {
+                    levels
+                } else {
+                    usize::MAX
+                }
+            });
         if last_quoted_at == cur.pos.checked_sub(1)
-            && item_opened_at == last_quoted_at
+            && nested_prefix != usize::MAX
+            && if nested_prefix == 0 {
+                item_opened_at == last_quoted_at
+            } else {
+                block_opened_at == last_quoted_at
+            }
             && !line.starts_with([' ', '\t'])
             && item_block_opener(line)
             && detect_list_marker_full(line).is_none()
             && last_quoted_at.is_some_and(|prior| {
-                strip_blockquote_prefix(cur.lines.at(prior))
-                    .is_some_and(|body| detect_list_marker_full(trim_ascii_start(body)).is_some())
-                    && cur.continuation_decision(prior).is_some_and(|decision| {
-                        decision.first_block
-                            && decision.refusal.is_none()
-                            && decision.owner == Some(continuation_marker::Kind::Quote)
-                    })
+                cur.continuation_decision(prior).is_some_and(|decision| {
+                    decision.first_block
+                        && decision.refusal.is_none()
+                        && decision.owner == Some(continuation_marker::Kind::Quote)
+                })
             })
         {
             let end = attached_block_lines_classified(
@@ -1799,9 +1840,13 @@ pub(in crate::parse) fn collect_blockquote_body(
                 &mut |next, _| is_blank_line(next) || is_plus_marker(next),
             )
             .max(cur.pos + 1);
+            let prefix = "> ".repeat(nested_prefix);
             while cur.pos < end {
-                let text = cur.lines.at(cur.pos).to_string();
-                inner.push_at(text, cur.source_line(cur.pos), cur.source_col(cur.pos));
+                let text = format!("{prefix}{}", cur.lines.at(cur.pos));
+                let column = cur
+                    .source_col(cur.pos)
+                    .map(|col| col - prefix.len() as isize);
+                inner.push_at(text, cur.source_line(cur.pos), column);
                 cur.pos += 1;
             }
             para_open = ParaOpen::Closed;
@@ -1833,6 +1878,7 @@ pub(in crate::parse) fn collect_blockquote_body(
         // A first-block list `+` (`- +`, `- - +`) leaves no paragraph open, so a line
         // without the quote's marker ends the quote (carve#3421).
         if last_quoted_at == cur.pos.checked_sub(1)
+            && block_opened_at == last_quoted_at
             && inner.lines.last().is_some_and(|last| {
                 let mut body = trim_ascii_start(&last.text);
                 while let Some(rest) = strip_blockquote_prefix(body) {

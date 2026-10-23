@@ -160,3 +160,41 @@ fn a_stacked_plus_in_a_colon_div_attaches_without_position_tracking() {
         ),
     ]);
 }
+
+#[test]
+fn a_quote_plus_below_an_item_line_attaches_at_depth_and_after_a_sibling() {
+    check(&[
+        (
+            "> > - > +\n# h\n",
+            "<blockquote><blockquote><ul><li><blockquote><h1id=\"h\">h</h1></blockquote></li></ul></blockquote></blockquote>",
+        ),
+        (
+            "> > - > +\n| c |\n",
+            "<blockquote><blockquote><ul><li><blockquote><table><tbody><tr><td>c</td></tr></tbody></table></blockquote></li></ul></blockquote></blockquote>",
+        ),
+        (
+            "> - a\n> b\n> - > +\n# h\n",
+            "<blockquote><ul><li>ab</li><li><blockquote><h1id=\"h\">h</h1></blockquote></li></ul></blockquote>",
+        ),
+        (
+            "> > para\n> > - > +\n# h\n",
+            "<blockquote><blockquote><p>para-&gt;+</p></blockquote></blockquote><sectionid=\"h\"><h1>h</h1></section>",
+        ),
+        (
+            "- a\n  > +\n# h\n",
+            "<ul><li>a<blockquote><p>+</p></blockquote></li></ul><sectionid=\"h\"><h1>h</h1></section>",
+        ),
+        (
+            "- a\n  > +\nb\n",
+            "<ul><li>a<blockquote><p>b</p></blockquote></li></ul>",
+        ),
+        (
+            "- a\n  > +\n  # h\n",
+            "<ul><li>a<blockquote><h1id=\"h\">h</h1></blockquote></li></ul>",
+        ),
+    ]);
+    let lint = carve::lint_carve("- a\n  > +\n# h\n");
+    assert!(lint
+        .iter()
+        .all(|warning| warning.rule != "continuation-marker-refused"));
+}

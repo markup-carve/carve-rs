@@ -517,7 +517,11 @@ impl Classifier {
                     && follower.is_some_and(|line| {
                         let column = source_column(line, Some(0));
                         // CARVE-P9-067: inside an item the follower may also sit at the quote line's column.
+                        // A block at column 0 below an indented quote line has left the item; only
+                        // paragraph text there is the quote's (carve#3421).
                         (column == 0
+                            && (source_column(&self.lines[index], Some(0)) == 0
+                                || !item_block_opener(line))
                             || quote_body(line).0 == 0
                                 && column == source_column(&self.lines[index], Some(0)))
                             && detect_list_marker_full(follower_body).is_none()
@@ -580,6 +584,19 @@ impl Classifier {
                 self.marker_fence = None;
             }
             self.pending_blank = false;
+            // A block at column 0 below an indented quote line has left its item; carve-js
+            // reports nothing for the `+` it leaves as text.
+            if first_block_quote
+                && refusal.is_some()
+                && source_column(&self.lines[index], Some(0)) > 0
+                && follower.is_some_and(|line| {
+                    !line.starts_with([' ', '\t'])
+                        && item_block_opener(line)
+                        && detect_list_marker_full(line).is_none()
+                })
+            {
+                self.reported[index] = true;
+            }
             self.decisions[index] = Some(Decision {
                 owner: owner.map(|e| e.kind),
                 refusal,
