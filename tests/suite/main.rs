@@ -2470,6 +2470,8 @@ mod nested_fence_continuation_blank_payload;
 #[path = "../nested_marker_fence_blank_payload.rs"]
 mod nested_marker_fence_blank_payload;
 
+#[path = "../a_block_below_an_empty_nested_item_uses_one_column.rs"]
+mod a_block_below_an_empty_nested_item_uses_one_column;
 #[path = "../a_quote_below_a_description_item_opens_in_the_description.rs"]
 mod a_quote_below_a_description_item_opens_in_the_description;
 #[path = "../a_tab_indented_quote_in_an_item_starts_on_its_marker.rs"]

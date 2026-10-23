@@ -2040,7 +2040,8 @@ fn render_item_blocks(
         if matches!(prev, Some(BlockNode::List(list)) if list.items.last().is_some_and(|item| item.children.is_empty()))
             && matches!(block, BlockNode::BlockQuote(_) | BlockNode::CodeBlock(_))
         {
-            out.push_str(&indent_adjacent_list(&rendered, 2));
+            // One column keeps the block outside the empty nested item.
+            out.push_str(&indent_adjacent_list(&rendered, 1));
             prev = Some(block);
             prev_at_marker_column = false;
             continue;
