@@ -38,6 +38,10 @@ carve lint --include-root . doc.crv
 data/plans.csv:3:1 delimited-table-malformed — This marked CSV/TSV record has malformed quoting, so the include remains a code block. (included from doc.crv:2:1)
 ```
 
+Add `--json` for one JSON object per finding. It includes `file`, `includedBy`
+(an array of directive sites), `line`, `column`, `rule`, `message`, and byte
+offsets `start` and `end`. The exit codes are the same as text output.
+
 Rust callers can set `Options::with_lint_includes(IncludeOptions::new().with_resolver(&resolver).with_source_path("doc.crv"))`. The resolver can be virtual or filesystem backed. Without this option, `lint_carve_with_options` does not expand includes.
 
 Reads stdin with no path, or with `-`, and reports under `<stdin>`.

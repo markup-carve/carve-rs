@@ -62,6 +62,66 @@ fn an_unattached_block_attribute_is_reported_and_exits_one() {
 }
 
 #[test]
+fn json_warning_exposes_offsets_and_chain() {
+    let path = fixture("é\n\n{#orphan .cls}\n\n");
+    let (stdout, stderr, code) = lint(&[std::ffi::OsStr::new("--json"), path.as_os_str()]);
+    assert_eq!(code, 1, "{stderr}");
+    let warning: serde_json::Value = serde_json::from_str(stdout.lines().next().unwrap()).unwrap();
+    assert_eq!(warning["file"], path.to_string_lossy().as_ref());
+    assert_eq!(warning["includedBy"], serde_json::json!([]));
+    assert_eq!(warning["start"], 4);
+    assert!(warning["end"].as_u64().unwrap() > 4);
+}
+
+#[test]
+fn include_limit_without_root_is_refused() {
+    let (stdout, stderr, code) = lint(&[
+        std::ffi::OsStr::new("--max-depth"),
+        std::ffi::OsStr::new("1"),
+    ]);
+    assert_eq!(code, 2);
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("require --include-root"));
+}
+
+#[cfg(feature = "fs")]
+#[test]
+fn json_warning_keeps_include_sites_separate_from_message() {
+    let root = std::env::temp_dir().join(format!(
+        "carve-lint-json-includes-{}-{}",
+        std::process::id(),
+        NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir_all(&root).unwrap();
+    let parent = root.join("parent.crv");
+    fs::write(&parent, "{{ child.crv }}\n").unwrap();
+    fs::write(root.join("child.crv"), ORPHAN).unwrap();
+    let (stdout, stderr, code) = lint(&[
+        std::ffi::OsStr::new("--json"),
+        std::ffi::OsStr::new("--include-root"),
+        root.as_os_str(),
+        parent.as_os_str(),
+    ]);
+    fs::remove_dir_all(&root).unwrap();
+    assert_eq!(code, 1, "{stderr}");
+    let warning = stdout
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .find(|value| value["rule"] == "unattached-block-attribute")
+        .unwrap();
+    assert_eq!(warning["file"], "child.crv");
+    assert_eq!(
+        warning["includedBy"][0]["file"],
+        parent.to_string_lossy().as_ref()
+    );
+    assert_eq!(warning["includedBy"][0]["line"], 1);
+    assert!(!warning["message"]
+        .as_str()
+        .unwrap()
+        .contains("included from"));
+}
+
+#[test]
 fn the_line_carries_file_line_column_and_rule() {
     // The format is carve-js's, exactly: `path:line:col rule — message`. A
     // script that parses one CLI has to parse the other, which is what makes

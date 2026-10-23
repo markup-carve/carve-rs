@@ -58,6 +58,14 @@ fn stamp_info_says_so_when_there_is_no_marker() {
 }
 
 #[test]
+fn stamp_query_refuses_include_limits() {
+    let (out, err, code) = run(&["--stamp-info", "--max-depth", "0"], FROM_PHP);
+    assert_eq!(code, 2);
+    assert!(out.is_empty());
+    assert!(err.contains("do not apply to stamp queries"));
+}
+
+#[test]
 fn stamp_check_exits_one_for_an_older_or_unknown_document() {
     let (_, err, code) = run(&["--stamp-check"], OLD);
     assert_eq!(code, 1);

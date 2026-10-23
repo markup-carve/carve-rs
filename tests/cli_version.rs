@@ -46,7 +46,7 @@ fn help_documents_the_include_root_for_render_and_lint() {
         "{stdout}"
     );
     assert!(
-        stdout.contains("carve lint [--include-root DIR] [files]"),
+        stdout.contains("carve lint [--json] [--include-root DIR] [files]"),
         "{stdout}"
     );
     assert!(stdout.contains("carve lint has no default"), "{stdout}");

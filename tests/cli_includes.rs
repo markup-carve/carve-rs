@@ -53,6 +53,43 @@ struct Output {
     code: Option<i32>,
 }
 
+#[test]
+fn region_subcommand_uses_shared_marker_rules() {
+    let source = "%% #region demo\nline\n%% #endregion demo\n";
+    let result = run(&["region", "demo"], Some(source));
+    assert!(result.success, "{}", result.stderr);
+    assert_eq!(result.stdout.trim(), r#"{"end":2,"start":2}"#);
+    let invalid = run(&["region", "missing"], Some(source));
+    assert_eq!(invalid.code, Some(1));
+    assert!(invalid.stderr.contains("include-region-invalid"));
+}
+
+#[cfg(feature = "fs")]
+#[test]
+fn render_and_lint_honor_include_depth_budget() {
+    let dir = TempDir::new("budget");
+    dir.write("child.crv", "included\n");
+    let root = dir.path().to_str().unwrap();
+    let source = "{{ child.crv }}\n";
+    let render = run(&["--include-root", root, "--max-depth", "0"], Some(source));
+    assert!(render.stderr.contains("include-depth"), "{}", render.stderr);
+    let lint = run(
+        &["lint", "--include-root", root, "--max-depth", "0"],
+        Some(source),
+    );
+    assert_eq!(lint.code, Some(1));
+    assert!(lint.stdout.contains("include-depth"), "{}", lint.stdout);
+    let refused = run(&["flatten", "--align-tables", "--include-root", root], None);
+    assert_eq!(refused.code, Some(2));
+    let no_expansion = run(&["--carve", "--max-depth", "0"], Some(source));
+    assert_eq!(no_expansion.code, Some(2));
+    let clean = run(
+        &["--include-root", root, "--max-depth", "0"],
+        Some("plain\n"),
+    );
+    assert_eq!(clean.code, Some(0), "{}", clean.stderr);
+}
+
 fn run(args: &[&str], input: Option<&str>) -> Output {
     run_impl(args, input, None)
 }

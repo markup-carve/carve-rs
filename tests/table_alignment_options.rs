@@ -66,9 +66,19 @@ fn written_escapes_count_in_width() {
 fn cli_formats_and_checks_aligned_output() {
     let source = "| A | B |\n|---|---|\n| x | yy |\n";
     let expected = aligned(source);
+    let rendered = cli(&["--carve", "--align-tables"], source);
+    assert!(rendered.status.success());
+    assert_eq!(String::from_utf8(rendered.stdout).unwrap(), expected);
     let printed = cli(&["fmt", "--align-tables"], source);
     assert!(printed.status.success());
     assert_eq!(String::from_utf8(printed.stdout).unwrap(), expected);
+    let early_flag = cli(&["--align-tables", "fmt"], source);
+    assert!(early_flag.status.success());
+    assert_eq!(String::from_utf8(early_flag.stdout).unwrap(), expected);
+    let json = carve::to_json(&carve::parse(source));
+    let decoded = cli(&["--from-json", "--carve", "--align-tables"], &json);
+    assert!(decoded.status.success());
+    assert_eq!(String::from_utf8(decoded.stdout).unwrap(), expected);
     let path = std::env::temp_dir().join(format!("carve-align-check-{}", std::process::id()));
     std::fs::write(&path, source).unwrap();
     let arg = path.to_str().unwrap();

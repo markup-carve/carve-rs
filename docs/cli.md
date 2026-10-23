@@ -39,10 +39,13 @@ echo '# Hello' | carve              # render from stdin
 carve merge base.crv ours.crv theirs.crv # structural three-way merge
 carve fmt --write notes.crv         # rewrite in canonical form
 carve fmt --align-tables --check notes.crv # check aligned table spelling
+carve --carve --align-tables notes.crv # write aligned Carve with render options
 carve fmt --migrate --write old.crv # also fix references that miss only by case
 ```
 
 `carve fmt --align-tables` pads table cells and separators to their column widths.
+`--carve --align-tables` applies the same layout through the render path, including
+`--profile`.
 `--check` compares files with this aligned output. Ordinary `fmt` keeps tables
 unaligned. Width counts Unicode 18 grapheme clusters, with wide and fullwidth
 clusters counting as two columns (CARVE-P11-071).
@@ -91,6 +94,8 @@ carve --no-raw-html untrusted.crv   # escape =html raw blocks/spans
 carve --safe --profile comment untrusted.crv   # and restrict which constructs are allowed
 carve --help
 carve --version                     # or -V: prints `carve-rs <version>`
+carve region intro notes.crv       # JSON content line range for a Carve region
+carve region --code setup src/main.rs # accept source comment markers too
 ```
 
 `--html` / `--markdown` (`--md`) / `--plain` (`--plain-text`) / `--ansi` select
@@ -111,6 +116,12 @@ carrier, so HTML gets the §13a attributes and Markdown the container comments
 and selects no import mode.
 Host resolver callbacks remain library-only because they cannot be represented
 as command-line values.
+`--max-depth`, `--max-bytes`, `--max-resolver-calls`, and `--max-warnings`
+set include expansion limits for render and `flatten`. Each takes a
+non-negative integer. The same flags work with `carve lint`.
+Lint requires `--include-root` when a limit is set. Render accepts limits for
+an include-capable target with a filesystem resolver, even when a document
+contains no include directives.
 `--no-raw-html` escapes `=html` raw
 blocks and spans instead of emitting them verbatim; it composes with every format
 and with `--profile`. `--no-includes` leaves every `{{ … }}` include directive

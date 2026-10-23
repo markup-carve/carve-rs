@@ -34,6 +34,39 @@ enum Command {
     Flatten,
 }
 
+#[derive(Default, Clone, Copy)]
+struct IncludeBudgets {
+    depth: Option<usize>,
+    bytes: Option<usize>,
+    resolver_calls: Option<usize>,
+    warnings: Option<usize>,
+}
+
+impl IncludeBudgets {
+    fn apply<'a>(self, mut options: carve::IncludeOptions<'a>) -> carve::IncludeOptions<'a> {
+        if let Some(value) = self.depth {
+            options = options.with_max_depth(value);
+        }
+        if let Some(value) = self.bytes {
+            options = options.with_max_bytes(value);
+        }
+        if let Some(value) = self.resolver_calls {
+            options = options.with_max_resolver_calls(value);
+        }
+        if let Some(value) = self.warnings {
+            options = options.with_max_warnings(value);
+        }
+        options
+    }
+}
+
+fn parse_budget(value: Option<&String>, flag: &str) -> Result<usize, ExitCode> {
+    value.and_then(|value| value.parse().ok()).ok_or_else(|| {
+        eprintln!("carve: {flag} requires a non-negative integer");
+        ExitCode::from(2)
+    })
+}
+
 /// The stamp modes answer a question about the document rather than rendering
 /// it: report the provenance marker, and optionally fail when the document
 /// predates this engine's spec version.
@@ -89,6 +122,9 @@ fn main() -> ExitCode {
     if raw_args.first().map(String::as_str) == Some("lint") {
         return run_lint(&raw_args[1..]);
     }
+    if raw_args.first().map(String::as_str) == Some("region") {
+        return run_region(&raw_args[1..]);
+    }
     // Bundled interactive extensions, owned here so they outlive `options`
     // (which borrows them). Registered only when `--extensions` is passed, so
     // the default CLI behavior is unchanged. They are degradation-safe: in
@@ -131,6 +167,7 @@ fn main() -> ExitCode {
     #[cfg_attr(not(feature = "fs"), allow(unused_mut))]
     let mut include_root: Option<String> = None;
     let mut no_includes = false;
+    let mut include_budgets = IncludeBudgets::default();
     let mut input_paths: Vec<String> = Vec::new();
     let mut args = raw_args.into_iter();
     while let Some(arg) = args.next() {
@@ -138,6 +175,7 @@ fn main() -> ExitCode {
             "fmt" if command == Command::Render && input_paths.is_empty() => {
                 command = Command::Fmt;
                 format = OutputFormat::Carve;
+                fmt_align_tables = options.align_tables;
             }
             "flatten" if command == Command::Render && input_paths.is_empty() => {
                 command = Command::Flatten;
@@ -154,6 +192,7 @@ fn main() -> ExitCode {
             "-w" | "--write" if command == Command::Fmt => fmt_write = true,
             "--check" if command == Command::Fmt => fmt_check = true,
             "--align-tables" if command == Command::Fmt => fmt_align_tables = true,
+            "--align-tables" => options = options.with_align_tables(true),
             "--migrate" if command == Command::Fmt => fmt_migrate = true,
             "--stamp" if command == Command::Fmt => fmt_stamp = Some(carve::StampForm::Line),
             "--stamp-block" if command == Command::Fmt => {
@@ -406,6 +445,18 @@ fn main() -> ExitCode {
                     include_root = Some(absolute.unwrap_or(value));
                 }
             }
+            "--max-depth" | "--max-bytes" | "--max-resolver-calls" | "--max-warnings" => {
+                let value = match parse_budget(args.next().as_ref(), &arg) {
+                    Ok(value) => value,
+                    Err(code) => return code,
+                };
+                match arg.as_str() {
+                    "--max-depth" => include_budgets.depth = Some(value),
+                    "--max-bytes" => include_budgets.bytes = Some(value),
+                    "--max-resolver-calls" => include_budgets.resolver_calls = Some(value),
+                    _ => include_budgets.warnings = Some(value),
+                }
+            }
             "--no-raw-html" => options = options.with_raw_html(false),
             // Untrusted input: the resolver MUST be off (includes, "The host
             // resolver"), so --safe also leaves every directive literal.
@@ -436,6 +487,14 @@ fn main() -> ExitCode {
     }
 
     if command == Command::Fmt {
+        if include_budgets.depth.is_some()
+            || include_budgets.bytes.is_some()
+            || include_budgets.resolver_calls.is_some()
+            || include_budgets.warnings.is_some()
+        {
+            eprintln!("carve fmt: include limits do not apply to formatting");
+            return ExitCode::from(2);
+        }
         return run_fmt(
             &input_paths,
             fmt_write,
@@ -447,6 +506,10 @@ fn main() -> ExitCode {
     }
 
     if command == Command::Flatten {
+        if options.align_tables {
+            eprintln!("carve flatten: --align-tables applies only to --carve or fmt");
+            return ExitCode::from(2);
+        }
         // Flatten exists to read includes, so a switch that forbids that is
         // refused rather than ignored (carve-js rejects both flags too).
         if no_includes {
@@ -456,6 +519,7 @@ fn main() -> ExitCode {
         return run_flatten(
             input_paths.first().map(String::as_str),
             include_root.as_deref(),
+            include_budgets,
         );
     }
 
@@ -471,7 +535,10 @@ fn main() -> ExitCode {
         eprintln!("carve: --roundtrip requires --html or --markdown");
         return ExitCode::FAILURE;
     }
-
+    if options.align_tables && format != OutputFormat::Carve {
+        eprintln!("carve: --align-tables requires --carve");
+        return ExitCode::from(2);
+    }
     if enable_extensions {
         options = options
             .with_extension(&details)
@@ -533,6 +600,14 @@ fn main() -> ExitCode {
         },
     };
     if let Some(mode) = stamp_mode {
+        if include_budgets.depth.is_some()
+            || include_budgets.bytes.is_some()
+            || include_budgets.resolver_calls.is_some()
+            || include_budgets.warnings.is_some()
+        {
+            eprintln!("carve: include limits do not apply to stamp queries");
+            return ExitCode::from(2);
+        }
         match carve::read_stamp(&source) {
             None => println!(
                 "unstamped (spec version unknown; this engine targets {})",
@@ -615,7 +690,7 @@ fn main() -> ExitCode {
         && root.is_some()
         && carve::expands_for_target(include_target)
         && (include_root.is_some() || source.contains("{{"));
-
+    let has_include_root = root.is_some();
     // The CLI's include path IS the filesystem resolver, so it compiles out with
     // it. Without the feature the directive stays literal, which is the core
     // behavior, not a degraded one.
@@ -643,6 +718,21 @@ fn main() -> ExitCode {
         let _ = want_includes;
         None
     };
+
+    if (include_budgets.depth.is_some()
+        || include_budgets.bytes.is_some()
+        || include_budgets.resolver_calls.is_some()
+        || include_budgets.warnings.is_some())
+        && (from_json
+            || no_includes
+            || !carve::expands_for_target(include_target)
+            || !has_include_root
+            || !cfg!(feature = "fs")
+            || (want_includes && resolver.is_none()))
+    {
+        eprintln!("carve: include limits require an available include resolver");
+        return ExitCode::from(2);
+    }
 
     let checked_options = carve::CheckedRenderOptions {
         strict: false,
@@ -700,7 +790,8 @@ fn main() -> ExitCode {
         // INCLUDES TAKE THE DOCUMENT PATH, not the source facades below: the
         // pass works on a parsed tree, which is also what carries the file
         // identity each included node keeps.
-        let mut include_options = carve::IncludeOptions::new().with_resolver(resolver);
+        let mut include_options =
+            include_budgets.apply(carve::IncludeOptions::new().with_resolver(resolver));
         if let Some(path) = &input_path {
             include_options = include_options.with_source_path(path.to_string_lossy().into_owned());
         }
@@ -1390,7 +1481,10 @@ fn render_document(
         OutputFormat::Markdown => carve::render_markdown_with_options(&doc, options)?,
         OutputFormat::Plain => carve::render_plain_text_with_options(&doc, options)?,
         OutputFormat::Ansi => carve::render_ansi_with_options(&doc, options)?,
-        OutputFormat::Carve => carve::render_carve(&doc)?,
+        OutputFormat::Carve => carve::render_carve_with_options(
+            &doc,
+            &carve::CarveWriterOptions::default().with_align_tables(options.align_tables),
+        )?,
         OutputFormat::Json => add_ast_version(carve::to_json(&doc)),
     })
 }
@@ -1406,6 +1500,58 @@ fn add_ast_version(json: String) -> String {
         carve::AST_CONTRACT_VERSION,
         &json[trimmed.len()..]
     )
+}
+
+fn run_region(args: &[String]) -> ExitCode {
+    let mut mode = carve::IncludeRegionMode::Carve;
+    let mut operands = Vec::new();
+    for arg in args {
+        match arg.as_str() {
+            "--code" => mode = carve::IncludeRegionMode::Code,
+            "--help" | "-h" => {
+                println!("Usage: carve region [--code] NAME [file]\nPrint the region's 1-based inclusive content lines as JSON.");
+                return ExitCode::SUCCESS;
+            }
+            value if value.starts_with('-') && value != "-" => {
+                eprintln!("carve region: unknown option: {value}");
+                return ExitCode::from(2);
+            }
+            _ => operands.push(arg.as_str()),
+        }
+    }
+    if operands.is_empty() || operands.len() > 2 {
+        eprintln!("carve region: expected NAME [file]");
+        return ExitCode::from(2);
+    }
+    let mut source = String::new();
+    match operands.get(1).copied().unwrap_or("-") {
+        "-" => {
+            if let Err(err) = read_stdin_lossy(&mut source) {
+                eprintln!("carve region: cannot read stdin: {err}");
+                return ExitCode::from(2);
+            }
+        }
+        path => match read_path_lossy(path) {
+            Ok(value) => source = value,
+            Err(err) => {
+                eprintln!("carve region: cannot read {path}: {err}");
+                return ExitCode::from(2);
+            }
+        },
+    }
+    match carve::select_include_region(&source, operands[0], mode) {
+        Ok(region) => {
+            println!(
+                "{}",
+                serde_json::json!({"start": region.start, "end": region.end})
+            );
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("carve region: {}", err.rule());
+            ExitCode::from(1)
+        }
+    }
 }
 
 /// Report constructs that parse and render, but not the way the author meant.
@@ -1432,10 +1578,26 @@ fn run_lint(args: &[String]) -> ExitCode {
     let mut enable_extensions = false;
     let mut enable_citations = false;
     let mut include_root: Option<String> = None;
+    let mut json = false;
+    let mut budgets = IncludeBudgets::default();
     let mut index = 0;
     while index < args.len() {
         let arg = &args[index];
         match arg.as_str() {
+            "--json" => json = true,
+            "--max-depth" | "--max-bytes" | "--max-resolver-calls" | "--max-warnings" => {
+                index += 1;
+                let value = match parse_budget(args.get(index), arg) {
+                    Ok(value) => value,
+                    Err(code) => return code,
+                };
+                match arg.as_str() {
+                    "--max-depth" => budgets.depth = Some(value),
+                    "--max-bytes" => budgets.bytes = Some(value),
+                    "--max-resolver-calls" => budgets.resolver_calls = Some(value),
+                    _ => budgets.warnings = Some(value),
+                }
+            }
             "--extensions" => enable_extensions = true,
             "--include-root" => {
                 index += 1;
@@ -1479,13 +1641,18 @@ fn run_lint(args: &[String]) -> ExitCode {
                 println!(
                     "carve lint - report constructs that parse but do not reach the page\n\n\
                      Usage:\n  \
-                     carve lint [--extensions] [--extension citations] [--include-root DIR] [files]\n\n\
+                     carve lint [--json] [--extensions] [--extension citations] [--include-root DIR] [files]\n\n\
                      Reads stdin when no file is given, or when the file is `-`.\n\n\
                      Options:\n  \
                      --extensions           enable the bundled extensions\n  \
+                     --json                 print one JSON warning per line\n  \
                      --extension citations  enable citation placement lint\n  \
                      --include-root DIR     expand and lint includes within DIR;\n                         \
-                     without it no include target is read\n\n\
+                     without it no include target is read\n  \
+                     --max-depth N          include depth limit\n  \
+                     --max-bytes N          expanded include byte limit\n  \
+                     --max-resolver-calls N resolver call limit\n  \
+                     --max-warnings N       retained include warning limit\n\n\
                      Exit codes:\n  \
                      0   no findings\n  \
                      1   findings reported\n  \
@@ -1504,11 +1671,22 @@ fn run_lint(args: &[String]) -> ExitCode {
         }
         index += 1;
     }
+    if include_root.is_none()
+        && (budgets.depth.is_some()
+            || budgets.bytes.is_some()
+            || budgets.resolver_calls.is_some()
+            || budgets.warnings.is_some())
+    {
+        eprintln!("carve lint: include limits require --include-root");
+        return ExitCode::from(2);
+    }
     run_lint_paths(
         &paths,
         enable_extensions,
         enable_citations,
         include_root.as_deref(),
+        json,
+        budgets,
     )
 }
 
@@ -1517,6 +1695,8 @@ fn run_lint_paths(
     enable_extensions: bool,
     enable_citations: bool,
     include_root: Option<&str>,
+    json: bool,
+    budgets: IncludeBudgets,
 ) -> ExitCode {
     // Only `options.extensions` is read by the linter - `lint_carve_with_options`
     // documents that - so nothing else from the render path is plumbed through
@@ -1592,7 +1772,8 @@ fn run_lint_paths(
         lint_options.extensions = options.extensions.clone();
         if let Some(resolver) = resolver.as_ref() {
             lint_options.lint_includes = Some(
-                carve::IncludeOptions::new()
+                budgets
+                    .apply(carve::IncludeOptions::new())
                     .with_resolver(resolver)
                     .with_source_path(
                         std::fs::canonicalize(label)
@@ -1628,10 +1809,22 @@ fn run_lint_paths(
                         .join(" > ")
                 )
             };
-            println!(
-                "{file}:{}:{} {} — {}{chain}",
-                warning.line, warning.column, warning.rule, warning.message
-            );
+            if json {
+                let included_by = warning.included_by.iter().enumerate().map(|(index, site)| {
+                    serde_json::json!({"file": if index == 0 { label.to_string() } else { display(&site.file) }, "line": site.line, "column": site.column})
+                }).collect::<Vec<_>>();
+                println!(
+                    "{}",
+                    serde_json::json!({"file": file, "includedBy": included_by,
+                    "line": warning.line, "column": warning.column, "rule": warning.rule,
+                    "message": warning.message, "start": warning.start, "end": warning.end})
+                );
+            } else {
+                println!(
+                    "{file}:{}:{} {} — {}{chain}",
+                    warning.line, warning.column, warning.rule, warning.message
+                );
+            }
             findings += 1;
         }
     };
@@ -1700,7 +1893,11 @@ fn run_lint_paths(
 /// cannot be honoured, and silently writing the document back unchanged would
 /// look like it had no includes.
 #[cfg(feature = "fs")]
-fn run_flatten(path: Option<&str>, include_root: Option<&str>) -> ExitCode {
+fn run_flatten(
+    path: Option<&str>,
+    include_root: Option<&str>,
+    budgets: IncludeBudgets,
+) -> ExitCode {
     let (source, source_path) = match path {
         Some(path) if path != "-" => match read_path_lossy(path) {
             Ok(source) => (source, Some(path.to_string())),
@@ -1743,7 +1940,7 @@ fn run_flatten(path: Option<&str>, include_root: Option<&str>) -> ExitCode {
         }
     };
 
-    let mut options = carve::IncludeOptions::new().with_resolver(&resolver);
+    let mut options = budgets.apply(carve::IncludeOptions::new().with_resolver(&resolver));
     if let Some(path) = source_path.as_deref() {
         let absolute =
             std::fs::canonicalize(path).unwrap_or_else(|_| std::path::PathBuf::from(path));
@@ -1783,7 +1980,11 @@ fn run_flatten(path: Option<&str>, include_root: Option<&str>) -> ExitCode {
 /// Without the filesystem resolver there is nothing to flatten AGAINST, so the
 /// command refuses rather than writing the document back unchanged.
 #[cfg(not(feature = "fs"))]
-fn run_flatten(_path: Option<&str>, _include_root: Option<&str>) -> ExitCode {
+fn run_flatten(
+    _path: Option<&str>,
+    _include_root: Option<&str>,
+    _budgets: IncludeBudgets,
+) -> ExitCode {
     eprintln!("carve flatten: needs the `fs` feature, which this build does not have");
     ExitCode::FAILURE
 }
@@ -1925,9 +2126,11 @@ fn print_usage() {
          carve flatten [file]        write the document as ONE self-contained\n                              \
          file, every include expanded in place (the\n                              \
          opposite of fmt, which leaves them alone)\n  \
-         carve lint [--include-root DIR] [files]\n                              \
+         carve lint [--json] [--include-root DIR] [files]\n                              \
          report constructs that render wrong\n                              \
          (exit 1 on findings, 2 if a file cannot be read)\n  \
+         carve region [--code] NAME [file]\n                              \
+         find a named include region (JSON start/end lines)\n  \
          carve merge [--json] BASE OURS THEIRS\n                              \
          merge independent structural edits\n  \
          carve migrate --from FORMAT [options] [file]\n                              \
@@ -1982,6 +2185,10 @@ fn print_usage() {
          emitting them\n  \
          --safe                      for untrusted input: --no-raw-html and\n                              \
          --no-includes together\n  \
+         --max-depth N               include depth limit\n  \
+         --max-bytes N               expanded include byte limit\n  \
+         --max-resolver-calls N      resolver call limit\n  \
+         --max-warnings N            retained include warning limit\n  \
          --profile NAME              restrict features (full|article|comment|minimal)\n  \
          --profile-base-host HOST    base host for the profile link policy\n  \
          --smart-typography MODE     glyph (default), source (all source runs),\n                              \
