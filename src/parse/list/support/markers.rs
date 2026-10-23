@@ -936,12 +936,33 @@ pub(crate) fn nested_ends_with_open_paragraph(
     // A wrapped attribute is one construct wherever its closer sits (carve#3421), so a
     // closer below the column still ends the body on an attribute block.
     let wrapped_attribute_tail = || {
-        nested
-            .lines()
+        let lines: Vec<&str> = nested.lines().collect();
+        let Some(end) = lines.iter().rposition(|line| !is_blank_line(line)) else {
+            return false;
+        };
+        if parse_standalone_attrs(trim_ascii_start(lines[end])).is_some() {
+            return false;
+        }
+        let trimmed: Vec<&str> = lines.iter().map(|line| trim_ascii_start(line)).collect();
+        // The opener must sit at a container's column: the body's own, or a nested
+        // item's content column. Past it, `{.c` is paragraph text.
+        let Some(start) = (0..end)
             .rev()
-            .find(|line| !is_blank_line(line))
-            .is_some_and(|line| parse_standalone_attrs(trim_ascii_start(line)).is_none())
-            && body_ends_with_an_attribute_line(nested)
+            .take_while(|&at| !is_blank_line(lines[at]))
+            .find(|&at| standalone_attrs_block_len(&trimmed[at..=end]) == Some(end - at + 1))
+        else {
+            return false;
+        };
+        let indent = indent_columns(lines[start]);
+        indent == 0
+            || lines[..start].iter().rev().any(|line| {
+                detect_list_marker_full(trim_ascii_start(line)).is_some_and(|marker| {
+                    indent_columns(line)
+                        + (marker.content.as_ptr() as usize
+                            - trim_ascii_start(line).as_ptr() as usize)
+                        == indent
+                })
+            })
     };
     if below_outer_column && wrapped_attribute_tail() {
         return false;
