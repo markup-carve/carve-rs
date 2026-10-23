@@ -537,7 +537,7 @@ impl CarveExtension for TocPlacement {
     }
 
     /// The nav fragment is written at column 0 throughout - see the note in
-    /// [`render_toc_nav`] - so the caller must not indent its first line, or the
+    /// `render_toc_nav` - so the caller must not indent its first line, or the
     /// `<nav>` opener sits a level below the `</nav>` it pairs with.
     ///
     /// Only the nav itself. An authored block written inside the placeholder is

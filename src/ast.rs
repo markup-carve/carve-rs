@@ -29,11 +29,17 @@ use std::ops::{Deref, DerefMut};
 // copying one used to hide that a position was being reused across nodes.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Pos {
+    /// First source line covered by the node, starting at 1.
     pub start_line: usize,
+    /// Last source line covered by the node, starting at 1.
     pub end_line: usize,
+    /// First column on `start_line`, counted in Unicode codepoints from 1.
     pub start_column: usize,
+    /// Exclusive column after the node on `end_line`, counted in Unicode codepoints.
     pub end_column: usize,
+    /// First codepoint offset in the original source, starting at 0.
     pub start_offset: usize,
+    /// Exclusive codepoint offset after the node in the original source.
     pub end_offset: usize,
     /// Identity of the file these coordinates are measured in, when that is NOT
     /// the document being parsed: the canonical id of the file an include
@@ -60,10 +66,12 @@ pub struct Pos {
 pub struct SourceFile(std::sync::Arc<String>);
 
 impl SourceFile {
+    /// Wrap the identifier used for a file included in a document.
     pub fn new(id: impl Into<String>) -> Self {
         Self(std::sync::Arc::new(id.into()))
     }
 
+    /// Borrow the file identifier without cloning it.
     pub fn as_str(&self) -> &str {
         self.0.as_str()
     }
@@ -87,18 +95,27 @@ impl From<&str> for SourceFile {
     }
 }
 
+/// Authored attributes and their source order.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Attrs {
+    /// Explicit node identifier, when the author supplied one.
     pub id: Option<String>,
+    /// Class names in authored order.
     pub classes: Vec<String>,
+    /// Named attribute values, indexed by key.
     pub key_values: BTreeMap<String, String>,
+    /// Order of the identifier, classes, and named attributes in source.
     pub order: Vec<AttrSlot>,
 }
 
+/// An attribute position in [`Attrs::order`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum AttrSlot {
+    /// The explicit identifier.
     Id,
+    /// A class from [`Attrs::classes`].
     Class,
+    /// The named value stored under this key in [`Attrs::key_values`].
     Key(String),
 }
 
@@ -144,13 +161,16 @@ pub struct Frontmatter {
 /// [`Document::try_clone`] / [`Document::try_eq`] for checked operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Document {
+    /// Parsed frontmatter keys and values when the frontmatter can be represented as a map.
     pub frontmatter: BTreeMap<String, String>,
     /// The frontmatter block as written, when the document has one.
     pub frontmatter_raw: Option<Frontmatter>,
+    /// Footnote bodies indexed by their definition labels.
     pub footnote_defs: BTreeMap<String, Vec<BlockNode>>,
     /// Where a footnote definition was WRITTEN, for the definitions whose body
     /// cannot say - keyed by the same label.
     pub footnote_def_pos: BTreeMap<String, Pos>,
+    /// Top-level blocks in document order.
     pub children: Vec<BlockNode>,
     /// UTF-8 byte length of the input before source normalization.
     ///
@@ -485,28 +505,45 @@ fn drain_inline(pending: &mut Vec<DropWork>, inline: &mut InlineNode) {
 /// for the measured small-stack behavior.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BlockNode {
+    /// A heading with a level and inline content.
     Heading(Heading),
+    /// A paragraph of inline content.
     Paragraph(Paragraph),
+    /// A fenced code block.
     CodeBlock(CodeBlock),
+    /// An ordered, unordered, or task list.
     List(List),
+    /// Blocks inside a quoted container.
     BlockQuote(BlockQuote),
+    /// A table and its rows, cells, and caption metadata.
     Table(Table),
+    /// A typed admonition container.
     Admonition(Admonition),
     /// A named container whose kind names GENERATED CONTENT (CARVE-P12-057).
     /// Everything else named is an [`BlockNode::Admonition`]; anonymous or
     /// attribute-only is a [`BlockNode::Div`].
     Directive(Directive),
+    /// An anonymous or attribute-only block container.
     Div(Div),
     /// An explicit section from an interchange document. Source sections are implicit.
     Section(Section),
+    /// Lines grouped as a line block.
     LineBlock(LineBlock),
+    /// Terms and descriptions in a definition list.
     DefinitionList(DefinitionList),
+    /// A figure with a target and optional caption.
     Figure(Figure),
+    /// Figures grouped under one container.
     FigureGroup(FigureGroup),
+    /// An abbreviation definition collected from source.
     AbbreviationDef(AbbreviationDef),
+    /// A link reference definition collected from source.
     LinkReferenceDefinition(LinkReferenceDefinition),
+    /// A citation definition collected from source.
     CitationDefinition(CitationDefinition),
+    /// A raw block with an output format.
     RawBlock(RawBlock),
+    /// A block comment preserved in the AST.
     Comment(Comment),
     /// A block construct an extension owns, carried with a core FALLBACK
     /// (CARVE-P12-055). Interchange-only: Carve 0.1 source spells none, so a
@@ -515,7 +552,9 @@ pub enum BlockNode {
     /// The render-stage carrier a `before_render` rewrite leaves behind. NOT the
     /// schema's `block_extension`, which is [`BlockNode::BlockExtension`].
     ExtensionCarrier(ExtensionCarrier),
+    /// An image placed at block level.
     BlockImage(Image),
+    /// A thematic separator.
     ThematicBreak(ThematicBreak),
 }
 
@@ -1227,37 +1266,66 @@ pub struct ExtensionCarrier {
 /// for the measured small-stack behavior.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InlineNode {
+    /// Ordinary authored text.
     Text(Text),
+    /// Text whose source used an escape.
     EscapedText(EscapedText),
+    /// A punctuation substitution with its source form.
     SmartPunctuation(SmartPunctuation),
+    /// Emphasis, strong text, or another emphasis kind.
     Emphasis(Emphasis),
+    /// Inline code.
     Code(Code),
+    /// A link with inline label content.
     Link(Link),
+    /// An image with alternative text.
     Image(Image),
+    /// An attributed inline container.
     Span(Span),
+    /// Ruby annotations for base text.
     Ruby(Ruby),
+    /// Inline mathematics.
     Math(Math),
+    /// Raw inline content routed to an output format.
     RawInline(RawInline),
+    /// Verbatim prose written with the `!`-prefixed code-span syntax.
     LiteralInline(LiteralInline),
+    /// A named symbol.
     Symbol(Symbol),
+    /// An automatically recognized link.
     AutoLink(AutoLink),
+    /// A reference to a heading, figure, or other target.
     CrossRef(CrossRef),
+    /// A generated caption number.
     CaptionNumber(CaptionNumber),
+    /// A mention node.
     Mention(Mention),
+    /// A tag node.
     Tag(Tag),
+    /// One or more citations.
     CitationGroup(CitationGroup),
+    /// Content owned by an inline extension.
     Extension(InlineExtension),
+    /// An abbreviation use.
     Abbreviation(Abbreviation),
+    /// A footnote reference or inline footnote.
     Footnote(Footnote),
+    /// A space that renderers must keep unbroken.
     NonBreakingSpace(NonBreakingSpace),
+    /// A source line ending represented as a soft break.
     SoftBreak(Break),
     /// Where a `+` continuation row joins content onto a table cell
     /// (CARVE-P12-069). Renders as one space.
     CellWrap(CellWrap),
+    /// A source line ending represented as a hard break.
     HardBreak(Break),
+    /// Inserted text in editorial markup.
     CriticInsert(CriticInsert),
+    /// Deleted text in editorial markup.
     CriticDelete(CriticDelete),
+    /// Replacement text in editorial markup.
     CriticSubstitute(CriticSubstitute),
+    /// An editorial comment.
     CriticComment(CriticComment),
     /// A trailing line comment inside a paragraph (`text %% note`). It renders
     /// to nothing on every target but the canonical Carve writer, and PART 12

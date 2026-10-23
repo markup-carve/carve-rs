@@ -62,7 +62,7 @@ pub(crate) type MathRendererRef<'r> = &'r (dyn Fn(&str, bool) -> String + 'stati
 ///
 /// The map is **open**: a diagram renderer is keyed by the fence's css class
 /// (`mermaid`, `chart`, `graphviz`, `plantuml`, or any custom fence word), so a
-/// custom [`FencedRender`] instance is static-capable without any change to this
+/// custom [`crate::FencedRender`] instance is static-capable without any change to this
 /// type. `math` is the one distinct entry (its closure also takes a display
 /// flag). A caller injects renderers with the builder:
 ///

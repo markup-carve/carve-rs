@@ -436,7 +436,7 @@ impl LinkPolicy {
     ///
     /// `base_host` is the current document's host (for external detection).
     ///
-    /// The scheme is read through [`is_url_probe_skippable`], the renderer's own
+    /// The scheme is read through `is_url_probe_skippable`, the renderer's own
     /// probe class, so this rule and PART 9 §25's answer the same way about a
     /// scheme split by a character a URL consumer discards. That is a
     /// NARROWING: filtering only removes characters, so the deny lists can

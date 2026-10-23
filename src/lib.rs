@@ -9,12 +9,23 @@
 //! assert!(html.contains("<em>italic</em>"));
 //! ```
 //!
+//! Use [`parse`] and [`render_html`] when a caller needs the AST between those
+//! steps. [`from_json`] reads the public AST exchange format, and [`try_to_json`]
+//! reports serialization failures for caller-built trees. HTML and BBCode
+//! importers, and importer functions named `try_*`, return fallible results.
+//!
+//! File inclusion can be run through [`prepare_doc_with_includes`] or as a
+//! separate pass through [`includes::expand_includes`].
+//! The `fs` feature enables the built-in filesystem resolver; disabling default
+//! features leaves resolver choice with the host.
+//!
 //! Implementation status: passes every `.crv` / `.html` pair currently
 //! checked into this crate's `tests/spec` submodule, including tables,
 //! captions / figures, admonitions, abbreviations, mentions, tags,
 //! inline extensions, attributes, and frontmatter.
 
 mod abbr_budget;
+/// Accessibility lint for Carve source.
 pub mod accessibility;
 pub mod ast;
 pub mod ast_envelope;
@@ -34,6 +45,7 @@ mod extension;
 pub mod extensions;
 pub mod html_import;
 mod include_walk;
+/// Opt-in file inclusion with host-supplied resolution and diagnostics.
 pub mod includes;
 pub mod incremental;
 mod index_budget;
@@ -45,6 +57,7 @@ pub use markdown_assessment::take_attribute_opener_scan_bytes;
 mod markdown_gfm_autolinks;
 pub mod markdown_import;
 mod markdown_strike;
+/// Import and migration results for supported source formats.
 pub mod migration;
 mod parse;
 pub mod profile;
@@ -71,6 +84,7 @@ mod source_patch;
 #[path = "source/source_positions.rs"]
 mod source_positions;
 mod stamp;
+/// Chunked HTML output on a fast path that may return `NeedsAst`.
 pub mod stream;
 #[path = "table/table_display_width.rs"]
 mod table_display_width;
