@@ -53,6 +53,17 @@ fn a_list_item_at_the_quote_column_is_not_pulled() {
 }
 
 #[test]
+fn a_stacked_quote_takes_a_list_at_its_owning_quote_column() {
+    let expected =
+        "<ul><li><blockquote><blockquote><ul><li>s</li></ul></blockquote></blockquote></li></ul>";
+    assert_eq!(flat("- > +\n  > - s\n"), expected);
+    assert_eq!(
+        flat("> - > +\n>   > - s\n"),
+        format!("<blockquote>{expected}</blockquote>")
+    );
+}
+
+#[test]
 fn an_attached_colon_fence_closes_at_its_indented_closer() {
     for (source, expected) in [
         (

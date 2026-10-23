@@ -810,14 +810,21 @@ impl Classifier {
                 follower.map_or(usize::MAX, |line| source_column(line, Some(owner.depth)));
             let opener_column =
                 follower.map_or(usize::MAX, |line| source_column(line, Some(depth)));
-            // A stacked quote opener (`- > +`, `- > > +`, `- - > +`) takes a non-list follower at
-            // column 0, its line's column, or the column of the innermost `>`, which owns the `+`;
-            // an intervening opener's column is refused (carve#3421).
+            // A stacked quote opener takes a non-list follower at column 0, its line's column,
+            // or the column of the innermost `>`. A list at that last column attaches only when
+            // it carries the owning quote marker (carve#3421, carve#3544).
             let stacked_quote = owner.kind == Kind::Quote && openers_on_line >= 2;
+            let list_at_owning_quote = stacked_quote
+                && follower.is_some_and(|line| {
+                    let raw = stacked_follower_column(line, &self.lines[index], depth);
+                    Some(raw) == inner_quote_marker_column
+                        && quote_body(line).0 >= owner.depth
+                        && detect_list_marker_full(follower_body).is_some()
+                });
             let at_column = if stacked_quote {
                 follower.is_some_and(|line| {
                     let raw = stacked_follower_column(line, &self.lines[index], depth);
-                    detect_list_marker_full(follower_body).is_none()
+                    (detect_list_marker_full(follower_body).is_none() || list_at_owning_quote)
                         && (raw == 0
                             || raw == column
                             || Some(raw) == inner_quote_marker_column
@@ -864,7 +871,8 @@ impl Classifier {
             let at_column = at_column && !outside_quote;
             let sibling = matches!(owner.kind, Kind::List | Kind::Quote)
                 && (follower_column == owner.column || opener_column == column)
-                && detect_list_marker_full(follower_body).is_some();
+                && detect_list_marker_full(follower_body).is_some()
+                && !list_at_owning_quote;
             // CARVE-P9-067: a note's or a description's first-block form pulls no column-0 list.
             let column_zero_list = matches!(owner.kind, Kind::Footnote | Kind::Description)
                 && follower.is_some_and(|line| {

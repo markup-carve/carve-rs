@@ -11,6 +11,10 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
+### Fixes
+
+- A stacked quote's first-block `+` takes a list at the owning quote's column (markup-carve/carve#3544).
+
 ## [0.1.11] - 2026-10-23
 
 ### Breaking
