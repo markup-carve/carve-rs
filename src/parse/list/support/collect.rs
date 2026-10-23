@@ -250,9 +250,24 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                     )
                 })
                 .max(start + 1);
+            // A fence attached below an indented `+` line closes only at its own column; a
+            // line below it has left the item and is payload, never its closer (carve#3421).
+            let fence_column = detect_fence_open(trim_ascii_start(cur.lines.at(start)))
+                .map(|_| indent_columns(cur.lines.at(start)))
+                .filter(|&column| {
+                    column >= strip_cols && indent_columns(cur.lines.at(start - 1)) > 0
+                });
             while cur.pos < end {
-                let (body, consumed, synthetic) =
-                    slice_columns_mapped(cur.lines.at(cur.pos), strip_cols, true);
+                let raw = cur.lines.at(cur.pos);
+                let (body, consumed, synthetic) = slice_columns_mapped(raw, strip_cols, true);
+                let body = if cur.pos > start
+                    && fence_column
+                        .is_some_and(|column| !is_blank_line(raw) && indent_columns(raw) < column)
+                {
+                    format!("{LAZY}{}", trim_ascii_start(raw))
+                } else {
+                    body
+                };
                 lines.push(body);
                 reached.push(false);
                 if building_maps {
@@ -1690,9 +1705,11 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 && !descendant_shape
                 && indent > strip_cols
                 && cur.pos > 0
-                && marker_line_columns
+                && nested_item_columns
                     .last()
-                    .is_some_and(|&column| indent < column)
+                    .map(|&(_, column)| column)
+                    .or(marker_line_columns.last().copied())
+                    .is_some_and(|column| indent < column)
                 && {
                     let mut prior =
                         innermost_marker_content(trim_ascii_start(cur.lines.at(cur.pos - 1)));

@@ -35,3 +35,27 @@ fn a_fence_closed_inside_the_item_still_opens() {
         "<ul><li><ul><li><blockquote><p>x</p></blockquote></li></ul><pre><code>y</code></pre></li></ul>",
     );
 }
+
+#[test]
+fn a_fence_below_an_indented_quote_plus_and_a_nested_item_quote() {
+    for (source, expected) in [
+        (
+            "- a\n  > +\n  ```\nx\n```\n",
+            "<ul><li>a<blockquote><pre><code>x```</code></pre></blockquote></li></ul>",
+        ),
+        (
+            "- a\n  > +\n  ```\n  x\n  ```\n",
+            "<ul><li>a<blockquote><pre><code>x</code></pre></blockquote></li></ul>",
+        ),
+        (
+            "- a\n  - > +\n   ```\nx\n```\n",
+            "<ul><li>a<ul><li><blockquote><p>+<code>x</code></p></blockquote></li></ul></li></ul>",
+        ),
+        (
+            "- - > +\n    ```\nx\n```\n",
+            "<ul><li><ul><li><blockquote><pre><code>x</code></pre></blockquote></li></ul></li></ul>",
+        ),
+    ] {
+        assert_eq!(flat(source), expected, "{source:?}");
+    }
+}
