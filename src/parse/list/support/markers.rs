@@ -933,6 +933,19 @@ pub(crate) fn nested_ends_with_open_paragraph(
     below_outer_column: bool,
     options: &Options<'_>,
 ) -> bool {
+    // A wrapped attribute is one construct wherever its closer sits (carve#3421), so a
+    // closer below the column still ends the body on an attribute block.
+    let wrapped_attribute_tail = || {
+        nested
+            .lines()
+            .rev()
+            .find(|line| !is_blank_line(line))
+            .is_some_and(|line| parse_standalone_attrs(trim_ascii_start(line)).is_none())
+            && body_ends_with_an_attribute_line(nested)
+    };
+    if below_outer_column && wrapped_attribute_tail() {
+        return false;
+    }
     if !below_outer_column
         && (body_ends_with_an_attribute_line(nested)
             || quoted_body_ends_with_an_invisible_line(nested)

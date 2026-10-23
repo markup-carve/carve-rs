@@ -120,6 +120,7 @@ which the published crate does not carry.
 - A first-block `+` inside a colon div reads the same with and without source positions, so a stacked quote `+` there attaches its follower in plain rendering too. (#3083, markup-carve/carve#3421)
 - A first-block list `+` in a quote (`> - +`, `- > - +`) takes no follower the quote does not reach: its item stays empty, the quote ends, and a paragraph below it joins the enclosing item. (#3087, markup-carve/carve#3421)
 - A quote `+` on its own line in an item takes no column-0 block that has left the item, a hosted stacked `+` attaches a column-0 block at any quote depth and after a sibling item's lazy line, and a quoted `- +` ends the quote only when it opened an item. (#3090, markup-carve/carve#3421)
+- A wrapped attribute opened at a nested item's column is one construct for the outer item too, so `- a` / `  - b` / `    {.c` / `}` / `para` ends the list before `para`. (#PRNUM, markup-carve/carve#3421)
 - Attach the block at its column to a `> +` that opens a quote on its own line in a list item or description. (markup-carve/carve#3421)
 
 ### Source positions

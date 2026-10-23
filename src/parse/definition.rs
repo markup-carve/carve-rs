@@ -1147,7 +1147,7 @@ pub(in crate::parse) fn collect_definition_body(
                     lines.push(trim_ascii_start(next).to_owned());
                     line_map.push(cur.source_line(cur.pos));
                     col_map.push(None);
-                    reached.push(indent_columns(next) >= content_column);
+                    reached.push(true);
                     cur.consume();
                 }
                 continue;

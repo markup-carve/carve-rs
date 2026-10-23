@@ -1788,7 +1788,10 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         cur.consume();
         // A wrapped attribute opened at the content column is one construct: its
         // later lines belong to it at any column (carve#3421).
-        let wrapped_attribute = (indent == strip_cols
+        let wrapped_attribute = ((indent == strip_cols
+            || nested_item_columns
+                .iter()
+                .any(|&(_, column)| column == indent))
             && !opaque_here
             && fence.is_none()
             && trim_ascii_start(line).starts_with('{')
@@ -1805,8 +1808,13 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         }
         for _ in 1..wrapped_attribute.unwrap_or(1) {
             let next = cur.lines.at(cur.pos);
-            lines.push(trim_ascii_start(next).to_owned());
-            reached.push(indent_columns(next) >= strip_cols);
+            // Kept at the opener's column, so a reparse reads them inside its container.
+            lines.push(format!(
+                "{}{}",
+                " ".repeat(indent - strip_cols),
+                trim_ascii_start(next)
+            ));
+            reached.push(true);
             if building_maps {
                 line_map.push(cur.source_line(cur.pos));
                 col_map.push(None);

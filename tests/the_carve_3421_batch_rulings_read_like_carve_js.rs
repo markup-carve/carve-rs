@@ -197,4 +197,19 @@ fn a_quote_plus_below_an_item_line_attaches_at_depth_and_after_a_sibling() {
     assert!(lint
         .iter()
         .all(|warning| warning.rule != "continuation-marker-refused"));
+fn a_wrapped_attribute_in_a_nested_item_is_one_construct_for_the_outer_item() {
+    check(&[
+        (
+            "- a\n  - b\n    {.c\n}\npara\n",
+            "<ul><li>a<ul><li>b</li></ul></li></ul><p>para</p>",
+        ),
+        (
+            "- a\n  - b\n\n    {.c\n}\npara\n",
+            "<ul><li>a<ul><li>b</li></ul></li></ul><p>para</p>",
+        ),
+        (
+            "- a\n  - b\n    {.c\n}\n    para\n",
+            "<ul><li>a<ul><li>b<pclass=\"c\">para</p></li></ul></li></ul>",
+        ),
+    ]);
 }
