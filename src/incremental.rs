@@ -51,7 +51,7 @@ pub struct IncrementalParse {
     pub node_identity: Option<crate::NodeIdentity>,
 }
 
-/// Invalid or overlapping text changes supplied to [`reparse`].
+/// Invalid text changes or a node identity retention failure during [`reparse`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IncrementalParseError(pub String);
 

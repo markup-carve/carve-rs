@@ -1286,9 +1286,9 @@ impl RawBlock {
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// A block or inline comment preserved in the AST.
 pub struct Comment {
-    /// Whether the comment occupies a block.
+    /// Whether the comment uses a fenced, multiline form.
     pub block: bool,
-    /// Whether the comment has a closing `%%` rather than ending at the line.
+    /// Whether the comment uses the inline `{% ... %}` form.
     pub delimited: bool,
     /// Literal content.
     pub content: String,
