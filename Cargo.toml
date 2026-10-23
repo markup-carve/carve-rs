@@ -76,6 +76,10 @@ name = "suite"
 path = "tests/suite/main.rs"
 
 [[test]]
+name = "public_api_paths"
+path = "tests/public_api_paths.rs"
+
+[[test]]
 name = "perf_regressions"
 path = "tests/perf_regressions.rs"
 
