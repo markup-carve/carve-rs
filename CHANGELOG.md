@@ -11,7 +11,7 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
-## [0.1.11] - 2026-10-21
+## [0.1.11] - 2026-10-23
 
 ### Breaking
 
@@ -19,143 +19,46 @@ which the published crate does not carry.
 - Public struct literals need the new `Options.align_tables`, `Options.lint_includes`, `IncludeWarning.included_by`, `IncludeResult.included`, and `LintWarning.file` and `.included_by` fields. The new code-include and lint modes use these fields (#2888, #2890, #2900).
 - `IncludeDenial` gains a `NonText` variant for invalid UTF-8 includes. Exhaustive matches need another arm (#2885).
 
-### Includes and safety
+### Fixes
 
-- Convert a {table} csv/tsv code include as an authored fence. (#2893)
-- Keep a region marker on its line through fmt. (#2899)
-- Fix the include-root help line and document it for lint. (#2906)
-- Refuse a repeated include option and see through a leading BOM. (#2910)
-- Report a lint include cycle closed by a code include, with no chain at top level. (#2913)
-- Keep definitions inside a region and report the authored fragment. (#2914)
-- Lint a CR/CRLF CSV include over the content the renderer converts. (#2915)
-- Keep a @lines or @region Carve include linear in its line count. (#2917)
-- Keep a code include's blank last line and end its span after the last line. (#2919)
-- Find region markers in every container when keeping definitions in place. (#2922)
+- A quote-prefixed `+` needs one space after each `>`: `>+`, `>>+` and `>> +` read as text (#3065, markup-carve/carve#3421).
+- A `> +` on its own line in a list item or description attaches the block at its column (#3069, markup-carve/carve#3421).
+- A `> +` on an item's marker line attaches a heading, fence or table at the quote's column, and its refused `+` takes a lazy line like a letter (#3075, markup-carve/carve#3529).
+- A stacked `- - > +` or `- > > +` refuses a follower at an outer item's column, so the `+` reads as text (#3079, markup-carve/carve#3421).
+- A stacked quote `+` attaches a block at the innermost `>` column and a column-0 quote as a nested quote (#3081, #3093, markup-carve/carve#3421).
+- A first-block `+` inside a colon div reads the same with and without source positions (#3083).
+- A first-block list `+` in a quote takes no follower the quote does not reach (#3087, markup-carve/carve#3421).
+- A quote `+` in an item takes no column-0 block that has left the item; a quoted `- +` ends the quote only when it opened an item (#3090).
+- A wrapped attribute opened at a nested item's column ends the list for the outer item too (#3091).
+- A wrapped attribute past a description's column is paragraph text, and a list marker below an empty `- +` item starts a list (#3092).
+- An unclosed fence-shaped line below a quote opened on an item's marker line is lazy text (#3095).
+- Deep quote `+` followers, misaligned `>` below a hosted `+`, and an indented quote `+` fence read as ruled (#3096, #3097, #3098).
+- An unclosed fence that a first-block `+` attaches ends at a blank line and keeps an empty last line (#3101, #3102).
+- A hosted nested quote with `> +` reads like its top-level twin; a quote after `> +` attaches to a quoted description or footnote (#3076, #3068, markup-carve/carve#3418, markup-carve/carve#3525).
+- Description separators below their column: fold a `::` into the open term, keep a separator at the item's content column as item text, and end a quoted item at a `:` on its marker column (#3060, #3078, #2995, markup-carve/carve#3474).
+- End a nested item at its marker column under an open term (#3070, markup-carve/carve#3473); open a block below a description list item at its authored base (#3077, markup-carve/carve#3450).
+- Column-0 lists stay outside first-block footnotes and descriptions; an empty unterminated nested fence stays empty before a column-0 `+` (#3053, #3072, #3071).
+- Continuation markers read only at column 0 or right after a block opener, at relative column 0, and not under an open fence (#2951, #3003, #2938, #2939, #2943, #3022).
+- Container ownership follows the spec clauses for quotes, lazy lines, comments, colon divs and duplicate footnotes (#2926, #3014, #3017, #3018, #3021, #3024, #3038).
+- Fences in nested containers: host boundary, below-column closers, footnote bounds and folded text (#2879, #2927, #2929, #2932, #3004, #3008, #3016, #3032, #3035, #3039, #3042, #3044).
+- List tightness across captions and nested lists; captionable hosts attach in list items (#2881, #2889, #2923).
+- A tab-placed sublist starts on a real column, and a stripped authored base counts in codepoints (#2979, #2984).
+- Link definitions, tables and paragraphs after invisible or nested blocks in list items and descriptions (#2996, #2997, #2998).
+- Authored spans for nested fences and quotes (#3030).
+- Includes: refuse a repeated include option, see through a BOM, keep definitions and region markers in place, keep a code include's blank last line, and lint CR/CRLF CSV includes as rendered (#2899, #2906, #2910, #2913, #2914, #2915, #2919, #2922).
+- Lint no longer calls a block at a description's content column inside a list item overindented (#3062).
+- Markdown import keeps destinations, autolink brackets and pipe escapes as written, keeps items tight above captioned blocks, and reaches a fmt fixed point (#2924, #2931, #2935, #2944, #2950, #2953, #2957, #2964, #2976, #2981, #2982, #3028).
+- Markdown migration resolves heading fragments (#2891); BBCode quote attribution reads as ruled (#2920); fmt stays idempotent on a block comment under a term-led item (#2916).
+- HTML import's recursive frames fit a 2 MiB stack (#2985).
 
-### Lint
+### Improvements
 
-- Lint a bare key one edit from a consumed key. (#2905)
-- Lint an unclosed code fence and a refused continuation marker. (#2941)
-- Lint the two ordered-list column traps of explicit numbers. (#2962)
-- Lint: report a list marker below the content column after a blank line. (#2969)
-- Lint a description separator below its definition list column. (#3056)
-- Lint: report the first-block `+` of a footnote or description refused above a column-0 list as `continuation-marker-refused`. (#3057; markup-carve/carve#3482)
-- Lint: do not report a block at the content column of a description inside a list item as overindented. (#3062)
-- Lint: say what a refused first-block `+` leaves behind and report a refused first-block `> +`. (#3061; markup-carve/carve#3524)
-- Lint: report a quote-prefixed `+` that a list item at the same quote level leaves as text, as carve-js does. (markup-carve/carve#3421)
-- Lint: report a document-level `+` no container claims only when a block follows it, not before paragraph text, and name the quote an unclaimed quoted `+` stays in. (#3080, markup-carve/carve#3421)
-- Lint: report a wrapped block attribute that reaches no block, as its one-line twin is reported. (#3099, #3094)
-
-### Formatting and migration
-
-- Report dropped BBCode quote user IDs. (#2886)
-- Resolve Markdown heading fragments during migration. (#2891)
-- Report dropped quote attribution fields as bbcode-quote-field-dropped. (#2892)
-- Use ruled BBCode quote field-loss code. (#2894)
-- Report case-only fragment rewrites as link-fragment-case-rewritten fixups. (#2898)
-- Keep fmt idempotent on a block comment under a term-led list item. (#2916)
-- Read a BBCode quote attribution the way the spec rules it. (#2920)
-- Fix: keep Markdown destination brackets and unwrap a lone image in the assessor. (#2924)
-- Keep a Markdown destination as written, and a bracketed autolink in angle form. (#2931)
-- Keep a Markdown autolink's brackets in its destination. (#2935)
-- Keep a Markdown destination's characters as Carve reads them. (#2944)
-- Assess a literal pipe in a Markdown link destination. (#2950)
-- Assess a table pipe escape at the row level, as GFM unescapes it. (#2953)
-- Fix: assess table pipe shapes completely and report dropped extra cells. (#2957)
-- Read a backslash run before a table pipe like cmark-gfm. (#2964)
-- Fix: make two Markdown imports a fmt fixed point. (#2976)
-- Perf: scan destination attributes in one pass during Markdown assessment. (#2980)
-- Fix(markdown): keep an item tight above a captioned quote or fence. (#2981)
-- Fix(markdown): keep the blank below a nested list before an image. (#2982)
-- Fix: keep HTML import's recursive frames small enough for a 2 MiB stack. (#2985)
-- Fix empty list term carrier in Markdown roundtrip. (#3028)
-
-### Parsing
-
-- A quote-prefixed `+` needs one space after each `>`: `>+`, `>>+` and `>> +` read as text, and a `> +` attaches a following quote to the item, description, note or inner quote at its column. Lint names the right host for a quote-prefixed `+` inside a list item (markup-carve/carve#3421).
-- Fold a `::` below a nested definition list's column into the open term, and end a quoted item at a `:` on its marker column. (#3060)
-- Fix: honor nested fence host boundary. (#2879)
-- Keep list items tight across attached captions. (#2881)
-- Attach captionable hosts in list items. (#2889)
-- Keep a list tight across a caption's blank line after a nested list. (#2923)
-- Read container documents by their ownership clauses. (#2926)
-- Keep the outer item tight when a fence run dedents out of a child. (#2927)
-- Keep the blank after an unterminated fence in a nested list item. (#2929)
-- Loosen the outer item when a fence run folds after a continuing child paragraph. (#2932)
-- Attach the block after a + below a nested item's open fence. (#2938)
-- Skip a refused + under an open fence, end an open div at a +, and keep a folded child open. (#2939)
-- Read a + under an outer quote prefix as the nested quote's marker. (#2943)
-- Read a continuation marker only at column 0 or right after a block opener. (#2951)
-- Fix(parser): start a tab-placed sublist on a real column. (#2979)
-- Fix(parser): count a stripped authored base in codepoints. (#2984)
-- Fix: keep a description separator out of an item's definition list below its column. (#2995)
-- Fix: read an empty link definition past an item's content column. (#2996)
-- Fix: open a table after an invisible definition in a list item. (#2997)
-- Fix: continue the deepest open paragraph after a nested list below a description. (#2998)
-- Read the continuation marker at relative column 0. (#3003)
-- Keep matched fences outside footnotes after comments. (#3004)
-- Keep below-column fence closers in definition descriptions. (#3008)
-- Fix ruled continuation ownership in nested containers. (#3014)
-- Keep description fences within their closing container. (#3016)
-- Fix nested description and list ownership by column. (#3017)
-- Keep quoted definitions within their list owner. (#3018)
-- Open sibling list below a hosted description column. (#3021)
-- Keep literal plus at safe column after nested task fences. (#3022)
-- Place marker-line definition terms at the item content column. (#3024)
-- Let folded fence text loosen later list paragraphs. (#3032)
-- Keep deep nested description fence with its owner. (#3035)
-- Release deeper list markers to the surviving description. (#3038)
-- Keep a separator at or past the owning item's content column, below its definition list, as interruptible item text. (#3078, markup-carve/carve#3474)
-- End a nested item at its marker column under an open term, and leave a definition list that ends a nested item at a flush separator. (#3070, markup-carve/carve#3473)
-- Collect overindented quoted note bodies at their authored base. (#3039)
-- Keep outer-column fences outside nested list items. (#3042)
-- Bound description fence search at footnote definitions. (#3044)
-- Keep column-zero lists outside first-block footnotes and descriptions. (#3053, markup-carve/carve#3482)
-- Keep an empty unterminated nested fence empty before a column-0 `+`. (#3072, #3071)
-- Read a hosted nested quote with `> +` like its top-level twin, in list items and descriptions. (#3076, markup-carve/carve#3418)
-- Open a block below a description list item at an authored base in the description, not as item text. (#3077, markup-carve/carve#3450)
-- Attach a quote after `> +` to a quoted description or footnote, as in a quoted list item. (#3068, markup-carve/carve#3525)
-- A `> +` on an item's marker line attaches a heading, fence or table at the quote's column, pulls no list item there, and its refused `+` takes a lazy line like a letter. (#3075, markup-carve/carve#3421, markup-carve/carve#3529)
-- A stacked `- - > +` or `- > > +` refuses a follower at an outer item's column, so the `+` folds it in like a letter (`+ b`). (#3079, markup-carve/carve#3421)
-- A stacked quote `+` takes a block at the innermost `>`'s column and a column-0 quote as a nested quote, attaches a column-0 block inside a host quote, and a wrapped attribute at an item's or description's column keeps its later lines at any column. (#3081, markup-carve/carve#3421)
-- A first-block `+` inside a colon div reads the same with and without source positions, so a stacked quote `+` there attaches its follower in plain rendering too. (#3083, markup-carve/carve#3421)
-- A first-block list `+` in a quote (`> - +`, `- > - +`) takes no follower the quote does not reach: its item stays empty, the quote ends, and a paragraph below it joins the enclosing item. (#3087, markup-carve/carve#3421)
-- A quote `+` on its own line in an item takes no column-0 block that has left the item, a hosted stacked `+` attaches a column-0 block at any quote depth and after a sibling item's lazy line, and a quoted `- +` ends the quote only when it opened an item. (#3090, markup-carve/carve#3421)
-- A wrapped attribute opened at a nested item's column is one construct for the outer item too, so `- a` / `  - b` / `    {.c` / `}` / `para` ends the list before `para`. (#3091, markup-carve/carve#3421)
-- A wrapped attribute opened past a description's column is paragraph text, and a list marker below the column of an empty `- +` item starts a list instead of folding into the item. (#3092, markup-carve/carve#3421)
-- A stacked quote `+` takes any block at its innermost `>` column, takes no column-0 block below an indented host quote, and stays text when nothing follows it in its body. (#3093, markup-carve/carve#3421)
-- An unclosed fence-shaped line below a quote that an item's marker line opens (`- - > x` / `   ```) is lazy text of the quote's paragraph. (#3095, markup-carve/carve#3421)
-- A quote `+` four or more levels deep takes a follower carrying its first marker into the innermost quote, a misaligned `>` below a hosted stacked `+` is no host prefix, and a fence attached below an indented quote `+` closes only at its own column. (#3096, markup-carve/carve#3421)
-- A quote marker past the column below a quoted list `+` it refused (`- a` / `  > - - +` / `   > q`) is item text, not a quote. (#3097, markup-carve/carve#3421)
-- A nested item takes a column-0 paragraph after its marker line's quote ends in a list `+`, a column-0 fence attached to a nested first-block `+` keeps its payload, and an aligned quote marker carries a deep quote `+` follower in an item. (#3098, markup-carve/carve#3421)
-- An unclosed fence a first-block `+` attaches ends with the attached block when a blank line follows, and takes the rest of its container only when none does. (#3101, markup-carve/carve#3421)
-- An unclosed fence a quote's first-block `+` attaches keeps an empty last line unless the document ends on its last line. (#3102, markup-carve/carve#3421)
-- Attach the block at its column to a `> +` that opens a quote on its own line in a list item or description. (markup-carve/carve#3421)
-
-### Source positions
-
-- Fix authored spans for nested fences and quotes. (#3030)
-
-### Performance and internals
-
-- Check grapheme extenders without the regex engine. (#2930)
-- Allow Unicode text on borrowed HTML layout route. (#2933)
-- Pin the layout guard's alphanumeric check to a generated table. (#2945)
-- Speed up short plain text in Rust AST parsing. (#2954)
-- Speed up plain ASCII table row splitting. (#2961)
-- Perf: skip occupied sentinel scan when defaults are free. (#2974)
-- Speed up plain AST list marker detection. (#2994)
-- Split Rust list parsing into focused modules. (#3006)
-- Split remaining Rust parser regions into modules. (#3007)
-- Perf(parser): shortcut short Unicode plain text. (#3012)
-- Move Rust block parsing helpers into modules. (#3013)
-- Extract Rust parser cursor and source positions. (#3015)
-- Separate Rust parser column tracking and unit tests. (#3019)
-- Split parser inline and prepass modules by responsibility. (#3047)
-- Extract list finalization from the parser loop. (#3050)
-- Derive list item looseness from parsed child ownership instead of rescanning source lines. (#3046)
-- Share indentation-body admission across list, description, and footnote collectors. (#3049)
-- Pin the spec corpus to carve `54528118` and cover four new fence and container cases. (#3048)
+- `carve fmt --align-tables` and `Options.align_tables` pad table cells to display width (#2888).
+- Include a file or region as a code block; a `{table}` csv/tsv code include converts as an authored fence (#2890, #2893).
+- Lint follows includes when an include root is given (#2900).
+- New lint reports: a bare key one edit from a consumed key, an unclosed fence, ordered-list column traps, list markers and description separators below their column, refused or unclaimed `+` markers, and a wrapped attribute that reaches no block (#2905, #2941, #2962, #2969, #3056, #3057, #3061, #3074, #3080, #3099, #3094, markup-carve/carve#3482, markup-carve/carve#3524).
+- BBCode import reports dropped quote user IDs and attribution fields; Markdown import reports case-only fragment rewrites (#2886, #2892, #2894, #2898).
+- Faster parsing and rendering for plain text, Unicode text, table rows, list markers, includes with `@lines`/`@region`, and Markdown assessment (#2917, #2930, #2933, #2954, #2961, #2974, #2980, #2994, #3012).
 
 ## [0.1.10] - 2026-10-16
 

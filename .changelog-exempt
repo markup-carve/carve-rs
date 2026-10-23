@@ -32,3 +32,17 @@
 2552: reverts a regression #2526 introduced in this unreleased window (dollar math on Markdown import); no release ever read dollars as math.
 2685: fixes a timing regression #2679 introduced in this unreleased window (cell wrap lookup); no release had it.
 2829: comments only in src/render_carve.rs and src/sentinel_run.rs; no behavior changed.
+2945: fixes a Rust 1.75 test failure #2933 introduced in this unreleased window; the layout guard's accepted inputs match what #2933's entry describes.
+3006: Rust list parsing split into modules. No public path or behavior moved.
+3007: remaining parser regions split into modules. No public path or behavior moved.
+3013: block parsing helpers moved into modules. No public path or behavior moved.
+3015: parser cursor and source positions extracted into modules. No public path or behavior moved.
+3019: parser column tracking and unit tests separated. No public path or behavior moved.
+3046: list looseness derived from parsed child ownership instead of a source rescan; AST shapes and rendering unchanged.
+3047: parser inline and prepass modules split by responsibility. No public path or behavior moved.
+3049: list, description and footnote body admission share one indentation loop; host policies and output unchanged.
+3050: list finalization extracted from the parser loop. No behavior moved.
+3073: import and helper modules grouped by feature. The public API diff against 0.1.10 shows no removed or moved path.
+3084: Djot unit tests moved into child modules. Test-only.
+3085: large source modules split. The public API diff against 0.1.10 shows no removed or moved path.
+3088: doc comments only on the public AST and crate root; no code moved.
