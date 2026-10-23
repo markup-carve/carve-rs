@@ -658,7 +658,7 @@ pub struct List {
     /// Bullet character as authored: `-` or `*` (unordered lists only).
     /// Same §11 semantics as `delim`; `None` falls back to `-`.
     pub bullet_char: Option<char>,
-    /// Whether item paragraphs render without separating blank lines.
+    /// Whether item paragraphs render without `<p>` wrappers.
     pub tight: bool,
     /// Items in source order.
     pub items: Vec<ListItem>,
@@ -1288,7 +1288,7 @@ impl RawBlock {
 pub struct Comment {
     /// Whether the comment occupies a block.
     pub block: bool,
-    /// Whether the source used explicit comment delimiters.
+    /// Whether the comment has a closing `%%` rather than ending at the line.
     pub delimited: bool,
     /// Literal content.
     pub content: String,
@@ -1678,7 +1678,7 @@ pub const GLYPHS: &[(&str, &str)] = &[
     ("trademark", "™"),
 ];
 
-/// Return the resolved glyph or a source fallback.
+/// Return the node's glyph, else the built-in glyph for its kind, else the source spelling.
 pub fn smart_punctuation_glyph(node: &SmartPunctuation) -> &str {
     node.glyph.as_deref().unwrap_or_else(|| {
         GLYPHS

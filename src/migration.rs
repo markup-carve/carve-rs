@@ -64,9 +64,9 @@ pub struct MigrationReport {
     pub source_format: SourceFormat,
     /// HTML import mode, when the input was HTML.
     pub mode: Option<HtmlImportMode>,
-    /// HTML source adapter, when one was used.
+    /// HTML source adapter, when the input was HTML.
     pub adapter: Option<HtmlImportAdapter>,
-    /// Findings in source order.
+    /// Findings in the order reported by the importer.
     pub diagnostics: Vec<MigrationDiagnostic>,
 }
 

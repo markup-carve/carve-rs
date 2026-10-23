@@ -268,20 +268,25 @@ jobs:
       - run: RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps
 
   semver:
-    name: Public API compatibility report
+    name: Public API compatibility report against 0.1.10
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           submodules: recursive
       - uses: obi1kenobi/cargo-semver-checks-action@v2
+        id: semver
+        continue-on-error: true
         with:
           package: carve-lang
-          baseline-rev: e05191f660461533edfe9d7e1bbef3a5fcb01b1f
+          baseline-version: 0.1.10
           release-type: patch
+      - name: Summarize API comparison
+        run: |
+          echo "SemVer comparison outcome: ${{ steps.semver.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "The report compares against 0.1.10 and includes changes planned for 0.1.11. Review the action log for details." >> "$GITHUB_STEP_SUMMARY"
 
   seam-matrix:
     name: Seam matrix covers every shape family

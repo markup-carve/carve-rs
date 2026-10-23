@@ -98,7 +98,8 @@ pub struct IncludeWarning {
 /// Source location of one directive in an include chain.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct IncludeSite {
-    /// Identity of the file containing the directive.
+    /// Identity of the file containing the directive, or an empty string when
+    /// the root document has no source path.
     pub file: String,
     /// Source line of the directive, counted from 1.
     pub line: usize,
@@ -117,9 +118,9 @@ pub enum AcceptedInclude {
         included_by: Vec<IncludeSite>,
         /// Selected Carve source text.
         source: String,
-        /// First selected source line, counted from 1.
+        /// Lines skipped before the selection; zero for the whole file.
         first_line: usize,
-        /// Selected line range, when the directive requested a region.
+        /// Line range of the selected section, when one was named.
         selected_lines: Option<(usize, usize)>,
     },
     /// Source inserted as a code block.
@@ -128,7 +129,7 @@ pub enum AcceptedInclude {
         file: String,
         /// Directive sites leading to this inclusion.
         included_by: Vec<IncludeSite>,
-        /// Parsed code block inserted into the document.
+        /// Code block, or table converted from delimited data.
         block: Box<BlockNode>,
         /// Code payload before insertion.
         payload: String,

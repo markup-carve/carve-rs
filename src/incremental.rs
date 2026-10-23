@@ -40,7 +40,8 @@ pub struct IncrementalParse {
     pub source_layout_json: String,
     /// Snapshot to pass to the next [`reparse`] call.
     pub snapshot: ParserSnapshot,
-    /// Byte ranges of source changed by this operation.
+    /// Changed byte ranges in the previous snapshot's coordinates. An initial
+    /// parse reports the full range of its new source.
     pub changed_source: Vec<Range<usize>>,
     /// Whether unchanged nodes from the previous tree were reused.
     pub reused_previous_tree: bool,
