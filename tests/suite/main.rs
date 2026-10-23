@@ -23,6 +23,8 @@ mod a_stacked_quote_plus_refuses_an_outer_item_column;
 mod a_tab_placed_sublist_starts_on_a_real_column;
 #[path = "../an_opener_in_a_description_in_an_item_is_not_overindented.rs"]
 mod an_opener_in_a_description_in_an_item_is_not_overindented;
+#[path = "../an_unclosed_fence_below_a_marker_line_quote_is_lazy_text.rs"]
+mod an_unclosed_fence_below_a_marker_line_quote_is_lazy_text;
 #[path = "../folded_fence_closer_shapes.rs"]
 mod folded_fence_closer_shapes;
 #[path = "../nested_colon_div_plus_attachment.rs"]

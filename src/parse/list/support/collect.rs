@@ -1615,6 +1615,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         } else {
             &sliced
         };
+        let mut frame_lazy_fence = false;
         if !in_comment_span {
             if fence.is_none()
                 && (after_below_comment
@@ -1674,7 +1675,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             });
             // An unclosed run below a descendant's open paragraph is lazy text
             // there, not a fence of this body (CARVE-P0-014).
-            let lazy_in_descendant = fence.is_none()
+            let descendant_shape = fence.is_none()
                 && indent == strip_cols
                 && nested_item_columns
                     .last()
@@ -1682,7 +1683,40 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 && cur.pos > 0
                 && line_starts_paragraph(innermost_marker_content(trim_ascii_start(
                     cur.lines.at(cur.pos - 1),
-                )))
+                )));
+            // The same below a quote a marker line opens (`- - > x` / `   ```), whose paragraph
+            // takes the unclosed run as lazy text (carve#3421).
+            let marker_quote_shape = fence.is_none()
+                && !descendant_shape
+                && indent > strip_cols
+                && cur.pos > 0
+                && marker_line_columns
+                    .last()
+                    .is_some_and(|&column| indent < column)
+                && {
+                    let mut prior =
+                        innermost_marker_content(trim_ascii_start(cur.lines.at(cur.pos - 1)));
+                    let mut quoted = false;
+                    while let Some(rest) = strip_blockquote_prefix(prior) {
+                        prior = innermost_marker_content(trim_ascii_start(rest));
+                        quoted = true;
+                    }
+                    quoted && line_starts_paragraph(prior)
+                };
+            // A closer at the opener's own column inside this item keeps the fence a fence.
+            let marker_quote_shape = marker_quote_shape
+                && detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
+                    !cur.lines
+                        .range(cur.pos + 1..cur.lines.len())
+                        .take_while(|next| {
+                            is_blank_line(next) || indent_columns(next) >= strip_cols
+                        })
+                        .any(|next| {
+                            indent_columns(next) == indent
+                                && is_fence_close(trim_ascii_start(next), open)
+                        })
+                });
+            let lazy_in_descendant = (descendant_shape || marker_quote_shape)
                 && detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
                     !cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
                         || !item_body_fence_has_closer(
@@ -1695,6 +1729,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                             },
                         )
                 });
+            frame_lazy_fence = lazy_in_descendant && marker_quote_shape;
             if retained_item_fence {
                 let mut open = detect_fence_open(trim_ascii_start(line)).unwrap();
                 open.content_col = strip_cols;
@@ -1770,7 +1805,12 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 indent >= strip_cols && !opaque_here,
             );
         }
-        lines.push(sliced);
+        // Lazy text of a descendant's paragraph, which the reparse must not read as a fence.
+        lines.push(if frame_lazy_fence {
+            format!("{LAZY}{}", trim_ascii_start(&sliced))
+        } else {
+            sliced
+        });
         carried_lazy_owner = marker_paragraph_owner
             .or_else(|| carried_lazy_owner.filter(|&owner| plain_nested_lazy && indent >= owner));
         if marker_paragraph_owner.is_some() {
