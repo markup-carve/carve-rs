@@ -2163,7 +2163,7 @@ pub(in crate::parse) fn last_emitted_glyph(out: &[InlineNode]) -> char {
 }
 
 pub(in crate::parse) fn closes_after_dash(prev: char, next: Option<char>) -> bool {
-    matches!(prev, '-' | '–' | '—')
+    matches!(prev, '-' | '–' | '—' | '/')
         && next.map_or(true, |c| is_flank_space(c) || "\"'.,;:!?)]".contains(c))
 }
 
