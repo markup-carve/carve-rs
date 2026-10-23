@@ -20,6 +20,7 @@ const LIST_CARRIER: &str = "code-callouts-list";
 pub struct CodeCallouts;
 
 impl CodeCallouts {
+    /// Create the code-callout extension with its defaults.
     pub fn new() -> Self {
         Self
     }

@@ -499,6 +499,7 @@ fn refuse_const_violations(node: &Json, path: &str) -> Result<(), AstJsonError> 
     Ok(())
 }
 
+/// Decode and validate a document in the public AST exchange format.
 pub fn from_json(input: &str) -> Result<Document, AstJsonError> {
     let json = parse_value(input)?;
     let root = json.expect_object("document root")?;

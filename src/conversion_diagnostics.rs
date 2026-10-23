@@ -6,44 +6,66 @@ use serde_json::Value;
 use crate::ast::{Attrs, Document, TableBodyGroup, TableRowGroups};
 use crate::ast_json::{parse_value, try_to_json, AstJsonError};
 
+/// Default maximum number of retained conversion findings.
 pub const DEFAULT_MAX_CONVERSION_DIAGNOSTICS: usize = 100;
 
+/// Kind of source conversion loss.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ConversionDiagnosticCode {
+    /// The source format cannot spell an entire node.
     StructureUnspellable,
+    /// The source format cannot spell one field of a node.
     FieldUnspellable,
 }
 
+/// Source span attached to a conversion finding.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConversionPos {
+    /// First source line, counted from 1.
     pub start_line: usize,
+    /// Last source line, counted from 1.
     pub end_line: usize,
+    /// First source column, counted from 1.
     pub start_column: usize,
+    /// Last source column, counted from 1.
     pub end_column: usize,
+    /// Start offset in source codepoints.
     pub start_offset: usize,
+    /// Exclusive end offset in source codepoints.
     pub end_offset: usize,
 }
 
+/// One node or field that source conversion cannot preserve.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ConversionDiagnostic {
+    /// Stable loss code.
     pub code: ConversionDiagnosticCode,
+    /// AST node kind affected by the loss.
     pub node: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// Affected field, when the loss is narrower than the node.
     pub field: Option<String>,
+    /// Human-readable explanation.
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// Source span, when available.
     pub pos: Option<ConversionPos>,
 }
 
+/// Bounded collection of source conversion findings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConversionDiagnostics {
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// Source file name, when supplied.
     pub file: Option<String>,
+    /// Retained findings in traversal order.
     pub diagnostics: Vec<ConversionDiagnostic>,
+    /// Number of findings before truncation.
     pub total_diagnostics: usize,
+    /// Whether the collection exceeded its retention limit.
     pub truncated: bool,
 }
 
@@ -342,6 +364,7 @@ pub fn conversion_diagnostics(
     Ok(report)
 }
 
+/// Serialize a conversion report as JSON.
 pub fn to_conversion_diagnostics_json(report: &ConversionDiagnostics) -> String {
     serde_json::to_string(report).expect("conversion diagnostics contain serializable values")
 }

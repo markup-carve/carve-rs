@@ -1,18 +1,26 @@
+//! Migration results and diagnostics for supported source formats.
+
 use crate::markdown_import::MarkdownLossKind;
 use crate::{
     html_to_carve, BbcodeImportError, HtmlImportAdapter, HtmlImportError, HtmlImportMode,
     HtmlImportOptions, HtmlImportSeverity,
 };
 
+/// Source language being migrated to Carve.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceFormat {
+    /// HTML input.
     Html,
+    /// Markdown input.
     Markdown,
+    /// Djot input.
     Djot,
+    /// BBCode input.
     Bbcode,
 }
 
 impl SourceFormat {
+    /// Return the lowercase source-format name.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Html => "html",
@@ -27,33 +35,51 @@ impl SourceFormat {
 /// classification belongs to the diagnostic code, and a migration report only
 /// repeats what the importer already answered.
 pub type MigrationFidelity = crate::html_import::ImportFidelity;
+/// Confidence vocabulary shared with HTML import reports.
 pub type MigrationConfidence = crate::html_import::ImportConfidence;
 
+/// One finding produced during migration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MigrationDiagnostic {
+    /// Stable finding code.
     pub code: String,
+    /// Human-readable explanation.
     pub message: String,
+    /// Severity for presentation.
     pub severity: HtmlImportSeverity,
+    /// Extent to which the source content survived.
     pub fidelity: MigrationFidelity,
+    /// Confidence in the migration decision.
     pub confidence: MigrationConfidence,
+    /// Path to the source construct, when available.
     pub path: Option<String>,
 }
 
+/// Metadata and findings for one migration operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MigrationReport {
+    /// Version of the migration report schema.
     pub schema_version: u32,
+    /// Language of the input source.
     pub source_format: SourceFormat,
+    /// HTML import mode, when the input was HTML.
     pub mode: Option<HtmlImportMode>,
+    /// HTML source adapter, when one was used.
     pub adapter: Option<HtmlImportAdapter>,
+    /// Findings in source order.
     pub diagnostics: Vec<MigrationDiagnostic>,
 }
 
+/// Migrated Carve source and its report.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MigrationResult {
+    /// Resulting Carve source.
     pub value: String,
+    /// Decisions and losses recorded during migration.
     pub report: MigrationReport,
 }
 
+/// Migrate HTML to Carve source with importer options and a report.
 pub fn migrate_html(
     source: &str,
     options: &HtmlImportOptions,
@@ -346,6 +372,7 @@ fn assess_markdown_migration(
     Ok(result)
 }
 
+/// Migrate Djot to Carve source and report conversion decisions.
 pub fn migrate_djot(source: &str) -> MigrationResult {
     let stripped = crate::djot_migrate::strip_footnote_definition_attributes(source);
     let (value, losses) = crate::djot_migrate::djot_to_carve_with_losses(source);
@@ -369,6 +396,7 @@ pub fn migrate_djot(source: &str) -> MigrationResult {
     result
 }
 
+/// Migrate BBCode to Carve source, or return an input-boundary error.
 pub fn migrate_bbcode(source: &str) -> Result<MigrationResult, BbcodeImportError> {
     let (value, dropped) = crate::bbcode_migrate::bbcode_to_carve_with_drops(source)?;
     let mut result = assessed(source, value, SourceFormat::Bbcode, false);

@@ -360,64 +360,78 @@ impl LinkPolicy {
         Self::default().set_allowed_domains(Some(domains))
     }
 
+    /// Allowed URL schemes, or `None` for no allowlist.
     pub fn allowed_schemes(&self) -> Option<&[String]> {
         self.allowed_schemes.as_deref()
     }
 
+    /// Set the URL scheme allowlist; names are lowercased.
     pub fn set_allowed_schemes(mut self, schemes: Option<Vec<String>>) -> Self {
         self.allowed_schemes = schemes.map(|s| s.iter().map(|x| x.to_lowercase()).collect());
         self
     }
 
+    /// Denied URL schemes.
     pub fn denied_schemes(&self) -> &[String] {
         &self.denied_schemes
     }
 
+    /// Set denied URL schemes; names are lowercased.
     pub fn set_denied_schemes(mut self, schemes: Vec<String>) -> Self {
         self.denied_schemes = schemes.iter().map(|x| x.to_lowercase()).collect();
         self
     }
 
+    /// Allowed link domains, or `None` for no allowlist.
     pub fn allowed_domains(&self) -> Option<&[String]> {
         self.allowed_domains.as_deref()
     }
 
+    /// Set the link domain allowlist.
     pub fn set_allowed_domains(mut self, domains: Option<Vec<String>>) -> Self {
         self.allowed_domains = domains;
         self
     }
 
+    /// Denied link domains.
     pub fn denied_domains(&self) -> &[String] {
         &self.denied_domains
     }
 
+    /// Set denied link domains.
     pub fn set_denied_domains(mut self, domains: Vec<String>) -> Self {
         self.denied_domains = domains;
         self
     }
 
+    /// Whether external links are allowed.
     pub fn allow_external(&self) -> bool {
         self.allow_external
     }
 
+    /// Allow or deny external links.
     pub fn set_allow_external(mut self, allow: bool) -> Self {
         self.allow_external = allow;
         self
     }
 
+    /// Whether internal links are allowed.
     pub fn allow_internal(&self) -> bool {
         self.allow_internal
     }
 
+    /// Allow or deny internal links.
     pub fn set_allow_internal(mut self, allow: bool) -> Self {
         self.allow_internal = allow;
         self
     }
 
+    /// `rel` values added to surviving links.
     pub fn rel_attributes(&self) -> &[String] {
         &self.rel_attributes
     }
 
+    /// Replace the `rel` values added to surviving links.
     pub fn set_rel_attributes(mut self, attrs: Vec<String>) -> Self {
         self.rel_attributes = attrs;
         self
@@ -688,6 +702,7 @@ impl ProfileViolation {
 /// when the profile's action is [`DisallowedAction::Error`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProfileViolationError {
+    /// Profile violations collected while filtering.
     pub violations: Vec<ProfileViolation>,
 }
 
@@ -959,10 +974,12 @@ impl Profile {
         p
     }
 
+    /// Profile name.
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    /// Human-readable profile description.
     pub fn description(&self) -> &str {
         &self.description
     }
@@ -978,10 +995,12 @@ impl Profile {
             .cloned()
     }
 
+    /// Configured explanations for disallowed node types.
     pub fn feature_reasons(&self) -> &std::collections::BTreeMap<String, String> {
         &self.feature_reasons
     }
 
+    /// Set the explanation for one canonical node type.
     pub fn set_feature_reason(
         mut self,
         canonical: impl Into<String>,
@@ -1003,41 +1022,50 @@ impl Profile {
         self
     }
 
+    /// Add inline node types to the denylist.
     pub fn deny_inline(mut self, types: &[&str]) -> Self {
         self.denied_inline.extend(to_strings(types));
         self
     }
 
+    /// Add block node types to the denylist.
     pub fn deny_block(mut self, types: &[&str]) -> Self {
         self.denied_block.extend(to_strings(types));
         self
     }
 
+    /// Allowed inline node types, or `None` for no allowlist.
     pub fn allowed_inline(&self) -> Option<&[String]> {
         self.allowed_inline.as_deref()
     }
 
+    /// Allowed block node types, or `None` for no allowlist.
     pub fn allowed_block(&self) -> Option<&[String]> {
         self.allowed_block.as_deref()
     }
 
+    /// Denied inline node types.
     pub fn denied_inline(&self) -> &[String] {
         &self.denied_inline
     }
 
+    /// Denied block node types.
     pub fn denied_block(&self) -> &[String] {
         &self.denied_block
     }
 
+    /// Link restrictions, when configured.
     pub fn link_policy(&self) -> Option<&LinkPolicy> {
         self.link_policy.as_ref()
     }
 
+    /// Set or remove link restrictions.
     pub fn set_link_policy(mut self, policy: Option<LinkPolicy>) -> Self {
         self.link_policy = policy;
         self
     }
 
+    /// Maximum block-container nesting depth; zero means unlimited.
     pub fn max_nesting(&self) -> usize {
         self.max_nesting
     }
@@ -1048,6 +1076,7 @@ impl Profile {
         self
     }
 
+    /// Maximum source length in bytes; zero means unlimited.
     pub fn max_length(&self) -> usize {
         self.max_length
     }
@@ -1058,6 +1087,7 @@ impl Profile {
         self
     }
 
+    /// Action applied to disallowed nodes.
     pub fn disallowed_action(&self) -> DisallowedAction {
         self.disallowed_action
     }

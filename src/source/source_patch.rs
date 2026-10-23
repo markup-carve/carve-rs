@@ -2,48 +2,73 @@
 
 use std::fmt;
 
+/// Purpose of a source edit or suggestion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SourceEditKind {
+    /// Formatting change.
     Formatting,
+    /// Syntax migration change.
     SyntaxMigration,
+    /// Suggested repair for a diagnosed problem.
     QuickFix,
+    /// Source refactoring change.
     Refactor,
 }
 
+/// A byte-range replacement applied by a source patch.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SourceEdit {
+    /// Inclusive start byte offset.
     pub start: usize,
+    /// Exclusive end byte offset.
     pub end: usize,
+    /// UTF-8 text inserted in place of the range.
     pub replacement: String,
+    /// Purpose of the edit.
     pub kind: SourceEditKind,
+    /// Stable edit code.
     pub code: String,
 }
 
+/// Proposed replacement that the patch could not apply automatically.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SourceSuggestion {
+    /// Inclusive start byte offset.
     pub start: usize,
+    /// Exclusive end byte offset.
     pub end: usize,
+    /// Proposed UTF-8 replacement.
     pub replacement: String,
+    /// Purpose of the suggestion.
     pub kind: SourceEditKind,
+    /// Stable suggestion code.
     pub code: String,
+    /// Human-readable explanation.
     pub message: String,
 }
 
+/// Stale-safe edits and unresolved suggestions for one source string.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SourcePatch {
+    /// Patch format version.
     pub version: u8,
+    /// Fingerprint of the source the patch was prepared against.
     pub source_fingerprint: String,
+    /// Original source length in bytes.
     pub source_bytes: usize,
     #[serde(default)]
+    /// Edits to apply in source order.
     pub edits: Vec<SourceEdit>,
     #[serde(default)]
+    /// Suggestions that need caller review.
     pub unresolved: Vec<SourceSuggestion>,
 }
 
+/// Reason a source patch could not be applied.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourcePatchError(String);
 
@@ -55,6 +80,7 @@ impl fmt::Display for SourcePatchError {
 
 impl std::error::Error for SourcePatchError {}
 
+/// Compute the FNV-1a fingerprint used to reject stale patches.
 pub fn source_fingerprint(source: &str) -> String {
     let mut hash = 0xcbf29ce484222325_u64;
     for byte in source.bytes() {
@@ -112,6 +138,7 @@ pub fn create_source_patch(
     }
 }
 
+/// Apply a patch only when its source fingerprint and byte ranges still match.
 pub fn apply_source_patch(source: &str, patch: &SourcePatch) -> Result<String, SourcePatchError> {
     if patch.version != 1 {
         return Err(SourcePatchError("unsupported source patch version".into()));

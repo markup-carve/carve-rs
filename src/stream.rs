@@ -1,8 +1,13 @@
+//! Chunked HTML rendering on the borrowed-layout fast path.
+
 use crate::{parse::try_layout_stream, Options};
 
+/// Result of attempting the HTML streaming fast path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StreamOutcome {
+    /// The sink received the complete HTML output.
     Complete,
+    /// The caller must parse an AST and use the regular renderer.
     NeedsAst,
 }
 

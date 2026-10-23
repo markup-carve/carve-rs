@@ -25,7 +25,9 @@ use crate::profile::{
 
 /// Result of a profile transform.
 pub struct ProfileFilterResult {
+    /// Document after disallowed nodes were handled.
     pub doc: Document,
+    /// Profile violations found during filtering.
     pub violations: Vec<ProfileViolation>,
 }
 

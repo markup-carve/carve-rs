@@ -95,6 +95,7 @@ pub struct AstEnvelopeExtension {
 }
 
 impl AstEnvelopeExtension {
+    /// Declare an extension id with no version or requirement override.
     pub fn new(id: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -109,6 +110,7 @@ impl AstEnvelopeExtension {
 pub struct AstEnvelopeOptions {
     /// `None` means the core vocabulary, which is the canonical spelling.
     pub vocabulary: Option<String>,
+    /// Extensions the producer used for this tree.
     pub extensions: Vec<AstEnvelopeExtension>,
 }
 
@@ -135,7 +137,12 @@ pub enum AstEnvelopeError {
     /// §34(a) asks for a typed error naming both versions, and says why it is
     /// not a schema failure: the payload may be perfectly well-formed under a
     /// contract this build predates.
-    Version { found: String, implemented: String },
+    Version {
+        /// Version declared by the payload.
+        found: String,
+        /// Highest version this reader implements.
+        implemented: String,
+    },
     /// The payload marks an extension required that this reader does not
     /// implement (§34(c)).
     Extension(String),

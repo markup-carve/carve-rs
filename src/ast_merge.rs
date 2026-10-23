@@ -7,32 +7,49 @@ use crate::ast::Document;
 use crate::ast_fingerprint::Fingerprints;
 use crate::ast_json::{from_json, parse_value, value_to_json, AstJsonError, Json};
 
+/// Reason two edits cannot be merged automatically.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MergeConflictReason {
+    /// Both sides changed the same value.
     BothChanged,
+    /// One side deleted a value the other edited.
     DeleteEdit,
+    /// Both sides changed the same sequence incompatibly.
     ConcurrentSequenceEdit,
 }
 
+/// Conflicting values at one AST path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MergeConflict {
+    /// Path to the affected value.
     pub path: String,
+    /// Conflict classification.
     pub reason: MergeConflictReason,
+    /// Base value as JSON, when present.
     pub base: Option<String>,
+    /// Local value as JSON, when present.
     pub ours: Option<String>,
+    /// Incoming value as JSON, when present.
     pub theirs: Option<String>,
 }
 
+/// Completed merge or unresolved conflicts.
 #[derive(Debug, Clone, PartialEq)]
 pub enum MergeResult {
+    /// Merged document.
     Merged(Document),
+    /// Conflicts that require a caller decision.
     Conflicts(Vec<MergeConflict>),
 }
 
+/// Value selected by a conflict resolver.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MergeResolution {
+    /// Keep the base value.
     Base,
+    /// Keep the local value.
     Ours,
+    /// Keep the incoming value.
     Theirs,
     /// A JSON-encoded replacement value, which may target any PART 12 field.
     Value(String),
@@ -704,6 +721,7 @@ fn merge_value(
     )
 }
 
+/// Merge two documents against a common base, returning unresolved conflicts.
 pub fn merge_ast(
     base: &Document,
     ours: &Document,
@@ -712,6 +730,7 @@ pub fn merge_ast(
     merge_ast_inner(base, ours, theirs, &mut None)
 }
 
+/// Merge documents and ask `resolver` to settle conflicts as they arise.
 pub fn merge_ast_with_resolver<F>(
     base: &Document,
     ours: &Document,

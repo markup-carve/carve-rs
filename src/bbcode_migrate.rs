@@ -8,11 +8,20 @@ use crate::djot_migrate::{escape_plain_carve_syntax, HandledDelimiters};
 use regex::{Captures, Regex};
 use std::fmt;
 
+/// Maximum BBCode input length in bytes.
 pub const BBCODE_MAX_INPUT_LENGTH: usize = 262_144;
 
+/// Reason a BBCode import could not complete.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BbcodeImportError {
-    InputTooLarge { bytes: usize, maximum: usize },
+    /// Input exceeds the supported byte limit.
+    InputTooLarge {
+        /// Supplied input length in bytes.
+        bytes: usize,
+        /// Maximum allowed length in bytes.
+        maximum: usize,
+    },
+    /// No unused private-use sentinel remained for protecting literal content.
     SentinelSpaceExhausted,
 }
 

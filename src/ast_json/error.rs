@@ -75,6 +75,7 @@ impl AstJsonError {
         }
     }
 
+    /// Return the structured error category.
     pub fn kind(&self) -> AstJsonErrorKind {
         self.kind
     }

@@ -91,29 +91,46 @@ pub struct IncludeWarning {
     /// `None` for a top-level document the caller gave no `source_path` for -
     /// there is no identity to report, and none is invented.
     pub file: Option<String>,
+    /// Directive sites that led from the root to this warning.
     pub included_by: Vec<IncludeSite>,
 }
 
+/// Source location of one directive in an include chain.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct IncludeSite {
+    /// Identity of the file containing the directive.
     pub file: String,
+    /// Source line of the directive, counted from 1.
     pub line: usize,
+    /// Source column of the directive, counted from 1.
     pub column: usize,
 }
 
+/// Included content admitted by the expansion pass.
 #[derive(Debug, Clone)]
 pub enum AcceptedInclude {
+    /// Carve source inserted as parsed document content.
     Carve {
+        /// Canonical file identity or the directive path when none was supplied.
         file: String,
+        /// Directive sites leading to this inclusion.
         included_by: Vec<IncludeSite>,
+        /// Selected Carve source text.
         source: String,
+        /// First selected source line, counted from 1.
         first_line: usize,
+        /// Selected line range, when the directive requested a region.
         selected_lines: Option<(usize, usize)>,
     },
+    /// Source inserted as a code block.
     Code {
+        /// Canonical file identity or the directive path when none was supplied.
         file: String,
+        /// Directive sites leading to this inclusion.
         included_by: Vec<IncludeSite>,
+        /// Parsed code block inserted into the document.
         block: Box<BlockNode>,
+        /// Code payload before insertion.
         payload: String,
     },
 }
@@ -141,7 +158,9 @@ pub struct IncludeContext<'a> {
 /// cycle guard and only the depth limit stops the recursion.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IncludeResolved {
+    /// Source text returned by the resolver.
     pub source: String,
+    /// Canonical identity of that source, if known.
     pub id: Option<String>,
 }
 
@@ -212,6 +231,7 @@ impl IncludeDenial {
 /// The error carries the class, which reaches the caller on the attempted
 /// dependency ([`IncludeDependency::denial`]).
 pub trait IncludeResolver {
+    /// Resolve one directive path in its containing document context.
     fn resolve(
         &self,
         path: &str,
@@ -255,15 +275,18 @@ pub struct IncludeOptions<'a> {
 }
 
 impl<'a> IncludeOptions<'a> {
+    /// Create include options without a resolver.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Retain accepted include records in the result.
     pub fn collecting_included(mut self) -> Self {
         self.collect_included = true;
         self
     }
 
+    /// Supply the host's path resolver.
     pub fn with_resolver(mut self, resolver: &'a dyn IncludeResolver) -> Self {
         self.resolver = Some(resolver);
         self
@@ -346,7 +369,9 @@ pub struct IncludeDependency {
 /// Outcome of [`expand_includes`].
 #[derive(Debug, Clone)]
 pub struct IncludeResult {
+    /// Document after accepted includes were expanded.
     pub doc: Document,
+    /// Retained diagnostics from expansion.
     pub warnings: Vec<IncludeWarning>,
     /// Warnings raised but not retained once the cap was reached. Zero on every
     /// uncapped run; non-zero means `warnings` is a sample, not the whole
@@ -365,6 +390,7 @@ pub struct IncludeResult {
     /// ADMITTED could not tell "read nothing" from "read a file and refused
     /// it", which is the one thing a reader of this number wants to know.
     pub charged_bytes: usize,
+    /// Accepted content records when collection was enabled.
     pub included: Vec<AcceptedInclude>,
 }
 

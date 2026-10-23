@@ -3,8 +3,10 @@
 use crate::ast::{BlockNode, Document, FigureTarget, InlineNode};
 use crate::extension::CarveExtension;
 
+/// Opening and closing double quotes followed by opening and closing single quotes.
 pub type QuoteCharacters = [&'static str; 4];
 
+/// Built-in locale names and their quote characters.
 pub const SMART_QUOTE_LOCALES: &[(&str, QuoteCharacters)] = &[
     ("en", ["“", "”", "‘", "’"]),
     ("de", ["„", "“", "‚", "‘"]),
@@ -28,17 +30,20 @@ pub const SMART_QUOTE_LOCALES: &[(&str, QuoteCharacters)] = &[
     ("uk", ["«", "»", "„", "“"]),
 ];
 
+/// Extension that substitutes locale-specific quote characters.
 pub struct SmartQuotes {
     quotes: [String; 4],
 }
 
 impl SmartQuotes {
+    /// Use the quote characters for `locale`, falling back to the default.
     pub fn new(locale: &str) -> Self {
         Self {
             quotes: resolve_locale(locale).map(str::to_owned),
         }
     }
 
+    /// Supply all four quote strings explicitly.
     pub fn with_quotes(
         open_double: impl Into<String>,
         close_double: impl Into<String>,
@@ -55,29 +60,35 @@ impl SmartQuotes {
         }
     }
 
+    /// Replace the opening double quote string.
     pub fn with_open_double_quote(mut self, quote: impl Into<String>) -> Self {
         self.quotes[0] = quote.into();
         self
     }
 
+    /// Replace the closing double quote string.
     pub fn with_close_double_quote(mut self, quote: impl Into<String>) -> Self {
         self.quotes[1] = quote.into();
         self
     }
 
+    /// Replace the opening single quote string.
     pub fn with_open_single_quote(mut self, quote: impl Into<String>) -> Self {
         self.quotes[2] = quote.into();
         self
     }
 
+    /// Replace the closing single quote string.
     pub fn with_close_single_quote(mut self, quote: impl Into<String>) -> Self {
         self.quotes[3] = quote.into();
         self
     }
 
+    /// Iterate over built-in locale names.
     pub fn supported_locales() -> impl Iterator<Item = &'static str> {
         SMART_QUOTE_LOCALES.iter().map(|(locale, _)| *locale)
     }
+    /// Check whether a locale has a built-in quote set.
     pub fn is_locale_supported(locale: &str) -> bool {
         lookup_locale(locale).is_some()
     }

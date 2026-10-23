@@ -7,18 +7,40 @@ use crate::ast::Document;
 use crate::ast_fingerprint::Fingerprints;
 use crate::ast_json::{from_json, parse_value, try_to_json, value_to_json, AstJsonError, Json};
 
+/// One change to an AST exchange-tree path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AstPatchOperation {
-    Add { path: String, value: String },
-    Replace { path: String, value: String },
-    Remove { path: String },
+    /// Add a JSON value at a path.
+    Add {
+        /// Destination path.
+        path: String,
+        /// JSON-encoded value to add.
+        value: String,
+    },
+    /// Replace the JSON value at a path.
+    Replace {
+        /// Destination path.
+        path: String,
+        /// JSON-encoded replacement.
+        value: String,
+    },
+    /// Remove the value at a path.
+    Remove {
+        /// Path to remove.
+        path: String,
+    },
 }
 
+/// Forward and inverse AST edits with stale-document checks.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReversibleAstPatch {
+    /// Edits from the before document to the after document.
     pub forward: Vec<AstPatchOperation>,
+    /// Edits from the after document to the before document.
     pub inverse: Vec<AstPatchOperation>,
+    /// Fingerprint required before forward replay.
     pub before_fingerprint: String,
+    /// Fingerprint required before inverse replay.
     pub after_fingerprint: String,
 }
 
@@ -32,6 +54,7 @@ fn fingerprint(document: &Document) -> Result<String, AstPatchError> {
     Ok(format!("fnv1a64:{hash:016x}"))
 }
 
+/// Build forward and inverse patches between two documents.
 pub fn create_reversible_ast_patch(
     before: &Document,
     after: &Document,
@@ -44,6 +67,7 @@ pub fn create_reversible_ast_patch(
     })
 }
 
+/// Apply the forward or inverse patch after checking its source fingerprint.
 pub fn apply_reversible_ast_patch(
     document: &Document,
     patch: &ReversibleAstPatch,
@@ -147,6 +171,7 @@ pub fn ast_patch_from_json(input: &str) -> Result<Vec<AstPatchOperation>, AstPat
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Invalid patch, source document, or exchange-tree value.
 pub struct AstPatchError(String);
 
 impl fmt::Display for AstPatchError {
@@ -261,6 +286,7 @@ fn build(
     }
 }
 
+/// Create position-independent edits from one document to another.
 pub fn create_ast_patch(
     before: &Document,
     after: &Document,
@@ -386,6 +412,7 @@ fn apply_at(
     Ok(())
 }
 
+/// Apply AST edits to a document.
 pub fn apply_ast_patch(
     ast: &Document,
     operations: &[AstPatchOperation],

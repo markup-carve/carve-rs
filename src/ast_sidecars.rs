@@ -11,6 +11,7 @@ use crate::ast::Document;
 use crate::ast_fingerprint::Fingerprints;
 use crate::ast_json::{parse_value, try_to_json};
 
+/// Invalid or incompatible AST sidecar data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AstSidecarError(String);
 
@@ -26,84 +27,122 @@ fn error(message: impl Into<String>) -> AstSidecarError {
     AstSidecarError(message.into())
 }
 
+/// Stable id assigned to one AST path.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NodeIdentityEntry {
+    /// Opaque node id.
     pub id: String,
+    /// Path to the AST node.
     pub path: String,
 }
 
+/// Node ids minted for one parse session.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NodeIdentity {
+    /// Sidecar schema version.
     pub version: u32,
+    /// Opaque session identifier.
     pub session: String,
+    /// Node ids and their paths.
     pub nodes: Vec<NodeIdentityEntry>,
 }
 
+/// Offset within a text node named by an AST path.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AnnotationAnchor {
+    /// Path to the text node.
     pub path: String,
+    /// Offset within that node.
     pub offset: usize,
 }
 
+/// Named annotation spanning two text anchors.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AnnotationRange {
+    /// Opaque annotation id.
     pub id: String,
+    /// Annotation kind chosen by the caller.
     pub kind: String,
+    /// Start anchor.
     pub start: AnnotationAnchor,
+    /// Exclusive end anchor.
     pub end: AnnotationAnchor,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// Optional caller-defined JSON metadata.
     pub data: Option<Map<String, Value>>,
 }
 
+/// Annotation ranges attached to one AST.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AnnotationRanges {
+    /// Sidecar schema version.
     pub version: u32,
+    /// Named ranges in caller order.
     pub ranges: Vec<AnnotationRange>,
 }
 
+/// Source referenced by node provenance records.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProvenanceSource {
+    /// Opaque source id.
     pub id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// Source URI, when known.
     pub uri: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// Source format, when known.
     pub format: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// Parent source id for derived content.
     pub parent: Option<String>,
 }
 
+/// Whether a node came from source text or a transformation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ProvenanceOrigin {
+    /// Authored source content.
     Authored,
+    /// Generated content.
     Generated,
 }
 
+/// Origin of one AST node.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct NodeProvenance {
+    /// Path to the AST node.
     pub path: String,
+    /// Id of the source containing the node.
     pub source: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// Start byte offset in the source, when known.
     pub start_byte: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// Exclusive end byte offset in the source, when known.
     pub end_byte: Option<usize>,
+    /// Authored or generated origin.
     pub origin: ProvenanceOrigin,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// Transformation step that produced the node, when known.
     pub step: Option<String>,
 }
 
+/// Sources and node origins attached to one AST.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Provenance {
+    /// Sidecar schema version.
     pub version: u32,
+    /// Known source identities.
     pub sources: Vec<ProvenanceSource>,
+    /// Node origins.
     pub nodes: Vec<NodeProvenance>,
 }
 
@@ -549,6 +588,7 @@ fn write<T: Serialize>(sidecar: &T) -> Result<String, AstSidecarError> {
     serde_json::to_string(sidecar).map_err(|err| error(err.to_string()))
 }
 
+/// Read and validate node identity JSON against `doc`.
 pub fn from_node_identity_json(
     input: &str,
     doc: &Document,
@@ -558,6 +598,7 @@ pub fn from_node_identity_json(
     Ok(sidecar)
 }
 
+/// Validate and serialize node identity data against `doc`.
 pub fn to_node_identity_json(
     sidecar: &NodeIdentity,
     doc: &Document,
@@ -566,6 +607,7 @@ pub fn to_node_identity_json(
     write(sidecar)
 }
 
+/// Read and validate annotation ranges against `doc`.
 pub fn from_annotation_ranges_json(
     input: &str,
     doc: &Document,
@@ -575,6 +617,7 @@ pub fn from_annotation_ranges_json(
     Ok(sidecar)
 }
 
+/// Validate and serialize annotation ranges against `doc`.
 pub fn to_annotation_ranges_json(
     sidecar: &AnnotationRanges,
     doc: &Document,
@@ -583,12 +626,14 @@ pub fn to_annotation_ranges_json(
     write(sidecar)
 }
 
+/// Read and validate provenance JSON against `doc`.
 pub fn from_provenance_json(input: &str, doc: &Document) -> Result<Provenance, AstSidecarError> {
     let sidecar: Provenance = read(input)?;
     validate_provenance(&sidecar, &ast_value(doc)?)?;
     Ok(sidecar)
 }
 
+/// Validate and serialize provenance against `doc`.
 pub fn to_provenance_json(sidecar: &Provenance, doc: &Document) -> Result<String, AstSidecarError> {
     validate_provenance(sidecar, &ast_value(doc)?)?;
     write(sidecar)

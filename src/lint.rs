@@ -27,7 +27,9 @@ use crate::table_spans::TableSpanPlan;
 /// passed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LintWarning {
+    /// Identity of the source file, when supplied.
     pub file: Option<String>,
+    /// Directive sites leading to the included source.
     pub included_by: Vec<crate::includes::IncludeSite>,
     /// 1-based line number.
     pub line: usize,

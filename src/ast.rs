@@ -558,6 +558,7 @@ pub enum BlockNode {
     ThematicBreak(ThematicBreak),
 }
 
+/// A horizontal separator authored with a run of marker characters.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ThematicBreak {
     /// The thematic-break character as authored. Absence defaults to `-`.
@@ -568,18 +569,25 @@ pub struct ThematicBreak {
     pub pos: Option<Pos>,
 }
 
+/// A heading and its inline content.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Heading {
+    /// Attributes attached to the heading.
     pub attrs: Option<Attrs>,
+    /// Heading depth, from 1 through 6.
     pub level: u8,
+    /// Inline content of the heading.
     pub children: Vec<InlineNode>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
 
+/// A paragraph of inline content.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Paragraph {
+    /// Attributes attached to the paragraph.
     pub attrs: Option<Attrs>,
+    /// Inline content of the paragraph.
     pub children: Vec<InlineNode>,
     /// Whether the paragraph's first source line began at its container's content
     /// column (column 0 at the top level), i.e. was NOT indented above it. Used
@@ -605,11 +613,16 @@ pub struct Paragraph {
     pub pos: Option<Pos>,
 }
 
+/// A fenced code block with an optional information string.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodeBlock {
+    /// Attributes attached to the block.
     pub attrs: Option<Attrs>,
+    /// Language name from the fence opener.
     pub lang: Option<String>,
+    /// Optional title from the fence opener.
     pub title: Option<String>,
+    /// Optional label from the fence opener.
     pub label: Option<String>,
     /// Literal payload text, including each authored line ending.
     /// Empty fences contain no characters; EOF can leave the last line unterminated.
@@ -623,11 +636,16 @@ pub fn fenced_payload_needs_ending(content: &str) -> bool {
     !content.is_empty() && !content.ends_with('\n')
 }
 
+/// An ordered, unordered, or task list.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct List {
+    /// Attributes attached to the list.
     pub attrs: Option<Attrs>,
+    /// Whether the list uses ordered markers.
     pub ordered: bool,
+    /// First ordinal of an ordered list, when specified.
     pub start: Option<usize>,
+    /// Letter or Roman numeral style of an ordered list.
     pub ol_type: Option<OrderedListType>,
     /// Runtime-only authoring flag for ordered lists opened with the bare-dot
     /// marker (`. item`). It stays out of PART 12 JSON until the schema names it.
@@ -640,36 +658,49 @@ pub struct List {
     /// Bullet character as authored: `-` or `*` (unordered lists only).
     /// Same §11 semantics as `delim`; `None` falls back to `-`.
     pub bullet_char: Option<char>,
+    /// Whether item paragraphs render without separating blank lines.
     pub tight: bool,
+    /// Items in source order.
     pub items: Vec<ListItem>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
 
+/// Letter or Roman numeral style for an ordered list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OrderedListType {
+    /// Lowercase letters.
     LowerAlpha,
+    /// Uppercase letters.
     UpperAlpha,
+    /// Lowercase Roman numerals.
     LowerRoman,
+    /// Uppercase Roman numerals.
     UpperRoman,
 }
 
+/// One list marker and the blocks that belong to it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListItem {
+    /// Attributes attached to the item.
     pub attrs: Option<Attrs>,
     /// `None` for plain bullets; `Some(checked)` for task-list items.
     pub checked: Option<bool>,
     /// Marker character as authored, when it is not the default for `checked`.
     /// Same author-choice role as `List::bullet_char`; `X` folds to `x`.
     pub task_state: Option<char>,
+    /// Blocks inside the item.
     pub children: Vec<BlockNode>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
 
+/// Quoted blocks, either line-prefixed or fenced.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockQuote {
+    /// Attributes attached to the quote.
     pub attrs: Option<Attrs>,
+    /// Blocks inside the quote.
     pub children: Vec<BlockNode>,
     /// True when the quote was authored as a colon-fence container rather than
     /// with line markers. The two spellings are one node; this records which,
@@ -681,15 +712,20 @@ pub struct BlockQuote {
     pub pos: Option<Pos>,
 }
 
+/// A table, its rows, and optional publishing metadata.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Table {
+    /// Attributes attached to the table.
     pub attrs: Option<Attrs>,
+    /// Source format when the table came from a delimited-data fence.
     pub source_format: Option<TableSourceFormat>,
+    /// Inline caption shown with the table.
     pub caption: Option<Vec<InlineNode>>,
     /// Structured publishing/navigation label; Carve 0.1 source has no spelling.
     pub short_caption: Option<Vec<InlineNode>>,
     /// Per-column publishing metadata, resolved from positional table attrs.
     pub columns: Vec<TableColumn>,
+    /// Rows in source order.
     pub rows: Vec<TableRow>,
     /// An explicit head/body/foot partition of `rows`, imported from or destined
     /// for a format whose table model has one. Carve 0.1 source has no spelling
@@ -705,10 +741,13 @@ pub struct Table {
     pub pos: Option<Pos>,
 }
 
+/// Delimited-data source format for a table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum TableSourceFormat {
+    /// Comma-separated values.
     Csv,
+    /// Tab-separated values.
     Tsv,
 }
 
@@ -755,10 +794,13 @@ pub struct TableRowGroups {
     pub bodies: Vec<TableBodyGroup>,
     /// Rows at the end of `rows` forming the table foot.
     pub foot_rows: usize,
+    /// Attributes attached to the head section.
     pub head_attrs: Option<Attrs>,
+    /// Attributes attached to the foot section.
     pub foot_attrs: Option<Attrs>,
 }
 
+/// One body section in an explicit table partition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableBodyGroup {
     /// Rows at the start of this group forming its intermediate header.
@@ -769,11 +811,14 @@ pub struct TableBodyGroup {
     /// zero. It sits on the group rather than on the table because that is where
     /// the exchanged model puts it.
     pub row_head_columns: Option<usize>,
+    /// Attributes attached to this body section.
     pub attrs: Option<Attrs>,
 }
 
+/// A table row and its cells.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableRow {
+    /// Cells in source order.
     pub cells: Vec<TableCell>,
     /// Row-level attributes from a `{...}` block glued to the closing pipe.
     pub attrs: Option<Attrs>,
@@ -783,9 +828,12 @@ pub struct TableRow {
     pub pos: Option<Pos>,
 }
 
+/// A table cell with inline or interchange-only block content.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableCell {
+    /// Whether the cell is a column header.
     pub header: bool,
+    /// Source marker for a row or column span.
     pub span: Option<TableCellSpan>,
     /// Resolved number of columns this cell occupies (spec PART 12 §26).
     /// `None` means 1. Published beside `span`, never instead of it.
@@ -793,10 +841,13 @@ pub struct TableCell {
     /// Resolved number of rows this cell occupies (spec PART 12 §26).
     /// `None` means 1.
     pub rowspan: Option<usize>,
+    /// Horizontal alignment, if specified.
     pub align: Option<TableAlign>,
+    /// Vertical alignment, if specified.
     pub valign: Option<TableVerticalAlign>,
     /// Author attributes from a `{...}` glued to the cell's opening pipe.
     pub attrs: Option<Attrs>,
+    /// Inline cell content.
     pub children: Vec<InlineNode>,
     /// Interchange-only block content, in place of inline children.
     pub blocks: Option<Vec<BlockNode>>,
@@ -804,22 +855,32 @@ pub struct TableCell {
     pub pos: Option<Pos>,
 }
 
+/// Direction of a table cell span marker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TableCellSpan {
+    /// Continue a cell from the row above.
     Rowspan,
+    /// Continue a cell from the preceding column.
     Colspan,
 }
 
+/// Horizontal alignment of a table column or cell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TableAlign {
+    /// Left aligned.
     Left,
+    /// Right aligned.
     Right,
+    /// Centered.
     Center,
 }
 
+/// Resolved publishing metadata for a table column.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TableColumn {
+    /// Horizontal alignment, if specified.
     pub align: Option<TableAlign>,
+    /// Vertical alignment, if specified.
     pub valign: Option<TableVerticalAlign>,
     /// Fraction of the table width, in `(0, 1]`.
     pub width: Option<f64>,
@@ -828,38 +889,57 @@ pub struct TableColumn {
 // Widths are finite values validated at the AST boundary.
 impl Eq for TableColumn {}
 
+/// Vertical alignment of a table column or cell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TableVerticalAlign {
+    /// Top aligned.
     Top,
+    /// Centered vertically.
     Middle,
+    /// Bottom aligned.
     Bottom,
 }
 
+/// A named callout container.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Admonition {
+    /// Attributes attached to the container.
     pub attrs: Option<Attrs>,
+    /// Name on the container opener.
     pub kind: String,
+    /// Inline title from the opener.
     pub title: Option<Vec<InlineNode>>,
+    /// Optional label from the opener.
     pub label: Option<String>,
+    /// Blocks inside the container.
     pub children: Vec<BlockNode>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
 
+/// An unnamed block container.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Div {
+    /// Attributes attached to the container.
     pub attrs: Option<Attrs>,
+    /// Optional label from the opener.
     pub label: Option<String>,
+    /// Blocks inside the container.
     pub children: Vec<BlockNode>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
 
+/// A section wrapper with an optional heading level.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Section {
+    /// Attributes attached to the section.
     pub attrs: Option<Attrs>,
+    /// Heading level associated with the section, if known.
     pub level: Option<u8>,
+    /// Blocks inside the section.
     pub children: Vec<BlockNode>,
+    /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
 
@@ -896,6 +976,7 @@ pub fn is_generated_content_kind(kind: &str) -> bool {
 ///
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Directive {
+    /// Attributes attached to the directive.
     pub attrs: Option<Attrs>,
     /// One of [`GENERATED_CONTENT_KINDS`].
     pub kind: String,
@@ -919,7 +1000,9 @@ pub struct Directive {
 /// reason - a profile denying it must be able to name it.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct LineBlock {
+    /// Attributes attached to the line block.
     pub attrs: Option<Attrs>,
+    /// Blocks containing the line content.
     pub children: Vec<BlockNode>,
     /// Optional line-end pointers for each stanza, relative to its child block.
     pub lines: Option<Vec<Vec<String>>>,
@@ -927,25 +1010,34 @@ pub struct LineBlock {
     pub pos: Option<Pos>,
 }
 
+/// A definition-list entry with one or more terms and descriptions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DefinitionItem {
+    /// Terms for this entry.
     pub terms: Vec<DefinitionTerm>,
+    /// Descriptions for this entry.
     pub definitions: Vec<DefinitionDef>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
 
+/// A term in a definition-list entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DefinitionTerm {
+    /// Attributes attached to the term.
     pub attrs: Option<Attrs>,
+    /// Inline term content.
     pub children: Vec<InlineNode>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
 
+/// A description in a definition-list entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DefinitionDef {
+    /// Attributes attached to the description.
     pub attrs: Option<Attrs>,
+    /// Blocks in the description.
     pub children: Vec<BlockNode>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
@@ -998,8 +1090,11 @@ impl<'a> IntoIterator for &'a mut DefinitionDef {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A definition list containing term and description entries.
 pub struct DefinitionList {
+    /// Attributes attached to this node.
     pub attrs: Option<Attrs>,
+    /// Term and description entries in source order.
     pub items: Vec<DefinitionItem>,
     /// PART 9 §17 L7: the looseness was SPELLED, with the consumed `loose`
     /// boolean on the preceding block-attribute line, so every description
@@ -1021,7 +1116,9 @@ pub struct DefinitionList {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A captioned block target.
 pub struct Figure {
+    /// Attributes attached to this node.
     pub attrs: Option<Attrs>,
     /// BOXED to keep `BlockNode` small. `FigureTarget` embeds a whole `Table`
     /// or `CodeBlock`, which made `Figure` the largest variant by far and so
@@ -1050,6 +1147,7 @@ pub struct Figure {
     /// cap. Unboxed this took `BlockNode` from 272 to 312 bytes, over the guard
     /// in tests/no_single_variant_sets_the_size_of_every_block_node.rs.
     pub rendered_target: Option<Box<RawBlock>>,
+    /// Inline caption shown with the target.
     pub caption: Vec<InlineNode>,
     /// Structured publishing/navigation label; ordinary renderers ignore it.
     pub short_caption: Option<Vec<InlineNode>>,
@@ -1058,11 +1156,17 @@ pub struct Figure {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Block content that a figure captions.
 pub enum FigureTarget {
+    /// An image target.
     Image(Image),
+    /// A quoted block target.
     BlockQuote(BlockQuote),
+    /// A table target.
     Table(Table),
+    /// A fenced code target.
     CodeBlock(CodeBlock),
+    /// A paragraph target.
     Paragraph(Paragraph),
 }
 
@@ -1078,7 +1182,9 @@ pub enum FigureTarget {
 /// caption on the closing fence (carve#1118/carve#1121 own the rest).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FigureGroup {
+    /// Attributes attached to this node.
     pub attrs: Option<Attrs>,
+    /// Blocks inside the group, including its panels.
     pub children: Vec<BlockNode>,
     /// The group caption (the `^ ` line after the closing fence). `None`
     /// means the group is uncaptioned - never an empty placeholder.
@@ -1088,8 +1194,11 @@ pub struct FigureGroup {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// An abbreviation definition hoisted to document scope.
 pub struct AbbreviationDef {
+    /// Abbreviated spelling.
     pub abbr: String,
+    /// Expanded text for the abbreviation.
     pub expansion: String,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
@@ -1115,6 +1224,7 @@ pub struct LinkReferenceDefinition {
     pub label: String,
     /// Present even when the authored definition has an empty destination.
     pub href: String,
+    /// Optional title from the definition.
     pub title: Option<String>,
     /// A trailing attribute block on the definition line (§15 A2b).
     pub attrs: Option<Attrs>,
@@ -1150,8 +1260,11 @@ pub struct CitationDefinition {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Raw block content routed to a named output format.
 pub struct RawBlock {
+    /// Attributes attached to this node.
     pub attrs: Option<Attrs>,
+    /// Target format for the raw content.
     pub format: String,
     /// Literal payload text, including each authored line ending.
     pub content: String,
@@ -1171,9 +1284,13 @@ impl RawBlock {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A block or inline comment preserved in the AST.
 pub struct Comment {
+    /// Whether the comment occupies a block.
     pub block: bool,
+    /// Whether the source used explicit comment delimiters.
     pub delimited: bool,
+    /// Literal content.
     pub content: String,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
@@ -1200,7 +1317,9 @@ pub struct BlockExtension {
     /// renders, writes and counts instead. Every walk that reaches children
     /// reaches this, so the renderers need no per-target special case.
     pub fallback: Box<BlockNode>,
+    /// Opaque extension data, if supplied.
     pub payload: Option<ExtensionPayload>,
+    /// Attributes attached to this node.
     pub attrs: Option<Attrs>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
@@ -1243,8 +1362,11 @@ impl BlockExtension {
 /// writer publishes it as a `div` (carve-rs#1865).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtensionCarrier {
+    /// Attributes attached to this node.
     pub attrs: Option<Attrs>,
+    /// Name of the extension that owns this carrier.
     pub name: String,
+    /// Blocks inside this node.
     pub children: Vec<BlockNode>,
     /// Optional parsed title carried by a `before_render` rewrite (e.g. the
     /// `details` extension stashes the admonition title here so its renderer
@@ -1375,6 +1497,7 @@ impl InlineNode {
         }
     }
 
+    /// Create a plain text node.
     pub fn text(value: impl Into<String>) -> Self {
         Self::Text(Text {
             value: value.into(),
@@ -1382,6 +1505,7 @@ impl InlineNode {
         })
     }
 
+    /// Create an escaped text node.
     pub fn escaped_text(value: impl Into<String>) -> Self {
         Self::EscapedText(EscapedText {
             value: value.into(),
@@ -1389,6 +1513,7 @@ impl InlineNode {
         })
     }
 
+    /// Create an inline code node.
     pub fn code(value: impl Into<String>, attrs: Option<Attrs>) -> Self {
         Self::Code(Code {
             value: value.into(),
@@ -1398,17 +1523,21 @@ impl InlineNode {
         })
     }
 
+    /// Create a soft line break.
     pub fn soft_break() -> Self {
         Self::SoftBreak(Break { pos: None })
     }
 
+    /// Create a hard line break.
     pub fn hard_break() -> Self {
         Self::HardBreak(Break { pos: None })
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Plain inline text.
 pub struct Text {
+    /// Text content.
     pub value: String,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
@@ -1430,6 +1559,7 @@ impl From<&str> for Text {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A source character protected by a backslash.
 pub struct EscapedText {
     /// A character the author escaped with a backslash (`\-`, `\"`).
     ///
@@ -1447,8 +1577,11 @@ pub struct EscapedText {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// An inline code span.
 pub struct Code {
+    /// Verbatim code content.
     pub value: String,
+    /// Attributes attached to this node.
     pub attrs: Option<Attrs>,
     /// The `+` continuation joins inside `value` (CARVE-P12-069).
     pub cell_wraps: Option<Vec<VerbatimCellWrap>>,
@@ -1457,8 +1590,11 @@ pub struct Code {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// An authored nonbreaking space.
 pub struct NonBreakingSpace {
+    /// Attributes attached to this node.
     pub attrs: Option<Attrs>,
+    /// Span in the original source, when available.
     pub pos: Option<Pos>,
 }
 
@@ -1466,20 +1602,27 @@ pub struct NonBreakingSpace {
 /// `offset` counts codepoints up to the joining space.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VerbatimCellWrap {
+    /// Codepoint offset of the joining space.
     pub offset: usize,
+    /// Source continuation line, counted from 1.
     pub line: usize,
+    /// Table row offset, when recorded.
     pub row: Option<usize>,
+    /// Table column offset, when recorded.
     pub col: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A continuation join inside a table cell.
 pub struct CellWrap {
+    /// Column of the continuation join, when recorded.
     pub col: Option<usize>,
     /// The row's continuation line this part came from, counted from 1.
     pub line: usize,
     /// Rows down from the cell to the row holding that line, when the cell
     /// spans down to it.
     pub row: Option<usize>,
+    /// Span in the original source, when available.
     pub pos: Option<Pos>,
 }
 
@@ -1496,20 +1639,26 @@ pub(crate) fn visible_table_cell_children(children: &[InlineNode]) -> &[InlineNo
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A soft or hard inline line break.
 pub struct Break {
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A named punctuation replacement.
 pub struct SmartPunctuation {
+    /// Name of the punctuation substitution.
     pub kind: String,
+    /// Source spelling of the punctuation.
     pub value: String,
+    /// Resolved output glyph, when provided.
     pub glyph: Option<String>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
 
+/// Built-in glyphs for named smart punctuation.
 pub const GLYPHS: &[(&str, &str)] = &[
     ("ellipsis", "…"),
     ("em_dash", "—"),
@@ -1529,6 +1678,7 @@ pub const GLYPHS: &[(&str, &str)] = &[
     ("trademark", "™"),
 ];
 
+/// Return the resolved glyph or a source fallback.
 pub fn smart_punctuation_glyph(node: &SmartPunctuation) -> &str {
     node.glyph.as_deref().unwrap_or_else(|| {
         GLYPHS
@@ -1612,23 +1762,36 @@ pub(crate) fn inline_nodes_without_strong(nodes: &[InlineNode]) -> Vec<InlineNod
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Formatted inline content.
 pub struct Emphasis {
+    /// Attributes attached to this node.
     pub attrs: Option<Attrs>,
+    /// Formatting applied to the children.
     pub kind: EmphasisKind,
+    /// Inline content of this node.
     pub children: Vec<InlineNode>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Formatting applied to inline content.
 pub enum EmphasisKind {
+    /// Italic emphasis.
     Italic,
+    /// Strong emphasis.
     Strong,
+    /// Underlined text.
     Underline,
+    /// Struck text.
     Strike,
+    /// Superscript text.
     Super,
+    /// Subscript text.
     Sub,
+    /// Highlighted text.
     Highlight,
+    /// Combined bold and italic text.
     BoldItalic,
     /// Interchange-only (CARVE-P12-050). Carve 0.1 source has no spelling for
     /// the wrapper, so the parser never produces one and the canonical writer
@@ -1639,12 +1802,19 @@ pub enum EmphasisKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A link with inline label content.
 pub struct Link {
+    /// Attributes attached to this node.
     pub attrs: Option<Attrs>,
+    /// Resolved or authored destination.
     pub href: String,
+    /// Optional title text.
     pub title: Option<String>,
+    /// Inline content of this node.
     pub children: Vec<InlineNode>,
+    /// Unresolved reference label, when the source used one.
     pub ref_label: Option<String>,
+    /// Original reference spelling, when retained.
     pub raw_ref: Option<String>,
     /// True when a reference resolves to a definition with an empty destination.
     /// Rebuilt from definitions after AST JSON decode; never written to the wire.
@@ -1673,10 +1843,15 @@ pub struct Link {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// An image with alternative text.
 pub struct Image {
+    /// Attributes attached to this node.
     pub attrs: Option<Attrs>,
+    /// Resolved or authored image source.
     pub src: String,
+    /// Alternative text for the image.
     pub alt: String,
+    /// Optional title text.
     pub title: Option<String>,
     /// Unresolved reference label for `![alt][ref]` / collapsed `![alt][]`,
     /// mirroring [`Link::ref_label`]. `resolve_reference_links` matches it
@@ -1686,6 +1861,7 @@ pub struct Image {
     /// link ref it never matches heading text. `None` for a direct
     /// `![alt](src)` image.
     pub ref_label: Option<String>,
+    /// Original reference spelling, when retained.
     pub raw_ref: Option<String>,
     /// True when a reference resolves to a definition with an empty destination.
     /// Rebuilt from definitions after AST JSON decode; never written to the wire.
@@ -1695,17 +1871,24 @@ pub struct Image {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Inline content owned by an extension.
 pub struct InlineExtension {
+    /// Attributes attached to this node.
     pub attrs: Option<Attrs>,
+    /// Name of this construct.
     pub name: String,
+    /// Inline content of this node.
     pub children: Vec<InlineNode>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// An inline container with attributes.
 pub struct Span {
+    /// Attributes attached to this node.
     pub attrs: Option<Attrs>,
+    /// Inline content of this node.
     pub children: Vec<InlineNode>,
     /// True when a render-stage transform injected this node rather than the
     /// author writing it - today, the `section-number` span `headingNumbers`
@@ -1721,19 +1904,27 @@ pub struct Span {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Ruby annotations paired with base text.
 pub struct Ruby {
+    /// Attributes attached to this node.
     pub attrs: Option<Attrs>,
+    /// Base text and annotation pairs in order.
     pub pairs: Vec<RubyPair>,
+    /// Span in the original source, when available.
     pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Base text and its ruby annotation.
 pub struct RubyPair {
+    /// Base text being annotated.
     pub base: Vec<InlineNode>,
+    /// Pronunciation or reading shown as the annotation.
     pub annotation: Vec<InlineNode>,
 }
 
 impl Ruby {
+    /// Flatten ruby pairs to inline text with parenthesized annotations.
     pub fn flattened(&self) -> Vec<InlineNode> {
         let mut out = Vec::new();
         for pair in &self.pairs {
@@ -1747,9 +1938,13 @@ impl Ruby {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Inline or display mathematics.
 pub struct Math {
+    /// Attributes attached to this node.
     pub attrs: Option<Attrs>,
+    /// Whether the math is displayed as a block.
     pub display: bool,
+    /// Verbatim math content.
     pub content: String,
     /// The `+` continuation joins inside `content` (CARVE-P12-069).
     pub cell_wraps: Option<Vec<VerbatimCellWrap>>,
@@ -1765,8 +1960,11 @@ pub struct Math {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Raw inline content routed to a named format.
 pub struct RawInline {
+    /// Target format for the raw content.
     pub format: String,
+    /// Literal raw content.
     pub content: String,
     /// The `+` continuation joins inside `content` (CARVE-P12-069).
     pub cell_wraps: Option<Vec<VerbatimCellWrap>>,
@@ -1800,23 +1998,31 @@ pub struct RawInline {
 /// text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LiteralInline {
+    /// Verbatim prose content.
     pub content: String,
+    /// Attributes attached to this node.
     pub attrs: Option<Attrs>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A named shortcode for renderer substitution.
 pub struct Symbol {
+    /// Shortcode name without its delimiters.
     pub name: String,
+    /// Attributes attached to this node.
     pub attrs: Option<Attrs>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A link recognized from angle-bracket source.
 pub struct AutoLink {
+    /// Attributes attached to this node.
     pub attrs: Option<Attrs>,
+    /// Link destination.
     pub href: String,
     /// Display text = the raw content between `<>`: a URI autolink keeps its
     /// scheme (`<mailto:a@b>` shows `mailto:a@b`), an email shows the address.
@@ -1826,6 +2032,7 @@ pub struct AutoLink {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A reference to a heading id.
 pub struct CrossRef {
     /// The raw id between `</#` and `>`, as the author spelled it. PART 12
     /// section 3a keeps it beside `href` rather than letting the resolution
@@ -1840,31 +2047,42 @@ pub struct CrossRef {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A resolved figure or table caption number.
 pub struct CaptionNumber {
+    /// Resolved caption number, when assigned.
     pub number: Option<usize>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A named social mention.
 pub struct Mention {
+    /// Attributes attached to this node.
     pub attrs: Option<Attrs>,
+    /// Mentioned user name.
     pub user: String,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A named social tag.
 pub struct Tag {
+    /// Attributes attached to this node.
     pub attrs: Option<Attrs>,
+    /// Tag name.
     pub name: String,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Citations written in one source group.
 pub struct CitationGroup {
+    /// Citations in source order.
     pub items: Vec<Citation>,
+    /// Original source spelling of the group.
     pub raw: String,
     /// Which built-in formatter the Citations extension picked for this group.
     /// Annotation only: the wire `mode` field is [`Citation::mode`], which is a
@@ -1888,8 +2106,11 @@ impl CitationGroup {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Built-in style chosen for rendering a citation group.
 pub enum CitationRenderMode {
+    /// Numeric citation labels.
     Numbered,
+    /// Author and date citation labels.
     AuthorDate,
 }
 
@@ -1898,21 +2119,32 @@ pub enum CitationRenderMode {
 /// CSL citation-mode vocabulary and is expected to grow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CitationItemMode {
+    /// Citation integrated into the surrounding sentence.
     Integral,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One cited key and its surrounding annotation.
 pub struct Citation {
+    /// Cited reference key.
     pub key: String,
     /// This item's citation mode. Absent means parenthetical.
     pub mode: Option<CitationItemMode>,
+    /// Inline text before the citation.
     pub prefix: Option<Vec<InlineNode>>,
+    /// Parsed locator text, when supplied.
     pub locator: Option<Vec<InlineNode>>,
+    /// Locator kind, such as a page label.
     pub locator_label: Option<String>,
+    /// Locator value following its label.
     pub locator_value: Option<String>,
+    /// Inline text after the citation.
     pub suffix: Option<Vec<InlineNode>>,
+    /// Whether author text is suppressed.
     pub suppress_author: bool,
+    /// Resolved numeric citation number.
     pub number: Option<usize>,
+    /// Resolved display label.
     pub label: Option<String>,
     /// Per-key, document-wide use-site index (1-based), assigned only when a
     /// bibliography pool is supplied; drives back-link anchors (#199).
@@ -1922,41 +2154,57 @@ pub struct Citation {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// An inline abbreviation and its expansion.
 pub struct Abbreviation {
+    /// Abbreviated spelling.
     pub abbr: String,
+    /// Expanded text for the abbreviation.
     pub expansion: String,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// An inline or referenced footnote.
 pub struct Footnote {
+    /// Attributes attached to this node.
     pub attrs: Option<Attrs>,
+    /// Reference identifier, when present.
     pub id: Option<String>,
+    /// Inline footnote content, when authored inline.
     pub inline: Option<Vec<InlineNode>>,
+    /// Resolved footnote number.
     pub number: Option<usize>,
+    /// Resolved backlink identifier.
     pub ref_id: Option<String>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Inline text marked as an insertion.
 pub struct CriticInsert {
+    /// Inline content of this node.
     pub children: Vec<InlineNode>,
+    /// Attributes attached to this node.
     pub attrs: Option<Attrs>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Inline text marked as a deletion.
 pub struct CriticDelete {
+    /// Inline content of this node.
     pub children: Vec<InlineNode>,
+    /// Attributes attached to this node.
     pub attrs: Option<Attrs>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Old and new inline content in a substitution.
 pub struct CriticSubstitute {
     /// The deleted half, as inline content (PART 12, ruling
     /// markup-carve/carve-js#1827).
@@ -1968,7 +2216,9 @@ pub struct CriticSubstitute {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// An inline editorial comment.
 pub struct CriticComment {
+    /// Editorial comment text.
     pub text: String,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,

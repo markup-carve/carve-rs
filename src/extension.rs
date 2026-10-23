@@ -303,20 +303,27 @@ pub fn label_default(key: &str) -> &'static str {
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SocialLinkKind {
+    /// A mention token such as `@name`.
     Mention,
+    /// A tag token such as `#name`.
     Tag,
 }
 
 /// Read-only data supplied to one social-link resolver invocation.
 #[non_exhaustive]
 pub struct SocialLinkResolverInput<'a> {
+    /// Kind of token being resolved.
     pub kind: SocialLinkKind,
+    /// Name without the token marker.
     pub name: &'a str,
+    /// Attributes attached to the token, if any.
     pub attrs: Option<&'a Attrs>,
+    /// Host data supplied through [`Options::social_context`].
     pub context: Option<&'a dyn Any>,
 }
 
 impl<'a> SocialLinkResolverInput<'a> {
+    /// Assemble the read-only input for a resolver call.
     pub fn new(
         kind: SocialLinkKind,
         name: &'a str,
@@ -337,13 +344,21 @@ impl<'a> SocialLinkResolverInput<'a> {
 pub type SocialLinkResolver<'a> =
     dyn Fn(&SocialLinkResolverInput<'_>) -> Result<Option<String>, String> + 'a;
 
+/// Parser and renderer settings for one Carve operation.
 pub struct Options<'a> {
+    /// Include settings used by include-aware linting.
     pub lint_includes: Option<crate::includes::IncludeOptions<'a>>,
+    /// Extensions applied in registration order.
     pub extensions: Vec<&'a dyn CarveExtension>,
+    /// URL template used when a mention has no resolver.
     pub mention_url: Option<String>,
+    /// URL template used when a tag has no resolver.
     pub tag_url: Option<String>,
+    /// Host resolver for mention destinations.
     pub mention_resolver: Option<&'a SocialLinkResolver<'a>>,
+    /// Host resolver for tag destinations.
     pub tag_resolver: Option<&'a SocialLinkResolver<'a>>,
+    /// Opaque host data passed to social-link resolvers.
     pub social_context: Option<&'a dyn Any>,
     /// `:name:` replacements, applied by the HTML renderer ONLY, in all three
     /// engines. The other targets emit the shortcode as the author wrote it:
@@ -486,11 +501,13 @@ impl Default for Options<'_> {
 }
 
 impl<'a> Options<'a> {
+    /// Supply include settings for linting.
     pub fn with_lint_includes(mut self, includes: crate::includes::IncludeOptions<'a>) -> Self {
         self.lint_includes = Some(includes);
         self
     }
 
+    /// Create options with the defaults.
     pub fn new() -> Self {
         Self::default()
     }
@@ -539,36 +556,43 @@ impl<'a> Options<'a> {
         self
     }
 
+    /// Register an extension after those already present.
     pub fn with_extension(mut self, extension: &'a dyn CarveExtension) -> Self {
         self.extensions.push(extension);
         self
     }
 
+    /// Set the fallback URL template for mentions.
     pub fn with_mention_url(mut self, template: impl Into<String>) -> Self {
         self.mention_url = Some(template.into());
         self
     }
 
+    /// Set the fallback URL template for tags.
     pub fn with_tag_url(mut self, template: impl Into<String>) -> Self {
         self.tag_url = Some(template.into());
         self
     }
 
+    /// Use a host callback to resolve mention destinations.
     pub fn with_mention_resolver(mut self, resolver: &'a SocialLinkResolver<'a>) -> Self {
         self.mention_resolver = Some(resolver);
         self
     }
 
+    /// Use a host callback to resolve tag destinations.
     pub fn with_tag_resolver(mut self, resolver: &'a SocialLinkResolver<'a>) -> Self {
         self.tag_resolver = Some(resolver);
         self
     }
 
+    /// Pass host data to social-link resolvers.
     pub fn with_social_context(mut self, context: &'a dyn Any) -> Self {
         self.social_context = Some(context);
         self
     }
 
+    /// Add an HTML-only shortcode replacement.
     pub fn with_symbol(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.symbols.insert(name.into(), value.into());
         self
@@ -653,7 +677,9 @@ impl<'a> Options<'a> {
     }
 }
 
+/// Hooks for recognizing, transforming, and rendering extension nodes.
 pub trait CarveExtension {
+    /// Stable name used to identify the extension.
     fn name(&self) -> &'static str;
 
     /// Semantic span attribute names this extension adds (spec PART 9 §10).
@@ -678,6 +704,7 @@ pub trait CarveExtension {
         None
     }
 
+    /// Match an inline construct beginning at `pos` in `text`.
     fn match_inline(
         &self,
         _text: &str,
@@ -687,6 +714,7 @@ pub trait CarveExtension {
         None
     }
 
+    /// Match a block construct beginning at `start` in `lines`.
     fn match_block(
         &self,
         _lines: &[&str],
@@ -696,6 +724,7 @@ pub trait CarveExtension {
         None
     }
 
+    /// Rewrite the parsed document before render preparation.
     fn after_parse(&self, doc: Document) -> Document {
         doc
     }
@@ -715,6 +744,7 @@ pub trait CarveExtension {
         doc
     }
 
+    /// Render an inline extension node as HTML, if this extension owns it.
     fn render_inline_extension(
         &self,
         _node: &InlineExtension,
@@ -723,6 +753,7 @@ pub trait CarveExtension {
         None
     }
 
+    /// Render a block carrier left by a render-stage transform.
     fn render_extension_carrier(
         &self,
         _node: &ExtensionCarrier,
@@ -799,16 +830,23 @@ impl<'a> BeforeRenderContext<'a> {
     }
 }
 
+/// Inline node and endpoint returned by an extension matcher.
 pub struct InlineMatch {
+    /// Matched node.
     pub node: InlineNode,
+    /// Exclusive end byte offset in the matched text.
     pub end: usize,
 }
 
+/// Block node and line count returned by an extension matcher.
 pub struct BlockMatch {
+    /// Matched node.
     pub node: BlockNode,
+    /// Number of input lines consumed.
     pub lines_consumed: usize,
 }
 
+/// Parser access supplied to an extension matcher.
 pub struct MatcherContext<'a> {
     options: &'a Options<'a>,
     citation_brackets: Option<(&'a str, &'a std::cell::OnceCell<HashMap<usize, usize>>)>,
@@ -857,15 +895,18 @@ impl<'a> MatcherContext<'a> {
         crate::citations::close_bracket(text, open, usize::MAX)
     }
 
+    /// Parse inline content with the active options.
     pub fn parse_inlines(&self, text: &str) -> Vec<InlineNode> {
         parse_matcher_inlines(text, self.options)
     }
 
+    /// Parse blocks with the active options.
     pub fn parse_blocks(&self, source: &str) -> Vec<BlockNode> {
         parse_blocks_with_options(source, self.options)
     }
 }
 
+/// Rendering helpers and settings supplied to extension hooks.
 pub struct RenderContext<'a> {
     pub(crate) options: &'a Options<'a>,
     /// Indentation level of the node currently being rendered. Zero on the
@@ -943,6 +984,7 @@ impl<'a> RenderContext<'a> {
         }
     }
 
+    /// Render an inline run with the active options.
     pub fn render_inlines(&self, nodes: &[InlineNode]) -> String {
         crate::render::render_inlines_with_options(nodes, self.options)
     }
@@ -1015,6 +1057,7 @@ impl<'a> RenderContext<'a> {
             .unwrap_or_else(|| label_default(key).to_string())
     }
 
+    /// Current block indentation level.
     pub fn level(&self) -> usize {
         self.level
     }
@@ -1061,10 +1104,12 @@ impl<'a> RenderContext<'a> {
             .mint_admonition_id()
     }
 
+    /// Escape text for an HTML element body.
     pub fn escape_html(&self, input: &str) -> String {
         escape_text(input)
     }
 
+    /// Escape text for an HTML attribute value.
     pub fn escape_attr(&self, input: &str) -> String {
         escape_attr(input)
     }

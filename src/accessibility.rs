@@ -1,17 +1,28 @@
+//! Accessibility checks for Carve source.
+
 use crate::{parse_with_source_layout, BlockNode, InlineNode, Pos};
 
+/// Severity of an accessibility finding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccessibilitySeverity {
+    /// The source may be hard to use but can still be rendered.
     Warning,
+    /// The source violates a checked accessibility rule.
     Error,
 }
 
+/// An accessibility finding with an optional source span.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccessibilityDiagnostic {
+    /// Stable rule identifier.
     pub rule: &'static str,
+    /// Finding severity.
     pub severity: AccessibilitySeverity,
+    /// Explanation for the author.
     pub message: String,
+    /// Start offset in source codepoints, when available.
     pub start_offset: Option<usize>,
+    /// Exclusive end offset in source codepoints, when available.
     pub end_offset: Option<usize>,
 }
 
@@ -44,6 +55,7 @@ fn check_inlines(nodes: &[InlineNode], diagnostics: &mut Vec<AccessibilityDiagno
     }
 }
 
+/// Parse Carve source and report image and heading accessibility findings.
 pub fn lint_accessibility(source: &str) -> Vec<AccessibilityDiagnostic> {
     let (document, _) = parse_with_source_layout(source);
     let mut diagnostics = Vec::new();

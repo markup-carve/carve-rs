@@ -76,31 +76,55 @@ macro_rules! report_vocabulary {
     };
 }
 
-report_vocabulary!(HtmlImportMode {
+report_vocabulary!(
+    /// Policy for how much HTML structure to preserve.
+    HtmlImportMode {
+    /// Remove constructs that cannot be represented safely.
     Safe => "safe",
+    /// Preserve supported structure and meaning.
     Semantic => "semantic",
+    /// Preserve unsupported HTML as raw content for round trips.
     Roundtrip => "roundtrip",
 });
 
-report_vocabulary!(HtmlImportAdapter {
+report_vocabulary!(
+    /// Source editor or producer whose HTML conventions are recognized.
+    HtmlImportAdapter {
+    /// No editor-specific handling.
     Generic => "generic",
+    /// Tiptap-produced HTML.
     Tiptap => "tiptap",
+    /// ProseMirror-produced HTML.
     Prosemirror => "prosemirror",
+    /// CKEditor-produced HTML.
     Ckeditor => "ckeditor",
+    /// TinyMCE-produced HTML.
     Tinymce => "tinymce",
+    /// Microsoft Word-produced HTML.
     Word => "word",
+    /// Google Docs-produced HTML.
     GoogleDocs => "google-docs",
 });
 
-report_vocabulary!(HtmlImportSeverity {
+report_vocabulary!(
+    /// Severity of an import diagnostic.
+    HtmlImportSeverity {
+    /// Informational finding.
     Info => "info",
+    /// Recoverable import concern.
     Warning => "warning",
+    /// Import problem that requires attention.
     Error => "error",
 });
 
-report_vocabulary!(HtmlImportDiagnosticCode {
+report_vocabulary!(
+    /// Stable code for one import decision.
+    HtmlImportDiagnosticCode {
+    /// An HTML element was omitted.
     ElementDropped => "element-dropped",
+    /// An element wrapper was omitted while its content survived.
     ElementUnwrapped => "element-unwrapped",
+    /// An HTML attribute was omitted.
     AttributeDropped => "attribute-dropped",
     /// An attribute the policy refused to represent as a Carve attribute, and
     /// that reached the output ANYWAY, inside the bytes of an element
@@ -112,8 +136,11 @@ report_vocabulary!(HtmlImportDiagnosticCode {
     /// that did not - which is the row somebody acts on, because `roundtrip` is
     /// the mode `docs/html-import.md` calls unsafe for untrusted input.
     AttributePreserved => "attribute-preserved",
+    /// A style had no Carve equivalent.
     StyleUnmapped => "style-unmapped",
+    /// A table lost structure during import.
     TableDegraded => "table-degraded",
+    /// Unsupported HTML was kept as raw content.
     RawPreserved => "raw-preserved",
     /// A structure the AST holds and Carve 0.1 SOURCE has no spelling for, so
     /// only a WRITER loses it (PART 12 §16). Reported by `html_to_carve`;
@@ -127,19 +154,31 @@ report_vocabulary!(HtmlImportDiagnosticCode {
     /// while retaining text, whereas an assumed encoding warns that the output
     /// text itself is only inferred.
     EncodingAssumed => "encoding-assumed",
+    /// The diagnostic limit hid further findings.
     DiagnosticsTruncated => "diagnostics-truncated",
 });
 
-report_vocabulary!(ImportFidelity {
+report_vocabulary!(
+    /// Extent to which an import decision preserves source content.
+    ImportFidelity {
+    /// Source content was preserved.
     Preserved => "preserved",
+    /// Source content was normalized without known loss.
     Normalized => "normalized",
+    /// Some source structure or content was degraded.
     Degraded => "degraded",
+    /// Some source content was omitted.
     Dropped => "dropped",
 });
 
-report_vocabulary!(ImportConfidence {
+report_vocabulary!(
+    /// Confidence in an import decision.
+    ImportConfidence {
+    /// The decision follows directly from the source.
     Exact => "exact",
+    /// The decision depends on an inference.
     Inferred => "inferred",
+    /// The decision uses a fallback after limited evidence.
     Fallback => "fallback",
 });
 
@@ -192,25 +231,36 @@ impl HtmlImportDiagnosticCode {
     }
 }
 
+/// One import decision with its location and loss classification.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HtmlImportDiagnostic {
+    /// Stable decision code.
     pub code: HtmlImportDiagnosticCode,
+    /// Human-readable explanation.
     pub message: String,
+    /// Severity for presentation.
     pub severity: HtmlImportSeverity,
     /// Stamped from `code`, so a consumer never has to recompute it and can
     /// never disagree with the producer about it.
     pub fidelity: ImportFidelity,
+    /// Confidence in the decision.
     pub confidence: ImportConfidence,
+    /// Path to the source HTML node, when available.
     pub path: Option<String>,
 }
 
+/// Import policy and resource limits.
 #[derive(Debug, Clone)]
 pub struct HtmlImportOptions {
+    /// Preservation policy for unsupported HTML.
     pub mode: HtmlImportMode,
+    /// Source-editor conventions to recognize.
     pub adapter: HtmlImportAdapter,
     /// Maximum input nesting, capped at [`MAX_HTML_IMPORT_DEPTH`] even when set higher.
     pub max_depth: usize,
+    /// Maximum number of input nodes to visit.
     pub max_nodes: usize,
+    /// Maximum number of diagnostics to retain.
     pub max_diagnostics: usize,
     /// The `labels` map the HTML was RENDERED with (PART 9 §16a).
     ///
@@ -249,24 +299,36 @@ impl Default for HtmlImportOptions {
     }
 }
 
+/// Import settings and findings returned with a result.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HtmlImportReport {
+    /// Preservation policy used for this import.
     pub mode: HtmlImportMode,
+    /// Source-editor adapter used for this import.
     pub adapter: HtmlImportAdapter,
+    /// Findings in source order.
     pub diagnostics: Vec<HtmlImportDiagnostic>,
 }
 
+/// Imported value and its diagnostic report.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HtmlImportResult<T> {
+    /// Imported AST or Carve source.
     pub value: T,
+    /// Decisions made during import.
     pub report: HtmlImportReport,
 }
 
+/// Reason HTML import could not complete.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HtmlImportError {
+    /// Input nesting exceeded the depth limit.
     DepthLimit,
+    /// Input contained more nodes than allowed.
     NodeLimit,
+    /// Rendering the imported tree exceeded the renderer's depth limit.
     RenderDepth,
+    /// The imported tree cannot be written as Carve source.
     SourceUnspellable,
 }
 
@@ -4249,6 +4311,7 @@ fn overwritten_attr_names(paragraph: Option<&Attrs>, image: Option<&Attrs>) -> V
     lost
 }
 
+/// Import HTML into an AST and report normalization or loss decisions.
 pub fn html_to_ast(
     html: &str,
     options: &HtmlImportOptions,
@@ -4478,6 +4541,7 @@ the image is written as a block";
     })
 }
 
+/// Import HTML and write Carve source, including writer losses in the report.
 pub fn html_to_carve(
     html: &str,
     options: &HtmlImportOptions,

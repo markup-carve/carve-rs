@@ -24,6 +24,8 @@
 //! captions / figures, admonitions, abbreviations, mentions, tags,
 //! inline extensions, attributes, and frontmatter.
 
+#![deny(missing_docs)]
+
 mod abbr_budget;
 /// Accessibility lint for Carve source.
 pub mod accessibility;
@@ -47,6 +49,7 @@ pub mod html_import;
 mod include_walk;
 /// Opt-in file inclusion with host-supplied resolution and diagnostics.
 pub mod includes;
+/// Incremental parsing snapshots and text-change results.
 pub mod incremental;
 mod index_budget;
 mod inline_carriers;
@@ -698,6 +701,9 @@ pub fn try_to_json_with_options(
     )?))
 }
 
+/// Parse and serialize with `options`, returning an empty string on failure.
+///
+/// Use [`try_to_json_with_options`] when the caller needs the error.
 pub fn to_json_with_options(source: &str, options: &Options<'_>) -> String {
     try_to_json_with_options(source, options).unwrap_or_default()
 }
@@ -833,9 +839,13 @@ pub fn prepare_doc_with_includes(
 /// Output of [`prepare_doc_with_includes`]: the fully prepared document plus
 /// the include diagnostics a host needs for reporting and file watching.
 pub struct PreparedWithIncludes {
+    /// Parsed document after include expansion and render preparation.
     pub doc: ast::Document,
+    /// Include diagnostics the host can display.
     pub warnings: Vec<IncludeWarning>,
+    /// Number of include diagnostics hidden by the reporting limit.
     pub suppressed_warnings: usize,
+    /// Included files the host can watch for changes.
     pub dependencies: Vec<IncludeDependency>,
 }
 

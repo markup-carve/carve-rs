@@ -1,8 +1,13 @@
+//! Version markers written into generated Carve source.
+
 use crate::SPEC_VERSION;
 
+/// Source spelling used for a generated version marker.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StampForm {
+    /// One line marker.
     Line,
+    /// Fenced block marker.
     Block,
 }
 

@@ -1,19 +1,29 @@
+//! Loss reports for output formats that cannot preserve every AST detail.
+
 use crate::ast::{BlockNode, Document, InlineNode, OrderedListType, Pos, Ruby};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
+/// Default maximum number of retained render losses.
 pub const DEFAULT_MAX_RENDER_LOSSES: usize = 100;
 
+/// Output format checked for render losses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RenderTarget {
+    /// HTML output.
     Html,
+    /// Markdown output.
     Markdown,
+    /// Plain-text output.
     Plain,
+    /// ANSI terminal output.
     Ansi,
+    /// Canonical Carve source output.
     Carve,
 }
 
 impl RenderTarget {
+    /// Return the lowercase target name.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Html => "html",
@@ -25,13 +35,17 @@ impl RenderTarget {
     }
 }
 
+/// Whether a raw source node is inline or block content.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RawNodeType {
+    /// Raw inline content.
     Inline,
+    /// Raw block content.
     Block,
 }
 
 impl RawNodeType {
+    /// Return the lowercase node-type name.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Inline => "inline",
@@ -40,36 +54,56 @@ impl RawNodeType {
     }
 }
 
+/// One detail that an output target would discard or change.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenderLoss {
+    /// Stable loss code.
     pub code: &'static str,
+    /// Format of a raw node, when relevant.
     pub format: Option<String>,
+    /// Attribute affected by the loss, when relevant.
     pub attribute: Option<String>,
+    /// Style affected by the loss, when relevant.
     pub style: Option<&'static str>,
     /// The authored ordered-list delimiter, for `list-delimiter-changed`.
     pub delim: Option<char>,
     /// The delimiter written instead, for `list-delimiter-changed`.
     pub emitted_delim: Option<char>,
+    /// Column span affected by the loss, when relevant.
     pub colspan: Option<usize>,
+    /// Row span affected by the loss, when relevant.
     pub rowspan: Option<usize>,
+    /// Output target that incurred the loss.
     pub target: RenderTarget,
+    /// Raw node class, when the loss concerns raw content.
     pub node_type: RawNodeType,
+    /// Source span, when available.
     pub pos: Option<Pos>,
+    /// Human-readable explanation.
     pub message: String,
 }
 
+/// Rendered value and a bounded report of losses.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenderResult<T> {
+    /// Rendered output.
     pub value: T,
+    /// Retained losses in encounter order.
     pub losses: Vec<RenderLoss>,
+    /// Number of losses before truncation.
     pub total_losses: usize,
+    /// Loss counts by stable code.
     pub totals_by_code: BTreeMap<&'static str, usize>,
+    /// Whether the retention limit hid further losses.
     pub truncated: bool,
 }
 
+/// Strictness and retention limit for checked rendering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CheckedRenderOptions {
+    /// Return an error when the target would lose content.
     pub strict: bool,
+    /// Maximum number of loss records to retain.
     pub max_losses: usize,
 }
 
@@ -82,11 +116,16 @@ impl Default for CheckedRenderOptions {
     }
 }
 
+/// Error returned when strict rendering would lose content.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenderLossError {
+    /// Retained losses in encounter order.
     pub losses: Vec<RenderLoss>,
+    /// Number of losses before truncation.
     pub total_losses: usize,
+    /// Loss counts by stable code.
     pub totals_by_code: BTreeMap<&'static str, usize>,
+    /// Whether the retention limit hid further losses.
     pub truncated: bool,
 }
 

@@ -1,3 +1,5 @@
+//! Citation rendering and the supported CSL-JSON subset.
+
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -9,9 +11,12 @@ use crate::extension::{
 
 const REFS_BLOCK: &str = "citations-references";
 
+/// Built-in citation formatting mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CitationMode {
+    /// Numeric citation labels.
     Numbered,
+    /// Author and date citation labels.
     AuthorDate,
 }
 
@@ -28,8 +33,11 @@ impl From<CitationMode> for CitationRenderMode {
 /// builds these from parsed CSL-JSON; the extension does no file I/O or parsing.
 #[derive(Debug, Clone, Default)]
 pub struct CslName {
+    /// Family name component.
     pub family: Option<String>,
+    /// Given name component.
     pub given: Option<String>,
+    /// Literal name used without component parsing.
     pub literal: Option<String>,
 }
 
@@ -38,15 +46,20 @@ pub struct CslName {
 pub struct CslDate {
     /// `date-parts[0][0]` is the year.
     pub date_parts: Option<Vec<Vec<i64>>>,
+    /// Literal date text when date parts are unavailable.
     pub literal: Option<String>,
 }
 
 /// A CSL-JSON bibliography entry (the subset the minimal formatter reads).
 #[derive(Debug, Clone, Default)]
 pub struct CslEntry {
+    /// CSL item identifier.
     pub id: String,
+    /// Authors of the item.
     pub author: Option<Vec<CslName>>,
+    /// Issued date of the item.
     pub issued: Option<CslDate>,
+    /// Item title.
     pub title: Option<String>,
 }
 
@@ -60,6 +73,7 @@ struct Def {
     csl_text: Option<String>,
 }
 
+/// Citation extension with optional bibliography data.
 pub struct Citations {
     mode: CitationMode,
     /// A supplied pool (even empty) activates the Tier-3 Bibliography behavior:
@@ -72,14 +86,17 @@ pub struct Citations {
 }
 
 impl Citations {
+    /// Create a numeric citation formatter.
     pub fn new() -> Self {
         Self::with_mode(CitationMode::Numbered)
     }
 
+    /// Create an author-date citation formatter.
     pub fn author_date() -> Self {
         Self::with_mode(CitationMode::AuthorDate)
     }
 
+    /// Create a citation formatter in the selected mode.
     pub fn with_mode(mode: CitationMode) -> Self {
         Self {
             mode,
@@ -374,8 +391,11 @@ fn parse_item(raw: &str, ctx: &MatcherContext<'_>) -> Option<Citation> {
 
 /// The result of parsing the locator text after a citation key's comma.
 pub struct ParsedLocator {
+    /// Recognized locator label, when present.
     pub label: Option<String>,
+    /// Locator value following the label.
     pub value: Option<String>,
+    /// Text following the locator value.
     pub suffix_text: Option<String>,
 }
 

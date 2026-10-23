@@ -1,14 +1,20 @@
+//! Incremental parse snapshots and source edits.
+
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{fmt, ops::Range};
 
 use crate::{parse_with_source_layout, Document};
 
+/// Replacement of one UTF-8 byte range in a source snapshot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextChange {
+    /// Byte range to replace.
     pub range: Range<usize>,
+    /// Replacement source text.
     pub replacement: String,
 }
 
+/// Source and parse state kept for a later edit.
 #[derive(Debug, Clone)]
 pub struct ParserSnapshot {
     source: String,
@@ -19,17 +25,24 @@ pub struct ParserSnapshot {
 }
 
 impl ParserSnapshot {
+    /// Source text represented by this snapshot.
     pub fn source(&self) -> &str {
         &self.source
     }
 }
 
+/// Updated document, source layout, and snapshot after parsing.
 #[derive(Debug, Clone)]
 pub struct IncrementalParse {
+    /// Parsed document after the operation.
     pub document: Document,
+    /// Source-layout JSON for the parsed document.
     pub source_layout_json: String,
+    /// Snapshot to pass to the next [`reparse`] call.
     pub snapshot: ParserSnapshot,
+    /// Byte ranges of source changed by this operation.
     pub changed_source: Vec<Range<usize>>,
+    /// Whether unchanged nodes from the previous tree were reused.
     pub reused_previous_tree: bool,
     /// Bytes passed to the parser during this operation; source mapping is separate.
     pub parsed_source_bytes: usize,
@@ -37,6 +50,7 @@ pub struct IncrementalParse {
     pub node_identity: Option<crate::NodeIdentity>,
 }
 
+/// Invalid or overlapping text changes supplied to [`reparse`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IncrementalParseError(pub String);
 
@@ -48,6 +62,7 @@ impl fmt::Display for IncrementalParseError {
 
 impl std::error::Error for IncrementalParseError {}
 
+/// Parse a source string and create a snapshot for later edits.
 pub fn parse_snapshot(source: &str) -> IncrementalParse {
     let (document, source_layout_json) = parse_with_source_layout(source);
     let plain_paragraphs = reusable_paragraphs(source, &document);
@@ -91,6 +106,7 @@ pub fn parse_snapshot_with_identity(source: &str) -> IncrementalParse {
     result
 }
 
+/// Apply text changes to a snapshot and parse the resulting source.
 pub fn reparse(
     snapshot: ParserSnapshot,
     changes: &[TextChange],

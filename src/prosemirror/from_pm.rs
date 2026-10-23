@@ -9,6 +9,7 @@ use super::{schema_map, ProseMirrorImport, SchemaMap};
 
 type Object = Map<String, Json>;
 
+/// Invalid or unsupported ProseMirror input.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProseMirrorError {
     message: String,
@@ -30,6 +31,7 @@ impl fmt::Display for ProseMirrorError {
 
 impl std::error::Error for ProseMirrorError {}
 
+/// Import ProseMirror JSON into a Carve document.
 pub fn from_prosemirror(json: &str) -> Result<Document, ProseMirrorError> {
     from_prosemirror_with_report(json).map(|import| import.document)
 }

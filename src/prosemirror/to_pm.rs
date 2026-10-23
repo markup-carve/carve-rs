@@ -8,6 +8,7 @@ use super::{schema_map, ProseMirrorDoc, SchemaMap};
 
 type Object = Map<String, Json>;
 
+/// Convert a Carve document to the supported ProseMirror schema.
 pub fn to_prosemirror(doc: &Document) -> ProseMirrorDoc {
     let mut renderer = Renderer {
         map: schema_map(),

@@ -15,9 +15,11 @@ impl SourceUnspellable {
         Self { node_type, reason }
     }
 
+    /// AST node type the writer could not spell.
     pub fn node_type(&self) -> &'static str {
         self.node_type
     }
+    /// Stable reason for the refusal.
     pub fn reason(&self) -> &'static str {
         self.reason
     }
@@ -38,7 +40,9 @@ impl std::error::Error for SourceUnspellable {}
 /// A typed reason the canonical Carve writer refused a tree.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RenderCarveError {
+    /// Tree nesting exceeded the writer's depth limit.
     Depth(crate::RenderDepthError),
+    /// A tree shape has no faithful Carve source spelling.
     SourceUnspellable(SourceUnspellable),
 }
 

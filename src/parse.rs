@@ -619,10 +619,12 @@ fn is_bare_figure_open(open: &ContainerOpen) -> bool {
         && open.label.is_none()
 }
 
+/// Parse Carve source with default options.
 pub fn parse(source: &str) -> Document {
     parse_with_options(source, &Options::default())
 }
 
+/// Parse Carve source using the supplied parser options.
 pub fn parse_with_options(source: &str, options: &Options<'_>) -> Document {
     parse_with_options_mode(source, options, ParseMode::Html)
 }
