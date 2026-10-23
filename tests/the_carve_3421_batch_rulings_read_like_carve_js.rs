@@ -266,3 +266,29 @@ fn stacked_quote_plus_readings_shared_by_the_spec_model_and_carve_js() {
         .iter()
         .all(|warning| warning.rule != "continuation-marker-refused"));
 }
+
+#[test]
+fn a_deep_quote_plus_and_a_misaligned_host_prefix_read_like_carve_js() {
+    check(&[
+        (
+            "> > > > +\n> b\n",
+            "<blockquote><blockquote><blockquote><blockquote><p>b</p></blockquote></blockquote></blockquote></blockquote>",
+        ),
+        (
+            "> > > > +\n> # h\n",
+            "<blockquote><blockquote><blockquote><blockquote><h1id=\"h\">h</h1></blockquote></blockquote></blockquote></blockquote>",
+        ),
+        (
+            "> > > +\n> b\n",
+            "<blockquote><blockquote><blockquote><p>b</p></blockquote></blockquote></blockquote>",
+        ),
+        (
+            "> > - > +\n>  > q\n",
+            "<blockquote><blockquote><ul><li><blockquote><p>+&gt;q</p></blockquote></li></ul></blockquote></blockquote>",
+        ),
+        (
+            "> > - > +\n> > q\n",
+            "<blockquote><blockquote><ul><li><blockquote><p>q</p></blockquote></li></ul></blockquote></blockquote>",
+        ),
+    ]);
+}

@@ -1454,7 +1454,13 @@ pub(in crate::parse) fn collect_blockquote_body(
                 let quoted_follower = cur
                     .peek()
                     .is_some_and(|next| strip_blockquote_prefix(next).is_some());
-                let keep_levels = if prior_levels > 0 {
+                // A follower carrying just this quote's own marker joins the innermost quote
+                // behind every level (`> > > > +` / `> b`, carve#3421).
+                let own_marker_follower = prior_levels == 0
+                    && quoted_follower
+                    && follower_nested_levels == 0
+                    && levels > 2;
+                let keep_levels = if prior_levels > 0 || own_marker_follower {
                     levels
                 } else if quoted_follower {
                     levels.saturating_sub(follower_nested_levels + 1)
@@ -1483,7 +1489,7 @@ pub(in crate::parse) fn collect_blockquote_body(
                 );
                 while cur.pos < end {
                     let next = cur.lines.at(cur.pos);
-                    let kept = if prior_levels > 0 {
+                    let kept = if prior_levels > 0 || own_marker_follower {
                         strip_blockquote_prefix(next).unwrap_or(next)
                     } else {
                         next

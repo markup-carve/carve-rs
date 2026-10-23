@@ -819,6 +819,8 @@ impl Classifier {
                             // No host prefix in line with the opener's: read at column 0.
                             || raw == usize::MAX
                                 && source_column(line, Some(0)) == 0
+                                // A misaligned `>` is no host prefix (`> > - > +` / `>  > q`).
+                                && quote_body(line).0 < depth.max(1)
                                 // Below an indented host quote, a column-0 block has left
                                 // the item that holds it (carve#3421).
                                 && (leading_ws(&self.lines[index]) == 0
