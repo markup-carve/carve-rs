@@ -847,6 +847,10 @@ impl Classifier {
                 && follower.is_some_and(|line| {
                     let marker = source_column(line, Some(depth));
                     quote_body(line).0 < owner.depth
+                        // An indented `>` is no host prefix (`> - - +` / ` > q`).
+                        || depth > 0
+                            && stacked_follower_column(line, &self.lines[index], depth)
+                                == usize::MAX
                         || owner.depth > depth
                             && quote_body(line).0 > depth
                             && marker != column

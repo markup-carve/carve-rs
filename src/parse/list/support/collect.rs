@@ -1746,7 +1746,18 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                             },
                         )
                 });
-            frame_lazy_fence = lazy_in_descendant && marker_quote_shape;
+            frame_lazy_fence = lazy_in_descendant && marker_quote_shape
+                // A quote marker past the column, below a quote whose list `+` refused it,
+                // is no quote of its own: the indented `>` is paragraph text (carve#3421).
+                || indent > strip_cols
+                    && cur.pos > 0
+                    && strip_blockquote_prefix(trim_ascii_start(line)).is_some()
+                    && trim_ascii_start(cur.lines.at(cur.pos - 1)).starts_with('>')
+                    && cur.continuation_decision(cur.pos - 1).is_some_and(|decision| {
+                        decision.first_block
+                            && decision.refusal.is_some()
+                            && decision.owner == Some(continuation_marker::Kind::List)
+                    });
             if retained_item_fence {
                 let mut open = detect_fence_open(trim_ascii_start(line)).unwrap();
                 open.content_col = strip_cols;
