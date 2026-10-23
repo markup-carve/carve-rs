@@ -142,15 +142,6 @@ pub(super) fn nested_tight_item_loses_tightness(item: &ListItem) -> bool {
     })
 }
 
-// The compact spelling after a nested heading changes the tree on readback.
-fn nested_heading_before_code_fence(item: &ListItem) -> bool {
-    item.children.windows(2).any(|pair| {
-        matches!(pair[1], BlockNode::CodeBlock(_))
-            && matches!(&pair[0], BlockNode::List(list) if list.items.last().is_some_and(|last|
-                matches!(last.children.last(), Some(BlockNode::Heading(_)))))
-    })
-}
-
 pub(super) fn indent_adjacent_list(text: &str, width: usize) -> String {
     let indent = " ".repeat(width);
     text.lines()
@@ -356,7 +347,6 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
         let inserted_before_item = session.inserted.with(std::cell::Cell::get);
         let seen_before_item = session.seen.with(std::cell::Cell::get);
         let mut relative_boundaries = Vec::new();
-        let prefer_blank_lines = node.tight && nested_heading_before_code_fence(item);
         let mut content = if item.children.is_empty() {
             item.pos
                 .as_ref()
@@ -367,7 +357,7 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
                 render_item_blocks(
                     session,
                     &item.children,
-                    node.tight && !prefer_blank_lines,
+                    node.tight,
                     item.pos.as_ref(),
                     ctx,
                     &mut relative_boundaries,
