@@ -91,6 +91,10 @@ fn an_indented_quote_marker_below_the_quote_is_item_text() {
             "<ul><li>a<blockquote><ul><li><ul><li></li></ul></li></ul></blockquote>&gt;q</li></ul>",
         ),
         (
+            "- a\n   > - +\n   > - b\n",
+            "<ul><li>a<blockquote><ul><li></li><li>b</li></ul></blockquote></li></ul>",
+        ),
+        (
             "- a\n  > - - +\n  > q\n",
             "<ul><li>a<blockquote><ul><li><ul><li>q</li></ul></li></ul></blockquote></li></ul>",
         ),

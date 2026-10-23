@@ -1753,6 +1753,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                     && cur.pos > 0
                     && strip_blockquote_prefix(trim_ascii_start(line)).is_some()
                     && trim_ascii_start(cur.lines.at(cur.pos - 1)).starts_with('>')
+                    // Only a `>` out of line with the quote's own marker.
+                    && indent_columns(cur.lines.at(cur.pos - 1)) != indent
                     && cur.continuation_decision(cur.pos - 1).is_some_and(|decision| {
                         decision.first_block
                             && decision.refusal.is_some()
