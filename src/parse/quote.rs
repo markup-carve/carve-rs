@@ -1830,6 +1830,20 @@ pub(in crate::parse) fn collect_blockquote_body(
         {
             break;
         }
+        // A first-block list `+` (`- +`, `- - +`) leaves no paragraph open, so a line
+        // without the quote's marker ends the quote (carve#3421).
+        if last_quoted_at == cur.pos.checked_sub(1)
+            && inner.lines.last().is_some_and(|last| {
+                let mut body = trim_ascii_start(&last.text);
+                while let Some(rest) = strip_blockquote_prefix(body) {
+                    body = trim_ascii_start(rest);
+                }
+                detect_list_marker_full(body).is_some()
+                    && is_plus_marker(innermost_marker_content(body))
+            })
+        {
+            break;
+        }
         let term_open = if may_have_term
             && !is_blank_line(line)
             && !is_definition_list_start(trim_ascii_start(line))

@@ -1021,6 +1021,40 @@ pub(crate) fn parse_list(
                     cur.consume();
                 }
                 continuation_has_content = end > start;
+            } else if detect_list_marker_full(innermost)
+                .is_some_and(|inner| is_plus_marker(innermost_marker_content(inner.content)))
+                && cur.peek().is_some_and(|line| {
+                    let text = trim_ascii_start(line);
+                    indent_columns(line) < content_col
+                        && strip_blockquote_prefix(text).is_none()
+                        && detect_list_marker_full(text).is_none()
+                        && line_starts_paragraph(text)
+                })
+            {
+                // A list `+` in the marker line's quote takes nothing below it: the quote
+                // has ended, and the paragraph line joins this item (carve#3421).
+                let start = cur.pos;
+                let end = attached_block_lines_classified(
+                    cur.lines,
+                    start,
+                    &mut cur.comment_closer_last_index,
+                    &mut cur.code_closer_last_index,
+                    options,
+                    &mut |next, _| is_blank_line(next) || is_plus_marker(next),
+                )
+                .max(start + 1);
+                while cur.pos < end {
+                    let line = cur.lines.at(cur.pos);
+                    let (body, consumed, synthetic) = slice_columns_mapped(line, content_col, true);
+                    stream.push_newline_at(
+                        body,
+                        cur.source_line(cur.pos),
+                        cur.source_col(cur.pos)
+                            .map(|col| col + consumed as isize - synthetic as isize),
+                    );
+                    cur.consume();
+                }
+                continuation_has_content = true;
             } else if !below_empty_quote_marker {
                 let continuation = collect_indented_block_mapped(
                     cur,

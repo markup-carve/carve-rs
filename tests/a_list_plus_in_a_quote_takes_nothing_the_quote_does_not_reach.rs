@@ -1,0 +1,75 @@
+//! A first-block list `+` inside a quote takes no follower the quote does not
+//! reach: the item stays empty and the follower is read after the quote, as
+//! the spec model and carve-js read it (markup-carve/carve#3421).
+
+use carve::to_html;
+
+fn flat(source: &str) -> String {
+    to_html(source).split_whitespace().collect()
+}
+
+#[test]
+fn an_unprefixed_follower_ends_the_quote() {
+    for (source, expected) in [
+        ("> - +\nb\n", "<blockquote><ul><li></li></ul></blockquote><p>b</p>"),
+        (
+            "> > - +\nb\n",
+            "<blockquote><blockquote><ul><li></li></ul></blockquote></blockquote><p>b</p>",
+        ),
+        (
+            "- a\n  > - +\nb\n",
+            "<ul><li>a<blockquote><ul><li></li></ul></blockquote></li></ul><p>b</p>",
+        ),
+        (
+            "> 1. +\n | c |\n",
+            "<blockquote><ol><li></li></ol></blockquote><p>|c|</p>",
+        ),
+        (
+            "- a\n  > - +\n> q\n",
+            "<ul><li>a<blockquote><ul><li></li></ul></blockquote></li></ul><blockquote><p>q</p></blockquote>",
+        ),
+    ] {
+        assert_eq!(flat(source), expected, "{source:?}");
+    }
+}
+
+#[test]
+fn a_follower_past_the_quote_joins_the_enclosing_item() {
+    for (source, expected) in [
+        (
+            "- > - +\nb\n",
+            "<ul><li><blockquote><ul><li></li></ul></blockquote>b</li></ul>",
+        ),
+        (
+            "> - > - +\n> b\n",
+            "<blockquote><ul><li><blockquote><ul><li></li></ul></blockquote>b</li></ul></blockquote>",
+        ),
+        (
+            "- > - +\n    - s\n",
+            "<ul><li><blockquote><ul><li></li></ul></blockquote><ul><li>s</li></ul></li></ul>",
+        ),
+    ] {
+        assert_eq!(flat(source), expected, "{source:?}");
+    }
+}
+
+#[test]
+fn a_follower_inside_the_quote_keeps_its_reading() {
+    for (source, expected) in [
+        (
+            "> - +\n> b\n",
+            "<blockquote><ul><li>b</li></ul></blockquote>",
+        ),
+        (
+            "> - +\n>  b\n",
+            "<blockquote><ul><li></li></ul><p>b</p></blockquote>",
+        ),
+        (
+            "> - +\n>   b\n",
+            "<blockquote><ul><li>b</li></ul></blockquote>",
+        ),
+        ("- - +\nb\n", "<ul><li><ul><li>b</li></ul></li></ul>"),
+    ] {
+        assert_eq!(flat(source), expected, "{source:?}");
+    }
+}

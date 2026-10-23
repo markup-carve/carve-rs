@@ -11,6 +11,8 @@
 mod a_continuation_marker_is_column_zero_only;
 #[path = "../a_fence_run_that_dedents_out_of_a_child_keeps_the_outer_item_tight.rs"]
 mod a_fence_run_that_dedents_out_of_a_child_keeps_the_outer_item_tight;
+#[path = "../a_list_plus_in_a_quote_takes_nothing_the_quote_does_not_reach.rs"]
+mod a_list_plus_in_a_quote_takes_nothing_the_quote_does_not_reach;
 #[path = "../a_quote_first_block_plus_reads_its_follower_by_column.rs"]
 mod a_quote_first_block_plus_reads_its_follower_by_column;
 #[path = "../a_stacked_quote_plus_refuses_an_outer_item_column.rs"]

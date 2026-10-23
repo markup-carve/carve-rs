@@ -682,6 +682,7 @@ impl Classifier {
         // Openers on this line; a task box counts as one.
         let mut openers_on_line = 0usize;
         let mut inner_quote_marker_column = None;
+        let mut first_quote_marker_column = None;
         for _ in 0..32 {
             if let Some(marker) = detect_list_marker_full(inner) {
                 list_opener_on_line = true;
@@ -702,6 +703,7 @@ impl Classifier {
             if let Some(quoted) = strip_blockquote_prefix(inner) {
                 openers_on_line += 1;
                 inner_quote_marker_column = Some(entry.column);
+                first_quote_marker_column.get_or_insert(entry.column);
                 entry.kind = Kind::Quote;
                 entry.content_column = entry.column;
                 entry.hosted_quote = list_opener_on_line || description_on_line;
@@ -811,10 +813,22 @@ impl Classifier {
                             && entry.content_column == opener_column
                             && follower.is_some_and(|line| !item_block_opener(line.trim_start()))
                     })
-                    || follower.is_some_and(|line| {
-                        source_column(line, Some(0)) == 0 && detect_list_marker_full(line).is_none()
-                    })
+                    // Column 0 inside the host quotes, not the column of a host `>` (carve#3421).
+                    || opener_column == 0 && detect_list_marker_full(follower_body).is_none()
             };
+            // A list's, note's or description's `+` inside a quote takes nothing from a line the
+            // quote does not reach: the quote has ended (carve#3421).
+            let outside_quote = owner.kind != Kind::Quote
+                && owner.depth > 0
+                && follower.is_some_and(|line| {
+                    let marker = source_column(line, Some(depth));
+                    quote_body(line).0 < owner.depth
+                        || owner.depth > depth
+                            && quote_body(line).0 > depth
+                            && marker != column
+                            && Some(marker) != first_quote_marker_column
+                });
+            let at_column = at_column && !outside_quote;
             let sibling = matches!(owner.kind, Kind::List | Kind::Quote)
                 && (follower_column == owner.column || opener_column == column)
                 && detect_list_marker_full(follower_body).is_some();
@@ -897,7 +911,12 @@ mod tests {
                 Kind::List,
                 None,
             ),
-            ("> - foo\n>   - +\n>     > q", 2, Kind::List, None),
+            (
+                "> - foo\n>   - +\n>     > q",
+                2,
+                Kind::List,
+                Some(Refusal::Right),
+            ),
             ("- > a  \n  +  \n  b  ", 2, Kind::Quote, None),
             ("- a\n\t- > +\n  b", 2, Kind::Quote, Some(Refusal::Right)),
             ("- a\n\t- > +\n  # h", 2, Kind::Quote, Some(Refusal::Right)),
