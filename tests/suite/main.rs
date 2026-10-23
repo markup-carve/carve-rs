@@ -25,6 +25,8 @@ mod a_tab_placed_sublist_starts_on_a_real_column;
 mod a_wrapped_dangling_attribute_is_reported_like_the_one_line_form;
 #[path = "../an_opener_in_a_description_in_an_item_is_not_overindented.rs"]
 mod an_opener_in_a_description_in_an_item_is_not_overindented;
+#[path = "../an_unclosed_attached_fence_ends_with_its_block_before_a_blank.rs"]
+mod an_unclosed_attached_fence_ends_with_its_block_before_a_blank;
 #[path = "../an_unclosed_fence_below_a_marker_line_quote_is_lazy_text.rs"]
 mod an_unclosed_fence_below_a_marker_line_quote_is_lazy_text;
 #[path = "../folded_fence_closer_shapes.rs"]

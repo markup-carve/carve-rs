@@ -497,8 +497,12 @@ pub(crate) fn attached_block_end(
 ) -> usize {
     let mut end = start;
     let mut in_fence: Option<FenceOpen> = None;
+    let mut unclosed_fence = false;
     while end < lines.len() {
         let line = lines.at(end);
+        if unclosed_fence && is_blank_line(line) {
+            break;
+        }
         if let Some(open) = in_fence {
             if is_fence_close(line, open) {
                 in_fence = None;
@@ -507,6 +511,14 @@ pub(crate) fn attached_block_end(
             continue;
         }
         if let Some(open) = detect_fence_open(line) {
+            // An unclosed attached fence takes the rest of its container only when no
+            // blank line follows; otherwise it ends with the attached block (carve#3421).
+            let closed = (end + 1..lines.len()).any(|at| is_fence_close(lines.at(at), open));
+            if !closed && (end + 1..lines.len()).any(|at| is_blank_line(lines.at(at))) {
+                unclosed_fence = true;
+                end += 1;
+                continue;
+            }
             in_fence = Some(open);
             end += 1;
             continue;
