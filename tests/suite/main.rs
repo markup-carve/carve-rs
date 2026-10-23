@@ -2470,6 +2470,8 @@ mod nested_fence_continuation_blank_payload;
 #[path = "../nested_marker_fence_blank_payload.rs"]
 mod nested_marker_fence_blank_payload;
 
+#[path = "../a_band_line_after_a_flush_lazy_line_stays_lazy.rs"]
+mod a_band_line_after_a_flush_lazy_line_stays_lazy;
 #[path = "../a_block_below_an_empty_nested_item_uses_one_column.rs"]
 mod a_block_below_an_empty_nested_item_uses_one_column;
 #[path = "../a_description_below_a_rebased_term_stays_text.rs"]

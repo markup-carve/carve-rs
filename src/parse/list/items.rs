@@ -614,6 +614,16 @@ pub(crate) fn parse_list(
                     });
                 let nested_bare_ends_item = nested_bare_marker_then_plain(cur, content_col)
                     || refused_first_block_below_column(cur, content_col);
+                // A flush lazy run keeps folding band lines below it (PART 1 S4).
+                let lazy_scope = if lazy_scope == (0, 0)
+                    && cur
+                        .peek()
+                        .is_some_and(|line| !is_blank_line(line) && indent_columns(line) == 0)
+                {
+                    (content_col - 1, base_indent)
+                } else {
+                    lazy_scope
+                };
                 if stopped_fence.is_none() && !descendant_text_after_fence && !nested_bare_ends_item
                 {
                     fold_lazy_run_and_resume_in_band(
