@@ -915,6 +915,7 @@ const IMPLEMENTED: &[&str] = &[
     "a-wrapped-attribute-line-interrupts-like-a-one-line-attribute-line",
     "a-wrapped-attribute-line-opened-at-a-container-s-column-is-one-construct",
     "the-column-of-the-quote-that-owns-a-first-block-plus-stays-eligible-at-every-depth",
+    "a-description-separator-left-of-its-item-s-column-folds-into-the-definition-body",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
