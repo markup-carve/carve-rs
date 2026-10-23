@@ -513,7 +513,16 @@ pub(crate) fn attached_block_end(
         if let Some(open) = detect_fence_open(line) {
             // An unclosed attached fence takes the rest of its container only when no
             // blank line follows; otherwise it ends with the attached block (carve#3421).
-            let closed = (end + 1..lines.len()).any(|at| is_fence_close(lines.at(at), open));
+            // The index rules out most suffixes, so unclosed openers stay linear.
+            let possible = lines
+                .code_after(end, open.fence_char, open.fence_len)
+                .unwrap_or_else(|| {
+                    let index =
+                        closer_index.get_or_insert_with(|| build_code_closer_last_index(&lines));
+                    code_closer_exists_after(index, end, open.fence_char, open.fence_len)
+                });
+            let closed =
+                possible && (end + 1..lines.len()).any(|at| is_fence_close(lines.at(at), open));
             if !closed && (end + 1..lines.len()).any(|at| is_blank_line(lines.at(at))) {
                 unclosed_fence = true;
                 end += 1;
