@@ -74,7 +74,8 @@ pub fn lint_carve(source: &str) -> Vec<LintWarning> {
 pub fn lint_carve_with_options(source: &str, options: &Options<'_>) -> Vec<LintWarning> {
     let mut out = lint_with_recovery(source, options).0;
     if let Some(includes) = &options.lint_includes {
-        out.extend(lint_includes(source, options, includes));
+        let found = lint_includes(source, options, includes, &mut out);
+        out.extend(found);
     }
     out
 }
@@ -83,6 +84,7 @@ fn lint_includes(
     source: &str,
     options: &Options<'_>,
     includes: &crate::includes::IncludeOptions<'_>,
+    root: &mut Vec<LintWarning>,
 ) -> Vec<LintWarning> {
     use crate::includes::AcceptedInclude;
     use std::collections::HashSet;
@@ -94,6 +96,20 @@ fn lint_includes(
     let doc = parse_with_options(source, &parse_options);
     let result =
         crate::includes::expand_includes(doc, source, &includes.clone().collecting_included());
+    // A heading an include supplies is a cross-reference target too.
+    if root.iter().any(|finding| finding.rule == "broken-crossref") {
+        let index =
+            crate::parse::crossref_index_for_document(&result.doc, options.heading_id_options());
+        let targets: HashSet<&str> = index.ids().collect();
+        root.retain(|finding| {
+            finding.rule != "broken-crossref"
+                || !source
+                    .get(finding.start..finding.end)
+                    .and_then(|text| text.strip_prefix("</#"))
+                    .and_then(|text| text.strip_suffix('>'))
+                    .is_some_and(|target| targets.contains(target))
+        });
+    }
     let mut findings = Vec::new();
     for entry in result.included {
         match entry {
