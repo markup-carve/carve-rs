@@ -44,7 +44,7 @@ which the published crate does not carry.
 - Lint: say what a refused first-block `+` leaves behind and report a refused first-block `> +`. (#3061; markup-carve/carve#3524)
 - Lint: report a quote-prefixed `+` that a list item at the same quote level leaves as text, as carve-js does. (markup-carve/carve#3421)
 - Lint: report a document-level `+` no container claims only when a block follows it, not before paragraph text, and name the quote an unclaimed quoted `+` stays in. (#3080, markup-carve/carve#3421)
-- Lint: report a wrapped block attribute that reaches no block, as its one-line twin is reported. (#PRNUM, #3094)
+- Lint: report a wrapped block attribute that reaches no block, as its one-line twin is reported. (#3099, #3094)
 
 ### Formatting and migration
 
