@@ -13,14 +13,8 @@ fn rows(source: &str) -> String {
 
 #[test]
 fn a_glued_left_marker_and_a_space_is_a_colspan() {
-    assert_eq!(
-        rows("| a |< |\n"),
-        "<tr><td colspan=\"2\">a</td></tr>"
-    );
-    assert_eq!(
-        rows("|< |\n"),
-        "<tr><td></td></tr>"
-    );
+    assert_eq!(rows("| a |< |\n"), "<tr><td colspan=\"2\">a</td></tr>");
+    assert_eq!(rows("|< |\n"), "<tr><td></td></tr>");
 }
 
 #[test]
