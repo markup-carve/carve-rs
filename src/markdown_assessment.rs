@@ -568,9 +568,695 @@ fn hide_even_pipe_runs(source: &str) -> Option<(String, char, Vec<usize>)> {
     Some((out, stand_in, hidden))
 }
 
+/// Walk state for the native parser's events: findings, the event stream the
+/// reference render is built from, and the construct depths the walk tracks.
+struct EventScan<'a> {
+    source: &'a str,
+    parser_source: &'a str,
+    value: &'a str,
+    line_starts: &'a [usize],
+    bare_urls: &'a [crate::markdown_gfm_autolinks::BareLink],
+    bare_url_at: usize,
+    expected_list_marker: &'a str,
+    diagnostics: Vec<(usize, MigrationDiagnostic)>,
+    events: Vec<(Event<'a>, usize)>,
+    complete: bool,
+    content_spans: Vec<std::ops::Range<usize>>,
+    lists: Vec<bool>,
+    authored_ordered_delimiters: Vec<char>,
+    link_depth: usize,
+    code_depth: usize,
+    code_needs_ending: bool,
+    html_block: bool,
+    html_fragments: usize,
+    table_pipe_escapes: BTreeSet<usize>,
+    table_width: usize,
+    extra_cell_lines: Vec<usize>,
+}
+
+impl<'a> EventScan<'a> {
+    fn event(&mut self, event: Event<'a>, range: std::ops::Range<usize>) {
+        use crate::html_import::ImportFidelity::Normalized;
+        let source = self.source;
+        if let Event::Start(Tag::Table(alignments)) = &event {
+            self.table_width = alignments.len();
+        }
+        if matches!(event, Event::Start(Tag::TableHead | Tag::TableRow)) {
+            self.table_row(matches!(event, Event::Start(Tag::TableRow)), range.start);
+        }
+        if matches!(
+            &event,
+            Event::Start(
+                Tag::Link {
+                    link_type: LinkType::Inline,
+                    ..
+                } | Tag::Image {
+                    link_type: LinkType::Inline,
+                    ..
+                }
+            )
+        ) && destination_has_entity(&source[range.clone()])
+        {
+            self.complete = false;
+        }
+        let mut paren_list = false;
+        if !matches!(event, Event::Start(_) | Event::End(_)) {
+            self.content_spans.push(range.clone());
+        }
+        if matches!(&event, Event::Text(_)) && self.code_depth == 0 {
+            let input = &source[range.clone()];
+            if range.start > 0
+                && self.parser_source[..range.start]
+                    .bytes()
+                    .rev()
+                    .take_while(|byte| *byte == b'\\')
+                    .count()
+                    % 2
+                    == 1
+                && input.starts_with(|character: char| character.is_ascii_punctuation())
+                && !self.table_pipe_escapes.contains(&(range.start - 1))
+            {
+                self.diagnostics.push(positioned(
+                    "escape",
+                    self.line_starts,
+                    range.start - 1,
+                    Normalized,
+                ));
+            }
+        }
+        if matches!(&event, Event::Text(_))
+            && self.link_depth == 0
+            && self.code_depth == 0
+            && self.split_bare_urls(&range)
+        {
+            return;
+        }
+        if matches!(event, Event::TaskListMarker(_)) {
+            self.task_list_marker(event, range);
+            return;
+        }
+        let assessment = match &event {
+            Event::Start(tag) => self.start_tag(tag, &range, &mut paren_list),
+            _ => self.other_event(&event, &range),
+        };
+        if let Some((construct, fidelity)) = assessment {
+            self.diagnostics.push(positioned(
+                construct,
+                self.line_starts,
+                range.start,
+                fidelity,
+            ));
+        }
+        self.events.push((event, range.start));
+        if paren_list {
+            self.events.push((
+                Event::Html(format!("<!--{}-->", self.expected_list_marker).into()),
+                range.start,
+            ));
+        }
+    }
+
+    fn table_row(&mut self, body_row: bool, start: usize) {
+        let source = self.source;
+        let end = source[start..]
+            .find('\n')
+            .map_or(source.len(), |offset| start + offset);
+        let row = &source[start..end];
+        let (escapes, doubled_boundary) = table_row_pipe_escapes(row, start);
+        self.table_pipe_escapes.extend(escapes);
+        if !doubled_boundary
+            && table_row_cells(row)
+                .iter()
+                .skip(self.table_width)
+                .any(|cell| !cell.trim().is_empty())
+        {
+            self.complete = false;
+            self.extra_cell_lines
+                .push(self.line_starts.partition_point(|line| *line <= start));
+        }
+        if doubled_boundary || (body_row && !row.contains('|')) {
+            self.complete = false;
+        }
+    }
+
+    /// Splits a text event around the bare URLs it holds; false when it holds none.
+    fn split_bare_urls(&mut self, range: &std::ops::Range<usize>) -> bool {
+        use crate::html_import::ImportFidelity::Normalized;
+        let source = self.source;
+        let bare_urls = self.bare_urls;
+        while bare_urls
+            .get(self.bare_url_at)
+            .is_some_and(|link| link.end <= range.start)
+        {
+            self.bare_url_at += 1;
+        }
+        if !bare_urls
+            .get(self.bare_url_at)
+            .is_some_and(|link| link.start >= range.start && link.end <= range.end)
+        {
+            return false;
+        }
+        let mut cursor = range.start;
+        while let Some(link) = bare_urls
+            .get(self.bare_url_at)
+            .filter(|link| link.start >= cursor && link.end <= range.end)
+        {
+            if cursor < link.start {
+                self.events
+                    .push((Event::Text(source[cursor..link.start].into()), cursor));
+            }
+            let label = if link.table {
+                std::borrow::Cow::Owned(source[link.start..link.end].replace("\\|", "|"))
+            } else {
+                std::borrow::Cow::Borrowed(&source[link.start..link.end])
+            };
+            let mut link_events = bare_link_events(&label, link.prefix);
+            if link.table {
+                // The label is already unescaped; the row-level pass must not drop a second backslash.
+                if let Event::Start(Tag::Link { title, .. }) = &mut link_events[0] {
+                    *title = TABLE_BARE_LINK.into();
+                }
+            }
+            self.events
+                .extend(link_events.map(|event| (event, link.start)));
+            self.diagnostics.push(positioned(
+                "bare-autolink",
+                self.line_starts,
+                link.start,
+                Normalized,
+            ));
+            cursor = link.end;
+            self.bare_url_at += 1;
+        }
+        if cursor < range.end {
+            self.events
+                .push((Event::Text(source[cursor..range.end].into()), cursor));
+        }
+        true
+    }
+
+    fn start_tag(
+        &mut self,
+        tag: &Tag<'_>,
+        range: &std::ops::Range<usize>,
+        paren_list: &mut bool,
+    ) -> Option<(&'static str, MigrationFidelity)> {
+        use crate::html_import::ImportFidelity::{Degraded, Normalized, Preserved};
+        let source = self.source;
+        if matches!(
+            tag,
+            Tag::Paragraph
+                | Tag::CodeBlock(_)
+                | Tag::HtmlBlock
+                | Tag::Table(_)
+                | Tag::Heading { .. }
+                | Tag::Link { .. }
+                | Tag::Image { .. }
+        ) {
+            self.content_spans.push(range.clone());
+        }
+        match tag {
+            Tag::Paragraph => Some(("paragraph", Preserved)),
+            Tag::Heading { .. } => Some((
+                if is_atx_heading(&source[range.clone()]) {
+                    "atx-heading"
+                } else {
+                    "setext-heading"
+                },
+                if is_atx_heading(&source[range.clone()]) {
+                    Preserved
+                } else {
+                    Normalized
+                },
+            )),
+            Tag::BlockQuote(_) => Some(("block-quote", Preserved)),
+            Tag::List(start) => {
+                self.lists.push(start.is_some());
+                if start.is_some() {
+                    let marker = source[range.clone()].trim_start_matches([' ', '\t']);
+                    let delimiter = marker
+                        .chars()
+                        .find(|character| !character.is_ascii_digit())
+                        .unwrap_or('.');
+                    *paren_list = delimiter == ')';
+                    self.authored_ordered_delimiters.push(delimiter);
+                }
+                Some((
+                    if start.is_some() {
+                        "ordered-list"
+                    } else {
+                        "bullet-list"
+                    },
+                    Preserved,
+                ))
+            }
+            Tag::Item => Some(("list-item", Preserved)),
+            Tag::CodeBlock(kind) => {
+                self.code_depth += 1;
+                self.code_needs_ending = false;
+                Some((
+                    if matches!(kind, CodeBlockKind::Indented) {
+                        "indented-code"
+                    } else {
+                        "fenced-code"
+                    },
+                    if matches!(kind, CodeBlockKind::Indented) {
+                        Normalized
+                    } else {
+                        Preserved
+                    },
+                ))
+            }
+            Tag::Emphasis => Some(("emphasis", Preserved)),
+            Tag::Strong => Some(("strong", Preserved)),
+            Tag::Strikethrough => Some(("strikethrough", Preserved)),
+            Tag::Link { link_type, .. } => {
+                self.link_depth += 1;
+                Some(match link_type {
+                    LinkType::Autolink | LinkType::Email => ("autolink", Normalized),
+                    LinkType::Reference | LinkType::Collapsed | LinkType::Shortcut => {
+                        ("reference-link", Normalized)
+                    }
+                    _ => ("link", Preserved),
+                })
+            }
+            Tag::Image { link_type, .. } => {
+                self.link_depth += 1;
+                Some(match link_type {
+                    LinkType::Reference | LinkType::Collapsed | LinkType::Shortcut => {
+                        ("reference-link", Normalized)
+                    }
+                    _ => ("image", Preserved),
+                })
+            }
+            Tag::Table(_) => Some(("table", Preserved)),
+            Tag::TableHead | Tag::TableRow => Some(("table-row", Preserved)),
+            Tag::TableCell => Some(("table-cell", Preserved)),
+            Tag::MetadataBlock(_) | Tag::FootnoteDefinition(_) => {
+                self.complete = false;
+                None
+            }
+            Tag::HtmlBlock => {
+                self.html_block = true;
+                Some(("raw-html", Degraded))
+            }
+            _ => {
+                self.complete = false;
+                None
+            }
+        }
+    }
+
+    fn other_event(
+        &mut self,
+        event: &Event<'_>,
+        range: &std::ops::Range<usize>,
+    ) -> Option<(&'static str, MigrationFidelity)> {
+        use crate::html_import::ImportFidelity::{Degraded, Normalized, Preserved};
+        match event {
+            Event::End(TagEnd::HtmlBlock) => {
+                self.html_block = false;
+            }
+            Event::End(TagEnd::List(_)) => {
+                self.lists.pop();
+            }
+            Event::End(TagEnd::Link | TagEnd::Image) => {
+                self.link_depth = self.link_depth.saturating_sub(1);
+            }
+            Event::End(TagEnd::CodeBlock) => {
+                if self.code_needs_ending {
+                    self.events.push((Event::Text("\n".into()), range.start));
+                }
+                self.code_needs_ending = false;
+                self.code_depth = self.code_depth.saturating_sub(1);
+            }
+            Event::Text(text) if self.code_depth > 0 => {
+                if !text.is_empty() {
+                    self.code_needs_ending = !text.ends_with('\n');
+                }
+            }
+            Event::Text(text) if self.code_depth == 0 => self.text_rewrites(text, range),
+            Event::Code(_) => return Some(("code-span", Preserved)),
+            Event::SoftBreak => return Some(("soft-break", Preserved)),
+            Event::HardBreak => return Some(("hard-break", Normalized)),
+            Event::Rule => return Some(("thematic-break", Preserved)),
+            Event::Html(html) | Event::InlineHtml(html) => {
+                self.html_fragments += 1;
+                let lower = html.to_lowercase();
+                if self.html_fragments > 128
+                    || !self.value.contains(html.as_ref())
+                    || [
+                        "<section",
+                        "</section",
+                        "<h1",
+                        "<h2",
+                        "<h3",
+                        "<h4",
+                        "<h5",
+                        "<h6",
+                        "</h1",
+                        "</h2",
+                        "</h3",
+                        "</h4",
+                        "</h5",
+                        "</h6",
+                        "<input",
+                    ]
+                    .iter()
+                    .any(|tag| lower.contains(tag))
+                {
+                    self.complete = false;
+                }
+                if !self.html_block {
+                    return Some(("raw-html", Degraded));
+                }
+            }
+            Event::FootnoteReference(_) | Event::InlineMath(_) | Event::DisplayMath(_) => {
+                self.complete = false;
+            }
+            _ => {}
+        }
+        None
+    }
+
+    fn text_rewrites(&mut self, text: &str, range: &std::ops::Range<usize>) {
+        use crate::html_import::ImportFidelity::Normalized;
+        static REWRITE: OnceLock<regex::Regex> = OnceLock::new();
+        let rewrite = REWRITE.get_or_init(|| regex::Regex::new(r"&(?:#[xX][\da-fA-F]+|#\d+|[A-Za-z][A-Za-z\d]+);|\\[!\x22#$%&'()*+,\-./:;<=>?@\[\]\\^_`{|}~]").unwrap());
+        let input = &self.source[range.clone()];
+
+        for matched in rewrite.find_iter(input) {
+            if text == input {
+                continue;
+            }
+            if matched.as_str() == "\\|"
+                && self
+                    .table_pipe_escapes
+                    .contains(&(range.start + matched.start()))
+            {
+                continue;
+            }
+            self.diagnostics.push(positioned(
+                if matched.as_str().starts_with('&') {
+                    "entity"
+                } else {
+                    "escape"
+                },
+                self.line_starts,
+                range.start + matched.start(),
+                Normalized,
+            ));
+        }
+    }
+
+    fn task_list_marker(&mut self, event: Event<'a>, range: std::ops::Range<usize>) {
+        use crate::html_import::ImportFidelity::{Dropped, Preserved};
+        let source = self.source;
+        let reaches = crate::markdown_import::tasklist_extension_reaches(source, &range);
+        let ordered = self.lists.last() == Some(&true);
+        if ordered || !reaches {
+            if ordered && reaches {
+                self.diagnostics.push(positioned(
+                    "ordered-task",
+                    self.line_starts,
+                    range.start,
+                    Dropped,
+                ));
+            }
+            self.events
+                .push((Event::Text(source[range.clone()].into()), range.start));
+            let separator: String = source[range.end..]
+                .chars()
+                .take_while(|character| matches!(character, ' ' | '\t'))
+                .collect();
+            if !separator.is_empty() {
+                self.events.push((Event::Text(separator.into()), range.end));
+            } else if source[range.end..].starts_with('\n') {
+                self.events.push((Event::SoftBreak, range.end));
+            }
+            return;
+        }
+        self.diagnostics.push(positioned(
+            "bullet-task",
+            self.line_starts,
+            range.start,
+            Preserved,
+        ));
+        self.events.push((event, range.start));
+        self.events.push((Event::Text(" ".into()), range.end));
+    }
+}
+
+/// Whether a line no parsed construct covers still holds a `]:` the parser dropped.
+fn uncovered_definition_line<'r>(
+    source: &str,
+    line_starts: &[usize],
+    spans: impl Iterator<Item = &'r std::ops::Range<usize>>,
+) -> bool {
+    let mut coverage_changes = vec![0_i32; line_starts.len() + 1];
+    for span in spans {
+        let first = line_starts
+            .partition_point(|start| *start <= span.start)
+            .saturating_sub(1);
+        let end = line_starts.partition_point(|start| *start < span.end);
+        if first < end {
+            coverage_changes[first] += 1;
+            coverage_changes[end] -= 1;
+        }
+    }
+    let mut coverage_depth = 0;
+    let covered_lines: Vec<_> = coverage_changes
+        .into_iter()
+        .map(|change| {
+            coverage_depth += change;
+            coverage_depth > 0
+        })
+        .collect();
+    let mut found = false;
+    for (index, start) in line_starts
+        .iter()
+        .copied()
+        .enumerate()
+        .filter(|(_, start)| *start < source.len())
+    {
+        if covered_lines[index] {
+            continue;
+        }
+        let end = source[start..]
+            .find('\n')
+            .map_or(source.len(), |end| start + end + 1);
+        let line = &source[start..end];
+        if line.contains("]:") {
+            found = true;
+        }
+    }
+    found
+}
+
+/// Whether the paragraph opening at `index` holds exactly one image.
+fn is_lone_image_paragraph(events: &[Event<'_>], index: usize) -> bool {
+    matches!(events[index], Event::Start(Tag::Paragraph))
+        && matches!(events.get(index + 1), Some(Event::Start(Tag::Image { .. })))
+        && {
+            let mut depth = 0usize;
+            let mut image_end = None;
+            for (offset, inner) in events[index + 1..].iter().enumerate() {
+                match inner {
+                    Event::Start(Tag::Image { .. }) => depth += 1,
+                    Event::End(TagEnd::Image) => {
+                        depth -= 1;
+                        if depth == 0 {
+                            image_end = Some(index + 1 + offset);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            image_end.is_some_and(|end| {
+                matches!(events.get(end + 1), Some(Event::End(TagEnd::Paragraph)))
+            })
+        }
+}
+
+/// Rewrites one event for the reference render the writer's output is compared against.
+fn reference_event<'a>(
+    event: &Event<'a>,
+    table_autolink: bool,
+    hidden_pipe: Option<char>,
+) -> Event<'a> {
+    let mut event = event.clone();
+    if let Event::Start(Tag::Link { title, .. }) = &mut event {
+        if title.as_ref() == TABLE_BARE_LINK {
+            *title = "".into();
+        }
+    }
+    if table_autolink {
+        match &mut event {
+            Event::Start(Tag::Link { dest_url, .. }) => {
+                *dest_url = dest_url.replace("\\|", "|").into();
+            }
+            Event::Text(text) => *text = text.replace("\\|", "|").into(),
+            _ => {}
+        }
+    }
+    if let Some(stand_in) = hidden_pipe {
+        match &mut event {
+            Event::Text(text) | Event::Code(text) | Event::InlineHtml(text) => {
+                *text = text.replace(stand_in, "|").into();
+            }
+            Event::Start(Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. }) => {
+                *dest_url = dest_url.replace(stand_in, "|").into();
+            }
+            _ => {}
+        }
+    }
+    match &mut event {
+        Event::Start(
+            Tag::Link {
+                dest_url,
+                link_type,
+                ..
+            }
+            | Tag::Image {
+                dest_url,
+                link_type,
+                ..
+            },
+        ) if !matches!(link_type, LinkType::Autolink | LinkType::Email) => {
+            // pulldown's href escaper encodes `[` and `]`, which Carve renders
+            // literally; the sentinels survive it and are restored below. An
+            // authored U+E000/U+E001 can only turn a match into a mismatch.
+            *dest_url = crate::markdown_import::markdown_destination(dest_url, false)
+                .replace('[', BRACKET_OPEN_SENTINEL)
+                .replace(']', BRACKET_CLOSE_SENTINEL)
+                .into();
+        }
+        Event::Start(Tag::Link {
+            dest_url,
+            link_type: LinkType::Autolink,
+            ..
+        }) => {
+            *dest_url = dest_url
+                .replace('[', BRACKET_OPEN_SENTINEL)
+                .replace(']', BRACKET_CLOSE_SENTINEL)
+                .into();
+        }
+        _ => {}
+    }
+    event
+}
+
+/// Replaces destination characters pulldown would escape differently with numbered markers.
+fn mark_destination(
+    dest_url: &str,
+    in_table: bool,
+    unicode_marker: &str,
+    unicode_chars: &mut Vec<char>,
+) -> String {
+    let mut marked = String::new();
+    for ch in dest_url.chars() {
+        if (!ch.is_ascii() && !ch.is_whitespace() && !ch.is_control()
+            || matches!(ch, '\\' | '`' | '^' | '{' | '}' | '"' | '<' | '>')
+            || (ch == '|' && !in_table))
+            && !matches!(ch, '\u{E000}' | '\u{E001}')
+        {
+            marked.push_str(&format!("{unicode_marker}{}END", unicode_chars.len()));
+            unicode_chars.push(ch);
+        } else {
+            marked.push(ch);
+        }
+    }
+    marked
+}
+
+/// Renders the parser's events and compares their shape with the writer's document.
+fn matches_writer_output(
+    source: &str,
+    value: &str,
+    events: &[Event<'_>],
+    hidden_pipe: Option<char>,
+    expected_list_marker: &str,
+    authored_ordered_delimiters: &[char],
+) -> bool {
+    let mut reference_events = Vec::with_capacity(events.len());
+    let mut unicode_marker = "CARVEURLUNICODEPLACEHOLDER".to_owned();
+    while source.contains(&unicode_marker) || value.contains(&unicode_marker) {
+        unicode_marker += "X";
+    }
+    let mut unicode_chars = Vec::new();
+    let mut lone_image_paragraph_end = None;
+    let mut in_table = false;
+    let mut table_autolink = false;
+    for (index, event) in events.iter().enumerate() {
+        table_autolink = match event {
+            Event::Start(Tag::Link {
+                link_type: LinkType::Autolink | LinkType::Email,
+                title,
+                ..
+            }) => in_table && title.as_ref() != TABLE_BARE_LINK,
+            Event::End(TagEnd::Link) => false,
+            _ => table_autolink,
+        };
+        if matches!(event, Event::Start(Tag::Table(_))) {
+            in_table = true;
+        } else if matches!(event, Event::End(TagEnd::Table)) {
+            in_table = false;
+        }
+        let lone_image = is_lone_image_paragraph(events, index);
+        if lone_image {
+            lone_image_paragraph_end = events[index + 1..]
+                .iter()
+                .position(|inner| matches!(inner, Event::End(TagEnd::Image)))
+                .map(|offset| index + offset + 2);
+        }
+        if lone_image || lone_image_paragraph_end == Some(index) {
+            continue;
+        }
+        let mut event = reference_event(event, table_autolink, hidden_pipe);
+        if let Event::Start(Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. }) = &mut event {
+            *dest_url =
+                mark_destination(dest_url, in_table, &unicode_marker, &mut unicode_chars).into();
+        }
+        reference_events.push(event);
+    }
+    let mut expected = String::new();
+    pulldown_cmark::html::push_html(&mut expected, reference_events.into_iter());
+    for (index, ch) in unicode_chars.into_iter().enumerate() {
+        let rendered = match ch {
+            '"' => "&quot;".to_owned(),
+            '<' => "&lt;".to_owned(),
+            '>' => "&gt;".to_owned(),
+            _ => ch.to_string(),
+        };
+        expected = expected.replace(&format!("{unicode_marker}{index}END"), &rendered);
+    }
+    expected = restore_destination_brackets(&expected)
+        .replace(
+            "<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n",
+            "<input disabled=\"\" type=\"checkbox\" checked=\"\"/>",
+        )
+        .replace(
+            "<input disabled=\"\" type=\"checkbox\"/>\n",
+            "<input disabled=\"\" type=\"checkbox\"/>",
+        );
+    let actual = crate::to_html_with_options(
+        value,
+        &crate::Options {
+            smart_typography: SmartTypographyMode::Source,
+            ..crate::Options::default()
+        },
+    );
+    // Mark only parser-authored lists in the expected HTML. Raw HTML
+    // attributes remain part of the comparison.
+    let document = crate::parse(value);
+    authored_ordered_delimiters == ordered_delimiters(&document.children)
+        && shape(&expected, Some(expected_list_marker)) == shape(&actual, None)
+}
+
 /// Assess the native parser's occurrences and verify the document the writer produced.
 pub(crate) fn assess(source: &str, value: &str) -> Assessment {
-    use crate::html_import::ImportFidelity::{Degraded, Dropped, Normalized, Preserved};
+    use crate::html_import::ImportFidelity::Normalized;
     if source.len() > 1_000_000 || source.contains('\0') {
         return Assessment {
             diagnostics: Vec::new(),
@@ -610,7 +1296,6 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
     let bare_urls = prepared_urls
         .as_ref()
         .map_or(&[][..], |prepared| prepared.1.as_slice());
-    let mut bare_url_at = 0;
     let strikes = crate::markdown_strike::prepare(parser_source, options);
     let mut reference = |link| strikes.reference(link);
     let parser =
@@ -631,590 +1316,68 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
             Normalized,
         ));
     }
-    let mut events = Vec::new();
     let expected_list_marker = unused_list_marker(&source, value);
-    let mut content_spans = Vec::new();
-    let mut lists = Vec::new();
-    let mut authored_ordered_delimiters = Vec::new();
-    let mut link_depth = 0usize;
-    let mut code_depth = 0usize;
-    let mut code_needs_ending = false;
-    let mut html_block = false;
-    let mut html_fragments = 0usize;
     let mut table_pipe_escapes = BTreeSet::new();
     if let Some((_, positions)) = &hidden_pipe {
         table_pipe_escapes.extend(positions.iter().map(|at| at - 1));
     }
-    let mut table_width = 0usize;
-    let mut extra_cell_lines = Vec::new();
-    static REWRITE: OnceLock<regex::Regex> = OnceLock::new();
-    let rewrite = REWRITE.get_or_init(|| regex::Regex::new(r"&(?:#[xX][\da-fA-F]+|#\d+|[A-Za-z][A-Za-z\d]+);|\\[!\x22#$%&'()*+,\-./:;<=>?@\[\]\\^_`{|}~]").unwrap());
+    let mut scan = EventScan {
+        source: &source,
+        parser_source,
+        value,
+        line_starts: &line_starts,
+        bare_urls,
+        bare_url_at: 0,
+        expected_list_marker: &expected_list_marker,
+        diagnostics,
+        events: Vec::new(),
+        complete,
+        content_spans: Vec::new(),
+        lists: Vec::new(),
+        authored_ordered_delimiters: Vec::new(),
+        link_depth: 0,
+        code_depth: 0,
+        code_needs_ending: false,
+        html_block: false,
+        html_fragments: 0,
+        table_pipe_escapes,
+        table_width: 0,
+        extra_cell_lines: Vec::new(),
+    };
     for (event, range) in parser.into_offset_iter() {
         if strikes.synthetic_comment(&event, &range) {
             continue;
         }
         let event = strikes.restore(event, &range);
         let range = strikes.original_range(range);
-        if let Event::Start(Tag::Table(alignments)) = &event {
-            table_width = alignments.len();
-        }
-        if matches!(event, Event::Start(Tag::TableHead | Tag::TableRow)) {
-            let end = source[range.start..]
-                .find('\n')
-                .map_or(source.len(), |offset| range.start + offset);
-            let row = &source[range.start..end];
-            let (escapes, doubled_boundary) = table_row_pipe_escapes(row, range.start);
-            table_pipe_escapes.extend(escapes);
-            if !doubled_boundary
-                && table_row_cells(row)
-                    .iter()
-                    .skip(table_width)
-                    .any(|cell| !cell.trim().is_empty())
-            {
-                complete = false;
-                extra_cell_lines.push(line_starts.partition_point(|start| *start <= range.start));
-            }
-            if doubled_boundary
-                || (matches!(event, Event::Start(Tag::TableRow)) && !row.contains('|'))
-            {
-                complete = false;
-            }
-        }
-        if matches!(
-            &event,
-            Event::Start(
-                Tag::Link {
-                    link_type: LinkType::Inline,
-                    ..
-                } | Tag::Image {
-                    link_type: LinkType::Inline,
-                    ..
-                }
-            )
-        ) && destination_has_entity(&source[range.clone()])
-        {
-            complete = false;
-        }
-        let mut paren_list = false;
-        if !matches!(event, Event::Start(_) | Event::End(_)) {
-            content_spans.push(range.clone());
-        }
-        if matches!(&event, Event::Text(_)) && code_depth == 0 {
-            let input = &source[range.clone()];
-            if range.start > 0
-                && parser_source[..range.start]
-                    .bytes()
-                    .rev()
-                    .take_while(|byte| *byte == b'\\')
-                    .count()
-                    % 2
-                    == 1
-                && input.starts_with(|character: char| character.is_ascii_punctuation())
-                && !table_pipe_escapes.contains(&(range.start - 1))
-            {
-                diagnostics.push(positioned(
-                    "escape",
-                    &line_starts,
-                    range.start - 1,
-                    Normalized,
-                ));
-            }
-        }
-        if matches!(&event, Event::Text(_)) && link_depth == 0 && code_depth == 0 {
-            while bare_urls
-                .get(bare_url_at)
-                .is_some_and(|link| link.end <= range.start)
-            {
-                bare_url_at += 1;
-            }
-            if bare_urls
-                .get(bare_url_at)
-                .is_some_and(|link| link.start >= range.start && link.end <= range.end)
-            {
-                let mut cursor = range.start;
-                while let Some(link) = bare_urls
-                    .get(bare_url_at)
-                    .filter(|link| link.start >= cursor && link.end <= range.end)
-                {
-                    if cursor < link.start {
-                        events.push((Event::Text(source[cursor..link.start].into()), cursor));
-                    }
-                    let label = if link.table {
-                        std::borrow::Cow::Owned(source[link.start..link.end].replace("\\|", "|"))
-                    } else {
-                        std::borrow::Cow::Borrowed(&source[link.start..link.end])
-                    };
-                    let mut link_events = bare_link_events(&label, link.prefix);
-                    if link.table {
-                        // The label is already unescaped; the row-level pass must not drop a second backslash.
-                        if let Event::Start(Tag::Link { title, .. }) = &mut link_events[0] {
-                            *title = TABLE_BARE_LINK.into();
-                        }
-                    }
-                    events.extend(link_events.map(|event| (event, link.start)));
-                    diagnostics.push(positioned(
-                        "bare-autolink",
-                        &line_starts,
-                        link.start,
-                        Normalized,
-                    ));
-                    cursor = link.end;
-                    bare_url_at += 1;
-                }
-                if cursor < range.end {
-                    events.push((Event::Text(source[cursor..range.end].into()), cursor));
-                }
-                continue;
-            }
-        }
-        let mut assessment = None;
-        match &event {
-            Event::Start(tag) => {
-                if matches!(
-                    tag,
-                    Tag::Paragraph
-                        | Tag::CodeBlock(_)
-                        | Tag::HtmlBlock
-                        | Tag::Table(_)
-                        | Tag::Heading { .. }
-                        | Tag::Link { .. }
-                        | Tag::Image { .. }
-                ) {
-                    content_spans.push(range.clone());
-                }
-                assessment = match tag {
-                    Tag::Paragraph => Some(("paragraph", Preserved)),
-                    Tag::Heading { .. } => Some((
-                        if is_atx_heading(&source[range.clone()]) {
-                            "atx-heading"
-                        } else {
-                            "setext-heading"
-                        },
-                        if is_atx_heading(&source[range.clone()]) {
-                            Preserved
-                        } else {
-                            Normalized
-                        },
-                    )),
-                    Tag::BlockQuote(_) => Some(("block-quote", Preserved)),
-                    Tag::List(start) => {
-                        lists.push(start.is_some());
-                        if start.is_some() {
-                            let marker = source[range.clone()].trim_start_matches([' ', '\t']);
-                            let delimiter = marker
-                                .chars()
-                                .find(|character| !character.is_ascii_digit())
-                                .unwrap_or('.');
-                            paren_list = delimiter == ')';
-                            authored_ordered_delimiters.push(delimiter);
-                        }
-                        Some((
-                            if start.is_some() {
-                                "ordered-list"
-                            } else {
-                                "bullet-list"
-                            },
-                            Preserved,
-                        ))
-                    }
-                    Tag::Item => Some(("list-item", Preserved)),
-                    Tag::CodeBlock(kind) => {
-                        code_depth += 1;
-                        code_needs_ending = false;
-                        Some((
-                            if matches!(kind, CodeBlockKind::Indented) {
-                                "indented-code"
-                            } else {
-                                "fenced-code"
-                            },
-                            if matches!(kind, CodeBlockKind::Indented) {
-                                Normalized
-                            } else {
-                                Preserved
-                            },
-                        ))
-                    }
-                    Tag::Emphasis => Some(("emphasis", Preserved)),
-                    Tag::Strong => Some(("strong", Preserved)),
-                    Tag::Strikethrough => Some(("strikethrough", Preserved)),
-                    Tag::Link { link_type, .. } => {
-                        link_depth += 1;
-                        Some(match link_type {
-                            LinkType::Autolink | LinkType::Email => ("autolink", Normalized),
-                            LinkType::Reference | LinkType::Collapsed | LinkType::Shortcut => {
-                                ("reference-link", Normalized)
-                            }
-                            _ => ("link", Preserved),
-                        })
-                    }
-                    Tag::Image { link_type, .. } => {
-                        link_depth += 1;
-                        Some(match link_type {
-                            LinkType::Reference | LinkType::Collapsed | LinkType::Shortcut => {
-                                ("reference-link", Normalized)
-                            }
-                            _ => ("image", Preserved),
-                        })
-                    }
-                    Tag::Table(_) => Some(("table", Preserved)),
-                    Tag::TableHead | Tag::TableRow => Some(("table-row", Preserved)),
-                    Tag::TableCell => Some(("table-cell", Preserved)),
-                    Tag::MetadataBlock(_) | Tag::FootnoteDefinition(_) => {
-                        complete = false;
-                        None
-                    }
-                    Tag::HtmlBlock => {
-                        html_block = true;
-                        Some(("raw-html", Degraded))
-                    }
-                    _ => {
-                        complete = false;
-                        None
-                    }
-                };
-            }
-            Event::End(TagEnd::HtmlBlock) => {
-                html_block = false;
-            }
-            Event::End(TagEnd::List(_)) => {
-                lists.pop();
-            }
-            Event::End(TagEnd::Link | TagEnd::Image) => {
-                link_depth = link_depth.saturating_sub(1);
-            }
-            Event::End(TagEnd::CodeBlock) => {
-                if code_needs_ending {
-                    events.push((Event::Text("\n".into()), range.start));
-                }
-                code_needs_ending = false;
-                code_depth = code_depth.saturating_sub(1);
-            }
-            Event::Text(text) if code_depth > 0 => {
-                if !text.is_empty() {
-                    code_needs_ending = !text.ends_with('\n');
-                }
-            }
-            Event::Text(text) if code_depth == 0 => {
-                let input = &source[range.clone()];
-
-                for matched in rewrite.find_iter(input) {
-                    if text.as_ref() == input {
-                        continue;
-                    }
-                    if matched.as_str() == "\\|"
-                        && table_pipe_escapes.contains(&(range.start + matched.start()))
-                    {
-                        continue;
-                    }
-                    diagnostics.push(positioned(
-                        if matched.as_str().starts_with('&') {
-                            "entity"
-                        } else {
-                            "escape"
-                        },
-                        &line_starts,
-                        range.start + matched.start(),
-                        Normalized,
-                    ));
-                }
-            }
-            Event::Code(_) => {
-                assessment = Some(("code-span", Preserved));
-            }
-            Event::SoftBreak => {
-                assessment = Some(("soft-break", Preserved));
-            }
-            Event::HardBreak => {
-                assessment = Some(("hard-break", Normalized));
-            }
-            Event::Rule => {
-                assessment = Some(("thematic-break", Preserved));
-            }
-            Event::Html(html) | Event::InlineHtml(html) => {
-                html_fragments += 1;
-                let lower = html.to_lowercase();
-                if html_fragments > 128
-                    || !value.contains(html.as_ref())
-                    || [
-                        "<section",
-                        "</section",
-                        "<h1",
-                        "<h2",
-                        "<h3",
-                        "<h4",
-                        "<h5",
-                        "<h6",
-                        "</h1",
-                        "</h2",
-                        "</h3",
-                        "</h4",
-                        "</h5",
-                        "</h6",
-                        "<input",
-                    ]
-                    .iter()
-                    .any(|tag| lower.contains(tag))
-                {
-                    complete = false;
-                }
-                if !html_block {
-                    assessment = Some(("raw-html", Degraded));
-                }
-            }
-            Event::TaskListMarker(_) => {
-                let reaches = crate::markdown_import::tasklist_extension_reaches(&source, &range);
-                let ordered = lists.last() == Some(&true);
-                if ordered || !reaches {
-                    if ordered && reaches {
-                        diagnostics.push(positioned(
-                            "ordered-task",
-                            &line_starts,
-                            range.start,
-                            Dropped,
-                        ));
-                    }
-                    events.push((Event::Text(source[range.clone()].into()), range.start));
-                    let separator: String = source[range.end..]
-                        .chars()
-                        .take_while(|character| matches!(character, ' ' | '\t'))
-                        .collect();
-                    if !separator.is_empty() {
-                        events.push((Event::Text(separator.into()), range.end));
-                    } else if source[range.end..].starts_with('\n') {
-                        events.push((Event::SoftBreak, range.end));
-                    }
-                    continue;
-                }
-                diagnostics.push(positioned(
-                    "bullet-task",
-                    &line_starts,
-                    range.start,
-                    Preserved,
-                ));
-                events.push((event, range.start));
-                events.push((Event::Text(" ".into()), range.end));
-                continue;
-            }
-            Event::FootnoteReference(_) | Event::InlineMath(_) | Event::DisplayMath(_) => {
-                complete = false;
-            }
-            _ => {}
-        }
-        if let Some((construct, fidelity)) = assessment {
-            diagnostics.push(positioned(construct, &line_starts, range.start, fidelity));
-        }
-        events.push((event, range.start));
-        if paren_list {
-            events.push((
-                Event::Html(format!("<!--{expected_list_marker}-->").into()),
-                range.start,
-            ));
-        }
+        scan.event(event, range);
     }
-    let mut coverage_changes = vec![0_i32; line_starts.len() + 1];
-    for span in content_spans.iter().chain(&definition_spans) {
-        let first = line_starts
-            .partition_point(|start| *start <= span.start)
-            .saturating_sub(1);
-        let end = line_starts.partition_point(|start| *start < span.end);
-        if first < end {
-            coverage_changes[first] += 1;
-            coverage_changes[end] -= 1;
-        }
-    }
-    let mut coverage_depth = 0;
-    let covered_lines: Vec<_> = coverage_changes
-        .into_iter()
-        .map(|change| {
-            coverage_depth += change;
-            coverage_depth > 0
-        })
-        .collect();
-    for (index, start) in line_starts
-        .iter()
-        .copied()
-        .enumerate()
-        .filter(|(_, start)| *start < source.len())
-    {
-        if covered_lines[index] {
-            continue;
-        }
-        let end = source[start..]
-            .find('\n')
-            .map_or(source.len(), |end| start + end + 1);
-        let line = &source[start..end];
-        if line.contains("]:") {
-            complete = false;
-        }
+    let EventScan {
+        mut diagnostics,
+        events,
+        mut complete,
+        content_spans,
+        authored_ordered_delimiters,
+        extra_cell_lines,
+        ..
+    } = scan;
+    if uncovered_definition_line(
+        &source,
+        &line_starts,
+        content_spans.iter().chain(&definition_spans),
+    ) {
+        complete = false;
     }
     let events = email_events(events, &line_starts, &mut diagnostics);
     if complete {
-        let mut reference_events = Vec::with_capacity(events.len());
-        let mut unicode_marker = "CARVEURLUNICODEPLACEHOLDER".to_owned();
-        while source.contains(&unicode_marker) || value.contains(&unicode_marker) {
-            unicode_marker.push('X');
-        }
-        let mut unicode_chars = Vec::new();
-        let mut lone_image_paragraph_end = None;
-        let mut in_table = false;
-        let mut table_autolink = false;
-        for (index, event) in events.iter().enumerate() {
-            table_autolink = match event {
-                Event::Start(Tag::Link {
-                    link_type: LinkType::Autolink | LinkType::Email,
-                    title,
-                    ..
-                }) => in_table && title.as_ref() != TABLE_BARE_LINK,
-                Event::End(TagEnd::Link) => false,
-                _ => table_autolink,
-            };
-            if matches!(event, Event::Start(Tag::Table(_))) {
-                in_table = true;
-            } else if matches!(event, Event::End(TagEnd::Table)) {
-                in_table = false;
-            }
-            let lone_image = matches!(event, Event::Start(Tag::Paragraph))
-                && matches!(events.get(index + 1), Some(Event::Start(Tag::Image { .. })))
-                && {
-                    let mut depth = 0usize;
-                    let mut image_end = None;
-                    for (offset, inner) in events[index + 1..].iter().enumerate() {
-                        match inner {
-                            Event::Start(Tag::Image { .. }) => depth += 1,
-                            Event::End(TagEnd::Image) => {
-                                depth -= 1;
-                                if depth == 0 {
-                                    image_end = Some(index + 1 + offset);
-                                    break;
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                    image_end.is_some_and(|end| {
-                        matches!(events.get(end + 1), Some(Event::End(TagEnd::Paragraph)))
-                    })
-                };
-            if lone_image {
-                lone_image_paragraph_end = events[index + 1..]
-                    .iter()
-                    .position(|inner| matches!(inner, Event::End(TagEnd::Image)))
-                    .map(|offset| index + offset + 2);
-            }
-            if lone_image || lone_image_paragraph_end == Some(index) {
-                continue;
-            }
-            let mut event = event.clone();
-            if let Event::Start(Tag::Link { title, .. }) = &mut event {
-                if title.as_ref() == TABLE_BARE_LINK {
-                    *title = "".into();
-                }
-            }
-            if table_autolink {
-                match &mut event {
-                    Event::Start(Tag::Link { dest_url, .. }) => {
-                        *dest_url = dest_url.replace("\\|", "|").into();
-                    }
-                    Event::Text(text) => *text = text.replace("\\|", "|").into(),
-                    _ => {}
-                }
-            }
-            if let Some((stand_in, _)) = &hidden_pipe {
-                match &mut event {
-                    Event::Text(text) | Event::Code(text) | Event::InlineHtml(text) => {
-                        *text = text.replace(*stand_in, "|").into();
-                    }
-                    Event::Start(Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. }) => {
-                        *dest_url = dest_url.replace(*stand_in, "|").into();
-                    }
-                    _ => {}
-                }
-            }
-            match &mut event {
-                Event::Start(
-                    Tag::Link {
-                        dest_url,
-                        link_type,
-                        ..
-                    }
-                    | Tag::Image {
-                        dest_url,
-                        link_type,
-                        ..
-                    },
-                ) if !matches!(link_type, LinkType::Autolink | LinkType::Email) => {
-                    // pulldown's href escaper encodes `[` and `]`, which Carve renders
-                    // literally; the sentinels survive it and are restored below. An
-                    // authored U+E000/U+E001 can only turn a match into a mismatch.
-                    *dest_url = crate::markdown_import::markdown_destination(dest_url, false)
-                        .replace('[', BRACKET_OPEN_SENTINEL)
-                        .replace(']', BRACKET_CLOSE_SENTINEL)
-                        .into();
-                }
-                Event::Start(Tag::Link {
-                    dest_url,
-                    link_type: LinkType::Autolink,
-                    ..
-                }) => {
-                    *dest_url = dest_url
-                        .replace('[', BRACKET_OPEN_SENTINEL)
-                        .replace(']', BRACKET_CLOSE_SENTINEL)
-                        .into();
-                }
-                _ => {}
-            }
-            if let Event::Start(Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. }) =
-                &mut event
-            {
-                let mut marked = String::new();
-                for ch in dest_url.chars() {
-                    if (!ch.is_ascii() && !ch.is_whitespace() && !ch.is_control()
-                        || matches!(ch, '\\' | '`' | '^' | '{' | '}' | '"' | '<' | '>')
-                        || (ch == '|' && !in_table))
-                        && !matches!(ch, '\u{E000}' | '\u{E001}')
-                    {
-                        marked.push_str(&format!("{unicode_marker}{}END", unicode_chars.len()));
-                        unicode_chars.push(ch);
-                    } else {
-                        marked.push(ch);
-                    }
-                }
-                *dest_url = marked.into();
-            }
-            reference_events.push(event);
-        }
-        let mut expected = String::new();
-        pulldown_cmark::html::push_html(&mut expected, reference_events.into_iter());
-        for (index, ch) in unicode_chars.into_iter().enumerate() {
-            let rendered = match ch {
-                '"' => "&quot;".to_owned(),
-                '<' => "&lt;".to_owned(),
-                '>' => "&gt;".to_owned(),
-                _ => ch.to_string(),
-            };
-            expected = expected.replace(&format!("{unicode_marker}{index}END"), &rendered);
-        }
-        expected = restore_destination_brackets(&expected)
-            .replace(
-                "<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n",
-                "<input disabled=\"\" type=\"checkbox\" checked=\"\"/>",
-            )
-            .replace(
-                "<input disabled=\"\" type=\"checkbox\"/>\n",
-                "<input disabled=\"\" type=\"checkbox\"/>",
-            );
-        let actual = crate::to_html_with_options(
+        complete = matches_writer_output(
+            &source,
             value,
-            &crate::Options {
-                smart_typography: SmartTypographyMode::Source,
-                ..crate::Options::default()
-            },
+            &events,
+            hidden_pipe.as_ref().map(|(stand_in, _)| *stand_in),
+            &expected_list_marker,
+            &authored_ordered_delimiters,
         );
-        // Mark only parser-authored lists in the expected HTML. Raw HTML
-        // attributes remain part of the comparison.
-        let document = crate::parse(value);
-        complete = authored_ordered_delimiters == ordered_delimiters(&document.children)
-            && shape(&expected, Some(&expected_list_marker)) == shape(&actual, None);
     }
     diagnostics.sort_by_key(|(offset, row)| {
         (

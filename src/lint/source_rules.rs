@@ -249,290 +249,369 @@ pub(super) fn collect(
     to_byte: &dyn Fn(usize) -> usize,
     out: &mut Vec<LintWarning>,
 ) -> bool {
-    let mut recovered_metadata = false;
     let rows = lines(source);
     collect_ordered_splits(doc, &rows, out);
-    let mut blocks: Vec<_> = doc.children.iter().map(|b| (b, 0)).collect();
-    for body in doc.footnote_defs.values() {
-        blocks.extend(body.iter().map(|b| (b, 1)));
-    }
-    let mut inlines = Vec::new();
-    let mut ignored = BTreeSet::new();
-    if let Some(pos) = doc
-        .frontmatter_raw
-        .as_ref()
-        .and_then(|front| front.pos.as_ref())
-    {
-        ignored.extend(pos.start_line..=pos.end_line);
-    }
+    let mut scan = BlockScan::new(doc, &rows, to_byte, out);
+    collect_description_separators(
+        &rows,
+        &scan.definition_hosts,
+        &scan.attached,
+        &scan.ignored,
+        &scan.payload,
+        out,
+    );
+    collect_habits(source, &rows, &scan.text_runs, out);
+    scan.items.sort_by_key(|i| (i.first, i.content));
+    let list_lines = ListScan::new(&rows, &scan, out).run(out);
+    LineRules::new(&rows, &scan, &list_lines).run(out);
+    collect_marker_text(&rows, &scan.starts, &list_lines, to_byte, out);
+    let recovered_metadata = collect_container_fences(&rows, &mut scan.fences, out);
+    collect_version(source, doc, &rows, out);
+    recovered_metadata
+}
+
+#[derive(Default)]
+struct BlockScan<'d> {
+    ignored: BTreeSet<usize>,
     // `%%` line comments: the one hidden place a mis-cased `%% #Region` is checked.
-    let mut line_comments = BTreeSet::new();
-    let mut paragraphs = BTreeSet::new();
-    let mut headings = BTreeSet::new();
-    let mut block_runs: BTreeMap<(char, usize), Vec<(usize, usize)>> = BTreeMap::new();
-    let mut starts = Vec::new();
-    let mut items = Vec::new();
-    let mut fences = Vec::new();
-    let mut definition_hosts = Vec::new();
-    let mut descriptions: Vec<(usize, usize, usize)> = Vec::new();
-    let mut attached = BTreeSet::new();
-    let mut payload = BTreeSet::new();
-    let marker = regex::Regex::new(
-        r"^([ \t]*)([-*]|(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-zA-Z])[.)])(\{[^{}\r\n]*\})?( +)(?:\[[ xX_?>-]\] +)?",
-    )
-    .unwrap();
-    let marker_shaped = regex::Regex::new(
-        r"^(?:[-+*](?: +\[[ xX\-_>?]\])?|\([0-9A-Za-z]+\)|[0-9A-Za-z]+[.)]|\.)[ \t]",
-    )
-    .unwrap();
-    let colon = regex::Regex::new(r"^(:{3,})(?:[ \t]|$)").unwrap();
-    let note_marker = regex::Regex::new(r"^\[\^[^\]\r\n]+\]:").unwrap();
-    while let Some((block, depth)) = blocks.pop() {
-        let pos = block_pos(block);
-        if let Some(pos) = pos {
-            let kind = match block {
-                BlockNode::BlockQuote(_) => Some('>'),
-                BlockNode::Table(_) => Some('|'),
-                _ => None,
-            };
-            if let (Some(kind), Some(row)) = (kind, rows.get(pos.start_line - 1)) {
-                let at = row
-                    .text
-                    .char_indices()
-                    .nth(pos.start_column.saturating_sub(1))
-                    .map_or(row.text.len(), |(at, _)| at);
-                let column = visual(&row.text[..at]);
-                for line in pos.start_line..=pos.end_line {
-                    block_runs
-                        .entry((kind, line))
-                        .or_default()
-                        .push((pos.start_line, column));
+    line_comments: BTreeSet<usize>,
+    paragraphs: BTreeSet<usize>,
+    headings: BTreeSet<usize>,
+    block_runs: BTreeMap<(char, usize), Vec<(usize, usize)>>,
+    starts: Vec<(Pos, &'d str)>,
+    items: Vec<Item>,
+    fences: Vec<Fence>,
+    definition_hosts: Vec<DefinitionHost>,
+    descriptions: Vec<(usize, usize, usize)>,
+    attached: BTreeSet<usize>,
+    payload: BTreeSet<usize>,
+    text_runs: Vec<(usize, usize)>,
+}
+
+struct BlockWalker<'d, 'r> {
+    rows: &'r [Line<'r>],
+    marker: regex::Regex,
+    colon: regex::Regex,
+    note_marker: regex::Regex,
+    scan: BlockScan<'d>,
+}
+
+impl<'d> BlockScan<'d> {
+    fn new(
+        doc: &'d Document,
+        rows: &[Line<'_>],
+        to_byte: &dyn Fn(usize) -> usize,
+        out: &mut Vec<LintWarning>,
+    ) -> Self {
+        let mut blocks: Vec<_> = doc.children.iter().map(|b| (b, 0)).collect();
+        for body in doc.footnote_defs.values() {
+            blocks.extend(body.iter().map(|b| (b, 1)));
+        }
+        let mut inlines = Vec::new();
+        let mut walker = BlockWalker {
+            rows,
+            marker: regex::Regex::new(
+                r"^([ \t]*)([-*]|(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-zA-Z])[.)])(\{[^{}\r\n]*\})?( +)(?:\[[ xX_?>-]\] +)?",
+            )
+            .unwrap(),
+            colon: regex::Regex::new(r"^(:{3,})(?:[ \t]|$)").unwrap(),
+            note_marker: regex::Regex::new(r"^\[\^[^\]\r\n]+\]:").unwrap(),
+            scan: BlockScan::default(),
+        };
+        if let Some(pos) = doc
+            .frontmatter_raw
+            .as_ref()
+            .and_then(|front| front.pos.as_ref())
+        {
+            walker.scan.ignored.extend(pos.start_line..=pos.end_line);
+        }
+        while let Some((block, depth)) = blocks.pop() {
+            walker.visit(block, depth, to_byte, out);
+            push_block_children(block, depth, &mut blocks, &mut inlines);
+        }
+        let mut scan = walker.scan;
+        scan.scan_inlines(inlines, to_byte);
+        scan
+    }
+
+    fn scan_inlines(
+        &mut self,
+        mut inlines: Vec<(&InlineNode, usize)>,
+        to_byte: &dyn Fn(usize) -> usize,
+    ) {
+        let mut text_spans = Vec::new();
+        while let Some((node, depth)) = inlines.pop() {
+            if matches!(
+                node,
+                InlineNode::Code(_)
+                    | InlineNode::Math(_)
+                    | InlineNode::RawInline(_)
+                    | InlineNode::LiteralInline(_)
+                    | InlineNode::Comment(_)
+            ) {
+                if let Some(pos) = node.pos() {
+                    self.payload.extend((pos.start_line + 1)..=pos.end_line);
                 }
-            }
-            match block {
-                BlockNode::Comment(c) if !c.block => {
-                    ignored.extend(pos.start_line..=pos.end_line);
-                    line_comments.extend(pos.start_line..=pos.end_line);
-                }
-                BlockNode::CodeBlock(_) | BlockNode::RawBlock(_) | BlockNode::Comment(_) => {
-                    ignored.extend(pos.start_line..=pos.end_line);
-                }
-                BlockNode::Paragraph(p) => {
-                    paragraphs.extend(pos.start_line..=pos.end_line);
-                    if let Some(InlineNode::Text(t)) = p.children.first() {
-                        if let Some(p) = &t.pos {
-                            starts.push((p.clone(), t.value.as_str()));
-                        }
-                    }
-                }
-                BlockNode::Heading(_) => {
-                    headings.insert(pos.end_line);
-                }
-                BlockNode::Figure(f) if matches!(&*f.target, FigureTarget::CodeBlock(_)) => {
-                    ignored.extend(pos.start_line..=pos.end_line);
-                }
-                _ => {}
             }
             if matches!(
-                block,
-                BlockNode::Div(_)
-                    | BlockNode::Directive(_)
-                    | BlockNode::Admonition(_)
-                    | BlockNode::FigureGroup(_)
-                    | BlockNode::LineBlock(_)
-            ) || matches!(block, BlockNode::BlockQuote(q) if q.fenced)
-            {
-                for ln in pos.start_line..=pos.end_line.min(rows.len()) {
-                    let row = &rows[ln - 1];
-                    let view = container_view(if ln == 1 {
-                        row.text.trim_start_matches('\u{feff}')
-                    } else {
-                        row.text
-                    })
-                    .trim_start_matches([' ', '\t']);
-                    if let Some(m) = colon.captures(view) {
-                        fences.push(Fence {
-                            first: ln,
-                            last: pos.end_line,
-                            column: row.text.len() - view.len(),
-                            width: m[1].len(),
-                            bare: view.trim() == &m[1],
-                        });
-                        break;
-                    }
-                    if !row.text.trim_start().starts_with('{') {
-                        break;
-                    }
+                node,
+                InlineNode::Text(_) | InlineNode::Mention(_) | InlineNode::Tag(_)
+            ) {
+                if let Some(p) = node.pos() {
+                    text_spans.push((to_byte(p.start_offset), to_byte(p.end_offset)));
                 }
             }
+            push_inline_children(node, depth, &mut inlines);
         }
-        if let BlockNode::Directive(d) = block {
-            if d.kind == "footnotes" && depth > 0 {
+        text_spans.sort_unstable();
+        for (start, end) in text_spans {
+            if let Some(last) = self.text_runs.last_mut().filter(|last| last.1 == start) {
+                last.1 = end;
+            } else {
+                self.text_runs.push((start, end));
+            }
+        }
+    }
+}
+
+fn in_text(text_runs: &[(usize, usize)], start: usize, end: usize) -> bool {
+    let i = text_runs.partition_point(|span| span.0 <= start);
+    i > 0 && text_runs[i - 1].1 >= end
+}
+
+fn byte_at_column(text: &str, column: usize) -> usize {
+    text.char_indices()
+        .nth(column.saturating_sub(1))
+        .map_or(text.len(), |(at, _)| at)
+}
+
+impl<'d> BlockWalker<'d, '_> {
+    fn visit(
+        &mut self,
+        block: &'d BlockNode,
+        depth: usize,
+        to_byte: &dyn Fn(usize) -> usize,
+        out: &mut Vec<LintWarning>,
+    ) {
+        if let Some(pos) = block_pos(block) {
+            self.record_block_run(block, pos);
+            self.record_lines(block, pos);
+            self.record_colon_fence(block, pos);
+        }
+        match block {
+            BlockNode::Directive(d) if d.kind == "footnotes" && depth > 0 => {
                 out.push(super::warning(d.pos.clone(), to_byte, "footnotes-placement-in-container", "This contained footnotes marker does not place the endnotes. Move it to document level.".into()));
             }
-        }
-        if let BlockNode::List(list) = block {
-            for item in &list.items {
-                let Some(p) = &item.pos else {
-                    continue;
-                };
-                let Some(row) = rows.get(p.start_line - 1) else {
-                    continue;
-                };
-                let at = row
-                    .text
-                    .char_indices()
-                    .nth(p.start_column.saturating_sub(1))
-                    .map(|(at, _)| at)
-                    .unwrap_or(row.text.len());
-                let Some(m) = marker.captures(&row.text[at..]) else {
-                    continue;
-                };
-                let base = visual(&row.text[..at]) + visual(&m[1]);
-                let content = base + m[2].chars().count() + m[4].len();
-                let mut rest = &row.text[at..];
-                let mut deepest = visual(&row.text[..at]);
-                while let Some(m) = marker.captures(rest) {
-                    deepest += visual(&m[1]) + m[2].chars().count() + m[4].len();
-                    rest = &rest[m.get(0).unwrap().end()..];
-                }
-                let marker_tail = &row.text[at + m.get(0).unwrap().end()..];
-                let mut paragraph_lines = BTreeSet::new();
-                let mut text_starts = BTreeSet::new();
-                for child in &item.children {
-                    let BlockNode::Paragraph(paragraph) = child else {
-                        continue;
-                    };
-                    if let Some(pos) = &paragraph.pos {
-                        paragraph_lines.extend((pos.start_line + 1)..=pos.end_line);
+            BlockNode::List(list) => {
+                for item in &list.items {
+                    if let Some(item) = self.list_item(item) {
+                        self.scan.items.push(item);
                     }
-                    let mut pending: Vec<_> = paragraph
+                }
+            }
+            BlockNode::DefinitionList(list) => self.record_definition_list(list),
+            _ => {}
+        }
+    }
+
+    fn record_block_run(&mut self, block: &BlockNode, pos: &Pos) {
+        let kind = match block {
+            BlockNode::BlockQuote(_) => '>',
+            BlockNode::Table(_) => '|',
+            _ => return,
+        };
+        let Some(row) = self.rows.get(pos.start_line - 1) else {
+            return;
+        };
+        let at = byte_at_column(row.text, pos.start_column);
+        let column = visual(&row.text[..at]);
+        for line in pos.start_line..=pos.end_line {
+            self.scan
+                .block_runs
+                .entry((kind, line))
+                .or_default()
+                .push((pos.start_line, column));
+        }
+    }
+
+    fn record_lines(&mut self, block: &'d BlockNode, pos: &Pos) {
+        let scan = &mut self.scan;
+        match block {
+            BlockNode::Comment(c) if !c.block => {
+                scan.ignored.extend(pos.start_line..=pos.end_line);
+                scan.line_comments.extend(pos.start_line..=pos.end_line);
+            }
+            BlockNode::CodeBlock(_) | BlockNode::RawBlock(_) | BlockNode::Comment(_) => {
+                scan.ignored.extend(pos.start_line..=pos.end_line);
+            }
+            BlockNode::Paragraph(p) => {
+                scan.paragraphs.extend(pos.start_line..=pos.end_line);
+                if let Some(InlineNode::Text(t)) = p.children.first() {
+                    if let Some(p) = &t.pos {
+                        scan.starts.push((p.clone(), t.value.as_str()));
+                    }
+                }
+            }
+            BlockNode::Heading(_) => {
+                scan.headings.insert(pos.end_line);
+            }
+            BlockNode::Figure(f) if matches!(&*f.target, FigureTarget::CodeBlock(_)) => {
+                scan.ignored.extend(pos.start_line..=pos.end_line);
+            }
+            _ => {}
+        }
+    }
+
+    fn record_colon_fence(&mut self, block: &BlockNode, pos: &Pos) {
+        if !(matches!(
+            block,
+            BlockNode::Div(_)
+                | BlockNode::Directive(_)
+                | BlockNode::Admonition(_)
+                | BlockNode::FigureGroup(_)
+                | BlockNode::LineBlock(_)
+        ) || matches!(block, BlockNode::BlockQuote(q) if q.fenced))
+        {
+            return;
+        }
+        let rows = self.rows;
+        for ln in pos.start_line..=pos.end_line.min(rows.len()) {
+            let row = &rows[ln - 1];
+            let view = container_view(if ln == 1 {
+                row.text.trim_start_matches('\u{feff}')
+            } else {
+                row.text
+            })
+            .trim_start_matches([' ', '\t']);
+            if let Some(m) = self.colon.captures(view) {
+                self.scan.fences.push(Fence {
+                    first: ln,
+                    last: pos.end_line,
+                    column: row.text.len() - view.len(),
+                    width: m[1].len(),
+                    bare: view.trim() == &m[1],
+                });
+                break;
+            }
+            if !row.text.trim_start().starts_with('{') {
+                break;
+            }
+        }
+    }
+
+    fn list_item(&self, item: &ListItem) -> Option<Item> {
+        let p = item.pos.as_ref()?;
+        let row = self.rows.get(p.start_line - 1)?;
+        let at = byte_at_column(row.text, p.start_column);
+        let m = self.marker.captures(&row.text[at..])?;
+        let base = visual(&row.text[..at]) + visual(&m[1]);
+        let content = base + m[2].chars().count() + m[4].len();
+        let mut rest = &row.text[at..];
+        let mut deepest = visual(&row.text[..at]);
+        while let Some(m) = self.marker.captures(rest) {
+            deepest += visual(&m[1]) + m[2].chars().count() + m[4].len();
+            rest = &rest[m.get(0).unwrap().end()..];
+        }
+        let marker_tail = &row.text[at + m.get(0).unwrap().end()..];
+        let mut paragraph_lines = BTreeSet::new();
+        let mut text_starts = BTreeSet::new();
+        for child in &item.children {
+            let BlockNode::Paragraph(paragraph) = child else {
+                continue;
+            };
+            if let Some(pos) = &paragraph.pos {
+                paragraph_lines.extend((pos.start_line + 1)..=pos.end_line);
+            }
+            let mut pending: Vec<_> = paragraph
+                .children
+                .iter()
+                .map(|inline| (inline, 0))
+                .collect();
+            while let Some((inline, depth)) = pending.pop() {
+                if let InlineNode::Text(text) = inline {
+                    if let Some(pos) = &text.pos {
+                        text_starts.insert((pos.start_line, pos.start_column));
+                    }
+                }
+                push_inline_children(inline, depth, &mut pending);
+            }
+        }
+        Some(Item {
+            first: p.start_line,
+            last: p.end_line,
+            base,
+            content,
+            quotes: row.text[..at].matches('>').count(),
+            deepest,
+            marker_line_note: self.note_marker.is_match(marker_tail),
+            paragraph_lines,
+            text_starts,
+        })
+    }
+
+    fn record_definition_list(&mut self, list: &DefinitionList) {
+        let rows = self.rows;
+        let scan = &mut self.scan;
+        for item in &list.items {
+            for def in &item.definitions {
+                let Some(pos) = def.pos.as_ref() else {
+                    continue;
+                };
+                let Some(row) = rows.get(pos.start_line.saturating_sub(1)) else {
+                    continue;
+                };
+                let at = byte_at_column(row.text, pos.start_column);
+                let rest = &row.text[at..];
+                let width = rest.len() - rest[1..].trim_start_matches([' ', '\t']).len();
+                if rest.starts_with(':') && width > 1 {
+                    let last = def
                         .children
                         .iter()
-                        .map(|inline| (inline, 0))
-                        .collect();
-                    while let Some((inline, depth)) = pending.pop() {
-                        if let InlineNode::Text(text) = inline {
-                            if let Some(pos) = &text.pos {
-                                text_starts.insert((pos.start_line, pos.start_column));
-                            }
-                        }
-                        push_inline_children(inline, depth, &mut pending);
-                    }
+                        .filter_map(|child| block_pos(child).map(|p| p.end_line))
+                        .fold(pos.end_line, usize::max);
+                    scan.descriptions
+                        .push((pos.start_line, last, visual(&row.text[..at + width])));
                 }
-                items.push(Item {
-                    first: p.start_line,
-                    last: p.end_line,
-                    base,
-                    content,
-                    quotes: row.text[..at].matches('>').count(),
-                    deepest,
-                    marker_line_note: note_marker.is_match(marker_tail),
-                    paragraph_lines,
-                    text_starts,
-                });
             }
+            scan.attached.extend(
+                item.terms
+                    .iter()
+                    .filter_map(|term| term.pos.as_ref().map(|pos| pos.start_line)),
+            );
+            scan.attached.extend(
+                item.definitions
+                    .iter()
+                    .filter_map(|def| def.pos.as_ref().map(|pos| pos.start_line)),
+            );
         }
-        if let BlockNode::DefinitionList(list) = block {
-            for item in &list.items {
-                for def in &item.definitions {
-                    let Some(pos) = def.pos.as_ref() else {
-                        continue;
-                    };
-                    let Some(row) = rows.get(pos.start_line.saturating_sub(1)) else {
-                        continue;
-                    };
-                    let at = row
-                        .text
-                        .char_indices()
-                        .nth(pos.start_column.saturating_sub(1))
-                        .map_or(row.text.len(), |(at, _)| at);
-                    let rest = &row.text[at..];
-                    let width = rest.len() - rest[1..].trim_start_matches([' ', '\t']).len();
-                    if rest.starts_with(':') && width > 1 {
-                        let last = def
-                            .children
-                            .iter()
-                            .filter_map(|child| block_pos(child).map(|p| p.end_line))
-                            .fold(pos.end_line, usize::max);
-                        descriptions.push((pos.start_line, last, visual(&row.text[..at + width])));
-                    }
-                }
-                attached.extend(
-                    item.terms
-                        .iter()
-                        .filter_map(|term| term.pos.as_ref().map(|pos| pos.start_line)),
-                );
-                attached.extend(
-                    item.definitions
-                        .iter()
-                        .filter_map(|def| def.pos.as_ref().map(|pos| pos.start_line)),
-                );
-            }
-            if let (Some(pos), Some(term)) = (
-                list.pos.as_ref(),
-                list.items
-                    .first()
-                    .and_then(|item| item.terms.first())
-                    .and_then(|term| term.pos.as_ref()),
-            ) {
-                if let Some(row) = rows.get(term.start_line.saturating_sub(1)) {
-                    let at = row
-                        .text
-                        .char_indices()
-                        .nth(term.start_column.saturating_sub(1))
-                        .map_or(row.text.len(), |(at, _)| at);
-                    if row.text[at..].starts_with("::") {
-                        definition_hosts.push(DefinitionHost {
-                            first: pos.start_line,
-                            last: pos.end_line,
-                            column: visual(&row.text[..at]),
-                            quotes: quote_prefix(row.text).1,
-                        });
-                    }
-                }
-            }
-        }
-        push_block_children(block, depth, &mut blocks, &mut inlines);
-    }
-    let mut text_spans = Vec::new();
-    while let Some((node, depth)) = inlines.pop() {
-        if matches!(
-            node,
-            InlineNode::Code(_)
-                | InlineNode::Math(_)
-                | InlineNode::RawInline(_)
-                | InlineNode::LiteralInline(_)
-                | InlineNode::Comment(_)
+        if let (Some(pos), Some(term)) = (
+            list.pos.as_ref(),
+            list.items
+                .first()
+                .and_then(|item| item.terms.first())
+                .and_then(|term| term.pos.as_ref()),
         ) {
-            if let Some(pos) = node.pos() {
-                payload.extend((pos.start_line + 1)..=pos.end_line);
+            if let Some(row) = rows.get(term.start_line.saturating_sub(1)) {
+                let at = byte_at_column(row.text, term.start_column);
+                if row.text[at..].starts_with("::") {
+                    scan.definition_hosts.push(DefinitionHost {
+                        first: pos.start_line,
+                        last: pos.end_line,
+                        column: visual(&row.text[..at]),
+                        quotes: quote_prefix(row.text).1,
+                    });
+                }
             }
         }
-        if matches!(
-            node,
-            InlineNode::Text(_) | InlineNode::Mention(_) | InlineNode::Tag(_)
-        ) {
-            if let Some(p) = node.pos() {
-                text_spans.push((to_byte(p.start_offset), to_byte(p.end_offset)));
-            }
-        }
-        push_inline_children(node, depth, &mut inlines);
     }
-    text_spans.sort_unstable();
-    collect_description_separators(&rows, &definition_hosts, &attached, &ignored, &payload, out);
-    let mut text_runs: Vec<(usize, usize)> = Vec::new();
-    for (start, end) in text_spans {
-        if let Some(last) = text_runs.last_mut().filter(|last| last.1 == start) {
-            last.1 = end;
-        } else {
-            text_runs.push((start, end));
-        }
-    }
-    let in_text = |start: usize, end: usize| {
-        let i = text_runs.partition_point(|span| span.0 <= start);
-        i > 0 && text_runs[i - 1].1 >= end
-    };
+}
+
+fn collect_habits(
+    source: &str,
+    rows: &[Line<'_>],
+    text_runs: &[(usize, usize)],
+    out: &mut Vec<LintWarning>,
+) {
     let habits = [
         (
             "markdown-strong-double-star",
@@ -575,7 +654,9 @@ pub(super) fn collect(
             if slashes % 2 == 1 {
                 continue;
             }
-            if !in_text(m.start(), m.start() + width) || !in_text(m.end() - width, m.end()) {
+            if !in_text(text_runs, m.start(), m.start() + width)
+                || !in_text(text_runs, m.end() - width, m.end())
+            {
                 search = m.start() + 1;
                 continue;
             }
@@ -615,26 +696,78 @@ pub(super) fn collect(
             });
         }
     }
-    let folded: BTreeSet<_> = out
-        .iter()
-        .filter(|w| w.rule == "definition-term-block-folded")
-        .map(|w| w.line)
-        .collect();
-    let mut list_lines = folded.clone();
-    items.sort_by_key(|i| (i.first, i.content));
-    let block_opener = regex::Regex::new(r"^(?:#{1,6} +\S|>(?: |$)|`{3,}|~{3,}|::(?: |$)|:{3,}(?: |$)|!\[|\[[^\]]+\]: +\S|(?:-{3,}|\*{3,}|_{3,})[ \t]*$|\{[^{}]+\}[ \t]*$|\|.*\|[ \t]*$)").unwrap();
-    let mut open_fence: Option<(usize, char, usize)> = None;
-    let mut previous_run = None;
-    let mut active: Vec<&Item> = Vec::new();
-    let mut next_item = 0;
-    let mut ended: Option<&Item> = None;
-    for (index, row) in rows.iter().enumerate() {
-        let ln = index + 1;
-        while next_item < items.len() && items[next_item].first < ln {
-            active.push(&items[next_item]);
-            next_item += 1;
+}
+
+struct ListScan<'s, 'r> {
+    rows: &'s [Line<'r>],
+    scan: &'s BlockScan<'s>,
+    marker_shaped: regex::Regex,
+    block_opener: regex::Regex,
+    folded: BTreeSet<usize>,
+    list_lines: BTreeSet<usize>,
+    open_fence: Option<(usize, char, usize)>,
+    previous_run: Option<(char, Option<usize>)>,
+    active: Vec<&'s Item>,
+    next_item: usize,
+    ended: Option<&'s Item>,
+}
+
+#[derive(Clone, Copy)]
+struct ListRow<'s> {
+    ln: usize,
+    index: usize,
+    view: &'s str,
+    at: usize,
+    column: usize,
+    containing: Option<&'s Item>,
+    owner: Option<&'s Item>,
+}
+
+impl<'s, 'r> ListScan<'s, 'r> {
+    fn new(rows: &'s [Line<'r>], scan: &'s BlockScan<'s>, out: &[LintWarning]) -> Self {
+        let folded: BTreeSet<_> = out
+            .iter()
+            .filter(|w| w.rule == "definition-term-block-folded")
+            .map(|w| w.line)
+            .collect();
+        Self {
+            rows,
+            scan,
+            marker_shaped: regex::Regex::new(
+                r"^(?:[-+*](?: +\[[ xX\-_>?]\])?|\([0-9A-Za-z]+\)|[0-9A-Za-z]+[.)]|\.)[ \t]",
+            )
+            .unwrap(),
+            block_opener: regex::Regex::new(r"^(?:#{1,6} +\S|>(?: |$)|`{3,}|~{3,}|::(?: |$)|:{3,}(?: |$)|!\[|\[[^\]]+\]: +\S|(?:-{3,}|\*{3,}|_{3,})[ \t]*$|\{[^{}]+\}[ \t]*$|\|.*\|[ \t]*$)").unwrap(),
+            list_lines: folded.clone(),
+            folded,
+            open_fence: None,
+            previous_run: None,
+            active: Vec::new(),
+            next_item: 0,
+            ended: None,
         }
-        active.retain(|item| {
+    }
+
+    fn run(mut self, out: &mut Vec<LintWarning>) -> BTreeSet<usize> {
+        let rows = self.rows;
+        for (index, row) in rows.iter().enumerate() {
+            let line = self.row(index, row);
+            self.check_folded_marker(&line, out);
+            self.check_separated_marker(&line, out);
+            self.check_block_opener(&line, out);
+        }
+        self.list_lines
+    }
+
+    fn row(&mut self, index: usize, row: &'s Line<'r>) -> ListRow<'s> {
+        let ln = index + 1;
+        let items = &self.scan.items;
+        while self.next_item < items.len() && items[self.next_item].first < ln {
+            self.active.push(&items[self.next_item]);
+            self.next_item += 1;
+        }
+        let ended = &mut self.ended;
+        self.active.retain(|item| {
             if item.last < ln {
                 if ended.map_or(true, |old| {
                     item.last > old.last
@@ -642,77 +775,112 @@ pub(super) fn collect(
                             && (item.first < old.first
                                 || (item.first == old.first && item.content > old.content)))
                 }) {
-                    ended = Some(item);
+                    *ended = Some(item);
                 }
                 false
             } else {
                 true
             }
         });
-        let containing = active.iter().copied().max_by_key(|i| i.content);
-        let owner = containing.or(ended);
+        let containing = self.active.iter().copied().max_by_key(|i| i.content);
+        let owner = containing.or(self.ended);
         let (view, at) = quoted_view(row.text, owner.map_or(0, |i| i.quotes));
-        let column = visual(&row.text[..at]);
-        if !ignored.contains(&ln) && marker_shaped.is_match(view) {
-            let marker_column = row.column(at);
-            if let Some(host) = active
-                .iter()
-                .copied()
-                .filter(|item| {
-                    item.paragraph_lines.contains(&ln)
-                        && item.text_starts.contains(&(ln, marker_column))
-                        && item.base < column
-                        && column < item.content
-                })
-                .max_by_key(|item| item.content)
-            {
-                let len = marker_shaped.find(view).unwrap().len() - 1;
-                emit(out, &rows, ln, at, len, "list-marker-below-content-column", &format!("This list marker starts at column {column}, below the list item's content column {}, so it folds into the item's paragraph as text. Indent it to column {} to nest it under the item, or start it at column {} to begin a new item at the item's own level.", host.content, host.content, host.base));
-            }
+        ListRow {
+            ln,
+            index,
+            view,
+            at,
+            column: visual(&row.text[..at]),
+            containing,
+            owner,
         }
-        if containing.is_none()
+    }
+
+    fn check_folded_marker(&self, l: &ListRow<'_>, out: &mut Vec<LintWarning>) {
+        let ln = l.ln;
+        let column = l.column;
+        if self.scan.ignored.contains(&ln) || !self.marker_shaped.is_match(l.view) {
+            return;
+        }
+        let marker_column = self.rows[l.index].column(l.at);
+        if let Some(host) = self
+            .active
+            .iter()
+            .copied()
+            .filter(|item| {
+                item.paragraph_lines.contains(&ln)
+                    && item.text_starts.contains(&(ln, marker_column))
+                    && item.base < column
+                    && column < item.content
+            })
+            .max_by_key(|item| item.content)
+        {
+            let len = self.marker_shaped.find(l.view).unwrap().len() - 1;
+            emit(out, self.rows, ln, l.at, len, "list-marker-below-content-column", &format!("This list marker starts at column {column}, below the list item's content column {}, so it folds into the item's paragraph as text. Indent it to column {} to nest it under the item, or start it at column {} to begin a new item at the item's own level.", host.content, host.content, host.base));
+        }
+    }
+
+    fn check_separated_marker(&self, l: &ListRow<'_>, out: &mut Vec<LintWarning>) {
+        let (ln, index, column) = (l.ln, l.index, l.column);
+        let rows = self.rows;
+        let items = &self.scan.items;
+        if !(l.containing.is_none()
             && ln > 1
-            && !ignored.contains(&ln)
-            && marker_shaped.is_match(view)
-            && quoted_view(rows[index - 1].text, owner.map_or(0, |i| i.quotes))
+            && !self.scan.ignored.contains(&ln)
+            && self.marker_shaped.is_match(l.view)
+            && quoted_view(rows[index - 1].text, l.owner.map_or(0, |i| i.quotes))
                 .0
                 .trim()
                 .is_empty()
             && !out
                 .iter()
-                .any(|w| w.rule == "ordered-list-split-by-indent" && w.line == ln)
+                .any(|w| w.rule == "ordered-list-split-by-indent" && w.line == ln))
         {
-            let host = items
-                .iter()
-                .filter(|i| i.first == ln)
-                .min_by_key(|i| i.base)
-                .and_then(|opened| {
-                    items
-                        .iter()
-                        .filter(|i| {
-                            i.first < ln
-                                && i.quotes == opened.quotes
-                                && i.base < opened.base
-                                && opened.base < i.content
-                                && rows[i.last..index]
-                                    .iter()
-                                    .all(|r| quoted_view(r.text, i.quotes).0.trim().is_empty())
-                        })
-                        .max_by_key(|i| i.content)
-                });
-            if let Some(host) = host {
-                let len = marker_shaped.find(view).unwrap().len() - 1;
-                emit(out, &rows, ln, at, len, "list-marker-below-content-column", &format!("This list marker starts at column {column} after a blank line, below the content column {} of the list item above, so it starts a separate list instead of nesting. Indent it to column {} to nest it under the item, or start it at column {} to put it at the item's own level.", host.content, host.content, host.base));
-            }
+            return;
         }
+        let host = items
+            .iter()
+            .filter(|i| i.first == ln)
+            .min_by_key(|i| i.base)
+            .and_then(|opened| {
+                items
+                    .iter()
+                    .filter(|i| {
+                        i.first < ln
+                            && i.quotes == opened.quotes
+                            && i.base < opened.base
+                            && opened.base < i.content
+                            && rows[i.last..index]
+                                .iter()
+                                .all(|r| quoted_view(r.text, i.quotes).0.trim().is_empty())
+                    })
+                    .max_by_key(|i| i.content)
+            });
+        if let Some(host) = host {
+            let len = self.marker_shaped.find(l.view).unwrap().len() - 1;
+            emit(out, rows, ln, l.at, len, "list-marker-below-content-column", &format!("This list marker starts at column {column} after a blank line, below the content column {} of the list item above, so it starts a separate list instead of nesting. Indent it to column {} to nest it under the item, or start it at column {} to put it at the item's own level.", host.content, host.content, host.base));
+        }
+    }
+
+    fn check_block_opener(&mut self, l: &ListRow<'s>, out: &mut Vec<LintWarning>) {
+        let ListRow {
+            ln,
+            index,
+            view,
+            at,
+            column,
+            containing,
+            owner,
+        } = *l;
+        let rows = self.rows;
         let run = view
             .chars()
             .next()
             .filter(|c| matches!(c, '|' | '>'))
-            .filter(|_| block_opener.is_match(view))
+            .filter(|_| self.block_opener.is_match(view))
             .map(|kind| (kind, owner.map(|i| i.first)));
         let block_run = run
-            .and_then(|(kind, _)| block_runs.get(&(kind, ln)))
+            .and_then(|(kind, _)| self.scan.block_runs.get(&(kind, ln)))
             .and_then(|runs| {
                 runs.iter()
                     .filter(|(_, column)| *column >= owner.map_or(0, |i| i.content))
@@ -721,23 +889,15 @@ pub(super) fn collect(
             });
         let continuing_run = run.is_some_and(|(kind, _)| kind == '|')
             && column > owner.map_or(0, |i| i.content)
-            && run == previous_run
+            && run == self.previous_run
             || block_run.is_some_and(|start| start < ln);
-        previous_run =
+        self.previous_run =
             run.filter(|(kind, _)| *kind == '|' && column > owner.map_or(0, |i| i.content));
-        if let Some((owner_line, ch, width)) = open_fence {
-            if containing.is_some_and(|i| i.first == owner_line) {
-                let run = view.chars().take_while(|&c| c == ch).count();
-                if run >= width && view[run..].trim().is_empty() {
-                    open_fence = None;
-                }
-                list_lines.insert(ln);
-                continue;
-            }
-            open_fence = None;
+        if self.continue_fence(l) {
+            return;
         }
-        if folded.contains(&ln) || column == 0 || !block_opener.is_match(view) {
-            continue;
+        if self.folded.contains(&ln) || column == 0 || !self.block_opener.is_match(view) {
+            return;
         }
         if let Some(note) = containing
             .filter(|item| item.marker_line_note && column == item.content + 2)
@@ -755,30 +915,30 @@ pub(super) fn collect(
             })
         {
             if let Some(ch) = view.chars().next().filter(|ch| matches!(ch, '`' | '~')) {
-                open_fence = Some((
+                self.open_fence = Some((
                     note.first,
                     ch,
                     view.chars().take_while(|c| *c == ch).count(),
                 ));
-                continue;
+                return;
             }
         }
         if owner.is_some_and(|i| i.deepest > i.content && i.deepest == column) {
-            continue;
+            return;
         }
         let fence_char = view
             .chars()
             .next()
             .filter(|ch| matches!(ch, '`' | '~' | ':'))
             .filter(|ch| view.chars().take_while(|c| c == ch).count() >= 3);
-        if ignored.contains(&ln)
+        if self.scan.ignored.contains(&ln)
             && fence_char.is_none()
             && !(view.starts_with('>') && block_run == Some(ln))
         {
-            list_lines.insert(ln);
-            continue;
+            self.list_lines.insert(ln);
+            return;
         }
-        let adjacent = ended.filter(|i| {
+        let adjacent = self.ended.filter(|i| {
             rows[i.last..index]
                 .iter()
                 .all(|r| quoted_view(r.text, i.quotes).0.is_empty())
@@ -786,15 +946,18 @@ pub(super) fn collect(
         let candidate = containing.or(adjacent);
         // A description inside the item is the innermost container, so its content column places the block.
         if candidate.is_some_and(|i| {
-            descriptions.iter().any(|&(first, last, content)| {
-                first >= i.first
-                    && first < ln
-                    && ln <= last
-                    && content > i.content
-                    && column >= content
-            })
+            self.scan
+                .descriptions
+                .iter()
+                .any(|&(first, last, content)| {
+                    first >= i.first
+                        && first < ln
+                        && ln <= last
+                        && content > i.content
+                        && column >= content
+                })
         }) {
-            continue;
+            return;
         }
         let rule = candidate.and_then(|i| {
             if column > i.content && !continuing_run {
@@ -808,12 +971,12 @@ pub(super) fn collect(
         if let Some(rule) = rule {
             let len = view.find(char::is_whitespace).unwrap_or(view.len());
             let content = candidate.unwrap().content;
-            emit(out, &rows, ln, at, len, rule, &format!("This block opener does not use the list item's content column {content}. Align it with that column, or escape it to keep literal text."));
-            list_lines.insert(ln);
+            emit(out, rows, ln, at, len, rule, &format!("This block opener does not use the list item's content column {content}. Align it with that column, or escape it to keep literal text."));
+            self.list_lines.insert(ln);
         }
         if let (Some(item), Some(ch)) = (candidate, fence_char) {
             if column >= item.content {
-                open_fence = Some((
+                self.open_fence = Some((
                     item.first,
                     ch,
                     view.chars().take_while(|&c| c == ch).count(),
@@ -821,25 +984,60 @@ pub(super) fn collect(
             }
         }
     }
-    let trailing = regex::Regex::new(r"(?:^|\s)(\{\s*[.#][^{}]*\})\s*$").unwrap();
-    let raw = regex::Regex::new(r"^([ \t]*)(`{3,}|~{3,})[ \t]*raw[ \t]+\S+").unwrap();
-    let fence_run = regex::Regex::new(r"^(`{3,}|~{3,})").unwrap();
-    let title = regex::Regex::new(r#"^:{3,}[ \t]+[A-Za-z_][\w-]*[ \t]+([^"\[ \t].*)$"#).unwrap();
-    let include = regex::Regex::new(r"\{\{([^{}]*)\}\}").unwrap();
-    for (index, row) in rows.iter().enumerate() {
-        let ln = index + 1;
-        for (column, (at, ch)) in row.text.char_indices().enumerate() {
-            if matches!(ch, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}') {
-                out.push(LintWarning { file: None, included_by: Vec::new(),
-                    line: ln,
-                    column: column + 1,
-                    start: row.start + at,
-                    end: row.start + at + ch.len_utf8(),
-                    rule: "bidi-control-in-source",
-                    message: "This bidi control is preserved by canonical Carve but removed from presentation output.".into(),
-                });
+
+    fn continue_fence(&mut self, l: &ListRow<'_>) -> bool {
+        let Some((owner_line, ch, width)) = self.open_fence else {
+            return false;
+        };
+        if l.containing.is_some_and(|i| i.first == owner_line) {
+            let run = l.view.chars().take_while(|&c| c == ch).count();
+            if run >= width && l.view[run..].trim().is_empty() {
+                self.open_fence = None;
             }
+            self.list_lines.insert(l.ln);
+            return true;
         }
+        self.open_fence = None;
+        false
+    }
+}
+
+struct LineRules<'s, 'r> {
+    rows: &'s [Line<'r>],
+    scan: &'s BlockScan<'s>,
+    list_lines: &'s BTreeSet<usize>,
+    trailing: regex::Regex,
+    raw: regex::Regex,
+    fence_run: regex::Regex,
+    include: regex::Regex,
+}
+
+impl<'s, 'r> LineRules<'s, 'r> {
+    fn new(rows: &'s [Line<'r>], scan: &'s BlockScan<'s>, list_lines: &'s BTreeSet<usize>) -> Self {
+        Self {
+            rows,
+            scan,
+            list_lines,
+            trailing: regex::Regex::new(r"(?:^|\s)(\{\s*[.#][^{}]*\})\s*$").unwrap(),
+            raw: regex::Regex::new(r"^([ \t]*)(`{3,}|~{3,})[ \t]*raw[ \t]+\S+").unwrap(),
+            fence_run: regex::Regex::new(r"^(`{3,}|~{3,})").unwrap(),
+            include: regex::Regex::new(r"\{\{([^{}]*)\}\}").unwrap(),
+        }
+    }
+
+    fn run(&self, out: &mut Vec<LintWarning>) {
+        for (index, row) in self.rows.iter().enumerate() {
+            let ln = index + 1;
+            collect_bidi_controls(ln, row, out);
+            self.check_region_marker(ln, row, out);
+            if self.scan.ignored.contains(&ln) {
+                continue;
+            }
+            self.check_visible_line(ln, row, out);
+        }
+    }
+
+    fn check_region_marker(&self, ln: usize, row: &Line<'_>, out: &mut Vec<LintWarning>) {
         let trimmed = row.text.trim_start_matches([' ', '\t']);
         let percent = trimmed.starts_with("%%") && !trimmed.starts_with("%%%");
         let body = if percent {
@@ -858,11 +1056,12 @@ pub(super) fn collect(
         };
         if let Some(lowercase) = region_keyword(body) {
             if (!percent || !lowercase)
-                && (!ignored.contains(&ln) || (percent && line_comments.contains(&ln)))
+                && (!self.scan.ignored.contains(&ln)
+                    || (percent && self.scan.line_comments.contains(&ln)))
             {
                 emit(
                     out,
-                    &rows,
+                    self.rows,
                     ln,
                     row.text.len() - trimmed.len(),
                     trimmed.len(),
@@ -872,46 +1071,35 @@ pub(super) fn collect(
                 );
             }
         }
-        if ignored.contains(&ln) {
-            continue;
-        }
-        if headings.contains(&ln) {
-            if let Some(m) = trailing.captures(row.text).and_then(|m| m.get(1)) {
-                emit(out,&rows,ln,m.start(),m.len(),"heading-trailing-attribute","A heading's trailing attribute block is literal text. Move it to its own line above the heading.");
+    }
+
+    fn check_visible_line(&self, ln: usize, row: &Line<'_>, out: &mut Vec<LintWarning>) {
+        let rows = self.rows;
+        if self.scan.headings.contains(&ln) {
+            if let Some(m) = self.trailing.captures(row.text).and_then(|m| m.get(1)) {
+                emit(out,rows,ln,m.start(),m.len(),"heading-trailing-attribute","A heading's trailing attribute block is literal text. Move it to its own line above the heading.");
             }
         }
         let view = container_view(row.text).trim_start_matches([' ', '\t']);
         let at = row.text.len() - view.len();
-        if let Some(m) = raw.captures(view) {
+        if let Some(m) = self.raw.captures(view) {
             let at = at + m[1].len();
             emit(
                 out,
-                &rows,
+                rows,
                 ln,
                 at,
                 row.text.len() - at,
                 "raw-block-syntax",
                 "Use a fence followed by =FORMAT for a raw block; raw FORMAT does not open one.",
             );
-        } else if paragraphs.contains(&ln) {
-            if let Some(m) = fence_run.find(view) {
-                let run = m.as_str();
-                if !crate::parse::lint_opens_code_fence(view) && !view[run.len()..].contains(run) {
-                    emit(out,&rows,ln,at,view.len(),"fence-opener-fallback","This fence has an invalid info string and parses as paragraph content. Use a language, optional quoted title, and optional label.");
-                } else if at > 0
-                    && row.text.starts_with([' ', '\t'])
-                    && container_view(row.text).starts_with([' ', '\t'])
-                    && !list_lines.contains(&ln)
-                    && !view[run.len()..].contains(run)
-                {
-                    emit(out,&rows,ln,at,run.len(),"fence-delimiter-indentation","This fence is indented past its container's content column and does not open a code block.");
-                }
-            }
+        } else if self.scan.paragraphs.contains(&ln) {
+            self.check_paragraph_fence(ln, row, view, at, out);
         }
         if row.text.starts_with('>') && row.text.len() > 1 && !row.text.starts_with("> ") {
             emit(
                 out,
-                &rows,
+                rows,
                 ln,
                 0,
                 row.text.len(),
@@ -920,18 +1108,24 @@ pub(super) fn collect(
             );
         }
         for (start, len) in crate::parse::lint_reversed_cell_markers(view) {
-            emit(out, &rows, ln, at + start, len, "table-cell-attribute-before-marker", "Write the alignment marker before the cell attribute block, and end the marker run with a space.");
+            emit(out, rows, ln, at + start, len, "table-cell-attribute-before-marker", "Write the alignment marker before the cell attribute block, and end the marker run with a space.");
         }
-        for m in include.captures_iter(row.text) {
+        for m in self.include.captures_iter(row.text) {
             let inner = &m[1];
             let value = inner.trim_matches([' ', '\t']);
             let missing = value.is_empty()
                 || (inner.starts_with([' ', '\t']) && value.starts_with(['#', '@']));
             let m = m.get(0).unwrap();
-            if missing && in_text(row.start + m.start(), row.start + m.end()) {
+            if missing
+                && in_text(
+                    &self.scan.text_runs,
+                    row.start + m.start(),
+                    row.start + m.end(),
+                )
+            {
                 emit(
                     out,
-                    &rows,
+                    rows,
                     ln,
                     m.start(),
                     m.len(),
@@ -941,6 +1135,55 @@ pub(super) fn collect(
             }
         }
     }
+
+    fn check_paragraph_fence(
+        &self,
+        ln: usize,
+        row: &Line<'_>,
+        view: &str,
+        at: usize,
+        out: &mut Vec<LintWarning>,
+    ) {
+        let Some(m) = self.fence_run.find(view) else {
+            return;
+        };
+        let run = m.as_str();
+        if !crate::parse::lint_opens_code_fence(view) && !view[run.len()..].contains(run) {
+            emit(out,self.rows,ln,at,view.len(),"fence-opener-fallback","This fence has an invalid info string and parses as paragraph content. Use a language, optional quoted title, and optional label.");
+        } else if at > 0
+            && row.text.starts_with([' ', '\t'])
+            && container_view(row.text).starts_with([' ', '\t'])
+            && !self.list_lines.contains(&ln)
+            && !view[run.len()..].contains(run)
+        {
+            emit(out,self.rows,ln,at,run.len(),"fence-delimiter-indentation","This fence is indented past its container's content column and does not open a code block.");
+        }
+    }
+}
+
+fn collect_bidi_controls(ln: usize, row: &Line<'_>, out: &mut Vec<LintWarning>) {
+    for (column, (at, ch)) in row.text.char_indices().enumerate() {
+        if matches!(ch, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}') {
+            out.push(LintWarning { file: None, included_by: Vec::new(),
+                line: ln,
+                column: column + 1,
+                start: row.start + at,
+                end: row.start + at + ch.len_utf8(),
+                rule: "bidi-control-in-source",
+                message: "This bidi control is preserved by canonical Carve but removed from presentation output.".into(),
+            });
+        }
+    }
+}
+
+fn collect_marker_text(
+    rows: &[Line<'_>],
+    starts: &[(Pos, &str)],
+    list_lines: &BTreeSet<usize>,
+    to_byte: &dyn Fn(usize) -> usize,
+    out: &mut Vec<LintWarning>,
+) {
+    let title = regex::Regex::new(r#"^:{3,}[ \t]+[A-Za-z_][\w-]*[ \t]+([^"\[ \t].*)$"#).unwrap();
     for (pos, text) in starts {
         if list_lines.contains(&pos.start_line) {
             continue;
@@ -960,7 +1203,7 @@ pub(super) fn collect(
         };
         emit(
             out,
-            &rows,
+            rows,
             pos.start_line,
             at,
             if rule == "fence-title-syntax" {
@@ -978,6 +1221,14 @@ pub(super) fn collect(
             },
         );
     }
+}
+
+fn collect_container_fences(
+    rows: &[Line<'_>],
+    fences: &mut [Fence],
+    out: &mut Vec<LintWarning>,
+) -> bool {
+    let mut recovered_metadata = false;
     fences.sort_by_key(|f| (f.first, std::cmp::Reverse(f.last)));
     let mut closed = vec![false; fences.len()];
     let mut claimed = BTreeSet::new();
@@ -1008,7 +1259,7 @@ pub(super) fn collect(
         .trim_start_matches([' ', '\t']);
         if crate::parse::lint_invalid_container_metadata(view) {
             recovered_metadata = true;
-            emit(out, &rows, fence.first, row.text.len() - view.len(), view.len(),
+            emit(out, rows, fence.first, row.text.len() - view.len(), view.len(),
                 "fence-title-syntax", "Invalid container metadata was dropped. Use a straight-double-quoted title or a bracketed label; the container and its children are preserved.");
         }
         if fence.bare && !closed[index] {
@@ -1020,7 +1271,7 @@ pub(super) fn collect(
                 if parent.width != fence.width {
                     emit(
                         out,
-                        &rows,
+                        rows,
                         fence.first,
                         fence.column,
                         fence.width,
@@ -1036,7 +1287,7 @@ pub(super) fn collect(
         if !closed[index] {
             emit(
                 out,
-                &rows,
+                rows,
                 fence.first,
                 fence.column,
                 (row.text.len() - fence.column).min(fence.width),
@@ -1045,6 +1296,10 @@ pub(super) fn collect(
             );
         }
     }
+    recovered_metadata
+}
+
+fn collect_version(source: &str, doc: &Document, rows: &[Line<'_>], out: &mut Vec<LintWarning>) {
     let version = regex::Regex::new(r"^[ \t]*carve-version[ \t]*:[ \t]*(\S+)[ \t]*$").unwrap();
     let declared = doc
         .frontmatter_raw
@@ -1064,37 +1319,37 @@ pub(super) fn collect(
                 (stamp.version, at)
             })
         });
-    if let Some((value, at)) = declared {
-        let declared: Option<Vec<u64>> = value.split('.').map(|v| v.parse().ok()).collect();
-        let implemented: Vec<u64> = crate::SPEC_VERSION
-            .split('.')
-            .map(|v| v.parse().unwrap())
-            .collect();
-        let unsupported = declared.map_or(true, |parts| {
-            (0..parts.len().max(implemented.len()))
-                .map(|i| parts.get(i).copied().unwrap_or(0))
-                .cmp(
-                    (0..parts.len().max(implemented.len()))
-                        .map(|i| implemented.get(i).copied().unwrap_or(0)),
-                )
-                .is_gt()
-        });
-        if unsupported {
-            let index = rows
-                .partition_point(|row| row.start <= at)
-                .saturating_sub(1);
-            emit(
-                out,
-                &rows,
-                index + 1,
-                at - rows[index].start,
-                value.len(),
-                "carve-version-unsupported",
-                "The declared Carve version is newer than or unrecognized by this engine.",
-            );
-        }
+    let Some((value, at)) = declared else {
+        return;
+    };
+    let declared: Option<Vec<u64>> = value.split('.').map(|v| v.parse().ok()).collect();
+    let implemented: Vec<u64> = crate::SPEC_VERSION
+        .split('.')
+        .map(|v| v.parse().unwrap())
+        .collect();
+    let unsupported = declared.map_or(true, |parts| {
+        (0..parts.len().max(implemented.len()))
+            .map(|i| parts.get(i).copied().unwrap_or(0))
+            .cmp(
+                (0..parts.len().max(implemented.len()))
+                    .map(|i| implemented.get(i).copied().unwrap_or(0)),
+            )
+            .is_gt()
+    });
+    if unsupported {
+        let index = rows
+            .partition_point(|row| row.start <= at)
+            .saturating_sub(1);
+        emit(
+            out,
+            rows,
+            index + 1,
+            at - rows[index].start,
+            value.len(),
+            "carve-version-unsupported",
+            "The declared Carve version is newer than or unrecognized by this engine.",
+        );
     }
-    recovered_metadata
 }
 
 fn collect_ordered_splits(doc: &Document, rows: &[Line<'_>], out: &mut Vec<LintWarning>) {

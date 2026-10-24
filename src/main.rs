@@ -58,6 +58,22 @@ impl IncludeBudgets {
         }
         options
     }
+
+    fn any(self) -> bool {
+        self.depth.is_some()
+            || self.bytes.is_some()
+            || self.resolver_calls.is_some()
+            || self.warnings.is_some()
+    }
+
+    fn set(&mut self, flag: &str, value: usize) {
+        match flag {
+            "--max-depth" => self.depth = Some(value),
+            "--max-bytes" => self.bytes = Some(value),
+            "--max-resolver-calls" => self.resolver_calls = Some(value),
+            _ => self.warnings = Some(value),
+        }
+    }
 }
 
 fn parse_budget(value: Option<&String>, flag: &str) -> Result<usize, ExitCode> {
@@ -93,6 +109,134 @@ impl carve::IncludeResolver for NoResolver {
     }
 }
 
+/// Every flag the render, `fmt` and `flatten` commands accept, as parsed.
+struct CliArgs<'a> {
+    options: carve::Options<'a>,
+    format: OutputFormat,
+    command: Command,
+    fmt_write: bool,
+    fmt_check: bool,
+    fmt_align_tables: bool,
+    fmt_stamp: Option<carve::StampForm>,
+    fmt_migrate: bool,
+    stamp_mode: Option<StampMode>,
+    enable_extensions: bool,
+    extension_keys: Vec<String>,
+    tabs_mode: carve::TabsMode,
+    tabs_mode_set: bool,
+    citation_mode: carve::CitationMode,
+    citation_mode_set: bool,
+    selective_render_options: bool,
+    quote_locale: Option<String>,
+    from_json: bool,
+    max_render_losses: usize,
+    include_root: Option<String>,
+    no_includes: bool,
+    include_budgets: IncludeBudgets,
+    input_paths: Vec<String>,
+    reports: LossReporting,
+}
+
+/// What happens to render losses and include dependencies once rendering ran.
+struct LossReporting {
+    strict_losses: bool,
+    report_losses: Option<String>,
+    report_includes: Option<String>,
+    allowed_render_losses: Vec<&'static str>,
+}
+
+/// Bundled interactive extensions, owned by `main` so they outlive `options`
+/// (which borrows them). Registered only when `--extensions` is passed, so
+/// the default CLI behavior is unchanged. They are degradation-safe: in
+/// `--static` they render their flattened form, in interactive their live
+/// form, and a document not using them is unaffected.
+struct BundledExtensions {
+    details: carve::Details,
+    spoiler: carve::Spoiler,
+    code_callouts: carve::CodeCallouts,
+    color_swatch: carve::ColorSwatch,
+    // Every FencedRender diagram preset (mermaid, plantuml, d2, dot/graphviz,
+    // wavedrom, abc, vega-lite, chart).
+    fenced_presets: Vec<carve::FencedRender>,
+    math_block: carve::MathBlock,
+}
+
+impl BundledExtensions {
+    fn new() -> Self {
+        Self {
+            details: carve::Details::new(),
+            spoiler: carve::Spoiler::new(),
+            code_callouts: carve::CodeCallouts::new(),
+            color_swatch: carve::ColorSwatch::new(),
+            fenced_presets: carve::FencedRender::presets(),
+            math_block: carve::MathBlock::new(),
+        }
+    }
+
+    fn register<'a>(&'a self, mut options: carve::Options<'a>) -> carve::Options<'a> {
+        options = options
+            .with_extension(&self.details)
+            .with_extension(&self.spoiler)
+            .with_extension(&self.code_callouts)
+            .with_extension(&self.color_swatch)
+            .with_extension(&self.math_block);
+        for preset in &self.fenced_presets {
+            options = options.with_extension(preset);
+        }
+        options
+    }
+
+    fn provides(&self, name: &str) -> bool {
+        name == self.details.name()
+            || name == self.spoiler.name()
+            || name == self.code_callouts.name()
+            || name == self.color_swatch.name()
+            || name == self.math_block.name()
+            || self
+                .fenced_presets
+                .iter()
+                .any(|preset| name == preset.name())
+    }
+}
+
+/// The rendered output plus the loss and include bookkeeping it produced.
+struct RenderOutcome {
+    output: String,
+    losses: Vec<carve::RenderLoss>,
+    total_losses: usize,
+    truncated: bool,
+    totals_by_code: std::collections::BTreeMap<&'static str, usize>,
+    include_dependencies: Vec<carve::IncludeDependency>,
+}
+
+impl RenderOutcome {
+    fn from_checked<E: Into<RenderError>>(
+        checked: carve::RenderResult<Result<String, E>>,
+    ) -> Result<Self, ExitCode> {
+        let output = match checked.value {
+            Ok(output) => output,
+            Err(err) => {
+                let err: RenderError = err.into();
+                eprintln!("carve: {err}");
+                return Err(ExitCode::FAILURE);
+            }
+        };
+        Ok(Self {
+            output,
+            losses: checked.losses,
+            total_losses: checked.total_losses,
+            truncated: checked.truncated,
+            totals_by_code: checked.totals_by_code,
+            include_dependencies: Vec::new(),
+        })
+    }
+}
+
+#[cfg(feature = "fs")]
+type CliResolver = carve::FileSystemResolver;
+#[cfg(not(feature = "fs"))]
+type CliResolver = NoResolver;
+
 fn main() -> ExitCode {
     // `std::env::args` panics on an argument that is not valid UTF-8, which
     // surfaced as exit 101 with a backtrace hint instead of a usage error.
@@ -125,124 +269,149 @@ fn main() -> ExitCode {
     if raw_args.first().map(String::as_str) == Some("region") {
         return run_region(&raw_args[1..]);
     }
-    // Bundled interactive extensions, owned here so they outlive `options`
-    // (which borrows them). Registered only when `--extensions` is passed, so
-    // the default CLI behavior is unchanged. They are degradation-safe: in
-    // `--static` they render their flattened form, in interactive their live
-    // form, and a document not using them is unaffected.
-    let details = carve::Details::new();
-    let spoiler = carve::Spoiler::new();
-    let code_callouts = carve::CodeCallouts::new();
-    let color_swatch = carve::ColorSwatch::new();
-    // Every FencedRender diagram preset (mermaid, plantuml, d2, dot/graphviz,
-    // wavedrom, abc, vega-lite, chart), owned here so it outlives `options`.
-    let fenced_presets = carve::FencedRender::presets();
-    let math_block = carve::MathBlock::new();
-    let mut quote_locale: Option<String> = None;
+    let bundled = BundledExtensions::new();
+    let cli = match parse_args(raw_args) {
+        Ok(cli) => cli,
+        Err(code) => return code,
+    };
 
-    let mut options = carve::Options::new();
-    let mut format = OutputFormat::Html;
-    let mut command = Command::Render;
-    let mut fmt_write = false;
-    let mut fmt_check = false;
-    let mut fmt_align_tables = false;
-    let mut fmt_stamp = None;
-    let mut fmt_migrate = false;
-    let mut stamp_mode: Option<StampMode> = None;
-    let mut enable_extensions = false;
-    let mut extension_keys: Vec<String> = Vec::new();
-    let mut tabs_mode = carve::TabsMode::Css;
-    let mut tabs_mode_set = false;
-    let mut citation_mode = carve::CitationMode::Numbered;
-    let mut citation_mode_set = false;
-    let mut selective_render_options = false;
-    let mut from_json = false;
-    let mut strict_losses = false;
-    let mut report_losses: Option<String> = None;
-    let mut report_includes: Option<String> = None;
-    let mut allowed_render_losses: Vec<&'static str> = Vec::new();
-    let mut max_render_losses = carve::DEFAULT_MAX_RENDER_LOSSES;
-    // `mut` only where the flag can be honoured: without the `fs` feature the
-    // flag is refused at the parse site and this never moves.
-    #[cfg_attr(not(feature = "fs"), allow(unused_mut))]
-    let mut include_root: Option<String> = None;
-    let mut no_includes = false;
-    let mut include_budgets = IncludeBudgets::default();
-    let mut input_paths: Vec<String> = Vec::new();
+    if cli.command != Command::Render && cli.selective_render_options {
+        eprintln!("carve: selective extension and render options apply only to rendering");
+        return ExitCode::FAILURE;
+    }
+
+    if cli.command == Command::Fmt {
+        if cli.include_budgets.any() {
+            eprintln!("carve fmt: include limits do not apply to formatting");
+            return ExitCode::from(2);
+        }
+        return run_fmt(
+            &cli.input_paths,
+            cli.fmt_write,
+            cli.fmt_check,
+            cli.fmt_stamp,
+            cli.fmt_migrate,
+            cli.fmt_align_tables,
+        );
+    }
+
+    if cli.command == Command::Flatten {
+        if cli.options.align_tables {
+            eprintln!("carve flatten: --align-tables applies only to --carve or fmt");
+            return ExitCode::from(2);
+        }
+        // Flatten exists to read includes, so a switch that forbids that is
+        // refused rather than ignored (carve-js rejects both flags too).
+        if cli.no_includes {
+            eprintln!("carve flatten: --safe and --no-includes leave nothing to flatten");
+            return ExitCode::from(2);
+        }
+        return run_flatten(
+            cli.input_paths.first().map(String::as_str),
+            cli.include_root.as_deref(),
+            cli.include_budgets,
+        );
+    }
+
+    run_render(cli, &bundled)
+}
+
+fn parse_args<'a>(raw_args: Vec<String>) -> Result<CliArgs<'a>, ExitCode> {
+    let mut cli = CliArgs {
+        options: carve::Options::new(),
+        format: OutputFormat::Html,
+        command: Command::Render,
+        fmt_write: false,
+        fmt_check: false,
+        fmt_align_tables: false,
+        fmt_stamp: None,
+        fmt_migrate: false,
+        stamp_mode: None,
+        enable_extensions: false,
+        extension_keys: Vec::new(),
+        tabs_mode: carve::TabsMode::Css,
+        tabs_mode_set: false,
+        citation_mode: carve::CitationMode::Numbered,
+        citation_mode_set: false,
+        selective_render_options: false,
+        quote_locale: None,
+        from_json: false,
+        max_render_losses: carve::DEFAULT_MAX_RENDER_LOSSES,
+        include_root: None,
+        no_includes: false,
+        include_budgets: IncludeBudgets::default(),
+        input_paths: Vec::new(),
+        reports: LossReporting {
+            strict_losses: false,
+            report_losses: None,
+            report_includes: None,
+            allowed_render_losses: Vec::new(),
+        },
+    };
     let mut args = raw_args.into_iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "fmt" if command == Command::Render && input_paths.is_empty() => {
-                command = Command::Fmt;
-                format = OutputFormat::Carve;
-                fmt_align_tables = options.align_tables;
+            "fmt" if cli.command == Command::Render && cli.input_paths.is_empty() => {
+                cli.command = Command::Fmt;
+                cli.format = OutputFormat::Carve;
+                cli.fmt_align_tables = cli.options.align_tables;
             }
-            "flatten" if command == Command::Render && input_paths.is_empty() => {
-                command = Command::Flatten;
-                format = OutputFormat::Carve;
+            "flatten" if cli.command == Command::Render && cli.input_paths.is_empty() => {
+                cli.command = Command::Flatten;
+                cli.format = OutputFormat::Carve;
             }
             "-h" | "--help" => {
                 print_usage();
-                return ExitCode::SUCCESS;
+                return Err(ExitCode::SUCCESS);
             }
             "-V" | "--version" => {
                 println!("carve-rs {}", env!("CARGO_PKG_VERSION"));
-                return ExitCode::SUCCESS;
+                return Err(ExitCode::SUCCESS);
             }
-            "-w" | "--write" if command == Command::Fmt => fmt_write = true,
-            "--check" if command == Command::Fmt => fmt_check = true,
-            "--align-tables" if command == Command::Fmt => fmt_align_tables = true,
-            "--align-tables" => options = options.with_align_tables(true),
-            "--migrate" if command == Command::Fmt => fmt_migrate = true,
-            "--stamp" if command == Command::Fmt => fmt_stamp = Some(carve::StampForm::Line),
-            "--stamp-block" if command == Command::Fmt => {
-                fmt_stamp = Some(carve::StampForm::Block);
+            "-w" | "--write" if cli.command == Command::Fmt => cli.fmt_write = true,
+            "--check" if cli.command == Command::Fmt => cli.fmt_check = true,
+            "--align-tables" if cli.command == Command::Fmt => cli.fmt_align_tables = true,
+            "--align-tables" => cli.options = cli.options.with_align_tables(true),
+            "--migrate" if cli.command == Command::Fmt => cli.fmt_migrate = true,
+            "--stamp" if cli.command == Command::Fmt => {
+                cli.fmt_stamp = Some(carve::StampForm::Line);
             }
-            "--stamp-info" => stamp_mode = Some(StampMode::Info),
-            "--stamp-check" => stamp_mode = Some(StampMode::Check),
+            "--stamp-block" if cli.command == Command::Fmt => {
+                cli.fmt_stamp = Some(carve::StampForm::Block);
+            }
+            "--stamp-info" => cli.stamp_mode = Some(StampMode::Info),
+            "--stamp-check" => cli.stamp_mode = Some(StampMode::Check),
             "--mention-url" => {
                 let Some(value) = args.next() else {
                     eprintln!("carve: --mention-url requires a template");
-                    return ExitCode::FAILURE;
+                    return Err(ExitCode::FAILURE);
                 };
-                options = options.with_mention_url(value);
+                cli.options = cli.options.with_mention_url(value);
             }
             "--tag-url" => {
                 let Some(value) = args.next() else {
                     eprintln!("carve: --tag-url requires a template");
-                    return ExitCode::FAILURE;
+                    return Err(ExitCode::FAILURE);
                 };
-                options = options.with_tag_url(value);
+                cli.options = cli.options.with_tag_url(value);
             }
             "--symbol" => {
                 let Some(value) = args.next() else {
                     eprintln!("carve: --symbol requires name=value");
-                    return ExitCode::FAILURE;
+                    return Err(ExitCode::FAILURE);
                 };
                 let Some((name, glyph)) = value.split_once('=') else {
                     eprintln!("carve: --symbol requires name=value");
-                    return ExitCode::FAILURE;
+                    return Err(ExitCode::FAILURE);
                 };
-                options = options.with_symbol(name, glyph);
+                cli.options = cli.options.with_symbol(name, glyph);
             }
             "--profile" => {
                 let Some(value) = args.next() else {
                     eprintln!("carve: --profile requires a name (full|article|comment|minimal)");
-                    return ExitCode::FAILURE;
+                    return Err(ExitCode::FAILURE);
                 };
-                let profile = match value.as_str() {
-                    "full" => carve::Profile::full(),
-                    "article" => carve::Profile::article(),
-                    "comment" => carve::Profile::comment(),
-                    "minimal" => carve::Profile::minimal(),
-                    other => {
-                        eprintln!(
-                            "carve: unknown profile: {other} (expected full|article|comment|minimal)"
-                        );
-                        return ExitCode::FAILURE;
-                    }
-                };
-                options = options.with_profile(profile);
+                cli.options = cli.options.with_profile(parse_profile(&value)?);
             }
             "--smart-typography" => {
                 // The switch the spec documents as document-global
@@ -254,394 +423,291 @@ fn main() -> ExitCode {
                     eprintln!(
                         "carve: --smart-typography requires a mode (glyph|source|quotes-source)"
                     );
-                    return ExitCode::FAILURE;
+                    return Err(ExitCode::FAILURE);
                 };
-                options.smart_typography = match value.as_str() {
-                    "glyph" => carve::SmartTypographyMode::Glyph,
-                    "source" => carve::SmartTypographyMode::Source,
-                    "quotes-source" => carve::SmartTypographyMode::QuotesSource,
-                    other => {
-                        eprintln!(
-                            "carve: unknown smart typography mode: {other} (expected glyph|source|quotes-source)"
-                        );
-                        return ExitCode::FAILURE;
-                    }
-                };
+                cli.options.smart_typography = parse_smart_typography(&value)?;
             }
             "--quote-locale" => {
                 let Some(value) = args.next() else {
                     eprintln!("carve: --quote-locale requires a locale");
-                    return ExitCode::FAILURE;
+                    return Err(ExitCode::FAILURE);
                 };
-                quote_locale = Some(value);
+                cli.quote_locale = Some(value);
             }
             "--profile-base-host" => {
                 let Some(value) = args.next() else {
                     eprintln!("carve: --profile-base-host requires a host");
-                    return ExitCode::FAILURE;
+                    return Err(ExitCode::FAILURE);
                 };
-                options = options.with_profile_base_host(value);
+                cli.options = cli.options.with_profile_base_host(value);
             }
             "--roundtrip" => {
                 // PART 10 §13. The target decides the carrier, so this is
                 // accepted for HTML and Markdown and refused elsewhere.
-                options.roundtrip = true;
+                cli.options.roundtrip = true;
             }
-            "--html" => format = OutputFormat::Html,
-            "--markdown" | "--md" => format = OutputFormat::Markdown,
-            "--plain" | "--plain-text" => format = OutputFormat::Plain,
-            "--ansi" => format = OutputFormat::Ansi,
-            "--carve" => format = OutputFormat::Carve,
-            "--json" | "--ast" => format = OutputFormat::Json,
-            "--from-json" => from_json = true,
-            "--strict-losses" => strict_losses = true,
+            "--html" => cli.format = OutputFormat::Html,
+            "--markdown" | "--md" => cli.format = OutputFormat::Markdown,
+            "--plain" | "--plain-text" => cli.format = OutputFormat::Plain,
+            "--ansi" => cli.format = OutputFormat::Ansi,
+            "--carve" => cli.format = OutputFormat::Carve,
+            "--json" | "--ast" => cli.format = OutputFormat::Json,
+            "--from-json" => cli.from_json = true,
+            "--strict-losses" => cli.reports.strict_losses = true,
             "--report-losses" => {
                 let Some(value) = args.next() else {
                     eprintln!("carve: --report-losses requires a file or -");
-                    return ExitCode::from(2);
+                    return Err(ExitCode::from(2));
                 };
-                report_losses = Some(value);
+                cli.reports.report_losses = Some(value);
             }
             "--report-includes" => {
                 let Some(value) = args.next() else {
                     eprintln!("carve: --report-includes requires a file or -");
-                    return ExitCode::from(2);
+                    return Err(ExitCode::from(2));
                 };
-                report_includes = Some(value);
+                cli.reports.report_includes = Some(value);
             }
-            "--allow-loss" => match args.next().as_deref() {
-                Some("raw-format-dropped") => allowed_render_losses.push("raw-format-dropped"),
-                Some("ruby-flattened") => allowed_render_losses.push("ruby-flattened"),
-                Some("editorial-comment-flattened") => {
-                    allowed_render_losses.push("editorial-comment-flattened")
-                }
-                Some("carrier-attribute-dropped") => {
-                    allowed_render_losses.push("carrier-attribute-dropped")
-                }
-                Some("definition-list-flattened") => {
-                    allowed_render_losses.push("definition-list-flattened")
-                }
-                Some("table-span-flattened") => allowed_render_losses.push("table-span-flattened"),
-                Some("table-header-row-demoted") => {
-                    allowed_render_losses.push("table-header-row-demoted")
-                }
-                Some("table-header-row-hoisted") => {
-                    allowed_render_losses.push("table-header-row-hoisted")
-                }
-                Some("table-header-cell-demoted") => {
-                    allowed_render_losses.push("table-header-cell-demoted")
-                }
-                Some("list-style-dropped") => allowed_render_losses.push("list-style-dropped"),
-                Some("list-tightness-lost") => allowed_render_losses.push("list-tightness-lost"),
-                Some("list-delimiter-changed") => {
-                    allowed_render_losses.push("list-delimiter-changed")
-                }
-                Some("markdown-container-flattened") => {
-                    allowed_render_losses.push("markdown-container-flattened")
-                }
-                Some("markdown-caption-flattened") => {
-                    allowed_render_losses.push("markdown-caption-flattened")
-                }
-                Some("markdown-attributes-dropped") => {
-                    allowed_render_losses.push("markdown-attributes-dropped")
-                }
-                Some("raw-html-escaped") => allowed_render_losses.push("raw-html-escaped"),
-                _ => {
-                    eprintln!("carve: --allow-loss expects raw-format-dropped, ruby-flattened, editorial-comment-flattened, carrier-attribute-dropped, definition-list-flattened, list-style-dropped, list-tightness-lost, list-delimiter-changed, table-span-flattened, table-header-row-demoted, table-header-row-hoisted or table-header-cell-demoted");
-                    return ExitCode::from(2);
-                }
-            },
+            "--allow-loss" => {
+                let code = parse_allowed_loss(args.next().as_deref())?;
+                cli.reports.allowed_render_losses.push(code);
+            }
             "--max-render-losses" => {
                 let Some(value) = args.next().and_then(|value| value.parse::<usize>().ok()) else {
                     eprintln!("carve: --max-render-losses requires a non-negative integer");
-                    return ExitCode::from(2);
+                    return Err(ExitCode::from(2));
                 };
-                max_render_losses = value;
+                cli.max_render_losses = value;
             }
-            "--static" => options = options.with_mode(carve::Mode::Static),
-            "--interactive" => options = options.with_mode(carve::Mode::Interactive),
-            "--extensions" => enable_extensions = true,
+            "--static" => cli.options = cli.options.with_mode(carve::Mode::Static),
+            "--interactive" => cli.options = cli.options.with_mode(carve::Mode::Interactive),
+            "--extensions" => cli.enable_extensions = true,
             "--extension" => {
-                selective_render_options = true;
+                cli.selective_render_options = true;
                 let Some(value) = args.next() else {
                     eprintln!("carve: --extension requires a registry key");
-                    return ExitCode::FAILURE;
+                    return Err(ExitCode::FAILURE);
                 };
                 if !carve::extensions::registry::keys().any(|key| key == value) {
                     let known = carve::extensions::registry::keys()
                         .collect::<Vec<_>>()
                         .join(", ");
                     eprintln!("carve: unknown extension: {value} (expected one of: {known})");
-                    return ExitCode::FAILURE;
+                    return Err(ExitCode::FAILURE);
                 }
-                if !extension_keys.contains(&value) {
-                    extension_keys.push(value);
+                if !cli.extension_keys.contains(&value) {
+                    cli.extension_keys.push(value);
                 }
             }
             "--tabs-mode" => {
-                selective_render_options = true;
+                cli.selective_render_options = true;
                 let Some(value) = args.next() else {
                     eprintln!("carve: --tabs-mode requires css or aria");
-                    return ExitCode::FAILURE;
+                    return Err(ExitCode::FAILURE);
                 };
-                tabs_mode = match value.as_str() {
-                    "css" => carve::TabsMode::Css,
-                    "aria" => carve::TabsMode::Aria,
-                    other => {
-                        eprintln!("carve: unknown tabs mode: {other} (expected css|aria)");
-                        return ExitCode::FAILURE;
-                    }
-                };
-                tabs_mode_set = true;
+                cli.tabs_mode = parse_tabs_mode(&value)?;
+                cli.tabs_mode_set = true;
             }
             "--citation-mode" => {
-                selective_render_options = true;
+                cli.selective_render_options = true;
                 let Some(value) = args.next() else {
                     eprintln!("carve: --citation-mode requires numbered or author-date");
-                    return ExitCode::FAILURE;
+                    return Err(ExitCode::FAILURE);
                 };
-                citation_mode = match value.as_str() {
-                    "numbered" => carve::CitationMode::Numbered,
-                    "author-date" => carve::CitationMode::AuthorDate,
-                    other => {
-                        eprintln!(
-                            "carve: unknown citation mode: {other} (expected numbered|author-date)"
-                        );
-                        return ExitCode::FAILURE;
-                    }
-                };
-                citation_mode_set = true;
+                cli.citation_mode = parse_citation_mode(&value)?;
+                cli.citation_mode_set = true;
             }
             "--no-sections" => {
-                selective_render_options = true;
-                options = options.with_sections(false);
+                cli.selective_render_options = true;
+                cli.options = cli.options.with_sections(false);
             }
             "--source-lines" => {
-                selective_render_options = true;
-                options = options.with_source_lines(true);
+                cli.selective_render_options = true;
+                cli.options = cli.options.with_source_lines(true);
             }
             "--include-root" => {
                 let Some(value) = args.next() else {
                     eprintln!("carve: --include-root requires a directory");
-                    return ExitCode::FAILURE;
+                    return Err(ExitCode::FAILURE);
                 };
-                // REFUSED, not ignored: a build without the resolver cannot
-                // honour the flag, and silently rendering the directive as
-                // literal text would look like the include simply failed.
-                #[cfg(not(feature = "fs"))]
-                {
-                    let _ = value;
-                    eprintln!("carve: --include-root needs the `fs` feature, which this build does not have");
-                    return ExitCode::FAILURE;
-                }
-                #[cfg(feature = "fs")]
-                {
-                    // The resolver refuses a relative root (§19), so the flag is
-                    // absolutized HERE - that is where `--include-root .` stays
-                    // a convenience instead of becoming a cwd-rooted resolver.
-                    let path = std::path::Path::new(&value);
-                    let absolute = (!path.is_absolute()).then(|| {
-                        match std::fs::canonicalize(path) {
-                            Ok(real) => real,
-                            // Keep the cwd-joined spelling so the failure the
-                            // user sees names the directory they meant.
-                            Err(_) => std::env::current_dir()
-                                .map(|cwd| cwd.join(path))
-                                .unwrap_or_else(|_| path.to_path_buf()),
-                        }
-                        .to_string_lossy()
-                        .into_owned()
-                    });
-                    include_root = Some(absolute.unwrap_or(value));
-                }
+                cli.include_root = Some(include_root_flag(value)?);
             }
             "--max-depth" | "--max-bytes" | "--max-resolver-calls" | "--max-warnings" => {
-                let value = match parse_budget(args.next().as_ref(), &arg) {
-                    Ok(value) => value,
-                    Err(code) => return code,
-                };
-                match arg.as_str() {
-                    "--max-depth" => include_budgets.depth = Some(value),
-                    "--max-bytes" => include_budgets.bytes = Some(value),
-                    "--max-resolver-calls" => include_budgets.resolver_calls = Some(value),
-                    _ => include_budgets.warnings = Some(value),
-                }
+                let value = parse_budget(args.next().as_ref(), &arg)?;
+                cli.include_budgets.set(&arg, value);
             }
-            "--no-raw-html" => options = options.with_raw_html(false),
+            "--no-raw-html" => cli.options = cli.options.with_raw_html(false),
             // Untrusted input: the resolver MUST be off (includes, "The host
             // resolver"), so --safe also leaves every directive literal.
             "--safe" => {
-                options = options.with_raw_html(false);
-                no_includes = true;
+                cli.options = cli.options.with_raw_html(false);
+                cli.no_includes = true;
             }
-            "--no-includes" => no_includes = true,
-            "-" if command == Command::Render => input_paths.clear(),
-            "-" if command == Command::Fmt => input_paths.push(arg),
+            "--no-includes" => cli.no_includes = true,
+            "-" if cli.command == Command::Render => cli.input_paths.clear(),
+            "-" if cli.command == Command::Fmt => cli.input_paths.push(arg),
             path if path.starts_with('-') => {
                 eprintln!("carve: unknown option: {path}");
-                return ExitCode::FAILURE;
+                return Err(ExitCode::FAILURE);
             }
             path => {
-                if command == Command::Render && !input_paths.is_empty() {
+                if cli.command == Command::Render && !cli.input_paths.is_empty() {
                     eprintln!("carve: multiple input files specified");
-                    return ExitCode::FAILURE;
+                    return Err(ExitCode::FAILURE);
                 }
-                input_paths.push(path.to_string());
+                cli.input_paths.push(path.to_string());
             }
         }
     }
+    Ok(cli)
+}
 
-    if command != Command::Render && selective_render_options {
-        eprintln!("carve: selective extension and render options apply only to rendering");
-        return ExitCode::FAILURE;
-    }
-
-    if command == Command::Fmt {
-        if include_budgets.depth.is_some()
-            || include_budgets.bytes.is_some()
-            || include_budgets.resolver_calls.is_some()
-            || include_budgets.warnings.is_some()
-        {
-            eprintln!("carve fmt: include limits do not apply to formatting");
-            return ExitCode::from(2);
+fn parse_profile(value: &str) -> Result<carve::Profile, ExitCode> {
+    match value {
+        "full" => Ok(carve::Profile::full()),
+        "article" => Ok(carve::Profile::article()),
+        "comment" => Ok(carve::Profile::comment()),
+        "minimal" => Ok(carve::Profile::minimal()),
+        other => {
+            eprintln!("carve: unknown profile: {other} (expected full|article|comment|minimal)");
+            Err(ExitCode::FAILURE)
         }
-        return run_fmt(
-            &input_paths,
-            fmt_write,
-            fmt_check,
-            fmt_stamp,
-            fmt_migrate,
-            fmt_align_tables,
-        );
     }
+}
 
-    if command == Command::Flatten {
-        if options.align_tables {
-            eprintln!("carve flatten: --align-tables applies only to --carve or fmt");
-            return ExitCode::from(2);
+fn parse_smart_typography(value: &str) -> Result<carve::SmartTypographyMode, ExitCode> {
+    match value {
+        "glyph" => Ok(carve::SmartTypographyMode::Glyph),
+        "source" => Ok(carve::SmartTypographyMode::Source),
+        "quotes-source" => Ok(carve::SmartTypographyMode::QuotesSource),
+        other => {
+            eprintln!(
+                "carve: unknown smart typography mode: {other} (expected glyph|source|quotes-source)"
+            );
+            Err(ExitCode::FAILURE)
         }
-        // Flatten exists to read includes, so a switch that forbids that is
-        // refused rather than ignored (carve-js rejects both flags too).
-        if no_includes {
-            eprintln!("carve flatten: --safe and --no-includes leave nothing to flatten");
-            return ExitCode::from(2);
-        }
-        return run_flatten(
-            input_paths.first().map(String::as_str),
-            include_root.as_deref(),
-            include_budgets,
-        );
     }
+}
 
-    if tabs_mode_set && !extension_keys.iter().any(|key| key == "tabs") {
+fn parse_allowed_loss(value: Option<&str>) -> Result<&'static str, ExitCode> {
+    match value {
+        Some("raw-format-dropped") => Ok("raw-format-dropped"),
+        Some("ruby-flattened") => Ok("ruby-flattened"),
+        Some("editorial-comment-flattened") => Ok("editorial-comment-flattened"),
+        Some("carrier-attribute-dropped") => Ok("carrier-attribute-dropped"),
+        Some("definition-list-flattened") => Ok("definition-list-flattened"),
+        Some("table-span-flattened") => Ok("table-span-flattened"),
+        Some("table-header-row-demoted") => Ok("table-header-row-demoted"),
+        Some("table-header-row-hoisted") => Ok("table-header-row-hoisted"),
+        Some("table-header-cell-demoted") => Ok("table-header-cell-demoted"),
+        Some("list-style-dropped") => Ok("list-style-dropped"),
+        Some("list-tightness-lost") => Ok("list-tightness-lost"),
+        Some("list-delimiter-changed") => Ok("list-delimiter-changed"),
+        Some("markdown-container-flattened") => Ok("markdown-container-flattened"),
+        Some("markdown-caption-flattened") => Ok("markdown-caption-flattened"),
+        Some("markdown-attributes-dropped") => Ok("markdown-attributes-dropped"),
+        Some("raw-html-escaped") => Ok("raw-html-escaped"),
+        _ => {
+            eprintln!("carve: --allow-loss expects raw-format-dropped, ruby-flattened, editorial-comment-flattened, carrier-attribute-dropped, definition-list-flattened, list-style-dropped, list-tightness-lost, list-delimiter-changed, table-span-flattened, table-header-row-demoted, table-header-row-hoisted, table-header-cell-demoted, markdown-container-flattened, markdown-caption-flattened, markdown-attributes-dropped or raw-html-escaped");
+            Err(ExitCode::from(2))
+        }
+    }
+}
+
+fn parse_tabs_mode(value: &str) -> Result<carve::TabsMode, ExitCode> {
+    match value {
+        "css" => Ok(carve::TabsMode::Css),
+        "aria" => Ok(carve::TabsMode::Aria),
+        other => {
+            eprintln!("carve: unknown tabs mode: {other} (expected css|aria)");
+            Err(ExitCode::FAILURE)
+        }
+    }
+}
+
+fn parse_citation_mode(value: &str) -> Result<carve::CitationMode, ExitCode> {
+    match value {
+        "numbered" => Ok(carve::CitationMode::Numbered),
+        "author-date" => Ok(carve::CitationMode::AuthorDate),
+        other => {
+            eprintln!("carve: unknown citation mode: {other} (expected numbered|author-date)");
+            Err(ExitCode::FAILURE)
+        }
+    }
+}
+
+fn include_root_flag(value: String) -> Result<String, ExitCode> {
+    // REFUSED, not ignored: a build without the resolver cannot
+    // honour the flag, and silently rendering the directive as
+    // literal text would look like the include simply failed.
+    #[cfg(not(feature = "fs"))]
+    {
+        let _ = value;
+        eprintln!("carve: --include-root needs the `fs` feature, which this build does not have");
+        Err(ExitCode::FAILURE)
+    }
+    #[cfg(feature = "fs")]
+    {
+        // The resolver refuses a relative root (§19), so the flag is
+        // absolutized HERE - that is where `--include-root .` stays
+        // a convenience instead of becoming a cwd-rooted resolver.
+        let path = std::path::Path::new(&value);
+        let absolute = (!path.is_absolute()).then(|| {
+            match std::fs::canonicalize(path) {
+                Ok(real) => real,
+                // Keep the cwd-joined spelling so the failure the
+                // user sees names the directory they meant.
+                Err(_) => std::env::current_dir()
+                    .map(|cwd| cwd.join(path))
+                    .unwrap_or_else(|_| path.to_path_buf()),
+            }
+            .to_string_lossy()
+            .into_owned()
+        });
+        Ok(absolute.unwrap_or(value))
+    }
+}
+
+fn run_render<'a>(mut cli: CliArgs<'a>, bundled: &'a BundledExtensions) -> ExitCode {
+    if cli.tabs_mode_set && !cli.extension_keys.iter().any(|key| key == "tabs") {
         eprintln!("carve: --tabs-mode requires --extension tabs");
         return ExitCode::FAILURE;
     }
-    if citation_mode_set && !extension_keys.iter().any(|key| key == "citations") {
+    if cli.citation_mode_set && !cli.extension_keys.iter().any(|key| key == "citations") {
         eprintln!("carve: --citation-mode requires --extension citations");
         return ExitCode::FAILURE;
     }
-    if options.roundtrip && !matches!(format, OutputFormat::Html | OutputFormat::Markdown) {
+    if cli.options.roundtrip && !matches!(cli.format, OutputFormat::Html | OutputFormat::Markdown)
+    {
         eprintln!("carve: --roundtrip requires --html or --markdown");
         return ExitCode::FAILURE;
     }
-    if options.align_tables && format != OutputFormat::Carve {
+    if cli.options.align_tables && cli.format != OutputFormat::Carve {
         eprintln!("carve: --align-tables requires --carve");
         return ExitCode::from(2);
     }
-    if enable_extensions {
-        options = options
-            .with_extension(&details)
-            .with_extension(&spoiler)
-            .with_extension(&code_callouts)
-            .with_extension(&color_swatch)
-            .with_extension(&math_block);
-        for preset in &fenced_presets {
-            options = options.with_extension(preset);
-        }
+    if cli.enable_extensions {
+        cli.options = bundled.register(cli.options);
     }
-    let named_extensions: Vec<Box<dyn carve::CarveExtension>> = extension_keys
-        .iter()
-        .map(|key| match key.as_str() {
-            "tabs" => Box::new(carve::Tabs::with_options(carve::TabsOptions {
-                mode: tabs_mode,
-                ..carve::TabsOptions::default()
-            })) as Box<dyn carve::CarveExtension>,
-            "citations" => Box::new(carve::Citations::with_mode(citation_mode)),
-            _ => carve::extensions::registry::by_key(key)
-                .expect("extension keys were validated while parsing arguments"),
-        })
-        .filter(|extension| {
-            !enable_extensions
-                || (extension.name() != details.name()
-                    && extension.name() != spoiler.name()
-                    && extension.name() != code_callouts.name()
-                    && extension.name() != color_swatch.name()
-                    && extension.name() != math_block.name()
-                    && !fenced_presets
-                        .iter()
-                        .any(|preset| extension.name() == preset.name()))
-        })
-        .filter(|extension| quote_locale.is_none() || extension.name() != "smart-quotes")
-        .collect();
+    let named_extensions = named_extensions(&cli, bundled);
+    let mut options: carve::Options<'_> = cli.options;
     for extension in &named_extensions {
         options = options.with_extension(extension.as_ref());
     }
-    let smart_quotes = quote_locale.as_deref().map(carve::SmartQuotes::new);
+    let smart_quotes = cli.quote_locale.as_deref().map(carve::SmartQuotes::new);
     if let Some(extension) = &smart_quotes {
         options = options.with_extension(extension);
     }
 
-    let source = match input_paths.first().map(String::as_str) {
-        None | Some("-") => {
-            let mut buf = String::new();
-            if let Err(err) = read_stdin_lossy(&mut buf) {
-                eprintln!("carve: cannot read stdin: {err}");
-                return ExitCode::FAILURE;
-            }
-            buf
-        }
-        Some(path) => match read_path_lossy(path) {
-            Ok(s) => s,
-            Err(err) => {
-                eprintln!("carve: cannot read {path}: {err}");
-                return ExitCode::FAILURE;
-            }
-        },
+    let source = match read_source(cli.input_paths.first().map(String::as_str)) {
+        Ok(source) => source,
+        Err(code) => return code,
     };
-    if let Some(mode) = stamp_mode {
-        if include_budgets.depth.is_some()
-            || include_budgets.bytes.is_some()
-            || include_budgets.resolver_calls.is_some()
-            || include_budgets.warnings.is_some()
-        {
-            eprintln!("carve: include limits do not apply to stamp queries");
-            return ExitCode::from(2);
-        }
-        match carve::read_stamp(&source) {
-            None => println!(
-                "unstamped (spec version unknown; this engine targets {})",
-                carve::SPEC_VERSION
-            ),
-            Some(stamp) => println!(
-                "carve-version: {}\ngenerated-by: {}\nthis engine targets: {}",
-                stamp.version,
-                stamp.generated_by.as_deref().unwrap_or("(unrecorded)"),
-                carve::SPEC_VERSION
-            ),
-        }
-
-        if mode == StampMode::Check && carve::needs_review(&source, carve::SPEC_VERSION) {
-            eprintln!(
-                "Review the [behavior] changelog entries between that version and {}.",
-                carve::SPEC_VERSION
-            );
-            return ExitCode::FAILURE;
-        }
-
-        return ExitCode::SUCCESS;
+    if let Some(mode) = cli.stamp_mode {
+        return run_stamp_query(mode, &source, cli.include_budgets);
     }
 
+    let format = cli.format;
     let target = match format {
         OutputFormat::Html => carve::RenderTarget::Html,
         OutputFormat::Markdown => carve::RenderTarget::Markdown,
@@ -662,19 +728,23 @@ fn main() -> ExitCode {
     // `book/main.crv` (root `book`) would otherwise re-prefix the root and
     // search `book/book/child.crv`. carve-js absolutizes here for the same
     // reason.
-    let input_path = input_paths.first().filter(|p| p.as_str() != "-").map(|p| {
-        let path = std::path::Path::new(p);
-        match std::fs::canonicalize(path) {
-            Ok(real) => real,
-            // The file was read successfully above, so this is unreachable
-            // in practice; fall back to cwd-joining rather than to a
-            // relative path, which would reintroduce the re-prefix bug.
-            Err(_) => std::env::current_dir()
-                .map(|cwd| cwd.join(path))
-                .unwrap_or_else(|_| path.to_path_buf()),
-        }
-    });
-    let root = include_root.clone().or_else(|| {
+    let input_path = cli
+        .input_paths
+        .first()
+        .filter(|p| p.as_str() != "-")
+        .map(|p| {
+            let path = std::path::Path::new(p);
+            match std::fs::canonicalize(path) {
+                Ok(real) => real,
+                // The file was read successfully above, so this is unreachable
+                // in practice; fall back to cwd-joining rather than to a
+                // relative path, which would reintroduce the re-prefix bug.
+                Err(_) => std::env::current_dir()
+                    .map(|cwd| cwd.join(path))
+                    .unwrap_or_else(|_| path.to_path_buf()),
+            }
+        });
+    let root = cli.include_root.clone().or_else(|| {
         input_path.as_deref().and_then(|p| {
             p.parent()
                 .filter(|d| !d.as_os_str().is_empty())
@@ -696,45 +766,19 @@ fn main() -> ExitCode {
     } else {
         carve::RenderTarget::Html
     };
-    let want_includes = !no_includes
+    let want_includes = !cli.no_includes
         && root.is_some()
         && carve::expands_for_target(include_target)
-        && (include_root.is_some() || source.contains("{{"));
+        && (cli.include_root.is_some() || source.contains("{{"));
     let has_include_root = root.is_some();
-    // The CLI's include path IS the filesystem resolver, so it compiles out with
-    // it. Without the feature the directive stays literal, which is the core
-    // behavior, not a degraded one.
-    #[cfg(feature = "fs")]
-    let resolver = if want_includes {
-        let root = root.expect("guarded by want_includes");
-        match carve::FileSystemResolver::new(&root) {
-            Ok(resolver) => Some(resolver),
-            Err(err) => {
-                // An explicit root is a user request, so a bad one is fatal; an
-                // inferred one silently falls back to no includes rather than
-                // failing a render the user never asked to change.
-                if include_root.is_some() {
-                    eprintln!("carve: cannot use include root {root}: {err}");
-                    return ExitCode::FAILURE;
-                }
-                None
-            }
-        }
-    } else {
-        None
-    };
-    #[cfg(not(feature = "fs"))]
-    let resolver: Option<NoResolver> = {
-        let _ = want_includes;
-        None
+    let resolver = match include_resolver(want_includes, root, cli.include_root.is_some()) {
+        Ok(resolver) => resolver,
+        Err(code) => return code,
     };
 
-    if (include_budgets.depth.is_some()
-        || include_budgets.bytes.is_some()
-        || include_budgets.resolver_calls.is_some()
-        || include_budgets.warnings.is_some())
-        && (from_json
-            || no_includes
+    if cli.include_budgets.any()
+        && (cli.from_json
+            || cli.no_includes
             || !carve::expands_for_target(include_target)
             || !has_include_root
             || !cfg!(feature = "fs")
@@ -746,191 +790,304 @@ fn main() -> ExitCode {
 
     let checked_options = carve::CheckedRenderOptions {
         strict: false,
-        max_losses: max_render_losses,
+        max_losses: cli.max_render_losses,
     };
     // Loss diagnostics promise source positions. Position tracking does not
     // alter rendered output, and the CLI is itself a reporting surface.
     options = options.with_positions(true);
-    let mut include_dependencies: Vec<carve::IncludeDependency> = Vec::new();
-    let (output, (mut losses, mut total_losses, mut truncated, totals_by_code)) = if from_json {
-        // A profile's max_length bounds UNTRUSTED INPUT, and here the untrusted
-        // input is the JSON payload: it is what gets parsed, held and walked.
-        // The document's own `srcByteLength` cannot stand in for it - that number
-        // arrives inside the payload, so a hostile tree can claim 0 and render
-        // anything. Measured on the payload, which is also the form a host
-        // storing trees actually receives.
-        if let Some(profile) = &options.profile {
-            let max_length = profile.max_length();
-            if max_length > 0 && source.len() > max_length {
-                eprintln!(
-                    "carve: encoded AST exceeds the profile's maximum length of {max_length} bytes ({} bytes of JSON given).",
-                    source.len()
-                );
-                return ExitCode::FAILURE;
-            }
-        }
-        let doc = match carve::from_json(&source) {
-            Ok(doc) => doc,
-            Err(err) => {
-                eprintln!("carve: cannot decode JSON AST: {err}");
-                return ExitCode::FAILURE;
-            }
-        };
-        let checked = carve::with_render_loss_report(target, checked_options, || {
-            render_document(doc, format, &options)
-        })
-        .expect("non-strict collection cannot fail");
-        let output = match checked.value {
-            Ok(output) => output,
-            Err(err) => {
-                eprintln!("carve: {err}");
-                return ExitCode::FAILURE;
-            }
-        };
-        (
-            output,
-            (
-                checked.losses,
-                checked.total_losses,
-                checked.truncated,
-                checked.totals_by_code,
-            ),
-        )
+    let outcome = if cli.from_json {
+        render_from_json(&source, format, target, checked_options, &options)
     } else if let Some(resolver) = &resolver {
-        // INCLUDES TAKE THE DOCUMENT PATH, not the source facades below: the
-        // pass works on a parsed tree, which is also what carries the file
-        // identity each included node keeps.
         let mut include_options =
-            include_budgets.apply(carve::IncludeOptions::new().with_resolver(resolver));
+            cli.include_budgets
+                .apply(carve::IncludeOptions::new().with_resolver(resolver));
         if let Some(path) = &input_path {
             include_options = include_options.with_source_path(path.to_string_lossy().into_owned());
         }
-        let target_is_html = matches!(format, OutputFormat::Html);
-        let prepared = match carve::prepare_doc_with_includes(
+        render_with_includes(
             &source,
+            format,
+            target,
+            checked_options,
             &options,
             &include_options,
-            // The same mode the HTML target renders under; every other target
-            // is interactive, which is what `render_document` also assumes.
-            if target_is_html {
-                options.mode
-            } else {
-                carve::Mode::Interactive
-            },
-            target_is_html,
-        ) {
-            Ok(prepared) => prepared,
-            Err(err) => {
-                eprintln!("carve: {err}");
-                return ExitCode::FAILURE;
-            }
-        };
-        for warning in &prepared.warnings {
-            // The rule id is machine-readable and stable across engines, and
-            // the file names the document the reader has to edit. The
-            // resolver's own error text is NOT printed: it routinely carries
-            // absolute host paths, and spec I7 keeps it off the report.
-            eprintln!(
-                "carve: {}: {} [{}]",
-                warning.file.as_deref().unwrap_or("<stdin>"),
-                warning.message,
-                warning.rule
-            );
-        }
-        if prepared.suppressed_warnings > 0 {
-            eprintln!(
-                "carve: {} additional include warning(s) suppressed",
-                prepared.suppressed_warnings
-            );
-        }
-        let checked = carve::with_render_loss_report(target, checked_options, || {
-            render_document(prepared.doc.clone(), format, &options)
-        })
-        .expect("non-strict collection cannot fail");
-        let output = match checked.value {
-            Ok(output) => output,
-            Err(err) => {
-                eprintln!("carve: {err}");
-                return ExitCode::FAILURE;
-            }
-        };
-        include_dependencies = prepared.dependencies;
-        (
-            output,
-            (
-                checked.losses,
-                checked.total_losses,
-                checked.truncated,
-                checked.totals_by_code,
-            ),
         )
     } else {
-        let checked = carve::with_render_loss_report(target, checked_options, || match format {
-            OutputFormat::Html => carve::try_to_html_with_options(&source, &options)
-                .map_err(carve::CarveWriteError::from),
-            // Positions ON for the three targets that PRINT the footnote
-            // definitions: §7 orders them by source position, and the map they
-            // come from is a BTreeMap, so without spans they print in label
-            // order (carve-rs#686). `--json` below asks for the same thing.
-            OutputFormat::Markdown => {
-                options = options.with_positions(true);
-                carve::try_to_markdown_with_options(&source, &options)
-                    .map_err(carve::CarveWriteError::from)
-            }
-            OutputFormat::Plain => {
-                options = options.with_positions(true);
-                carve::try_to_plain_text_with_options(&source, &options)
-                    .map_err(carve::CarveWriteError::from)
-            }
-            OutputFormat::Ansi => {
-                options = options.with_positions(true);
-                carve::try_to_ansi_with_options(&source, &options)
-                    .map_err(carve::CarveWriteError::from)
-            }
-            // The options-taking sibling. `to_carve` carries no `Options`, so
-            // the profile was never even asked about on this target: an
-            // over-cap document was re-serialized in full at exit 0, and a raw
-            // HTML block a `minimal` profile removes from every other output
-            // came straight back out (carve-rs#1191).
-            OutputFormat::Carve => carve::try_to_carve_with_options(&source, &options),
-            OutputFormat::Json => {
-                options = options.with_positions(true);
-                carve::try_to_json_with_options(&source, &options)
-                    .map(add_ast_version)
-                    .map_err(carve::CarveWriteError::from)
-            }
-        })
-        .expect("non-strict collection cannot fail");
-        let output = match checked.value {
-            Ok(output) => output,
-            Err(err) => {
-                let err = RenderError::from(err);
-                eprintln!("carve: {err}");
-                return ExitCode::FAILURE;
-            }
-        };
-        (
-            output,
-            (
-                checked.losses,
-                checked.total_losses,
-                checked.truncated,
-                checked.totals_by_code,
-            ),
-        )
+        render_source(&source, format, target, checked_options, options)
     };
-    if total_losses > 0
-        && totals_by_code
-            .keys()
-            .all(|code| allowed_render_losses.contains(code))
-    {
-        losses.clear();
-        total_losses = 0;
-        truncated = false;
+    match outcome {
+        Ok(outcome) => finish_render(outcome, &cli.input_paths, cli.reports),
+        Err(code) => code,
     }
+}
+
+fn named_extensions(
+    cli: &CliArgs<'_>,
+    bundled: &BundledExtensions,
+) -> Vec<Box<dyn carve::CarveExtension>> {
+    cli.extension_keys
+        .iter()
+        .map(|key| match key.as_str() {
+            "tabs" => Box::new(carve::Tabs::with_options(carve::TabsOptions {
+                mode: cli.tabs_mode,
+                ..carve::TabsOptions::default()
+            })) as Box<dyn carve::CarveExtension>,
+            "citations" => Box::new(carve::Citations::with_mode(cli.citation_mode)),
+            _ => carve::extensions::registry::by_key(key)
+                .expect("extension keys were validated while parsing arguments"),
+        })
+        .filter(|extension| !cli.enable_extensions || !bundled.provides(extension.name()))
+        .filter(|extension| cli.quote_locale.is_none() || extension.name() != "smart-quotes")
+        .collect()
+}
+
+fn read_source(input: Option<&str>) -> Result<String, ExitCode> {
+    match input {
+        None | Some("-") => {
+            let mut buf = String::new();
+            if let Err(err) = read_stdin_lossy(&mut buf) {
+                eprintln!("carve: cannot read stdin: {err}");
+                return Err(ExitCode::FAILURE);
+            }
+            Ok(buf)
+        }
+        Some(path) => match read_path_lossy(path) {
+            Ok(s) => Ok(s),
+            Err(err) => {
+                eprintln!("carve: cannot read {path}: {err}");
+                Err(ExitCode::FAILURE)
+            }
+        },
+    }
+}
+
+fn run_stamp_query(mode: StampMode, source: &str, include_budgets: IncludeBudgets) -> ExitCode {
+    if include_budgets.any() {
+        eprintln!("carve: include limits do not apply to stamp queries");
+        return ExitCode::from(2);
+    }
+    match carve::read_stamp(source) {
+        None => println!(
+            "unstamped (spec version unknown; this engine targets {})",
+            carve::SPEC_VERSION
+        ),
+        Some(stamp) => println!(
+            "carve-version: {}\ngenerated-by: {}\nthis engine targets: {}",
+            stamp.version,
+            stamp.generated_by.as_deref().unwrap_or("(unrecorded)"),
+            carve::SPEC_VERSION
+        ),
+    }
+
+    if mode == StampMode::Check && carve::needs_review(source, carve::SPEC_VERSION) {
+        eprintln!(
+            "Review the [behavior] changelog entries between that version and {}.",
+            carve::SPEC_VERSION
+        );
+        return ExitCode::FAILURE;
+    }
+
+    ExitCode::SUCCESS
+}
+
+// The CLI's include path IS the filesystem resolver, so it compiles out with
+// it. Without the feature the directive stays literal, which is the core
+// behavior, not a degraded one.
+#[cfg(feature = "fs")]
+fn include_resolver(
+    want_includes: bool,
+    root: Option<String>,
+    explicit_root: bool,
+) -> Result<Option<CliResolver>, ExitCode> {
+    if !want_includes {
+        return Ok(None);
+    }
+    let root = root.expect("guarded by want_includes");
+    match carve::FileSystemResolver::new(&root) {
+        Ok(resolver) => Ok(Some(resolver)),
+        Err(err) => {
+            // An explicit root is a user request, so a bad one is fatal; an
+            // inferred one silently falls back to no includes rather than
+            // failing a render the user never asked to change.
+            if explicit_root {
+                eprintln!("carve: cannot use include root {root}: {err}");
+                return Err(ExitCode::FAILURE);
+            }
+            Ok(None)
+        }
+    }
+}
+
+#[cfg(not(feature = "fs"))]
+fn include_resolver(
+    want_includes: bool,
+    root: Option<String>,
+    explicit_root: bool,
+) -> Result<Option<CliResolver>, ExitCode> {
+    let _ = (want_includes, root, explicit_root);
+    Ok(None)
+}
+
+fn render_from_json(
+    source: &str,
+    format: OutputFormat,
+    target: carve::RenderTarget,
+    checked_options: carve::CheckedRenderOptions,
+    options: &carve::Options<'_>,
+) -> Result<RenderOutcome, ExitCode> {
+    // A profile's max_length bounds UNTRUSTED INPUT, and here the untrusted
+    // input is the JSON payload: it is what gets parsed, held and walked.
+    // The document's own `srcByteLength` cannot stand in for it - that number
+    // arrives inside the payload, so a hostile tree can claim 0 and render
+    // anything. Measured on the payload, which is also the form a host
+    // storing trees actually receives.
+    if let Some(profile) = &options.profile {
+        let max_length = profile.max_length();
+        if max_length > 0 && source.len() > max_length {
+            eprintln!(
+                "carve: encoded AST exceeds the profile's maximum length of {max_length} bytes ({} bytes of JSON given).",
+                source.len()
+            );
+            return Err(ExitCode::FAILURE);
+        }
+    }
+    let doc = match carve::from_json(source) {
+        Ok(doc) => doc,
+        Err(err) => {
+            eprintln!("carve: cannot decode JSON AST: {err}");
+            return Err(ExitCode::FAILURE);
+        }
+    };
+    let checked = carve::with_render_loss_report(target, checked_options, || {
+        render_document(doc, format, options)
+    })
+    .expect("non-strict collection cannot fail");
+    RenderOutcome::from_checked(checked)
+}
+
+fn render_with_includes(
+    source: &str,
+    format: OutputFormat,
+    target: carve::RenderTarget,
+    checked_options: carve::CheckedRenderOptions,
+    options: &carve::Options<'_>,
+    include_options: &carve::IncludeOptions<'_>,
+) -> Result<RenderOutcome, ExitCode> {
+    // INCLUDES TAKE THE DOCUMENT PATH, not the source facades below: the
+    // pass works on a parsed tree, which is also what carries the file
+    // identity each included node keeps.
+    let target_is_html = matches!(format, OutputFormat::Html);
+    let prepared = match carve::prepare_doc_with_includes(
+        source,
+        options,
+        include_options,
+        // The same mode the HTML target renders under; every other target
+        // is interactive, which is what `render_document` also assumes.
+        if target_is_html {
+            options.mode
+        } else {
+            carve::Mode::Interactive
+        },
+        target_is_html,
+    ) {
+        Ok(prepared) => prepared,
+        Err(err) => {
+            eprintln!("carve: {err}");
+            return Err(ExitCode::FAILURE);
+        }
+    };
+    for warning in &prepared.warnings {
+        // The rule id is machine-readable and stable across engines, and
+        // the file names the document the reader has to edit. The
+        // resolver's own error text is NOT printed: it routinely carries
+        // absolute host paths, and spec I7 keeps it off the report.
+        eprintln!(
+            "carve: {}: {} [{}]",
+            warning.file.as_deref().unwrap_or("<stdin>"),
+            warning.message,
+            warning.rule
+        );
+    }
+    if prepared.suppressed_warnings > 0 {
+        eprintln!(
+            "carve: {} additional include warning(s) suppressed",
+            prepared.suppressed_warnings
+        );
+    }
+    let checked = carve::with_render_loss_report(target, checked_options, || {
+        render_document(prepared.doc.clone(), format, options)
+    })
+    .expect("non-strict collection cannot fail");
+    let mut outcome = RenderOutcome::from_checked(checked)?;
+    outcome.include_dependencies = prepared.dependencies;
+    Ok(outcome)
+}
+
+fn render_source(
+    source: &str,
+    format: OutputFormat,
+    target: carve::RenderTarget,
+    checked_options: carve::CheckedRenderOptions,
+    mut options: carve::Options<'_>,
+) -> Result<RenderOutcome, ExitCode> {
+    let checked = carve::with_render_loss_report(target, checked_options, || match format {
+        OutputFormat::Html => {
+            carve::try_to_html_with_options(source, &options).map_err(carve::CarveWriteError::from)
+        }
+        // Positions ON for the three targets that PRINT the footnote
+        // definitions: §7 orders them by source position, and the map they
+        // come from is a BTreeMap, so without spans they print in label
+        // order (carve-rs#686). `--json` below asks for the same thing.
+        OutputFormat::Markdown => {
+            options = options.with_positions(true);
+            carve::try_to_markdown_with_options(source, &options)
+                .map_err(carve::CarveWriteError::from)
+        }
+        OutputFormat::Plain => {
+            options = options.with_positions(true);
+            carve::try_to_plain_text_with_options(source, &options)
+                .map_err(carve::CarveWriteError::from)
+        }
+        OutputFormat::Ansi => {
+            options = options.with_positions(true);
+            carve::try_to_ansi_with_options(source, &options).map_err(carve::CarveWriteError::from)
+        }
+        // The options-taking sibling. `to_carve` carries no `Options`, so
+        // the profile was never even asked about on this target: an
+        // over-cap document was re-serialized in full at exit 0, and a raw
+        // HTML block a `minimal` profile removes from every other output
+        // came straight back out (carve-rs#1191).
+        OutputFormat::Carve => carve::try_to_carve_with_options(source, &options),
+        OutputFormat::Json => {
+            options = options.with_positions(true);
+            carve::try_to_json_with_options(source, &options)
+                .map(add_ast_version)
+                .map_err(carve::CarveWriteError::from)
+        }
+    })
+    .expect("non-strict collection cannot fail");
+    RenderOutcome::from_checked(checked)
+}
+
+fn finish_render(
+    mut outcome: RenderOutcome,
+    input_paths: &[String],
+    reports: LossReporting,
+) -> ExitCode {
+    if outcome.total_losses > 0
+        && outcome
+            .totals_by_code
+            .keys()
+            .all(|code| reports.allowed_render_losses.contains(code))
+    {
+        outcome.losses.clear();
+        outcome.total_losses = 0;
+        outcome.truncated = false;
+    }
+    let total_losses = outcome.total_losses;
     let file = input_paths.first().map(String::as_str).unwrap_or("<stdin>");
     if total_losses > 0 {
-        for loss in &losses {
+        for loss in &outcome.losses {
             let at = loss
                 .pos
                 .as_ref()
@@ -943,8 +1100,8 @@ fn main() -> ExitCode {
             if total_losses == 1 { "" } else { "es" }
         );
     }
-    if let Some(path) = report_losses {
-        let json = render_loss_json(&losses, total_losses, truncated);
+    if let Some(path) = reports.report_losses {
+        let json = render_loss_json(&outcome.losses, total_losses, outcome.truncated);
         if path == "-" {
             eprintln!("{json}");
         } else if let Err(error) = std::fs::write(&path, format!("{json}\n")) {
@@ -952,8 +1109,8 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     }
-    if let Some(path) = report_includes {
-        let json = include_dependency_json(&include_dependencies);
+    if let Some(path) = reports.report_includes {
+        let json = include_dependency_json(&outcome.include_dependencies);
         if path == "-" {
             eprintln!("{json}");
         } else if let Err(error) = std::fs::write(&path, format!("{json}\n")) {
@@ -961,9 +1118,10 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     }
-    if strict_losses && total_losses > 0 {
+    if reports.strict_losses && total_losses > 0 {
         return ExitCode::FAILURE;
     }
+    let output = outcome.output;
     let mut stdout = io::stdout().lock();
     if let Err(err) = stdout.write_all(output.as_bytes()) {
         eprintln!("carve: cannot write stdout: {err}");

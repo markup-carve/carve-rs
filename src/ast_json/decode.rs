@@ -717,304 +717,453 @@ pub(super) fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
     let obj = value.expect_object("inline node")?;
     let ty = required_string(obj, "inline node", "type")?;
     match ty {
-        "text" => Ok(InlineNode::Text(Text {
-            value: required_string(obj, "text", "value")?.to_string(),
-            pos: optional_pos(obj, "text")?,
-        })),
-        "escaped_text" => Ok(InlineNode::EscapedText(EscapedText {
-            value: required_string(obj, "escaped_text", "value")?.to_string(),
-            pos: optional_pos(obj, "escaped_text")?,
-        })),
-        "smart_punctuation" => Ok(InlineNode::SmartPunctuation(SmartPunctuation {
-            kind: required_string(obj, "smart_punctuation", "kind")?.to_string(),
-            value: required_string(obj, "smart_punctuation", "value")?.to_string(),
-            glyph: optional_string(obj, "glyph")?.map(str::to_string),
-            pos: optional_pos(obj, "smart_punctuation")?,
-        })),
+        "text" => decode_inline_text(obj),
+        "escaped_text" => decode_inline_escaped_text(obj),
+        "smart_punctuation" => decode_inline_smart_punctuation(obj),
         "emphasis" | "strong" | "underline" | "strike" | "superscript" | "subscript"
-        | "highlight" | "small_caps" => {
-            let kind = decode_emphasis_kind(ty, obj)?;
-            let mut children = decode_inlines(required_array(obj, ty, "children")?)?;
-            // The combined form is ONE node here and TWO on the wire: a
-            // `strong` marked `boldItalic` wrapping an `emphasis` (PART 11 §6).
-            // Unwrap that single emphasis child on the way in, or the kind and
-            // the child both add italic and `/*x*/` round-trips to
-            // `<strong><em><em>` (#513).
-            if kind == EmphasisKind::BoldItalic && children.len() == 1 {
-                if let InlineNode::Emphasis(inner) = &children[0] {
-                    if inner.kind == EmphasisKind::Italic && inner.attrs.is_none() {
-                        children = inner.children.clone();
-                    }
-                }
-            }
-            Ok(InlineNode::Emphasis(Emphasis {
-                attrs: optional_attrs(obj)?,
-                kind,
-                children,
-                pos: optional_pos(obj, ty)?,
-            }))
-        }
-        "code" => Ok(InlineNode::Code(Code {
-            cell_wraps: decode_cell_wraps(obj, "code")?,
-            value: required_string(obj, "code", "value")?.to_string(),
-            attrs: optional_attrs(obj)?,
-            pos: optional_pos(obj, "code")?,
-        })),
-        "link" => Ok(InlineNode::Link(Link {
-            attrs: optional_attrs(obj)?,
-            href: required_string(obj, "link", "href")?.to_string(),
-            title: optional_string(obj, "title")?.map(str::to_string),
-            children: decode_inlines(required_array(obj, "link", "children")?)?,
-            ref_label: optional_string(obj, "ref")?.map(str::to_string),
-            raw_ref: optional_string(obj, "rawRef")?.map(str::to_string),
-            // Neither flag is on the wire: both are a writer's concern, and a
-            // decoded document rebuilds them from the heading index the same way
-            // a parse does. Reading `fromCrossref` here could never fire anyway -
-            // `refuse_unknown_fields` turns the whole payload away first
-            // (carve-rs#776).
-            from_crossref: false,
-            from_heading_reference: false,
-            pos: optional_pos(obj, "link")?,
-            resolved_empty_reference: optional_resolved(obj, "link", "href")?,
-        })),
+        | "highlight" | "small_caps" => decode_inline_emphasis(ty, obj),
+        "code" => decode_inline_code(obj),
+        "link" => decode_inline_link(obj),
         "image" => Ok(InlineNode::Image(decode_image(obj)?)),
-        "span" => Ok(InlineNode::Span(Span {
-            // Ingested content is AUTHORED; `injected` is this crate's own
-            // render-time bookkeeping and never a field of the payload.
-            injected: false,
-            attrs: optional_attrs(obj)?,
-            children: decode_inlines(required_array(obj, "span", "children")?)?,
-            pos: optional_pos(obj, "span")?,
-        })),
-        "ruby" => {
-            let pairs = required_array(obj, "ruby", "pairs")?;
-            if pairs.is_empty() {
-                return Err(AstJsonError::new("ruby.pairs must not be empty"));
-            }
-            let pairs = pairs
-                .iter()
-                .map(|value| {
-                    let pair = value.expect_object("ruby.pairs[]")?;
-                    let base = decode_inlines(required_array(pair, "ruby.pairs[]", "base")?)?;
-                    if base.is_empty() {
-                        return Err(AstJsonError::new("ruby.pairs[].base must not be empty"));
-                    }
-                    Ok(RubyPair {
-                        base,
-                        annotation: decode_inlines(required_array(
-                            pair,
-                            "ruby.pairs[]",
-                            "annotation",
-                        )?)?,
-                    })
-                })
-                .collect::<Result<Vec<_>, AstJsonError>>()?;
-            Ok(InlineNode::Ruby(Ruby {
-                attrs: optional_attrs(obj)?,
-                pairs,
-                pos: optional_pos(obj, "ruby")?,
-            }))
-        }
-        "math" => {
-            let display = required_bool(obj, "math", "display")?;
-            let label = optional_string(obj, "label")?.map(str::to_string);
-            if let Some(label) = &label {
-                // CARVE-P12-051 pins the label's shape in the schema itself:
-                // non-empty, and no leading or trailing whitespace, so it is the
-                // same plain-text counter key PART 2 derives from a caption label.
-                if label.is_empty() || label.trim() != label.as_str() {
-                    return Err(AstJsonError::new(
-                        "math.label is a non-empty string with no leading or trailing whitespace",
-                    ));
-                }
-            }
-            let number = optional_usize(obj, "number")?;
-            if let Some(number) = number {
-                // A number without a label has no counter bucket and no visible
-                // prefix, and inline math never draws one (CARVE-P12-051).
-                if number == 0 {
-                    return Err(AstJsonError::new("math.number is a positive integer"));
-                }
-                if label.is_none() {
-                    return Err(AstJsonError::new(
-                        "math.number needs math.label: the label is the counter bucket and the visible prefix",
-                    ));
-                }
-                if !display {
-                    return Err(AstJsonError::new(
-                        "math.number is only valid on display math: inline math draws no number",
-                    ));
-                }
-            }
-            Ok(InlineNode::Math(Math {
-                cell_wraps: decode_cell_wraps(obj, "math")?,
-                attrs: optional_attrs(obj)?,
-                display,
-                content: required_string(obj, "math", "content")?.to_string(),
-                label,
-                number,
-                pos: optional_pos(obj, "math")?,
-            }))
-        }
-        "raw_inline" => Ok(InlineNode::RawInline(RawInline {
-            cell_wraps: decode_cell_wraps(obj, "raw_inline")?,
-            format: required_string(obj, "raw_inline", "format")?.to_string(),
-            content: required_string(obj, "raw_inline", "content")?.to_string(),
-            // An ingested node is AUTHORED content: `injected` is a render-time
-            // fact this crate sets, never a field of the payload (PART 12 §7).
-            injected: false,
-            pos: optional_pos(obj, "raw_inline")?,
-        })),
-        "literal_inline" => Ok(InlineNode::LiteralInline(LiteralInline {
-            content: required_string(obj, "literal_inline", "content")?.to_string(),
-            attrs: optional_attrs(obj)?,
-            pos: optional_pos(obj, "literal_inline")?,
-        })),
-        "symbol" => Ok(InlineNode::Symbol(Symbol {
-            name: required_string(obj, "symbol", "name")?.to_string(),
-            attrs: optional_attrs(obj)?,
-            pos: optional_pos(obj, "symbol")?,
-        })),
-        "autolink" => Ok(InlineNode::AutoLink(AutoLink {
-            attrs: optional_attrs(obj)?,
-            href: required_string(obj, "autolink", "href")?.to_string(),
-            text: optional_string(obj, "text")?.unwrap_or("").to_string(),
-            pos: optional_pos(obj, "autolink")?,
-        })),
-        "heading_ref" => Ok(InlineNode::CrossRef(CrossRef {
-            target: required_string(obj, "heading_ref", "target")?.to_string(),
-            href: optional_string(obj, "href")?.map(str::to_string),
-            pos: optional_pos(obj, "heading_ref")?,
-        })),
-        "caption_number" => Ok(InlineNode::CaptionNumber(CaptionNumber {
-            number: optional_usize(obj, "n")?,
-            pos: optional_pos(obj, "caption_number")?,
-        })),
-        "mention" => Ok(InlineNode::Mention(Mention {
-            attrs: optional_attrs(obj)?,
-            user: required_string(obj, "mention", "user")?.to_string(),
-            pos: optional_pos(obj, "mention")?,
-        })),
-        "tag" => Ok(InlineNode::Tag(Tag {
-            attrs: optional_attrs(obj)?,
-            name: required_string(obj, "tag", "name")?.to_string(),
-            pos: optional_pos(obj, "tag")?,
-        })),
-        "citation_group" => Ok(InlineNode::CitationGroup(CitationGroup {
-            items: decode_citation_items(
-                required_array(obj, "citation_group", "items")?,
-                optional_string(obj, "mode")? == Some("integral"),
-            )?,
-            raw: required_string(obj, "citation_group", "raw")?.to_string(),
-            render_mode: None,
-            pos: optional_pos(obj, "citation_group")?,
-        })),
-        "inline_extension" => Ok(InlineNode::Extension(InlineExtension {
-            attrs: optional_attrs(obj)?,
-            name: required_string(obj, "inline_extension", "name")?.to_string(),
-            // `content` only, for the reason given at `code_block` above:
-            // `children` is not a name the schema gives this node, so the
-            // fallback could never be reached.
-            children: decode_inlines(required_array(obj, "inline_extension", "content")?)?,
-            pos: optional_pos(obj, "inline_extension")?,
-        })),
-        "abbreviation" => Ok(InlineNode::Abbreviation(Abbreviation {
-            abbr: required_string(obj, "abbreviation", "abbr")?.to_string(),
-            expansion: required_string(obj, "abbreviation", "expansion")?.to_string(),
-            pos: optional_pos(obj, "abbreviation")?,
-        })),
-        "footnote_ref" => Ok(InlineNode::Footnote(Footnote {
-            attrs: optional_attrs(obj)?,
-            // REQUIRED since carve#2193. Every other reference node names what
-            // it points at, and a `footnote_ref` with no label is a reference
-            // to nothing - a shape PART 12 section 3a cannot have produced,
-            // since a pre-resolve tree records what the author wrote.
-            // `id` is REFUSED rather than aliased: §11's narrow exception is a MAY,
-            // and this engine already refuses `footnote.id` on the definition half
-            // of the same pair. Two spellings of one field is what §3 prevents.
-            id: Some(required_string(obj, "footnote_ref", "label")?.to_string()),
-            inline: None,
-            number: optional_usize(obj, "number")?,
-            // NOT read from the wire. `refId` is a rendering convention -
-            // `fnref1`, the anchor an endnotes section links back to - and
-            // carve#762 removed it from the schema, so a tree carrying one is
-            // invalid under `additionalProperties: false`. Reading it echoed a
-            // payload's value straight back out, and an inherited anchor would
-            // carry the previous document's numbering (carve-rs#648). The HTML
-            // renderer assigns this itself while numbering.
-            ref_id: None,
-            pos: optional_pos(obj, "footnote_ref")?,
-        })),
-        "inline_footnote" => Ok(InlineNode::Footnote(Footnote {
-            attrs: optional_attrs(obj)?,
-            id: None,
-            inline: Some(decode_inlines(required_array(
-                obj,
-                "inline_footnote",
-                "inline",
-            )?)?),
-            number: optional_usize(obj, "number")?,
-            // NOT read from the wire. `refId` is a rendering convention -
-            // `fnref1`, the anchor an endnotes section links back to - and
-            // carve#762 removed it from the schema, so a tree carrying one is
-            // invalid under `additionalProperties: false`. Reading it echoed a
-            // payload's value straight back out, and an inherited anchor would
-            // carry the previous document's numbering (carve-rs#648). The HTML
-            // renderer assigns this itself while numbering.
-            ref_id: None,
-            pos: optional_pos(obj, "inline_footnote")?,
-        })),
-        "non_breaking_space" => Ok(InlineNode::NonBreakingSpace(NonBreakingSpace {
-            attrs: optional_attrs(obj)?,
-            pos: optional_pos(obj, "non_breaking_space")?,
-        })),
-        "soft_break" => Ok(InlineNode::SoftBreak(Break {
-            pos: optional_pos(obj, "soft_break")?,
-        })),
-        "cell_wrap" => Ok(InlineNode::CellWrap(CellWrap {
-            line: positive_usize(
-                Some(required_usize(obj, "cell_wrap", "line")?),
-                "cell_wrap.line",
-            )?
-            .unwrap_or(1),
-            row: positive_usize(optional_usize(obj, "row")?, "cell_wrap.row")?,
-            col: positive_usize(optional_usize(obj, "col")?, "cell_wrap.col")?,
-            pos: optional_pos(obj, "cell_wrap")?,
-        })),
-        "hard_break" => Ok(InlineNode::HardBreak(Break {
-            pos: optional_pos(obj, "hard_break")?,
-        })),
-        "insert" => Ok(InlineNode::CriticInsert(CriticInsert {
-            attrs: optional_attrs(obj)?,
-            children: decode_inlines(required_array(obj, "insert", "children")?)?,
-            pos: optional_pos(obj, "insert")?,
-        })),
-        "delete" => Ok(InlineNode::CriticDelete(CriticDelete {
-            attrs: optional_attrs(obj)?,
-            children: decode_inlines(required_array(obj, "delete", "children")?)?,
-            pos: optional_pos(obj, "delete")?,
-        })),
-        "substitution" => Ok(InlineNode::CriticSubstitute(CriticSubstitute {
-            old: decode_inlines(required_array(obj, "substitution", "old")?)?,
-            new: decode_inlines(required_array(obj, "substitution", "new")?)?,
-            pos: optional_pos(obj, "substitution")?,
-        })),
-        "critic_comment" => Ok(InlineNode::CriticComment(CriticComment {
-            text: required_string(obj, "critic_comment", "text")?.to_string(),
-            pos: optional_pos(obj, "critic_comment")?,
-        })),
+        "span" => decode_inline_span(obj),
+        "ruby" => decode_inline_ruby(obj),
+        "math" => decode_inline_math(obj),
+        "raw_inline" => decode_inline_raw_inline(obj),
+        "literal_inline" => decode_inline_literal_inline(obj),
+        "symbol" => decode_inline_symbol(obj),
+        "autolink" => decode_inline_autolink(obj),
+        "heading_ref" => decode_inline_heading_ref(obj),
+        "caption_number" => decode_inline_caption_number(obj),
+        "mention" => decode_inline_mention(obj),
+        "tag" => decode_inline_tag(obj),
+        "citation_group" => decode_inline_citation_group(obj),
+        "inline_extension" => decode_inline_inline_extension(obj),
+        "abbreviation" => decode_inline_abbreviation(obj),
+        "footnote_ref" => decode_inline_footnote_ref(obj),
+        "inline_footnote" => decode_inline_inline_footnote(obj),
+        "non_breaking_space" => decode_inline_non_breaking_space(obj),
+        "soft_break" => decode_inline_soft_break(obj),
+        "cell_wrap" => decode_inline_cell_wrap(obj),
+        "hard_break" => decode_inline_hard_break(obj),
+        "insert" => decode_inline_insert(obj),
+        "delete" => decode_inline_delete(obj),
+        "substitution" => decode_inline_substitution(obj),
+        "critic_comment" => decode_inline_critic_comment(obj),
         // The inline half of `comment`. The block half decodes in the block
         // table above; `block` says which one a payload names.
-        "comment" => Ok(InlineNode::Comment(Comment {
-            block: required_bool(obj, "comment", "block")?,
-            delimited: optional_bool(obj, "delimited")?.unwrap_or(false),
-            content: required_string(obj, "comment", "content")?.to_string(),
-            pos: optional_pos(obj, "comment")?,
-        })),
+        "comment" => decode_inline_comment(obj),
         other => Err(AstJsonError::new(format!(
             "unknown inline node type {other:?}"
         ))),
     }
+}
+
+pub(super) fn decode_inline_text(obj: &Map<String, Json>) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::Text(Text {
+        value: required_string(obj, "text", "value")?.to_string(),
+        pos: optional_pos(obj, "text")?,
+    }))
+}
+
+pub(super) fn decode_inline_escaped_text(
+    obj: &Map<String, Json>,
+) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::EscapedText(EscapedText {
+        value: required_string(obj, "escaped_text", "value")?.to_string(),
+        pos: optional_pos(obj, "escaped_text")?,
+    }))
+}
+
+pub(super) fn decode_inline_smart_punctuation(
+    obj: &Map<String, Json>,
+) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::SmartPunctuation(SmartPunctuation {
+        kind: required_string(obj, "smart_punctuation", "kind")?.to_string(),
+        value: required_string(obj, "smart_punctuation", "value")?.to_string(),
+        glyph: optional_string(obj, "glyph")?.map(str::to_string),
+        pos: optional_pos(obj, "smart_punctuation")?,
+    }))
+}
+
+pub(super) fn decode_inline_emphasis(
+    ty: &str,
+    obj: &Map<String, Json>,
+) -> Result<InlineNode, AstJsonError> {
+    let kind = decode_emphasis_kind(ty, obj)?;
+    let mut children = decode_inlines(required_array(obj, ty, "children")?)?;
+    // The combined form is ONE node here and TWO on the wire: a
+    // `strong` marked `boldItalic` wrapping an `emphasis` (PART 11 §6).
+    // Unwrap that single emphasis child on the way in, or the kind and
+    // the child both add italic and `/*x*/` round-trips to
+    // `<strong><em><em>` (#513).
+    if kind == EmphasisKind::BoldItalic && children.len() == 1 {
+        if let InlineNode::Emphasis(inner) = &children[0] {
+            if inner.kind == EmphasisKind::Italic && inner.attrs.is_none() {
+                children = inner.children.clone();
+            }
+        }
+    }
+    Ok(InlineNode::Emphasis(Emphasis {
+        attrs: optional_attrs(obj)?,
+        kind,
+        children,
+        pos: optional_pos(obj, ty)?,
+    }))
+}
+
+pub(super) fn decode_inline_code(obj: &Map<String, Json>) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::Code(Code {
+        cell_wraps: decode_cell_wraps(obj, "code")?,
+        value: required_string(obj, "code", "value")?.to_string(),
+        attrs: optional_attrs(obj)?,
+        pos: optional_pos(obj, "code")?,
+    }))
+}
+
+pub(super) fn decode_inline_link(obj: &Map<String, Json>) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::Link(Link {
+        attrs: optional_attrs(obj)?,
+        href: required_string(obj, "link", "href")?.to_string(),
+        title: optional_string(obj, "title")?.map(str::to_string),
+        children: decode_inlines(required_array(obj, "link", "children")?)?,
+        ref_label: optional_string(obj, "ref")?.map(str::to_string),
+        raw_ref: optional_string(obj, "rawRef")?.map(str::to_string),
+        // Neither flag is on the wire: both are a writer's concern, and a
+        // decoded document rebuilds them from the heading index the same way
+        // a parse does. Reading `fromCrossref` here could never fire anyway -
+        // `refuse_unknown_fields` turns the whole payload away first
+        // (carve-rs#776).
+        from_crossref: false,
+        from_heading_reference: false,
+        pos: optional_pos(obj, "link")?,
+        resolved_empty_reference: optional_resolved(obj, "link", "href")?,
+    }))
+}
+
+pub(super) fn decode_inline_span(obj: &Map<String, Json>) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::Span(Span {
+        // Ingested content is AUTHORED; `injected` is this crate's own
+        // render-time bookkeeping and never a field of the payload.
+        injected: false,
+        attrs: optional_attrs(obj)?,
+        children: decode_inlines(required_array(obj, "span", "children")?)?,
+        pos: optional_pos(obj, "span")?,
+    }))
+}
+
+pub(super) fn decode_inline_ruby(obj: &Map<String, Json>) -> Result<InlineNode, AstJsonError> {
+    let pairs = required_array(obj, "ruby", "pairs")?;
+    if pairs.is_empty() {
+        return Err(AstJsonError::new("ruby.pairs must not be empty"));
+    }
+    let pairs = pairs
+        .iter()
+        .map(|value| {
+            let pair = value.expect_object("ruby.pairs[]")?;
+            let base = decode_inlines(required_array(pair, "ruby.pairs[]", "base")?)?;
+            if base.is_empty() {
+                return Err(AstJsonError::new("ruby.pairs[].base must not be empty"));
+            }
+            Ok(RubyPair {
+                base,
+                annotation: decode_inlines(required_array(pair, "ruby.pairs[]", "annotation")?)?,
+            })
+        })
+        .collect::<Result<Vec<_>, AstJsonError>>()?;
+    Ok(InlineNode::Ruby(Ruby {
+        attrs: optional_attrs(obj)?,
+        pairs,
+        pos: optional_pos(obj, "ruby")?,
+    }))
+}
+
+pub(super) fn decode_inline_math(obj: &Map<String, Json>) -> Result<InlineNode, AstJsonError> {
+    let display = required_bool(obj, "math", "display")?;
+    let label = optional_string(obj, "label")?.map(str::to_string);
+    if let Some(label) = &label {
+        // CARVE-P12-051 pins the label's shape in the schema itself:
+        // non-empty, and no leading or trailing whitespace, so it is the
+        // same plain-text counter key PART 2 derives from a caption label.
+        if label.is_empty() || label.trim() != label.as_str() {
+            return Err(AstJsonError::new(
+                "math.label is a non-empty string with no leading or trailing whitespace",
+            ));
+        }
+    }
+    let number = optional_usize(obj, "number")?;
+    if let Some(number) = number {
+        // A number without a label has no counter bucket and no visible
+        // prefix, and inline math never draws one (CARVE-P12-051).
+        if number == 0 {
+            return Err(AstJsonError::new("math.number is a positive integer"));
+        }
+        if label.is_none() {
+            return Err(AstJsonError::new(
+                "math.number needs math.label: the label is the counter bucket and the visible prefix",
+            ));
+        }
+        if !display {
+            return Err(AstJsonError::new(
+                "math.number is only valid on display math: inline math draws no number",
+            ));
+        }
+    }
+    Ok(InlineNode::Math(Math {
+        cell_wraps: decode_cell_wraps(obj, "math")?,
+        attrs: optional_attrs(obj)?,
+        display,
+        content: required_string(obj, "math", "content")?.to_string(),
+        label,
+        number,
+        pos: optional_pos(obj, "math")?,
+    }))
+}
+
+pub(super) fn decode_inline_raw_inline(
+    obj: &Map<String, Json>,
+) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::RawInline(RawInline {
+        cell_wraps: decode_cell_wraps(obj, "raw_inline")?,
+        format: required_string(obj, "raw_inline", "format")?.to_string(),
+        content: required_string(obj, "raw_inline", "content")?.to_string(),
+        // An ingested node is AUTHORED content: `injected` is a render-time
+        // fact this crate sets, never a field of the payload (PART 12 §7).
+        injected: false,
+        pos: optional_pos(obj, "raw_inline")?,
+    }))
+}
+
+pub(super) fn decode_inline_literal_inline(
+    obj: &Map<String, Json>,
+) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::LiteralInline(LiteralInline {
+        content: required_string(obj, "literal_inline", "content")?.to_string(),
+        attrs: optional_attrs(obj)?,
+        pos: optional_pos(obj, "literal_inline")?,
+    }))
+}
+
+pub(super) fn decode_inline_symbol(obj: &Map<String, Json>) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::Symbol(Symbol {
+        name: required_string(obj, "symbol", "name")?.to_string(),
+        attrs: optional_attrs(obj)?,
+        pos: optional_pos(obj, "symbol")?,
+    }))
+}
+
+pub(super) fn decode_inline_autolink(obj: &Map<String, Json>) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::AutoLink(AutoLink {
+        attrs: optional_attrs(obj)?,
+        href: required_string(obj, "autolink", "href")?.to_string(),
+        text: optional_string(obj, "text")?.unwrap_or("").to_string(),
+        pos: optional_pos(obj, "autolink")?,
+    }))
+}
+
+pub(super) fn decode_inline_heading_ref(
+    obj: &Map<String, Json>,
+) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::CrossRef(CrossRef {
+        target: required_string(obj, "heading_ref", "target")?.to_string(),
+        href: optional_string(obj, "href")?.map(str::to_string),
+        pos: optional_pos(obj, "heading_ref")?,
+    }))
+}
+
+pub(super) fn decode_inline_caption_number(
+    obj: &Map<String, Json>,
+) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::CaptionNumber(CaptionNumber {
+        number: optional_usize(obj, "n")?,
+        pos: optional_pos(obj, "caption_number")?,
+    }))
+}
+
+pub(super) fn decode_inline_mention(obj: &Map<String, Json>) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::Mention(Mention {
+        attrs: optional_attrs(obj)?,
+        user: required_string(obj, "mention", "user")?.to_string(),
+        pos: optional_pos(obj, "mention")?,
+    }))
+}
+
+pub(super) fn decode_inline_tag(obj: &Map<String, Json>) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::Tag(Tag {
+        attrs: optional_attrs(obj)?,
+        name: required_string(obj, "tag", "name")?.to_string(),
+        pos: optional_pos(obj, "tag")?,
+    }))
+}
+
+pub(super) fn decode_inline_citation_group(
+    obj: &Map<String, Json>,
+) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::CitationGroup(CitationGroup {
+        items: decode_citation_items(
+            required_array(obj, "citation_group", "items")?,
+            optional_string(obj, "mode")? == Some("integral"),
+        )?,
+        raw: required_string(obj, "citation_group", "raw")?.to_string(),
+        render_mode: None,
+        pos: optional_pos(obj, "citation_group")?,
+    }))
+}
+
+pub(super) fn decode_inline_inline_extension(
+    obj: &Map<String, Json>,
+) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::Extension(InlineExtension {
+        attrs: optional_attrs(obj)?,
+        name: required_string(obj, "inline_extension", "name")?.to_string(),
+        // `content` only, for the reason given at `code_block` above:
+        // `children` is not a name the schema gives this node, so the
+        // fallback could never be reached.
+        children: decode_inlines(required_array(obj, "inline_extension", "content")?)?,
+        pos: optional_pos(obj, "inline_extension")?,
+    }))
+}
+
+pub(super) fn decode_inline_abbreviation(
+    obj: &Map<String, Json>,
+) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::Abbreviation(Abbreviation {
+        abbr: required_string(obj, "abbreviation", "abbr")?.to_string(),
+        expansion: required_string(obj, "abbreviation", "expansion")?.to_string(),
+        pos: optional_pos(obj, "abbreviation")?,
+    }))
+}
+
+pub(super) fn decode_inline_footnote_ref(
+    obj: &Map<String, Json>,
+) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::Footnote(Footnote {
+        attrs: optional_attrs(obj)?,
+        // REQUIRED since carve#2193. Every other reference node names what
+        // it points at, and a `footnote_ref` with no label is a reference
+        // to nothing - a shape PART 12 section 3a cannot have produced,
+        // since a pre-resolve tree records what the author wrote.
+        // `id` is REFUSED rather than aliased: §11's narrow exception is a MAY,
+        // and this engine already refuses `footnote.id` on the definition half
+        // of the same pair. Two spellings of one field is what §3 prevents.
+        id: Some(required_string(obj, "footnote_ref", "label")?.to_string()),
+        inline: None,
+        number: optional_usize(obj, "number")?,
+        // NOT read from the wire. `refId` is a rendering convention -
+        // `fnref1`, the anchor an endnotes section links back to - and
+        // carve#762 removed it from the schema, so a tree carrying one is
+        // invalid under `additionalProperties: false`. Reading it echoed a
+        // payload's value straight back out, and an inherited anchor would
+        // carry the previous document's numbering (carve-rs#648). The HTML
+        // renderer assigns this itself while numbering.
+        ref_id: None,
+        pos: optional_pos(obj, "footnote_ref")?,
+    }))
+}
+
+pub(super) fn decode_inline_inline_footnote(
+    obj: &Map<String, Json>,
+) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::Footnote(Footnote {
+        attrs: optional_attrs(obj)?,
+        id: None,
+        inline: Some(decode_inlines(required_array(
+            obj,
+            "inline_footnote",
+            "inline",
+        )?)?),
+        number: optional_usize(obj, "number")?,
+        // NOT read from the wire. `refId` is a rendering convention -
+        // `fnref1`, the anchor an endnotes section links back to - and
+        // carve#762 removed it from the schema, so a tree carrying one is
+        // invalid under `additionalProperties: false`. Reading it echoed a
+        // payload's value straight back out, and an inherited anchor would
+        // carry the previous document's numbering (carve-rs#648). The HTML
+        // renderer assigns this itself while numbering.
+        ref_id: None,
+        pos: optional_pos(obj, "inline_footnote")?,
+    }))
+}
+
+pub(super) fn decode_inline_non_breaking_space(
+    obj: &Map<String, Json>,
+) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::NonBreakingSpace(NonBreakingSpace {
+        attrs: optional_attrs(obj)?,
+        pos: optional_pos(obj, "non_breaking_space")?,
+    }))
+}
+
+pub(super) fn decode_inline_soft_break(
+    obj: &Map<String, Json>,
+) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::SoftBreak(Break {
+        pos: optional_pos(obj, "soft_break")?,
+    }))
+}
+
+pub(super) fn decode_inline_cell_wrap(obj: &Map<String, Json>) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::CellWrap(CellWrap {
+        line: positive_usize(
+            Some(required_usize(obj, "cell_wrap", "line")?),
+            "cell_wrap.line",
+        )?
+        .unwrap_or(1),
+        row: positive_usize(optional_usize(obj, "row")?, "cell_wrap.row")?,
+        col: positive_usize(optional_usize(obj, "col")?, "cell_wrap.col")?,
+        pos: optional_pos(obj, "cell_wrap")?,
+    }))
+}
+
+pub(super) fn decode_inline_hard_break(
+    obj: &Map<String, Json>,
+) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::HardBreak(Break {
+        pos: optional_pos(obj, "hard_break")?,
+    }))
+}
+
+pub(super) fn decode_inline_insert(obj: &Map<String, Json>) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::CriticInsert(CriticInsert {
+        attrs: optional_attrs(obj)?,
+        children: decode_inlines(required_array(obj, "insert", "children")?)?,
+        pos: optional_pos(obj, "insert")?,
+    }))
+}
+
+pub(super) fn decode_inline_delete(obj: &Map<String, Json>) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::CriticDelete(CriticDelete {
+        attrs: optional_attrs(obj)?,
+        children: decode_inlines(required_array(obj, "delete", "children")?)?,
+        pos: optional_pos(obj, "delete")?,
+    }))
+}
+
+pub(super) fn decode_inline_substitution(
+    obj: &Map<String, Json>,
+) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::CriticSubstitute(CriticSubstitute {
+        old: decode_inlines(required_array(obj, "substitution", "old")?)?,
+        new: decode_inlines(required_array(obj, "substitution", "new")?)?,
+        pos: optional_pos(obj, "substitution")?,
+    }))
+}
+
+pub(super) fn decode_inline_critic_comment(
+    obj: &Map<String, Json>,
+) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::CriticComment(CriticComment {
+        text: required_string(obj, "critic_comment", "text")?.to_string(),
+        pos: optional_pos(obj, "critic_comment")?,
+    }))
+}
+
+pub(super) fn decode_inline_comment(obj: &Map<String, Json>) -> Result<InlineNode, AstJsonError> {
+    Ok(InlineNode::Comment(Comment {
+        block: required_bool(obj, "comment", "block")?,
+        delimited: optional_bool(obj, "delimited")?.unwrap_or(false),
+        content: required_string(obj, "comment", "content")?.to_string(),
+        pos: optional_pos(obj, "comment")?,
+    }))
 }
 
 pub(super) fn decode_image(obj: &Map<String, Json>) -> Result<Image, AstJsonError> {
