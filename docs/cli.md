@@ -141,6 +141,15 @@ without it the CLI parses those words as plain containers. Supplying build
 renderers for the diagrams/math requires the library API (`Options::with_mode` +
 `with_renderers`); see `docs/extensions.md` and `examples/static_mode.rs`.
 
+`--report-losses FILE` writes a JSON report for content the selected target
+cannot preserve; `-` writes it to stderr. `--strict-losses` refuses that output.
+For Markdown, the report names flattened `div` containers, captions written as
+text, dropped block attributes, and escaped raw HTML. The corresponding
+`--allow-loss` codes are `markdown-container-flattened`,
+`markdown-caption-flattened`, `markdown-attributes-dropped`, and
+`raw-html-escaped`. `destination-denied` remains a policy refusal and cannot
+be allowed.
+
 ---
 
 [Back to the README](../README.md)

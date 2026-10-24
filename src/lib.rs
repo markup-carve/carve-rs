@@ -379,11 +379,12 @@ pub fn to_markdown_with_report(
     checked_options: CheckedRenderOptions,
 ) -> Result<RenderResult<String>, RenderLossError> {
     render_loss::checked(RenderTarget::Markdown, checked_options, || {
-        render_markdown(&parse_with_options(
-            source,
-            &Options::default().with_positions(true),
-        ))
-        .expect("the parse cap sits below the render ceiling")
+        let (doc, unattached) = parse::collecting_unattached_block_attrs(|| {
+            parse_with_options(source, &Options::default().with_positions(true))
+        });
+        let rendered = render_markdown(&doc).expect("the parse cap sits below the render ceiling");
+        render_loss::collect_markdown_unattached(unattached);
+        rendered
     })
 }
 
@@ -716,11 +717,13 @@ pub fn try_to_markdown_with_options(
     source: &str,
     options: &Options<'_>,
 ) -> Result<String, ProfileViolationError> {
-    Ok(render_markdown_with_options(
-        &prepare_doc(source, options, Mode::Interactive, false)?,
-        options,
-    )
-    .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it"))
+    let (doc, unattached) = parse::collecting_unattached_block_attrs(|| {
+        prepare_doc(source, options, Mode::Interactive, false)
+    });
+    let rendered = render_markdown_with_options(&doc?, options)
+        .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it");
+    render_loss::collect_markdown_unattached(unattached);
+    Ok(rendered)
 }
 
 /// Parse, run extension hooks, apply the profile, and render to plain text.

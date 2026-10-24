@@ -77,6 +77,13 @@ attribute, with its name in `attribute` and no `format`.
 Markdown export reports `definition-list-flattened` for a nested definition
 list it cannot carry and `list-style-dropped` when it writes an alphabetic or
 roman ordered list as decimal. The latter row names the style in `style`.
+It also reports `markdown-container-flattened` for a `div`,
+`markdown-caption-flattened` for figure or table captions,
+`markdown-attributes-dropped` for block attributes without Markdown syntax,
+and `raw-html-escaped` for raw HTML written as escaped text. A source-based
+checked render reports an unattached block attribute that parsing discards;
+an AST-only render has no source run to report. Roundtrip Markdown carries
+containers, attributes, and captions, so those three losses are absent there.
 Carve output reports `list-tightness-lost` when a nested item's blocks require
 the writer to make that item loose.
 A link destination, an autolink destination and an image source each take their

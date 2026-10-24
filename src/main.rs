@@ -336,6 +336,16 @@ fn main() -> ExitCode {
                 Some("list-delimiter-changed") => {
                     allowed_render_losses.push("list-delimiter-changed")
                 }
+                Some("markdown-container-flattened") => {
+                    allowed_render_losses.push("markdown-container-flattened")
+                }
+                Some("markdown-caption-flattened") => {
+                    allowed_render_losses.push("markdown-caption-flattened")
+                }
+                Some("markdown-attributes-dropped") => {
+                    allowed_render_losses.push("markdown-attributes-dropped")
+                }
+                Some("raw-html-escaped") => allowed_render_losses.push("raw-html-escaped"),
                 _ => {
                     eprintln!("carve: --allow-loss expects raw-format-dropped, ruby-flattened, editorial-comment-flattened, carrier-attribute-dropped, definition-list-flattened, list-style-dropped, list-tightness-lost, list-delimiter-changed, table-span-flattened, table-header-row-demoted, table-header-row-hoisted or table-header-cell-demoted");
                     return ExitCode::from(2);
@@ -2202,7 +2212,9 @@ fn print_usage() {
          list-tightness-lost,\n                              \
          list-delimiter-changed, table-span-flattened,\n                              \
          table-header-row-demoted, table-header-row-hoisted\n                              \
-         or table-header-cell-demoted\n  \
+         table-header-cell-demoted, markdown-container-flattened,\n                              \
+         markdown-caption-flattened, markdown-attributes-dropped\n                              \
+         or raw-html-escaped\n  \
          --max-render-losses N       bound detailed losses (default 100)\n\n  \
          --include-root DIR          containment root for {{{{ path }}}} includes.\n                              \
          Render defaults to the input file's directory; pass this\n                              \

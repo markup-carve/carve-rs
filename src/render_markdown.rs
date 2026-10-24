@@ -4,7 +4,7 @@ use crate::carrier_markers::{
 };
 use crate::extension::Options;
 use crate::parse::unwrap_nested_anchors;
-use crate::render_loss::DeniedSink;
+use crate::render_loss::{DeniedSink, MarkdownLoss, RawNodeType};
 use crate::render_text::{strip_high_controls as strip_control_chars, trim_non_nbsp};
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -515,6 +515,13 @@ fn render_blocks(blocks: &[BlockNode], ctx: &mut MarkdownContext, depth: usize) 
 /// written into (PART 11 §10o). A wrapper this target writes transparently
 /// leaves the answer to its children.
 fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> String {
+    if !ctx.roundtrip && markdown_dropped_attributes(node) {
+        crate::render_loss::record_markdown_loss(
+            MarkdownLoss::Attributes,
+            RawNodeType::Block,
+            crate::ast_json::block_pos(node),
+        );
+    }
     let mut out = render_block_kind(node, ctx, depth);
     if ctx.roundtrip && ctx.single_line_depth == 0 && !out.is_empty() {
         if let Some(attributes) = dropped_attribute_line(node)
@@ -539,6 +546,30 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
         ctx.previous_list = None;
     }
     out
+}
+
+fn markdown_dropped_attributes(node: &BlockNode) -> bool {
+    let additional = match node {
+        BlockNode::CodeBlock(n) => {
+            return !crate::render::render_attrs_without_keys(&n.attrs, &["title"]).is_empty();
+        }
+        BlockNode::Admonition(n) if list_table_outer(n).is_some() => {
+            return !crate::render::render_attrs_without_keys(
+                &n.attrs,
+                &["header-rows", "header-cols", "aligns"],
+            )
+            .is_empty();
+        }
+        BlockNode::Admonition(n) => &n.attrs,
+        BlockNode::Directive(n) => &n.attrs,
+        BlockNode::Div(n) => &n.attrs,
+        BlockNode::LineBlock(n) => &n.attrs,
+        BlockNode::FigureGroup(n) => &n.attrs,
+        BlockNode::BlockExtension(n) => &n.attrs,
+        BlockNode::ExtensionCarrier(n) => &n.attrs,
+        _ => return dropped_attribute_line(node).is_some(),
+    };
+    nonempty_attributes(additional).is_some()
 }
 
 fn dropped_attribute_line(node: &BlockNode) -> Option<String> {
@@ -882,6 +913,13 @@ fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) 
             carried(markers.as_ref(), body)
         }
         BlockNode::Div(div) => {
+            if !ctx.roundtrip {
+                crate::render_loss::record_markdown_loss(
+                    MarkdownLoss::Container,
+                    RawNodeType::Block,
+                    div.pos.as_ref(),
+                );
+            }
             if div.label.as_deref().is_some_and(|l| !l.is_empty()) {
                 ctx.previous_list = None;
             }
@@ -904,6 +942,11 @@ fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) 
         BlockNode::BlockImage(image) => format!("{}\n\n", render_image(image)),
         BlockNode::RawBlock(raw) => {
             if raw.format == "html" {
+                crate::render_loss::record_markdown_loss(
+                    MarkdownLoss::RawHtml,
+                    RawNodeType::Block,
+                    raw.pos.as_ref(),
+                );
                 // Escape, not emit: raw HTML in Markdown would be live again
                 // when the Markdown is rendered to HTML downstream.
                 format!(
@@ -1519,7 +1562,7 @@ fn list_table_count(value: Option<&String>) -> usize {
 
 /// The pipe table a `::: list-table` is equivalent to (PART 11 §10q,
 /// CARVE-P11-059), or `None` when its body is not a grid.
-fn list_table_as_table(node: &Admonition) -> Option<Table> {
+fn list_table_outer(node: &Admonition) -> Option<&List> {
     if node.kind != "list-table" {
         return None;
     }
@@ -1533,6 +1576,11 @@ fn list_table_as_table(node: &Admonition) -> Option<Table> {
     {
         return None;
     }
+    Some(outer)
+}
+
+fn list_table_as_table(node: &Admonition) -> Option<Table> {
+    let outer = list_table_outer(node)?;
     let empty = std::collections::BTreeMap::new();
     let kv = node.attrs.as_ref().map_or(&empty, |a| &a.key_values);
     let header_rows = list_table_count(kv.get("header-rows"));
@@ -1763,6 +1811,13 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
     // §10e states the general form: attachment by adjacency is available only on
     // a target where adjacency does not change what the adjacent block IS.
     if let Some(caption) = &node.caption {
+        if !ctx.roundtrip && !caption.is_empty() {
+            crate::render_loss::record_markdown_loss(
+                MarkdownLoss::Caption,
+                RawNodeType::Block,
+                node.pos.as_ref(),
+            );
+        }
         let text = render_inlines(caption, ctx, 0);
         let text = text.trim();
         if !text.is_empty() {
@@ -1878,6 +1933,13 @@ fn render_figure_group(node: &FigureGroup, ctx: &mut MarkdownContext, depth: usi
     for child in &node.children {
         match child {
             BlockNode::Figure(figure) => {
+                if !ctx.roundtrip {
+                    crate::render_loss::record_markdown_loss(
+                        MarkdownLoss::Caption,
+                        RawNodeType::Block,
+                        figure.pos.as_ref(),
+                    );
+                }
                 let target = render_figure_target(figure, ctx, depth);
                 let caption = render_wrapped_inlines(&figure.caption, ctx, "*", "<em>", "</em>");
                 out.push_str(&format!(
@@ -1894,6 +1956,13 @@ fn render_figure_group(node: &FigureGroup, ctx: &mut MarkdownContext, depth: usi
     out = carried(markers.as_ref(), out);
     // The group's caption slot follows the closing fence in Carve.
     if let Some(caption) = &node.caption {
+        if !ctx.roundtrip {
+            crate::render_loss::record_markdown_loss(
+                MarkdownLoss::Caption,
+                RawNodeType::Block,
+                node.pos.as_ref(),
+            );
+        }
         out.push_str(&caption_carrier(caption, ctx));
         let caption = render_wrapped_inlines(caption, ctx, "**", "<strong>", "</strong>");
         out.push_str(&caption);
@@ -1906,6 +1975,13 @@ fn render_figure(node: &Figure, ctx: &mut MarkdownContext, depth: usize) -> Stri
     if depth > MAX_RENDER_DEPTH {
         crate::render_depth::record("markdown");
         return String::new();
+    }
+    if !ctx.roundtrip {
+        crate::render_loss::record_markdown_loss(
+            MarkdownLoss::Caption,
+            RawNodeType::Block,
+            node.pos.as_ref(),
+        );
     }
     let target = render_figure_target(node, ctx, depth);
     let sep = match &*node.target {
@@ -2986,6 +3062,11 @@ fn render_inline_body(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize
         }
         InlineNode::RawInline(raw) => {
             if raw.format == "html" {
+                crate::render_loss::record_markdown_loss(
+                    MarkdownLoss::RawHtml,
+                    RawNodeType::Inline,
+                    raw.pos.as_ref(),
+                );
                 escape_md_html(&strip_controls(&raw.content))
             } else {
                 crate::render_loss::record_raw_drop(

@@ -54,6 +54,37 @@ impl RawNodeType {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum MarkdownLoss {
+    Container,
+    Caption,
+    Attributes,
+    RawHtml,
+}
+
+impl MarkdownLoss {
+    fn details(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Container => (
+                "markdown-container-flattened",
+                "Flattened a container into Markdown blocks",
+            ),
+            Self::Caption => (
+                "markdown-caption-flattened",
+                "Wrote a caption as ordinary Markdown text",
+            ),
+            Self::Attributes => (
+                "markdown-attributes-dropped",
+                "Dropped block attributes while rendering Markdown",
+            ),
+            Self::RawHtml => (
+                "raw-html-escaped",
+                "Escaped raw HTML while rendering Markdown",
+            ),
+        }
+    }
+}
+
 /// One detail that an output target would discard or change.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenderLoss {
@@ -181,6 +212,89 @@ impl LossCheckpoint {
             }
         });
     }
+}
+
+pub(crate) fn record_markdown_loss(kind: MarkdownLoss, node_type: RawNodeType, pos: Option<&Pos>) {
+    COLLECTOR.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let Some(c) = slot.as_mut().filter(|c| c.target == RenderTarget::Markdown) else {
+            return;
+        };
+        let (code, message) = kind.details();
+        c.total += 1;
+        *c.totals_by_code.entry(code).or_default() += 1;
+        if c.losses.len() < c.max {
+            c.losses.push(RenderLoss {
+                code,
+                format: None,
+                attribute: None,
+                style: None,
+                delim: None,
+                emitted_delim: None,
+                colspan: None,
+                rowspan: None,
+                target: RenderTarget::Markdown,
+                node_type,
+                pos: pos.cloned(),
+                message: message.to_string(),
+            });
+        }
+    });
+}
+
+pub(crate) fn collect_markdown_unattached(spans: Vec<Pos>) {
+    if spans.is_empty() {
+        return;
+    }
+    COLLECTOR.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let Some(c) = slot.as_mut().filter(|c| c.target == RenderTarget::Markdown) else {
+            return;
+        };
+        let (code, _) = MarkdownLoss::Attributes.details();
+        c.total += spans.len();
+        *c.totals_by_code.entry(code).or_default() += spans.len();
+        let mut dangling = spans;
+        dangling.sort_by_key(|pos| pos.start_offset);
+        let mut rendered = std::mem::take(&mut c.losses).into_iter().peekable();
+        let mut dangling = dangling.into_iter().peekable();
+        let mut merged = Vec::with_capacity(c.max.min(c.total));
+        let mut rendered_offset = 0;
+        while merged.len() < c.max && (rendered.peek().is_some() || dangling.peek().is_some()) {
+            if let Some(loss) = rendered.peek() {
+                rendered_offset = rendered_offset.max(
+                    loss.pos
+                        .as_ref()
+                        .map_or(rendered_offset, |p| p.start_offset),
+                );
+            }
+            if dangling
+                .peek()
+                .is_some_and(|pos| pos.start_offset < rendered_offset)
+                || rendered.peek().is_none()
+            {
+                let pos = dangling.next().expect("dangling loss available");
+                merged.push(RenderLoss {
+                    code,
+                    format: None,
+                    attribute: None,
+                    style: None,
+                    delim: None,
+                    emitted_delim: None,
+                    colspan: None,
+                    rowspan: None,
+                    target: RenderTarget::Markdown,
+                    node_type: RawNodeType::Block,
+                    pos: Some(pos),
+                    message: "Dropped an unattached block attribute while rendering Markdown"
+                        .to_string(),
+                });
+            } else if let Some(loss) = rendered.next() {
+                merged.push(loss);
+            }
+        }
+        c.losses = merged;
+    });
 }
 
 pub(crate) fn record_table_span(cell: &crate::ast::TableCell) {
