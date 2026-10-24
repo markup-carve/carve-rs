@@ -50,6 +50,8 @@ mod normalize;
 
 #[path = "djot_migrate/djot_div_classes.rs"]
 mod div_classes;
+#[path = "djot_migrate/djot_heading_ids.rs"]
+mod heading_ids;
 #[path = "djot_migrate/djot_heading_targets.rs"]
 mod heading_targets;
 #[path = "djot_migrate/djot_tight_definition_descriptions.rs"]
@@ -779,13 +781,13 @@ fn convert_djot_document(
         })
         .into_owned();
     let converted = tight_definition_descriptions::normalize(&div_classes::normalize(&converted));
-    stripped_definitions.restore(&if frontmatter.is_empty() {
+    heading_ids::preserve(stripped_definitions.restore(&if frontmatter.is_empty() {
         converted
     } else if converted.is_empty() {
         format!("{frontmatter}{separator}")
     } else {
         format!("{}{}{}", frontmatter, separator, converted)
-    })
+    }))
 }
 
 pub(crate) fn djot_to_carve_with_losses(source: &str) -> (String, Vec<crate::MigrationDiagnostic>) {

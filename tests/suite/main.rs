@@ -2512,3 +2512,6 @@ mod markdown_figure_in_a_tight_item;
 mod ruled_description_fence;
 #[path = "../ruled_quote_definition.rs"]
 mod ruled_quote_definition;
+
+#[path = "../djot_heading_id_collisions.rs"]
+mod djot_heading_id_collisions;
