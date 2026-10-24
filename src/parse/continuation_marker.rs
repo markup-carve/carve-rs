@@ -366,6 +366,7 @@ impl Classifier {
         {
             open.content_col = column;
             self.code_fence = Some(open);
+            self.paragraph_open = false;
             return;
         }
         let (local, has_tab) = local_column(line, depth);
