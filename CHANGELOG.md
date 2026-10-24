@@ -17,7 +17,7 @@ Carve 0.1.12 fixes nested container ownership, table spans, and import round tri
 
 ### Fixes
 
-- Quoted and nested list continuations keep the block that owns them, including wrapped attributes, band lines, and a `+` after a lazy line (#3106, #3120, #3124, #3149, markup-carve/carve#3592).
+- Quoted and nested list continuations keep the block that owns them, including wrapped attributes, band lines, and a `+` after a lazy line (#3106, #3120, #3124, #3149, #3151, markup-carve/carve#3592).
 - Nested descriptions, empty items, and heading-adjacent fences retain their authored boundaries when parsed or formatted (#3112, #3113, #3115, #3116, #3121).
 - A quote after a trailing slash closes before punctuation or whitespace (#3114).
 - An included heading satisfies a root cross-reference in cross-reference diagnostics (#3119).
