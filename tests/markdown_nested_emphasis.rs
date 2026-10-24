@@ -108,7 +108,11 @@ fn markdown_preserves_nested_wrapper_hosts_and_attributes() {
             vec![]
         };
         assert_eq!(
-            report.losses.iter().map(|loss| loss.code).collect::<Vec<_>>(),
+            report
+                .losses
+                .iter()
+                .map(|loss| loss.code)
+                .collect::<Vec<_>>(),
             expected_losses,
             "{}",
             control.source
