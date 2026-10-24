@@ -677,8 +677,7 @@ fn run_render<'a>(mut cli: CliArgs<'a>, bundled: &'a BundledExtensions) -> ExitC
         eprintln!("carve: --citation-mode requires --extension citations");
         return ExitCode::FAILURE;
     }
-    if cli.options.roundtrip && !matches!(cli.format, OutputFormat::Html | OutputFormat::Markdown)
-    {
+    if cli.options.roundtrip && !matches!(cli.format, OutputFormat::Html | OutputFormat::Markdown) {
         eprintln!("carve: --roundtrip requires --html or --markdown");
         return ExitCode::FAILURE;
     }
@@ -798,9 +797,9 @@ fn run_render<'a>(mut cli: CliArgs<'a>, bundled: &'a BundledExtensions) -> ExitC
     let outcome = if cli.from_json {
         render_from_json(&source, format, target, checked_options, &options)
     } else if let Some(resolver) = &resolver {
-        let mut include_options =
-            cli.include_budgets
-                .apply(carve::IncludeOptions::new().with_resolver(resolver));
+        let mut include_options = cli
+            .include_budgets
+            .apply(carve::IncludeOptions::new().with_resolver(resolver));
         if let Some(path) = &input_path {
             include_options = include_options.with_source_path(path.to_string_lossy().into_owned());
         }

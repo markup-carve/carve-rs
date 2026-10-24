@@ -1,5 +1,5 @@
-use super::*;
 use super::definition_regions::VerseLine;
+use super::*;
 
 /// What `extract_footnote_defs` hands back, in order: the document body with
 /// the definition lines removed, each definition's own source, where each
@@ -194,7 +194,11 @@ struct HostedWalk {
 
 impl HostedWalk {
     fn reaches_floor(&self, host: &NoteHost, raw: &str) -> bool {
-        host.reaches_floor(raw, self.admitted_fence.is_some(), self.opacity.comment.is_some())
+        host.reaches_floor(
+            raw,
+            self.admitted_fence.is_some(),
+            self.opacity.comment.is_some(),
+        )
     }
 }
 
@@ -511,15 +515,16 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
     }
 
     fn step_fence_opener(&mut self, i: usize, scan: &LineScan<'a>) -> bool {
-        let Some(mut open) =
-            detect_fence_open(scan.fence_line).filter(|_| !self.folded_into_term.folded.contains(&i))
+        let Some(mut open) = detect_fence_open(scan.fence_line)
+            .filter(|_| !self.folded_into_term.folded.contains(&i))
         else {
             return false;
         };
         let line = self.lines[i];
         let term_fence = self.folded_into_term.fence_openers.get(&i);
         if scan.stripped.description {
-            open.content_col = description_fence_content_column(line, &scan.stripped, &self.columns);
+            open.content_col =
+                description_fence_content_column(line, &scan.stripped, &self.columns);
         }
         if let Some(host) = term_fence {
             open.content_col = host.content_col;
@@ -626,7 +631,10 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 &mut self.probe_budget,
                 &mut unaffordable,
             );
-        if folds || quoted_note_paragraph || unaffordable || self.folded_into_term.folded.contains(&i)
+        if folds
+            || quoted_note_paragraph
+            || unaffordable
+            || self.folded_into_term.folded.contains(&i)
         {
             return None;
         }
@@ -639,7 +647,12 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
     }
 
     /// Collects the definition opened on line `i` and returns the line after it.
-    fn collect_definition(&mut self, i: usize, scan: &LineScan<'a>, def: DefinitionLine<'a>) -> usize {
+    fn collect_definition(
+        &mut self,
+        i: usize,
+        scan: &LineScan<'a>,
+        def: DefinitionLine<'a>,
+    ) -> usize {
         let stripped = &scan.stripped;
         let in_container = !stripped.structural.is_empty();
         let normalized_label = label_key(def.label);
@@ -795,9 +808,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 note.col_map[0] = None;
             }
             while i < end {
-                note.push_with(lines[i].to_string(), Some(self.first_source_line + i), |_| {
-                    Some(0)
-                });
+                note.push_with(
+                    lines[i].to_string(),
+                    Some(self.first_source_line + i),
+                    |_| Some(0),
+                );
                 i += 1;
             }
             note.push_blank();
@@ -905,7 +920,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         {
             return Some(Flow::Stop);
         }
-        note.push_with(line.to_owned(), Some(self.first_source_line + *i), |_| Some(0));
+        note.push_with(line.to_owned(), Some(self.first_source_line + *i), |_| {
+            Some(0)
+        });
         if is_fence_close(trim_ascii_start(line), open) {
             state.note_fence = None;
             state.retained_below_comment = false;
@@ -1001,14 +1018,12 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             }
         }
         let matched_span_line = matched_span_line || state.below_comment_span.is_some();
-        let kept = if trim_ascii_start(line).starts_with("%%")
-            && !state.open_term
-            && !matched_span_line
-        {
-            trim_ascii_start(line).to_owned()
-        } else {
-            line.to_owned()
-        };
+        let kept =
+            if trim_ascii_start(line).starts_with("%%") && !state.open_term && !matched_span_line {
+                trim_ascii_start(line).to_owned()
+            } else {
+                line.to_owned()
+            };
         note.push_with(kept, Some(self.first_source_line + *i), |kept| {
             stripped_col(Some(0), line, kept)
         });
@@ -1131,7 +1146,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             &mut self.comment_closers,
             &mut self.closer_index,
             self.options,
-            &mut |a, _| is_blank_line(a) || is_plus_marker(a) || parse_footnote_def_line(a).is_some(),
+            &mut |a, _| {
+                is_blank_line(a) || is_plus_marker(a) || parse_footnote_def_line(a).is_some()
+            },
         );
         while *i < end {
             attached.push(slice_columns(lines[*i], column, true));
@@ -1277,9 +1294,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             } else {
                 trimmed
             };
-        note.push_with(trimmed.to_string(), Some(self.first_source_line + *i), |_| {
-            stripped_col(Some(0), line, trimmed)
-        });
+        note.push_with(
+            trimmed.to_string(),
+            Some(self.first_source_line + *i),
+            |_| stripped_col(Some(0), line, trimmed),
+        );
         *i += 1;
         Flow::Next
     }
@@ -1401,10 +1420,12 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             && host.quote_indents.iter().all(|&indent| indent == 0)
             && lines.get(i).is_some_and(|raw| raw.starts_with('>'))
             && lines.get(i).and_then(|raw| host.content(raw)) == Some("+")
-            && self.decision_at(self.first_source_line + i).is_some_and(|decision| {
-                decision.owner == Some(continuation_marker::Kind::Footnote)
-                    && decision.refusal.is_none()
-            });
+            && self
+                .decision_at(self.first_source_line + i)
+                .is_some_and(|decision| {
+                    decision.owner == Some(continuation_marker::Kind::Footnote)
+                        && decision.refusal.is_none()
+                });
         if !applies {
             return i;
         }
@@ -1420,9 +1441,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let count = attached_one_block_lines(CursorLines::Slice(&attached), self.options);
         note.push_blank();
         for (offset, line) in attached.into_iter().take(count).enumerate() {
-            note.push_with(line.to_string(), Some(self.first_source_line + start + offset), |_| {
-                Some((lines[start + offset].chars().count() - line.chars().count()) as isize)
-            });
+            note.push_with(
+                line.to_string(),
+                Some(self.first_source_line + start + offset),
+                |_| Some((lines[start + offset].chars().count() - line.chars().count()) as isize),
+            );
         }
         start + count
     }
@@ -1492,10 +1515,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             && walk.opacity.code.is_none()
             && self.hoist_note_link_def(trim_ascii_start(&dedented), *i)
         {
-            note.push_with(definition_placeholder(), Some(self.first_source_line + *i), |_| {
-                let prefix = raw.chars().count() - line.chars().count();
-                stripped_col(Some(prefix as isize), line, &dedented)
-            });
+            note.push_with(
+                definition_placeholder(),
+                Some(self.first_source_line + *i),
+                |_| {
+                    let prefix = raw.chars().count() - line.chars().count();
+                    stripped_col(Some(prefix as isize), line, &dedented)
+                },
+            );
             *i += 1;
             return Flow::Next;
         }

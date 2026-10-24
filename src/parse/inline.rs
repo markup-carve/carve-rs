@@ -612,7 +612,13 @@ impl InlineSink<'_> {
 
     /// Ends the text run and appends `node` spanning `start..end`, through the
     /// quote frame.
-    fn emit(&mut self, quotes: &quote_state::Frame, mut node: InlineNode, start: usize, end: usize) -> usize {
+    fn emit(
+        &mut self,
+        quotes: &quote_state::Frame,
+        mut node: InlineNode,
+        start: usize,
+        end: usize,
+    ) -> usize {
         self.flush();
         set_inline_node_pos(&mut node, self.pos(start, end));
         quotes.push(&mut self.out, node);
@@ -646,7 +652,10 @@ impl InlineRun<'_, '_> {
         if c == 0 {
             let pos = self.sink.pos(i, i + 1);
             self.sink
-                .push(InlineNode::NonBreakingSpace(NonBreakingSpace { attrs: None, pos }));
+                .push(InlineNode::NonBreakingSpace(NonBreakingSpace {
+                    attrs: None,
+                    pos,
+                }));
             return i + 1;
         }
 
@@ -732,7 +741,10 @@ impl InlineRun<'_, '_> {
         if nxt == b' ' {
             let pos = self.sink.pos(i, i + 2);
             self.sink
-                .push(InlineNode::NonBreakingSpace(NonBreakingSpace { attrs: None, pos }));
+                .push(InlineNode::NonBreakingSpace(NonBreakingSpace {
+                    attrs: None,
+                    pos,
+                }));
             return Some(i + 2);
         }
         if !is_escapable(nxt) {
@@ -773,7 +785,9 @@ impl InlineRun<'_, '_> {
         let bytes = self.bytes;
         if bytes.get(i + 1) != Some(&b'%')
             || decorated_braced_opener(bytes, i)
-            || !self.last_delimited_comment_close.is_some_and(|close| close >= i + 2)
+            || !self
+                .last_delimited_comment_close
+                .is_some_and(|close| close >= i + 2)
         {
             return None;
         }
@@ -850,7 +864,8 @@ impl InlineRun<'_, '_> {
         } else {
             None
         };
-        if let Some((mut raw, raw_consumed)) = parse_raw_inline_after_code(bytes, i, &value, consumed)
+        if let Some((mut raw, raw_consumed)) =
+            parse_raw_inline_after_code(bytes, i, &value, consumed)
         {
             raw.cell_wraps = cell_wraps;
             return Some(self.emit(InlineNode::RawInline(raw), i, raw_consumed));
@@ -885,16 +900,28 @@ impl InlineRun<'_, '_> {
         }
         let (bytes, options, in_footnote) = (self.bytes, self.options, self.in_footnote);
         let (positions, base) = (self.sink.positions, self.sink.base);
-        if let Some((critic, consumed)) =
-            parse_critic_markup(bytes, i, options, in_footnote, &self.bounds, positions, base)
-        {
+        if let Some((critic, consumed)) = parse_critic_markup(
+            bytes,
+            i,
+            options,
+            in_footnote,
+            &self.bounds,
+            positions,
+            base,
+        ) {
             return Some(self.emit(critic, i, consumed));
         }
         // Forced intraword emphasis `{X…X}` — tried before inline attribute
         // blocks, matching the reference scan order.
-        if let Some((node, consumed)) =
-            parse_forced_emphasis(bytes, i, options, in_footnote, &self.bounds, positions, base)
-        {
+        if let Some((node, consumed)) = parse_forced_emphasis(
+            bytes,
+            i,
+            options,
+            in_footnote,
+            &self.bounds,
+            positions,
+            base,
+        ) {
             // A trailing `{...}` attribute block attaches to the forced span,
             // exactly like a bare span (`{*x*}{.c}` -> <strong class="c">x</strong>).
             return Some(self.emit_with_trailing_attrs(node, i, consumed));
@@ -903,7 +930,12 @@ impl InlineRun<'_, '_> {
     }
 
     /// Emits `node` and the attribute block glued to its end, if one parses.
-    fn emit_with_trailing_attrs(&mut self, mut node: InlineNode, i: usize, consumed: usize) -> usize {
+    fn emit_with_trailing_attrs(
+        &mut self,
+        mut node: InlineNode,
+        i: usize,
+        consumed: usize,
+    ) -> usize {
         let mut consumed = consumed;
         if self.bytes.get(i + consumed) == Some(&b'{') {
             if let Some((attrs, next)) =
@@ -1035,11 +1067,16 @@ impl InlineRun<'_, '_> {
 
     fn hash(&mut self, i: usize) -> Option<usize> {
         if self.caption_number_allowed
-            && !self.bytes.get(i + 1).is_some_and(|b| is_attr_ident_part(*b))
+            && !self
+                .bytes
+                .get(i + 1)
+                .is_some_and(|b| is_attr_ident_part(*b))
         {
             let pos = self.sink.pos(i, i + 1);
-            self.sink
-                .push(InlineNode::CaptionNumber(CaptionNumber { number: None, pos }));
+            self.sink.push(InlineNode::CaptionNumber(CaptionNumber {
+                number: None,
+                pos,
+            }));
             self.caption_number_allowed = false;
             return Some(i + 1);
         }

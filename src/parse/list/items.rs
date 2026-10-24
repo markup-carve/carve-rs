@@ -295,7 +295,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     }
 
     fn plus_continuation(&mut self, line: &str) -> ControlFlow<()> {
-        let (base_indent, content_col, options) = (self.base_indent, self.content_col, self.options);
+        let (base_indent, content_col, options) =
+            (self.base_indent, self.content_col, self.options);
         let marker_column = indent_columns(line);
         self.cur.consume();
         self.pending_blank = false;
@@ -482,7 +483,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         self.item_paragraph_open = ParagraphOpen::deferred(move || {
             nested_ends_with_open_paragraph_rebased(&probed, below, below, options)
         });
-        let (nested_children, carried) = self.parse_continuation_chunk(nested, collected_tail_blank);
+        let (nested_children, carried) =
+            self.parse_continuation_chunk(nested, collected_tail_blank);
         place_item_chunk(self.deferred, last_item, nested_children, carried);
         if self.cur.peek().is_some_and(|line| {
             let indent = indent_columns(line);
@@ -542,7 +544,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     }
 
     fn fold_continuation_chunk(&mut self, nested: &mut MappedSource, collected_tail_blank: bool) {
-        let (base_indent, content_col, options) = (self.base_indent, self.content_col, self.options);
+        let (base_indent, content_col, options) =
+            (self.base_indent, self.content_col, self.options);
         if self.item_open_fence.is_some() {
             let mut admitted = nested.clone();
             rebase_overindented_blocks(&mut admitted, false, options);
@@ -763,8 +766,13 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // a second paragraph rather than a continuation of the
         // first: a comment ends the paragraph above it (§10) while
         // leaving its container open.
-        let retained_fence =
-            collect_trailing_lazy_through(self.cur, &mut nested, base_indent, base_indent, content_col);
+        let retained_fence = collect_trailing_lazy_through(
+            self.cur,
+            &mut nested,
+            base_indent,
+            base_indent,
+            content_col,
+        );
         if retained_fence && self.previous_line_blank() {
             self.pending_blank = true;
         }
@@ -774,7 +782,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             self.item_paragraph_open = ParagraphOpen::Known(false);
             if self.cur.peek().is_some_and(|line| {
                 indent_columns(line) < content_col
-                    && !detect_list_marker_full(line).is_some_and(|marker| marker.indent == base_indent)
+                    && !detect_list_marker_full(line)
+                        .is_some_and(|marker| marker.indent == base_indent)
             }) {
                 return END;
             }
@@ -826,7 +835,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     }
 
     fn collect_sublist_chunk(&mut self, sub_indent: usize) -> SublistChunk {
-        let (base_indent, content_col, options) = (self.base_indent, self.content_col, self.options);
+        let (base_indent, content_col, options) =
+            (self.base_indent, self.content_col, self.options);
         let is_ordered = self.is_ordered;
         let cur = &mut *self.cur;
         // Keep the collector's fence boundary when a descendant's body
@@ -936,7 +946,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         sub_indent: usize,
         chunk: SublistChunk,
     ) -> ControlFlow<()> {
-        let (base_indent, content_col, options) = (self.base_indent, self.content_col, self.options);
+        let (base_indent, content_col, options) =
+            (self.base_indent, self.content_col, self.options);
         let SublistChunk {
             nested,
             stopped_fence,
@@ -957,12 +968,13 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             .peek()
             .is_some_and(|line| !is_blank_line(line) && indent_columns(line) < content_col)
         {
-            self.item_paragraph_open = ParagraphOpen::Known(nested_ends_with_open_paragraph_rebased(
-                &nested,
-                last_consumed_line_below_column(self.cur, content_col),
-                last_consumed_line_below_column(self.cur, content_col),
-                options,
-            ));
+            self.item_paragraph_open =
+                ParagraphOpen::Known(nested_ends_with_open_paragraph_rebased(
+                    &nested,
+                    last_consumed_line_below_column(self.cur, content_col),
+                    last_consumed_line_below_column(self.cur, content_col),
+                    options,
+                ));
         }
         let nested_children = item_body_with_layout_suppression(
             self.deferred,
@@ -1157,7 +1169,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     }
 
     fn bare_continuation_item(&mut self, item: ItemOpen<'l>) {
-        let (base_indent, content_col, options) = (self.base_indent, self.content_col, self.options);
+        let (base_indent, content_col, options) =
+            (self.base_indent, self.content_col, self.options);
         self.last_item_bare_continuation = true;
         let cur = &mut *self.cur;
         let mut children = Vec::new();
@@ -1187,7 +1200,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 .peek()
                 .is_some_and(|line| indent_columns(line) == 0 && line_starts_paragraph(line))
         {
-            if let Some(block) = parse_continuation_block(cur, options, base_indent, None, pull_indent)
+            if let Some(block) =
+                parse_continuation_block(cur, options, base_indent, None, pull_indent)
             {
                 children.push(block);
             }
@@ -1200,7 +1214,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     }
 
     fn quote_lead_item(&mut self, item: ItemOpen<'l>) -> ControlFlow<()> {
-        let (base_indent, content_col, options) = (self.base_indent, self.content_col, self.options);
+        let (base_indent, content_col, options) =
+            (self.base_indent, self.content_col, self.options);
         let content = item.marker.content;
         let mut stream = item_marker_source(self.cur, content, item.at);
         let fence_after_quote = self.fence_after_quote();
@@ -1284,7 +1299,14 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // where `- x` / blank / `Body.` went loose - on the same blank line
         // (carve-rs#476).
         stream.authored_base_at_start |= after_blank;
-        let children = item_body(self.deferred, self.items.len(), stream, None, false, options);
+        let children = item_body(
+            self.deferred,
+            self.items.len(),
+            stream,
+            None,
+            false,
+            options,
+        );
         // The item runs from its marker to the last line its body
         // consumed - the bullet is part of the item, unlike the
         // paragraph inside it, which starts at the text.
@@ -1323,7 +1345,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                     open,
                     content_col,
                     |line, _| {
-                        detect_list_marker_full(line).is_some_and(|marker| marker.indent <= base_indent)
+                        detect_list_marker_full(line)
+                            .is_some_and(|marker| marker.indent <= base_indent)
                     },
                 )
             })
@@ -1339,22 +1362,25 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         innermost: &str,
         item_at: usize,
     ) -> bool {
-        let (base_indent, content_col, options) = (self.base_indent, self.content_col, self.options);
+        let (base_indent, content_col, options) =
+            (self.base_indent, self.content_col, self.options);
         let cur = &mut *self.cur;
         let start = cur.pos;
-        let end = attached_indented_block_end(cur.lines, start, content_col, options).unwrap_or_else(|| {
-            attached_block_lines_classified(
-                cur.lines,
-                start,
-                &mut cur.comment_closer_last_index,
-                &mut cur.code_closer_last_index,
-                options,
-                &mut |line, at| {
-                    at > start
-                        && detect_list_marker_full(line).is_some_and(|marker| marker.indent <= base_indent)
-                },
-            )
-        });
+        let end = attached_indented_block_end(cur.lines, start, content_col, options)
+            .unwrap_or_else(|| {
+                attached_block_lines_classified(
+                    cur.lines,
+                    start,
+                    &mut cur.comment_closer_last_index,
+                    &mut cur.code_closer_last_index,
+                    options,
+                    &mut |line, at| {
+                        at > start
+                            && detect_list_marker_full(line)
+                                .is_some_and(|marker| marker.indent <= base_indent)
+                    },
+                )
+            });
         // A quote follower at an eligible raw column opens a block in the
         // innermost quote, which owns the `+` (`- > > +` / `> q` nests three
         // deep, carve#3421): it takes the `+` line's place behind its prefix.
@@ -1505,12 +1531,20 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             content_col,
             options,
         ));
-        let children = item_body(self.deferred, self.items.len(), stream, None, false, options);
+        let children = item_body(
+            self.deferred,
+            self.items.len(),
+            stream,
+            None,
+            false,
+            options,
+        );
         self.push_item(item, children);
     }
 
     fn sublist_lead_item(&mut self, item: ItemOpen<'l>) -> ControlFlow<()> {
-        let (base_indent, content_col, options) = (self.base_indent, self.content_col, self.options);
+        let (base_indent, content_col, options) =
+            (self.base_indent, self.content_col, self.options);
         let content = item.marker.content;
         let item_at = item.at;
         // The marker line can open more than one item (`* * u`). Once a
@@ -1532,12 +1566,13 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         let nested_definition_ended_paragraph =
             is_collected_definition_placeholder(innermost_content);
         let mut stream = item_marker_source(self.cur, content, item_at);
-        stream.marker_tail = NonZeroUsize::new(content.len() - innermost_content.len()).map(
-            |content_offset| MarkerTail {
-                content_offset,
-                column: tail_col,
-            },
-        );
+        stream.marker_tail =
+            NonZeroUsize::new(content.len() - innermost_content.len()).map(|content_offset| {
+                MarkerTail {
+                    content_offset,
+                    column: tail_col,
+                }
+            });
         // A fence on the nested marker line keeps only lines that reach
         // its host. A flush-left line supplies neither item's content
         // column, so the nested parse must not receive it as lazy payload
@@ -1641,7 +1676,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         stream: &mut MappedSource,
         lead: &MarkerSublist<'l>,
     ) -> Option<bool> {
-        let (base_indent, content_col, options) = (self.base_indent, self.content_col, self.options);
+        let (base_indent, content_col, options) =
+            (self.base_indent, self.content_col, self.options);
         let nested_content_col = lead.nested_content_col;
         let cur = &mut *self.cur;
         let below_fence = cur
@@ -1657,7 +1693,11 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             return None;
         }
         let line = cur.peek().unwrap();
-        stream.push_newline_at(line.to_string(), cur.source_line(cur.pos), cur.source_col(cur.pos));
+        stream.push_newline_at(
+            line.to_string(),
+            cur.source_line(cur.pos),
+            cur.source_col(cur.pos),
+        );
         cur.consume();
         if let Some(run) = below_fence {
             append_comment_span_through_closer(cur, stream, run, false);
@@ -1670,7 +1710,12 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             nested_content_col,
         );
         let before_block = cur.pos;
-        stream.append(collect_indented_block_mapped(cur, content_col - 1, content_col, options));
+        stream.append(collect_indented_block_mapped(
+            cur,
+            content_col - 1,
+            content_col,
+            options,
+        ));
         Some(cur.pos > before_block && is_blank_line(cur.lines.at(cur.pos - 1)))
     }
 
@@ -1681,7 +1726,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         stream: &mut MappedSource,
         lead: &MarkerSublist<'l>,
     ) -> Option<bool> {
-        let (base_indent, content_col, options) = (self.base_indent, self.content_col, self.options);
+        let (base_indent, content_col, options) =
+            (self.base_indent, self.content_col, self.options);
         let nested_content_col = lead.nested_content_col;
         let bare_continuation = self.last_item_bare_continuation;
         let cur = &mut *self.cur;
@@ -1824,7 +1870,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     }
 
     fn block_lead_item(&mut self, item: ItemOpen<'l>) -> ControlFlow<()> {
-        let (base_indent, content_col, options) = (self.base_indent, self.content_col, self.options);
+        let (base_indent, content_col, options) =
+            (self.base_indent, self.content_col, self.options);
         let content = item.marker.content;
         let item_at = item.at;
         let mut stream = item_marker_source(self.cur, content, item_at);
@@ -1861,7 +1908,12 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             &mut self.item_open_fence,
             options,
         ));
-        let lead = self.block_lead_state(&stream, content, before_block, marker_block_leaves_content_open);
+        let lead = self.block_lead_state(
+            &stream,
+            content,
+            before_block,
+            marker_block_leaves_content_open,
+        );
         // NOT WHILE THE FENCE IS STILL OPEN, as the continuation branch
         // above already has it. A fenced body is verbatim and holds no
         // paragraph, so there is nothing below the content column for the
@@ -1889,7 +1941,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 .any(is_blank_line);
         // A heading, a fence or a table on the marker line leaves the item
         // holding no paragraph - see `item_paragraph_open`.
-        self.item_paragraph_open = if lead.literal_comment_handoff || lead.definition_comment_handoff
+        self.item_paragraph_open = if lead.literal_comment_handoff
+            || lead.definition_comment_handoff
         {
             ParagraphOpen::Known(false)
         } else {
@@ -1995,21 +2048,20 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     }
 
     fn fold_block_lead(&mut self, stream: &mut MappedSource, lead: &BlockLead) {
-        let (base_indent, content_col, options) = (self.base_indent, self.content_col, self.options);
+        let (base_indent, content_col, options) =
+            (self.base_indent, self.content_col, self.options);
         // IN THE BAND, not only at column 0. The floor above hands the
         // band line to this fold instead of collecting it blind, and the
         // fold is the thing that asks S4's question - so it has to be
         // able to see a line the raised floor left behind (#2120).
         // A marker-line colon container that has closed stops the
         // collector at a band line, so the fold has to reach it.
-        let (lazy_column, list_base) = if lead.leaves_content_open
-            && !lead.marker_colon_closed
-            && !lead.marker_colon_open
-        {
-            (0, 0)
-        } else {
-            (content_col.saturating_sub(1), base_indent)
-        };
+        let (lazy_column, list_base) =
+            if lead.leaves_content_open && !lead.marker_colon_closed && !lead.marker_colon_open {
+                (0, 0)
+            } else {
+                (content_col.saturating_sub(1), base_indent)
+            };
         let refuses_fold = lead.swallowed_blank_separator
             || lead.literal_comment_handoff
             || lead.definition_comment_handoff;
@@ -2099,7 +2151,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             return false;
         }
         if let Some(fence_len) = lead.literal_colon_opener {
-            if indent_columns(next) <= base_indent && exact_colon_fence_len(next) == Some(fence_len) {
+            if indent_columns(next) <= base_indent && exact_colon_fence_len(next) == Some(fence_len)
+            {
                 return false;
             }
         }
@@ -2135,7 +2188,12 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         self.lead_line_at_column(lead, next, indent)
     }
 
-    fn lead_line_below_column(&mut self, lead: &mut LeadParagraph, next: &str, indent: usize) -> bool {
+    fn lead_line_below_column(
+        &mut self,
+        lead: &mut LeadParagraph,
+        next: &str,
+        indent: usize,
+    ) -> bool {
         let base_indent = self.base_indent;
         // A closed run at an ancestor's column interrupts this child.
         // Its host is the ancestor, so only a closer at a column that
@@ -2168,7 +2226,12 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         true
     }
 
-    fn lead_line_over_indented(&mut self, lead: &mut LeadParagraph, next: &str, indent: usize) -> bool {
+    fn lead_line_over_indented(
+        &mut self,
+        lead: &mut LeadParagraph,
+        next: &str,
+        indent: usize,
+    ) -> bool {
         let (base_indent, content_col) = (self.base_indent, self.content_col);
         // A recognized block opener may be authored past the canonical
         // content column: that visual column becomes its temporary
@@ -2239,7 +2302,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 self.cur.lines.range(self.cur.pos + 1..self.cur.lines.len()),
                 open,
                 content_col,
-                |line, _| detect_list_marker_full(line).is_some_and(|marker| marker.indent <= base_indent),
+                |line, _| {
+                    detect_list_marker_full(line).is_some_and(|marker| marker.indent <= base_indent)
+                },
             )
         });
         let interrupts = (wrapped_attr_interrupts
@@ -2327,7 +2392,12 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
 
 /// The column the marker line's quote opens at: past a task's checkbox, and
 /// never before the item's content column.
-fn quote_lead_column(cur: &LineCursor<'_>, content: &str, item_at: usize, content_col: usize) -> usize {
+fn quote_lead_column(
+    cur: &LineCursor<'_>,
+    content: &str,
+    item_at: usize,
+    content_col: usize,
+) -> usize {
     cur.lines.line(item_at).map_or(content_col, |lead| {
         let offset = (content.as_ptr() as usize).saturating_sub(lead.as_ptr() as usize);
         lead.get(..offset)

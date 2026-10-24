@@ -649,11 +649,15 @@ impl<'a, 't, 'o> BodyRebase<'a, 't, 'o> {
     }
 
     fn below_descendant(&self, base: usize) -> bool {
-        self.nested_columns.last().is_some_and(|column| base < *column)
+        self.nested_columns
+            .last()
+            .is_some_and(|column| base < *column)
     }
 
     fn within_descendant(&self, base: usize) -> bool {
-        self.nested_columns.last().is_some_and(|column| base >= *column)
+        self.nested_columns
+            .last()
+            .is_some_and(|column| base >= *column)
     }
 
     fn comment_closers(&self) -> &HashMap<usize, Vec<usize>> {
@@ -1004,9 +1008,9 @@ impl<'a, 't, 'o> BodyRebase<'a, 't, 'o> {
     fn list_marker_opener(&mut self, base: usize) -> bool {
         let i = self.i;
         let include_sublists = self.mode.include_sublists;
-        let Some(column) = marker_content_col_at(&self.lines[i], base)
-            .filter(|_| !(self.mode.absorbed_note_marker && self.paragraph_open && !self.after_blank))
-        else {
+        let Some(column) = marker_content_col_at(&self.lines[i], base).filter(|_| {
+            !(self.mode.absorbed_note_marker && self.paragraph_open && !self.after_blank)
+        }) else {
             return false;
         };
         if include_sublists && base != 0 && self.nested_columns.is_empty() {
@@ -1236,8 +1240,8 @@ impl<'a, 't, 'o> BodyRebase<'a, 't, 'o> {
         if self.skip_colon_line_block(walk, base, owned_by_item) {
             return false;
         }
-        if let Some(open) =
-            detect_fence_open(trim_ascii_start(&self.lines[i])).filter(|_| base == 0 || owned_by_item)
+        if let Some(open) = detect_fence_open(trim_ascii_start(&self.lines[i]))
+            .filter(|_| base == 0 || owned_by_item)
         {
             walk.code = Some((open, base));
             self.i += 1;
@@ -1423,7 +1427,11 @@ impl<'a, 't, 'o> BodyRebase<'a, 't, 'o> {
         true
     }
 
-    fn open_colon_comment(&mut self, walk: &mut ColonGroupWalk, comment_is_body_owned: bool) -> bool {
+    fn open_colon_comment(
+        &mut self,
+        walk: &mut ColonGroupWalk,
+        comment_is_body_owned: bool,
+    ) -> bool {
         let i = self.i;
         let Some(open) = detect_comment_fence_line(trim_ascii_start(&self.lines[i])) else {
             return false;
@@ -1687,7 +1695,11 @@ fn rebase_authored_line(
         }
         return;
     }
-    if last && kind.code.is_some_and(|open| is_fence_close(strip_lazy(line), open)) {
+    if last
+        && kind
+            .code
+            .is_some_and(|open| is_fence_close(strip_lazy(line), open))
+    {
         *line = Cow::Owned(strip_lazy(line).to_string());
         return;
     }

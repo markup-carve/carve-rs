@@ -864,9 +864,10 @@ impl<'a, 'o> TermScan<'a, 'o> {
                 self.admitted_term_host = Some((base, floor, depth));
             }
         }
-        if self.admitted_term_host.is_some_and(|(base, floor, _)| {
-            col < base || (col < floor && !is_list_marker(rest))
-        }) {
+        if self
+            .admitted_term_host
+            .is_some_and(|(base, floor, _)| col < base || (col < floor && !is_list_marker(rest)))
+        {
             self.admitted_term_host = None;
         }
     }
@@ -1108,11 +1109,14 @@ impl<'a, 'o> TermScan<'a, 'o> {
                 frame.first_list_start = None;
             }
         }
-        if self.admitted_term_host.is_some_and(|(_, floor, host_depth)| {
-            depth != host_depth
-                || strip_term_quote_prefixes(line, &self.admitted_host_quote_columns).is_none()
-                || (!is_blank_line(line) && indent_columns(body) < floor)
-        }) {
+        if self
+            .admitted_term_host
+            .is_some_and(|(_, floor, host_depth)| {
+                depth != host_depth
+                    || strip_term_quote_prefixes(line, &self.admitted_host_quote_columns).is_none()
+                    || (!is_blank_line(line) && indent_columns(body) < floor)
+            })
+        {
             self.admitted_term_host = None;
         }
     }

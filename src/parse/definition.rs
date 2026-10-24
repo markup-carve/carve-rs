@@ -946,8 +946,8 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
     fn adopt_paragraph_owner(&mut self, local: &str, column: usize) {
         self.paragraph_owner_is_item = is_list_marker(local);
         self.owner_item_opens_block = self.lines.last().is_some_and(|prior| is_blank_line(prior));
-        self.paragraph_column = paragraph_owner_column(local, column)
-            .filter(|owner| *owner > self.content_column);
+        self.paragraph_column =
+            paragraph_owner_column(local, column).filter(|owner| *owner > self.content_column);
         self.paragraph_marker_column = is_list_marker(local).then_some(column);
     }
 
@@ -1117,7 +1117,10 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             && paragraph_open
             && !(self.nested_definition_open
                 && self.lines.last().is_some_and(|line| is_plus_marker(line)))
-            && !self.lines.last().is_some_and(|line| quote_opens_with_plus(line))
+            && !self
+                .lines
+                .last()
+                .is_some_and(|line| quote_opens_with_plus(line))
         {
             // The blank is MANUFACTURED, so it stands for no source
             // line and takes no column. Pushing the sliced line's own
@@ -1140,7 +1143,9 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         if past_body_fence_without_closer {
             self.unopened_past_fence = detect_fence_open(trim_ascii_start(&sliced));
             sliced = format!("{LAZY}{}", trim_ascii_start(&sliced));
-        } else if !accept_fence_opener && fence.open.is_none() && detect_fence_open(&sliced).is_some()
+        } else if !accept_fence_opener
+            && fence.open.is_none()
+            && detect_fence_open(&sliced).is_some()
         {
             sliced.insert_str(0, LAZY);
         }
@@ -1196,7 +1201,11 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         !self.descendant_block_ended
             && match self.lines.last() {
                 Some(last) => !is_blank_line(last),
-                None => self.seed.lines().last().is_some_and(|line| !is_blank_line(line)),
+                None => self
+                    .seed
+                    .lines()
+                    .last()
+                    .is_some_and(|line| !is_blank_line(line)),
             }
     }
 
@@ -1317,7 +1326,12 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             let col = cur
                 .source_col(cur.pos)
                 .map(|col| col + leading_ws(next) as isize);
-            self.push(trim_ascii_start(next).to_owned(), cur.source_line(cur.pos), col, true);
+            self.push(
+                trim_ascii_start(next).to_owned(),
+                cur.source_line(cur.pos),
+                col,
+                true,
+            );
             cur.consume();
         }
     }
@@ -1341,7 +1355,12 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             probe.extend(self.lines.iter().map(String::as_str));
             if closes_a_held_comment_span(&probe, line) {
                 let col = cur.source_col(cur.pos);
-                self.push(kept_comment_delimiter(line), cur.source_line(cur.pos), col, false);
+                self.push(
+                    kept_comment_delimiter(line),
+                    cur.source_line(cur.pos),
+                    col,
+                    false,
+                );
                 cur.consume();
                 return BodyStep::Next;
             }
@@ -1430,8 +1449,9 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         // the one that ejected them: the interrupt test below never got the
         // line.
         let opener = trim_ascii_start(line);
-        let closes_unopened_past_fence =
-            self.unopened_past_fence.is_some_and(|open| is_fence_close(opener, open));
+        let closes_unopened_past_fence = self
+            .unopened_past_fence
+            .is_some_and(|open| is_fence_close(opener, open));
         let fold_below_column_opener =
             self.folds_below_column_opener(cur, opener, indent, closes_unopened_past_fence);
         if self.opener_ends_body(cur, line, indent, fold_below_column_opener) {
@@ -1620,11 +1640,13 @@ fn authored_below_body(cur: &LineCursor<'_>, indent: usize) -> bool {
         (0..cur.pos)
             .rev()
             .find_map(|at| {
-                strip_definition_marker(trim_ascii_start(cur.lines.at(at))).and_then(|(_, width)| {
-                    cur.source_col(at).map(|base| {
-                        base + indent_columns(cur.lines.at(at)) as isize + width as isize
-                    })
-                })
+                strip_definition_marker(trim_ascii_start(cur.lines.at(at))).and_then(
+                    |(_, width)| {
+                        cur.source_col(at).map(|base| {
+                            base + indent_columns(cur.lines.at(at)) as isize + width as isize
+                        })
+                    },
+                )
             })
             .is_some_and(|body_col| comment_col + (indent as isize) < body_col)
     })
