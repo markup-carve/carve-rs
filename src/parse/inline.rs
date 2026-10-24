@@ -368,7 +368,7 @@ pub(in crate::parse) fn parse_inline_context(
 pub(in crate::parse) fn parse_inline_context_with_pairs(
     text: &str,
     options: &Options<'_>,
-    mut caption_number_allowed: bool,
+    caption_number_allowed: bool,
     in_footnote: bool,
     positions: Option<&InlinePositionMap<'_>>,
     base: usize,
@@ -384,43 +384,10 @@ pub(in crate::parse) fn parse_inline_context_with_pairs(
         return vec![InlineNode::text(text.to_string())];
     };
     let _kinds = kinds;
-    let bytes = text.as_bytes();
-    if options.extensions.is_empty()
-        && !bytes.is_empty()
-        && bytes.len() <= 64
-        && {
-            // Keep the ASCII check cheap. Only a Unicode byte needs the
-            // character scan for letters and combining marks.
-            match bytes
-                .iter()
-                .find(|&&b| !(b.is_ascii_alphanumeric() || b == b' '))
-            {
-                None => true,
-                Some(&b) if !b.is_ascii() => text.chars().all(|c| {
-                    c.is_alphanumeric()
-                        || c == ' '
-                        || unicode_normalization::char::is_combining_mark(c)
-                }),
-                _ => false,
-            }
-        }
-        && (!bytes.contains(&b' ') || CELL_WRAPS.with(|wraps| wraps.borrow().is_empty()))
-    {
-        let mapped = positions
-            .and_then(|map| map.unmapped_prefix.as_ref())
-            .map_or(true, |prefix| {
-                prefix
-                    .get(base)
-                    .zip(prefix.get(base + bytes.len()))
-                    .is_some_and(|(start, end)| start == end)
-            });
-        return vec![InlineNode::Text(Text {
-            value: text.to_string(),
-            pos: mapped
-                .then(|| inline_pos(positions, base, base + bytes.len()))
-                .flatten(),
-        })];
+    if let Some(plain) = plain_inline_text(text, options, positions, base) {
+        return plain;
     }
+    let bytes = text.as_bytes();
     // A `[` only opens an inline link, reference link, or span when a `](`,
     // `][`, or `]{` follows (there is no bare shortcut-reference form). If none
     // occur, those attempts -- each an O(n) bracket scan -- can be skipped, so a
@@ -443,6 +410,106 @@ pub(in crate::parse) fn parse_inline_context_with_pairs(
         (Vec::new(), Vec::new())
     };
     let bracket_openers = compute_bracket_openers(&bracket_matches);
+    let mut run = InlineRun {
+        text,
+        bytes,
+        options,
+        in_footnote,
+        caption_number_allowed,
+        has_link_trigger,
+        wraps_live: CELL_WRAPS.with(|wraps| !wraps.borrow().is_empty()),
+        last_delimited_comment_close: bytes.windows(2).rposition(|w| w == b"%}"),
+        bounds: inline_bounds(
+            text,
+            has_brackets,
+            &bracket_matches,
+            &bracket_openers,
+            &bracket_run_at,
+            pairs,
+        ),
+        quotes: &quotes,
+        citation_brackets: std::cell::OnceCell::new(),
+        // Keeps `_a](`×n / `*a](`×n linear. See cached_find_emphasis_close.
+        emphasis_no_close: EmphasisMemo::default(),
+        attribute_target: None,
+        attribute_slots: None,
+        sink: InlineSink {
+            out: Vec::with_capacity(4),
+            buf: String::with_capacity(text.len()),
+            buf_start: None,
+            buf_placeable: true,
+            buf_src_delta: 0,
+            positions,
+            base,
+        },
+    };
+    let mut i = 0;
+    while i < bytes.len() {
+        i = run.step(i);
+    }
+    run.sink.flush();
+    quotes.finish(&mut run.sink.out);
+    run.sink.out
+}
+
+/// The whole result for a short run of letters, digits and spaces that no
+/// construct can claim, or `None` when the text needs the full scan.
+fn plain_inline_text(
+    text: &str,
+    options: &Options<'_>,
+    positions: Option<&InlinePositionMap<'_>>,
+    base: usize,
+) -> Option<Vec<InlineNode>> {
+    let bytes = text.as_bytes();
+    if !(options.extensions.is_empty()
+        && !bytes.is_empty()
+        && bytes.len() <= 64
+        && {
+            // Keep the ASCII check cheap. Only a Unicode byte needs the
+            // character scan for letters and combining marks.
+            match bytes
+                .iter()
+                .find(|&&b| !(b.is_ascii_alphanumeric() || b == b' '))
+            {
+                None => true,
+                Some(&b) if !b.is_ascii() => text.chars().all(|c| {
+                    c.is_alphanumeric()
+                        || c == ' '
+                        || unicode_normalization::char::is_combining_mark(c)
+                }),
+                _ => false,
+            }
+        }
+        && (!bytes.contains(&b' ') || CELL_WRAPS.with(|wraps| wraps.borrow().is_empty())))
+    {
+        return None;
+    }
+    let mapped = positions
+        .and_then(|map| map.unmapped_prefix.as_ref())
+        .map_or(true, |prefix| {
+            prefix
+                .get(base)
+                .zip(prefix.get(base + bytes.len()))
+                .is_some_and(|(start, end)| start == end)
+        });
+    Some(vec![InlineNode::Text(Text {
+        value: text.to_string(),
+        pos: mapped
+            .then(|| inline_pos(positions, base, base + bytes.len()))
+            .flatten(),
+    })])
+}
+
+/// Closer bounds for one inline run; see `InlineBounds`.
+fn inline_bounds<'a>(
+    text: &str,
+    has_brackets: bool,
+    matches: &'a [usize],
+    openers: &'a [usize],
+    run_at: &'a [usize],
+    pairs: Option<NativeBracedView>,
+) -> InlineBounds<'a> {
+    let bytes = text.as_bytes();
     // Last-occurrence positions of each mandatory closer, precomputed once so the
     // per-position scanners short-circuit in O(1) when their closer cannot lie
     // ahead (see InlineBounds). Each is gated on a cheap presence check; a
@@ -469,7 +536,6 @@ pub(in crate::parse) fn parse_inline_context_with_pairs(
     } else {
         None
     };
-    let last_delimited_comment_close = bytes.windows(2).rposition(|w| w == b"%}");
     // For each tracked `X}` pair (`+} -} ~} #}` for critic, plus the forced-
     // emphasis delimiters), record the leading byte's LAST position. Built only
     // when a `}` exists at all, since every such pair ends in `}`.
@@ -487,10 +553,10 @@ pub(in crate::parse) fn parse_inline_context_with_pairs(
     // and `openers` needs a `](`, `][`, `]{` or `![` at the position it examines,
     // and `comment_needs_run_end` only fires where `has_brackets` found none of
     // those anywhere in the text.
-    let bounds = InlineBounds {
-        matches: &bracket_matches,
-        openers: &bracket_openers,
-        run_at: &bracket_run_at,
+    InlineBounds {
+        matches,
+        openers,
+        run_at,
         last_close_paren,
         last_close_brace,
         last_close_bracket,
@@ -499,430 +565,416 @@ pub(in crate::parse) fn parse_inline_context_with_pairs(
         delim_brace,
         braced_closers: RefCell::new(None),
         native_pairs: pairs,
-    };
-    let citation_brackets = std::cell::OnceCell::new();
-    // Keeps `_a](`×n / `*a](`×n linear. See cached_find_emphasis_close.
-    let mut emphasis_no_close = EmphasisMemo::default();
-    let mut out = Vec::with_capacity(4);
-    let mut attribute_target = None;
-    let mut attribute_slots = None;
-    let mut buf = String::with_capacity(text.len());
-    let mut buf_start: Option<usize> = None;
-    let mut buf_placeable = true;
-    let mut buf_src_delta: isize = 0;
-    let wraps_live = CELL_WRAPS.with(|wraps| !wraps.borrow().is_empty());
-    let mut i = 0;
-    while i < bytes.len() {
-        let c = bytes[i];
+    }
+}
+
+/// The nodes emitted so far, plus the literal text buffered since the last one.
+struct InlineSink<'a> {
+    out: Vec<InlineNode>,
+    buf: String,
+    buf_start: Option<usize>,
+    buf_placeable: bool,
+    buf_src_delta: isize,
+    positions: Option<&'a InlinePositionMap<'a>>,
+    base: usize,
+}
+
+impl InlineSink<'_> {
+    fn flush(&mut self) {
+        flush_text(
+            &mut self.out,
+            &mut self.buf,
+            self.positions,
+            self.base,
+            &mut self.buf_start,
+            &mut self.buf_placeable,
+            &mut self.buf_src_delta,
+        );
+    }
+
+    fn pos(&self, start: usize, end: usize) -> Option<Pos> {
+        inline_pos(self.positions, self.base + start, self.base + end)
+    }
+
+    /// Appends source text to the buffer, starting it at `start` if empty.
+    fn buffer(&mut self, start: usize, source: &str) {
+        if self.buf_start.is_none() {
+            self.buf_start = Some(start);
+        }
+        self.buf.push_str(source);
+    }
+
+    /// Ends the text run and appends `node` as is.
+    fn push(&mut self, node: InlineNode) {
+        self.flush();
+        self.out.push(node);
+    }
+
+    /// Ends the text run and appends `node` spanning `start..end`, through the
+    /// quote frame.
+    fn emit(&mut self, quotes: &quote_state::Frame, mut node: InlineNode, start: usize, end: usize) -> usize {
+        self.flush();
+        set_inline_node_pos(&mut node, self.pos(start, end));
+        quotes.push(&mut self.out, node);
+        end
+    }
+}
+
+/// Scan state for one call of `parse_inline_context_with_pairs`.
+struct InlineRun<'a, 'o> {
+    text: &'a str,
+    bytes: &'a [u8],
+    options: &'a Options<'o>,
+    in_footnote: bool,
+    caption_number_allowed: bool,
+    has_link_trigger: bool,
+    wraps_live: bool,
+    last_delimited_comment_close: Option<usize>,
+    bounds: InlineBounds<'a>,
+    quotes: &'a quote_state::Frame,
+    citation_brackets: std::cell::OnceCell<HashMap<usize, usize>>,
+    emphasis_no_close: EmphasisMemo,
+    attribute_target: Option<usize>,
+    attribute_slots: Option<HashSet<AttrSlot>>,
+    sink: InlineSink<'a>,
+}
+
+impl InlineRun<'_, '_> {
+    /// Consumes whatever starts at `i` and returns the next scan position.
+    fn step(&mut self, i: usize) -> usize {
+        let c = self.bytes[i];
         if c == 0 {
-            flush_text(
-                &mut out,
-                &mut buf,
-                positions,
-                base,
-                &mut buf_start,
-                &mut buf_placeable,
-                &mut buf_src_delta,
-            );
-            out.push(InlineNode::NonBreakingSpace(NonBreakingSpace {
-                attrs: None,
-                pos: inline_pos(positions, base + i, base + i + 1),
-            }));
-            i += 1;
-            continue;
+            let pos = self.sink.pos(i, i + 1);
+            self.sink
+                .push(InlineNode::NonBreakingSpace(NonBreakingSpace { attrs: None, pos }));
+            return i + 1;
         }
 
         // With no extension matcher able to claim an arbitrary byte, runs of
         // ASCII prose cannot open any core inline construct. Append the whole
         // run at once instead of sending every letter and space through all of
         // the delimiter, link, typography and footnote dispatch below.
-        if c == b' ' && wraps_live {
-            if let Some(wrap) = cell_wrap_at(base + i) {
-                flush_text(
-                    &mut out,
-                    &mut buf,
-                    positions,
-                    base,
-                    &mut buf_start,
-                    &mut buf_placeable,
-                    &mut buf_src_delta,
-                );
-                out.push(InlineNode::CellWrap(wrap));
-                i += 1;
-                continue;
+        if c == b' ' && self.wraps_live {
+            if let Some(wrap) = cell_wrap_at(self.sink.base + i) {
+                self.sink.push(InlineNode::CellWrap(wrap));
+                return i + 1;
             }
         }
-        if options.extensions.is_empty() && (c.is_ascii_alphanumeric() || c == b' ' || c == b'\t') {
-            let start = i;
-            i += 1;
-            while i < bytes.len()
-                && (bytes[i].is_ascii_alphanumeric()
-                    || bytes[i] == b'\t'
-                    || (bytes[i] == b' ' && !(wraps_live && cell_wrap_at(base + i).is_some())))
-            {
-                i += 1;
-            }
-            if buf_start.is_none() {
-                buf_start = Some(start);
-            }
-            buf.push_str(&text[start..i]);
-            continue;
+        if self.options.extensions.is_empty()
+            && (c.is_ascii_alphanumeric() || c == b' ' || c == b'\t')
+        {
+            return self.prose_run(i);
         }
+        if let Some(next) = self.delimited_construct(c, i) {
+            return next;
+        }
+        if let Some(next) = self.open_construct(c, i) {
+            return next;
+        }
+        let ch = self.text[i..].chars().next().unwrap();
+        let end = i + ch.len_utf8();
+        self.sink.buffer(i, &self.text[i..end]);
+        end
+    }
 
+    fn prose_run(&mut self, start: usize) -> usize {
+        let bytes = self.bytes;
+        let mut i = start + 1;
+        while i < bytes.len()
+            && (bytes[i].is_ascii_alphanumeric()
+                || bytes[i] == b'\t'
+                || (bytes[i] == b' '
+                    && !(self.wraps_live && cell_wrap_at(self.sink.base + i).is_some())))
+        {
+            i += 1;
+        }
+        self.sink.buffer(start, &self.text[start..i]);
+        i
+    }
+
+    /// Constructs that only a specific opening byte can start.
+    fn delimited_construct(&mut self, c: u8, i: usize) -> Option<usize> {
+        match c {
+            b'\\' => self.escape(i),
+            b'%' => self.trailing_comment(i),
+            b'`' => self.code_span(i),
+            b'$' => self.math(i),
+            b'{' => self.brace(i),
+            b'!' => self.bang(i),
+            b'[' => self.bracket(i),
+            b'<' => self.angle(i),
+            b'@' => {
+                let (mention, consumed) = parse_mention(self.text, i)?;
+                Some(self.emit(InlineNode::Mention(mention), i, consumed))
+            }
+            b'#' => self.hash(i),
+            b':' => self.colon(i),
+            _ => None,
+        }
+    }
+
+    fn emit(&mut self, node: InlineNode, i: usize, consumed: usize) -> usize {
+        self.sink.emit(self.quotes, node, i, i + consumed)
+    }
+
+    fn escape(&mut self, i: usize) -> Option<usize> {
+        let bytes = self.bytes;
         // Backslash escapes
         // A backslash at the very end of the content (no following byte) is a
         // hard break, mirroring the `\`-before-newline rule at end of input
         // (`para\` at EOF -> `<br>`), matching djot and the cheatsheet.
-        if c == b'\\' && i + 1 >= bytes.len() {
-            flush_text(
-                &mut out,
-                &mut buf,
-                positions,
-                base,
-                &mut buf_start,
-                &mut buf_placeable,
-                &mut buf_src_delta,
-            );
-            out.push(InlineNode::HardBreak(Break {
-                pos: inline_pos(positions, base + i, base + i + 1),
-            }));
-            i += 1;
-            continue;
+        if i + 1 >= bytes.len() {
+            let pos = self.sink.pos(i, i + 1);
+            self.sink.push(InlineNode::HardBreak(Break { pos }));
+            return Some(i + 1);
         }
-        if c == b'\\' && i + 1 < bytes.len() {
-            let nxt = bytes[i + 1];
-            if nxt == b' ' {
-                flush_text(
-                    &mut out,
-                    &mut buf,
-                    positions,
-                    base,
-                    &mut buf_start,
-                    &mut buf_placeable,
-                    &mut buf_src_delta,
-                );
-                out.push(InlineNode::NonBreakingSpace(NonBreakingSpace {
-                    attrs: None,
-                    pos: inline_pos(positions, base + i, base + i + 2),
+        let nxt = bytes[i + 1];
+        if nxt == b' ' {
+            let pos = self.sink.pos(i, i + 2);
+            self.sink
+                .push(InlineNode::NonBreakingSpace(NonBreakingSpace { attrs: None, pos }));
+            return Some(i + 2);
+        }
+        if !is_escapable(nxt) {
+            return None;
+        }
+        // The escape is its own node: the backslash carries intent the
+        // literal character does not (carve issue 350). The caret keeps
+        // its placeholder inside the node's value, so the checks that
+        // stop `\^` being read as a caption marker still see it.
+        let pos = self.sink.pos(i, i + 2);
+        self.sink.push(InlineNode::EscapedText(EscapedText {
+            // The CHARACTER, not a marker standing in for it. PART 12
+            // section 1 requires mapping internals on the way out, and
+            // the node type already carries the only thing the marker
+            // was distinguishing: an `escaped_text` node IS an escape,
+            // so the writer emits a backslash plus this value without
+            // needing the value to say so again (carve-rs#408).
+            value: (nxt as char).to_string(),
+            pos,
+        }));
+        if nxt == b'<' {
+            if let Some(end) = crossref_close(bytes, i + 1, &self.bounds).map(|close| close + 1) {
+                let pos = self.sink.pos(i + 2, end);
+                self.sink.out.push(InlineNode::Text(Text {
+                    value: self.text[i + 2..end].to_string(),
+                    pos,
                 }));
-                i += 2;
-                continue;
-            }
-            if is_escapable(nxt) {
-                // The escape is its own node: the backslash carries intent the
-                // literal character does not (carve issue 350). The caret keeps
-                // its placeholder inside the node's value, so the checks that
-                // stop `\^` being read as a caption marker still see it.
-                flush_text(
-                    &mut out,
-                    &mut buf,
-                    positions,
-                    base,
-                    &mut buf_start,
-                    &mut buf_placeable,
-                    &mut buf_src_delta,
-                );
-                out.push(InlineNode::EscapedText(EscapedText {
-                    // The CHARACTER, not a marker standing in for it. PART 12
-                    // section 1 requires mapping internals on the way out, and
-                    // the node type already carries the only thing the marker
-                    // was distinguishing: an `escaped_text` node IS an escape,
-                    // so the writer emits a backslash plus this value without
-                    // needing the value to say so again (carve-rs#408).
-                    value: (nxt as char).to_string(),
-                    pos: inline_pos(positions, base + i, base + i + 2),
-                }));
-                if nxt == b'<' {
-                    if let Some(end) = crossref_close(bytes, i + 1, &bounds).map(|close| close + 1)
-                    {
-                        out.push(InlineNode::Text(Text {
-                            value: text[i + 2..end].to_string(),
-                            pos: inline_pos(positions, base + i + 2, base + end),
-                        }));
-                        i = end;
-                        continue;
-                    }
-                }
-                i += 2;
-                continue;
+                return Some(end);
             }
         }
+        Some(i + 2)
+    }
 
-        // Explicitly delimited inline comment. The first closer wins; without
-        // one the opener remains ordinary visible text. Backslash escapes have
-        // already been consumed, and code/raw spans consume their whole run.
-        if c == b'{'
-            && bytes.get(i + 1) == Some(&b'%')
-            && !decorated_braced_opener(bytes, i)
-            && last_delimited_comment_close.is_some_and(|close| close >= i + 2)
+    /// Explicitly delimited inline comment. The first closer wins; without
+    /// one the opener remains ordinary visible text. Backslash escapes have
+    /// already been consumed, and code/raw spans consume their whole run.
+    fn delimited_comment(&mut self, i: usize) -> Option<usize> {
+        let bytes = self.bytes;
+        if bytes.get(i + 1) != Some(&b'%')
+            || decorated_braced_opener(bytes, i)
+            || !self.last_delimited_comment_close.is_some_and(|close| close >= i + 2)
         {
-            if let Some(close_rel) = bytes[i + 2..].windows(2).position(|w| w == b"%}") {
-                let close = i + 2 + close_rel;
-                flush_text(
-                    &mut out,
-                    &mut buf,
-                    positions,
-                    base,
-                    &mut buf_start,
-                    &mut buf_placeable,
-                    &mut buf_src_delta,
-                );
-                let raw = String::from_utf8_lossy(&bytes[i + 2..close]);
-                let without_leading = raw.strip_prefix(' ').unwrap_or(&raw);
-                let content = without_leading
-                    .strip_suffix(' ')
-                    .unwrap_or(without_leading)
-                    .to_string();
-                out.push(InlineNode::Comment(Comment {
-                    block: false,
-                    delimited: true,
-                    content,
-                    pos: inline_pos(positions, base + i, base + close + 2),
-                }));
-                i = close + 2;
-                continue;
-            }
+            return None;
         }
+        let close_rel = bytes[i + 2..].windows(2).position(|w| w == b"%}")?;
+        let close = i + 2 + close_rel;
+        self.sink.flush();
+        let raw = String::from_utf8_lossy(&bytes[i + 2..close]);
+        let without_leading = raw.strip_prefix(' ').unwrap_or(&raw);
+        let content = without_leading
+            .strip_suffix(' ')
+            .unwrap_or(without_leading)
+            .to_string();
+        let pos = self.sink.pos(i, close + 2);
+        self.sink.out.push(InlineNode::Comment(Comment {
+            block: false,
+            delimited: true,
+            content,
+            pos,
+        }));
+        Some(close + 2)
+    }
 
-        // Trailing line comment: `%%` at the start of the inline run or after
-        // whitespace runs to the end of the line and is dropped
-        // (`text %% comment`). A bracket run open here is the host: the marker
-        // needs no separator at its start, and takes nothing past its closer.
-        let comment_run = bounds.bracket_run_at(i);
+    /// Trailing line comment: `%%` at the start of the inline run or after
+    /// whitespace runs to the end of the line and is dropped
+    /// (`text %% comment`). A bracket run open here is the host: the marker
+    /// needs no separator at its start, and takes nothing past its closer.
+    fn trailing_comment(&mut self, i: usize) -> Option<usize> {
+        let bytes = self.bytes;
+        let comment_run = self.bounds.bracket_run_at(i);
         let run_start = comment_run.map_or(0, |open| open + 1);
-        if c == b'%'
-            && bytes.get(i + 1) == Some(&b'%')
-            && (i == run_start || bytes[i - 1] == b' ' || bytes[i - 1] == b'\n')
+        if bytes.get(i + 1) != Some(&b'%')
+            || !(i == run_start || bytes[i - 1] == b' ' || bytes[i - 1] == b'\n')
         {
-            // Popping from the END keeps the buffer equal to the source it
-            // started at - `flush_text` measures the span as
-            // `start .. start + buf.len()`, so a shorter buffer is a shorter
-            // span, not a wrong one. Clearing `buf_placeable` here refused a
-            // position for every line ending in a `%%` comment.
-            while buf.ends_with(' ') {
-                buf.pop();
-            }
-            let comment_start = i;
-            i = trailing_comment_end(bytes, i + 2, comment_run.map(|open| bounds.matches[open]))
-                .unwrap_or(bytes.len());
-            // The comment renders to nothing, but it is PUBLISHED: PART 12 has a
-            // `comment` node and carve-js and carve-php both emit one here, so a
-            // tree that records what the author wrote cannot drop it
-            // (carve-rs#513). Flush the text before it so the node lands in
-            // source order.
-            flush_text(
-                &mut out,
-                &mut buf,
-                positions,
-                base,
-                &mut buf_start,
-                &mut buf_placeable,
-                &mut buf_src_delta,
-            );
-            let raw = String::from_utf8_lossy(&bytes[comment_start + 2..i]);
-            let content = trailing_comment_content(&raw).to_string();
-            out.push(InlineNode::Comment(Comment {
-                block: false,
-                delimited: false,
-                content,
-                pos: inline_pos(positions, base + comment_start, base + i),
-            }));
-            continue;
+            return None;
         }
-
-        // Inline code spans
-        if c == b'`' {
-            if let Some((value, consumed)) = parse_inline_code(bytes, i) {
-                let cell_wraps = if wraps_live {
-                    verbatim_cell_wraps(bytes, base, i, &value)
-                } else {
-                    None
-                };
-                if let Some((mut raw, raw_consumed)) =
-                    parse_raw_inline_after_code(bytes, i, &value, consumed)
-                {
-                    raw.cell_wraps = cell_wraps;
-                    flush_text(
-                        &mut out,
-                        &mut buf,
-                        positions,
-                        base,
-                        &mut buf_start,
-                        &mut buf_placeable,
-                        &mut buf_src_delta,
-                    );
-                    let mut node = InlineNode::RawInline(raw);
-                    set_inline_node_pos(
-                        &mut node,
-                        inline_pos(positions, base + i, base + i + raw_consumed),
-                    );
-                    quotes.push(&mut out, node);
-                    i += raw_consumed;
-                    continue;
-                }
-                flush_text(
-                    &mut out,
-                    &mut buf,
-                    positions,
-                    base,
-                    &mut buf_start,
-                    &mut buf_placeable,
-                    &mut buf_src_delta,
-                );
-                // Push the bare code span. A trailing inline attribute block
-                // (`` `code`{.cls} ``) is attached by the general attr-merge in
-                // the main loop, which runs AFTER the forced-emphasis / critic
-                // checks -- so `` `c`{_u_} `` is a code span + forced underline,
-                // not a bogus `_u_` attribute. Matches carve-js / carve-php.
-                out.push(InlineNode::Code(Code {
-                    cell_wraps,
-                    value,
-                    attrs: None,
-                    pos: inline_pos(positions, base + i, base + i + consumed),
-                }));
-                i += consumed;
-                continue;
-            }
+        // Popping from the END keeps the buffer equal to the source it
+        // started at - `flush_text` measures the span as
+        // `start .. start + buf.len()`, so a shorter buffer is a shorter
+        // span, not a wrong one. Clearing `buf_placeable` here refused a
+        // position for every line ending in a `%%` comment.
+        while self.sink.buf.ends_with(' ') {
+            self.sink.buf.pop();
         }
+        let end = trailing_comment_end(
+            bytes,
+            i + 2,
+            comment_run.map(|open| self.bounds.matches[open]),
+        )
+        .unwrap_or(bytes.len());
+        // The comment renders to nothing, but it is PUBLISHED: PART 12 has a
+        // `comment` node and carve-js and carve-php both emit one here, so a
+        // tree that records what the author wrote cannot drop it
+        // (carve-rs#513). Flush the text before it so the node lands in
+        // source order.
+        self.sink.flush();
+        let raw = String::from_utf8_lossy(&bytes[i + 2..end]);
+        let content = trailing_comment_content(&raw).to_string();
+        let pos = self.sink.pos(i, end);
+        self.sink.out.push(InlineNode::Comment(Comment {
+            block: false,
+            delimited: false,
+            content,
+            pos,
+        }));
+        Some(end)
+    }
 
-        if c == b'$' {
-            if let Some((mut math, consumed)) = parse_math(bytes, i, &bounds) {
-                if wraps_live {
-                    let tick = if math.display { i + 2 } else { i + 1 };
-                    math.cell_wraps = verbatim_cell_wraps(bytes, base, tick, &math.content);
-                }
-                flush_text(
-                    &mut out,
-                    &mut buf,
-                    positions,
-                    base,
-                    &mut buf_start,
-                    &mut buf_placeable,
-                    &mut buf_src_delta,
-                );
-                let mut node = InlineNode::Math(math);
-                set_inline_node_pos(
-                    &mut node,
-                    inline_pos(positions, base + i, base + i + consumed),
-                );
-                quotes.push(&mut out, node);
-                i += consumed;
-                continue;
-            }
+    /// Inline code spans
+    fn code_span(&mut self, i: usize) -> Option<usize> {
+        let bytes = self.bytes;
+        let (value, consumed) = parse_inline_code(bytes, i)?;
+        let cell_wraps = if self.wraps_live {
+            verbatim_cell_wraps(bytes, self.sink.base, i, &value)
+        } else {
+            None
+        };
+        if let Some((mut raw, raw_consumed)) = parse_raw_inline_after_code(bytes, i, &value, consumed)
+        {
+            raw.cell_wraps = cell_wraps;
+            return Some(self.emit(InlineNode::RawInline(raw), i, raw_consumed));
         }
+        // Push the bare code span. A trailing inline attribute block
+        // (`` `code`{.cls} ``) is attached by the general attr-merge in
+        // the main loop, which runs AFTER the forced-emphasis / critic
+        // checks -- so `` `c`{_u_} `` is a code span + forced underline,
+        // not a bogus `_u_` attribute. Matches carve-js / carve-php.
+        let pos = self.sink.pos(i, i + consumed);
+        self.sink.push(InlineNode::Code(Code {
+            cell_wraps,
+            value,
+            attrs: None,
+            pos,
+        }));
+        Some(i + consumed)
+    }
 
-        if c == b'{' {
-            if let Some((critic, consumed)) =
-                parse_critic_markup(bytes, i, options, in_footnote, &bounds, positions, base)
+    fn math(&mut self, i: usize) -> Option<usize> {
+        let (mut math, consumed) = parse_math(self.bytes, i, &self.bounds)?;
+        if self.wraps_live {
+            let tick = if math.display { i + 2 } else { i + 1 };
+            math.cell_wraps = verbatim_cell_wraps(self.bytes, self.sink.base, tick, &math.content);
+        }
+        Some(self.emit(InlineNode::Math(math), i, consumed))
+    }
+
+    fn brace(&mut self, i: usize) -> Option<usize> {
+        if let Some(next) = self.delimited_comment(i) {
+            return Some(next);
+        }
+        let (bytes, options, in_footnote) = (self.bytes, self.options, self.in_footnote);
+        let (positions, base) = (self.sink.positions, self.sink.base);
+        if let Some((critic, consumed)) =
+            parse_critic_markup(bytes, i, options, in_footnote, &self.bounds, positions, base)
+        {
+            return Some(self.emit(critic, i, consumed));
+        }
+        // Forced intraword emphasis `{X…X}` — tried before inline attribute
+        // blocks, matching the reference scan order.
+        if let Some((node, consumed)) =
+            parse_forced_emphasis(bytes, i, options, in_footnote, &self.bounds, positions, base)
+        {
+            // A trailing `{...}` attribute block attaches to the forced span,
+            // exactly like a bare span (`{*x*}{.c}` -> <strong class="c">x</strong>).
+            return Some(self.emit_with_trailing_attrs(node, i, consumed));
+        }
+        self.attach_attributes(i)
+    }
+
+    /// Emits `node` and the attribute block glued to its end, if one parses.
+    fn emit_with_trailing_attrs(&mut self, mut node: InlineNode, i: usize, consumed: usize) -> usize {
+        let mut consumed = consumed;
+        if self.bytes.get(i + consumed) == Some(&b'{') {
+            if let Some((attrs, next)) =
+                read_attrs_at(self.bytes, i + consumed, self.bounds.last_close_brace)
             {
-                flush_text(
-                    &mut out,
-                    &mut buf,
-                    positions,
-                    base,
-                    &mut buf_start,
-                    &mut buf_placeable,
-                    &mut buf_src_delta,
-                );
-                let mut node = critic;
-                set_inline_node_pos(
-                    &mut node,
-                    inline_pos(positions, base + i, base + i + consumed),
-                );
-                quotes.push(&mut out, node);
-                i += consumed;
-                continue;
+                apply_attrs_to_inline(&mut node, attrs);
+                consumed = next - i;
             }
-            // Forced intraword emphasis `{X…X}` — tried before inline attribute
-            // blocks, matching the reference scan order.
-            if let Some((mut node, consumed)) =
-                parse_forced_emphasis(bytes, i, options, in_footnote, &bounds, positions, base)
-            {
-                let mut consumed = consumed;
-                // A trailing `{...}` attribute block attaches to the forced span,
-                // exactly like a bare span (`{*x*}{.c}` -> <strong class="c">x</strong>).
-                if bytes.get(i + consumed) == Some(&b'{') {
-                    if let Some((attrs, next)) =
-                        read_attrs_at(bytes, i + consumed, bounds.last_close_brace)
-                    {
-                        apply_attrs_to_inline(&mut node, attrs);
-                        consumed = next - i;
-                    }
-                }
-                flush_text(
-                    &mut out,
-                    &mut buf,
-                    positions,
-                    base,
-                    &mut buf_start,
-                    &mut buf_placeable,
-                    &mut buf_src_delta,
-                );
-                set_inline_node_pos(
-                    &mut node,
-                    inline_pos(positions, base + i, base + i + consumed),
-                );
-                quotes.push(&mut out, node);
-                i += consumed;
-                continue;
-            }
-            // A standalone attribute block merges into the immediately preceding
-            // inline node, so adjacent blocks chain (`[x]{.a}{.b}`,
-            // `*x*{.a}{.b}` -> merged classes, §15). It must be GLUED: a
-            // non-empty `buf` means text (e.g. a space) sits between the node
-            // and the `{`, so the block stays literal. An empty/invalid `{...}`
-            // also stays literal. Matches carve-php / carve-js.
-            if buf.is_empty() && out.last().is_some_and(inline_is_attributable) {
-                if let Some((attrs, mut next)) = read_attrs_at(bytes, i, bounds.last_close_brace) {
-                    let mut attrs = Some(attrs);
-                    let mut slots = None;
-                    while bytes.get(next) == Some(&b'{')
-                        && (bytes.get(next + 1) != Some(&b'_')
-                            || !bounds.has_delim_brace_from(b'_', next))
-                    {
-                        let Some((incoming, end)) =
-                            read_attrs_at(bytes, next, bounds.last_close_brace)
-                        else {
-                            break;
-                        };
-                        merge_attrs_indexed(&mut attrs, incoming, &mut slots);
-                        next = end;
-                    }
-                    if attribute_target != Some(out.len()) {
-                        attribute_target = Some(out.len());
-                        attribute_slots = None;
-                    }
-                    let last = out.last_mut().unwrap();
-                    // A reference link carries `raw_ref` (its literal source) in
-                    // case it stays unresolved. Merge the block into the link's
-                    // attrs (used when it resolves) AND append the block's
-                    // literal text to `raw_ref` (used when it reverts), so a
-                    // resolved `[t][r]{.a}{.b}` gets class="a b" while an
-                    // unresolved `[t][missing]{.a}{.b}` keeps both blocks literal.
-                    if let InlineNode::Link(l) = last {
-                        if let Some(raw) = l.raw_ref.as_mut() {
-                            if let Ok(lit) = std::str::from_utf8(&bytes[i..next]) {
-                                raw.push_str(lit);
-                            }
-                        }
-                    }
-                    merge_attrs_into_inline(last, attrs.unwrap(), &mut attribute_slots);
-                    // An attached attribute block is owned by the construct it
-                    // decorates, so extend the construct through the closing
-                    // brace while retaining its original opening delimiter.
-                    if let Some(attr_extent) = inline_pos(positions, base + i, base + next) {
-                        if let Some(pos) = inline_pos_mut(last) {
-                            pos.end_line = attr_extent.end_line;
-                            pos.end_column = attr_extent.end_column;
-                            pos.end_offset = attr_extent.end_offset;
-                        }
-                    }
-                    i = next;
-                    continue;
+        }
+        self.emit(node, i, consumed)
+    }
+
+    /// A standalone attribute block merges into the immediately preceding
+    /// inline node, so adjacent blocks chain (`[x]{.a}{.b}`,
+    /// `*x*{.a}{.b}` -> merged classes, §15). It must be GLUED: a
+    /// non-empty `buf` means text (e.g. a space) sits between the node
+    /// and the `{`, so the block stays literal. An empty/invalid `{...}`
+    /// also stays literal. Matches carve-php / carve-js.
+    fn attach_attributes(&mut self, i: usize) -> Option<usize> {
+        let bytes = self.bytes;
+        if !self.sink.buf.is_empty() || !self.sink.out.last().is_some_and(inline_is_attributable) {
+            return None;
+        }
+        let (attrs, mut next) = read_attrs_at(bytes, i, self.bounds.last_close_brace)?;
+        let mut attrs = Some(attrs);
+        let mut slots = None;
+        while bytes.get(next) == Some(&b'{')
+            && (bytes.get(next + 1) != Some(&b'_') || !self.bounds.has_delim_brace_from(b'_', next))
+        {
+            let Some((incoming, end)) = read_attrs_at(bytes, next, self.bounds.last_close_brace)
+            else {
+                break;
+            };
+            merge_attrs_indexed(&mut attrs, incoming, &mut slots);
+            next = end;
+        }
+        if self.attribute_target != Some(self.sink.out.len()) {
+            self.attribute_target = Some(self.sink.out.len());
+            self.attribute_slots = None;
+        }
+        let attr_extent = self.sink.pos(i, next);
+        let last = self.sink.out.last_mut().unwrap();
+        // A reference link carries `raw_ref` (its literal source) in
+        // case it stays unresolved. Merge the block into the link's
+        // attrs (used when it resolves) AND append the block's
+        // literal text to `raw_ref` (used when it reverts), so a
+        // resolved `[t][r]{.a}{.b}` gets class="a b" while an
+        // unresolved `[t][missing]{.a}{.b}` keeps both blocks literal.
+        if let InlineNode::Link(l) = last {
+            if let Some(raw) = l.raw_ref.as_mut() {
+                if let Ok(lit) = std::str::from_utf8(&bytes[i..next]) {
+                    raw.push_str(lit);
                 }
             }
         }
+        merge_attrs_into_inline(last, attrs.unwrap(), &mut self.attribute_slots);
+        // An attached attribute block is owned by the construct it
+        // decorates, so extend the construct through the closing
+        // brace while retaining its original opening delimiter.
+        if let Some(attr_extent) = attr_extent {
+            if let Some(pos) = inline_pos_mut(last) {
+                pos.end_line = attr_extent.end_line;
+                pos.end_column = attr_extent.end_column;
+                pos.end_offset = attr_extent.end_offset;
+            }
+        }
+        Some(next)
+    }
 
+    fn bang(&mut self, i: usize) -> Option<usize> {
+        let bytes = self.bytes;
         // Inline literal (§27): a `!` prefix on a verbatim code span, mirroring
         // the `$`-math prefix above. The span content is captured verbatim,
         // later HTML-escaped and emitted by every renderer with the `<code>`
@@ -931,316 +983,92 @@ pub(in crate::parse) fn parse_inline_context_with_pairs(
         // first-token sigil). Like math it requires a CLOSED span — a bare `!`
         // before an unclosed run stays literal and the run becomes an ordinary
         // (unclosed) code span. Tried before the image case, which needs `[`.
-        if c == b'!' && bytes.get(i + 1) == Some(&b'`') {
+        if bytes.get(i + 1) == Some(&b'`') {
             if let Some((lit, consumed)) = parse_literal_inline(bytes, i) {
-                flush_text(
-                    &mut out,
-                    &mut buf,
-                    positions,
-                    base,
-                    &mut buf_start,
-                    &mut buf_placeable,
-                    &mut buf_src_delta,
-                );
-                let mut node = InlineNode::LiteralInline(lit);
-                set_inline_node_pos(
-                    &mut node,
-                    inline_pos(positions, base + i, base + i + consumed),
-                );
-                quotes.push(&mut out, node);
-                i += consumed;
-                continue;
+                return Some(self.emit(InlineNode::LiteralInline(lit), i, consumed));
             }
         }
-
         // Image: ![alt](src), then reference image ![alt][ref] / ![alt][].
-        if c == b'!' && bytes.get(i + 1) == Some(&b'[') {
-            if let Some((img, consumed)) = parse_image_at(bytes, i, &bounds) {
-                flush_text(
-                    &mut out,
-                    &mut buf,
-                    positions,
-                    base,
-                    &mut buf_start,
-                    &mut buf_placeable,
-                    &mut buf_src_delta,
-                );
-                let mut node = InlineNode::Image(img);
-                set_inline_node_pos(
-                    &mut node,
-                    inline_pos(positions, base + i, base + i + consumed),
-                );
-                quotes.push(&mut out, node);
-                i += consumed;
-                continue;
-            }
-            if let Some((img, consumed)) = parse_reference_image(bytes, i, &bounds) {
-                flush_text(
-                    &mut out,
-                    &mut buf,
-                    positions,
-                    base,
-                    &mut buf_start,
-                    &mut buf_placeable,
-                    &mut buf_src_delta,
-                );
-                let mut node = InlineNode::Image(img);
-                set_inline_node_pos(
-                    &mut node,
-                    inline_pos(positions, base + i, base + i + consumed),
-                );
-                quotes.push(&mut out, node);
-                i += consumed;
-                continue;
+        if bytes.get(i + 1) != Some(&b'[') {
+            return None;
+        }
+        let (img, consumed) = parse_image_at(bytes, i, &self.bounds)
+            .or_else(|| parse_reference_image(bytes, i, &self.bounds))?;
+        Some(self.emit(InlineNode::Image(img), i, consumed))
+    }
+
+    /// Footnote reference, then inline link `[text](href)`, reference link and
+    /// span.
+    fn bracket(&mut self, i: usize) -> Option<usize> {
+        let (bytes, options, in_footnote) = (self.bytes, self.options, self.in_footnote);
+        let (positions, base) = (self.sink.positions, self.sink.base);
+        if !in_footnote {
+            if let Some((footnote, consumed)) = parse_footnote_ref(bytes, i, &self.bounds) {
+                return Some(self.emit(InlineNode::Footnote(footnote), i, consumed));
             }
         }
-
-        // Inline link: [text](href)
-        if c == b'[' {
-            if !in_footnote {
-                if let Some((footnote, consumed)) = parse_footnote_ref(bytes, i, &bounds) {
-                    flush_text(
-                        &mut out,
-                        &mut buf,
-                        positions,
-                        base,
-                        &mut buf_start,
-                        &mut buf_placeable,
-                        &mut buf_src_delta,
-                    );
-                    let mut node = InlineNode::Footnote(footnote);
-                    set_inline_node_pos(
-                        &mut node,
-                        inline_pos(positions, base + i, base + i + consumed),
-                    );
-                    quotes.push(&mut out, node);
-                    i += consumed;
-                    continue;
-                }
-            }
-            if has_link_trigger {
-                if let Some((link, consumed)) = parse_inline_link_with_options(
-                    bytes,
-                    i,
-                    options,
-                    in_footnote,
-                    &bounds,
-                    positions,
-                    base,
-                ) {
-                    flush_text(
-                        &mut out,
-                        &mut buf,
-                        positions,
-                        base,
-                        &mut buf_start,
-                        &mut buf_placeable,
-                        &mut buf_src_delta,
-                    );
-                    let mut node = InlineNode::Link(link);
-                    set_inline_node_pos(
-                        &mut node,
-                        inline_pos(positions, base + i, base + i + consumed),
-                    );
-                    quotes.push(&mut out, node);
-                    i += consumed;
-                    continue;
-                }
-                if let Some((link, consumed)) =
-                    parse_reference_link(bytes, i, options, in_footnote, &bounds, positions, base)
-                {
-                    flush_text(
-                        &mut out,
-                        &mut buf,
-                        positions,
-                        base,
-                        &mut buf_start,
-                        &mut buf_placeable,
-                        &mut buf_src_delta,
-                    );
-                    let mut node = InlineNode::Link(link);
-                    set_inline_node_pos(
-                        &mut node,
-                        inline_pos(positions, base + i, base + i + consumed),
-                    );
-                    quotes.push(&mut out, node);
-                    i += consumed;
-                    continue;
-                }
-                if let Some((span, consumed)) =
-                    parse_span(bytes, i, options, in_footnote, &bounds, positions, base)
-                {
-                    flush_text(
-                        &mut out,
-                        &mut buf,
-                        positions,
-                        base,
-                        &mut buf_start,
-                        &mut buf_placeable,
-                        &mut buf_src_delta,
-                    );
-                    let mut node = InlineNode::Span(span);
-                    set_inline_node_pos(
-                        &mut node,
-                        inline_pos(positions, base + i, base + i + consumed),
-                    );
-                    quotes.push(&mut out, node);
-                    i += consumed;
-                    continue;
-                }
-            }
+        if !self.has_link_trigger {
+            return None;
         }
+        let bounds = &self.bounds;
+        let (node, consumed) =
+            parse_inline_link_with_options(bytes, i, options, in_footnote, bounds, positions, base)
+                .or_else(|| {
+                    parse_reference_link(bytes, i, options, in_footnote, bounds, positions, base)
+                })
+                .map(|(link, consumed)| (InlineNode::Link(link), consumed))
+                .or_else(|| {
+                    parse_span(bytes, i, options, in_footnote, bounds, positions, base)
+                        .map(|(span, consumed)| (InlineNode::Span(span), consumed))
+                })?;
+        Some(self.emit(node, i, consumed))
+    }
 
-        if c == b'<' {
-            if let Some((crossref, consumed)) = parse_crossref(text, i, &bounds) {
-                flush_text(
-                    &mut out,
-                    &mut buf,
-                    positions,
-                    base,
-                    &mut buf_start,
-                    &mut buf_placeable,
-                    &mut buf_src_delta,
-                );
-                let mut node = InlineNode::CrossRef(crossref);
-                set_inline_node_pos(
-                    &mut node,
-                    inline_pos(positions, base + i, base + i + consumed),
-                );
-                quotes.push(&mut out, node);
-                i += consumed;
-                continue;
-            }
+    /// Cross-reference, then autolink.
+    fn angle(&mut self, i: usize) -> Option<usize> {
+        if let Some((crossref, consumed)) = parse_crossref(self.text, i, &self.bounds) {
+            return Some(self.emit(InlineNode::CrossRef(crossref), i, consumed));
         }
+        let (autolink, consumed) = parse_autolink(self.text, i, &self.bounds)?;
+        Some(self.emit(InlineNode::AutoLink(autolink), i, consumed))
+    }
 
-        if c == b'@' {
-            if let Some((mention, consumed)) = parse_mention(text, i) {
-                flush_text(
-                    &mut out,
-                    &mut buf,
-                    positions,
-                    base,
-                    &mut buf_start,
-                    &mut buf_placeable,
-                    &mut buf_src_delta,
-                );
-                let mut node = InlineNode::Mention(mention);
-                set_inline_node_pos(
-                    &mut node,
-                    inline_pos(positions, base + i, base + i + consumed),
-                );
-                quotes.push(&mut out, node);
-                i += consumed;
-                continue;
-            }
+    fn hash(&mut self, i: usize) -> Option<usize> {
+        if self.caption_number_allowed
+            && !self.bytes.get(i + 1).is_some_and(|b| is_attr_ident_part(*b))
+        {
+            let pos = self.sink.pos(i, i + 1);
+            self.sink
+                .push(InlineNode::CaptionNumber(CaptionNumber { number: None, pos }));
+            self.caption_number_allowed = false;
+            return Some(i + 1);
         }
+        let (tag, consumed) = parse_tag(self.text, i)?;
+        Some(self.emit(InlineNode::Tag(tag), i, consumed))
+    }
 
-        if c == b'#' {
-            if caption_number_allowed && !bytes.get(i + 1).is_some_and(|b| is_attr_ident_part(*b)) {
-                flush_text(
-                    &mut out,
-                    &mut buf,
-                    positions,
-                    base,
-                    &mut buf_start,
-                    &mut buf_placeable,
-                    &mut buf_src_delta,
-                );
-                out.push(InlineNode::CaptionNumber(CaptionNumber {
-                    number: None,
-                    pos: inline_pos(positions, base + i, base + i + 1),
-                }));
-                caption_number_allowed = false;
-                i += 1;
-                continue;
-            }
-            if let Some((tag, consumed)) = parse_tag(text, i) {
-                flush_text(
-                    &mut out,
-                    &mut buf,
-                    positions,
-                    base,
-                    &mut buf_start,
-                    &mut buf_placeable,
-                    &mut buf_src_delta,
-                );
-                let mut node = InlineNode::Tag(tag);
-                set_inline_node_pos(
-                    &mut node,
-                    inline_pos(positions, base + i, base + i + consumed),
-                );
-                quotes.push(&mut out, node);
-                i += consumed;
-                continue;
-            }
+    /// Inline extension `:name[content]`, then symbol.
+    fn colon(&mut self, i: usize) -> Option<usize> {
+        let (positions, base) = (self.sink.positions, self.sink.base);
+        if let Some((node, consumed)) = parse_inline_extension(
+            self.bytes,
+            i,
+            self.options,
+            self.in_footnote,
+            &self.bounds,
+            positions,
+            base,
+        ) {
+            return Some(self.emit(InlineNode::Extension(node), i, consumed));
         }
+        let (symbol, consumed) = parse_symbol(self.text, i, &self.bounds)?;
+        Some(self.emit(InlineNode::Symbol(symbol), i, consumed))
+    }
 
-        if c == b'<' {
-            if let Some((autolink, consumed)) = parse_autolink(text, i, &bounds) {
-                flush_text(
-                    &mut out,
-                    &mut buf,
-                    positions,
-                    base,
-                    &mut buf_start,
-                    &mut buf_placeable,
-                    &mut buf_src_delta,
-                );
-                let mut node = InlineNode::AutoLink(autolink);
-                set_inline_node_pos(
-                    &mut node,
-                    inline_pos(positions, base + i, base + i + consumed),
-                );
-                quotes.push(&mut out, node);
-                i += consumed;
-                continue;
-            }
-        }
-
-        // Inline extension: :name[content]
-        if c == b':' {
-            if let Some((node, consumed)) =
-                parse_inline_extension(bytes, i, options, in_footnote, &bounds, positions, base)
-            {
-                flush_text(
-                    &mut out,
-                    &mut buf,
-                    positions,
-                    base,
-                    &mut buf_start,
-                    &mut buf_placeable,
-                    &mut buf_src_delta,
-                );
-                let mut node = InlineNode::Extension(node);
-                set_inline_node_pos(
-                    &mut node,
-                    inline_pos(positions, base + i, base + i + consumed),
-                );
-                quotes.push(&mut out, node);
-                i += consumed;
-                continue;
-            }
-            if let Some((symbol, consumed)) = parse_symbol(text, i, &bounds) {
-                flush_text(
-                    &mut out,
-                    &mut buf,
-                    positions,
-                    base,
-                    &mut buf_start,
-                    &mut buf_placeable,
-                    &mut buf_src_delta,
-                );
-                let mut node = InlineNode::Symbol(symbol);
-                set_inline_node_pos(
-                    &mut node,
-                    inline_pos(positions, base + i, base + i + consumed),
-                );
-                quotes.push(&mut out, node);
-                i += consumed;
-                continue;
-            }
-        }
-
+    /// Constructs tried at any byte once the delimited ones declined, in
+    /// precedence order.
+    fn open_construct(&mut self, c: u8, i: usize) -> Option<usize> {
+        let text = self.text;
         // PART 9 §8 (markup-carve/carve#1443): a hyphen run PRECEDED by
         // whitespace (or the start of the content) and FOLLOWED by a
         // non-whitespace character is a long CLI flag, not a dash, and stays
@@ -1252,192 +1080,97 @@ pub(in crate::parse) fn parse_inline_context_with_pairs(
         // nodes where the other engines keep one, and consuming the run a byte
         // at a time would leave `-->` as a stray `-` plus a live `->` symbol.
         if let Some(run) = flag_shaped_hyphen_run(text, i) {
-            if buf_start.is_none() {
-                buf_start = Some(i);
-            }
-            buf.push_str(&text[i..i + run]);
-            i += run;
-            continue;
+            self.sink.buffer(i, &text[i..i + run]);
+            return Some(i + run);
         }
-
-        // Smart typography (§8): parsed into AST nodes so renderers can choose
-        // glyph output or source-preserving Carve output without rescanning.
-        if let Some((nodes, consumed)) = parse_smart_punctuation_at(text, i, &buf, &out) {
-            flush_text(
-                &mut out,
-                &mut buf,
-                positions,
-                base,
-                &mut buf_start,
-                &mut buf_placeable,
-                &mut buf_src_delta,
-            );
-            let mut local = 0usize;
-            for mut node in nodes {
-                let width = smart_punctuation_source_width(&node);
-                set_inline_node_pos(
-                    &mut node,
-                    inline_pos(positions, base + i + local, base + i + local + width),
-                );
-                local += width;
-                quotes.push(&mut out, node);
-            }
-            i += consumed;
-            continue;
+        if let Some(next) = self.smart_punctuation(i) {
+            return Some(next);
         }
-
         // Inline footnote `^[content]`. A `^` anywhere else is literal text
         // (there is no bare superscript), so `^^[x]` is a literal `^` + a note.
-        if !in_footnote && c == b'^' && bytes.get(i + 1) == Some(&b'[') {
+        if !self.in_footnote && c == b'^' && self.bytes.get(i + 1) == Some(&b'[') {
+            let (positions, base) = (self.sink.positions, self.sink.base);
             if let Some((footnote, consumed)) =
-                parse_inline_footnote(bytes, i, options, &bounds, positions, base)
+                parse_inline_footnote(self.bytes, i, self.options, &self.bounds, positions, base)
             {
-                flush_text(
-                    &mut out,
-                    &mut buf,
-                    positions,
-                    base,
-                    &mut buf_start,
-                    &mut buf_placeable,
-                    &mut buf_src_delta,
-                );
-                let mut node = InlineNode::Footnote(footnote);
-                set_inline_node_pos(
-                    &mut node,
-                    inline_pos(positions, base + i, base + i + consumed),
-                );
-                quotes.push(&mut out, node);
-                i += consumed;
-                continue;
+                return Some(self.emit(InlineNode::Footnote(footnote), i, consumed));
             }
         }
-
         // Bold-italic, sub, highlight, then single-char emphasis
-        if let Some((mut node, consumed)) = match_emphasis(
-            bytes,
+        if let Some((node, consumed)) = match_emphasis(
+            self.bytes,
             i,
-            options,
-            in_footnote,
-            &mut emphasis_no_close,
-            &bounds,
-            positions,
-            base,
+            self.options,
+            self.in_footnote,
+            &mut self.emphasis_no_close,
+            &self.bounds,
+            self.sink.positions,
+            self.sink.base,
         ) {
-            let mut consumed = consumed;
-            if bytes.get(i + consumed) == Some(&b'{') {
-                if let Some((attrs, next)) =
-                    read_attrs_at(bytes, i + consumed, bounds.last_close_brace)
-                {
-                    apply_attrs_to_inline(&mut node, attrs);
-                    consumed = next - i;
-                }
-            }
-            flush_text(
-                &mut out,
-                &mut buf,
-                positions,
-                base,
-                &mut buf_start,
-                &mut buf_placeable,
-                &mut buf_src_delta,
-            );
-            set_inline_node_pos(
-                &mut node,
-                inline_pos(positions, base + i, base + i + consumed),
-            );
-            quotes.push(&mut out, node);
-            i += consumed;
-            continue;
+            return Some(self.emit_with_trailing_attrs(node, i, consumed));
         }
-
-        // Soft break
         if c == b'\n' {
-            if buf.ends_with('\\') {
-                buf.pop();
-                flush_text(
-                    &mut out,
-                    &mut buf,
-                    positions,
-                    base,
-                    &mut buf_start,
-                    &mut buf_placeable,
-                    &mut buf_src_delta,
-                );
-                // `hard_break = '\', newline`, so the span covers BOTH
-                // characters. Placing the newline alone left the backslash in
-                // no node at all: a break reporting one character where the
-                // construct is two, which nothing rendered differently and no
-                // checker could see (carve#549).
-                let backslash = if i > 0 && bytes[i - 1] == b'\\' {
-                    i - 1
-                } else {
-                    i
-                };
-                out.push(InlineNode::HardBreak(Break {
-                    pos: inline_pos(positions, base + backslash, base + i + 1),
-                }));
-                i += 1;
-                continue;
-            }
-            flush_text(
-                &mut out,
-                &mut buf,
-                positions,
-                base,
-                &mut buf_start,
-                &mut buf_placeable,
-                &mut buf_src_delta,
-            );
-            out.push(InlineNode::SoftBreak(Break {
-                pos: inline_pos(positions, base + i, base + i + 1),
-            }));
-            i += 1;
-            continue;
+            return Some(self.line_break(i));
         }
-
-        if let Some(InlineMatch { mut node, end }) =
-            try_extension_inline(text, i, options, &citation_brackets)
-        {
-            // `end` must land on a char boundary or `text[i..]`/slicing panics;
-            // a misbehaving extension matcher must not be able to crash the core.
-            if end > i && end <= text.len() && text.is_char_boundary(end) {
-                flush_text(
-                    &mut out,
-                    &mut buf,
-                    positions,
-                    base,
-                    &mut buf_start,
-                    &mut buf_placeable,
-                    &mut buf_src_delta,
-                );
-                set_inline_node_pos(&mut node, inline_pos(positions, base + i, base + end));
-                if let InlineNode::CitationGroup(group) = &mut node {
-                    position_citation_items_from_map(group, positions, base + i);
-                }
-                quotes.push(&mut out, node);
-                i = end;
-                continue;
-            }
-        }
-
-        let ch = text[i..].chars().next().unwrap();
-        if buf_start.is_none() {
-            buf_start = Some(i);
-        }
-        buf.push(ch);
-        i += ch.len_utf8();
+        self.extension_inline(i)
     }
-    flush_text(
-        &mut out,
-        &mut buf,
-        positions,
-        base,
-        &mut buf_start,
-        &mut buf_placeable,
-        &mut buf_src_delta,
-    );
-    quotes.finish(&mut out);
-    out
+
+    /// Smart typography (§8): parsed into AST nodes so renderers can choose
+    /// glyph output or source-preserving Carve output without rescanning.
+    fn smart_punctuation(&mut self, i: usize) -> Option<usize> {
+        let (nodes, consumed) =
+            parse_smart_punctuation_at(self.text, i, &self.sink.buf, &self.sink.out)?;
+        self.sink.flush();
+        let mut local = 0usize;
+        for mut node in nodes {
+            let width = smart_punctuation_source_width(&node);
+            set_inline_node_pos(&mut node, self.sink.pos(i + local, i + local + width));
+            local += width;
+            self.quotes.push(&mut self.sink.out, node);
+        }
+        Some(i + consumed)
+    }
+
+    /// Soft break, or a hard break when the buffered text ends in `\`.
+    fn line_break(&mut self, i: usize) -> usize {
+        if self.sink.buf.ends_with('\\') {
+            self.sink.buf.pop();
+            // `hard_break = '\', newline`, so the span covers BOTH
+            // characters. Placing the newline alone left the backslash in
+            // no node at all: a break reporting one character where the
+            // construct is two, which nothing rendered differently and no
+            // checker could see (carve#549).
+            let backslash = if i > 0 && self.bytes[i - 1] == b'\\' {
+                i - 1
+            } else {
+                i
+            };
+            let pos = self.sink.pos(backslash, i + 1);
+            self.sink.push(InlineNode::HardBreak(Break { pos }));
+            return i + 1;
+        }
+        let pos = self.sink.pos(i, i + 1);
+        self.sink.push(InlineNode::SoftBreak(Break { pos }));
+        i + 1
+    }
+
+    fn extension_inline(&mut self, i: usize) -> Option<usize> {
+        let text = self.text;
+        let InlineMatch { mut node, end } =
+            try_extension_inline(text, i, self.options, &self.citation_brackets)?;
+        // `end` must land on a char boundary or `text[i..]`/slicing panics;
+        // a misbehaving extension matcher must not be able to crash the core.
+        if !(end > i && end <= text.len() && text.is_char_boundary(end)) {
+            return None;
+        }
+        self.sink.flush();
+        set_inline_node_pos(&mut node, self.sink.pos(i, end));
+        if let InlineNode::CitationGroup(group) = &mut node {
+            position_citation_items_from_map(group, self.sink.positions, self.sink.base + i);
+        }
+        self.quotes.push(&mut self.sink.out, node);
+        Some(end)
+    }
 }
 
 pub(in crate::parse) fn parse_critic_markup(

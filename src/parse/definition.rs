@@ -644,41 +644,61 @@ pub(in crate::parse) fn collect_definition_body(
         content_column,
         owner: continuation_marker::Kind::Description,
     };
-    let mut lines: Vec<String> = Vec::new();
-    let mut nested_definition_open = seed.lines().any(is_definition_list_start);
-    let mut nested_definition_column = seed
-        .lines()
-        .rev()
-        .find(|line| is_definition_list_start(trim_ascii_start(line)))
-        .map(indent_columns);
-    let mut paragraph_column = seed
-        .lines()
-        .last()
-        .and_then(|line| paragraph_owner_column(line, content_column))
-        .filter(|column| *column > content_column);
-    let mut paragraph_marker_column = seed
-        .lines()
-        .last()
-        .filter(|line| is_list_marker(trim_ascii_start(line)))
-        .map(|_| content_column);
-    let mut paragraph_owner_is_item = seed
-        .lines()
-        .last()
-        .is_some_and(|line| is_list_marker(trim_ascii_start(line)));
-    let mut owner_item_opens_block = paragraph_owner_is_item;
-    let mut descendant_marker_fence: Option<(FenceOpen, usize)> = None;
-    let mut descendant_block_ended = false;
+    let mut body = DefinitionBodyCollector::new(seed, content_column, container, options);
+    run_indented_body!(cur.lines, cur.pos, container, |line, admission| {
+        match body.take_line(cur, fence, line, admission.blank) {
+            BodyStep::Next => continue,
+            BodyStep::Stop => break,
+        }
+    });
+    body.into_mapped_source()
+}
+
+/// What the collector does after a line: keep reading, or end the body.
+enum BodyStep {
+    Next,
+    Stop,
+}
+
+/// Loop state of [`collect_definition_body`]: the collected lines with their
+/// maps, and what the body read so far has left open.
+struct DefinitionBodyCollector<'s, 'o> {
+    seed: &'s str,
+    content_column: usize,
+    container: IndentContainer,
+    options: &'s Options<'o>,
+    lines: Vec<String>,
+    line_map: Vec<Option<usize>>,
+    // Codepoints taken off the front of each line, kept in lockstep with
+    // `lines`. `None` means unknown, and a block starting there gets no
+    // position rather than a guessed one (PART 12 section 4).
+    col_map: Vec<Option<isize>>,
+    // Did each collected line REACH the body's content column? See
+    // `MappedSource::reached`: the slice at the column leaves a line one past
+    // it and a line below it with the SAME residual, and only this tells them
+    // apart. `:  ` bodies recorded nothing, so the rebase read an attribute
+    // block written PAST the column as §10 I5's below-column lazy text
+    // (markup-carve/carve#1911, corpus 444-7 against 430-3).
+    reached: Vec<bool>,
+    nested_definition_open: bool,
+    nested_definition_column: Option<usize>,
+    paragraph_column: Option<usize>,
+    paragraph_marker_column: Option<usize>,
+    paragraph_owner_is_item: bool,
+    owner_item_opens_block: bool,
+    descendant_marker_fence: Option<(FenceOpen, usize)>,
+    descendant_block_ended: bool,
     // A lazy fold leaves a paragraph open. Rechecking by parsing all collected
     // lines after each fold would make a long paragraph quadratic. Other ways
     // of extending the body clear this hint because they may open a block.
-    let mut folded_a_lazy_line = false;
-    let mut folded_into_quote = false;
-    let mut retained_below_comment = false;
-    let mut retained_comment_column = 0;
-    let mut retained_fence: Option<(FenceOpen, bool)> = None;
-    let mut past_body_closers: Option<DefinitionBodyCloserIndex> = None;
-    let mut unopened_past_fence: Option<FenceOpen> = None;
-    let mut below_comment_span = None;
+    folded_a_lazy_line: bool,
+    folded_into_quote: bool,
+    retained_below_comment: bool,
+    retained_comment_column: usize,
+    retained_fence: Option<(FenceOpen, bool)>,
+    past_body_closers: Option<DefinitionBodyCloserIndex>,
+    unopened_past_fence: Option<FenceOpen>,
+    below_comment_span: Option<usize>,
     // Seeded from the marker line's own content: does the body's LEAD open a
     // code fence NESTED past a list marker? Its verbatim body is the flush-left
     // lines below, which cannot close it - but an INDENTED closer written at or
@@ -687,122 +707,267 @@ pub(in crate::parse) fn collect_definition_body(
     // `advance_nested_lead_fence` on each line collected, cheaply: a flush-left
     // line never closes the fence, so the blank-terminated form still asks the
     // question effectively once (the shape #1547 guards against).
-    let mut nested_lead_fence: Option<(FenceOpen, usize)> = None;
-    for raw in seed.lines() {
-        advance_nested_lead_fence(&mut nested_lead_fence, raw);
+    nested_lead_fence: Option<(FenceOpen, usize)>,
+}
+
+impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
+    fn new(
+        seed: &'s str,
+        content_column: usize,
+        container: IndentContainer,
+        options: &'s Options<'o>,
+    ) -> Self {
+        let last = seed.lines().last();
+        let paragraph_owner_is_item =
+            last.is_some_and(|line| is_list_marker(trim_ascii_start(line)));
+        let mut nested_lead_fence = None;
+        for raw in seed.lines() {
+            advance_nested_lead_fence(&mut nested_lead_fence, raw);
+        }
+        Self {
+            seed,
+            content_column,
+            container,
+            options,
+            lines: Vec::new(),
+            line_map: Vec::new(),
+            col_map: Vec::new(),
+            reached: Vec::new(),
+            nested_definition_open: seed.lines().any(is_definition_list_start),
+            nested_definition_column: seed
+                .lines()
+                .rev()
+                .find(|line| is_definition_list_start(trim_ascii_start(line)))
+                .map(indent_columns),
+            paragraph_column: last
+                .and_then(|line| paragraph_owner_column(line, content_column))
+                .filter(|column| *column > content_column),
+            paragraph_marker_column: last
+                .filter(|line| is_list_marker(trim_ascii_start(line)))
+                .map(|_| content_column),
+            paragraph_owner_is_item,
+            owner_item_opens_block: paragraph_owner_is_item,
+            descendant_marker_fence: None,
+            descendant_block_ended: false,
+            folded_a_lazy_line: false,
+            folded_into_quote: false,
+            retained_below_comment: false,
+            retained_comment_column: 0,
+            retained_fence: None,
+            past_body_closers: None,
+            unopened_past_fence: None,
+            below_comment_span: None,
+            nested_lead_fence,
+        }
     }
-    let mut line_map: Vec<Option<usize>> = Vec::new();
-    // Codepoints taken off the front of each line, kept in lockstep with
-    // `lines`. `None` means unknown, and a block starting there gets no
-    // position rather than a guessed one (PART 12 section 4).
-    let mut col_map: Vec<Option<isize>> = Vec::new();
-    // Did each collected line REACH the body's content column? See
-    // `MappedSource::reached`: the slice at the column leaves a line one past
-    // it and a line below it with the SAME residual, and only this tells them
-    // apart. `:  ` bodies recorded nothing, so the rebase read an attribute
-    // block written PAST the column as §10 I5's below-column lazy text
-    // (markup-carve/carve#1911, corpus 444-7 against 430-3).
-    let mut reached: Vec<bool> = Vec::new();
-    run_indented_body!(cur.lines, cur.pos, container, |line, admission| {
-        if let Some((open, has_closer)) = retained_fence {
-            let payload_floor = if open.content_col == 0 {
-                content_column
-            } else {
-                open.content_col
-            };
-            if !has_closer && !line.starts_with(LAZY) && indent_columns(line) < payload_floor {
-                break;
-            }
-            let (kept, consumed, synthetic) = slice_columns_mapped(line, open.content_col, true);
-            lines.push(kept);
-            line_map.push(cur.source_line(cur.pos));
-            col_map.push(
-                cur.source_col(cur.pos)
-                    .map(|col| col + consumed as isize - synthetic as isize),
-            );
-            reached.push(false);
-            if is_fence_close(trim_ascii_start(line), open) {
-                retained_fence = None;
-                fence.closed_last = true;
-            }
-            cur.consume();
-            continue;
+
+    fn into_mapped_source(self) -> MappedSource {
+        debug_assert_eq!(self.col_map.len(), self.lines.len());
+        debug_assert_eq!(self.reached.len(), self.lines.len());
+        MappedSource {
+            col_map: self.col_map,
+            source: self.lines.join("\n"),
+            line_map: self.line_map,
+            authored_base_at_start: false,
+            item_marker_at_start: false,
+            marker_colon_rebased: false,
+            marker_tail: None,
+            reached: self.reached,
+            opaque_blank_lines: Vec::new(),
+            discarded_outer_blank: false,
+            outer_plus_after_blank: false,
+            in_quoted_body: false,
+            sublists_carry_authored_base: false,
         }
-        if is_definition_placeholder(line) && indent_columns(line) < content_column {
-            break;
+    }
+
+    fn push(&mut self, text: String, line: Option<usize>, col: Option<isize>, reached: bool) {
+        self.lines.push(text);
+        self.line_map.push(line);
+        self.col_map.push(col);
+        self.reached.push(reached);
+    }
+
+    /// Push the current line sliced at `columns`, as a line that did not reach.
+    fn push_sliced(&mut self, cur: &LineCursor<'_>, line: &str, columns: usize) {
+        let (residue, consumed, synthetic) = slice_columns_mapped(line, columns, true);
+        let col = cur
+            .source_col(cur.pos)
+            .map(|col| col + consumed as isize - synthetic as isize);
+        self.push(residue, cur.source_line(cur.pos), col, false);
+    }
+
+    /// The seed plus every collected line, as one source.
+    fn body_so_far(&self) -> String {
+        let mut so_far = self.seed.to_owned();
+        for collected in &self.lines {
+            so_far.push('\n');
+            so_far.push_str(collected);
         }
-        if admission.blank {
-            retained_below_comment = false;
-            paragraph_column = None;
-            paragraph_marker_column = None;
-            unopened_past_fence = None;
+        so_far
+    }
+
+    fn take_line(
+        &mut self,
+        cur: &mut LineCursor<'_>,
+        fence: &mut DefinitionBodyFence,
+        line: &str,
+        blank: bool,
+    ) -> BodyStep {
+        if let Some(retained) = self.retained_fence {
+            return self.take_retained_fence_line(cur, fence, line, retained);
+        }
+        if is_definition_placeholder(line) && indent_columns(line) < self.content_column {
+            return BodyStep::Stop;
+        }
+        if blank {
+            self.retained_below_comment = false;
+            self.paragraph_column = None;
+            self.paragraph_marker_column = None;
+            self.unopened_past_fence = None;
         }
         let column = indent_columns(line);
-        let mut opens_descendant_here = false;
-        if !is_blank_line(line)
-            && fence.open.is_none()
-            && nested_lead_fence.is_none()
-            && descendant_marker_fence.is_none()
+        let opens_descendant_here = self.track_paragraph_owner(fence, line, column);
+        if column == 0 && self.opens_comment_span_outside_body(cur, line) {
+            return BodyStep::Stop;
+        }
+        let below_comment =
+            column < self.content_column && trim_ascii_start(line).starts_with("%%");
+        if self.below_comment_span.is_some() || below_comment {
+            return self.take_below_column_comment(cur, line, column);
+        }
+        if column >= self.content_column {
+            self.retained_below_comment = false;
+        }
+        // Form B: `+` pull-left continuation.
+        // A nested description at this column owns its own `+`. Keep it in
+        // the outer body's stream so the inner description can pull the block.
+        if is_plus_marker(trim_ascii_start(line))
+            && self.nested_definition_column != Some(column)
+            && self
+                .container
+                .owns_continuation(line, cur.continuation_decision(cur.pos))
         {
-            if paragraph_column.is_some_and(|owner| column < owner)
-                && column >= content_column
-                && is_reference_definition(trim_ascii_start(line))
-            {
-                paragraph_column = None;
-                paragraph_marker_column = None;
-                descendant_block_ended = true;
-            } else if paragraph_column.is_some_and(|owner| column < owner)
-                && column >= content_column
-                && (column == content_column
-                    || !paragraph_owner_is_item
-                    || is_definition_list_start(trim_ascii_start(line)))
-                && (is_list_marker(trim_ascii_start(line))
-                    || item_block_opener_with_invisible_arms(trim_ascii_start(line), true))
-            {
-                paragraph_owner_is_item = is_list_marker(trim_ascii_start(line));
-                owner_item_opens_block = lines.last().is_some_and(|prior| is_blank_line(prior));
-                paragraph_column = paragraph_owner_column(trim_ascii_start(line), column)
-                    .filter(|owner| *owner > content_column);
-                paragraph_marker_column = is_list_marker(trim_ascii_start(line)).then_some(column);
-                opens_descendant_here = true;
-            } else if paragraph_marker_column == Some(column)
-                && is_list_marker(trim_ascii_start(line))
-            {
-                paragraph_owner_is_item = true;
-                owner_item_opens_block = lines.last().is_some_and(|prior| is_blank_line(prior));
-                paragraph_column = paragraph_owner_column(trim_ascii_start(line), column)
-                    .filter(|owner| *owner > content_column);
-                opens_descendant_here = paragraph_column.is_some();
-            } else if column >= content_column
-                && paragraph_column.map_or(true, |owner| column >= owner)
-                && (is_list_marker(trim_ascii_start(line))
-                    || strip_definition_marker(trim_ascii_start(line)).is_some())
-            {
-                paragraph_owner_is_item = is_list_marker(trim_ascii_start(line));
-                owner_item_opens_block = lines.last().is_some_and(|prior| is_blank_line(prior));
-                paragraph_column = paragraph_owner_column(trim_ascii_start(line), column)
-                    .filter(|owner| *owner > content_column);
-                paragraph_marker_column = is_list_marker(trim_ascii_start(line)).then_some(column);
-                opens_descendant_here = paragraph_column.is_some();
-            } else if paragraph_column.is_some_and(|owner| column >= owner)
-                && (item_block_opener_with_invisible_arms(trim_ascii_start(line), true)
+            self.take_plus_block(cur, column);
+            return BodyStep::Next;
+        }
+        // Form A: an indented continuation line (no intervening blank).
+        if !is_blank_line(line) {
+            if column >= self.content_column {
+                return self.take_column_line(cur, fence, line, column, opens_descendant_here);
+            }
+            return self.take_below_column_line(cur, fence, line, column);
+        }
+        if fence.open.is_some() {
+            // The body's own column, like every other line this collector takes:
+            // an opener PAST it leaves its authored residue for the rebase, which
+            // would otherwise dedent this line a second time.
+            self.push_sliced(cur, line, self.content_column);
+            cur.consume();
+            return BodyStep::Next;
+        }
+        self.take_blank_run(cur)
+    }
+
+    fn take_retained_fence_line(
+        &mut self,
+        cur: &mut LineCursor<'_>,
+        fence: &mut DefinitionBodyFence,
+        line: &str,
+        (open, has_closer): (FenceOpen, bool),
+    ) -> BodyStep {
+        let payload_floor = if open.content_col == 0 {
+            self.content_column
+        } else {
+            open.content_col
+        };
+        if !has_closer && !line.starts_with(LAZY) && indent_columns(line) < payload_floor {
+            return BodyStep::Stop;
+        }
+        self.push_sliced(cur, line, open.content_col);
+        if is_fence_close(trim_ascii_start(line), open) {
+            self.retained_fence = None;
+            fence.closed_last = true;
+        }
+        cur.consume();
+        BodyStep::Next
+    }
+
+    /// Follow which paragraph owner (a nested item or description) the body's
+    /// last paragraph sits in. True when this line opens a descendant.
+    fn track_paragraph_owner(
+        &mut self,
+        fence: &DefinitionBodyFence,
+        line: &str,
+        column: usize,
+    ) -> bool {
+        if is_blank_line(line)
+            || fence.open.is_some()
+            || self.nested_lead_fence.is_some()
+            || self.descendant_marker_fence.is_some()
+        {
+            return false;
+        }
+        let local = trim_ascii_start(line);
+        let content_column = self.content_column;
+        let below_owner =
+            self.paragraph_column.is_some_and(|owner| column < owner) && column >= content_column;
+        if below_owner && is_reference_definition(local) {
+            self.end_descendant_block();
+            false
+        } else if below_owner
+            && (column == content_column
+                || !self.paragraph_owner_is_item
+                || is_definition_list_start(local))
+            && (is_list_marker(local) || item_block_opener_with_invisible_arms(local, true))
+        {
+            self.adopt_paragraph_owner(local, column);
+            true
+        } else if self.paragraph_marker_column == Some(column) && is_list_marker(local) {
+            self.adopt_paragraph_owner(local, column);
+            self.paragraph_column.is_some()
+        } else if column >= content_column
+            && self.paragraph_column.map_or(true, |owner| column >= owner)
+            && (is_list_marker(local) || strip_definition_marker(local).is_some())
+        {
+            self.adopt_paragraph_owner(local, column);
+            self.paragraph_column.is_some()
+        } else {
+            if self.paragraph_column.is_some_and(|owner| column >= owner)
+                && (item_block_opener_with_invisible_arms(local, true)
                     || is_line_comment_any_column(line))
             {
-                paragraph_column = None;
-                paragraph_marker_column = None;
-                descendant_block_ended = true;
+                self.end_descendant_block();
             }
+            false
         }
-        let below_comment = column < content_column && trim_ascii_start(line).starts_with("%%");
+    }
+
+    fn adopt_paragraph_owner(&mut self, local: &str, column: usize) {
+        self.paragraph_owner_is_item = is_list_marker(local);
+        self.owner_item_opens_block = self.lines.last().is_some_and(|prior| is_blank_line(prior));
+        self.paragraph_column = paragraph_owner_column(local, column)
+            .filter(|owner| *owner > self.content_column);
+        self.paragraph_marker_column = is_list_marker(local).then_some(column);
+    }
+
+    fn end_descendant_block(&mut self) {
+        self.paragraph_column = None;
+        self.paragraph_marker_column = None;
+        self.descendant_block_ended = true;
+    }
+
+    /// A flush-left comment fence that opens a span closing further down
+    /// belongs to the surrounding container, not to this body.
+    fn opens_comment_span_outside_body(&self, cur: &LineCursor<'_>, line: &str) -> bool {
         let authored_opener_comment = cur.source_col(cur.pos).is_some_and(|comment_col| {
             (0..cur.pos)
                 .rev()
                 .find(|&at| strip_description_prefix(trim_ascii_start(cur.lines.at(at))).is_some())
                 .is_some_and(|at| cur.source_col(at) == Some(comment_col))
         });
-        if column == 0
-            && ((!cur.in_item_body && !cur.sublists_carry_authored_base) || authored_opener_comment)
-            && below_comment_span.is_none()
+        ((!cur.in_item_body && !cur.sublists_carry_authored_base) || authored_opener_comment)
+            && self.below_comment_span.is_none()
             && detect_comment_fence_line_any_column(line).is_some_and(|open| {
                 cur.has_comment_closer_after(cur.pos + 1, open.fence_len)
                     && !cur
@@ -810,673 +975,682 @@ pub(in crate::parse) fn collect_definition_body(
                         .line(cur.pos + 1)
                         .is_some_and(|next| is_comment_fence_close_any_column(next, open.fence_len))
             })
+    }
+
+    fn take_below_column_comment(
+        &mut self,
+        cur: &mut LineCursor<'_>,
+        line: &str,
+        column: usize,
+    ) -> BodyStep {
+        if self.below_comment_span.is_none()
+            && !self.retained_below_comment
+            && !self.folded_a_lazy_line
+            && !definition_body_fold(&self.body_so_far(), self.options).0
         {
-            break;
+            return BodyStep::Stop;
         }
-        if below_comment_span.is_some() || below_comment {
-            if below_comment_span.is_none() && !retained_below_comment && !folded_a_lazy_line {
-                let mut so_far = seed.to_owned();
-                if !lines.is_empty() {
-                    so_far.push('\n');
-                    so_far.push_str(&lines.join("\n"));
-                }
-                if !definition_body_fold(&so_far, options).0 {
-                    break;
-                }
+        if let Some(width) = self.below_comment_span {
+            if is_comment_fence_close_any_column(line, width) {
+                self.below_comment_span = None;
             }
-            if let Some(width) = below_comment_span {
-                if is_comment_fence_close_any_column(line, width) {
-                    below_comment_span = None;
-                }
-            } else if let Some(open) = detect_comment_fence_line_any_column(line) {
-                if cur.has_comment_closer_after(cur.pos + 1, open.fence_len) {
-                    below_comment_span = Some(open.fence_len);
-                }
+        } else if let Some(open) = detect_comment_fence_line_any_column(line) {
+            if cur.has_comment_closer_after(cur.pos + 1, open.fence_len) {
+                self.below_comment_span = Some(open.fence_len);
             }
-            let keep_authored = column > 0
-                && ((nested_definition_open && lines.is_empty())
-                    || detect_comment_fence_line_any_column(line).is_some_and(|open| {
-                        cur.has_comment_closer_after(cur.pos + 1, open.fence_len)
-                    }));
-            let kept = if !keep_authored && trim_ascii_start(line).starts_with("%%") {
-                trim_ascii_start(line).to_owned()
-            } else {
-                line.to_owned()
-            };
-            line_map.push(cur.source_line(cur.pos));
-            col_map.push(
-                cur.source_col(cur.pos)
-                    .map(|col| col + (line.len() - kept.len()) as isize),
+        }
+        let keep_authored = column > 0
+            && ((self.nested_definition_open && self.lines.is_empty())
+                || detect_comment_fence_line_any_column(line)
+                    .is_some_and(|open| cur.has_comment_closer_after(cur.pos + 1, open.fence_len)));
+        let kept = if !keep_authored && trim_ascii_start(line).starts_with("%%") {
+            trim_ascii_start(line).to_owned()
+        } else {
+            line.to_owned()
+        };
+        let col = cur
+            .source_col(cur.pos)
+            .map(|col| col + (line.len() - kept.len()) as isize);
+        self.push(kept, cur.source_line(cur.pos), col, false);
+        self.retained_below_comment = true;
+        self.retained_comment_column = column;
+        self.folded_a_lazy_line = false;
+        cur.consume();
+        BodyStep::Next
+    }
+
+    fn take_plus_block(&mut self, cur: &mut LineCursor<'_>, column: usize) {
+        cur.consume();
+        let mut attached = LineBuffer::default();
+        let cursor_lines = cur.lines;
+        let end = attached_block_lines_classified(
+            cursor_lines,
+            cur.pos,
+            &mut cur.comment_closer_last_index,
+            &mut cur.code_closer_last_index,
+            self.options,
+            &mut |a, _| {
+                is_blank_line(a)
+                    || is_plus_marker(a)
+                    || a.strip_prefix(":: ").is_some()
+                    || strip_definition_marker(a).is_some()
+            },
+        );
+        while cur.pos < end {
+            let a = cur.lines.at(cur.pos);
+            attached.push_at(
+                slice_columns(a, column, true),
+                cur.source_line(cur.pos),
+                cur.source_col(cur.pos).map(|col| col + column as isize),
             );
-            reached.push(false);
-            lines.push(kept);
-            retained_below_comment = true;
-            retained_comment_column = column;
-            folded_a_lazy_line = false;
             cur.consume();
-            continue;
         }
-        if column >= content_column {
-            retained_below_comment = false;
+        if !attached.lines.is_empty() {
+            self.folded_a_lazy_line = false;
+            // A `+` block is pulled in FLUSH LEFT, so it has no residual
+            // for the rebase to read either way.
+            self.push(String::new(), None, None, false);
+            for line in attached.lines {
+                self.push(line.text, line.source_line(), line.stripped, false);
+            }
         }
-        // Form B: `+` pull-left continuation.
-        // A nested description at this column owns its own `+`. Keep it in
-        // the outer body's stream so the inner description can pull the block.
-        if is_plus_marker(trim_ascii_start(line))
-            && nested_definition_column != Some(column)
-            && container.owns_continuation(line, cur.continuation_decision(cur.pos))
-        {
-            cur.consume();
-            let mut attached = LineBuffer::default();
-            let cursor_lines = cur.lines;
-            let end = attached_block_lines_classified(
-                cursor_lines,
-                cur.pos,
-                &mut cur.comment_closer_last_index,
-                &mut cur.code_closer_last_index,
-                options,
-                &mut |a, _| {
-                    is_blank_line(a)
-                        || is_plus_marker(a)
-                        || a.strip_prefix(":: ").is_some()
-                        || strip_definition_marker(a).is_some()
-                },
-            );
-            while cur.pos < end {
-                let a = cur.lines.at(cur.pos);
-                attached.push_at(
-                    slice_columns(a, column, true),
-                    cur.source_line(cur.pos),
-                    cur.source_col(cur.pos).map(|col| col + column as isize),
-                );
-                cur.consume();
-            }
-            if !attached.lines.is_empty() {
-                folded_a_lazy_line = false;
-                lines.push(String::new());
-                line_map.push(None);
-                col_map.push(None);
-                for line in attached.lines {
-                    line_map.push(line.source_line());
-                    lines.push(line.text);
-                    col_map.push(line.stripped);
-                }
-                // A `+` block is pulled in FLUSH LEFT, so it has no residual
-                // for the rebase to read either way.
-                reached.resize(lines.len(), false);
-            }
-            continue;
+    }
+
+    fn take_column_line(
+        &mut self,
+        cur: &mut LineCursor<'_>,
+        fence: &mut DefinitionBodyFence,
+        line: &str,
+        indent: usize,
+        opens_descendant_here: bool,
+    ) -> BodyStep {
+        // A STRADDLING TAB LEAVES ITS RESIDUAL COLUMNS IN FRONT OF THE
+        // LINE (PART 9 §24 C1 gives a tab a column value, carve-rs#793).
+        // With `keep_residual` false a single tab - which reaches column
+        // 4, one PAST the body's column - was consumed whole and the
+        // residue landed FLUSH LEFT, where a `>` is a block opener. The
+        // four-space spelling of the same column keeps its fourth space,
+        // so the line sits at column 1 and is lazy text. Same column,
+        // two answers.
+        //
+        // The residual is written back as the spaces the tab bought past
+        // the margin, which is what makes the two spellings agree.
+        let mut sliced = slice_columns(line, self.content_column.min(indent), true);
+        if !opens_descendant_here && self.folds_past_column_into_owner(line, indent) {
+            sliced = format!("{LAZY}{}", trim_ascii_start(&sliced));
         }
-        // Form A: an indented continuation line (no intervening blank).
-        if !is_blank_line(line) {
-            let indent = indent_columns(line);
-            if indent >= content_column {
-                // A STRADDLING TAB LEAVES ITS RESIDUAL COLUMNS IN FRONT OF THE
-                // LINE (PART 9 §24 C1 gives a tab a column value, carve-rs#793).
-                // With `keep_residual` false a single tab - which reaches column
-                // 4, one PAST the body's column - was consumed whole and the
-                // residue landed FLUSH LEFT, where a `>` is a block opener. The
-                // four-space spelling of the same column keeps its fourth space,
-                // so the line sits at column 1 and is lazy text. Same column,
-                // two answers.
-                //
-                // The residual is written back as the spaces the tab bought past
-                // the margin, which is what makes the two spellings agree.
-                let mut sliced = slice_columns(line, content_column.min(indent), true);
-                if !opens_descendant_here
-                    && !(nested_definition_column == Some(indent)
-                        && is_plus_marker(trim_ascii_start(line)))
-                    && !is_line_comment_any_column(line)
-                    && detect_comment_fence_line_any_column(line).is_none()
-                    && detect_fence_open(trim_ascii_start(line)).is_none()
-                    && paragraph_column.is_some_and(|owner| indent < owner)
-                    && indent != content_column
-                    // An item past the body column does not reach an opener below its own column (carve#3450).
-                    && (paragraph_owner_is_item
-                        && (is_list_marker(trim_ascii_start(line))
-                            || owner_item_opens_block
-                                && paragraph_marker_column
-                                    .is_some_and(|marker| marker <= content_column))
-                        || !item_block_opener_with_invisible_arms(trim_ascii_start(line), true))
-                {
-                    sliced = format!("{LAZY}{}", trim_ascii_start(&sliced));
-                }
-                // Count what was actually removed rather than assuming three:
-                // `slice_columns` works in COLUMNS, and a tab is one codepoint
-                // spanning several of them. The difference in LENGTH is the
-                // right quantity for both cases: with a residual it is
-                // `consumed - synthetic`, which is exactly the base the mapping
-                // in `slice_columns_mapped` documents.
-                // As in a list item, an unterminated fence at the definition
-                // body's content column stays in its open paragraph (§10 I4).
-                // Tracking one as a real fence would eject the next lazy line
-                // from the `<dd>` (corpus 367). Keep the established behavior
-                // when a closer is written in this body, as for lists.
-                //
-                // §10 I4'S LOOKAHEAD IS CONDITIONAL ON A PARAGRAPH BEING OPEN,
-                // and a trailing blank clears it. Asked unconditionally, it
-                // declined an opener the block parser accepts, so the body folded
-                // the run below its own column in as verbatim payload
-                // (carve-rs#2092).
-                if let Some((open, column)) = descendant_marker_fence {
-                    if indent < column
-                        || (indent == column && is_fence_close(trim_ascii_start(line), open))
-                    {
-                        descendant_marker_fence = None;
-                        descendant_block_ended = true;
-                    }
-                }
-                let paragraph_open = !descendant_block_ended
-                    && match lines.last() {
-                        Some(last) => !is_blank_line(last),
-                        None => seed.lines().last().is_some_and(|line| !is_blank_line(line)),
-                    };
-                let accept_fence_opener = fence.open.is_none()
-                    && detect_fence_open(&sliced).is_some_and(|open| {
-                        !paragraph_open
-                            || (cur.has_code_closer_after(
-                                cur.pos + 1,
-                                open.fence_char,
-                                open.fence_len,
-                            ) && {
-                                let closers = past_body_closers.get_or_insert_with(|| {
-                                    definition_body_closer_index(cur, cur.pos + 1, content_column)
-                                });
-                                let next = cur.pos + 1;
-                                next < closers.end
-                                    && closers.exact_in_body.code_in(
-                                        next - closers.start..closers.end - closers.start,
-                                        open.fence_char,
-                                        open.fence_len,
-                                    )
-                            })
-                    });
-                // The nested description's `+`, or a quote's `> +`, already separates its next
-                // block. A manufactured blank here would make it attach none.
-                if accept_fence_opener
-                    && paragraph_open
-                    && !(nested_definition_open
-                        && lines.last().is_some_and(|line| is_plus_marker(line)))
-                    && !lines.last().is_some_and(|line| quote_opens_with_plus(line))
-                {
-                    // The blank is MANUFACTURED, so it stands for no source
-                    // line and takes no column. Pushing the sliced line's own
-                    // column before the blank gave the blank that column and
-                    // left the fence line with none, and a block that opens on
-                    // a line whose column is unknown is published UNPLACED
-                    // (`span_of`) - which is how a fenced code block in a
-                    // description body lost its position and narrowed the
-                    // `definition_description` around it to its last placed
-                    // child (markup-carve/carve-rs#1833).
-                    lines.push(String::new());
-                    line_map.push(None);
-                    col_map.push(None);
-                    reached.push(true);
-                }
-                let past_body_fence_without_closer = paragraph_open
-                    && fence.open.is_none()
-                    && nested_lead_fence.is_none()
-                    && descendant_marker_fence.is_none()
-                    && detect_fence_open(&sliced).is_none()
-                    && detect_fence_open(trim_ascii_start(&sliced)).is_some_and(|open| {
-                        let closers = past_body_closers.get_or_insert_with(|| {
-                            definition_body_closer_index(cur, cur.pos + 1, content_column)
-                        });
-                        let next = cur.pos + 1;
-                        let range = next.saturating_sub(closers.start)
-                            ..closers.end.saturating_sub(closers.start);
-                        next < closers.end
-                            && !closers.in_body.code_in(
-                                range.clone(),
-                                open.fence_char,
-                                open.fence_len,
-                            )
-                            && closers
-                                .below_body
-                                .code_in(range, open.fence_char, open.fence_len)
-                    });
-                if past_body_fence_without_closer {
-                    unopened_past_fence = detect_fence_open(trim_ascii_start(&sliced));
-                    sliced = format!("{LAZY}{}", trim_ascii_start(&sliced));
-                } else if !accept_fence_opener
-                    && fence.open.is_none()
-                    && detect_fence_open(&sliced).is_some()
-                {
-                    sliced.insert_str(0, LAZY);
-                }
-                // A tab can leave more synthetic spaces than consumed source
-                // characters. Keep that signed difference for the later rebase.
-                let sliced_col = cur.source_col(cur.pos).map(|c| {
-                    c + line.chars().count() as isize - strip_lazy(&sliced).chars().count() as isize
-                });
-                col_map.push(sliced_col);
-                if fence.open.is_some()
-                    || !paragraph_open
-                    || detect_fence_open(trim_ascii_start(&sliced)).is_none()
-                    || accept_fence_opener
-                {
-                    fence.track(&sliced, indent);
-                }
-                // A line collected AT the body's column can be the closer of a
-                // nested lead fence (its content sits at or past the fence's
-                // column). Following it here releases the fence's ownership of
-                // the flush-left lines below, so a `:: ` opener under a closed
-                // nested fence starts a new item instead of being absorbed
-                // (carve#1970). `sliced` is in the body's own coordinates, as
-                // the seed and `advance_nested_lead_fence` both are.
-                let prior = lines
-                    .last()
-                    .map(String::as_str)
-                    .or_else(|| seed.lines().last());
-                if nested_lead_fence.is_some() || prior.map_or(true, is_blank_line) {
-                    advance_nested_lead_fence(&mut nested_lead_fence, &sliced);
-                }
-                if fence.open.is_none() {
-                    let local = trim_ascii_start(&sliced);
-                    if is_definition_list_start(local) {
-                        nested_definition_open = true;
-                        nested_definition_column = Some(indent);
-                    }
-                    if nested_definition_open {
-                        if let Some(body) = strip_description_prefix(local) {
-                            let marker_column = innermost_marker_content_col(body);
-                            if marker_column > 0 {
-                                if let Some(open) = detect_fence_open(trim_ascii_start(
-                                    innermost_marker_content(body),
-                                )) {
-                                    descendant_marker_fence = Some((
-                                        open,
-                                        indent + local.len() - body.len() + marker_column,
-                                    ));
-                                    descendant_block_ended = false;
-                                }
-                            }
-                        }
-                    }
-                    if indent == content_column
-                        && detect_fence_open(local).is_none()
-                        && !is_reference_definition(local)
-                        && line_starts_paragraph(local)
-                    {
-                        descendant_block_ended = false;
-                    }
-                }
-                folded_a_lazy_line = false;
-                lines.push(sliced);
-                let authored_below_body = cur.source_col(cur.pos).is_some_and(|comment_col| {
-                    (0..cur.pos)
-                        .rev()
-                        .find_map(|at| {
-                            strip_definition_marker(trim_ascii_start(cur.lines.at(at))).and_then(
-                                |(_, width)| {
-                                    cur.source_col(at).map(|base| {
-                                        base + indent_columns(cur.lines.at(at)) as isize
-                                            + width as isize
-                                    })
-                                },
-                            )
-                        })
-                        .is_some_and(|body_col| comment_col + (indent as isize) < body_col)
-                });
-                if indent == content_column
-                    && (cur.in_item_body || cur.sublists_carry_authored_base)
-                    && authored_below_body
-                    && ends_with_closed_comment_fence(&lines)
-                {
-                    retained_below_comment = true;
-                    retained_comment_column = indent;
-                }
-                line_map.push(cur.source_line(cur.pos));
-                reached.push(true);
-                cur.consume();
-                // A wrapped attribute opened at the body's column is one construct:
-                // its later lines belong to it at any column (carve#3421).
-                let opener = lines.last().map_or("", |line| trim_ascii_start(line));
-                let wrapped_attribute = (indent == content_column
-                    && fence.open.is_none()
-                    && opener.starts_with('{')
-                    && parse_standalone_attrs(opener).is_none())
-                .then(|| {
-                    standalone_attrs_block_len_iter(
-                        std::iter::once(opener)
-                            .chain((cur.pos..cur.lines.len()).map_while(|i| cur.lines.line(i))),
-                    )
-                })
-                .flatten();
-                for _ in 1..wrapped_attribute.unwrap_or(1) {
-                    let next = cur.lines.at(cur.pos);
-                    lines.push(trim_ascii_start(next).to_owned());
-                    line_map.push(cur.source_line(cur.pos));
-                    col_map.push(
-                        cur.source_col(cur.pos)
-                            .map(|col| col + leading_ws(next) as isize),
-                    );
-                    reached.push(true);
-                    cur.consume();
-                }
-                continue;
-            }
-            // An unfinished nested marker fence owns no below-column line.
-            if nested_lead_fence.is_some() {
-                break;
-            }
-            // The line cannot belong to this description below its body column.
-            // Leave a list opener to the surviving outer container.
-            if column < content_column
-                && cur.reached.and_then(|r| r.get(cur.pos)).copied() == Some(true)
-                && is_list_marker(trim_ascii_start(line))
+        // Count what was actually removed rather than assuming three:
+        // `slice_columns` works in COLUMNS, and a tab is one codepoint
+        // spanning several of them. The difference in LENGTH is the
+        // right quantity for both cases: with a residual it is
+        // `consumed - synthetic`, which is exactly the base the mapping
+        // in `slice_columns_mapped` documents.
+        // As in a list item, an unterminated fence at the definition
+        // body's content column stays in its open paragraph (§10 I4).
+        // Tracking one as a real fence would eject the next lazy line
+        // from the `<dd>` (corpus 367). Keep the established behavior
+        // when a closer is written in this body, as for lists.
+        //
+        // §10 I4'S LOOKAHEAD IS CONDITIONAL ON A PARAGRAPH BEING OPEN,
+        // and a trailing blank clears it. Asked unconditionally, it
+        // declined an opener the block parser accepts, so the body folded
+        // the run below its own column in as verbatim payload
+        // (carve-rs#2092).
+        if let Some((open, column)) = self.descendant_marker_fence {
+            if indent < column || (indent == column && is_fence_close(trim_ascii_start(line), open))
             {
-                break;
+                self.descendant_marker_fence = None;
+                self.descendant_block_ended = true;
             }
-            // A new term/definition marker ends the definition (the outer loop
-            // picks it up). An EMPTY term marker opens nothing, whatever
-            // whitespace trails it, so it folds like a bare `::`.
-            if is_definition_list_start(strip_lazy(line))
-                || (!line.starts_with(LAZY) && strip_definition_marker(strip_lazy(line)).is_some())
-            {
-                break;
-            }
-            // A COMMENT DELIMITER CLOSING A SPAN THIS BODY ALREADY HOLDS IS NOT
-            // "a comment below the column" - see `body_open_comment_run`. The
-            // shape test comes first because the predicate walks the collected
-            // lines and a delimiter-shaped line is rare.
-            if detect_comment_fence_line_any_column(line).is_some() {
-                let mut probe: Vec<&str> = seed.lines().collect();
-                probe.extend(lines.iter().map(String::as_str));
-                if closes_a_held_comment_span(&probe, line) {
-                    lines.push(kept_comment_delimiter(line));
-                    line_map.push(cur.source_line(cur.pos));
-                    col_map.push(cur.source_col(cur.pos));
-                    reached.push(false);
-                    cur.consume();
-                    continue;
-                }
-            }
-            // A closed deepest fence leaves no paragraph for a below-column line.
-            if fence.holds_no_paragraph() && !folded_a_lazy_line {
-                break;
-            }
-            // AND NEITHER DOES ANY OTHER BODY THAT ENDS IN A FINISHED BLOCK.
-            // The fence guard above is one shape of "the body holds no open
-            // paragraph"; an empty block quote, a closed div or admonition, a
-            // table, a thematic break, a line block and a body a
-            // block-attribute line left with no block at all are the others,
-            // and each of them folded here while the LIST twin closed
-            // (carve-rs#790). Same clause, same answer.
-            let mut so_far = String::new();
-            if !folded_a_lazy_line {
-                so_far.push_str(seed);
-                for collected in &lines {
-                    so_far.push('\n');
-                    so_far.push_str(collected);
-                }
-                // ASKED OF THE BODY AS THE BODY WILL READ IT
-                // (markup-carve/carve#1911). The collector slices each line at
-                // the body's content column and leaves the residue in front, so
-                // a heading written one column past a three-column body arrives
-                // here as ` # H` - not an opener - and reported a paragraph the
-                // body does not have. The caller rebases those residuals away
-                // before parsing; the fold question has to see the same lines.
-                // The seed is the `:  ` marker line's own content, which is
-                // at the body's column 0 by construction, so it reaches.
-                let mut probe_reached = vec![true; seed.lines().count()];
-                probe_reached.extend_from_slice(&reached);
-                so_far = body_as_read(so_far, probe_reached, options);
-            }
-            if !folded_a_lazy_line && !retained_below_comment {
-                let (takes_fold, quoted) = definition_body_fold(&so_far, options);
-                if !takes_fold {
-                    break;
-                }
-                folded_into_quote = quoted;
-            }
-            // A surviving quote owns this line before the definition column (CARVE-P0-004).
-            if indent > 0 && folded_into_quote && !trim_ascii_start(line).starts_with("%%") {
-                folded_a_lazy_line = true;
-                lines.push(line.to_string());
-                line_map.push(cur.source_line(cur.pos));
-                col_map.push(cur.source_col(cur.pos));
-                reached.push(false);
-                cur.consume();
-                continue;
-            }
-            // Below the body's column, a recognized structural opener returns
-            // to the surviving outer container. Ordinary prose is still the
-            // open definition paragraph's lazy continuation; indentation alone
-            // does not manufacture a paragraph boundary.
-            //
-            // AND AN INVISIBLE LINE IS NOT AN OPENER HERE. §10 I5 makes a
-            // footnote definition and a block-attribute line at a nonzero column
-            // below the content column lazy paragraph text of THIS container
-            // (markup-carve/carve#1809, corpus 430-2 and 430-3). This guard is
-            // the one that ejected them: the interrupt test below never got the
-            // line.
-            let opener = trim_ascii_start(line);
-            let closes_unopened_past_fence =
-                unopened_past_fence.is_some_and(|open| is_fence_close(opener, open));
-            let below_body_fence_is_text = indent > 0
-                && indent < content_column
-                && detect_fence_open(opener).is_some_and(|open| {
-                    let closers = past_body_closers.get_or_insert_with(|| {
-                        definition_body_closer_index(cur, cur.pos + 1, content_column)
-                    });
-                    let next = cur.pos + 1;
-                    let range = next.saturating_sub(closers.start)
-                        ..closers.end.saturating_sub(closers.start);
-                    next >= closers.end
-                        || !closers
-                            .in_body
-                            .code_in(range, open.fence_char, open.fence_len)
-                });
-            let fold_below_column_opener = indent > 0
-                && indent < content_column
-                && (detect_heading(opener).is_some()
-                    || thematic_break_marker(opener).is_some()
-                    || closes_unopened_past_fence
-                    || is_table_start(opener)
-                    || below_body_fence_is_text
-                    || strip_blockquote_prefix(opener).is_some()
-                    || caption_content(opener).is_some());
-            if indent > 0
-                && (indent < content_column
-                    || paragraph_column.map_or(true, |owner| indent >= owner))
-                && item_block_opener_with_invisible_arms(trim_ascii_start(line), false)
-                && !fold_below_column_opener
-                && !(retained_below_comment
-                    && (lines
-                        .last()
-                        .is_some_and(|line| is_line_comment_any_column(line))
-                        || ends_with_closed_comment_fence(&lines))
-                    && (indent <= retained_comment_column || retained_comment_column == 0)
-                    && detect_fence_open(trim_ascii_start(line)).is_some())
-            {
-                break;
-            }
-            if retained_below_comment
-                && cur.reached.and_then(|r| r.get(cur.pos)).copied() == Some(true)
-                && detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
-                    cur.lines
-                        .range(cur.pos + 1..cur.lines.len())
-                        .any(|next| is_fence_close(trim_ascii_start(next), open))
-                })
-            {
-                break;
-            }
-            // Lazy continuation: a flush-left line with no blank before it that
-            // does not start an interrupting block folds into the open
-            // paragraph (the same rule list items and block quotes use, matching
-            // djot). A block opener ends the definition.
-            let owned = if indent > 0 {
-                trim_ascii_start(line).to_string()
-            } else {
-                line.to_string()
-            };
-            let below_the_column = indent > 0;
-            // List markers do not interrupt the open paragraph (§10 I2).
-            // Fences and captions retain their separate boundary rules.
-            // AN INFO STRING IS NOT AN OPENER (markup-carve/carve#2735). A
-            // flush-left fence line below a body that takes a fold is the
-            // body's content whether or not it carries a language, so the
-            // closer ahead is the only thing that decides. Reading the language
-            // as an opener split the two spellings and pinned the split in
-            // `a_fence_ends_the_body`, which the clause contradicts.
-            let fence_interrupts = detect_fence_open(&owned).is_some_and(|open| {
-                item_body_fence_has_closer(
-                    cur.lines.range(cur.pos + 1..cur.lines.len()),
-                    open,
-                    content_column,
-                    |line, indent| {
-                        indent < content_column
-                            && (is_definition_placeholder(line)
-                                || is_definition_list_start(strip_lazy(line))
-                                || strip_definition_marker(strip_lazy(line)).is_some())
-                    },
-                )
+        }
+        let paragraph_open = self.paragraph_open();
+        let accept_fence_opener = fence.open.is_none()
+            && detect_fence_open(&sliced).is_some_and(|open| {
+                !paragraph_open
+                    || (cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
+                        && self.closer_in_exact_body(cur, open))
             });
-            if !below_the_column
-                && cur.at_document_level
-                && fence_interrupts
-                && !retained_below_comment
-            {
-                break;
+        // The nested description's `+`, or a quote's `> +`, already separates its next
+        // block. A manufactured blank here would make it attach none.
+        if accept_fence_opener
+            && paragraph_open
+            && !(self.nested_definition_open
+                && self.lines.last().is_some_and(|line| is_plus_marker(line)))
+            && !self.lines.last().is_some_and(|line| quote_opens_with_plus(line))
+        {
+            // The blank is MANUFACTURED, so it stands for no source
+            // line and takes no column. Pushing the sliced line's own
+            // column before the blank gave the blank that column and
+            // left the fence line with none, and a block that opens on
+            // a line whose column is unknown is published UNPLACED
+            // (`span_of`) - which is how a fenced code block in a
+            // description body lost its position and narrowed the
+            // `definition_description` around it to its last placed
+            // child (markup-carve/carve-rs#1833).
+            self.push(String::new(), None, None, true);
+        }
+        let past_body_fence_without_closer = paragraph_open
+            && fence.open.is_none()
+            && self.nested_lead_fence.is_none()
+            && self.descendant_marker_fence.is_none()
+            && detect_fence_open(&sliced).is_none()
+            && detect_fence_open(trim_ascii_start(&sliced))
+                .is_some_and(|open| self.closer_only_below_body(cur, open));
+        if past_body_fence_without_closer {
+            self.unopened_past_fence = detect_fence_open(trim_ascii_start(&sliced));
+            sliced = format!("{LAZY}{}", trim_ascii_start(&sliced));
+        } else if !accept_fence_opener && fence.open.is_none() && detect_fence_open(&sliced).is_some()
+        {
+            sliced.insert_str(0, LAZY);
+        }
+        // A tab can leave more synthetic spaces than consumed source
+        // characters. Keep that signed difference for the later rebase.
+        let sliced_col = cur.source_col(cur.pos).map(|c| {
+            c + line.chars().count() as isize - strip_lazy(&sliced).chars().count() as isize
+        });
+        if fence.open.is_some()
+            || !paragraph_open
+            || detect_fence_open(trim_ascii_start(&sliced)).is_none()
+            || accept_fence_opener
+        {
+            fence.track(&sliced, indent);
+        }
+        self.follow_column_line(fence, &sliced, indent);
+        self.folded_a_lazy_line = false;
+        self.push(sliced, cur.source_line(cur.pos), sliced_col, true);
+        if indent == self.content_column
+            && (cur.in_item_body || cur.sublists_carry_authored_base)
+            && authored_below_body(cur, indent)
+            && ends_with_closed_comment_fence(&self.lines)
+        {
+            self.retained_below_comment = true;
+            self.retained_comment_column = indent;
+        }
+        cur.consume();
+        self.take_wrapped_attribute_tail(cur, fence, indent);
+        BodyStep::Next
+    }
+
+    /// Does a line past the body's column, below an open descendant's own
+    /// column, fold into that descendant's paragraph as lazy text?
+    fn folds_past_column_into_owner(&self, line: &str, indent: usize) -> bool {
+        let local = trim_ascii_start(line);
+        !(self.nested_definition_column == Some(indent) && is_plus_marker(local))
+            && !is_line_comment_any_column(line)
+            && detect_comment_fence_line_any_column(line).is_none()
+            && detect_fence_open(local).is_none()
+            && self.paragraph_column.is_some_and(|owner| indent < owner)
+            && indent != self.content_column
+            // An item past the body column does not reach an opener below its own column (carve#3450).
+            && (self.paragraph_owner_is_item
+                && (is_list_marker(local)
+                    || self.owner_item_opens_block
+                        && self
+                            .paragraph_marker_column
+                            .is_some_and(|marker| marker <= self.content_column))
+                || !item_block_opener_with_invisible_arms(local, true))
+    }
+
+    fn paragraph_open(&self) -> bool {
+        !self.descendant_block_ended
+            && match self.lines.last() {
+                Some(last) => !is_blank_line(last),
+                None => self.seed.lines().last().is_some_and(|line| !is_blank_line(line)),
             }
-            let opens_retained_fence = retained_below_comment
-                && (lines
-                    .last()
-                    .is_some_and(|line| is_line_comment_any_column(line))
-                    || ends_with_closed_comment_fence(&lines))
-                && indent <= retained_comment_column
-                && !(cur.in_item_body
-                    && cur.reached.and_then(|r| r.get(cur.pos)).copied() == Some(false)
-                    && detect_fence_open(&owned).is_some_and(|open| open.fence_len > 3))
-                && detect_fence_open(&owned).is_some();
-            if caption_content(&owned).is_some()
-                || fold_below_column_opener
-                || opens_retained_fence
-                || indent > 0
-                    && indent != content_column
-                    && detect_fence_open(&owned).is_none()
-                    && paragraph_column.is_some_and(|owner| indent < owner)
-                || !interrupts_paragraph_in_band(cur, &owned, !below_the_column)
-            {
-                let keep = if caption_content(&owned).is_some() {
-                    format!("{LAZY}{owned}")
-                } else if opens_retained_fence {
-                    owned.clone()
-                } else if fold_below_column_opener
-                    || indent > 0
-                        && indent != content_column
-                        && detect_fence_open(&owned).is_none()
-                        && paragraph_column.is_some_and(|owner| indent < owner)
-                {
-                    format!("{LAZY}{}", trim_ascii_start(line))
-                } else if below_the_column {
-                    line.to_string()
-                } else if detect_fence_open(&owned).is_some() && !opens_retained_fence {
-                    // ONE COLUMN, AS THE LIST TWIN KEEPS IT. The body dedents
-                    // its own lines by the content margin, so a line pushed at
-                    // column 0 arrives AT that column on the reparse and the
-                    // fence shape opens a block one level in, where S10 I5 has
-                    // just made it the paragraph's text (carve-rs#2313). Only a
-                    // fence gets the column: a list marker given one opens a
-                    // second list where the fold continues the first.
-                    format!("{LAZY}{owned}")
-                } else {
-                    owned
-                };
-                folded_a_lazy_line = true;
-                if opens_retained_fence {
-                    retained_fence = detect_fence_open(&keep).map(|mut open| {
-                        open.content_col = indent;
-                        let has_closer =
-                            cur.lines.range(cur.pos + 1..cur.lines.len()).any(|next| {
-                                indent_columns(next) >= indent
-                                    && is_fence_close(trim_ascii_start(next), open)
-                            });
-                        (open, has_closer)
-                    });
-                    folded_a_lazy_line = false;
-                }
-                retained_below_comment = false;
-                let kept_col = if opens_retained_fence {
-                    cur.source_col(cur.pos)
-                        .map(|col| col + (line.len() - keep.len()) as isize)
-                } else if keep.starts_with(LAZY) && indent > 0 {
-                    cur.source_col(cur.pos).map(|col| col + indent as isize)
-                } else {
-                    cur.source_col(cur.pos)
-                };
-                lines.push(keep);
-                if closes_unopened_past_fence {
-                    unopened_past_fence = None;
-                }
-                line_map.push(cur.source_line(cur.pos));
-                col_map.push(kept_col);
-                reached.push(false);
-                cur.consume();
-                continue;
-            }
-            break;
+    }
+
+    fn closers(&mut self, cur: &LineCursor<'_>) -> &DefinitionBodyCloserIndex {
+        let content_column = self.content_column;
+        self.past_body_closers
+            .get_or_insert_with(|| definition_body_closer_index(cur, cur.pos + 1, content_column))
+    }
+
+    /// Is `open` closed by a closer written exactly at this body's column?
+    fn closer_in_exact_body(&mut self, cur: &LineCursor<'_>, open: FenceOpen) -> bool {
+        let next = cur.pos + 1;
+        let closers = self.closers(cur);
+        next < closers.end
+            && closers.exact_in_body.code_in(
+                next - closers.start..closers.end - closers.start,
+                open.fence_char,
+                open.fence_len,
+            )
+    }
+
+    /// Is `open` closed only by a closer below the body's column?
+    fn closer_only_below_body(&mut self, cur: &LineCursor<'_>, open: FenceOpen) -> bool {
+        let next = cur.pos + 1;
+        let closers = self.closers(cur);
+        let range = next.saturating_sub(closers.start)..closers.end.saturating_sub(closers.start);
+        next < closers.end
+            && !closers
+                .in_body
+                .code_in(range.clone(), open.fence_char, open.fence_len)
+            && closers
+                .below_body
+                .code_in(range, open.fence_char, open.fence_len)
+    }
+
+    /// Is `open` left without any closer inside the body?
+    fn no_closer_in_body(&mut self, cur: &LineCursor<'_>, open: FenceOpen) -> bool {
+        let next = cur.pos + 1;
+        let closers = self.closers(cur);
+        let range = next.saturating_sub(closers.start)..closers.end.saturating_sub(closers.start);
+        next >= closers.end
+            || !closers
+                .in_body
+                .code_in(range, open.fence_char, open.fence_len)
+    }
+
+    /// Advance the nested lead fence and the nested description state past a
+    /// line collected at the body's column.
+    fn follow_column_line(&mut self, fence: &DefinitionBodyFence, sliced: &str, indent: usize) {
+        // A line collected AT the body's column can be the closer of a
+        // nested lead fence (its content sits at or past the fence's
+        // column). Following it here releases the fence's ownership of
+        // the flush-left lines below, so a `:: ` opener under a closed
+        // nested fence starts a new item instead of being absorbed
+        // (carve#1970). `sliced` is in the body's own coordinates, as
+        // the seed and `advance_nested_lead_fence` both are.
+        let prior = self
+            .lines
+            .last()
+            .map(String::as_str)
+            .or_else(|| self.seed.lines().last());
+        if self.nested_lead_fence.is_some() || prior.map_or(true, is_blank_line) {
+            advance_nested_lead_fence(&mut self.nested_lead_fence, sliced);
         }
         if fence.open.is_some() {
-            // The body's own column, like every other line this collector takes:
-            // an opener PAST it leaves its authored residue for the rebase, which
-            // would otherwise dedent this line a second time.
-            let (residue, consumed, synthetic) = slice_columns_mapped(line, content_column, true);
-            lines.push(residue);
-            line_map.push(cur.source_line(cur.pos));
-            col_map.push(
-                cur.source_col(cur.pos)
-                    .map(|col| col + consumed as isize - synthetic as isize),
-            );
-            reached.push(false);
-            cur.consume();
-            continue;
+            return;
         }
-        // Blank line: absorb it as a paragraph separator ONLY when a later line
-        // still continues the definition (form A); otherwise leave it for the
-        // entry separator / outer block stream.
+        let local = trim_ascii_start(sliced);
+        if is_definition_list_start(local) {
+            self.nested_definition_open = true;
+            self.nested_definition_column = Some(indent);
+        }
+        if self.nested_definition_open {
+            if let Some(body) = strip_description_prefix(local) {
+                let marker_column = innermost_marker_content_col(body);
+                if marker_column > 0 {
+                    if let Some(open) =
+                        detect_fence_open(trim_ascii_start(innermost_marker_content(body)))
+                    {
+                        self.descendant_marker_fence =
+                            Some((open, indent + local.len() - body.len() + marker_column));
+                        self.descendant_block_ended = false;
+                    }
+                }
+            }
+        }
+        if indent == self.content_column
+            && detect_fence_open(local).is_none()
+            && !is_reference_definition(local)
+            && line_starts_paragraph(local)
+        {
+            self.descendant_block_ended = false;
+        }
+    }
+
+    /// A wrapped attribute opened at the body's column is one construct:
+    /// its later lines belong to it at any column (carve#3421).
+    fn take_wrapped_attribute_tail(
+        &mut self,
+        cur: &mut LineCursor<'_>,
+        fence: &DefinitionBodyFence,
+        indent: usize,
+    ) {
+        let opener = self.lines.last().map_or("", |line| trim_ascii_start(line));
+        let wrapped_attribute = (indent == self.content_column
+            && fence.open.is_none()
+            && opener.starts_with('{')
+            && parse_standalone_attrs(opener).is_none())
+        .then(|| {
+            standalone_attrs_block_len_iter(
+                std::iter::once(opener)
+                    .chain((cur.pos..cur.lines.len()).map_while(|i| cur.lines.line(i))),
+            )
+        })
+        .flatten();
+        for _ in 1..wrapped_attribute.unwrap_or(1) {
+            let next = cur.lines.at(cur.pos);
+            let col = cur
+                .source_col(cur.pos)
+                .map(|col| col + leading_ws(next) as isize);
+            self.push(trim_ascii_start(next).to_owned(), cur.source_line(cur.pos), col, true);
+            cur.consume();
+        }
+    }
+
+    fn take_below_column_line(
+        &mut self,
+        cur: &mut LineCursor<'_>,
+        fence: &DefinitionBodyFence,
+        line: &str,
+        indent: usize,
+    ) -> BodyStep {
+        if self.ends_below_column(cur, line, indent) {
+            return BodyStep::Stop;
+        }
+        // A COMMENT DELIMITER CLOSING A SPAN THIS BODY ALREADY HOLDS IS NOT
+        // "a comment below the column" - see `body_open_comment_run`. The
+        // shape test comes first because the predicate walks the collected
+        // lines and a delimiter-shaped line is rare.
+        if detect_comment_fence_line_any_column(line).is_some() {
+            let mut probe: Vec<&str> = self.seed.lines().collect();
+            probe.extend(self.lines.iter().map(String::as_str));
+            if closes_a_held_comment_span(&probe, line) {
+                let col = cur.source_col(cur.pos);
+                self.push(kept_comment_delimiter(line), cur.source_line(cur.pos), col, false);
+                cur.consume();
+                return BodyStep::Next;
+            }
+        }
+        // A closed deepest fence leaves no paragraph for a below-column line.
+        if fence.holds_no_paragraph() && !self.folded_a_lazy_line {
+            return BodyStep::Stop;
+        }
+        if !self.body_takes_fold() {
+            return BodyStep::Stop;
+        }
+        // A surviving quote owns this line before the definition column (CARVE-P0-004).
+        if indent > 0 && self.folded_into_quote && !trim_ascii_start(line).starts_with("%%") {
+            self.folded_a_lazy_line = true;
+            let col = cur.source_col(cur.pos);
+            self.push(line.to_string(), cur.source_line(cur.pos), col, false);
+            cur.consume();
+            return BodyStep::Next;
+        }
+        self.take_lazy_line(cur, line, indent)
+    }
+
+    /// Early exits for a line below the body's column, before any fold test.
+    fn ends_below_column(&self, cur: &LineCursor<'_>, line: &str, column: usize) -> bool {
+        // An unfinished nested marker fence owns no below-column line.
+        if self.nested_lead_fence.is_some() {
+            return true;
+        }
+        // The line cannot belong to this description below its body column.
+        // Leave a list opener to the surviving outer container.
+        if column < self.content_column
+            && cur.reached.and_then(|r| r.get(cur.pos)).copied() == Some(true)
+            && is_list_marker(trim_ascii_start(line))
+        {
+            return true;
+        }
+        // A new term/definition marker ends the definition (the outer loop
+        // picks it up). An EMPTY term marker opens nothing, whatever
+        // whitespace trails it, so it folds like a bare `::`.
+        is_definition_list_start(strip_lazy(line))
+            || (!line.starts_with(LAZY) && strip_definition_marker(strip_lazy(line)).is_some())
+    }
+
+    /// AND NEITHER DOES ANY OTHER BODY THAT ENDS IN A FINISHED BLOCK.
+    /// The fence guard is one shape of "the body holds no open paragraph"; an
+    /// empty block quote, a closed div or admonition, a table, a thematic
+    /// break, a line block and a body a block-attribute line left with no
+    /// block at all are the others, and each of them folded here while the
+    /// LIST twin closed (carve-rs#790). Same clause, same answer.
+    fn body_takes_fold(&mut self) -> bool {
+        if self.folded_a_lazy_line {
+            return true;
+        }
+        // ASKED OF THE BODY AS THE BODY WILL READ IT
+        // (markup-carve/carve#1911). The collector slices each line at
+        // the body's content column and leaves the residue in front, so
+        // a heading written one column past a three-column body arrives
+        // here as ` # H` - not an opener - and reported a paragraph the
+        // body does not have. The caller rebases those residuals away
+        // before parsing; the fold question has to see the same lines.
+        // The seed is the `:  ` marker line's own content, which is
+        // at the body's column 0 by construction, so it reaches.
+        let mut probe_reached = vec![true; self.seed.lines().count()];
+        probe_reached.extend_from_slice(&self.reached);
+        let so_far = body_as_read(self.body_so_far(), probe_reached, self.options);
+        if self.retained_below_comment {
+            return true;
+        }
+        let (takes_fold, quoted) = definition_body_fold(&so_far, self.options);
+        if takes_fold {
+            self.folded_into_quote = quoted;
+        }
+        takes_fold
+    }
+
+    fn take_lazy_line(&mut self, cur: &mut LineCursor<'_>, line: &str, indent: usize) -> BodyStep {
+        // Below the body's column, a recognized structural opener returns
+        // to the surviving outer container. Ordinary prose is still the
+        // open definition paragraph's lazy continuation; indentation alone
+        // does not manufacture a paragraph boundary.
+        //
+        // AND AN INVISIBLE LINE IS NOT AN OPENER HERE. §10 I5 makes a
+        // footnote definition and a block-attribute line at a nonzero column
+        // below the content column lazy paragraph text of THIS container
+        // (markup-carve/carve#1809, corpus 430-2 and 430-3). This guard is
+        // the one that ejected them: the interrupt test below never got the
+        // line.
+        let opener = trim_ascii_start(line);
+        let closes_unopened_past_fence =
+            self.unopened_past_fence.is_some_and(|open| is_fence_close(opener, open));
+        let fold_below_column_opener =
+            self.folds_below_column_opener(cur, opener, indent, closes_unopened_past_fence);
+        if self.opener_ends_body(cur, line, indent, fold_below_column_opener) {
+            return BodyStep::Stop;
+        }
+        // Lazy continuation: a flush-left line with no blank before it that
+        // does not start an interrupting block folds into the open
+        // paragraph (the same rule list items and block quotes use, matching
+        // djot). A block opener ends the definition.
+        let owned = if indent > 0 {
+            trim_ascii_start(line).to_string()
+        } else {
+            line.to_string()
+        };
+        let below_the_column = indent > 0;
+        // List markers do not interrupt the open paragraph (§10 I2).
+        // Fences and captions retain their separate boundary rules.
+        if !below_the_column
+            && cur.at_document_level
+            && fence_interrupts_body(cur, &owned, self.content_column)
+            && !self.retained_below_comment
+        {
+            return BodyStep::Stop;
+        }
+        let opens_retained_fence = self.opens_retained_fence(cur, &owned, indent);
+        let below_owner = self.below_owner_column(&owned, indent);
+        if !(caption_content(&owned).is_some()
+            || fold_below_column_opener
+            || opens_retained_fence
+            || below_owner
+            || !interrupts_paragraph_in_band(cur, &owned, !below_the_column))
+        {
+            return BodyStep::Stop;
+        }
+        let keep = if caption_content(&owned).is_some() {
+            format!("{LAZY}{owned}")
+        } else if opens_retained_fence {
+            owned.clone()
+        } else if fold_below_column_opener || below_owner {
+            format!("{LAZY}{}", trim_ascii_start(line))
+        } else if below_the_column {
+            line.to_string()
+        } else if detect_fence_open(&owned).is_some() {
+            // ONE COLUMN, AS THE LIST TWIN KEEPS IT. The body dedents
+            // its own lines by the content margin, so a line pushed at
+            // column 0 arrives AT that column on the reparse and the
+            // fence shape opens a block one level in, where S10 I5 has
+            // just made it the paragraph's text (carve-rs#2313). Only a
+            // fence gets the column: a list marker given one opens a
+            // second list where the fold continues the first.
+            format!("{LAZY}{owned}")
+        } else {
+            owned
+        };
+        self.folded_a_lazy_line = true;
+        if opens_retained_fence {
+            self.retained_fence = detect_fence_open(&keep).map(|mut open| {
+                open.content_col = indent;
+                let has_closer = cur.lines.range(cur.pos + 1..cur.lines.len()).any(|next| {
+                    indent_columns(next) >= indent && is_fence_close(trim_ascii_start(next), open)
+                });
+                (open, has_closer)
+            });
+            self.folded_a_lazy_line = false;
+        }
+        self.retained_below_comment = false;
+        let kept_col = if opens_retained_fence {
+            cur.source_col(cur.pos)
+                .map(|col| col + (line.len() - keep.len()) as isize)
+        } else if keep.starts_with(LAZY) && indent > 0 {
+            cur.source_col(cur.pos).map(|col| col + indent as isize)
+        } else {
+            cur.source_col(cur.pos)
+        };
+        if closes_unopened_past_fence {
+            self.unopened_past_fence = None;
+        }
+        self.push(keep, cur.source_line(cur.pos), kept_col, false);
+        cur.consume();
+        BodyStep::Next
+    }
+
+    /// A structural opener in the band below the body's column that still
+    /// folds in as text.
+    fn folds_below_column_opener(
+        &mut self,
+        cur: &LineCursor<'_>,
+        opener: &str,
+        indent: usize,
+        closes_unopened_past_fence: bool,
+    ) -> bool {
+        indent > 0
+            && indent < self.content_column
+            && (detect_heading(opener).is_some()
+                || thematic_break_marker(opener).is_some()
+                || closes_unopened_past_fence
+                || is_table_start(opener)
+                || detect_fence_open(opener).is_some_and(|open| self.no_closer_in_body(cur, open))
+                || strip_blockquote_prefix(opener).is_some()
+                || caption_content(opener).is_some())
+    }
+
+    fn opener_ends_body(
+        &self,
+        cur: &LineCursor<'_>,
+        line: &str,
+        indent: usize,
+        fold_below_column_opener: bool,
+    ) -> bool {
+        let fence_after_retained_comment = self.retained_below_comment
+            && (self
+                .lines
+                .last()
+                .is_some_and(|line| is_line_comment_any_column(line))
+                || ends_with_closed_comment_fence(&self.lines))
+            && (indent <= self.retained_comment_column || self.retained_comment_column == 0)
+            && detect_fence_open(trim_ascii_start(line)).is_some();
+        if indent > 0
+            && (indent < self.content_column
+                || self.paragraph_column.map_or(true, |owner| indent >= owner))
+            && item_block_opener_with_invisible_arms(trim_ascii_start(line), false)
+            && !fold_below_column_opener
+            && !fence_after_retained_comment
+        {
+            return true;
+        }
+        self.retained_below_comment
+            && cur.reached.and_then(|r| r.get(cur.pos)).copied() == Some(true)
+            && detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
+                cur.lines
+                    .range(cur.pos + 1..cur.lines.len())
+                    .any(|next| is_fence_close(trim_ascii_start(next), open))
+            })
+    }
+
+    fn opens_retained_fence(&self, cur: &LineCursor<'_>, owned: &str, indent: usize) -> bool {
+        self.retained_below_comment
+            && (self
+                .lines
+                .last()
+                .is_some_and(|line| is_line_comment_any_column(line))
+                || ends_with_closed_comment_fence(&self.lines))
+            && indent <= self.retained_comment_column
+            && !(cur.in_item_body
+                && cur.reached.and_then(|r| r.get(cur.pos)).copied() == Some(false)
+                && detect_fence_open(owned).is_some_and(|open| open.fence_len > 3))
+            && detect_fence_open(owned).is_some()
+    }
+
+    /// Text between the body's column and an open descendant's own column.
+    fn below_owner_column(&self, owned: &str, indent: usize) -> bool {
+        indent > 0
+            && indent != self.content_column
+            && detect_fence_open(owned).is_none()
+            && self.paragraph_column.is_some_and(|owner| indent < owner)
+    }
+
+    /// Blank line: absorb it as a paragraph separator ONLY when a later line
+    /// still continues the definition (form A); otherwise leave it for the
+    /// entry separator / outer block stream.
+    fn take_blank_run(&mut self, cur: &mut LineCursor<'_>) -> BodyStep {
+        let container = self.container;
         let look = container.blank_run_end(cur.lines, cur.pos) - cur.pos;
         match cur.lines.line(cur.pos + look) {
             Some(after)
                 if container.classify(after, || cur.continuation_decision(cur.pos + look))
                     == ContainerLine::Content =>
             {
-                folded_a_lazy_line = false;
+                self.folded_a_lazy_line = false;
                 for _ in 0..look {
-                    let (residue, consumed, synthetic) =
-                        slice_columns_mapped(cur.lines.at(cur.pos), content_column, true);
-                    lines.push(residue);
-                    line_map.push(cur.source_line(cur.pos));
-                    col_map.push(
-                        cur.source_col(cur.pos)
-                            .map(|col| col + consumed as isize - synthetic as isize),
-                    );
-                    reached.push(false);
+                    let blank = cur.lines.at(cur.pos);
+                    self.push_sliced(cur, blank, self.content_column);
                     cur.consume();
                 }
+                BodyStep::Next
             }
-            _ => break,
+            _ => BodyStep::Stop,
         }
-    });
-    debug_assert_eq!(col_map.len(), lines.len());
-    debug_assert_eq!(reached.len(), lines.len());
-    MappedSource {
-        col_map,
-        source: lines.join("\n"),
-        line_map,
-        authored_base_at_start: false,
-        item_marker_at_start: false,
-        marker_colon_rebased: false,
-        marker_tail: None,
-        reached,
-        opaque_blank_lines: Vec::new(),
-        discarded_outer_blank: false,
-        outer_plus_after_blank: false,
-        in_quoted_body: false,
-        sublists_carry_authored_base: false,
     }
 }
+
+/// Is the comment line at `indent` written below the column of the
+/// description marker that opened this body?
+fn authored_below_body(cur: &LineCursor<'_>, indent: usize) -> bool {
+    cur.source_col(cur.pos).is_some_and(|comment_col| {
+        (0..cur.pos)
+            .rev()
+            .find_map(|at| {
+                strip_definition_marker(trim_ascii_start(cur.lines.at(at))).and_then(|(_, width)| {
+                    cur.source_col(at).map(|base| {
+                        base + indent_columns(cur.lines.at(at)) as isize + width as isize
+                    })
+                })
+            })
+            .is_some_and(|body_col| comment_col + (indent as isize) < body_col)
+    })
+}
+
+/// AN INFO STRING IS NOT AN OPENER (markup-carve/carve#2735). A
+/// flush-left fence line below a body that takes a fold is the
+/// body's content whether or not it carries a language, so the
+/// closer ahead is the only thing that decides. Reading the language
+/// as an opener split the two spellings and pinned the split in
+/// `a_fence_ends_the_body`, which the clause contradicts.
+fn fence_interrupts_body(cur: &LineCursor<'_>, owned: &str, content_column: usize) -> bool {
+    detect_fence_open(owned).is_some_and(|open| {
+        item_body_fence_has_closer(
+            cur.lines.range(cur.pos + 1..cur.lines.len()),
+            open,
+            content_column,
+            |line, indent| {
+                indent < content_column
+                    && (is_definition_placeholder(line)
+                        || is_definition_list_start(strip_lazy(line))
+                        || strip_definition_marker(strip_lazy(line)).is_some())
+            },
+        )
+    })
+}
+
 /// Index closer runs that can reach this description body. Build it once for
 /// the current entry so several fence-shaped paragraph lines do not each scan
 /// the same remaining suffix.

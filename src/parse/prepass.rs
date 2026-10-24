@@ -1,4 +1,5 @@
 use super::*;
+use std::ops::ControlFlow;
 
 /// How many BYTES the definition pre-pass may hand to the block parser to
 /// answer [`line_folds_into_an_open_paragraph`], for one document.
@@ -447,35 +448,7 @@ pub(in crate::parse) fn term_folded_lines(
     closer_maxima: &PrepassFenceClosers,
     options: &Options<'_>,
 ) -> TermLineOwnership {
-    fn view_upto(raw: &str, limit: usize) -> (&str, usize, bool) {
-        let mut view = raw;
-        let mut quotes = 0usize;
-        let mut through_list = false;
-        while quotes < limit {
-            let rest = strip_blockquote_prefix(trim_ascii_start(view)).or_else(|| {
-                let mut content = view;
-                while let Some(rest) = term_container_content(content) {
-                    content = rest;
-                }
-                if content.len() == view.len() {
-                    return None;
-                }
-                let rest = strip_blockquote_prefix(trim_ascii_start(content))?;
-                through_list = true;
-                Some(rest)
-            });
-            let Some(rest) = rest else {
-                break;
-            };
-            view = rest;
-            quotes += 1;
-        }
-        (view, quotes, through_list)
-    }
-    fn view(raw: &str) -> (&str, usize, bool) {
-        view_upto(raw, usize::MAX)
-    }
-    let mut ownership = TermLineOwnership {
+    let ownership = TermLineOwnership {
         tracks_quote_context: lines.iter().any(|line| line.contains('>')),
         ..TermLineOwnership::default()
     };
@@ -483,43 +456,221 @@ pub(in crate::parse) fn term_folded_lines(
     // document of unterminated openers, which nesting re-reads per level.
     if !lines
         .iter()
-        .any(|raw| term_start_column(view(raw).0).is_some())
+        .any(|raw| term_start_column(term_view(raw).0).is_some())
     {
         return ownership;
     }
+    let mut scan = TermScan::new(lines, closer_maxima, options, ownership);
+    while scan.index < lines.len() {
+        scan.step();
+    }
+    scan.ownership.paragraph_quotes.borrow_mut().clear();
+    scan.ownership
+}
+
+fn term_view_upto(raw: &str, limit: usize) -> (&str, usize, bool) {
+    let mut view = raw;
+    let mut quotes = 0usize;
+    let mut through_list = false;
+    while quotes < limit {
+        let rest = strip_blockquote_prefix(trim_ascii_start(view)).or_else(|| {
+            let mut content = view;
+            while let Some(rest) = term_container_content(content) {
+                content = rest;
+            }
+            if content.len() == view.len() {
+                return None;
+            }
+            let rest = strip_blockquote_prefix(trim_ascii_start(content))?;
+            through_list = true;
+            Some(rest)
+        });
+        let Some(rest) = rest else {
+            break;
+        };
+        view = rest;
+        quotes += 1;
+    }
+    (view, quotes, through_list)
+}
+
+fn term_view(raw: &str) -> (&str, usize, bool) {
+    term_view_upto(raw, usize::MAX)
+}
+
+/// Does `rest`, on a line under an open term, end that term?
+fn ends_open_term(lines: &[&str], index: usize, deeper_quote: bool, rest: &str) -> bool {
+    deeper_quote
+        || (item_block_opener(rest) && detect_block_image(rest).is_none())
+        || is_colon_fence_opener_shape(rest)
+        || (rest.starts_with('{')
+            && standalone_attrs_block_len_iter(
+                lines[index..]
+                    .iter()
+                    .map(|line| trim_ascii_start(term_view(line).0)),
+            )
+            .is_some())
+        || is_list_marker(rest)
+        || rest.starts_with("%%")
+        || strip_definition_marker(rest).is_some()
+        || parse_link_def_line_with_value(rest)
+            .is_some_and(|(label, target, _)| !label.starts_with('@') && !target.trim().is_empty())
+}
+
+/// `view_line` past the list markers, and after a term its definition markers,
+/// that may host a fence, with how many were stripped.
+fn strip_fence_host_markers(view_line: &str, after_term: bool) -> (&str, usize) {
+    let mut fence_line = view_line;
+    let mut fence_markers = 0;
+    while let Some(content) = detect_list_marker_full(fence_line)
+        .map(|marker| marker.content)
+        .or_else(|| {
+            after_term
+                .then(|| strip_definition_marker(trim_ascii_start(fence_line)))
+                .flatten()
+                .map(|(body, _)| body)
+        })
+    {
+        fence_line = content;
+        fence_markers += 1;
+    }
+    (fence_line, fence_markers)
+}
+
+/// How far the term pass may still probe a marker line, and where the probe may
+/// restart its run.
+struct TermMarkerProbe {
+    budget: usize,
+    root_start: usize,
+    reuse_root: bool,
+    last_unproved_delimiter: Option<usize>,
+    unresolved_code_delimiter: bool,
+}
+
+/// A fence opener line as the term pass read it.
+struct TermFenceLine<'a> {
+    view_line: &'a str,
+    fence_line: &'a str,
+    fence_rest: &'a str,
+    quotes: usize,
+    fence_markers: usize,
+    after_term: bool,
+    admitted_term_fence: bool,
+    reusable_before_fence: bool,
+}
+
+/// An opened fence whose body the term pass skips.
+struct TermFenceBody {
+    open: FenceOpen,
+    quotes: usize,
+    term_hosted: bool,
+    inline_marker: bool,
+    owned: bool,
+    floor: usize,
+    quote_columns: Option<Vec<usize>>,
+    closer_ahead: bool,
+}
+
+impl TermFenceBody {
+    fn ends_at(&self, line: &str, paragraph: Option<&PrepassParagraph>) -> bool {
+        inline_fence_paragraph_ends(line, self.open, paragraph)
+            || !inline_fence_lazy_line(line, paragraph)
+                && ((self.inline_marker && is_blank_line(term_view(line).0))
+                    || (self.owned
+                        && term_fence_ends_above(
+                            line,
+                            self.floor,
+                            self.quote_columns.as_deref().unwrap_or(&[]),
+                        ))
+                    || prepass_fence_ends_above(line, self.open, self.closer_ahead))
+    }
+}
+
+struct TermScan<'a, 'o> {
+    lines: &'a [&'a str],
+    closer_maxima: &'a PrepassFenceClosers,
+    options: &'a Options<'o>,
+    ownership: TermLineOwnership,
     // Lines by the length of their leading `%` run, so finding the closer of a
     // comment fence opened on `index` stays linear over many unclosed openers.
-    let mut runs: HashMap<usize, Vec<usize>> = HashMap::new();
-    for (k, raw) in lines.iter().enumerate() {
-        let run = comment_fence_width(trim_ascii_start(view(raw).0));
-        if run >= 3 {
-            runs.entry(run).or_default().push(k);
+    comment_runs: HashMap<usize, Vec<usize>>,
+    prefix_costs: Vec<usize>,
+    probe: TermMarkerProbe,
+    term: Option<(usize, usize)>,
+    term_start: Option<usize>,
+    term_quote_columns: Vec<usize>,
+    admitted_term_host: Option<(usize, usize, usize)>,
+    admitted_host_quote_columns: Vec<usize>,
+    columns: ContentColumns,
+    previous_non_blank: &'a str,
+    index: usize,
+}
+
+impl<'a, 'o> TermScan<'a, 'o> {
+    fn new(
+        lines: &'a [&'a str],
+        closer_maxima: &'a PrepassFenceClosers,
+        options: &'a Options<'o>,
+        ownership: TermLineOwnership,
+    ) -> Self {
+        let mut comment_runs: HashMap<usize, Vec<usize>> = HashMap::new();
+        for (k, raw) in lines.iter().enumerate() {
+            let run = comment_fence_width(trim_ascii_start(term_view(raw).0));
+            if run >= 3 {
+                comment_runs.entry(run).or_default().push(k);
+            }
+        }
+        let mut prefix_costs = Vec::with_capacity(lines.len() + 1);
+        prefix_costs.push(0usize);
+        for line in lines {
+            prefix_costs.push(prefix_costs.last().unwrap().saturating_add(line.len() + 1));
+        }
+        let budget = probe_budget_for(*prefix_costs.last().unwrap());
+        Self {
+            lines,
+            closer_maxima,
+            options,
+            ownership,
+            comment_runs,
+            prefix_costs,
+            probe: TermMarkerProbe {
+                budget,
+                root_start: 0,
+                reuse_root: true,
+                last_unproved_delimiter: None,
+                unresolved_code_delimiter: false,
+            },
+            term: None,
+            term_start: None,
+            term_quote_columns: Vec::new(),
+            admitted_term_host: None,
+            admitted_host_quote_columns: Vec::new(),
+            columns: ContentColumns::new(),
+            previous_non_blank: "",
+            index: 0,
         }
     }
-    let comment_closer = |index: usize, fence_len: usize| {
-        let at = runs.get(&fence_len)?;
+
+    fn comment_closer(&self, index: usize, fence_len: usize) -> Option<usize> {
+        let at = self.comment_runs.get(&fence_len)?;
         at.get(at.partition_point(|&k| k <= index)).copied()
-    };
-    let mut prefix_costs = Vec::with_capacity(lines.len() + 1);
-    prefix_costs.push(0usize);
-    for line in lines {
-        prefix_costs.push(prefix_costs.last().unwrap().saturating_add(line.len() + 1));
     }
-    let marker_admitted = |start: usize,
-                           budget: &mut usize,
-                           root_start: &mut usize,
-                           reuse_root: &mut bool,
-                           last_unproved_delimiter: Option<usize>,
-                           unresolved_code_delimiter: bool| {
-        if probing() || start == 0 || is_blank_line(view(lines[start - 1]).0) {
+
+    fn marker_admitted(&mut self, start: usize) -> bool {
+        let lines = self.lines;
+        let options = self.options;
+        if probing() || start == 0 || is_blank_line(term_view(lines[start - 1]).0) {
             return true;
         }
-        let run_start = if *reuse_root && options.extensions.is_empty() && *root_start < start {
-            *root_start
-        } else {
-            0
-        };
-        if *budget
+        let probe = &mut self.probe;
+        let prefix_costs = &self.prefix_costs;
+        let run_start =
+            if probe.reuse_root && options.extensions.is_empty() && probe.root_start < start {
+                probe.root_start
+            } else {
+                0
+            };
+        if probe.budget
             < prefix_costs[start]
                 .saturating_sub(prefix_costs[run_start])
                 .saturating_mul(2)
@@ -542,13 +693,13 @@ pub(in crate::parse) fn term_folded_lines(
             &lines[probe_start..start],
             lines[start],
             options,
-            budget,
+            &mut probe.budget,
             &mut unaffordable,
             true,
             true,
         );
         if let Some((root, closed_initial_container_end)) = restart {
-            *budget = budget.saturating_sub(
+            probe.budget = probe.budget.saturating_sub(
                 prefix_costs[root]
                     .saturating_sub(prefix_costs[run_start])
                     .saturating_mul(2),
@@ -567,417 +718,447 @@ pub(in crate::parse) fn term_folded_lines(
             };
         }
         if run_start == 0
-            && !unresolved_code_delimiter
+            && !probe.unresolved_code_delimiter
             && proved_start
                 .closed_initial_container_end
-                .is_some_and(|end| last_unproved_delimiter.is_some_and(|delimiter| delimiter < end))
+                .is_some_and(|end| {
+                    probe
+                        .last_unproved_delimiter
+                        .is_some_and(|delimiter| delimiter < end)
+                })
         {
-            *reuse_root = true;
+            probe.reuse_root = true;
         }
         if let Some(proved_start) = proved_start.start.map(|proved| run_start + proved) {
-            if proved_start >= *root_start && proved_start < start {
-                *root_start = proved_start;
+            if proved_start >= probe.root_start && proved_start < start {
+                probe.root_start = proved_start;
             }
         }
         !(folds || unaffordable)
-    };
-    let mut term_probe_budget = probe_budget_for(*prefix_costs.last().unwrap());
-    let mut probe_root_start = 0;
-    let mut reuse_probe_root = true;
-    let mut last_unproved_delimiter = None;
-    let mut unresolved_code_delimiter = false;
-    let mut term: Option<(usize, usize)> = None;
-    let mut term_start = None;
-    let mut admitted_term_host: Option<(usize, usize, usize)> = None;
-    let mut admitted_host_quote_columns = Vec::new();
-    let mut term_quote_columns = Vec::new();
-    let mut columns = ContentColumns::new();
-    let mut previous_non_blank = "";
-    let mut index = 0;
-    while index < lines.len() {
-        columns.observe_indexed(
-            lines[index],
-            prepass_quote_line_is_folded(&ownership, index, lines[index]),
+    }
+
+    fn step(&mut self) {
+        let index = self.index;
+        let line = self.lines[index];
+        self.columns.observe_indexed(
+            line,
+            prepass_quote_line_is_folded(&self.ownership, index, line),
             Some(index),
         );
-        if admitted_term_host.is_some()
-            && strip_term_quote_prefixes(lines[index], &admitted_host_quote_columns).is_none()
+        if self.admitted_term_host.is_some()
+            && strip_term_quote_prefixes(line, &self.admitted_host_quote_columns).is_none()
         {
-            admitted_term_host = None;
+            self.admitted_term_host = None;
         }
-        let after_term = opens_definition_entry(previous_non_blank);
-        if !is_blank_line(lines[index]) {
-            previous_non_blank = lines[index];
+        let after_term = opens_definition_entry(self.previous_non_blank);
+        if !is_blank_line(line) {
+            self.previous_non_blank = line;
         }
-        let prefix = strip_container_prefixes_at(lines[index], &columns, after_term);
-        remember_prepass_paragraph_line(&ownership, index, lines[index], &prefix, &columns);
-        // A `>` past an open term's column is term text, not a deeper quote.
-        if let Some((term_col, term_quotes)) = term {
-            let (at_term, quotes, through_list) = view_upto(lines[index], term_quotes);
-            let rest = trim_ascii_start(at_term);
-            if !through_list
-                && quotes == term_quotes
-                && !is_blank_line(at_term)
-                && (indent_columns(at_term) > term_col
-                    || (term_quotes > 0
-                        && term_quote_columns
-                            .first()
-                            .is_some_and(|column| indent_columns(lines[index]) > *column)))
-                && (strip_blockquote_prefix(rest).is_some()
-                    || strip_definition_marker(rest).is_some()
-                    || strip_blockquote_prefix(trim_ascii_start(lines[index])).is_some())
-            {
-                ownership.folded.insert(index);
-                index += 1;
-                continue;
-            }
+        let prefix = strip_container_prefixes_at(line, &self.columns, after_term);
+        remember_prepass_paragraph_line(&self.ownership, index, line, &prefix, &self.columns);
+        if self.quote_is_term_text(line) {
+            self.ownership.folded.insert(index);
+            self.index += 1;
+            return;
         }
-        let (view_line, quotes, through_list) = view(lines[index]);
+        let (view_line, quotes, through_list) = term_view(line);
         if through_list {
-            term = None;
+            self.term = None;
         }
-        if admitted_term_host.is_some_and(|(_, _, depth)| depth != quotes) {
-            admitted_term_host = None;
+        if self
+            .admitted_term_host
+            .is_some_and(|(_, _, depth)| depth != quotes)
+        {
+            self.admitted_term_host = None;
         }
         if is_blank_line(view_line) {
-            term = None;
-            index += 1;
-            continue;
+            self.term = None;
+            self.index += 1;
+            return;
         }
         let col = indent_columns(view_line);
         let rest = trim_ascii_start(view_line);
-        if let Some((base, _, depth)) =
-            admitted_term_host.filter(|&(base, _, depth)| depth == quotes && col == base)
-        {
-            if let Some((_, floor)) = detect_prepass_list_marker(view_line) {
-                admitted_term_host = Some((base, floor, depth));
-            }
-        }
-        let comment =
-            detect_comment_fence_line(rest).and_then(|open| comment_closer(index, open.fence_len));
-        if admitted_term_host
-            .is_some_and(|(base, floor, _)| col < base || (col < floor && !is_list_marker(rest)))
-        {
-            admitted_term_host = None;
-        }
-        let mut admitted_term_fence = false;
-        if let Some((term_col, term_quotes)) = term {
-            if quotes == term_quotes && col > term_col && !is_list_marker(rest) {
-                // A folded comment fence takes its body and closer with it.
-                let last = comment.unwrap_or(index);
-                ownership.folded.extend(index..=last);
-                previous_non_blank = lines[last];
-                index = last + 1;
-                continue;
-            }
-            if quotes == term_quotes
-                && col == term_col
-                && detect_fence_open(rest).is_some()
-                && term_start.is_some_and(|start| {
-                    let marker_col = indent_columns(view(lines[start]).0);
-                    if term_col == 0
-                        || admitted_term_host.is_some_and(|(base, floor, depth)| {
-                            depth == quotes
-                                && (marker_col == floor
-                                    || (marker_col == base
-                                        && is_list_marker(trim_ascii_start(view(lines[start]).0))))
-                        })
-                    {
-                        return true;
-                    }
-                    marker_admitted(
-                        start,
-                        &mut term_probe_budget,
-                        &mut probe_root_start,
-                        &mut reuse_probe_root,
-                        last_unproved_delimiter,
-                        unresolved_code_delimiter,
-                    )
-                })
-            {
-                admitted_term_fence = true;
-                ownership.fence_openers.insert(
-                    index,
-                    TermFenceHost {
-                        content_col: col,
-                        quote_depth: quotes,
-                        quote_columns: if strip_term_quote_prefixes(
-                            lines[index],
-                            &term_quote_columns,
-                        )
-                        .is_some()
-                        {
-                            term_quote_columns.clone()
-                        } else {
-                            term_quote_columns_for(lines[index], &columns)
-                        },
-                        opener_offset: rest.as_ptr() as usize - lines[index].as_ptr() as usize,
-                    },
-                );
-            }
-            if quotes > term_quotes
-                || (item_block_opener(rest) && detect_block_image(rest).is_none())
-                || is_colon_fence_opener_shape(rest)
-                || (rest.starts_with('{')
-                    && standalone_attrs_block_len_iter(
-                        lines[index..]
-                            .iter()
-                            .map(|line| trim_ascii_start(view(line).0)),
-                    )
-                    .is_some())
-                || is_list_marker(rest)
-                || rest.starts_with("%%")
-                || strip_definition_marker(rest).is_some()
-                || parse_link_def_line_with_value(rest).is_some_and(|(label, target, _)| {
-                    !label.starts_with('@') && !target.trim().is_empty()
-                })
-            {
-                term = None;
-            }
-        }
+        self.track_admitted_host(view_line, col, quotes, rest);
+        let comment = detect_comment_fence_line(rest)
+            .and_then(|open| self.comment_closer(index, open.fence_len));
+        let ControlFlow::Continue(admitted_term_fence) =
+            self.continue_open_term(col, quotes, rest, comment)
+        else {
+            return;
+        };
         // A fence's payload holds no term.
         if let Some(close) = comment {
             for opaque in index..=close {
-                end_prepass_paragraph_at(&ownership, opaque);
+                end_prepass_paragraph_at(&self.ownership, opaque);
             }
-            previous_non_blank = lines[close];
-            index = close + 1;
-            continue;
+            self.previous_non_blank = self.lines[close];
+            self.index = close + 1;
+            return;
         }
-        let mut fence_line = view_line;
-        let mut fence_markers = 0;
-        while let Some(content) = detect_list_marker_full(fence_line)
-            .map(|marker| marker.content)
-            .or_else(|| {
-                after_term
-                    .then(|| strip_definition_marker(trim_ascii_start(fence_line)))
-                    .flatten()
-                    .map(|(body, _)| body)
-            })
-        {
-            fence_line = content;
-            fence_markers += 1;
-        }
+        let (fence_line, fence_markers) = strip_fence_host_markers(view_line, after_term);
         let fence_rest = trim_ascii_start(fence_line);
-        let reusable_before_fence = reuse_probe_root;
+        let reusable_before_fence = self.probe.reuse_root;
         // An unproved delimiter may acquire a closer in a later prefix.
         if (detect_fence_open(fence_rest).is_some() && !admitted_term_fence)
             || is_colon_fence_opener_shape(rest)
         {
-            reuse_probe_root = false;
-            probe_root_start = 0;
-            last_unproved_delimiter = Some(index);
+            self.probe.reuse_root = false;
+            self.probe.root_start = 0;
+            self.probe.last_unproved_delimiter = Some(index);
         }
-        if let Some(mut open) = detect_fence_open(fence_rest) {
-            open.content_col = view_line
-                [..fence_line.as_ptr() as usize - view_line.as_ptr() as usize]
-                .chars()
-                .count()
-                + indent_columns(fence_line);
-            open.quoted = quotes > 0;
-            let fence = prepass_fence_opens(
-                lines,
-                index,
-                open,
-                closer_maxima,
-                &ownership,
-                &columns,
+        if let Some(open) = detect_fence_open(fence_rest) {
+            let at = TermFenceLine {
+                view_line,
+                fence_line,
+                fence_rest,
+                quotes,
+                fence_markers,
                 after_term,
-            );
-            if !fence.opens {
-                unresolved_code_delimiter = true;
-                index += 1;
-                continue;
-            }
-            // A column-zero term after a blank starts its own block. Its
-            // immediate definition marker cannot continue an earlier paragraph.
-            let direct_term_body = index >= 2
-                && after_term
-                && term_start == Some(index - 1)
-                && strip_definition_marker(trim_ascii_start(view_line)).is_some()
-                && view(lines[index - 1]).1 == quotes
-                && term_start_column(view(lines[index - 1]).0) == Some(0)
-                && is_blank_line(view(lines[index - 2]).0);
-            if fence_markers == 1
-                && (admitted_term_fence
-                    || direct_term_body
-                    || marker_admitted(
-                        index,
-                        &mut term_probe_budget,
-                        &mut probe_root_start,
-                        &mut reuse_probe_root,
-                        last_unproved_delimiter,
-                        unresolved_code_delimiter,
-                    ))
-            {
-                ownership.fence_openers.insert(
-                    index,
-                    TermFenceHost {
-                        content_col: open.content_col,
-                        quote_depth: quotes,
-                        quote_columns: term_quote_columns_for(lines[index], &columns),
-                        opener_offset: fence_rest.as_ptr() as usize
-                            - lines[index].as_ptr() as usize,
-                    },
-                );
-            }
-            let term_host = ownership.fence_openers.get(&index);
-            let mut inline_marker_paragraph = if fence.inline_marker && term_host.is_none() {
-                previous_prepass_paragraph(&ownership, index)
-            } else {
-                None
+                admitted_term_fence,
+                reusable_before_fence,
             };
-            let mut term_quote_columns = term_host.map(|host| host.quote_columns.clone());
-            let mut term_fence_owned = term_host.is_some();
-            let term_fence_floor =
-                term_host.map_or(fence.host_content_col, |host| host.content_col);
-            if term_quote_columns.is_none() && !fence.quote_columns.is_empty() {
-                term_quote_columns = Some(fence.quote_columns.clone());
-                term_fence_owned = true;
-            }
-            end_prepass_paragraph_at(&ownership, index);
-            let mut consumed_closer = false;
-            index += 1;
-            while index < lines.len() {
-                if inline_fence_paragraph_ends(lines[index], open, inline_marker_paragraph.as_ref())
-                    || !inline_fence_lazy_line(lines[index], inline_marker_paragraph.as_ref())
-                        && ((fence.inline_marker
-                            && term_host.is_none()
-                            && is_blank_line(view(lines[index]).0))
-                            || (term_fence_owned
-                                && term_fence_ends_above(
-                                    lines[index],
-                                    term_fence_floor,
-                                    term_quote_columns.as_deref().unwrap_or(&[]),
-                                ))
-                            || prepass_fence_ends_above(lines[index], open, fence.closer_ahead))
-                {
-                    if term_host.is_some() {
-                        let (next, depth, _) = view(lines[index]);
-                        let next = trim_ascii_start(next);
-                        if detect_fence_open(next).is_some() {
-                            ownership.fence_openers.insert(
-                                index,
-                                TermFenceHost {
-                                    content_col: indent_columns(view(lines[index]).0),
-                                    quote_depth: depth,
-                                    quote_columns: term_quote_columns_for(lines[index], &columns),
-                                    opener_offset: next.as_ptr() as usize
-                                        - lines[index].as_ptr() as usize,
-                                },
-                            );
-                        }
-                    }
-                    break;
-                }
-                end_prepass_paragraph_at(&ownership, index);
-                if !term_fence_owned {
-                    let (body, depth, _) = view(lines[index]);
-                    for (frame_depth, frame) in columns.frames.iter_mut().enumerate() {
-                        if frame_depth > depth
-                            || (frame_depth == depth
-                                && !is_blank_line(body)
-                                && frame.first_list_col.is_some_and(|(base, floor)| {
-                                    let col = indent_columns(body);
-                                    col < base
-                                        || (col < floor && !is_list_marker(trim_ascii_start(body)))
-                                }))
-                        {
-                            frame.first_list_col = None;
-                            frame.first_list_start = None;
-                        }
-                    }
-                    if admitted_term_host.is_some_and(|(_, floor, host_depth)| {
-                        depth != host_depth
-                            || strip_term_quote_prefixes(lines[index], &admitted_host_quote_columns)
-                                .is_none()
-                            || (!is_blank_line(lines[index]) && indent_columns(body) < floor)
-                    }) {
-                        admitted_term_host = None;
-                    }
-                }
-                advance_inline_paragraph(lines[index], inline_marker_paragraph.as_mut());
-                let kept = strip_prepass_quote_levels(lines[index], quotes).unwrap_or(lines[index]);
-                let close_line = if leading_ws(kept) >= open.content_col {
-                    &kept[open.content_col..]
-                } else {
-                    kept
-                };
-                let closes = is_fence_close(close_line, open);
-                if !is_blank_line(lines[index]) {
-                    previous_non_blank = lines[index];
-                }
-                index += 1;
-                if closes {
-                    if fence.inline_marker && term_host.is_none() {
-                        ownership
-                            .paragraph_quotes
-                            .borrow_mut()
-                            .insert(index - 1, inline_marker_paragraph.clone());
-                    }
-                    consumed_closer = true;
-                    break;
-                }
-            }
-            if reusable_before_fence && consumed_closer {
-                reuse_probe_root = true;
-            }
-            if !admitted_term_fence && !consumed_closer {
-                unresolved_code_delimiter = true;
-            }
-            // A proved term fence establishes an actual item host. Keep its
-            // column through sibling markers and in-item continuations, but
-            // discard it on every non-marker line below that column.
-            if admitted_term_fence
-                && term_start
-                    .is_some_and(|start| detect_list_marker_full(view(lines[start]).0).is_some())
-            {
-                let start = term_start.unwrap();
-                let marker_col = indent_columns(view(lines[start]).0);
-                if !admitted_term_host.is_some_and(|(base, floor, depth)| {
-                    depth == quotes && (marker_col == base || marker_col == floor)
-                }) {
-                    let own_host = (marker_col, open.content_col);
-                    let outer = columns
-                        .frames
-                        .get(quotes)
-                        .and_then(|frame| Some((frame.first_list_col?, frame.first_list_start?)));
-                    let (base, floor) = outer
-                        .filter(|&((base, _), outer_start)| {
-                            base == marker_col
-                                || (term_quote_columns_for(lines[outer_start], &columns)
-                                    == term_quote_columns.clone().unwrap_or_default()
-                                    && marker_admitted(
-                                        outer_start,
-                                        &mut term_probe_budget,
-                                        &mut probe_root_start,
-                                        &mut reuse_probe_root,
-                                        last_unproved_delimiter,
-                                        unresolved_code_delimiter,
-                                    ))
-                        })
-                        .map_or(own_host, |(host, _)| host);
-                    admitted_term_host = Some((base, floor, quotes));
-                    admitted_host_quote_columns = term_quote_columns.clone().unwrap_or_default();
-                }
-            }
-            continue;
+            self.scan_fence(&at, open);
+            return;
         }
         // A term may follow list markers on its line; its column is then the
         // item's content column.
         if let Some(term_col) = term_start_column(view_line).filter(|&term_col| {
             term_col == 0
                 || detect_list_marker_full(view_line).is_some()
-                || columns.reached_by_at(quotes, term_col) == term_col
+                || self.columns.reached_by_at(quotes, term_col) == term_col
         }) {
-            term = Some((term_col, quotes));
-            term_start = Some(index);
-            term_quote_columns = term_quote_columns_for(lines[index], &columns);
+            self.term = Some((term_col, quotes));
+            self.term_start = Some(index);
+            self.term_quote_columns = term_quote_columns_for(line, &self.columns);
         }
-        index += 1;
+        self.index += 1;
     }
-    ownership.paragraph_quotes.borrow_mut().clear();
-    ownership
+
+    /// A `>` past an open term's column is term text, not a deeper quote.
+    fn quote_is_term_text(&self, line: &str) -> bool {
+        let Some((term_col, term_quotes)) = self.term else {
+            return false;
+        };
+        let (at_term, quotes, through_list) = term_view_upto(line, term_quotes);
+        let rest = trim_ascii_start(at_term);
+        !through_list
+            && quotes == term_quotes
+            && !is_blank_line(at_term)
+            && (indent_columns(at_term) > term_col
+                || (term_quotes > 0
+                    && self
+                        .term_quote_columns
+                        .first()
+                        .is_some_and(|column| indent_columns(line) > *column)))
+            && (strip_blockquote_prefix(rest).is_some()
+                || strip_definition_marker(rest).is_some()
+                || strip_blockquote_prefix(trim_ascii_start(line)).is_some())
+    }
+
+    fn track_admitted_host(&mut self, view_line: &str, col: usize, quotes: usize, rest: &str) {
+        if let Some((base, _, depth)) = self
+            .admitted_term_host
+            .filter(|&(base, _, depth)| depth == quotes && col == base)
+        {
+            if let Some((_, floor)) = detect_prepass_list_marker(view_line) {
+                self.admitted_term_host = Some((base, floor, depth));
+            }
+        }
+        if self.admitted_term_host.is_some_and(|(base, floor, _)| {
+            col < base || (col < floor && !is_list_marker(rest))
+        }) {
+            self.admitted_term_host = None;
+        }
+    }
+
+    /// Folds the line into an open term, breaking, or reports whether a fence at
+    /// the term's column belongs to the term.
+    fn continue_open_term(
+        &mut self,
+        col: usize,
+        quotes: usize,
+        rest: &str,
+        comment: Option<usize>,
+    ) -> ControlFlow<(), bool> {
+        let index = self.index;
+        let Some((term_col, term_quotes)) = self.term else {
+            return ControlFlow::Continue(false);
+        };
+        if quotes == term_quotes && col > term_col && !is_list_marker(rest) {
+            // A folded comment fence takes its body and closer with it.
+            let last = comment.unwrap_or(index);
+            self.ownership.folded.extend(index..=last);
+            self.previous_non_blank = self.lines[last];
+            self.index = last + 1;
+            return ControlFlow::Break(());
+        }
+        let mut admitted_term_fence = false;
+        if quotes == term_quotes
+            && col == term_col
+            && detect_fence_open(rest).is_some()
+            && self.term_fence_admitted(term_col, quotes)
+        {
+            admitted_term_fence = true;
+            let line = self.lines[index];
+            let quote_columns =
+                if strip_term_quote_prefixes(line, &self.term_quote_columns).is_some() {
+                    self.term_quote_columns.clone()
+                } else {
+                    term_quote_columns_for(line, &self.columns)
+                };
+            self.ownership.fence_openers.insert(
+                index,
+                TermFenceHost {
+                    content_col: col,
+                    quote_depth: quotes,
+                    quote_columns,
+                    opener_offset: rest.as_ptr() as usize - line.as_ptr() as usize,
+                },
+            );
+        }
+        if ends_open_term(self.lines, index, quotes > term_quotes, rest) {
+            self.term = None;
+        }
+        ControlFlow::Continue(admitted_term_fence)
+    }
+
+    /// Does the open term's marker line host a fence at the term's column?
+    fn term_fence_admitted(&mut self, term_col: usize, quotes: usize) -> bool {
+        let Some(start) = self.term_start else {
+            return false;
+        };
+        let marker_view = term_view(self.lines[start]).0;
+        let marker_col = indent_columns(marker_view);
+        if term_col == 0
+            || self.admitted_term_host.is_some_and(|(base, floor, depth)| {
+                depth == quotes
+                    && (marker_col == floor
+                        || (marker_col == base && is_list_marker(trim_ascii_start(marker_view))))
+            })
+        {
+            return true;
+        }
+        self.marker_admitted(start)
+    }
+
+    fn scan_fence(&mut self, at: &TermFenceLine<'a>, mut open: FenceOpen) {
+        let lines = self.lines;
+        let index = self.index;
+        open.content_col = at.view_line
+            [..at.fence_line.as_ptr() as usize - at.view_line.as_ptr() as usize]
+            .chars()
+            .count()
+            + indent_columns(at.fence_line);
+        open.quoted = at.quotes > 0;
+        let fence = prepass_fence_opens(
+            lines,
+            index,
+            open,
+            self.closer_maxima,
+            &self.ownership,
+            &self.columns,
+            at.after_term,
+        );
+        if !fence.opens {
+            self.probe.unresolved_code_delimiter = true;
+            self.index += 1;
+            return;
+        }
+        // A column-zero term after a blank starts its own block. Its
+        // immediate definition marker cannot continue an earlier paragraph.
+        let direct_term_body = index >= 2
+            && at.after_term
+            && self.term_start == Some(index - 1)
+            && strip_definition_marker(trim_ascii_start(at.view_line)).is_some()
+            && term_view(lines[index - 1]).1 == at.quotes
+            && term_start_column(term_view(lines[index - 1]).0) == Some(0)
+            && is_blank_line(term_view(lines[index - 2]).0);
+        if at.fence_markers == 1
+            && (at.admitted_term_fence || direct_term_body || self.marker_admitted(index))
+        {
+            self.ownership.fence_openers.insert(
+                index,
+                TermFenceHost {
+                    content_col: open.content_col,
+                    quote_depth: at.quotes,
+                    quote_columns: term_quote_columns_for(lines[index], &self.columns),
+                    opener_offset: at.fence_rest.as_ptr() as usize - lines[index].as_ptr() as usize,
+                },
+            );
+        }
+        let term_host = self
+            .ownership
+            .fence_openers
+            .get(&index)
+            .map(|host| (host.content_col, host.quote_columns.clone()));
+        let inline_marker = fence.inline_marker && term_host.is_none();
+        let paragraph = if inline_marker {
+            previous_prepass_paragraph(&self.ownership, index)
+        } else {
+            None
+        };
+        let mut body = TermFenceBody {
+            open,
+            quotes: at.quotes,
+            term_hosted: term_host.is_some(),
+            inline_marker,
+            owned: term_host.is_some(),
+            floor: term_host
+                .as_ref()
+                .map_or(fence.host_content_col, |(content_col, _)| *content_col),
+            quote_columns: term_host.map(|(_, quote_columns)| quote_columns),
+            closer_ahead: fence.closer_ahead,
+        };
+        if body.quote_columns.is_none() && !fence.quote_columns.is_empty() {
+            body.quote_columns = Some(fence.quote_columns);
+            body.owned = true;
+        }
+        end_prepass_paragraph_at(&self.ownership, index);
+        self.index += 1;
+        let consumed_closer = self.consume_fence_body(&body, paragraph);
+        if at.reusable_before_fence && consumed_closer {
+            self.probe.reuse_root = true;
+        }
+        if !at.admitted_term_fence && !consumed_closer {
+            self.probe.unresolved_code_delimiter = true;
+        }
+        if at.admitted_term_fence {
+            self.adopt_term_fence_host(
+                at.quotes,
+                open.content_col,
+                body.quote_columns.unwrap_or_default(),
+            );
+        }
+    }
+
+    /// Skips a fence's body, reporting whether its closer was consumed.
+    fn consume_fence_body(
+        &mut self,
+        body: &TermFenceBody,
+        mut paragraph: Option<PrepassParagraph>,
+    ) -> bool {
+        while self.index < self.lines.len() {
+            let index = self.index;
+            let line = self.lines[index];
+            if body.ends_at(line, paragraph.as_ref()) {
+                if body.term_hosted {
+                    self.record_term_fence_after(line);
+                }
+                return false;
+            }
+            end_prepass_paragraph_at(&self.ownership, index);
+            if !body.owned {
+                self.drop_hosts_left_by(line);
+            }
+            advance_inline_paragraph(line, paragraph.as_mut());
+            let kept = strip_prepass_quote_levels(line, body.quotes).unwrap_or(line);
+            let close_line = if leading_ws(kept) >= body.open.content_col {
+                &kept[body.open.content_col..]
+            } else {
+                kept
+            };
+            let closes = is_fence_close(close_line, body.open);
+            if !is_blank_line(line) {
+                self.previous_non_blank = line;
+            }
+            self.index += 1;
+            if closes {
+                if body.inline_marker {
+                    self.ownership
+                        .paragraph_quotes
+                        .borrow_mut()
+                        .insert(index, paragraph);
+                }
+                return true;
+            }
+        }
+        false
+    }
+
+    /// A fence that ends a term-hosted fence at its column is itself term-hosted.
+    fn record_term_fence_after(&mut self, line: &str) {
+        let (next, depth, _) = term_view(line);
+        let next = trim_ascii_start(next);
+        if detect_fence_open(next).is_some() {
+            self.ownership.fence_openers.insert(
+                self.index,
+                TermFenceHost {
+                    content_col: indent_columns(term_view(line).0),
+                    quote_depth: depth,
+                    quote_columns: term_quote_columns_for(line, &self.columns),
+                    opener_offset: next.as_ptr() as usize - line.as_ptr() as usize,
+                },
+            );
+        }
+    }
+
+    /// Forgets the list hosts a fence body line falls out of.
+    fn drop_hosts_left_by(&mut self, line: &str) {
+        let (body, depth, _) = term_view(line);
+        for (frame_depth, frame) in self.columns.frames.iter_mut().enumerate() {
+            if frame_depth > depth
+                || (frame_depth == depth
+                    && !is_blank_line(body)
+                    && frame.first_list_col.is_some_and(|(base, floor)| {
+                        let col = indent_columns(body);
+                        col < base || (col < floor && !is_list_marker(trim_ascii_start(body)))
+                    }))
+            {
+                frame.first_list_col = None;
+                frame.first_list_start = None;
+            }
+        }
+        if self.admitted_term_host.is_some_and(|(_, floor, host_depth)| {
+            depth != host_depth
+                || strip_term_quote_prefixes(line, &self.admitted_host_quote_columns).is_none()
+                || (!is_blank_line(line) && indent_columns(body) < floor)
+        }) {
+            self.admitted_term_host = None;
+        }
+    }
+
+    // A proved term fence establishes an actual item host. Keep its
+    // column through sibling markers and in-item continuations, but
+    // discard it on every non-marker line below that column.
+    fn adopt_term_fence_host(
+        &mut self,
+        quotes: usize,
+        content_col: usize,
+        host_quote_columns: Vec<usize>,
+    ) {
+        let lines = self.lines;
+        let Some(start) = self
+            .term_start
+            .filter(|&start| detect_list_marker_full(term_view(lines[start]).0).is_some())
+        else {
+            return;
+        };
+        let marker_col = indent_columns(term_view(lines[start]).0);
+        if self.admitted_term_host.is_some_and(|(base, floor, depth)| {
+            depth == quotes && (marker_col == base || marker_col == floor)
+        }) {
+            return;
+        }
+        let own_host = (marker_col, content_col);
+        let outer = self
+            .columns
+            .frames
+            .get(quotes)
+            .and_then(|frame| Some((frame.first_list_col?, frame.first_list_start?)));
+        let (base, floor) = match outer {
+            Some((host, outer_start))
+                if host.0 == marker_col
+                    || (term_quote_columns_for(lines[outer_start], &self.columns)
+                        == host_quote_columns
+                        && self.marker_admitted(outer_start)) =>
+            {
+                host
+            }
+            _ => own_host,
+        };
+        self.admitted_term_host = Some((base, floor, quotes));
+        self.admitted_host_quote_columns = host_quote_columns;
+    }
 }
 
 /// The column of a `:: ` term that opens this line, after any list or
