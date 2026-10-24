@@ -630,6 +630,8 @@ mod a_code_line_left_of_an_authored_base_loses_its_prefix;
 mod a_continuation_under_a_caret_joins_the_spanning_cell;
 #[path = "../a_nested_destination_slot_is_content_of_the_run_around_it.rs"]
 mod a_nested_destination_slot_is_content_of_the_run_around_it;
+#[path = "../a_nested_wrapped_attribute_closes_its_container.rs"]
+mod a_nested_wrapped_attribute_closes_its_container;
 #[path = "../a_raw_span_ends_at_the_tag_it_recognized.rs"]
 mod a_raw_span_ends_at_the_tag_it_recognized;
 #[path = "../a_reference_inside_an_inline_note_resolves.rs"]

@@ -1502,6 +1502,9 @@ struct QuoteBody<'a> {
     // the block's extent is tracked here beside the code fence's - the same
     // shape, for the same reason (markup-carve/carve-rs#1050).
     attrs_block_rest: usize,
+    attrs_nested_run: bool,
+    attrs_closed_last: bool,
+    unclosed_nested_attribute: bool,
     // The first line index the block lookahead is still worth running on. A scan
     // that walked to a blank line, or to the end of the quoted run, without
     // meeting a line that could CLOSE an attribute block has proved the same for
@@ -1524,6 +1527,7 @@ struct QuoteBody<'a> {
     // The quoted line that opened a block at any depth, not text in a paragraph or a fence.
     block_opened_at: Option<usize>,
     list_open: bool,
+    list_content_columns: Vec<usize>,
 }
 
 impl<'a> QuoteBody<'a> {
@@ -1543,6 +1547,9 @@ impl<'a> QuoteBody<'a> {
             may_have_term: false,
             table: TableRun::default(),
             attrs_block_rest: 0,
+            attrs_nested_run: false,
+            attrs_closed_last: false,
+            unclosed_nested_attribute: false,
             attrs_scan_floor: 0,
             last_nested: false,
             nested_verdict: None,
@@ -1554,6 +1561,7 @@ impl<'a> QuoteBody<'a> {
             item_opened_at: None,
             block_opened_at: None,
             list_open: false,
+            list_content_columns: Vec::new(),
         }
     }
 
@@ -1589,6 +1597,8 @@ impl<'a> QuoteBody<'a> {
         line: &'a str,
         stripped: &'a str,
     ) {
+        self.attrs_closed_last = false;
+        self.unclosed_nested_attribute = false;
         self.note_openers(cur.pos, stripped);
         let source_line = cur.source_line(cur.pos);
         let at = cur.pos;
@@ -1622,6 +1632,20 @@ impl<'a> QuoteBody<'a> {
     /// before it is consumed.
     fn note_openers(&mut self, at: usize, stripped: &str) {
         let marker = detect_list_marker_full(trim_ascii_start(stripped)).is_some();
+        let column = indent_columns(stripped);
+        if !is_blank_line(stripped)
+            && !marker
+            && !trim_ascii_start(stripped).starts_with('{')
+            && self.in_fence.is_none()
+        {
+            while self
+                .list_content_columns
+                .last()
+                .is_some_and(|owner| column < *owner)
+            {
+                self.list_content_columns.pop();
+            }
+        }
         // Resolved only for a list or quote line ending in `+`, so plain quoted prose
         // pays no paragraph resolution here.
         let plus_line = trim_ascii_end(stripped).ends_with('+')
@@ -1636,12 +1660,22 @@ impl<'a> QuoteBody<'a> {
         // until a block or paragraph at the quote's column ends the list.
         if self.item_opened_at.is_some() {
             self.list_open = true;
+            while self
+                .list_content_columns
+                .last()
+                .is_some_and(|owner| column < *owner)
+            {
+                self.list_content_columns.pop();
+            }
+            self.list_content_columns
+                .push(innermost_marker_content_col(stripped));
         } else if self.in_fence.is_none()
             && !is_blank_line(stripped)
             && !stripped.starts_with([' ', '\t'])
             && (!self.list_open || !self.para_open.get())
         {
             self.list_open = false;
+            self.list_content_columns.clear();
         }
         if !self.may_have_term && stripped.contains(":: ") {
             let trimmed = trim_ascii_start(stripped);
@@ -1881,12 +1915,21 @@ impl<'a> QuoteBody<'a> {
         // quoted line's columns are knowable in the document.
         let stripped_at = stripped_col(cur.source_col(quoted.at), quoted.line, stripped);
         self.track_quoted_block(cur, options, quoted, after_nested);
+        let kept_at = if self.unclosed_nested_attribute {
+            stripped_at.map(|column| column + leading_ws(stripped) as isize)
+        } else {
+            stripped_at
+        };
         self.push_carried(
             cur,
             quoted.at,
-            stripped.to_string(),
+            if self.unclosed_nested_attribute {
+                format!("{LAZY}{}", trim_ascii_start(stripped))
+            } else {
+                stripped.to_string()
+            },
             quoted.source_line,
-            stripped_at,
+            kept_at,
         );
     }
 
@@ -1924,6 +1967,7 @@ impl<'a> QuoteBody<'a> {
             // paragraph; its remaining lines close nothing further and open
             // nothing either.
             self.attrs_block_rest -= 1;
+            self.attrs_closed_last = self.attrs_block_rest == 0 && self.attrs_nested_run;
             self.para_open = ParaOpen::Closed;
             self.table = TableRun::default();
         } else if let Some(open) = self.in_fence {
@@ -2029,6 +2073,16 @@ impl<'a> QuoteBody<'a> {
                     .is_some_and(|base| indent_columns(description_content) >= base)
             };
         self.description_line = in_description;
+        let nested_attribute = self.list_content_columns.last().copied()
+            == Some(indent_columns(stripped))
+            && trim_ascii_start(stripped).starts_with('{');
+        let prior_paragraph = nested_attribute
+            && self.para_open.get()
+            && self
+                .inner
+                .lines
+                .last()
+                .is_some_and(|line| !is_blank_line(&line.text));
         self.para_open = if nested_item_closes {
             ParaOpen::Closed
         } else if in_description {
@@ -2047,7 +2101,7 @@ impl<'a> QuoteBody<'a> {
         {
             self.para_open = ParaOpen::Closed;
         }
-        self.scan_attrs_block(cur, at, stripped);
+        self.scan_attrs_block(cur, at, stripped, prior_paragraph);
     }
 
     // A WRAPPED ATTRIBUTE BLOCK CLOSES THE PARAGRAPH TOO, and only
@@ -2061,14 +2115,28 @@ impl<'a> QuoteBody<'a> {
     // were written to end (markup-carve/carve-rs#1050). §15 A5 makes
     // one block one block however many lines it takes, so the two
     // spellings answer alike.
-    fn scan_attrs_block(&mut self, cur: &LineCursor<'a>, at: usize, stripped: &'a str) {
+    fn scan_attrs_block(
+        &mut self,
+        cur: &LineCursor<'a>,
+        at: usize,
+        stripped: &'a str,
+        prior_paragraph: bool,
+    ) {
         if at < self.attrs_scan_floor {
             return;
         }
-        match quoted_attrs_block_len(stripped, cur.lines.range(cur.pos..cur.lines.len())) {
+        let nested = self.list_content_columns.last().copied() == Some(indent_columns(stripped))
+            && stripped.starts_with([' ', '\t']);
+        let opener = if nested {
+            trim_ascii_start(stripped)
+        } else {
+            stripped
+        };
+        match quoted_attrs_block_len(opener, cur.lines.range(cur.pos..cur.lines.len())) {
             QuotedAttrsBlock::Block(len) => {
                 self.para_open = ParaOpen::Closed;
                 self.attrs_block_rest = len - 1;
+                self.attrs_nested_run = nested;
             }
             // The scan already proved no block can start inside the
             // window it walked, so the next lines skip it. That is
@@ -2076,6 +2144,8 @@ impl<'a> QuoteBody<'a> {
             // nothing linear instead of scanned once per line.
             QuotedAttrsBlock::NoneWithin(window) => {
                 self.attrs_scan_floor = at + window;
+                self.unclosed_nested_attribute =
+                    nested && prior_paragraph && trim_ascii_start(stripped).starts_with('{');
             }
             QuotedAttrsBlock::No => {}
         }
@@ -2285,6 +2355,9 @@ impl<'a> QuoteBody<'a> {
     // simply defer to it. A heading is the sole construct a list marker
     // would otherwise end, and headings still interrupt via that predicate.
     fn lazy_ends_quote(&mut self, cur: &mut LineCursor<'a>, line: &str) -> bool {
+        if self.attrs_closed_last {
+            return true;
+        }
         let fenced_below = if self.may_hold_fence {
             *self
                 .nested_verdict

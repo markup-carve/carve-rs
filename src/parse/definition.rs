@@ -685,6 +685,7 @@ struct DefinitionBodyCollector<'s, 'o> {
     paragraph_column: Option<usize>,
     paragraph_marker_column: Option<usize>,
     paragraph_owner_is_item: bool,
+    item_content_columns: Vec<usize>,
     owner_item_opens_block: bool,
     descendant_marker_fence: Option<(FenceOpen, usize)>,
     descendant_block_ended: bool,
@@ -693,6 +694,7 @@ struct DefinitionBodyCollector<'s, 'o> {
     // of extending the body clear this hint because they may open a block.
     folded_a_lazy_line: bool,
     folded_into_quote: bool,
+    nested_attribute_closed: bool,
     retained_below_comment: bool,
     retained_comment_column: usize,
     retained_fence: Option<(FenceOpen, bool)>,
@@ -746,11 +748,19 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
                 .filter(|line| is_list_marker(trim_ascii_start(line)))
                 .map(|_| content_column),
             paragraph_owner_is_item,
+            item_content_columns: if paragraph_owner_is_item {
+                last.and_then(|line| paragraph_owner_column(line, content_column))
+                    .into_iter()
+                    .collect()
+            } else {
+                Vec::new()
+            },
             owner_item_opens_block: paragraph_owner_is_item,
             descendant_marker_fence: None,
             descendant_block_ended: false,
             folded_a_lazy_line: false,
             folded_into_quote: false,
+            nested_attribute_closed: false,
             retained_below_comment: false,
             retained_comment_column: 0,
             retained_fence: None,
@@ -814,6 +824,17 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         line: &str,
         blank: bool,
     ) -> BodyStep {
+        let column = indent_columns(line);
+        if self.nested_attribute_closed && !blank {
+            let attached_plus = is_plus_marker(trim_ascii_start(line))
+                && self
+                    .container
+                    .owns_continuation(line, cur.continuation_decision(cur.pos));
+            if column < self.content_column && !attached_plus {
+                return BodyStep::Stop;
+            }
+            self.nested_attribute_closed = false;
+        }
         if let Some(retained) = self.retained_fence {
             return self.take_retained_fence_line(cur, fence, line, retained);
         }
@@ -826,7 +847,15 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             self.paragraph_marker_column = None;
             self.unopened_past_fence = None;
         }
-        let column = indent_columns(line);
+        if !blank && fence.open.is_none() {
+            while self
+                .item_content_columns
+                .last()
+                .is_some_and(|owner| column < *owner)
+            {
+                self.item_content_columns.pop();
+            }
+        }
         let opens_descendant_here = self.track_paragraph_owner(fence, line, column);
         if column == 0 && self.opens_comment_span_outside_body(cur, line) {
             return BodyStep::Stop;
@@ -946,6 +975,18 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         self.owner_item_opens_block = self.lines.last().is_some_and(|prior| is_blank_line(prior));
         self.paragraph_column =
             paragraph_owner_column(local, column).filter(|owner| *owner > self.content_column);
+        if self.paragraph_owner_is_item {
+            while self
+                .item_content_columns
+                .last()
+                .is_some_and(|owner| *owner > column)
+            {
+                self.item_content_columns.pop();
+            }
+            if let Some(owner) = self.paragraph_column {
+                self.item_content_columns.push(owner);
+            }
+        }
         self.paragraph_marker_column = is_list_marker(local).then_some(column);
     }
 
@@ -1063,6 +1104,20 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         indent: usize,
         opens_descendant_here: bool,
     ) -> BodyStep {
+        let opener = trim_ascii_start(line);
+        let nested_attribute_owner =
+            opener.starts_with('{') && self.item_content_columns.contains(&indent);
+        let wrapped_attribute = ((indent == self.content_column || nested_attribute_owner)
+            && fence.open.is_none()
+            && opener.starts_with('{')
+            && parse_standalone_attrs(opener).is_none())
+        .then(|| {
+            standalone_attrs_block_len_iter(
+                std::iter::once(opener)
+                    .chain((cur.pos + 1..cur.lines.len()).map_while(|i| cur.lines.line(i))),
+            )
+        })
+        .flatten();
         // A STRADDLING TAB LEAVES ITS RESIDUAL COLUMNS IN FRONT OF THE
         // LINE (PART 9 §24 C1 gives a tab a column value, carve-rs#793).
         // With `keep_residual` false a single tab - which reaches column
@@ -1075,7 +1130,10 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         // The residual is written back as the spaces the tab bought past
         // the margin, which is what makes the two spellings agree.
         let mut sliced = slice_columns(line, self.content_column.min(indent), true);
-        if !opens_descendant_here && self.folds_past_column_into_owner(line, indent) {
+        if !opens_descendant_here
+            && wrapped_attribute.is_none()
+            && self.folds_past_column_into_owner(line, indent)
+        {
             sliced = format!("{LAZY}{}", trim_ascii_start(&sliced));
         }
         // Count what was actually removed rather than assuming three:
@@ -1171,7 +1229,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             self.retained_comment_column = indent;
         }
         cur.consume();
-        self.take_wrapped_attribute_tail(cur, fence, indent);
+        self.take_wrapped_attribute_tail(cur, wrapped_attribute, nested_attribute_owner);
         BodyStep::Next
     }
 
@@ -1304,21 +1362,12 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
     fn take_wrapped_attribute_tail(
         &mut self,
         cur: &mut LineCursor<'_>,
-        fence: &DefinitionBodyFence,
-        indent: usize,
+        wrapped_attribute: Option<usize>,
+        nested: bool,
     ) {
-        let opener = self.lines.last().map_or("", |line| trim_ascii_start(line));
-        let wrapped_attribute = (indent == self.content_column
-            && fence.open.is_none()
-            && opener.starts_with('{')
-            && parse_standalone_attrs(opener).is_none())
-        .then(|| {
-            standalone_attrs_block_len_iter(
-                std::iter::once(opener)
-                    .chain((cur.pos..cur.lines.len()).map_while(|i| cur.lines.line(i))),
-            )
-        })
-        .flatten();
+        if nested && wrapped_attribute.is_some_and(|len| len > 1) {
+            self.nested_attribute_closed = true;
+        }
         for _ in 1..wrapped_attribute.unwrap_or(1) {
             let next = cur.lines.at(cur.pos);
             let col = cur
