@@ -616,7 +616,7 @@ pub(super) fn render_table_cell(
         align_marker(cell.align)
     };
     let valign = match cell.valign {
-        Some(TableVerticalAlign::Top) if !empty => "^",
+        Some(TableVerticalAlign::Top) if !empty || cell.header && !mark_header => "^",
         Some(TableVerticalAlign::Middle) => "~",
         Some(TableVerticalAlign::Bottom) => "v",
         _ => "",

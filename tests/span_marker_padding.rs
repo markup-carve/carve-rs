@@ -49,8 +49,16 @@ fn imported_empty_left_body_cell_does_not_become_a_span() {
 fn empty_header_left_default_survives_a_delimiter_row() {
     let source = "|=< |\n|:--|\n| a |\n";
     let written = to_carve(source);
-    assert_eq!(to_html(&written), to_html(source));
+    assert_eq!(to_html(&written), to_html(source), "{written:?}");
     assert!(written.contains("|:--|"), "{written:?}");
+}
+
+#[test]
+fn empty_header_top_default_survives_a_delimiter_row() {
+    let source = "|=?^ |\n|:--|\n| a |\n";
+    let written = to_carve(source);
+    assert_eq!(to_html(&written), to_html(source), "{written:?}");
+    assert!(written.contains("?^ "), "{written:?}");
 }
 
 #[test]
