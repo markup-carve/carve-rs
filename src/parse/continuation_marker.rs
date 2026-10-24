@@ -93,6 +93,13 @@ impl Entry {
 
 struct Classifier {
     lines: Vec<String>,
+    matching_code_closer: Vec<bool>,
+    walk: Walk,
+    scanned: usize,
+}
+
+/// What the classifier carries from one line to the next, and what it decided.
+struct Walk {
     stack: Vec<Entry>,
     held_owner: Option<Entry>,
     pending_blank: bool,
@@ -101,10 +108,8 @@ struct Classifier {
     closed_quote_on_blank: bool,
     code_fence: Option<FenceOpen>,
     marker_fence: Option<(FenceOpen, usize)>,
-    matching_code_closer: Vec<bool>,
     decisions: Vec<Option<Decision>>,
     reported: Vec<bool>,
-    scanned: usize,
 }
 
 thread_local! {
@@ -151,16 +156,18 @@ impl Guard {
         let reported = vec![false; lines.len()];
         let classifier = Classifier {
             lines,
-            stack: Vec::new(),
-            held_owner: None,
-            pending_blank: false,
-            paragraph_open: false,
-            closed_quote_on_blank: false,
-            code_fence: None,
-            marker_fence: None,
             matching_code_closer,
-            decisions,
-            reported,
+            walk: Walk {
+                stack: Vec::new(),
+                held_owner: None,
+                pending_blank: false,
+                paragraph_open: false,
+                closed_quote_on_blank: false,
+                code_fence: None,
+                marker_fence: None,
+                decisions,
+                reported,
+            },
             scanned: 0,
         };
         Self(CLASSIFIER.with(|slot| slot.replace(Some(classifier))))
@@ -188,13 +195,13 @@ pub(super) fn decision(source_line: usize) -> Option<Decision> {
         while classifier.scanned <= index && classifier.scanned < classifier.lines.len() {
             classifier.step();
         }
-        let found = classifier.decisions.get(index).copied().flatten();
+        let found = classifier.walk.decisions.get(index).copied().flatten();
         if let Some(decision) = found {
             // A document-level `+` no container claims is reported by the paragraph
             // reader, and only before a block (carve#3421).
             if let Some(reason) = decision.refusal.filter(|_| !decision.unclaimed) {
-                if !classifier.reported[index] {
-                    classifier.reported[index] = true;
+                if !classifier.walk.reported[index] {
+                    classifier.walk.reported[index] = true;
                     let line = &classifier.lines[index];
                     note_lint_event(LintEvent::Marker {
                         line: index + 1,
@@ -335,40 +342,22 @@ fn tight_quote_prefix(line: &str, depth: usize) -> bool {
         .any(|pair| pair[0] == b'>' && !matches!(pair[1], b' ' | b'\t'))
 }
 
-impl Classifier {
-    fn step(&mut self) {
-        let index = self.scanned;
-        self.scanned += 1;
-        #[cfg(test)]
-        LINES_CLASSIFIED.with(|c| c.set(c.get() + 1));
-        let line = &self.lines[index];
-        let (depth, body) = quote_body(line);
-        let column = source_column(line, None);
-        if let Some(open) = self.code_fence {
-            if is_blank_line(body) || column >= open.content_col {
-                if is_blank_line(body) {
-                    self.pending_blank = true;
-                }
-                if column == open.content_col && is_fence_close(body, open) {
-                    self.code_fence = None;
-                    self.marker_fence = None;
-                }
-                return;
-            }
-            self.code_fence = None;
-            if !is_plus_marker(body) {
-                self.marker_fence = None;
-            }
-        }
-        if let Some(mut open) = self.matching_code_closer[index]
-            .then(|| detect_fence_open(body))
-            .flatten()
-        {
-            open.content_col = column;
-            self.code_fence = Some(open);
-            self.paragraph_open = false;
-            return;
-        }
+/// Where a classified line sits: its quote depth and the columns its marker is
+/// measured at.
+#[derive(Clone, Copy)]
+struct Shape {
+    index: usize,
+    depth: usize,
+    column: usize,
+    local: usize,
+    has_tab: bool,
+    marker_column: usize,
+    relative_quote_column: bool,
+    owner_column: usize,
+}
+
+impl Shape {
+    fn new(line: &str, index: usize, depth: usize, column: usize) -> Self {
         let (local, has_tab) = local_column(line, depth);
         let marker_column = if depth > 0 && has_tab { local } else { column };
         let relative_quote_column = depth > 0 && (has_tab || tight_quote_prefix(line, depth));
@@ -377,272 +366,474 @@ impl Classifier {
         } else {
             marker_column
         };
-        // A deeper quote opened inside a list has no marker owner at this depth.
-        if depth > 0
-            && local == 0
-            && index > 0
-            && quote_body(&self.lines[index - 1]).0 > 0
-            && quote_body(&self.lines[index - 1]).0 < depth
-            && self
-                .stack
-                .iter()
-                .any(|entry| entry.kind == Kind::List && entry.depth == 0)
-            && is_plus_marker(body)
-        {
+        Self {
+            index,
+            depth,
+            column,
+            local,
+            has_tab,
+            marker_column,
+            relative_quote_column,
+            owner_column,
+        }
+    }
+}
+
+/// What the open stack says about a standalone `+` at the line's depth.
+#[derive(Clone, Copy, Default)]
+struct StackScan {
+    deepest_quote: usize,
+    list_at_column: bool,
+    inner_list_open: bool,
+    inner_list_blocks_quote: bool,
+}
+
+/// The line after a standalone `+`, read at the marker's depth.
+#[derive(Clone, Copy)]
+struct Follower<'a> {
+    line: Option<&'a str>,
+    col: usize,
+    body: &'a str,
+    depth: Option<usize>,
+}
+
+impl<'a> Follower<'a> {
+    fn probe(lines: &'a [String], shape: Shape) -> Self {
+        let line = lines.get(shape.index + 1).map(String::as_str);
+        if line.is_some() {
+            #[cfg(test)]
+            FOLLOWER_PROBES.with(|c| c.set(c.get() + 1));
+        }
+        let col = line.map_or(usize::MAX, |line| {
+            if shape.relative_quote_column {
+                local_column(line, shape.depth).0
+            } else {
+                source_column(line, Some(shape.depth))
+            }
+        });
+        Self {
+            line,
+            col,
+            body: line.map(|line| quote_body(line).1).unwrap_or(""),
+            depth: line.map(|line| quote_body(line).0),
+        }
+    }
+}
+
+/// Who a standalone `+` attaches to, before its follower is checked.
+#[derive(Clone, Copy)]
+struct MarkerClaim {
+    owner: Option<Entry>,
+    first_block_quote: bool,
+    first_block_attaches: bool,
+    sibling: bool,
+}
+
+/// The containers one line opens, read left to right.
+struct LineOpeners<'a> {
+    inner: &'a str,
+    entry: Entry,
+    first_block_owner: Option<Entry>,
+    list_opener_on_line: bool,
+    // A task box counts as one.
+    openers_on_line: usize,
+    inner_quote_marker_column: Option<usize>,
+    first_quote_marker_column: Option<usize>,
+}
+
+/// The line after a first-block `+` that ends a container opener line.
+#[derive(Clone, Copy)]
+struct FirstBlockFollower<'a> {
+    line: Option<&'a str>,
+    body: &'a str,
+    column: usize,
+    opener_column: usize,
+}
+
+/// A non-list block at column 0, which has left any item it sits below.
+fn column_zero_block(line: &str) -> bool {
+    !line.starts_with([' ', '\t'])
+        && item_block_opener(line)
+        && detect_list_marker_full(line).is_none()
+}
+
+impl Classifier {
+    fn step(&mut self) {
+        let index = self.scanned;
+        self.scanned += 1;
+        #[cfg(test)]
+        LINES_CLASSIFIED.with(|c| c.set(c.get() + 1));
+        let lines = &self.lines;
+        let line = &lines[index];
+        let (depth, body) = quote_body(line);
+        let column = source_column(line, None);
+        let walk = &mut self.walk;
+        if walk.continues_code_fence(body, column) {
             return;
         }
+        if let Some(mut open) = self.matching_code_closer[index]
+            .then(|| detect_fence_open(body))
+            .flatten()
+        {
+            open.content_col = column;
+            walk.code_fence = Some(open);
+            walk.paragraph_open = false;
+            return;
+        }
+        let shape = Shape::new(line, index, depth, column);
         if is_plus_marker(body) {
-            let mut deepest_quote = 0;
-            let mut list_at_column = false;
-            let mut inner_list_open = false;
-            let mut inner_list_blocks_quote = false;
-            for entry in &self.stack {
-                #[cfg(test)]
-                STACK_ENTRIES_EXAMINED.with(|c| c.set(c.get() + 1));
-                if entry.kind == Kind::Quote {
-                    deepest_quote = deepest_quote.max(entry.depth);
-                }
-                if depth > 0 && entry.kind == Kind::List && entry.depth == depth {
-                    inner_list_open = true;
-                    inner_list_blocks_quote |= entry.column >= marker_column;
-                }
-                if entry.kind == Kind::List
-                    && entry.depth == depth
-                    && (if depth > 0 && has_tab {
-                        entry.local_column
-                    } else {
-                        entry.column
-                    }) == marker_column
-                {
-                    list_at_column = true;
-                }
-            }
-            let mut owner = None;
-            let mut owner_index = None;
-            for (at, entry) in self.stack.iter().enumerate().rev() {
-                #[cfg(test)]
-                STACK_ENTRIES_EXAMINED.with(|c| c.set(c.get() + 1));
-                let entry_column = if relative_quote_column {
-                    entry.local_column
-                } else {
-                    entry.column
-                };
-                if entry_column == owner_column
-                    && entry.depth == depth
-                    && (depth == 0
-                        || depth >= deepest_quote
-                        || matches!(entry.kind, Kind::List | Kind::Quote))
-                    && !(list_at_column && entry.kind == Kind::Quote)
-                {
-                    owner = Some(*entry);
-                    owner_index = Some(at);
-                    break;
-                }
-            }
-            let has_ancestor_list = owner_index.is_some_and(|at| {
-                self.stack[..at].iter().any(|entry| {
-                    #[cfg(test)]
-                    STACK_ENTRIES_EXAMINED.with(|c| c.set(c.get() + 1));
-                    matches!(entry.kind, Kind::List | Kind::Description)
-                        && owner.is_some_and(|owner| entry.depth <= owner.depth)
-                })
-            });
-            let first_block_quote = owner.is_none()
-                && depth > 0
-                && local == 0
-                && !inner_list_open
-                && self.lines.get(index + 1).map_or(true, |line| {
-                    let (next_depth, next_body) = quote_body(line);
-                    next_depth < depth
-                        || is_blank_line(next_body)
-                        || next_depth == depth
-                            && self
-                                .stack
-                                .iter()
-                                .any(|entry| entry.kind == Kind::List && entry.depth == 0)
-                            && index > 0
-                            && quote_body(&self.lines[index - 1]).0 >= depth
-                })
-                && !index.checked_sub(1).is_some_and(|prior| {
-                    quote_body(&self.lines[prior]).0 > 0
-                        && source_column(&self.lines[prior], None) > marker_column
-                })
-                && !index.checked_sub(1).is_some_and(|prior| {
-                    quote_body(&self.lines[prior]).0 >= depth
-                        && is_blank_line(quote_body(&self.lines[prior]).1)
-                        && !self
-                            .stack
-                            .iter()
-                            .any(|entry| entry.kind == Kind::List && entry.depth == 0)
-                })
-                && !index.checked_sub(1).is_some_and(|prior| {
-                    is_blank_line(&self.lines[prior])
-                        && self.lines[..prior]
-                            .iter()
-                            .rev()
-                            .find(|line| !is_blank_line(line))
-                            .is_some_and(|line| {
-                                let (prior_depth, prior_body) = quote_body(line);
-                                prior_depth > 0 && detect_list_marker_full(prior_body).is_some()
-                            })
-                });
-            if first_block_quote {
-                owner = Some(Entry::new(
-                    Kind::Quote,
-                    (marker_column, local),
-                    depth,
-                    0,
-                    false,
-                ));
-            }
-            let follower = self.lines.get(index + 1).map(String::as_str);
-            if follower.is_some() {
-                #[cfg(test)]
-                FOLLOWER_PROBES.with(|c| c.set(c.get() + 1));
-            }
-            let follower_col = follower.map_or(usize::MAX, |line| {
-                if relative_quote_column {
-                    local_column(line, depth).0
-                } else {
-                    source_column(line, Some(depth))
-                }
-            });
-            let follower_body = follower.map(|line| quote_body(line).1).unwrap_or("");
-            let follower_depth = follower.map(|line| quote_body(line).0);
-            let sibling = owner.is_some_and(|entry| {
-                entry.kind == Kind::List
-                    || entry.kind == Kind::Quote
-                        && (has_ancestor_list || depth > 0 && deepest_quote == depth)
-            }) && follower_depth == Some(depth)
-                && follower_col == owner_column
-                && detect_list_marker_full(follower_body).is_some();
-            let first_block_attaches = first_block_quote
-                && ((index == 0 || quote_body(&self.lines[index - 1]).0 < depth)
-                    && follower.is_some_and(|line| {
-                        let column = source_column(line, Some(0));
-                        // CARVE-P9-067: inside an item the follower may also sit at the quote line's column.
-                        // A block at column 0 below an indented quote line has left the item; only
-                        // paragraph text there is the quote's (carve#3421).
-                        (column == 0
-                            && (source_column(&self.lines[index], Some(0)) == 0
-                                || !item_block_opener(line))
-                            || quote_body(line).0 == 0
-                                && column == source_column(&self.lines[index], Some(0))
-                            // The quote's own first marker, in line with it (`  > > > +` /
-                            // `  > q`), carries the follower into the innermost quote.
-                            || column > 0
-                                && quote_body(line).0 > 0
-                                && column == source_column(&self.lines[index], Some(0)))
-                            && detect_list_marker_full(follower_body).is_none()
-                    })
-                    || follower_depth == Some(depth)
-                        && self
-                            .stack
-                            .iter()
-                            .any(|entry| entry.kind == Kind::List && entry.depth == 0)
-                        && index > 0
-                        && quote_body(&self.lines[index - 1]).0 >= depth);
-            let refusal = if owner.is_none()
-                || inner_list_open
-                    && owner.is_some_and(|entry| {
-                        entry.kind == Kind::Quote
-                            && (inner_list_blocks_quote || !entry.hosted_quote)
-                    })
-                || self.pending_blank && owner.is_some_and(|entry| entry.kind == Kind::Footnote)
-            {
-                Some(Refusal::WrongColumn)
-            } else if follower.is_none() {
-                Some(Refusal::Document)
-            } else if is_blank_line(follower_body) {
-                Some(Refusal::Blank)
-            } else if first_block_quote && !first_block_attaches {
-                // CARVE-P9-067: the quote's first-block form refuses a column-0 list and any other column.
-                let follower_column = follower.map_or(0, |line| source_column(line, Some(0)));
-                if follower_column == 0
-                    && follower.is_some_and(|line| detect_list_marker_full(line).is_some())
-                {
-                    Some(Refusal::List)
-                } else if follower_column > source_column(&self.lines[index], Some(0)) {
-                    Some(Refusal::Right)
-                } else {
-                    Some(Refusal::Left)
-                }
-            } else if !first_block_attaches
-                && (follower_depth.is_some_and(|next_depth| next_depth < depth)
-                    || follower_col < owner_column)
-            {
-                Some(Refusal::Left)
-            } else if !first_block_attaches && follower_col > owner_column {
-                Some(Refusal::Right)
-            } else if sibling && self.held_owner != owner {
-                Some(Refusal::Sibling)
-            } else if depth == 0
-                && deepest_quote > 0
-                && owner.is_some_and(|entry| entry.kind == Kind::Description)
-                && follower_col == owner_column
-                && detect_list_marker_full(follower_body).is_some()
-            {
-                Some(Refusal::WrongColumn)
-            } else {
-                None
-            };
-            if self
-                .marker_fence
-                .is_some_and(|(fence, _)| marker_column < fence.content_col)
-            {
-                self.marker_fence = None;
-            }
-            self.pending_blank = false;
-            // A block at column 0 below an indented quote line has left its item; carve-js
-            // reports nothing for the `+` it leaves as text.
-            if first_block_quote
-                && refusal.is_some()
-                && source_column(&self.lines[index], Some(0)) > 0
-                && follower.is_some_and(|line| {
-                    !line.starts_with([' ', '\t'])
-                        && item_block_opener(line)
-                        && detect_list_marker_full(line).is_none()
-                })
-            {
-                self.reported[index] = true;
-            }
-            self.decisions[index] = Some(Decision {
-                owner: owner.map(|e| e.kind),
-                refusal,
-                first_block: first_block_quote,
-                quote_depth: depth,
-                after_quote_blank: self.closed_quote_on_blank,
-                sibling_interrupt: column == 0
-                    || depth > 0
-                        && local == 0
-                        && index > 0
-                        && quote_body(&self.lines[index - 1]).0 >= depth,
-                unclaimed: owner.is_none() && depth == 0 && self.stack.is_empty(),
-            });
-            if refusal.is_none() {
-                self.held_owner = owner;
-            }
-            if depth == 0 {
-                self.closed_quote_on_blank = false;
+            if !walk.deeper_quote_in_list(lines, shape) {
+                walk.classify_marker(lines, shape);
             }
             return;
         }
         if is_blank_line(body) {
-            if depth == 0 {
-                if let Some(quote) = self
-                    .stack
-                    .iter()
-                    .position(|entry| entry.kind == Kind::Quote)
-                {
-                    self.closed_quote_on_blank = true;
-                    self.stack.truncate(quote);
-                    self.held_owner = None;
-                }
-            }
-            self.pending_blank = true;
-            self.paragraph_open = false;
+            walk.blank(depth);
             return;
         }
+        walk.content_line(lines, shape, body);
+    }
+}
+
+impl Walk {
+    fn root_list_open(&self) -> bool {
+        self.stack
+            .iter()
+            .any(|entry| entry.kind == Kind::List && entry.depth == 0)
+    }
+
+    fn continues_code_fence(&mut self, body: &str, column: usize) -> bool {
+        let Some(open) = self.code_fence else {
+            return false;
+        };
+        if is_blank_line(body) || column >= open.content_col {
+            if is_blank_line(body) {
+                self.pending_blank = true;
+            }
+            if column == open.content_col && is_fence_close(body, open) {
+                self.code_fence = None;
+                self.marker_fence = None;
+            }
+            return true;
+        }
+        self.code_fence = None;
+        if !is_plus_marker(body) {
+            self.marker_fence = None;
+        }
+        false
+    }
+
+    /// A deeper quote opened inside a list has no marker owner at this depth.
+    fn deeper_quote_in_list(&self, lines: &[String], shape: Shape) -> bool {
+        let Shape {
+            index,
+            depth,
+            local,
+            ..
+        } = shape;
+        depth > 0
+            && local == 0
+            && index > 0
+            && quote_body(&lines[index - 1]).0 > 0
+            && quote_body(&lines[index - 1]).0 < depth
+            && self.root_list_open()
+    }
+
+    fn scan_stack(&self, shape: Shape) -> StackScan {
+        let Shape {
+            depth,
+            has_tab,
+            marker_column,
+            ..
+        } = shape;
+        let mut scan = StackScan::default();
+        for entry in &self.stack {
+            #[cfg(test)]
+            STACK_ENTRIES_EXAMINED.with(|c| c.set(c.get() + 1));
+            if entry.kind == Kind::Quote {
+                scan.deepest_quote = scan.deepest_quote.max(entry.depth);
+            }
+            if depth > 0 && entry.kind == Kind::List && entry.depth == depth {
+                scan.inner_list_open = true;
+                scan.inner_list_blocks_quote |= entry.column >= marker_column;
+            }
+            if entry.kind == Kind::List
+                && entry.depth == depth
+                && (if depth > 0 && has_tab {
+                    entry.local_column
+                } else {
+                    entry.column
+                }) == marker_column
+            {
+                scan.list_at_column = true;
+            }
+        }
+        scan
+    }
+
+    fn find_owner(&self, shape: Shape, scan: StackScan) -> Option<(usize, Entry)> {
+        let Shape {
+            depth,
+            relative_quote_column,
+            owner_column,
+            ..
+        } = shape;
+        for (at, entry) in self.stack.iter().enumerate().rev() {
+            #[cfg(test)]
+            STACK_ENTRIES_EXAMINED.with(|c| c.set(c.get() + 1));
+            let entry_column = if relative_quote_column {
+                entry.local_column
+            } else {
+                entry.column
+            };
+            if entry_column == owner_column
+                && entry.depth == depth
+                && (depth == 0
+                    || depth >= scan.deepest_quote
+                    || matches!(entry.kind, Kind::List | Kind::Quote))
+                && !(scan.list_at_column && entry.kind == Kind::Quote)
+            {
+                return Some((at, *entry));
+            }
+        }
+        None
+    }
+
+    /// Whether an unowned `+` on a quote line is that quote's own first-block
+    /// marker.
+    fn first_block_quote(&self, lines: &[String], shape: Shape, scan: StackScan) -> bool {
+        let Shape {
+            index,
+            depth,
+            local,
+            marker_column,
+            ..
+        } = shape;
+        depth > 0
+            && local == 0
+            && !scan.inner_list_open
+            && lines.get(index + 1).map_or(true, |line| {
+                let (next_depth, next_body) = quote_body(line);
+                next_depth < depth
+                    || is_blank_line(next_body)
+                    || next_depth == depth
+                        && self.root_list_open()
+                        && index > 0
+                        && quote_body(&lines[index - 1]).0 >= depth
+            })
+            && !index.checked_sub(1).is_some_and(|prior| {
+                quote_body(&lines[prior]).0 > 0
+                    && source_column(&lines[prior], None) > marker_column
+            })
+            && !index.checked_sub(1).is_some_and(|prior| {
+                quote_body(&lines[prior]).0 >= depth
+                    && is_blank_line(quote_body(&lines[prior]).1)
+                    && !self.root_list_open()
+            })
+            && !index.checked_sub(1).is_some_and(|prior| {
+                is_blank_line(&lines[prior])
+                    && lines[..prior]
+                        .iter()
+                        .rev()
+                        .find(|line| !is_blank_line(line))
+                        .is_some_and(|line| {
+                            let (prior_depth, prior_body) = quote_body(line);
+                            prior_depth > 0 && detect_list_marker_full(prior_body).is_some()
+                        })
+            })
+    }
+
+    fn first_block_attaches(&self, lines: &[String], shape: Shape, follower: Follower<'_>) -> bool {
+        let Shape { index, depth, .. } = shape;
+        (index == 0 || quote_body(&lines[index - 1]).0 < depth)
+            && follower.line.is_some_and(|line| {
+                let column = source_column(line, Some(0));
+                // CARVE-P9-067: inside an item the follower may also sit at the quote line's column.
+                // A block at column 0 below an indented quote line has left the item; only
+                // paragraph text there is the quote's (carve#3421).
+                (column == 0
+                    && (source_column(&lines[index], Some(0)) == 0 || !item_block_opener(line))
+                    || quote_body(line).0 == 0 && column == source_column(&lines[index], Some(0))
+                    // The quote's own first marker, in line with it (`  > > > +` /
+                    // `  > q`), carries the follower into the innermost quote.
+                    || column > 0
+                        && quote_body(line).0 > 0
+                        && column == source_column(&lines[index], Some(0)))
+                    && detect_list_marker_full(follower.body).is_none()
+            })
+            || follower.depth == Some(depth)
+                && self.root_list_open()
+                && index > 0
+                && quote_body(&lines[index - 1]).0 >= depth
+    }
+
+    fn classify_marker(&mut self, lines: &[String], shape: Shape) {
+        let Shape {
+            index,
+            depth,
+            column,
+            local,
+            marker_column,
+            owner_column,
+            ..
+        } = shape;
+        let scan = self.scan_stack(shape);
+        let found = self.find_owner(shape, scan);
+        let mut owner = found.map(|(_, entry)| entry);
+        let has_ancestor_list = found.is_some_and(|(at, owner)| {
+            self.stack[..at].iter().any(|entry| {
+                #[cfg(test)]
+                STACK_ENTRIES_EXAMINED.with(|c| c.set(c.get() + 1));
+                matches!(entry.kind, Kind::List | Kind::Description) && entry.depth <= owner.depth
+            })
+        });
+        let first_block_quote = owner.is_none() && self.first_block_quote(lines, shape, scan);
+        if first_block_quote {
+            owner = Some(Entry::new(
+                Kind::Quote,
+                (marker_column, local),
+                depth,
+                0,
+                false,
+            ));
+        }
+        let follower = Follower::probe(lines, shape);
+        let sibling = owner.is_some_and(|entry| {
+            entry.kind == Kind::List
+                || entry.kind == Kind::Quote
+                    && (has_ancestor_list || depth > 0 && scan.deepest_quote == depth)
+        }) && follower.depth == Some(depth)
+            && follower.col == owner_column
+            && detect_list_marker_full(follower.body).is_some();
+        let claim = MarkerClaim {
+            owner,
+            first_block_quote,
+            first_block_attaches: first_block_quote
+                && self.first_block_attaches(lines, shape, follower),
+            sibling,
+        };
+        let refusal = self.marker_refusal(lines, shape, scan, claim, follower);
+        if self
+            .marker_fence
+            .is_some_and(|(fence, _)| marker_column < fence.content_col)
+        {
+            self.marker_fence = None;
+        }
+        self.pending_blank = false;
+        // A block at column 0 below an indented quote line has left its item; carve-js
+        // reports nothing for the `+` it leaves as text.
+        if first_block_quote
+            && refusal.is_some()
+            && source_column(&lines[index], Some(0)) > 0
+            && follower.line.is_some_and(column_zero_block)
+        {
+            self.reported[index] = true;
+        }
+        self.decisions[index] = Some(Decision {
+            owner: owner.map(|e| e.kind),
+            refusal,
+            first_block: first_block_quote,
+            quote_depth: depth,
+            after_quote_blank: self.closed_quote_on_blank,
+            sibling_interrupt: column == 0
+                || depth > 0 && local == 0 && index > 0 && quote_body(&lines[index - 1]).0 >= depth,
+            unclaimed: owner.is_none() && depth == 0 && self.stack.is_empty(),
+        });
+        if refusal.is_none() {
+            self.held_owner = owner;
+        }
+        if depth == 0 {
+            self.closed_quote_on_blank = false;
+        }
+    }
+
+    fn marker_refusal(
+        &self,
+        lines: &[String],
+        shape: Shape,
+        scan: StackScan,
+        claim: MarkerClaim,
+        follower: Follower<'_>,
+    ) -> Option<Refusal> {
+        let Shape {
+            index,
+            depth,
+            owner_column,
+            ..
+        } = shape;
+        let owner = claim.owner;
+        if owner.is_none()
+            || scan.inner_list_open
+                && owner.is_some_and(|entry| {
+                    entry.kind == Kind::Quote
+                        && (scan.inner_list_blocks_quote || !entry.hosted_quote)
+                })
+            || self.pending_blank && owner.is_some_and(|entry| entry.kind == Kind::Footnote)
+        {
+            return Some(Refusal::WrongColumn);
+        }
+        if follower.line.is_none() {
+            return Some(Refusal::Document);
+        }
+        if is_blank_line(follower.body) {
+            return Some(Refusal::Blank);
+        }
+        if claim.first_block_quote && !claim.first_block_attaches {
+            // CARVE-P9-067: the quote's first-block form refuses a column-0 list and any other column.
+            let follower_column = follower.line.map_or(0, |line| source_column(line, Some(0)));
+            if follower_column == 0
+                && follower
+                    .line
+                    .is_some_and(|line| detect_list_marker_full(line).is_some())
+            {
+                return Some(Refusal::List);
+            }
+            if follower_column > source_column(&lines[index], Some(0)) {
+                return Some(Refusal::Right);
+            }
+            return Some(Refusal::Left);
+        }
+        if !claim.first_block_attaches
+            && (follower.depth.is_some_and(|next_depth| next_depth < depth)
+                || follower.col < owner_column)
+        {
+            return Some(Refusal::Left);
+        }
+        if !claim.first_block_attaches && follower.col > owner_column {
+            return Some(Refusal::Right);
+        }
+        if claim.sibling && self.held_owner != owner {
+            return Some(Refusal::Sibling);
+        }
+        if depth == 0
+            && scan.deepest_quote > 0
+            && owner.is_some_and(|entry| entry.kind == Kind::Description)
+            && follower.col == owner_column
+            && detect_list_marker_full(follower.body).is_some()
+        {
+            return Some(Refusal::WrongColumn);
+        }
+        None
+    }
+
+    fn blank(&mut self, depth: usize) {
+        if depth == 0 {
+            if let Some(quote) = self
+                .stack
+                .iter()
+                .position(|entry| entry.kind == Kind::Quote)
+            {
+                self.closed_quote_on_blank = true;
+                self.stack.truncate(quote);
+                self.held_owner = None;
+            }
+        }
+        self.pending_blank = true;
+        self.paragraph_open = false;
+    }
+
+    fn content_line(&mut self, lines: &[String], shape: Shape, body: &str) {
+        let Shape { depth, column, .. } = shape;
         if self.marker_fence.is_some_and(|(fence, _)| {
             column < fence.content_col
                 || (column == fence.content_col && is_fence_close(body, fence))
@@ -665,6 +856,18 @@ impl Classifier {
             return;
         }
         self.paragraph_open = false;
+        self.close_before_line(shape, body);
+        self.push_quote_prefixes(&lines[shape.index], depth);
+        let opened = self.open_containers(shape, body);
+        self.note_opened_fence(&opened);
+        if let Some(owner) = opened.first_block_owner {
+            self.classify_first_block(lines, shape, owner, &opened);
+        }
+    }
+
+    /// Pops what a non-lazy line at this depth and column has closed.
+    fn close_before_line(&mut self, shape: Shape, body: &str) {
+        let Shape { depth, column, .. } = shape;
         if self.pending_blank {
             self.pending_blank = false;
             if let Some(at) = self.stack.iter().position(|entry| {
@@ -697,6 +900,9 @@ impl Classifier {
         }) {
             self.stack.pop();
         }
+    }
+
+    fn push_quote_prefixes(&mut self, line: &str, depth: usize) {
         let mut at = 0;
         for level in 1..=depth {
             let end = quote_prefix_end(line, at).unwrap_or(at);
@@ -717,49 +923,61 @@ impl Classifier {
             self.stack
                 .push(Entry::new(Kind::Quote, (quote_column, 0), level, 0, false));
         }
-        let mut inner = body;
-        let mut entry = Entry::new(Kind::List, (column, local), depth, 0, false);
-        let mut first_block_owner = None;
-        let mut list_opener_on_line = false;
+    }
+
+    fn open_containers<'a>(&mut self, shape: Shape, body: &'a str) -> LineOpeners<'a> {
+        let Shape {
+            depth,
+            column,
+            local,
+            ..
+        } = shape;
+        let mut opened = LineOpeners {
+            inner: body,
+            entry: Entry::new(Kind::List, (column, local), depth, 0, false),
+            first_block_owner: None,
+            list_opener_on_line: false,
+            openers_on_line: 0,
+            inner_quote_marker_column: None,
+            first_quote_marker_column: None,
+        };
         let mut description_on_line = false;
-        // Openers on this line; a task box counts as one.
-        let mut openers_on_line = 0usize;
-        let mut inner_quote_marker_column = None;
-        let mut first_quote_marker_column = None;
+        let entry = &mut opened.entry;
         for _ in 0..32 {
+            let inner = opened.inner;
             if let Some(marker) = detect_list_marker_full(inner) {
-                list_opener_on_line = true;
-                openers_on_line += 1 + usize::from(marker.checked.is_some());
+                opened.list_opener_on_line = true;
+                opened.openers_on_line += 1 + usize::from(marker.checked.is_some());
                 let width = (marker.content.as_ptr() as usize) - (inner.as_ptr() as usize);
                 entry.kind = Kind::List;
                 entry.content_column = entry.column + width;
                 entry.hosted_quote = false;
-                self.stack.push(entry);
+                self.stack.push(*entry);
                 if is_plus_marker(marker.content) {
-                    first_block_owner = Some(entry);
+                    opened.first_block_owner = Some(*entry);
                 }
                 entry.column += width;
                 entry.local_column += width;
-                inner = marker.content.trim_start();
+                opened.inner = marker.content.trim_start();
                 continue;
             }
             if let Some(quoted) = strip_blockquote_prefix(inner) {
-                openers_on_line += 1;
-                inner_quote_marker_column = Some(entry.column);
-                first_quote_marker_column.get_or_insert(entry.column);
+                opened.openers_on_line += 1;
+                opened.inner_quote_marker_column = Some(entry.column);
+                opened.first_quote_marker_column.get_or_insert(entry.column);
                 entry.kind = Kind::Quote;
                 entry.content_column = entry.column;
-                entry.hosted_quote = list_opener_on_line || description_on_line;
-                self.stack.push(entry);
+                entry.hosted_quote = opened.list_opener_on_line || description_on_line;
+                self.stack.push(*entry);
                 entry.depth += 1;
                 entry.column += inner.len() - quoted.len();
                 entry.local_column = indent_columns(quoted);
                 entry.content_column = entry.column;
-                self.stack.push(entry);
+                self.stack.push(*entry);
                 if is_plus_marker(quoted) {
-                    first_block_owner = Some(entry);
+                    opened.first_block_owner = Some(*entry);
                 }
-                inner = quoted.trim_start();
+                opened.inner = quoted.trim_start();
                 continue;
             }
             let first_block = if inner.starts_with("[^") && inner.contains("]:") {
@@ -775,9 +993,9 @@ impl Classifier {
             };
             entry.content_column = entry.column + 2;
             entry.hosted_quote = false;
-            self.stack.push(entry);
+            self.stack.push(*entry);
             if first_block {
-                first_block_owner = Some(entry);
+                opened.first_block_owner = Some(*entry);
             }
             if entry.kind == Kind::Description {
                 if let Some(content) = strip_description_prefix(inner)
@@ -786,161 +1004,223 @@ impl Classifier {
                     let width = (content.as_ptr() as usize) - (inner.as_ptr() as usize);
                     entry.column += width;
                     entry.local_column += width;
-                    inner = content;
+                    opened.inner = content;
                     description_on_line = true;
                     continue;
                 }
             }
             break;
         }
-        let fence_column = entry.column;
-        let rest = trim_ascii_start(inner);
+        opened
+    }
+
+    fn note_opened_fence(&mut self, opened: &LineOpeners<'_>) {
+        let fence_column = opened.entry.column;
+        let rest = trim_ascii_start(opened.inner);
         self.paragraph_open = line_starts_paragraph(rest) && !item_block_opener(rest);
-        if let Some(fence) = list_opener_on_line
-            .then(|| detect_fence_open(inner))
+        let Some(fence) = opened
+            .list_opener_on_line
+            .then(|| detect_fence_open(opened.inner))
             .flatten()
+        else {
+            return;
+        };
+        self.code_fence = Some(FenceOpen {
+            content_col: fence_column,
+            ..fence
+        });
+        let nested = self
+            .stack
+            .iter()
+            .filter(|entry| entry.kind == Kind::List)
+            .count()
+            > 1;
+        if let Some(entry) = self.stack.last().filter(|entry| entry.kind == Kind::List) {
+            if nested {
+                self.marker_fence = Some((
+                    FenceOpen {
+                        content_col: fence_column,
+                        ..fence
+                    },
+                    entry.column,
+                ));
+            }
+        }
+    }
+
+    /// Decides a `+` that ends a line of container openers (`- +`, `> > +`).
+    fn classify_first_block(
+        &mut self,
+        lines: &[String],
+        shape: Shape,
+        owner: Entry,
+        opened: &LineOpeners<'_>,
+    ) {
+        let Shape { index, depth, .. } = shape;
+        let line = lines.get(index + 1).map(String::as_str);
+        if line.is_some() {
+            #[cfg(test)]
+            FOLLOWER_PROBES.with(|c| c.set(c.get() + 1));
+        }
+        let follower = FirstBlockFollower {
+            line,
+            body: line.map(|line| quote_body(line).1).unwrap_or(""),
+            column: line.map_or(usize::MAX, |line| source_column(line, Some(owner.depth))),
+            opener_column: line.map_or(usize::MAX, |line| source_column(line, Some(depth))),
+        };
+        // A stacked quote opener takes a non-list follower at column 0, its line's column,
+        // or the column of the innermost `>`. A list at that last column attaches only when
+        // it carries the owning quote marker (carve#3421, carve#3544).
+        let stacked_quote = owner.kind == Kind::Quote && opened.openers_on_line >= 2;
+        let list_at_owning_quote = stacked_quote
+            && follower.line.is_some_and(|line| {
+                let raw = stacked_follower_column(line, &lines[index], depth);
+                Some(raw) == opened.inner_quote_marker_column
+                    && quote_body(line).0 >= owner.depth
+                    && detect_list_marker_full(follower.body).is_some()
+            });
+        let at_column = if stacked_quote {
+            stacked_at_column(lines, shape, opened, follower, list_at_owning_quote)
+        } else {
+            self.unstacked_at_column(shape, owner, follower)
+        };
+        let at_column = at_column && !outside_quote(lines, shape, owner, opened, follower);
+        let refusal = first_block_refusal(shape, owner, follower, at_column, list_at_owning_quote);
+        // As below an indented quote line: carve-js reports nothing for this `+`.
+        if stacked_quote
+            && refusal.is_some()
+            && leading_ws(&lines[index]) > 0
+            && follower.line.is_some_and(column_zero_block)
         {
-            self.code_fence = Some(FenceOpen {
-                content_col: fence_column,
-                ..fence
-            });
-            let nested = self
-                .stack
-                .iter()
-                .filter(|entry| entry.kind == Kind::List)
-                .count()
-                > 1;
-            if let Some(entry) = self.stack.last().filter(|entry| entry.kind == Kind::List) {
-                if nested {
-                    self.marker_fence = Some((
-                        FenceOpen {
-                            content_col: fence_column,
-                            ..fence
-                        },
-                        entry.column,
-                    ));
-                }
-            }
+            self.reported[index] = true;
         }
-        if let Some(owner) = first_block_owner {
-            let follower = self.lines.get(index + 1).map(String::as_str);
-            if follower.is_some() {
+        self.decisions[index] = Some(Decision {
+            owner: Some(owner.kind),
+            refusal,
+            first_block: true,
+            quote_depth: depth,
+            after_quote_blank: false,
+            sibling_interrupt: false,
+            unclaimed: false,
+        });
+        if refusal.is_none() {
+            self.held_owner = Some(owner);
+        }
+    }
+
+    fn unstacked_at_column(
+        &self,
+        shape: Shape,
+        owner: Entry,
+        follower: FirstBlockFollower<'_>,
+    ) -> bool {
+        follower.column == owner.column
+            || follower.opener_column == shape.column
+            || self.stack.iter().any(|entry| {
                 #[cfg(test)]
-                FOLLOWER_PROBES.with(|c| c.set(c.get() + 1));
-            }
-            let follower_body = follower.map(|line| quote_body(line).1).unwrap_or("");
-            let follower_column =
-                follower.map_or(usize::MAX, |line| source_column(line, Some(owner.depth)));
-            let opener_column =
-                follower.map_or(usize::MAX, |line| source_column(line, Some(depth)));
-            // A stacked quote opener takes a non-list follower at column 0, its line's column,
-            // or the column of the innermost `>`. A list at that last column attaches only when
-            // it carries the owning quote marker (carve#3421, carve#3544).
-            let stacked_quote = owner.kind == Kind::Quote && openers_on_line >= 2;
-            let list_at_owning_quote = stacked_quote
-                && follower.is_some_and(|line| {
-                    let raw = stacked_follower_column(line, &self.lines[index], depth);
-                    Some(raw) == inner_quote_marker_column
-                        && quote_body(line).0 >= owner.depth
-                        && detect_list_marker_full(follower_body).is_some()
-                });
-            let at_column = if stacked_quote {
-                follower.is_some_and(|line| {
-                    let raw = stacked_follower_column(line, &self.lines[index], depth);
-                    (detect_list_marker_full(follower_body).is_none() || list_at_owning_quote)
-                        && (raw == 0
-                            || raw == column
-                            || Some(raw) == inner_quote_marker_column
-                            // No host prefix in line with the opener's: read at column 0.
-                            || raw == usize::MAX
-                                && source_column(line, Some(0)) == 0
-                                // A misaligned `>` is no host prefix (`> > - > +` / `>  > q`).
-                                && quote_body(line).0 < depth.max(1)
-                                // Below an indented host quote, a column-0 block has left
-                                // the item that holds it (carve#3421).
-                                && (leading_ws(&self.lines[index]) == 0
-                                    || !item_block_opener(line)))
-                })
-            } else {
-                follower_column == owner.column
-                    || opener_column == column
-                    || self.stack.iter().any(|entry| {
-                        #[cfg(test)]
-                        STACK_ENTRIES_EXAMINED.with(|c| c.set(c.get() + 1));
-                        entry.kind == Kind::List
-                            && entry.depth < owner.depth
-                            && entry.content_column == opener_column
-                            && follower.is_some_and(|line| !item_block_opener(line.trim_start()))
-                    })
-                    // Column 0 inside the host quotes, not the column of a host `>` (carve#3421).
-                    || opener_column == 0 && detect_list_marker_full(follower_body).is_none()
-            };
-            // A list's, note's or description's `+` inside a quote takes nothing from a line the
-            // quote does not reach: the quote has ended (carve#3421).
-            let outside_quote = owner.kind != Kind::Quote
-                && owner.depth > 0
-                && follower.is_some_and(|line| {
-                    let marker = source_column(line, Some(depth));
-                    quote_body(line).0 < owner.depth
-                        // An indented `>` is no host prefix (`> - - +` / ` > q`).
-                        || depth > 0
-                            && stacked_follower_column(line, &self.lines[index], depth)
-                                == usize::MAX
-                        || owner.depth > depth
-                            && quote_body(line).0 > depth
-                            && marker != column
-                            && Some(marker) != first_quote_marker_column
-                });
-            let at_column = at_column && !outside_quote;
-            let sibling = matches!(owner.kind, Kind::List | Kind::Quote)
-                && (follower_column == owner.column || opener_column == column)
-                && detect_list_marker_full(follower_body).is_some()
-                && !list_at_owning_quote;
-            // CARVE-P9-067: a note's or a description's first-block form pulls no column-0 list.
-            let column_zero_list = matches!(owner.kind, Kind::Footnote | Kind::Description)
-                && follower.is_some_and(|line| {
-                    source_column(line, Some(0)) == 0 && detect_list_marker_full(line).is_some()
-                });
-            let refusal = if follower.is_none() {
-                Some(Refusal::Document)
-            } else if is_blank_line(follower_body) {
-                Some(Refusal::Blank)
-            } else if column_zero_list {
-                Some(Refusal::List)
-            } else if sibling {
-                Some(Refusal::Sibling)
-            } else if !at_column && follower_column < owner.column {
-                Some(Refusal::Left)
-            } else if !at_column {
-                Some(Refusal::Right)
-            } else {
-                None
-            };
-            // As below an indented quote line: carve-js reports nothing for this `+`.
-            if stacked_quote
-                && refusal.is_some()
-                && leading_ws(&self.lines[index]) > 0
-                && follower.is_some_and(|line| {
-                    !line.starts_with([' ', '\t'])
-                        && item_block_opener(line)
-                        && detect_list_marker_full(line).is_none()
-                })
-            {
-                self.reported[index] = true;
-            }
-            self.decisions[index] = Some(Decision {
-                owner: Some(owner.kind),
-                refusal,
-                first_block: true,
-                quote_depth: depth,
-                after_quote_blank: false,
-                sibling_interrupt: false,
-                unclaimed: false,
-            });
-            if refusal.is_none() {
-                self.held_owner = Some(owner);
-            }
-        }
+                STACK_ENTRIES_EXAMINED.with(|c| c.set(c.get() + 1));
+                entry.kind == Kind::List
+                    && entry.depth < owner.depth
+                    && entry.content_column == follower.opener_column
+                    && follower
+                        .line
+                        .is_some_and(|line| !item_block_opener(line.trim_start()))
+            })
+            // Column 0 inside the host quotes, not the column of a host `>` (carve#3421).
+            || follower.opener_column == 0 && detect_list_marker_full(follower.body).is_none()
+    }
+}
+
+fn stacked_at_column(
+    lines: &[String],
+    shape: Shape,
+    opened: &LineOpeners<'_>,
+    follower: FirstBlockFollower<'_>,
+    list_at_owning_quote: bool,
+) -> bool {
+    let Shape {
+        index,
+        depth,
+        column,
+        ..
+    } = shape;
+    follower.line.is_some_and(|line| {
+        let raw = stacked_follower_column(line, &lines[index], depth);
+        (detect_list_marker_full(follower.body).is_none() || list_at_owning_quote)
+            && (raw == 0
+                || raw == column
+                || Some(raw) == opened.inner_quote_marker_column
+                // No host prefix in line with the opener's: read at column 0.
+                || raw == usize::MAX
+                    && source_column(line, Some(0)) == 0
+                    // A misaligned `>` is no host prefix (`> > - > +` / `>  > q`).
+                    && quote_body(line).0 < depth.max(1)
+                    // Below an indented host quote, a column-0 block has left
+                    // the item that holds it (carve#3421).
+                    && (leading_ws(&lines[index]) == 0 || !item_block_opener(line)))
+    })
+}
+
+// A list's, note's or description's `+` inside a quote takes nothing from a line the
+// quote does not reach: the quote has ended (carve#3421).
+fn outside_quote(
+    lines: &[String],
+    shape: Shape,
+    owner: Entry,
+    opened: &LineOpeners<'_>,
+    follower: FirstBlockFollower<'_>,
+) -> bool {
+    let Shape {
+        index,
+        depth,
+        column,
+        ..
+    } = shape;
+    owner.kind != Kind::Quote
+        && owner.depth > 0
+        && follower.line.is_some_and(|line| {
+            let marker = source_column(line, Some(depth));
+            quote_body(line).0 < owner.depth
+                // An indented `>` is no host prefix (`> - - +` / ` > q`).
+                || depth > 0
+                    && stacked_follower_column(line, &lines[index], depth) == usize::MAX
+                || owner.depth > depth
+                    && quote_body(line).0 > depth
+                    && marker != column
+                    && Some(marker) != opened.first_quote_marker_column
+        })
+}
+
+fn first_block_refusal(
+    shape: Shape,
+    owner: Entry,
+    follower: FirstBlockFollower<'_>,
+    at_column: bool,
+    list_at_owning_quote: bool,
+) -> Option<Refusal> {
+    let sibling = matches!(owner.kind, Kind::List | Kind::Quote)
+        && (follower.column == owner.column || follower.opener_column == shape.column)
+        && detect_list_marker_full(follower.body).is_some()
+        && !list_at_owning_quote;
+    // CARVE-P9-067: a note's or a description's first-block form pulls no column-0 list.
+    let column_zero_list = matches!(owner.kind, Kind::Footnote | Kind::Description)
+        && follower.line.is_some_and(|line| {
+            source_column(line, Some(0)) == 0 && detect_list_marker_full(line).is_some()
+        });
+    if follower.line.is_none() {
+        Some(Refusal::Document)
+    } else if is_blank_line(follower.body) {
+        Some(Refusal::Blank)
+    } else if column_zero_list {
+        Some(Refusal::List)
+    } else if sibling {
+        Some(Refusal::Sibling)
+    } else if !at_column && follower.column < owner.column {
+        Some(Refusal::Left)
+    } else if !at_column {
+        Some(Refusal::Right)
+    } else {
+        None
     }
 }
 
