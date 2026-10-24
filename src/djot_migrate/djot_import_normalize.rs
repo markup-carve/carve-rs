@@ -4705,7 +4705,7 @@ fn reference_definitions(source: &str, mask: &str) -> (HashMap<String, String>, 
                 }
                 if let Some(m) = marker
                     .captures(part)
-                    .filter(|m| &m[1] == &heading[1])
+                    .filter(|m| m[1] == heading[1])
                     .and_then(|m| m.get(0))
                 {
                     text.push('\n');
