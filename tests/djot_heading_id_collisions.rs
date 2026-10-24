@@ -19,6 +19,15 @@ fn repeated_and_later_explicit_ids() {
 }
 
 #[test]
+fn explicit_suffix_is_skipped_in_repeated_heading_chain() {
+    let html = to_html(&djot_to_carve("# A\n\n{#A-1}\np\n\n# A\n\n# A\n"));
+    assert!(html.contains("<section id=\"A\">"), "{html}");
+    assert!(html.contains("<p id=\"A-1\">p</p>"), "{html}");
+    assert!(html.contains("<section id=\"A-2\">"), "{html}");
+    assert!(html.contains("<section id=\"A-3\">"), "{html}");
+}
+
+#[test]
 fn quoted_heading_collision() {
     let html = to_html(&djot_to_carve("{#A}\np\n\n> # A\n"));
     assert!(html.contains("<h1 id=\"A-1\">A</h1>"), "{html}");

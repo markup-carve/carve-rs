@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::ast::{AttrSlot, Attrs, BlockNode, InlineNode, Pos};
 use crate::extension::HeadingIdOptions;
@@ -68,6 +68,7 @@ pub(super) fn preserve(source: String) -> String {
     }
     nodes.explicit.sort_by_key(|(at, _)| *at);
     let mut occupied = HashSet::new();
+    let mut next_suffix = HashMap::new();
     let mut next_explicit = 0;
     let mut edits = Vec::new();
     for ((at, authored, base), current) in nodes.headings.into_iter().zip(actual) {
@@ -79,11 +80,12 @@ pub(super) fn preserve(source: String) -> String {
             continue;
         }
         let mut id = base.clone();
-        let mut suffix = 1;
+        let mut suffix = *next_suffix.get(&base).unwrap_or(&1);
         while occupied.contains(&id) {
             id = format!("{base}-{suffix}");
             suffix += 1;
         }
+        next_suffix.insert(base, suffix);
         occupied.insert(id.clone());
         if id != current {
             edits.push((at, id));
