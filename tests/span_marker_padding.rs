@@ -27,7 +27,7 @@ fn writer_escapes_literal_span_glyphs() {
         assert!(written.contains(&format!("\\{glyph}")), "{written:?}");
     }
     let header = to_carve("|a|= <|\n");
-    assert!(header.contains("|= \\< |"), "{header:?}");
+    assert!(header.contains("|= < |"), "{header:?}");
 }
 
 #[test]

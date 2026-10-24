@@ -597,9 +597,6 @@ pub(super) fn render_table_cell(
         content.truncate(content.len() - trailing);
         content.drain(..leading);
     }
-    if matches!(content.as_str(), "<" | "^") {
-        content.insert(0, '\\');
-    }
     let empty = content.is_empty();
     if empty
         && header_default_without_delimiter
@@ -634,12 +631,16 @@ pub(super) fn render_table_cell(
         valign,
         attrs
     );
+    if prefix.is_empty() && matches!(content.as_str(), "<" | "^") {
+        content.insert(0, '\\');
+    }
     // The space `pad_cell` writes after the prefix is what keeps the content's
     // first character content. The header `=` is read glued to the pipe and the
     // alignment sigil glued after it, off the UNTRIMMED cell, and a cell whose
     // text begins with an attribute block used to hand that block to the
     // reader as the CELL's attributes: `| ~x~ |` came back as `|=~x~|`, a
     // CENTERED column holding `x~` (carve-rs#819). Padding every cell parts
-    // them without enumerating which characters merge.
+    // them without enumerating which characters merge. A bare span glyph
+    // still needs the escape above.
     pad_cell(&prefix, &content)
 }
