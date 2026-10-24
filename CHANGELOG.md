@@ -16,6 +16,20 @@ which the published crate does not carry.
 ### Fixes
 
 - A stacked quote's first-block `+` takes a list at the owning quote's column, so `carve fmt` keeps the backslash before a refused `+` in that shape instead of writing a nested list (#3106, markup-carve/carve#3544).
+- A nested item's empty block uses one continuation column in Carve output (#3112).
+- Keep blank lines between a nested heading and its following fence, while formatting a heading-tailed sublist compactly when the fence follows directly (#3113, #3121).
+- A quote after a trailing slash closes before punctuation or whitespace (#3114).
+- Descriptions below a rebased term's column stay outside the term, and separators below a nested description list's column remain text (#3115, #3116).
+- A band line after a flush lazy line stays in its nested paragraph, and a `+` at an item's marker column after a lazy line attaches to the item (#3120, #3124).
+- An included heading satisfies a root cross-reference during lint (#3119).
+- Markdown import leaves a bare term marker unescaped (#3122).
+
+### Improvements
+
+- Document the public Rust API and check its documentation in CI (#3105).
+- Add CLI options for Carve table alignment, include limits, region selection, and JSON lint output (#3111).
+- Move contribution guidance to GitHub's conventional location.
+- Update the pinned spec corpus and its bridge checks (#3109).
 
 ## [0.1.11] - 2026-10-23
 
