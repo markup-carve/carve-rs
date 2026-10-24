@@ -1446,58 +1446,122 @@ fn normalize_note_body(
     returned
 }
 
-pub(super) fn note_blocks(
-    source: &str,
-    metadata: &DjotFootnoteAttributeStrip,
-    empty_note: &str,
-    attribute_prefix: &str,
-    item_attributes: &mut Vec<String>,
-) -> String {
-    if !source.contains("[^") {
-        return blocks_with_slot(source, None, None, attribute_prefix, item_attributes);
+struct NoteRegexes {
+    quote: &'static regex::Regex,
+    header: &'static regex::Regex,
+    first_header: &'static regex::Regex,
+    item: &'static regex::Regex,
+    inline_header: &'static regex::Regex,
+    block: &'static regex::Regex,
+    code: &'static regex::Regex,
+}
+
+impl NoteRegexes {
+    fn new() -> Self {
+        Self {
+            quote: cached_regex!(r"^(?:[ \t]*>(?:[ \t]|$))*").unwrap(),
+            header: cached_regex!(r"^(\[\^[^\]\n]+\]:[ \t]*)(.*)$").unwrap(),
+            first_header: cached_regex!(r"^\[\^[^\]\n]+\]:[ \t]*").unwrap(),
+            item: cached_regex!(r"^(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]+").unwrap(),
+            inline_header: cached_regex!(r"^((?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]+)((?:>[ \t](?:[ \t]*>[ \t])*)?)[ \t]*(\[\^[^\]\n]+\]:[ \t]*)(.*)$").unwrap(),
+            block: cached_regex!(r"^(?:#{1,6}(?:[ \t]|$)|:{3,}|[|]|[`~]{3,}|[-*+][ \t]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)][ \t]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\)[ \t]|\[[^\]^\n][^\]\n]*\]:)").unwrap(),
+            code: cached_regex!(r"^(`{3,}|~{3,})[ \t]*[A-Za-z0-9_+#.-]*$").unwrap(),
+        }
     }
-    let lines: Vec<_> = source.split('\n').collect();
-    let quote = cached_regex!(r"^(?:[ \t]*>(?:[ \t]|$))*").unwrap();
-    let header = cached_regex!(r"^(\[\^[^\]\n]+\]:[ \t]*)(.*)$").unwrap();
-    let first_header = cached_regex!(r"^\[\^[^\]\n]+\]:[ \t]*").unwrap();
-    let item = cached_regex!(r"^(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]+").unwrap();
-    let inline_header = cached_regex!(r"^((?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]+)((?:>[ \t](?:[ \t]*>[ \t])*)?)[ \t]*(\[\^[^\]\n]+\]:[ \t]*)(.*)$").unwrap();
-    let block = cached_regex!(r"^(?:#{1,6}(?:[ \t]|$)|:{3,}|[|]|[`~]{3,}|[-*+][ \t]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)][ \t]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\)[ \t]|\[[^\]^\n][^\]\n]*\]:)").unwrap();
-    let code = cached_regex!(r"^(`{3,}|~{3,})[ \t]*[A-Za-z0-9_+#.-]*$").unwrap();
-    let mask = mask_code_and_destinations(source);
-    let rows = djot_table_rows(source, &mask);
-    let fence_mask = mask_djot_fences(source, None, &rows, true);
-    let slot_prefix = djot_placeholder_prefix(source, "\0DJOTNOTESLOT\0");
-    let mut main = Vec::<String>::new();
-    let mut notes = Vec::<NoteBuffer>::new();
-    let mut completed = Vec::<NoteBuffer>::new();
-    let mut paragraph = false;
-    let mut blank = true;
-    let mut previous_depth = 0;
-    let mut last_boundary = false;
-    let mut main_item: Option<(usize, usize)> = None;
-    let mut held_code: Option<(u8, usize, usize, Option<usize>)> = None;
-    for (note_line_index, ((line, masked), fenced)) in source
-        .split('\n')
-        .zip(mask.split('\n'))
-        .zip(fence_mask.split('\n'))
-        .enumerate()
-    {
-        let physical_prefix = quote.find(line).unwrap().as_str();
+}
+
+struct NoteLine<'a> {
+    line: &'a str,
+    masked: &'a str,
+    fenced: &'a str,
+    physical_prefix: &'a str,
+    physical_depth: usize,
+    physical_indent: usize,
+    inline: Option<regex::Captures<'a>>,
+    virtual_prefix: Option<String>,
+    depth: usize,
+    indent: usize,
+    header_column: usize,
+    text: &'a str,
+    visible: &'a str,
+    columns: Vec<usize>,
+    ends: Vec<usize>,
+}
+
+impl NoteLine<'_> {
+    fn prefix(&self) -> &str {
+        self.virtual_prefix
+            .as_deref()
+            .unwrap_or(self.physical_prefix)
+    }
+}
+
+fn note_quote_columns(column_line: &str, depth: usize) -> (Vec<usize>, Vec<usize>) {
+    let mut columns = Vec::with_capacity(depth + 1);
+    let mut ends = Vec::with_capacity(depth);
+    let mut at = 0;
+    for level in 0..=depth {
+        let start = at;
+        while column_line
+            .as_bytes()
+            .get(at)
+            .is_some_and(|b| matches!(b, b' ' | b'\t'))
+        {
+            at += 1;
+        }
+        columns.push(at - start);
+        if level < depth {
+            at += 1;
+            if column_line
+                .as_bytes()
+                .get(at)
+                .is_some_and(|b| matches!(b, b' ' | b'\t'))
+            {
+                at += 1;
+            }
+            ends.push(at);
+        }
+    }
+    (columns, ends)
+}
+
+struct NoteScanner<'s> {
+    lines: Vec<&'s str>,
+    rows: Vec<bool>,
+    metadata: &'s DjotFootnoteAttributeStrip,
+    empty_note: &'s str,
+    attribute_prefix: &'s str,
+    item_attributes: &'s mut Vec<String>,
+    slot_prefix: String,
+    re: NoteRegexes,
+    main: Vec<String>,
+    notes: Vec<NoteBuffer>,
+    completed: Vec<NoteBuffer>,
+    paragraph: bool,
+    blank: bool,
+    previous_depth: usize,
+    last_boundary: bool,
+    main_item: Option<(usize, usize)>,
+    held_code: Option<(u8, usize, usize, Option<usize>)>,
+}
+
+impl NoteScanner<'_> {
+    fn line_view<'a>(&self, line: &'a str, masked: &'a str, fenced: &'a str) -> NoteLine<'a> {
+        let physical_prefix = self.re.quote.find(line).unwrap().as_str();
         let physical_depth = physical_prefix.bytes().filter(|&b| b == b'>').count();
         let physical_rest = &line[physical_prefix.len()..];
         let physical_indent = physical_rest
             .bytes()
             .take_while(|b| matches!(b, b' ' | b'\t'))
             .count();
-        let may_open_inline = blank
-            || !paragraph
-            || last_boundary
-            || physical_depth < previous_depth
-            || main_item.is_some_and(|(owner_depth, column)| {
+        let may_open_inline = self.blank
+            || !self.paragraph
+            || self.last_boundary
+            || physical_depth < self.previous_depth
+            || self.main_item.is_some_and(|(owner_depth, column)| {
                 physical_depth <= owner_depth && physical_indent <= column
             })
-            || notes.last().is_some_and(|note| {
+            || self.notes.last().is_some_and(|note| {
                 physical_depth <= note.depth
                     && (physical_indent <= note.column
                         || note
@@ -1505,7 +1569,11 @@ pub(super) fn note_blocks(
                             .is_some_and(|column| physical_indent <= column))
             });
         let inline = may_open_inline
-            .then(|| inline_header.captures(&physical_rest[physical_indent..]))
+            .then(|| {
+                self.re
+                    .inline_header
+                    .captures(&physical_rest[physical_indent..])
+            })
             .flatten();
         let virtual_prefix = inline
             .as_ref()
@@ -1545,75 +1613,121 @@ pub(super) fn note_blocks(
             )
         });
         let column_line = quote_view.as_deref().unwrap_or(line);
-        let mut columns = Vec::with_capacity(depth + 1);
-        let mut ends = Vec::with_capacity(depth);
-        let mut at = 0;
-        for level in 0..=depth {
-            let start = at;
-            while column_line
-                .as_bytes()
-                .get(at)
-                .is_some_and(|b| matches!(b, b' ' | b'\t'))
-            {
-                at += 1;
-            }
-            columns.push(at - start);
-            if level < depth {
-                at += 1;
-                if column_line
-                    .as_bytes()
-                    .get(at)
-                    .is_some_and(|b| matches!(b, b' ' | b'\t'))
-                {
-                    at += 1;
-                }
-                ends.push(at);
-            }
+        let (columns, ends) = note_quote_columns(column_line, depth);
+        NoteLine {
+            line,
+            masked,
+            fenced,
+            physical_prefix,
+            physical_depth,
+            physical_indent,
+            inline,
+            virtual_prefix,
+            depth,
+            indent,
+            header_column,
+            text,
+            visible,
+            columns,
+            ends,
         }
-        if held_code.is_some_and(|(_, _, host, floor)| {
+    }
+
+    fn scan_line(&mut self, note_line_index: usize, line: &str, masked: &str, fenced: &str) {
+        let view = self.line_view(line, masked, fenced);
+        let (depth, indent, text) = (view.depth, view.indent, view.text);
+        if self.held_code.is_some_and(|(_, _, host, floor)| {
             depth < host
                 || floor.is_some_and(|floor| depth == host && indent < floor && !text.is_empty())
         }) {
-            held_code = None;
+            self.held_code = None;
         }
-        let active = notes.last();
-        let outside_main_item = active.is_none()
-            && main_item.is_some_and(|(owner_depth, column)| {
+        let outside_main_item = self.notes.last().is_none()
+            && self.main_item.is_some_and(|(owner_depth, column)| {
                 depth < owner_depth
-                    || columns
+                    || view
+                        .columns
                         .get(owner_depth)
                         .is_some_and(|current| *current <= column)
             });
-        let can_define = inline.is_some()
-            || blank
-            || !paragraph
-            || last_boundary
+        let head = self.note_header(&view, outside_main_item);
+        let (returned_note_attributes, returned_scope) = self.close_notes(&view, head.is_some());
+        if let Some(scope) = returned_scope {
+            self.place_returned_attributes(&view, scope, returned_note_attributes);
+        }
+        if let Some(caps) = head {
+            self.open_note(note_line_index, &view, &caps);
+            return;
+        }
+        self.track_held_code(&view);
+        if self.notes.is_empty() {
+            self.push_main_line(&view, outside_main_item);
+        } else {
+            self.push_note_line(note_line_index, &view);
+        }
+        self.previous_depth = depth;
+        self.last_boundary = self.metadata.is_boundary(line);
+    }
+
+    fn note_header<'a>(
+        &self,
+        view: &NoteLine<'a>,
+        outside_main_item: bool,
+    ) -> Option<regex::Captures<'a>> {
+        let active = self.notes.last();
+        let can_define = view.inline.is_some()
+            || self.blank
+            || !self.paragraph
+            || self.last_boundary
             || outside_main_item
-            || depth < previous_depth
-            || active.is_some_and(|n| depth <= n.depth && indent <= n.column);
-        let head = can_define
-            .then(|| header.captures(text))
+            || view.depth < self.previous_depth
+            || active.is_some_and(|n| view.depth <= n.depth && view.indent <= n.column);
+        can_define
+            .then(|| self.re.header.captures(view.text))
             .flatten()
             .filter(|caps| {
                 let colon = caps[1].trim_end_matches([' ', '\t']).len() - 1;
-                masked.as_bytes().get(prefix.len() + header_column + colon) == Some(&b':')
-                    || held_code.is_none()
-                        && fenced != line
-                        && code.is_match(&caps[2][djot_content_start(&caps[2])..])
-            });
+                view.masked
+                    .as_bytes()
+                    .get(view.prefix().len() + view.header_column + colon)
+                    == Some(&b':')
+                    || self.held_code.is_none()
+                        && view.fenced != view.line
+                        && self
+                            .re
+                            .code
+                            .is_match(&caps[2][djot_content_start(&caps[2])..])
+            })
+    }
+
+    fn close_notes(
+        &mut self,
+        view: &NoteLine<'_>,
+        has_head: bool,
+    ) -> (Vec<String>, Option<(usize, usize)>) {
+        let NoteLine {
+            line,
+            fenced,
+            depth,
+            indent,
+            text,
+            visible,
+            ..
+        } = *view;
+        let (block, code, item) = (self.re.block, self.re.code, self.re.item);
         let mut returned_note_attributes = Vec::new();
         let mut returned_scope: Option<(usize, usize)> = None;
-        while let Some(note) = notes.last() {
-            if fenced != line && (held_code.is_some() || !code.is_match(text)) {
+        while let Some(note) = self.notes.last() {
+            if fenced != line && (self.held_code.is_some() || !code.is_match(text)) {
                 break;
             }
-            let column = if inline.is_some() && note.depth == physical_depth {
-                physical_indent
+            let column = if view.inline.is_some() && note.depth == view.physical_depth {
+                view.physical_indent
             } else {
-                columns.get(note.depth).copied().unwrap_or(indent)
+                view.columns.get(note.depth).copied().unwrap_or(indent)
             };
             let outside = depth < note.depth || column <= note.column;
-            let starts_block = head.is_some()
+            let starts_block = has_head
                 || code.is_match(text)
                 || depth > note.depth
                 || depth < note.depth && text.is_empty()
@@ -1621,14 +1735,18 @@ pub(super) fn note_blocks(
                 || (text.starts_with('{')
                     && read_djot_word_attributes(text, 0)
                         .is_some_and(|(end, _)| end == text.len()))
-                || metadata.is_boundary(line);
+                || self.metadata.is_boundary(line);
             if outside
                 && !(note.paragraph && !note.blank && !starts_block && depth <= note.depth)
                 && (!text.is_empty() || depth != note.depth)
             {
-                let mut closed = notes.pop().unwrap();
-                let returned =
-                    normalize_note_body(&mut closed, empty_note, attribute_prefix, item_attributes);
+                let mut closed = self.notes.pop().unwrap();
+                let returned = normalize_note_body(
+                    &mut closed,
+                    self.empty_note,
+                    self.attribute_prefix,
+                    self.item_attributes,
+                );
                 returned_note_attributes.extend(returned);
                 if !returned_note_attributes.is_empty() {
                     returned_scope = Some(match returned_scope {
@@ -1639,7 +1757,7 @@ pub(super) fn note_blocks(
                         _ => (closed.depth, closed.column),
                     });
                 }
-                if let Some(parent) = notes.last_mut() {
+                if let Some(parent) = self.notes.last_mut() {
                     if (closed.blank || !closed.paragraph)
                         && parent.item_column.is_some_and(|column| indent <= column)
                         && !block.is_match(visible)
@@ -1650,7 +1768,7 @@ pub(super) fn note_blocks(
                     }
                     parent.paragraph = false;
                 }
-                if notes.is_empty()
+                if self.notes.is_empty()
                     && (code.is_match(text)
                         || cached_regex!(r"^\[[^\]\n^][^\]\n]*\]:")
                             .unwrap()
@@ -1658,360 +1776,487 @@ pub(super) fn note_blocks(
                         || (text.starts_with('{')
                             && read_djot_word_attributes(text, 0)
                                 .is_some_and(|(end, _)| end == text.len())))
-                    && main.last().is_some_and(|line| line.contains(empty_note))
+                    && self
+                        .main
+                        .last()
+                        .is_some_and(|line| line.contains(self.empty_note))
                 {
-                    main.push(line[..djot_content_start(line)].to_owned());
+                    self.main.push(line[..djot_content_start(line)].to_owned());
                 }
-                completed.push(closed);
+                self.completed.push(closed);
             } else {
                 break;
             }
         }
-        if let Some((scope_depth, scope_column)) = returned_scope {
-            let scope_depth = scope_depth.min(depth);
-            let end = ends.get(scope_depth.wrapping_sub(1)).copied().unwrap_or(0);
-            let padding = columns
-                .get(scope_depth)
-                .copied()
-                .unwrap_or(indent)
-                .min(scope_column);
-            let mut prefix = format!("{}{}", &line[..end], " ".repeat(padding));
-            if prefix.ends_with('>') {
-                prefix.push(' ');
-            }
-            for attributes in returned_note_attributes {
-                if let Some(parent) = notes.last_mut() {
-                    let host = ends.get(parent.depth.wrapping_sub(1)).copied().unwrap_or(0);
-                    let prefix = &prefix[host..];
-                    let padding = prefix
-                        .bytes()
-                        .take_while(|b| matches!(b, b' ' | b'\t'))
-                        .count();
-                    parent.body.push(format!(
-                        "{}{attributes}",
-                        &prefix[padding.min(parent.column)..]
-                    ));
-                } else {
-                    main.push(format!("{prefix}{attributes}"));
-                }
+        (returned_note_attributes, returned_scope)
+    }
+
+    fn place_returned_attributes(
+        &mut self,
+        view: &NoteLine<'_>,
+        (scope_depth, scope_column): (usize, usize),
+        returned_note_attributes: Vec<String>,
+    ) {
+        let line = view.line;
+        let ends = &view.ends;
+        let scope_depth = scope_depth.min(view.depth);
+        let end = ends.get(scope_depth.wrapping_sub(1)).copied().unwrap_or(0);
+        let padding = view
+            .columns
+            .get(scope_depth)
+            .copied()
+            .unwrap_or(view.indent)
+            .min(scope_column);
+        let mut prefix = format!("{}{}", &line[..end], " ".repeat(padding));
+        if prefix.ends_with('>') {
+            prefix.push(' ');
+        }
+        for attributes in returned_note_attributes {
+            if let Some(parent) = self.notes.last_mut() {
+                let host = ends.get(parent.depth.wrapping_sub(1)).copied().unwrap_or(0);
+                let prefix = &prefix[host..];
+                let padding = prefix
+                    .bytes()
+                    .take_while(|b| matches!(b, b' ' | b'\t'))
+                    .count();
+                parent.body.push(format!(
+                    "{}{attributes}",
+                    &prefix[padding.min(parent.column)..]
+                ));
+            } else {
+                self.main.push(format!("{prefix}{attributes}"));
             }
         }
-        if let Some(caps) = head {
-            if let Some(inline) = &inline {
-                let dummy = format!(
-                    "{physical_prefix}{}{}{}{empty_note}",
-                    " ".repeat(physical_indent),
-                    &inline[1],
-                    &inline[2]
-                );
-                if let Some(parent) = notes.last_mut() {
-                    let host = ends.get(parent.depth.wrapping_sub(1)).copied().unwrap_or(0);
-                    let payload = &dummy[host..];
-                    let padding = payload
-                        .bytes()
-                        .take_while(|b| matches!(b, b' ' | b'\t'))
-                        .count();
-                    parent
-                        .body
-                        .push(payload[padding.min(parent.column)..].to_owned());
-                } else {
-                    main.push(dummy);
-                    main_item = Some((physical_depth, physical_indent));
-                }
-            }
-            let parent = notes.last_mut();
-            let slot = if parent.is_none() && depth == 0 && header_column == 0 {
-                Some(format!("{slot_prefix}{}\0", completed.len()))
+    }
+
+    fn open_note(
+        &mut self,
+        note_line_index: usize,
+        view: &NoteLine<'_>,
+        caps: &regex::Captures<'_>,
+    ) {
+        let (quote, item, block, code) = (self.re.quote, self.re.item, self.re.block, self.re.code);
+        let (depth, header_column, ends) = (view.depth, view.header_column, &view.ends);
+        let empty_note = self.empty_note;
+        if let Some(inline) = &view.inline {
+            let dummy = format!(
+                "{}{}{}{}{empty_note}",
+                view.physical_prefix,
+                " ".repeat(view.physical_indent),
+                &inline[1],
+                &inline[2]
+            );
+            if let Some(parent) = self.notes.last_mut() {
+                let host = ends.get(parent.depth.wrapping_sub(1)).copied().unwrap_or(0);
+                let payload = &dummy[host..];
+                let padding = payload
+                    .bytes()
+                    .take_while(|b| matches!(b, b' ' | b'\t'))
+                    .count();
+                parent
+                    .body
+                    .push(payload[padding.min(parent.column)..].to_owned());
             } else {
-                None
-            };
-            let separator = if let Some(parent) = parent {
-                let kept = prefix
-                    .get(ends.get(parent.depth.wrapping_sub(1)).copied().unwrap_or(0)..)
-                    .unwrap_or("")
-                    .trim_end()
-                    .to_owned();
-                if inline.is_none() {
-                    parent.body.push(kept);
-                }
-                None
-            } else {
-                if depth > 0 && inline.is_none() {
-                    main.push(prefix.trim_end().to_owned());
-                }
-                Some(())
-            };
-            if separator.is_some() {
-                if let Some(slot) = &slot {
-                    main.push(slot.clone());
-                }
+                self.main.push(dummy);
+                self.main_item = Some((view.physical_depth, view.physical_indent));
             }
-            let body = &caps[2];
-            if let Some(opener) = code.captures(&body[djot_content_start(body)..]) {
-                held_code = Some((
-                    opener[1].as_bytes()[0],
-                    opener[1].len(),
-                    depth,
-                    Some(header_column + 1),
-                ));
+        }
+        let parent = self.notes.last_mut();
+        let slot = if parent.is_none() && depth == 0 && header_column == 0 {
+            Some(format!("{}{}\0", self.slot_prefix, self.completed.len()))
+        } else {
+            None
+        };
+        let separator = if let Some(parent) = parent {
+            let kept = view
+                .prefix()
+                .get(ends.get(parent.depth.wrapping_sub(1)).copied().unwrap_or(0)..)
+                .unwrap_or("")
+                .trim_end()
+                .to_owned();
+            if view.inline.is_none() {
+                parent.body.push(kept);
             }
-            let quoted_item = quote
-                .find(body)
-                .is_some_and(|prefix| !prefix.is_empty() && item.is_match(&body[prefix.end()..]));
-            let empty_task = empty_djot_task_tail_end(
-                body,
-                lines
-                    .get(note_line_index + 1)
-                    .map_or(true, |line| line.trim().is_empty()),
-            )
-            .is_some();
-            let first_padding = if item.is_match(body) || quoted_item {
-                caps[1].encode_utf16().count()
-            } else if code.is_match(body) {
+            None
+        } else {
+            if depth > 0 && view.inline.is_none() {
+                self.main.push(view.prefix().trim_end().to_owned());
+            }
+            Some(())
+        };
+        if separator.is_some() {
+            if let Some(slot) = &slot {
+                self.main.push(slot.clone());
+            }
+        }
+        let body = &caps[2];
+        if let Some(opener) = code.captures(&body[djot_content_start(body)..]) {
+            self.held_code = Some((
+                opener[1].as_bytes()[0],
+                opener[1].len(),
+                depth,
+                Some(header_column + 1),
+            ));
+        }
+        let quoted_item = quote
+            .find(body)
+            .is_some_and(|prefix| !prefix.is_empty() && item.is_match(&body[prefix.end()..]));
+        let empty_task = empty_djot_task_tail_end(
+            body,
+            self.lines
+                .get(note_line_index + 1)
+                .map_or(true, |line| line.trim().is_empty()),
+        )
+        .is_some();
+        let first_padding = if item.is_match(body) || quoted_item {
+            caps[1].encode_utf16().count()
+        } else if code.is_match(body) {
+            2
+        } else {
+            0
+        };
+        let body_paragraph =
+            !empty_task && !body.is_empty() && !block.is_match(body) && !code.is_match(body);
+        self.notes.push(NoteBuffer {
+            depth,
+            column: header_column,
+            label: caps[1].to_owned(),
+            body: vec![format!("{}{body}", " ".repeat(first_padding))],
+            converted_body: None,
+            carry_task_attributes: !empty_task
+                && empty_djot_task_tail_end(body, true).is_some()
+                && self.lines.get(note_line_index + 1).is_some_and(|line| {
+                    let text = &line[djot_content_start(line)..];
+                    read_djot_word_attributes(text, 0)
+                        .is_some_and(|(end, _)| text[end..].trim().is_empty())
+                }),
+            item_column: item
+                .is_match(body)
+                .then_some(header_column + caps[1].encode_utf16().count()),
+            paragraph_depth: depth
+                + body[..djot_content_start(body)]
+                    .bytes()
+                    .filter(|&b| b == b'>')
+                    .count(),
+            paragraph: !empty_task && (body_paragraph || item.is_match(body) || starts_quote(body)),
+            blank: empty_task || !body_paragraph && !item.is_match(body) && !starts_quote(body),
+            slot,
+        });
+        self.open_nested_notes(body, depth);
+        self.paragraph = self.notes.last().unwrap().paragraph;
+        self.blank = self.notes.last().unwrap().blank;
+        self.previous_depth = depth;
+        self.last_boundary = false;
+    }
+
+    fn open_nested_notes(&mut self, body: &str, depth: usize) {
+        let (first_header, item, block, code) = (
+            self.re.first_header,
+            self.re.item,
+            self.re.block,
+            self.re.code,
+        );
+        let empty_note = self.empty_note;
+        let mut nested_body = body;
+        while let Some(marker) = item.find(nested_body) {
+            let after_marker = &nested_body[marker.end()..];
+            let Some(nested) = first_header.find(after_marker) else {
+                break;
+            };
+            let parent = self.notes.last_mut().unwrap();
+            let child_column = parent.column
+                + parent.label.encode_utf16().count()
+                + marker.as_str().encode_utf16().count();
+            parent.body[0] = format!(
+                "{}{}{empty_note}",
+                " ".repeat(parent.label.encode_utf16().count()),
+                marker.as_str()
+            );
+            nested_body = &after_marker[nested.end()..];
+            let child_item = item.is_match(nested_body);
+            let child_paragraph = !nested_body.is_empty()
+                && !block.is_match(nested_body)
+                && !code.is_match(nested_body);
+            let child_padding = if child_item {
+                nested.as_str().encode_utf16().count()
+            } else if code.is_match(nested_body) {
                 2
             } else {
                 0
             };
-            let body_paragraph =
-                !empty_task && !body.is_empty() && !block.is_match(body) && !code.is_match(body);
-            notes.push(NoteBuffer {
-                depth,
-                column: header_column,
-                label: caps[1].to_owned(),
-                body: vec![format!("{}{body}", " ".repeat(first_padding))],
-                converted_body: None,
-                carry_task_attributes: !empty_task
-                    && empty_djot_task_tail_end(body, true).is_some()
-                    && lines.get(note_line_index + 1).is_some_and(|line| {
-                        let text = &line[djot_content_start(line)..];
-                        read_djot_word_attributes(text, 0)
-                            .is_some_and(|(end, _)| text[end..].trim().is_empty())
-                    }),
-                item_column: item
-                    .is_match(body)
-                    .then_some(header_column + caps[1].encode_utf16().count()),
-                paragraph_depth: depth
-                    + body[..djot_content_start(body)]
-                        .bytes()
-                        .filter(|&b| b == b'>')
-                        .count(),
-                paragraph: !empty_task
-                    && (body_paragraph || item.is_match(body) || starts_quote(body)),
-                blank: empty_task || !body_paragraph && !item.is_match(body) && !starts_quote(body),
-                slot,
-            });
-            let mut nested_body = body;
-            while let Some(marker) = item.find(nested_body) {
-                let after_marker = &nested_body[marker.end()..];
-                let Some(nested) = first_header.find(after_marker) else {
-                    break;
-                };
-                let parent = notes.last_mut().unwrap();
-                let child_column = parent.column
-                    + parent.label.encode_utf16().count()
-                    + marker.as_str().encode_utf16().count();
-                parent.body[0] = format!(
-                    "{}{}{empty_note}",
-                    " ".repeat(parent.label.encode_utf16().count()),
-                    marker.as_str()
-                );
-                nested_body = &after_marker[nested.end()..];
-                let child_item = item.is_match(nested_body);
-                let child_paragraph = !nested_body.is_empty()
-                    && !block.is_match(nested_body)
-                    && !code.is_match(nested_body);
-                let child_padding = if child_item {
-                    nested.as_str().encode_utf16().count()
-                } else if code.is_match(nested_body) {
-                    2
-                } else {
-                    0
-                };
-                if let Some(opener) = code.captures(nested_body) {
-                    held_code = Some((
-                        opener[1].as_bytes()[0],
-                        opener[1].len(),
-                        depth,
-                        Some(child_column + 1),
-                    ));
-                }
-                notes.push(NoteBuffer {
-                    depth,
-                    column: child_column,
-                    label: nested.as_str().to_owned(),
-                    body: vec![if item
-                        .find(nested_body)
-                        .is_some_and(|marker| first_header.is_match(&nested_body[marker.end()..]))
-                    {
-                        String::new()
-                    } else {
-                        format!("{}{nested_body}", " ".repeat(child_padding))
-                    }],
-                    converted_body: None,
-                    carry_task_attributes: false,
-                    item_column: child_item
-                        .then_some(child_column + nested.as_str().encode_utf16().count()),
-                    paragraph_depth: depth,
-                    paragraph: child_paragraph || child_item || starts_quote(nested_body),
-                    blank: !child_paragraph && !child_item && !starts_quote(nested_body),
-                    slot: None,
-                });
-            }
-            paragraph = notes.last().unwrap().paragraph;
-            blank = notes.last().unwrap().blank;
-            previous_depth = depth;
-            last_boundary = false;
-            continue;
-        }
-        if fenced != line {
-            if let Some((kind, width, host, _)) = held_code {
-                let start = ends.get(host.wrapping_sub(1)).copied().unwrap_or(0);
-                let content = line[start..].trim_matches([' ', '\t']);
-                let run = content.bytes().take_while(|&b| b == kind).count();
-                if run >= width && content[run..].trim_matches([' ', '\t']).is_empty() {
-                    held_code = None;
-                }
-            } else if let Some(opener) = code.captures(&line[djot_content_start(line)..]) {
-                held_code = Some((
+            if let Some(opener) = code.captures(nested_body) {
+                self.held_code = Some((
                     opener[1].as_bytes()[0],
                     opener[1].len(),
                     depth,
-                    notes.last().map(|note| note.column + 1),
+                    Some(child_column + 1),
+                ));
+            }
+            self.notes.push(NoteBuffer {
+                depth,
+                column: child_column,
+                label: nested.as_str().to_owned(),
+                body: vec![if item
+                    .find(nested_body)
+                    .is_some_and(|marker| first_header.is_match(&nested_body[marker.end()..]))
+                {
+                    String::new()
+                } else {
+                    format!("{}{nested_body}", " ".repeat(child_padding))
+                }],
+                converted_body: None,
+                carry_task_attributes: false,
+                item_column: child_item
+                    .then_some(child_column + nested.as_str().encode_utf16().count()),
+                paragraph_depth: depth,
+                paragraph: child_paragraph || child_item || starts_quote(nested_body),
+                blank: !child_paragraph && !child_item && !starts_quote(nested_body),
+                slot: None,
+            });
+        }
+    }
+
+    fn track_held_code(&mut self, view: &NoteLine<'_>) {
+        let line = view.line;
+        if view.fenced != line {
+            if let Some((kind, width, host, _)) = self.held_code {
+                let start = view.ends.get(host.wrapping_sub(1)).copied().unwrap_or(0);
+                let content = line[start..].trim_matches([' ', '\t']);
+                let run = content.bytes().take_while(|&b| b == kind).count();
+                if run >= width && content[run..].trim_matches([' ', '\t']).is_empty() {
+                    self.held_code = None;
+                }
+            } else if let Some(opener) = self.re.code.captures(&line[djot_content_start(line)..]) {
+                self.held_code = Some((
+                    opener[1].as_bytes()[0],
+                    opener[1].len(),
+                    view.depth,
+                    self.notes.last().map(|note| note.column + 1),
                 ));
             }
         }
-        if let Some(note) = notes.last_mut() {
-            let host = ends.get(note.depth.wrapping_sub(1)).copied().unwrap_or(0);
-            let payload = &line[host..];
-            let padding = payload
-                .bytes()
-                .take_while(|b| matches!(b, b' ' | b'\t'))
-                .count();
-            let removed = padding.min(note.column);
-            let mut payload = payload[removed..].to_owned();
-            let content_at = djot_content_start(line);
-            if !rows[note_line_index]
-                && line.as_bytes().get(content_at) == Some(&b'|')
-                && masked.as_bytes().get(content_at) == Some(&b'|')
-            {
-                payload.insert(content_at - host - removed, '\\');
-            }
-            note.body.push(payload);
-            let outside_item = note.item_column.is_some_and(|column| {
-                columns.get(note.depth).copied().unwrap_or(indent) <= column
-                    && (note.blank || depth > note.depth || block.is_match(visible))
-            });
-            if outside_item {
-                note.item_column = None;
-                note.paragraph = false;
-                note.paragraph_depth = note.depth;
-            }
-            if item.is_match(text) && (!note.paragraph || outside_item) {
-                note.item_column = Some(indent);
-            }
-            let literal_quote = depth > note.paragraph_depth && note.paragraph;
-            note.blank = text.is_empty() && !literal_quote;
-            if !note.paragraph && depth > note.depth {
-                note.paragraph_depth = depth;
-            }
-            note.paragraph = !note.blank && fenced == line && !block.is_match(visible);
-            paragraph = note.paragraph;
-            blank = note.blank;
+    }
+
+    fn push_note_line(&mut self, note_line_index: usize, view: &NoteLine<'_>) {
+        let NoteLine {
+            line,
+            masked,
+            fenced,
+            depth,
+            indent,
+            text,
+            visible,
+            ..
+        } = *view;
+        let (item, block) = (self.re.item, self.re.block);
+        let note = self.notes.last_mut().unwrap();
+        let host = view
+            .ends
+            .get(note.depth.wrapping_sub(1))
+            .copied()
+            .unwrap_or(0);
+        let payload = &line[host..];
+        let padding = payload
+            .bytes()
+            .take_while(|b| matches!(b, b' ' | b'\t'))
+            .count();
+        let removed = padding.min(note.column);
+        let mut payload = payload[removed..].to_owned();
+        let content_at = djot_content_start(line);
+        if !self.rows[note_line_index]
+            && line.as_bytes().get(content_at) == Some(&b'|')
+            && masked.as_bytes().get(content_at) == Some(&b'|')
+        {
+            payload.insert(content_at - host - removed, '\\');
+        }
+        note.body.push(payload);
+        let outside_item = note.item_column.is_some_and(|column| {
+            view.columns.get(note.depth).copied().unwrap_or(indent) <= column
+                && (note.blank || depth > note.depth || block.is_match(visible))
+        });
+        if outside_item {
+            note.item_column = None;
+            note.paragraph = false;
+            note.paragraph_depth = note.depth;
+        }
+        if item.is_match(text) && (!note.paragraph || outside_item) {
+            note.item_column = Some(indent);
+        }
+        let literal_quote = depth > note.paragraph_depth && note.paragraph;
+        note.blank = text.is_empty() && !literal_quote;
+        if !note.paragraph && depth > note.depth {
+            note.paragraph_depth = depth;
+        }
+        note.paragraph = !note.blank && fenced == line && !block.is_match(visible);
+        self.paragraph = note.paragraph;
+        self.blank = note.blank;
+    }
+
+    fn push_main_line(&mut self, view: &NoteLine<'_>, outside_main_item: bool) {
+        let (item, block, code) = (self.re.item, self.re.block, self.re.code);
+        let (text, visible) = (view.text, view.visible);
+        if outside_main_item
+            && (self.blank || !self.paragraph || block.is_match(visible))
+            && !item.is_match(text)
+            && !text.is_empty()
+        {
+            self.main_item = None;
+        }
+        self.main.push(view.line.to_owned());
+        self.blank = text.is_empty();
+        if item.is_match(text) && (!self.paragraph || outside_main_item) {
+            self.main_item = Some((view.depth, view.indent));
+            let content = &text[djot_content_start(text)..];
+            self.paragraph =
+                !content.is_empty() && !block.is_match(content) && !code.is_match(content);
         } else {
-            if outside_main_item
-                && (blank || !paragraph || block.is_match(visible))
-                && !item.is_match(text)
-                && !text.is_empty()
-            {
-                main_item = None;
+            self.paragraph = !self.blank && !block.is_match(visible);
+        }
+    }
+
+    fn note_definitions(&mut self) -> (HashMap<String, String>, Vec<String>) {
+        let empty_note = self.empty_note;
+        let mut definitions = HashMap::<String, String>::new();
+        let mut unplaced = Vec::new();
+        for mut note in std::mem::take(&mut self.completed) {
+            if note.converted_body.is_none() {
+                normalize_note_body(
+                    &mut note,
+                    empty_note,
+                    self.attribute_prefix,
+                    self.item_attributes,
+                );
             }
-            main.push(line.to_owned());
-            blank = text.is_empty();
-            if item.is_match(text) && (!paragraph || outside_main_item) {
-                main_item = Some((depth, indent));
-                let content = &text[djot_content_start(text)..];
-                paragraph =
-                    !content.is_empty() && !block.is_match(content) && !code.is_match(content);
+            let converted = note.converted_body.as_ref().unwrap();
+            let mut lines = converted.split('\n');
+            let first_line = lines.next().unwrap_or("").trim_start_matches([' ', '\t']);
+            let mut definition = if first_line.starts_with("* ")
+                && note.body.first().is_some_and(|line| {
+                    empty_djot_task_tail_end(line.trim_start_matches([' ', '\t']), true).is_some()
+                }) {
+                format!("{}{empty_note}\n  {first_line}", note.label)
             } else {
-                paragraph = !blank && !block.is_match(visible);
+                format!("{}{first_line}", note.label)
+            };
+            for line in lines {
+                definition.push('\n');
+                if !line.is_empty() {
+                    definition.push_str("  ");
+                    definition.push_str(line);
+                }
+            }
+            if let Some(slot) = note.slot {
+                definitions.insert(slot, definition);
+            } else {
+                unplaced.push(definition);
             }
         }
-        previous_depth = depth;
-        last_boundary = metadata.is_boundary(line);
+        (definitions, unplaced)
     }
-    while let Some(note) = notes.pop() {
-        completed.push(note);
+
+    fn main_source(&self) -> String {
+        let main = &self.main;
+        let mut main_source = String::new();
+        for (index, line) in main.iter().enumerate() {
+            if index > 0 {
+                main_source.push('\n');
+            }
+            main_source.push_str(line);
+            if line.starts_with(&self.slot_prefix)
+                && main
+                    .get(index + 1)
+                    .is_some_and(|next| self.re.code.is_match(next.trim_start_matches([' ', '\t'])))
+            {
+                main_source.push('\n');
+            }
+        }
+        main_source
     }
-    if completed.is_empty() {
+
+    fn finish(mut self, source: &str) -> String {
+        while let Some(note) = self.notes.pop() {
+            self.completed.push(note);
+        }
+        if self.completed.is_empty() {
+            return blocks_with_slot(
+                source,
+                None,
+                None,
+                self.attribute_prefix,
+                self.item_attributes,
+            );
+        }
+        let (mut definitions, unplaced) = self.note_definitions();
+        let main_source = self.main_source();
+        let main = normalize_djot_fences(&main_source);
+        let normalized_main = blocks_with_slot(
+            &main,
+            Some(&self.slot_prefix),
+            Some(self.empty_note),
+            self.attribute_prefix,
+            self.item_attributes,
+        );
+        let mut result = unplaced.join("\n\n");
+        if !result.is_empty() {
+            result.push_str("\n\n");
+        }
+        for (n, line) in normalized_main.split('\n').enumerate() {
+            if n > 0 {
+                result.push('\n');
+            }
+            if let Some(definition) = definitions.remove(line) {
+                result.push_str(&definition);
+            } else {
+                result.push_str(line);
+            }
+        }
+        result
+    }
+}
+
+pub(super) fn note_blocks(
+    source: &str,
+    metadata: &DjotFootnoteAttributeStrip,
+    empty_note: &str,
+    attribute_prefix: &str,
+    item_attributes: &mut Vec<String>,
+) -> String {
+    if !source.contains("[^") {
         return blocks_with_slot(source, None, None, attribute_prefix, item_attributes);
     }
-    let mut definitions = HashMap::<String, String>::new();
-    let mut unplaced = Vec::new();
-    for mut note in completed {
-        if note.converted_body.is_none() {
-            normalize_note_body(&mut note, empty_note, attribute_prefix, item_attributes);
-        }
-        let converted = note.converted_body.as_ref().unwrap();
-        let mut lines = converted.split('\n');
-        let first_line = lines.next().unwrap_or("").trim_start_matches([' ', '\t']);
-        let mut definition = if first_line.starts_with("* ")
-            && note.body.first().is_some_and(|line| {
-                empty_djot_task_tail_end(line.trim_start_matches([' ', '\t']), true).is_some()
-            }) {
-            format!("{}{empty_note}\n  {first_line}", note.label)
-        } else {
-            format!("{}{first_line}", note.label)
-        };
-        for line in lines {
-            definition.push('\n');
-            if !line.is_empty() {
-                definition.push_str("  ");
-                definition.push_str(line);
-            }
-        }
-        if let Some(slot) = note.slot {
-            definitions.insert(slot, definition);
-        } else {
-            unplaced.push(definition);
-        }
-    }
-    let mut main_source = String::new();
-    for (index, line) in main.iter().enumerate() {
-        if index > 0 {
-            main_source.push('\n');
-        }
-        main_source.push_str(line);
-        if line.starts_with(&slot_prefix)
-            && main
-                .get(index + 1)
-                .is_some_and(|next| code.is_match(next.trim_start_matches([' ', '\t'])))
-        {
-            main_source.push('\n');
-        }
-    }
-    let main = normalize_djot_fences(&main_source);
-    let normalized_main = blocks_with_slot(
-        &main,
-        Some(&slot_prefix),
-        Some(empty_note),
+    let lines: Vec<_> = source.split('\n').collect();
+    let mask = mask_code_and_destinations(source);
+    let rows = djot_table_rows(source, &mask);
+    let fence_mask = mask_djot_fences(source, None, &rows, true);
+    let slot_prefix = djot_placeholder_prefix(source, "\0DJOTNOTESLOT\0");
+    let mut scanner = NoteScanner {
+        lines,
+        rows,
+        metadata,
+        empty_note,
         attribute_prefix,
         item_attributes,
-    );
-    let mut result = unplaced.join("\n\n");
-    if !result.is_empty() {
-        result.push_str("\n\n");
+        slot_prefix,
+        re: NoteRegexes::new(),
+        main: Vec::new(),
+        notes: Vec::new(),
+        completed: Vec::new(),
+        paragraph: false,
+        blank: true,
+        previous_depth: 0,
+        last_boundary: false,
+        main_item: None,
+        held_code: None,
+    };
+    for (note_line_index, ((line, masked), fenced)) in source
+        .split('\n')
+        .zip(mask.split('\n'))
+        .zip(fence_mask.split('\n'))
+        .enumerate()
+    {
+        scanner.scan_line(note_line_index, line, masked, fenced);
     }
-    for (n, line) in normalized_main.split('\n').enumerate() {
-        if n > 0 {
-            result.push('\n');
-        }
-        if let Some(definition) = definitions.remove(line) {
-            result.push_str(&definition);
-        } else {
-            result.push_str(line);
-        }
-    }
-    result
+    scanner.finish(source)
 }
 
 #[cfg(test)]
@@ -4031,6 +4276,26 @@ pub(super) fn heading_reference_keys(source: &str, targets: &HashMap<String, Str
     references_impl(source, None, true, Some(targets))
 }
 
+type ReferenceAttributes = Vec<(String, Vec<String>)>;
+type ReferenceDefinitionMap = HashMap<String, (String, ReferenceAttributes, bool)>;
+type ReferenceOverrideCounts = HashMap<String, HashMap<String, usize>>;
+
+#[derive(Default)]
+struct ReferenceDefinitionScan {
+    definitions: ReferenceDefinitionMap,
+    removed: Vec<(usize, usize, String)>,
+    definition_ranges: HashMap<String, Vec<(usize, usize)>>,
+    definition_keys: Vec<String>,
+    indented_definitions: Vec<(usize, usize, usize, String)>,
+    container_definitions: Vec<(usize, usize, String)>,
+}
+
+struct ReferenceAliases {
+    aliases: HashMap<String, String>,
+    occupied: HashSet<String>,
+    serial: usize,
+}
+
 fn references_impl(
     source: &str,
     accepted: Option<&HashMap<usize, ReferenceDecision>>,
@@ -4038,13 +4303,97 @@ fn references_impl(
     heading_targets: Option<&HashMap<String, String>>,
 ) -> String {
     let _paragraph_cache = ParagraphCacheScope::new(source);
-    let definition = cached_regex!(r"(?m)^\[([^\]\n]+)\]:[ \t]*([^ \t\r\n]*)\r?$").unwrap();
-    let quote_prefix = cached_regex!(r"^(?:[ \t]*>[ \t]*)*[ \t]*").unwrap();
-    let list_marker = cached_regex!(r"(?:[-*+] |[0-9A-Za-z]+[.)] |\([0-9A-Za-z]+\) )").unwrap();
-    let block_end = cached_regex!(
-        r"^(?:#{1,6}(?: |$)|:{3,}|[`~]{3,}|\||\[[^\]^][^\]]*\]:|(?:[-*][ \t]*){3,}$)"
-    )
-    .unwrap();
+    let quote_openings = reference_quote_openings(source);
+    let mask = reference_mask(source);
+    let ReferenceDefinitionScan {
+        mut definitions,
+        removed,
+        definition_ranges,
+        mut definition_keys,
+        indented_definitions,
+        container_definitions,
+    } = scan_reference_definitions(source, &mask, &quote_openings, accepted, aliases_only);
+    if definitions.is_empty() && heading_targets.map_or(true, HashMap::is_empty) {
+        return source.to_owned();
+    }
+    let mut seen_keys = HashSet::new();
+    definition_keys.retain(|key| seen_keys.insert(key.clone()));
+    let (uses, use_counts, override_counts) =
+        attributed_reference_uses(source, &mask, &definitions);
+    for (key, (_, attrs, _)) in &mut definitions {
+        if let Some(counts) = override_counts.get(key) {
+            attrs.retain(|(attribute, _)| counts.get(attribute) != use_counts.get(key));
+        }
+    }
+    let has_source_nuls = source.contains("\0U\0");
+    let mut aliases = reference_aliases(
+        source,
+        &definition_keys,
+        &definitions,
+        accepted,
+        &uses,
+        aliases_only,
+    );
+    if aliases_only {
+        return alias_only_references(
+            source,
+            &mask,
+            &uses,
+            &definitions,
+            &definition_ranges,
+            &aliases.aliases,
+            has_source_nuls,
+            heading_targets,
+        );
+    }
+    let mut moved_definitions = Vec::new();
+    let lifted_attributes = lift_container_definitions(
+        container_definitions,
+        &definitions,
+        &definition_ranges,
+        &mut aliases,
+        &mut moved_definitions,
+    );
+    let class_aliases = class_reference_aliases(
+        &definition_keys,
+        &definitions,
+        &override_counts,
+        &mut aliases,
+        &mut moved_definitions,
+    );
+    let trim_definition_space = !removed.is_empty();
+    let mut edits = removed;
+    let moved_keys = move_indented_definitions(
+        source,
+        indented_definitions,
+        &definitions,
+        &definition_ranges,
+        &aliases.aliases,
+        &mut moved_definitions,
+        &mut edits,
+    );
+    push_definition_edits(
+        source,
+        &definitions,
+        &definition_ranges,
+        &aliases.aliases,
+        &lifted_attributes,
+        &moved_keys,
+        &mut edits,
+    );
+    push_reference_use_edits(
+        source,
+        uses,
+        &definitions,
+        &aliases.aliases,
+        &class_aliases,
+        accepted.is_some(),
+        &mut edits,
+    );
+    apply_reference_edits(source, edits, trim_definition_space, moved_definitions)
+}
+
+fn reference_quote_openings(source: &str) -> HashSet<usize> {
     let mut quote_openings = HashSet::new();
     let mut previous_quote_depth = 0;
     let mut quote_offset = 0;
@@ -4060,13 +4409,18 @@ fn references_impl(
         previous_quote_depth = depth;
         quote_offset += line.len();
     }
-    let mask = reference_mask(source);
-    let mut definitions = HashMap::new();
-    let mut removed = Vec::new();
-    let mut definition_ranges: HashMap<String, Vec<(usize, usize)>> = HashMap::new();
-    let mut definition_keys = Vec::new();
-    let mut indented_definitions = Vec::new();
-    let mut container_definitions = Vec::new();
+    quote_openings
+}
+
+fn scan_reference_definitions(
+    source: &str,
+    mask: &str,
+    quote_openings: &HashSet<usize>,
+    accepted: Option<&HashMap<usize, ReferenceDecision>>,
+    aliases_only: bool,
+) -> ReferenceDefinitionScan {
+    let definition = cached_regex!(r"(?m)^\[([^\]\n]+)\]:[ \t]*([^ \t\r\n]*)\r?$").unwrap();
+    let mut scan = ReferenceDefinitionScan::default();
     let mut line_offset = 0;
     let mut valid_definition_lines = None;
     for (line_number, line) in source.split_inclusive('\n').enumerate() {
@@ -4091,7 +4445,7 @@ fn references_impl(
         }
         if (content_start > 0 || aliases_only)
             && !valid_definition_lines
-                .get_or_insert_with(|| reference_definitions(source, &mask).1)
+                .get_or_insert_with(|| reference_definitions(source, mask).1)
                 .contains(&line_number)
         {
             continue;
@@ -4102,135 +4456,47 @@ fn references_impl(
             continue;
         }
         if content_start > 0 && line[..content_start].trim().is_empty() {
-            indented_definitions.push((line_start, start, definition_end, definition_label(&c[1])));
-        } else if content_start > 0 {
-            container_definitions.push((start, definition_end, definition_label(&c[1])));
-        }
-        let mut previous_end = line_start;
-        let mut attr_parts = Vec::new();
-        let removed_start = removed.len();
-        let mut first_attribute = line_start;
-        let mut attribute_starts = Vec::new();
-        let mut attribute_depth: Option<usize> = None;
-        while let Some(previous) = source[..previous_end]
-            .strip_suffix('\n')
-            .filter(|_| accepted.is_none() && !aliases_only)
-        {
-            let previous_start = previous.rfind('\n').map_or(0, |at| at + 1);
-            let previous_line = &previous[previous_start..];
-            let attribute_start = djot_content_start(previous_line);
-            let attribute_content = &previous_line[attribute_start..];
-            let attribute_prefix = &previous_line[..attribute_start];
-            let prefix = &line[..content_start];
-            let opens_container = prefix.bytes().any(|byte| b"-*+.):".contains(&byte))
-                || prefix.bytes().filter(|&byte| byte == b'>').count()
-                    > attribute_prefix
-                        .bytes()
-                        .filter(|&byte| byte == b'>')
-                        .count();
-            if opens_container {
-                break;
-            }
-            let depth = attribute_prefix
-                .bytes()
-                .filter(|&byte| byte == b'>')
-                .count();
-            if attribute_content.trim().is_empty() {
-                if quote_openings.contains(&previous_start) {
-                    break;
-                }
-                if attribute_depth.is_some_and(|previous| depth < previous) {
-                    break;
-                }
-                previous_end = previous_start;
-                continue;
-            }
-            if attribute_depth.is_some_and(|previous| depth < previous) {
-                break;
-            }
-            let marker_owned = list_marker.is_match(attribute_prefix);
-            let previous_body = &source[..previous_start];
-            let previous_body = previous_body
-                .trim_end_matches('\n')
-                .rsplit('\n')
-                .next()
-                .unwrap_or("");
-            let previous_body = &previous_body[djot_content_start(previous_body)..];
-            let after_div_close = cached_regex!(r"^:{3,}[ \t]*$")
-                .unwrap()
-                .is_match(previous_body);
-            if !attribute_content.starts_with('{')
-                || !marker_owned
-                    && !after_div_close
-                    && comment_continues_paragraph(source, previous_start + attribute_start)
-                || read_djot_word_attributes(attribute_content, 0)
-                    .map_or(true, |(end, _)| end != attribute_content.len())
-            {
-                break;
-            }
-            attribute_depth = Some(depth);
-            attr_parts.push(attribute_content);
-            first_attribute = previous_start;
-            attribute_starts.push(previous_start);
-            removed.push((
-                previous_start + attribute_start,
-                previous_start + previous_line.len() + usize::from(attribute_start == 0),
-                if attribute_start > 0 {
-                    "{%%}".to_owned()
-                } else {
-                    String::new()
-                },
+            scan.indented_definitions.push((
+                line_start,
+                start,
+                definition_end,
+                definition_label(&c[1]),
             ));
-            previous_end = previous_start;
-            if quote_openings.contains(&previous_start) {
-                break;
-            }
+        } else if content_start > 0 {
+            scan.container_definitions
+                .push((start, definition_end, definition_label(&c[1])));
         }
+        let removed_start = scan.removed.len();
+        let (mut attr_parts, first_attribute, attribute_starts) = preceding_reference_attributes(
+            source,
+            line,
+            line_start,
+            content_start,
+            quote_openings,
+            accepted.is_none() && !aliases_only,
+            &mut scan.removed,
+        );
         if !attr_parts.is_empty() && first_attribute > 0 {
-            let before = source[..first_attribute].strip_suffix('\n').unwrap_or("");
-            let before = before.rsplit('\n').next().unwrap_or("");
-            let before_start = djot_content_start(before);
-            let first_line = source[first_attribute..].split('\n').next().unwrap_or("");
-            let note_at = before[..before_start].find("[^");
-            let owner_start = note_at.map_or(before_start, |at| at + 1);
-            let quote_depth = |line: &str| {
-                quote_prefix
-                    .find(line)
-                    .unwrap()
-                    .as_str()
-                    .bytes()
-                    .filter(|&byte| byte == b'>')
-                    .count()
-            };
-            let outdented = quote_depth(first_line) < quote_depth(before)
-                || djot_content_start(first_line) < owner_start
-                    && (note_at.is_some() || list_marker.is_match(&before[..before_start]));
-            let before = before[before_start..].trim();
-            let before_attribute = before.starts_with('{')
-                && read_djot_word_attributes(before, 0).is_some_and(|(end, _)| end == before.len());
-            if !before.is_empty() && !outdented && !before_attribute && !block_end.is_match(before)
-            {
-                let tail = attribute_starts.iter().rposition(|&at| {
-                    let previous = source[..at].strip_suffix('\n').unwrap_or("");
-                    let previous = previous.rsplit('\n').next().unwrap_or("");
-                    previous[djot_content_start(previous)..].trim().is_empty()
-                });
-                let count = tail.map_or(0, |index| index + 1);
-                attr_parts.truncate(count);
-                removed.truncate(removed_start + count);
-            } else if !before.is_empty() && content_start == 0 {
-                removed.push((start, start, "\n".to_owned()));
-            }
+            trim_detached_reference_attributes(
+                source,
+                first_attribute,
+                content_start,
+                start,
+                &attribute_starts,
+                &mut attr_parts,
+                &mut scan.removed,
+                removed_start,
+            );
         }
         attr_parts.reverse();
         let attr_text = attr_parts.join("");
         let key = definition_label(&c[1]);
-        definition_keys.push(key.clone());
-        definition_ranges
+        scan.definition_keys.push(key.clone());
+        scan.definition_ranges
             .entry(key.clone())
             .or_default()
             .push((start, definition_end));
-        definitions.insert(
+        scan.definitions.insert(
             key,
             (
                 c[2].to_owned(),
@@ -4239,12 +4505,163 @@ fn references_impl(
             ),
         );
     }
-    if definitions.is_empty() && heading_targets.map_or(true, HashMap::is_empty) {
-        return source.to_owned();
+    scan
+}
+
+fn preceding_reference_attributes<'a>(
+    source: &'a str,
+    line: &str,
+    line_start: usize,
+    content_start: usize,
+    quote_openings: &HashSet<usize>,
+    collect: bool,
+    removed: &mut Vec<(usize, usize, String)>,
+) -> (Vec<&'a str>, usize, Vec<usize>) {
+    let list_marker = cached_regex!(r"(?:[-*+] |[0-9A-Za-z]+[.)] |\([0-9A-Za-z]+\) )").unwrap();
+    let mut previous_end = line_start;
+    let mut attr_parts = Vec::new();
+    let mut first_attribute = line_start;
+    let mut attribute_starts = Vec::new();
+    let mut attribute_depth: Option<usize> = None;
+    while let Some(previous) = source[..previous_end]
+        .strip_suffix('\n')
+        .filter(|_| collect)
+    {
+        let previous_start = previous.rfind('\n').map_or(0, |at| at + 1);
+        let previous_line = &previous[previous_start..];
+        let attribute_start = djot_content_start(previous_line);
+        let attribute_content = &previous_line[attribute_start..];
+        let attribute_prefix = &previous_line[..attribute_start];
+        let prefix = &line[..content_start];
+        let opens_container = prefix.bytes().any(|byte| b"-*+.):".contains(&byte))
+            || prefix.bytes().filter(|&byte| byte == b'>').count()
+                > attribute_prefix
+                    .bytes()
+                    .filter(|&byte| byte == b'>')
+                    .count();
+        if opens_container {
+            break;
+        }
+        let depth = attribute_prefix
+            .bytes()
+            .filter(|&byte| byte == b'>')
+            .count();
+        if attribute_content.trim().is_empty() {
+            if quote_openings.contains(&previous_start) {
+                break;
+            }
+            if attribute_depth.is_some_and(|previous| depth < previous) {
+                break;
+            }
+            previous_end = previous_start;
+            continue;
+        }
+        if attribute_depth.is_some_and(|previous| depth < previous) {
+            break;
+        }
+        let marker_owned = list_marker.is_match(attribute_prefix);
+        let previous_body = &source[..previous_start];
+        let previous_body = previous_body
+            .trim_end_matches('\n')
+            .rsplit('\n')
+            .next()
+            .unwrap_or("");
+        let previous_body = &previous_body[djot_content_start(previous_body)..];
+        let after_div_close = cached_regex!(r"^:{3,}[ \t]*$")
+            .unwrap()
+            .is_match(previous_body);
+        if !attribute_content.starts_with('{')
+            || !marker_owned
+                && !after_div_close
+                && comment_continues_paragraph(source, previous_start + attribute_start)
+            || read_djot_word_attributes(attribute_content, 0)
+                .map_or(true, |(end, _)| end != attribute_content.len())
+        {
+            break;
+        }
+        attribute_depth = Some(depth);
+        attr_parts.push(attribute_content);
+        first_attribute = previous_start;
+        attribute_starts.push(previous_start);
+        removed.push((
+            previous_start + attribute_start,
+            previous_start + previous_line.len() + usize::from(attribute_start == 0),
+            if attribute_start > 0 {
+                "{%%}".to_owned()
+            } else {
+                String::new()
+            },
+        ));
+        previous_end = previous_start;
+        if quote_openings.contains(&previous_start) {
+            break;
+        }
     }
-    let mut seen_keys = HashSet::new();
-    definition_keys.retain(|key| seen_keys.insert(key.clone()));
-    let references = reference_uses(source, &mask);
+    (attr_parts, first_attribute, attribute_starts)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn trim_detached_reference_attributes(
+    source: &str,
+    first_attribute: usize,
+    content_start: usize,
+    start: usize,
+    attribute_starts: &[usize],
+    attr_parts: &mut Vec<&str>,
+    removed: &mut Vec<(usize, usize, String)>,
+    removed_start: usize,
+) {
+    let quote_prefix = cached_regex!(r"^(?:[ \t]*>[ \t]*)*[ \t]*").unwrap();
+    let list_marker = cached_regex!(r"(?:[-*+] |[0-9A-Za-z]+[.)] |\([0-9A-Za-z]+\) )").unwrap();
+    let block_end = cached_regex!(
+        r"^(?:#{1,6}(?: |$)|:{3,}|[`~]{3,}|\||\[[^\]^][^\]]*\]:|(?:[-*][ \t]*){3,}$)"
+    )
+    .unwrap();
+    let before = source[..first_attribute].strip_suffix('\n').unwrap_or("");
+    let before = before.rsplit('\n').next().unwrap_or("");
+    let before_start = djot_content_start(before);
+    let first_line = source[first_attribute..].split('\n').next().unwrap_or("");
+    let note_at = before[..before_start].find("[^");
+    let owner_start = note_at.map_or(before_start, |at| at + 1);
+    let quote_depth = |line: &str| {
+        quote_prefix
+            .find(line)
+            .unwrap()
+            .as_str()
+            .bytes()
+            .filter(|&byte| byte == b'>')
+            .count()
+    };
+    let outdented = quote_depth(first_line) < quote_depth(before)
+        || djot_content_start(first_line) < owner_start
+            && (note_at.is_some() || list_marker.is_match(&before[..before_start]));
+    let before = before[before_start..].trim();
+    let before_attribute = before.starts_with('{')
+        && read_djot_word_attributes(before, 0).is_some_and(|(end, _)| end == before.len());
+    if !before.is_empty() && !outdented && !before_attribute && !block_end.is_match(before) {
+        let tail = attribute_starts.iter().rposition(|&at| {
+            let previous = source[..at].strip_suffix('\n').unwrap_or("");
+            let previous = previous.rsplit('\n').next().unwrap_or("");
+            previous[djot_content_start(previous)..].trim().is_empty()
+        });
+        let count = tail.map_or(0, |index| index + 1);
+        attr_parts.truncate(count);
+        removed.truncate(removed_start + count);
+    } else if !before.is_empty() && content_start == 0 {
+        removed.push((start, start, "\n".to_owned()));
+    }
+}
+
+fn attributed_reference_uses<'a>(
+    source: &'a str,
+    mask: &str,
+    definitions: &ReferenceDefinitionMap,
+) -> (
+    Vec<AttributedReferenceUse<'a>>,
+    HashMap<String, usize>,
+    ReferenceOverrideCounts,
+) {
+    let references = reference_uses(source, mask);
     let mut table_uses = HashSet::new();
     let mut line_start = 0;
     let mut reference_index = 0;
@@ -4304,11 +4721,17 @@ fn references_impl(
             }
         })
         .collect();
-    for (key, (_, attrs, _)) in &mut definitions {
-        if let Some(counts) = override_counts.get(key) {
-            attrs.retain(|(attribute, _)| counts.get(attribute) != use_counts.get(key));
-        }
-    }
+    (uses, use_counts, override_counts)
+}
+
+fn reference_aliases(
+    source: &str,
+    definition_keys: &[String],
+    definitions: &ReferenceDefinitionMap,
+    accepted: Option<&HashMap<usize, ReferenceDecision>>,
+    uses: &[AttributedReferenceUse<'_>],
+    aliases_only: bool,
+) -> ReferenceAliases {
     let mut occupied: HashSet<String> = definitions.keys().cloned().collect();
     if let Some(decisions) = accepted {
         occupied.extend(
@@ -4321,7 +4744,7 @@ fn references_impl(
     let mut serial = 0;
     let mut aliases = HashMap::new();
     let has_source_nuls = source.contains("\0U\0");
-    for key in &definition_keys {
+    for key in definition_keys {
         if (reference_key_needs_alias(key) || aliases_only && has_source_nuls && key.contains('�'))
             && !aliases.contains_key(key)
         {
@@ -4331,115 +4754,149 @@ fn references_impl(
             );
         }
     }
-    if aliases_only {
-        let mut edits = Vec::new();
-        let mut heading_edits = Vec::new();
-        for (key, alias) in &aliases {
-            for &(start, end) in definition_ranges.get(key).into_iter().flatten() {
-                if let Some(close) = source[start..end].find("]:") {
-                    edits.push((start + 1, start + close, alias.as_str()));
-                }
-            }
-        }
-        let mut unresolved = Vec::new();
-        if has_source_nuls && aliases.keys().any(|key| key.contains('�')) {
-            let native = reference_definitions(source, &mask).0;
-            unresolved.extend(
-                uses.iter()
-                    .filter(|outer| {
-                        !native.contains_key(&outer.key)
-                            || !outer.reference.label.is_empty()
-                                && !definitions.contains_key(&outer.key)
-                    })
-                    .map(|outer| {
-                        (
-                            outer.reference.start,
-                            outer.reference.start + outer.reference.text.len() + 1,
-                        )
-                    }),
-            );
-            unresolved.sort_unstable_by_key(|range| range.0);
-            let mut end = 0;
-            for range in &mut unresolved {
-                end = end.max(range.1);
-                range.1 = end;
-            }
-        }
-        for attributed in &uses {
-            let before = unresolved.partition_point(|range| range.0 < attributed.reference.start);
-            if before > 0 && unresolved[before - 1].1 >= attributed.end {
-                continue;
-            }
-            let heading_key = attributed.key.replace("\0U\0", "\0");
-            if heading_targets.is_some()
-                && (heading_key.contains('\0') || heading_key.contains('�'))
-                && !definitions.contains_key(&attributed.key)
-            {
-                if let Some(target) = heading_targets.and_then(|targets| targets.get(&heading_key))
-                {
-                    let reference = &attributed.reference;
-                    let target = target
-                        .replace('\\', "\\\\")
-                        .replace('(', "\\(")
-                        .replace(')', "\\)");
-                    heading_edits.push((
-                        reference.end - reference.label.len() - 2,
-                        reference.end,
-                        format!("({target})"),
-                    ));
-                    continue;
-                } else {
-                    let start = attributed.reference.start;
-                    heading_edits.push((start, start, "\\".to_owned()));
-                    let label_start =
-                        attributed.reference.end - attributed.reference.label.len() - 2;
-                    heading_edits.push((label_start, label_start, "\\".to_owned()));
-                    let mut attribute_at = attributed.reference.end;
-                    while source[attribute_at..].starts_with('{') {
-                        let Some((end, wire)) = read_djot_word_attributes(source, attribute_at)
-                        else {
-                            break;
-                        };
-                        let literal = if attributes(&wire).is_empty() {
-                            String::new()
-                        } else {
-                            literal_reference_attributes(
-                                &source[attribute_at..end],
-                                attributed.reference.quote_depth,
-                            )
-                        };
-                        heading_edits.push((attribute_at, end, literal));
-                        attribute_at = end;
-                    }
-                    continue;
-                }
-            }
-            if let Some(alias) = aliases.get(&attributed.key) {
-                let reference = &attributed.reference;
-                edits.push((
-                    reference.end - reference.label.len() - 1,
-                    reference.end - 1,
-                    alias.as_str(),
-                ));
-            }
-        }
-        edits.extend(
-            heading_edits
-                .iter()
-                .map(|(start, end, text)| (*start, *end, text.as_str())),
-        );
-        edits.sort_unstable_by_key(|edit| edit.0);
-        let mut result = String::new();
-        let mut cursor = 0;
-        for (start, end, replacement) in edits {
-            result.push_str(&source[cursor..start]);
-            result.push_str(replacement);
-            cursor = end;
-        }
-        result.push_str(&source[cursor..]);
-        return result;
+    ReferenceAliases {
+        aliases,
+        occupied,
+        serial,
     }
-    let mut moved_definitions = Vec::new();
+}
+
+#[allow(clippy::too_many_arguments)]
+fn alias_only_references(
+    source: &str,
+    mask: &str,
+    uses: &[AttributedReferenceUse<'_>],
+    definitions: &ReferenceDefinitionMap,
+    definition_ranges: &HashMap<String, Vec<(usize, usize)>>,
+    aliases: &HashMap<String, String>,
+    has_source_nuls: bool,
+    heading_targets: Option<&HashMap<String, String>>,
+) -> String {
+    let mut edits = Vec::new();
+    let mut heading_edits = Vec::new();
+    for (key, alias) in aliases {
+        for &(start, end) in definition_ranges.get(key).into_iter().flatten() {
+            if let Some(close) = source[start..end].find("]:") {
+                edits.push((start + 1, start + close, alias.as_str()));
+            }
+        }
+    }
+    let mut unresolved = Vec::new();
+    if has_source_nuls && aliases.keys().any(|key| key.contains('�')) {
+        let native = reference_definitions(source, mask).0;
+        unresolved.extend(
+            uses.iter()
+                .filter(|outer| {
+                    !native.contains_key(&outer.key)
+                        || !outer.reference.label.is_empty()
+                            && !definitions.contains_key(&outer.key)
+                })
+                .map(|outer| {
+                    (
+                        outer.reference.start,
+                        outer.reference.start + outer.reference.text.len() + 1,
+                    )
+                }),
+        );
+        unresolved.sort_unstable_by_key(|range| range.0);
+        let mut end = 0;
+        for range in &mut unresolved {
+            end = end.max(range.1);
+            range.1 = end;
+        }
+    }
+    for attributed in uses {
+        let before = unresolved.partition_point(|range| range.0 < attributed.reference.start);
+        if before > 0 && unresolved[before - 1].1 >= attributed.end {
+            continue;
+        }
+        let heading_key = attributed.key.replace("\0U\0", "\0");
+        if heading_targets.is_some()
+            && (heading_key.contains('\0') || heading_key.contains('�'))
+            && !definitions.contains_key(&attributed.key)
+        {
+            push_heading_reference_edits(
+                source,
+                attributed,
+                heading_targets.and_then(|targets| targets.get(&heading_key)),
+                &mut heading_edits,
+            );
+            continue;
+        }
+        if let Some(alias) = aliases.get(&attributed.key) {
+            let reference = &attributed.reference;
+            edits.push((
+                reference.end - reference.label.len() - 1,
+                reference.end - 1,
+                alias.as_str(),
+            ));
+        }
+    }
+    edits.extend(
+        heading_edits
+            .iter()
+            .map(|(start, end, text)| (*start, *end, text.as_str())),
+    );
+    edits.sort_unstable_by_key(|edit| edit.0);
+    let mut result = String::new();
+    let mut cursor = 0;
+    for (start, end, replacement) in edits {
+        result.push_str(&source[cursor..start]);
+        result.push_str(replacement);
+        cursor = end;
+    }
+    result.push_str(&source[cursor..]);
+    result
+}
+
+fn push_heading_reference_edits(
+    source: &str,
+    attributed: &AttributedReferenceUse<'_>,
+    target: Option<&String>,
+    heading_edits: &mut Vec<(usize, usize, String)>,
+) {
+    if let Some(target) = target {
+        let reference = &attributed.reference;
+        let target = target
+            .replace('\\', "\\\\")
+            .replace('(', "\\(")
+            .replace(')', "\\)");
+        heading_edits.push((
+            reference.end - reference.label.len() - 2,
+            reference.end,
+            format!("({target})"),
+        ));
+    } else {
+        let start = attributed.reference.start;
+        heading_edits.push((start, start, "\\".to_owned()));
+        let label_start = attributed.reference.end - attributed.reference.label.len() - 2;
+        heading_edits.push((label_start, label_start, "\\".to_owned()));
+        let mut attribute_at = attributed.reference.end;
+        while source[attribute_at..].starts_with('{') {
+            let Some((end, wire)) = read_djot_word_attributes(source, attribute_at) else {
+                break;
+            };
+            let literal = if attributes(&wire).is_empty() {
+                String::new()
+            } else {
+                literal_reference_attributes(
+                    &source[attribute_at..end],
+                    attributed.reference.quote_depth,
+                )
+            };
+            heading_edits.push((attribute_at, end, literal));
+            attribute_at = end;
+        }
+    }
+}
+
+fn lift_container_definitions(
+    container_definitions: Vec<(usize, usize, String)>,
+    definitions: &ReferenceDefinitionMap,
+    definition_ranges: &HashMap<String, Vec<(usize, usize)>>,
+    aliases: &mut ReferenceAliases,
+    moved_definitions: &mut Vec<String>,
+) -> HashSet<String> {
     let mut lifted_attributes = HashSet::new();
     for (start, end, key) in container_definitions {
         if definition_ranges
@@ -4454,17 +4911,32 @@ fn references_impl(
         if target.is_empty() || attrs.is_empty() {
             continue;
         }
+        let ReferenceAliases {
+            aliases,
+            occupied,
+            serial,
+        } = &mut *aliases;
         let alias = aliases
             .entry(key.clone())
-            .or_insert_with(|| next_reference_alias(&mut occupied, &mut serial));
+            .or_insert_with(|| next_reference_alias(occupied, serial));
         moved_definitions.push(format!(
             "[{alias}]: {target} {}",
             reference_attribute_text(attrs, false)
         ));
         lifted_attributes.insert(key);
     }
+    lifted_attributes
+}
+
+fn class_reference_aliases(
+    definition_keys: &[String],
+    definitions: &ReferenceDefinitionMap,
+    override_counts: &ReferenceOverrideCounts,
+    aliases: &mut ReferenceAliases,
+    moved_definitions: &mut Vec<String>,
+) -> HashMap<String, String> {
     let mut class_aliases = HashMap::new();
-    for key in &definition_keys {
+    for key in definition_keys {
         if class_aliases.contains_key(key) {
             continue;
         }
@@ -4477,7 +4949,7 @@ fn references_impl(
         {
             continue;
         }
-        let alias = next_reference_alias(&mut occupied, &mut serial);
+        let alias = next_reference_alias(&mut aliases.occupied, &mut aliases.serial);
         let attrs: Vec<_> = attrs
             .iter()
             .filter(|(attribute, _)| attribute != "class")
@@ -4494,8 +4966,18 @@ fn references_impl(
         ));
         class_aliases.insert(key.clone(), alias);
     }
-    let trim_definition_space = !removed.is_empty();
-    let mut edits = removed;
+    class_aliases
+}
+
+fn move_indented_definitions(
+    source: &str,
+    indented_definitions: Vec<(usize, usize, usize, String)>,
+    definitions: &ReferenceDefinitionMap,
+    definition_ranges: &HashMap<String, Vec<(usize, usize)>>,
+    aliases: &HashMap<String, String>,
+    moved_definitions: &mut Vec<String>,
+    edits: &mut Vec<(usize, usize, String)>,
+) -> HashSet<String> {
     let mut moved_keys = HashSet::new();
     for (line_start, start, end, key) in indented_definitions {
         if definition_ranges
@@ -4533,12 +5015,24 @@ fn references_impl(
             format!("{}{{%%}}", &source[line_start..start]),
         ));
     }
+    moved_keys
+}
+
+fn push_definition_edits(
+    source: &str,
+    definitions: &ReferenceDefinitionMap,
+    definition_ranges: &HashMap<String, Vec<(usize, usize)>>,
+    aliases: &HashMap<String, String>,
+    lifted_attributes: &HashSet<String>,
+    moved_keys: &HashSet<String>,
+    edits: &mut Vec<(usize, usize, String)>,
+) {
     for ranges in definition_ranges.values() {
         for &(start, end) in ranges.iter().take(ranges.len().saturating_sub(1)) {
             edits.push((start, end, "{%%}".to_owned()));
         }
     }
-    for (key, alias) in &aliases {
+    for (key, alias) in aliases {
         if lifted_attributes.contains(key) {
             continue;
         }
@@ -4548,7 +5042,7 @@ fn references_impl(
             }
         }
     }
-    for (key, (target, attrs, _)) in &definitions {
+    for (key, (target, attrs, _)) in definitions {
         if target.is_empty()
             || attrs.is_empty()
             || moved_keys.contains(key)
@@ -4564,6 +5058,17 @@ fn references_impl(
             ));
         }
     }
+}
+
+fn push_reference_use_edits(
+    source: &str,
+    uses: Vec<AttributedReferenceUse<'_>>,
+    definitions: &ReferenceDefinitionMap,
+    aliases: &HashMap<String, String>,
+    class_aliases: &HashMap<String, String>,
+    accepted: bool,
+    edits: &mut Vec<(usize, usize, String)>,
+) {
     for attributed in uses {
         let AttributedReferenceUse {
             reference,
@@ -4576,7 +5081,7 @@ fn references_impl(
         let Some((target, _, has_attribute_lines)) = definitions.get(&key) else {
             continue;
         };
-        if accepted.is_some() {
+        if accepted {
             if let Some(alias) = aliases.get(&key) {
                 edits.push((
                     start,
@@ -4616,6 +5121,14 @@ fn references_impl(
         };
         edits.push((start, end, replacement));
     }
+}
+
+fn apply_reference_edits(
+    source: &str,
+    mut edits: Vec<(usize, usize, String)>,
+    trim_definition_space: bool,
+    moved_definitions: Vec<String>,
+) -> String {
     edits.sort_by_key(|edit| edit.0);
     let mut out = String::new();
     let mut cursor = 0;
