@@ -608,7 +608,7 @@ fn parse_allowed_loss(value: Option<&str>) -> Result<&'static str, ExitCode> {
         Some("markdown-attributes-dropped") => Ok("markdown-attributes-dropped"),
         Some("raw-html-escaped") => Ok("raw-html-escaped"),
         _ => {
-            eprintln!("carve: --allow-loss expects raw-format-dropped, ruby-flattened, editorial-comment-flattened, carrier-attribute-dropped, definition-list-flattened, list-style-dropped, list-tightness-lost, list-delimiter-changed, table-span-flattened, table-header-row-demoted, table-header-row-hoisted, table-header-cell-demoted, markdown-container-flattened, markdown-caption-flattened, markdown-attributes-dropped or raw-html-escaped");
+            eprintln!("carve: --allow-loss expects raw-format-dropped, ruby-flattened, editorial-comment-flattened, carrier-attribute-dropped, definition-list-flattened, list-style-dropped, list-tightness-lost, list-delimiter-changed, table-span-flattened, table-header-row-demoted, table-header-row-hoisted or table-header-cell-demoted");
             Err(ExitCode::from(2))
         }
     }
