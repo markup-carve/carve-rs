@@ -265,6 +265,11 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo fmt --all -- --check
       - run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Check cyclomatic complexity
+        run: |
+          python3 -m venv "$RUNNER_TEMP/complexity-venv"
+          "$RUNNER_TEMP/complexity-venv/bin/pip" install --disable-pip-version-check lizard==1.24.3
+          "$RUNNER_TEMP/complexity-venv/bin/python" tools/check_complexity.py
       - run: RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps
 
   semver:
