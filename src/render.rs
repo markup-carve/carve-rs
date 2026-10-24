@@ -2190,6 +2190,11 @@ fn table_column_defaults(table: &Table, header_count: usize) -> ColumnDefaults {
     let mut defaults: ColumnDefaults = vec![(None, None); width];
     for row in table.rows.iter().take(header_count) {
         for (col, cell) in row.cells.iter().enumerate() {
+            // HTML row-group promotion does not widen a plain cell marker
+            // into a column default. Native and GFM header cells do.
+            if !cell.header {
+                continue;
+            }
             let Some(slot) = defaults.get_mut(col) else {
                 continue;
             };

@@ -1166,7 +1166,7 @@ pub(in crate::parse) fn parse_table_cell(
                                         // a bare span marker either -- its content is literal even if it is just
                                         // `^` or `<`.
     let span = match text {
-        _ if align.is_some() || attrs.is_some() => None,
+        _ if header || align.is_some() || valign.is_some() || attrs.is_some() => None,
         "^" => Some(TableCellSpan::Rowspan),
         "<" => Some(TableCellSpan::Colspan),
         _ => None,

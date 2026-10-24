@@ -1759,6 +1759,8 @@ mod table_row_closing_pipe;
 mod table_row_counts;
 #[path = "../table_section_attributes.rs"]
 mod table_section_attributes;
+#[path = "../table_span_alignment_defaults.rs"]
+mod table_span_alignment_defaults;
 #[path = "../table_span_covers_caption.rs"]
 mod table_span_covers_caption;
 #[path = "../table_span_loss.rs"]
