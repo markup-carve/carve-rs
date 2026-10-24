@@ -1720,7 +1720,8 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // Spec bdb102a1 adds 658, which round trips strictly.
     // Spec #3586 adds eleven table cases. The base case and rows 2-4, 6-8,
     // 10 and 11 are strict; rows 5 and 9 report existing table losses.
-    const STRICT: usize = 2246;
+    // Spec #3585 adds twelve strict table span cases.
+    const STRICT: usize = 2258;
     // Spec 894ff32e adds 616-25, whose marked quote soft break reports a loss.
     // The eight parsed CSV/TSV tables lose their source fence in ProseMirror;
     // the bridge reports that loss instead of claiming a strict round trip.
