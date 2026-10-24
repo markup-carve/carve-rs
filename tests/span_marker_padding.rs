@@ -55,11 +55,8 @@ fn empty_header_left_default_survives_a_delimiter_row() {
 
 #[test]
 fn empty_header_default_without_delimiter_is_reported() {
-    let error = carve::try_to_carve_with_options(
-        "|=< |\n| a |\n",
-        &carve::Options::default(),
-    )
-    .unwrap_err();
+    let error =
+        carve::try_to_carve_with_options("|=< |\n| a |\n", &carve::Options::default()).unwrap_err();
     assert!(error.to_string().contains("empty header alignment default"));
 }
 

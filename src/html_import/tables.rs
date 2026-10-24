@@ -530,7 +530,7 @@ impl<'a> Importer<'a> {
                     (trim_edge_whitespace(children?), None)
                 };
                 let header = Self::tag(cell).as_deref() == Some("th");
-                let empty = children.is_empty() && blocks.as_ref().is_none_or(Vec::is_empty);
+                let empty = children.is_empty() && blocks.as_ref().map_or(true, Vec::is_empty);
                 if self.writing && !list_form && empty && header {
                     if alignment.align == Some(TableAlign::Left)
                         || alignment.valign == Some(TableVerticalAlign::Top)

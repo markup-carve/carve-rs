@@ -603,8 +603,7 @@ pub(super) fn render_table_cell(
     let empty = content.is_empty();
     if empty
         && header_default_without_delimiter
-        && (cell.align == Some(TableAlign::Left)
-            || cell.valign == Some(TableVerticalAlign::Top))
+        && (cell.align == Some(TableAlign::Left) || cell.valign == Some(TableVerticalAlign::Top))
     {
         crate::render_carve_error::record_unspellable(
             "table_cell",
