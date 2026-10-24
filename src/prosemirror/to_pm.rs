@@ -74,29 +74,29 @@ impl Renderer {
         nodes.iter().filter_map(|node| self.block(node)).collect()
     }
 
+    fn heading_attrs(&self, heading: &Heading) -> Object {
+        let authored = heading.attrs.as_ref().map(|attrs| {
+            if attrs
+                .id
+                .as_ref()
+                .is_some_and(|id| self.redundant_heading_ids.contains(id))
+                && !attrs.order.iter().any(|slot| matches!(slot, AttrSlot::Id))
+            {
+                let mut authored = attrs.clone();
+                authored.id = None;
+                authored
+            } else {
+                attrs.clone()
+            }
+        });
+        structural_attrs(authored.as_ref(), [("level", Json::from(heading.level))])
+    }
+
     fn block(&mut self, node: &BlockNode) -> Option<Json> {
         let (name, mut attrs, content) = match node {
             BlockNode::Heading(n) => (
                 self.name("heading")?,
-                structural_attrs(
-                    n.attrs
-                        .as_ref()
-                        .map(|a| {
-                            if a.id
-                                .as_ref()
-                                .is_some_and(|id| self.redundant_heading_ids.contains(id))
-                                && !a.order.iter().any(|slot| matches!(slot, AttrSlot::Id))
-                            {
-                                let mut authored = a.clone();
-                                authored.id = None;
-                                authored
-                            } else {
-                                a.clone()
-                            }
-                        })
-                        .as_ref(),
-                    [("level", Json::from(n.level))],
-                ),
+                self.heading_attrs(n),
                 self.inlines(&n.children, &[]),
             ),
             BlockNode::Paragraph(n) => (
