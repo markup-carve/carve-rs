@@ -103,7 +103,14 @@ fn markdown_preserves_nested_wrapper_hosts_and_attributes() {
                 .unwrap();
         assert_eq!(report.value, control.markdown, "{}", control.source);
         let expected_losses = if control.source.starts_with("::: figure\n") {
-            vec!["markdown-caption-flattened"]
+            vec![
+                "markdown-caption-flattened";
+                control
+                    .source
+                    .lines()
+                    .filter(|line| line.starts_with("^ "))
+                    .count()
+            ]
         } else {
             vec![]
         };
