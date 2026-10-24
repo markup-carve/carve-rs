@@ -5,8 +5,8 @@ use std::collections::HashMap;
 
 use super::{
     detect_fence_open, detect_list_marker_full, indent_columns, is_blank_line, is_fence_close,
-    is_plus_marker, item_block_opener, leading_ws, note_lint_event, strip_blockquote_prefix,
-    strip_description_prefix, FenceOpen, LintEvent,
+    is_plus_marker, item_block_opener, leading_ws, line_starts_paragraph, note_lint_event,
+    strip_blockquote_prefix, strip_description_prefix, trim_ascii_start, FenceOpen, LintEvent,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -96,6 +96,8 @@ struct Classifier {
     stack: Vec<Entry>,
     held_owner: Option<Entry>,
     pending_blank: bool,
+    // The last line left paragraph text open, so a plain line below it is lazy.
+    paragraph_open: bool,
     closed_quote_on_blank: bool,
     code_fence: Option<FenceOpen>,
     marker_fence: Option<(FenceOpen, usize)>,
@@ -152,6 +154,7 @@ impl Guard {
             stack: Vec::new(),
             held_owner: None,
             pending_blank: false,
+            paragraph_open: false,
             closed_quote_on_blank: false,
             code_fence: None,
             marker_fence: None,
@@ -636,6 +639,7 @@ impl Classifier {
                 }
             }
             self.pending_blank = true;
+            self.paragraph_open = false;
             return;
         }
         if self.marker_fence.is_some_and(|(fence, _)| {
@@ -644,6 +648,22 @@ impl Classifier {
         }) {
             self.marker_fence = None;
         }
+        let text = trim_ascii_start(body);
+        // A lazy paragraph line closes no container (§17 L3 keeps the item's `+` column).
+        if self.paragraph_open
+            && !self.pending_blank
+            && self
+                .stack
+                .iter()
+                .any(|entry| entry.kind == Kind::Quote && entry.depth >= depth)
+                == (depth > 0)
+            && line_starts_paragraph(text)
+            && !item_block_opener(text)
+            && detect_list_marker_full(text).is_none()
+        {
+            return;
+        }
+        self.paragraph_open = false;
         if self.pending_blank {
             self.pending_blank = false;
             if let Some(at) = self.stack.iter().position(|entry| {
@@ -773,6 +793,8 @@ impl Classifier {
             break;
         }
         let fence_column = entry.column;
+        let rest = trim_ascii_start(inner);
+        self.paragraph_open = line_starts_paragraph(rest) && !item_block_opener(rest);
         if let Some(fence) = list_opener_on_line
             .then(|| detect_fence_open(inner))
             .flatten()

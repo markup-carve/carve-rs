@@ -2478,6 +2478,8 @@ mod a_block_below_an_empty_nested_item_uses_one_column;
 mod a_description_below_a_rebased_term_stays_text;
 #[path = "../a_fence_after_a_nested_heading_stays_compact.rs"]
 mod a_fence_after_a_nested_heading_stays_compact;
+#[path = "../a_plus_after_a_lazy_line_attaches_to_the_item.rs"]
+mod a_plus_after_a_lazy_line_attaches_to_the_item;
 #[path = "../a_quote_after_a_trailing_slash_closes.rs"]
 mod a_quote_after_a_trailing_slash_closes;
 #[path = "../a_quote_below_a_description_item_opens_in_the_description.rs"]
