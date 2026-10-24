@@ -1041,7 +1041,7 @@ fn paragraph_marker_escape(line: &str, first: bool, in_definition: bool) -> Opti
     // A literal marker line can open or attach to a definition after import.
     if first_byte == b':'
         && ((in_definition && matches!(bytes.get(1), None | Some(b' ' | b'\t')))
-            || (bytes.get(1) == Some(&b':') && matches!(bytes.get(2), None | Some(b' ' | b'\t'))))
+            || (bytes.get(1) == Some(&b':') && matches!(bytes.get(2), Some(b' ' | b'\t'))))
     {
         return Some(0);
     }

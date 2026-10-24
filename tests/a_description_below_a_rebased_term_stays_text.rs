@@ -87,3 +87,17 @@ fn literal_description_lines_survive_markdown_import() {
         "{markdown}"
     );
 }
+
+#[test]
+fn a_bare_term_marker_needs_no_markdown_escape() {
+    for source in ["\\::\n", "\\::\nc\n"] {
+        let markdown = carve::to_markdown(source);
+        assert!(markdown.starts_with("::\n"), "{markdown}");
+        assert!(!markdown.contains("\\::\n"), "{markdown}");
+        assert_eq!(
+            carve::to_html(&carve::markdown_to_carve(&markdown)),
+            carve::to_html(source),
+            "{source:?}"
+        );
+    }
+}
