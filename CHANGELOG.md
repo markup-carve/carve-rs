@@ -23,6 +23,8 @@ which the published crate does not carry.
 - A band line after a flush lazy line stays in its nested paragraph, and a `+` at an item's marker column after a lazy line attaches to the item (#3120, #3124).
 - An included heading satisfies a root cross-reference during lint (#3119).
 - Markdown import leaves a bare term marker unescaped (#3122).
+- Djot import preserves heading IDs after collisions and avoids repeated suffix scans (#3128, #3130).
+- Table span marker lint avoids false warnings (#3126).
 
 ### Improvements
 
