@@ -923,12 +923,10 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         {
             self.adopt_paragraph_owner(local, column);
             true
-        } else if self.paragraph_marker_column == Some(column) && is_list_marker(local) {
-            self.adopt_paragraph_owner(local, column);
-            self.paragraph_column.is_some()
-        } else if column >= content_column
-            && self.paragraph_column.map_or(true, |owner| column >= owner)
-            && (is_list_marker(local) || strip_definition_marker(local).is_some())
+        } else if (self.paragraph_marker_column == Some(column) && is_list_marker(local))
+            || (column >= content_column
+                && self.paragraph_column.map_or(true, |owner| column >= owner)
+                && (is_list_marker(local) || strip_definition_marker(local).is_some()))
         {
             self.adopt_paragraph_owner(local, column);
             self.paragraph_column.is_some()
