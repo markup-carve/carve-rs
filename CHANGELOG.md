@@ -11,27 +11,25 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
-## [0.1.12] - 2026-10-23
+## [0.1.12] - 2026-10-24
+
+Carve 0.1.12 fixes nested container ownership, table spans, and import round trips. The CLI adds controls for alignment, includes, regions, and lint output.
 
 ### Fixes
 
-- A stacked quote's first-block `+` takes a list at the owning quote's column, so `carve fmt` keeps the backslash before a refused `+` in that shape instead of writing a nested list (#3106, markup-carve/carve#3544).
-- A nested item's empty block uses one continuation column in Carve output (#3112).
-- Keep blank lines between a nested heading and its following fence, while formatting a heading-tailed sublist compactly when the fence follows directly (#3113, #3121).
+- Quoted and nested list continuations keep the block that owns them, including wrapped attributes, band lines, and a `+` after a lazy line (#3106, #3120, #3124, #3149, markup-carve/carve#3592).
+- Nested descriptions, empty items, and heading-adjacent fences retain their authored boundaries when parsed or formatted (#3112, #3113, #3115, #3116, #3121).
 - A quote after a trailing slash closes before punctuation or whitespace (#3114).
-- Descriptions below a rebased term's column stay outside the term, and separators below a nested description list's column remain text (#3115, #3116).
-- A band line after a flush lazy line stays in its nested paragraph, and a `+` at an item's marker column after a lazy line attaches to the item (#3120, #3124).
-- An included heading satisfies a root cross-reference during lint (#3119).
-- Markdown import leaves a bare term marker unescaped (#3122).
-- Djot import preserves heading IDs after collisions and avoids repeated suffix scans; caching the heading continuation regex also speeds up large imports (#3128, #3130, #3134).
-- Table span marker lint avoids false warnings (#3126).
+- An included heading satisfies a root cross-reference in cross-reference diagnostics (#3119).
+- Markdown import keeps bare term markers literal, and Markdown output reports content it cannot preserve (#3122, #3143).
+- Djot import preserves heading IDs after collisions and handles repeated IDs faster (#3128, #3130, #3134).
+- Table span markers with padding parse consistently, merged cells keep the header cell's alignment, and span marker diagnostics avoid false warnings (#3126, #3136, #3147).
 
 ### Improvements
 
-- Document the public Rust API and check its documentation in CI (#3105).
-- Add CLI options for Carve table alignment, include limits, region selection, and JSON lint output (#3111).
-- Move contribution guidance to GitHub's conventional location.
-- Update the pinned spec corpus and its bridge checks (#3109).
+- CLI options control table alignment, include limits, region selection, and JSON diagnostics (#3111).
+
+**Full Changelog**: https://github.com/markup-carve/carve-rs/compare/0.1.11...0.1.12
 
 ## [0.1.11] - 2026-10-23
 

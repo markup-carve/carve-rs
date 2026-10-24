@@ -2102,6 +2102,12 @@ impl<'a> QuoteBody<'a> {
             self.para_open = ParaOpen::Closed;
         }
         self.scan_attrs_block(cur, at, stripped, prior_paragraph);
+        if self.unclosed_nested_attribute {
+            // A closer without this quote's marker cannot finish the attribute.
+            // The opener remains text in the list paragraph, which can still
+            // take a lazy continuation below the quote.
+            self.para_open = ParaOpen::from_line("x", inherited_absorption);
+        }
     }
 
     // A WRAPPED ATTRIBUTE BLOCK CLOSES THE PARAGRAPH TOO, and only
