@@ -531,23 +531,25 @@ impl<'a> Importer<'a> {
                 };
                 let header = Self::tag(cell).as_deref() == Some("th");
                 let empty = children.is_empty() && blocks.as_ref().map_or(true, Vec::is_empty);
-                if self.writing && !list_form && empty && header {
-                    if alignment.align == Some(TableAlign::Left)
-                        || alignment.valign == Some(TableVerticalAlign::Top)
-                    {
-                        self.diag(
-                            HtmlImportDiagnosticCode::StyleUnmapped,
-                            "Dropped alignment on an empty header cell: without a delimiter row, Carve source cannot spell its column default".into(),
-                            HtmlImportSeverity::Warning,
-                            &p,
-                            cell,
-                        );
-                        if alignment.align == Some(TableAlign::Left) {
-                            alignment.align = None;
-                        }
-                        if alignment.valign == Some(TableVerticalAlign::Top) {
-                            alignment.valign = None;
-                        }
+                if self.writing
+                    && !list_form
+                    && empty
+                    && header
+                    && (alignment.align == Some(TableAlign::Left)
+                        || alignment.valign == Some(TableVerticalAlign::Top))
+                {
+                    self.diag(
+                        HtmlImportDiagnosticCode::StyleUnmapped,
+                        "Dropped alignment on an empty header cell: without a delimiter row, Carve source cannot spell its column default".into(),
+                        HtmlImportSeverity::Warning,
+                        &p,
+                        cell,
+                    );
+                    if alignment.align == Some(TableAlign::Left) {
+                        alignment.align = None;
+                    }
+                    if alignment.valign == Some(TableVerticalAlign::Top) {
+                        alignment.valign = None;
                     }
                 }
                 row.push(BuiltCell {
