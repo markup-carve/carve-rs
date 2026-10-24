@@ -1,11 +1,7 @@
 use super::*;
 
-/// What an escape decision needs that one text node cannot say.
-///
-/// Both facts here are about what SURROUNDS the node: whether it sits inside a
-/// note's content, and what the node after it writes. A text node holds neither,
-/// and `boundary_text` cannot supply the second - it reports a code span's
-/// CONTENT while the span writes a backtick ahead of it.
+/// Escape context outside the current text node. [`boundary_text`] may report
+/// content after a node's opener, so it cannot answer what that node writes first.
 #[derive(Clone, Copy)]
 pub(super) struct NeighbourEscape {
     /// Inside an inline note's content, where PART 9 §16 disables note
@@ -22,21 +18,9 @@ pub(super) struct NeighbourEscape {
     pub(super) next_node_opens_a_bracket: bool,
 }
 
-/// Whether the `^` before the `[` at `bracket` needs its escape.
-///
-/// PART 11 §2 escapes a character IF AND ONLY IF omitting the escape would
-/// change the re-parsed AST, and it takes the decision per OPENER OCCURRENCE.
-/// `^[` is only an occurrence where the note can FORM, and PART 9 §16 gives two
-/// shapes where it cannot: an empty or whitespace-only body is literal, and note
-/// recognition is DISABLED inside a note's own content, at every depth. Escaping
-/// either one is the over-escaping §2 calls a defect rather than a safe default.
-///
-/// Three of the four answers are certain and are taken here. The fourth is not:
-/// the run does not close in THIS text node, and a later node may still supply
-/// the `]` - or may not, which is the `x ^[a` that needs nothing. That one is
-/// handed to the minimal/conservative vote (§4) rather than guessed, which is
-/// what the `mode` argument is for: the two passes then differ, W3 parses both,
-/// and the bare form is emitted exactly when it re-parses the same.
+/// Whether `^[` at `bracket` can open a note (PART 9 §16, PART 11 §2).
+/// Empty bodies and note content cannot open one. If the closer may occur in a
+/// later node, `mode` leaves the decision to the writer's reparse vote (§4).
 pub(super) fn caret_needs_its_escape(
     text: &str,
     bracket: usize,
@@ -61,16 +45,9 @@ pub(super) fn caret_needs_its_escape(
     }
 }
 
-/// The characters a node writes VERBATIM at the very front of its output.
-///
-/// A different question from [`boundary_text`], which answers "what character is
-/// adjacent" for the emphasis and comment-spacing decisions and is happy to name
-/// one the node does not write first: a code span reports its content while
-/// writing a backtick ahead of it, escaped text reports the character while
-/// writing a backslash, and a mention, a tag and a symbol all write their sigil
-/// first. Only these three put their own value at byte zero.
-///
-/// The nodes that open with a bare `[` are [`leading_bracket_run`]'s.
+/// Text a node writes at byte zero, before any sigil or fence.
+/// [`boundary_text`] can report content that follows such an opener; bare `[`
+/// openers are handled by [`leading_bracket_run`].
 pub(super) fn leading_verbatim_text(node: &InlineNode) -> Option<&str> {
     match node {
         InlineNode::Text(text) => Some(&text.value),
@@ -196,17 +173,8 @@ pub(super) fn leading_bracket_run(node: &InlineNode) -> Option<Cow<'_, str>> {
     }
 }
 
-/// Does the node FOLLOWING a text node begin, in the output, with the BACKTICK
-/// FENCE a `$`, `$$` or `!` sigil would bind to?
-///
-/// Asked of the node rather than of [`boundary_text`], which reports a code
-/// span's CONTENT and so cannot answer it: `a $` before a code span holding
-/// `x+y` sees `x` as its neighbour character while the output puts a backtick
-/// there.
-///
-/// A code span and a raw inline are the two nodes that write [`render_code`]'s
-/// fence at byte zero. Math and an inline literal write their own sigil first
-/// (`$` and `!`), so the fence is not adjacent to the text at all.
+/// Whether the next node writes a backtick fence immediately after a text node.
+/// Code and raw inline do; math and inline literals write a sigil first.
 pub(super) fn next_node_opens_a_verbatim_span(next: Option<&InlineNode>) -> bool {
     matches!(
         next,
@@ -307,38 +275,15 @@ pub(super) fn escape_text(
                 continue;
             }
         }
-        // A CONTROL CHARACTER IS CONTENT, and the writer has to write it back.
-        // This dropped 61 codepoints - every C0 control but tab/newline/return,
-        // DEL, and the whole C1 block - none of which the parser or the HTML
-        // renderer drops, so `to_html(fmt(x)) == to_html(x)` failed on any
-        // document holding one. PART 2 keeps a FORM FEED and a VERTICAL TAB
-        // explicitly (carve#926), and corpus
-        // `261-a-blank-line-holds-spaces-and-tabs-and-nothing-else-3` pins a
-        // line holding one as CONTENT rather than as a blank.
-        //
-        // U+0000 stays dropped, and only it: `normalize_source` removes it
-        // before the parser sees it, so keeping it here would write back a byte
-        // no re-parse can read. Every other control survives the round trip
-        // because it survives the parse.
-        //
-        // This is not the Trojan-Source hardening, which is a different set in
-        // a different place: `escape::is_bidi_control` strips the bidi
-        // overrides and isolates (U+202A-E, U+2066-9), none of which are in the
-        // range this line held.
+        // Drop only U+0000, which normalize_source removes before parsing.
+        // Other control characters are content and must survive formatting
+        // (PART 2, carve#926). Bidi controls are handled by escape::is_bidi_control.
         if ch == '\u{0000}' {
             continue;
         }
-        // The caption marker is `^` followed by a SPACE. `^sup^` at the start
-        // of a line is not one - superscript is braced-only, so it is literal
-        // text and needs no escape, which two of this repo's own tests already
-        // pinned.
+        // A caption marker is `^` followed by a space; superscript is braced.
         let next = chars.peek().map(|&(_, c)| c).unwrap_or(next_boundary);
-        // SPACE ONLY, which is what the comment above already said and what the
-        // code did not do. A tab after the marker leaves the line as prose -
-        // corpus
-        // `231-a-tab-after-a-heading-quote-or-caption-marker-leaves-the-line-as-prose-2`
-        // is that document - so `^<TAB>` re-parses as text either way and PART 11
-        // §4 asks for the minimal form when dropping the escape changes nothing.
+        // A tab leaves this as prose, so the minimal spelling needs no escape.
         let caret_opens_a_caption = ch == '^' && at_line_start && caption_can_open && next == ' ';
         let caret_opens_inline = ch == '^'
             && (next == '[' || (chars.peek().is_none() && note.next_node_opens_a_note))
@@ -464,17 +409,9 @@ pub(super) struct BracketRole {
     pub(super) opener: Option<(usize, usize)>,
 }
 
-/// Whether the `:` at `offset` opens a symbol shortcode.
-///
-/// MIRRORS [`crate::parse::parse_symbol`] and is deliberately not a second
-/// reading of the same production: the opener's preceding-character test, the
-/// first name character's narrower class (`_` is excluded so `:_x_:` cannot
-/// steal from underline) and the closing colon are the parser's, so a writer
-/// that escapes here and a parser that opens there cannot drift apart.
-///
-/// `previous` is the character before the run, which is what carries the
-/// preceding-character test across a node boundary - the text node this is
-/// called on may begin mid-line.
+/// Whether `:` at `offset` opens a symbol, matching [`crate::parse::parse_symbol`].
+/// The first name character excludes `_`; `previous` carries the preceding
+/// character across a node boundary.
 pub(super) fn symbol_opens_at(text: &str, offset: usize, previous: char) -> bool {
     let bytes = text.as_bytes();
     if bytes.get(offset) != Some(&b':') {
