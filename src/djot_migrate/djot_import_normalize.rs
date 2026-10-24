@@ -4687,7 +4687,7 @@ fn reference_definitions(source: &str, mask: &str) -> (HashMap<String, String>, 
             .filter(|_| visible.starts_with('#') && boundary && !heading_lines.contains(&n))
         {
             let mut text = content[heading.get(0).unwrap().end()..].to_owned();
-            let marker = regex::Regex::new(&format!(r"^{}[ \t]+", &heading[1])).unwrap();
+            let marker = cached_regex!(r"^(#{1,6})[ \t]+").unwrap();
             for (next, following) in lines.iter().enumerate().skip(n + 1) {
                 let start = djot_content_start(following);
                 let prefix = &following[..start];
@@ -4703,7 +4703,11 @@ fn reference_definitions(source: &str, mask: &str) -> (HashMap<String, String>, 
                 {
                     break;
                 }
-                if let Some(m) = marker.find(part) {
+                if let Some(m) = marker
+                    .captures(part)
+                    .filter(|m| &m[1] == &heading[1])
+                    .and_then(|m| m.get(0))
+                {
                     text.push('\n');
                     text.push_str(&part[m.end()..]);
                 } else {
@@ -5902,6 +5906,21 @@ mod tests {
             );
         }
         assert!(super::losses("[a][]\n\n# a\n- continued\n").is_empty());
+    }
+
+    #[test]
+    fn heading_reference_continuations_match_their_heading_level() {
+        for level in 1..=6 {
+            let marker = "#".repeat(level);
+            let source = format!("[a continued][]\n\n{marker} a\n{marker} continued\n");
+            assert!(super::losses(&source).is_empty(), "{source:?}");
+
+            if level < 6 {
+                let other = "#".repeat(level + 1);
+                let source = format!("[a continued][]\n\n{marker} a\n{other} continued\n");
+                assert!(!super::losses(&source).is_empty(), "{source:?}");
+            }
+        }
     }
 
     #[test]
