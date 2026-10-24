@@ -102,8 +102,17 @@ fn markdown_preserves_nested_wrapper_hosts_and_attributes() {
             carve::to_markdown_with_report(&control.source, CheckedRenderOptions::default())
                 .unwrap();
         assert_eq!(report.value, control.markdown, "{}", control.source);
-        assert!(report.losses.is_empty(), "{}", control.source);
-        assert_eq!(report.total_losses, 0);
+        let expected_losses = if control.source.starts_with("::: figure\n") {
+            vec!["markdown-caption-flattened"]
+        } else {
+            vec![]
+        };
+        assert_eq!(
+            report.losses.iter().map(|loss| loss.code).collect::<Vec<_>>(),
+            expected_losses,
+            "{}",
+            control.source
+        );
         assert_eq!(
             carve::render_markdown(&carve::parse(&control.source)).unwrap(),
             report.value

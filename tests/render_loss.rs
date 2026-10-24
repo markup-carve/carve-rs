@@ -43,8 +43,11 @@ fn target_specific_visible_fallbacks_are_not_losses() {
     assert_eq!(
         carve::to_markdown_with_report(html, CheckedRenderOptions::default())
             .unwrap()
-            .total_losses,
-        0
+            .losses
+            .iter()
+            .map(|loss| loss.code)
+            .collect::<Vec<_>>(),
+        ["raw-html-escaped"]
     );
     let raw_block = "``` =latex\nx
 ```\n";
