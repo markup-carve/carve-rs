@@ -1,4 +1,5 @@
 use super::*;
+use super::definition_regions::VerseLine;
 
 /// What `extract_footnote_defs` hands back, in order: the document body with
 /// the definition lines removed, each definition's own source, where each
@@ -810,11 +811,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         mut i: usize,
         mut state: IndentedNote<'a>,
     ) -> usize {
-        let container = state.container;
+        let _container = state.container;
         run_indented_body!(
             CursorLines::Slice(self.lines),
             i,
-            container,
+            _container,
             |line, admission| {
                 if self.indented_line(&mut state, note, line, admission.blank, &mut i) == Flow::Stop
                 {

@@ -959,7 +959,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
 
     /// A flush-left comment fence that opens a span closing further down
     /// belongs to the surrounding container, not to this body.
-    fn opens_comment_span_outside_body(&self, cur: &LineCursor<'_>, line: &str) -> bool {
+    fn opens_comment_span_outside_body(&self, cur: &mut LineCursor<'_>, line: &str) -> bool {
         let authored_opener_comment = cur.source_col(cur.pos).is_some_and(|comment_col| {
             (0..cur.pos)
                 .rev()
@@ -1051,7 +1051,8 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             // for the rebase to read either way.
             self.push(String::new(), None, None, false);
             for line in attached.lines {
-                self.push(line.text, line.source_line(), line.stripped, false);
+                let source_line = line.source_line();
+                self.push(line.text, source_line, line.stripped, false);
             }
         }
     }
