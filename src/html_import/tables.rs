@@ -515,7 +515,7 @@ impl<'a> Importer<'a> {
                 // `text-align` / `vertical-align` lands here rather than in the
                 // attribute block `attrs` builds (markup-carve/carve#1745,
                 // markup-carve/carve#1746).
-                let alignment = self.cell_style_alignment(cell);
+                let mut alignment = self.cell_style_alignment(cell);
                 let cell_attrs = self.attrs(cell, &p);
                 let (children, blocks) = if list_form {
                     (
@@ -529,11 +529,32 @@ impl<'a> Importer<'a> {
                     // A cell's edges are block edges: `fmt` drops their space.
                     (trim_edge_whitespace(children?), None)
                 };
+                let header = Self::tag(cell).as_deref() == Some("th");
+                let empty = children.is_empty() && blocks.as_ref().is_none_or(Vec::is_empty);
+                if self.writing && !list_form && empty && header {
+                    if alignment.align == Some(TableAlign::Left)
+                        || alignment.valign == Some(TableVerticalAlign::Top)
+                    {
+                        self.diag(
+                            HtmlImportDiagnosticCode::StyleUnmapped,
+                            "Dropped alignment on an empty header cell: without a delimiter row, Carve source cannot spell its column default".into(),
+                            HtmlImportSeverity::Warning,
+                            &p,
+                            cell,
+                        );
+                        if alignment.align == Some(TableAlign::Left) {
+                            alignment.align = None;
+                        }
+                        if alignment.valign == Some(TableVerticalAlign::Top) {
+                            alignment.valign = None;
+                        }
+                    }
+                }
                 row.push(BuiltCell {
                     cell: TableCell {
                         colspan: None,
                         rowspan: None,
-                        header: Self::tag(cell).as_deref() == Some("th"),
+                        header,
                         span: None,
                         align: alignment.align,
                         valign: alignment.valign,

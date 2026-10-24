@@ -196,6 +196,7 @@ pub(super) fn render_table(
                 ctx,
                 mark_header,
                 suppress_align,
+                row_index == 0 && header_row && !needs_delimiter,
                 row.continuation_lines.unwrap_or(0) > 0,
             );
             match place_cell_wraps(
@@ -241,7 +242,13 @@ pub(super) fn render_table(
                 Some(separator) => separator,
                 None => return String::new(),
             },
-            None => format!("|{}|", vec!["---"; node.rows[0].cells.len()].join("|")),
+            None => {
+                let widths = vec![3; node.rows[0].cells.len()];
+                match render_table_separator(node, &widths) {
+                    Some(separator) => separator,
+                    None => return String::new(),
+                }
+            }
         };
         let head_lines = node.rows[0].continuation_lines.unwrap_or(0);
         let index = 1 + head_lines;
@@ -511,6 +518,7 @@ pub(super) fn render_table_cell(
     ctx: &mut CarveContext,
     mark_header: bool,
     suppress_align: bool,
+    header_default_without_delimiter: bool,
     has_continuations: bool,
 ) -> String {
     if cell.blocks.is_some() && !cell.children.is_empty() {
@@ -520,14 +528,8 @@ pub(super) fn render_table_cell(
         );
     }
     let attrs = render_attrs(&cell.attrs);
-    // A lone span marker keeps a SPACE before it. Glued to the opening pipe, `<`
-    // is also the left-alignment sigil, and the two readings differ: the
-    // executable spec reads `|<|` as alignment on an empty cell where all three
-    // engines read a colspan (markup-carve/carve#710). `alignment_marker` is defined
-    // as glued and `colspan_marker` may carry surrounding whitespace, so the
-    // padded form means the same thing to every reader and the writer must not
-    // emit the ambiguous one. `^` is not an alignment sigil, but takes the same
-    // shape so a row of span cells stays readable.
+    // A lone span marker keeps a space before it. Every padding form has the
+    // same span reading, so the writer uses the padded form for both glyphs.
     //
     // A cell attribute stays GLUED to the pipe, where the grammar puts it; the
     // space goes between it and the marker.
@@ -554,36 +556,12 @@ pub(super) fn render_table_cell(
         };
         return format!("{own}{first_wrap}{content}");
     }
-    let align = if suppress_align {
-        ""
-    } else {
-        align_marker(cell.align)
-    };
-    let valign = match cell.valign {
-        Some(TableVerticalAlign::Top) => "^",
-        Some(TableVerticalAlign::Middle) => "~",
-        Some(TableVerticalAlign::Bottom) => "v",
-        None => "",
-    };
-    let inherited_horizontal = if align.is_empty() && !valign.is_empty() {
-        "?"
-    } else {
-        ""
-    };
     // CELL ATTRIBUTES BIND LAST (grammar §20 T10): the kind marker first, then
     // the alignment marker, then the attribute block, glued to the marker run.
     // Writing the block AHEAD of the markers had no spelling for an attributed
     // header cell at all -- it emitted `|{#x}=R|`, which the reader takes as a
     // data cell whose content is `=R`, so `toHtml(fmt(x)) != toHtml(x)` on
     // every attributed header cell.
-    let prefix = format!(
-        "{}{}{}{}{}",
-        if cell.header && mark_header { "=" } else { "" },
-        align,
-        inherited_horizontal,
-        valign,
-        attrs
-    );
     ctx.table_cell_depth += 1;
     let mut content = match &cell.blocks {
         Some(blocks) => {
@@ -619,6 +597,44 @@ pub(super) fn render_table_cell(
         content.truncate(content.len() - trailing);
         content.drain(..leading);
     }
+    if matches!(content.as_str(), "<" | "^") {
+        content.insert(0, '\\');
+    }
+    let empty = content.is_empty();
+    if empty
+        && header_default_without_delimiter
+        && (cell.align == Some(TableAlign::Left)
+            || cell.valign == Some(TableVerticalAlign::Top))
+    {
+        crate::render_carve_error::record_unspellable(
+            "table_cell",
+            "an empty header alignment default needs a delimiter row",
+        );
+    }
+    let align = if suppress_align || empty && cell.align == Some(TableAlign::Left) {
+        ""
+    } else {
+        align_marker(cell.align)
+    };
+    let valign = match cell.valign {
+        Some(TableVerticalAlign::Top) if !empty => "^",
+        Some(TableVerticalAlign::Middle) => "~",
+        Some(TableVerticalAlign::Bottom) => "v",
+        _ => "",
+    };
+    let inherited_horizontal = if align.is_empty() && !valign.is_empty() {
+        "?"
+    } else {
+        ""
+    };
+    let prefix = format!(
+        "{}{}{}{}{}",
+        if cell.header && mark_header { "=" } else { "" },
+        align,
+        inherited_horizontal,
+        valign,
+        attrs
+    );
     // The space `pad_cell` writes after the prefix is what keeps the content's
     // first character content. The header `=` is read glued to the pipe and the
     // alignment sigil glued after it, off the UNTRIMMED cell, and a cell whose

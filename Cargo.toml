@@ -141,6 +141,10 @@ name = "table_alignment_options"
 path = "tests/table_alignment_options.rs"
 
 [[test]]
+name = "span_marker_padding"
+path = "tests/span_marker_padding.rs"
+
+[[test]]
 name = "markdown_render_losses"
 path = "tests/markdown_render_losses.rs"
 
