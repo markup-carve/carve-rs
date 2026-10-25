@@ -170,10 +170,6 @@ jobs:
       # doctests (`src/extensions/*` carry worked examples), so dropping this
       # line would silently stop testing them while the job stayed green.
       - run: cargo test --doc
-      - name: Check experimental event parser parity
-        if: matrix.toolchain == 'stable'
-        run: cargo test --locked --features experimental-event-parser --test event_pipeline
-
       # The test run already fails when a corpus category is missing from
       # IMPLEMENTED - that guard is why a spec bump lands red. This says whether
       # the missing ones are a LIST problem or an ENGINE problem, which is the
@@ -251,6 +247,23 @@ jobs:
       # asserts that count rather than printing it, so a skip rule that skipped
       # everything could not pass.
       - run: cargo test --locked --no-default-features --test includes --test include_conformance
+
+  event-parser:
+    name: Experimental event parser parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - run: cargo nextest run --locked --features experimental-event-parser -E 'not binary(perf_regressions)' --no-fail-fast
 
   lints:
     name: rustfmt + clippy

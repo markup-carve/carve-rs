@@ -1,6 +1,10 @@
-use carve::{parse, parse_experimental_event_blocks, render_html, to_json};
+use carve::{parse_experimental_event_blocks, parse_with_options, render_html, to_json, Options};
 use std::fs;
 use std::path::Path;
+
+fn parse_standard(source: &str) -> carve::Document {
+    parse_with_options(source, &Options::default())
+}
 
 #[test]
 fn exact_corpus_ast_and_html() {
@@ -13,7 +17,7 @@ fn exact_corpus_ast_and_html() {
             continue;
         }
         let source = fs::read_to_string(&path).unwrap();
-        let baseline = parse(&source);
+        let baseline = parse_standard(&source);
         let (candidate, used) = parse_experimental_event_blocks(&source);
         admitted += usize::from(used);
         total += 1;
@@ -36,16 +40,16 @@ fn exact_corpus_ast_and_html() {
 }
 
 #[test]
-fn direct_route_is_admitted_for_prose_and_rejects_containers() {
+fn direct_route_admits_prose_and_uses_existing_list_reader() {
     let prose = "# Heading\n\nA paragraph with *strong* text.\n";
     let (doc, admitted) = parse_experimental_event_blocks(prose);
     assert!(admitted);
-    assert_eq!(to_json(&doc), to_json(&parse(prose)));
+    assert_eq!(to_json(&doc), to_json(&parse_standard(prose)));
 
     let list = "- item\n";
     let (doc, admitted) = parse_experimental_event_blocks(list);
-    assert!(!admitted);
-    assert_eq!(to_json(&doc), to_json(&parse(list)));
+    assert!(admitted);
+    assert_eq!(to_json(&doc), to_json(&parse_standard(list)));
 }
 
 #[test]
@@ -57,6 +61,7 @@ fn generated_prose_keeps_exact_ast_and_html() {
         "[link](https://example.org)",
         "`code`",
         "a & b",
+        "(c) (r) (tm)",
         "a\\*b",
         "{=mark=}",
         "--",
@@ -82,7 +87,7 @@ fn generated_prose_keeps_exact_ast_and_html() {
         if case % 2 == 0 {
             source.push('\n');
         }
-        let expected = parse(&source);
+        let expected = parse_standard(&source);
         let (actual, used) = parse_experimental_event_blocks(&source);
         admitted += usize::from(used);
         assert_eq!(
@@ -100,4 +105,155 @@ fn generated_prose_keeps_exact_ast_and_html() {
         admitted > 0,
         "generated cases must exercise the event route"
     );
+}
+
+#[test]
+fn authored_documents_match_when_available() {
+    let Some(root) = std::env::var_os("CARVE_DOCS_ROOT") else {
+        return;
+    };
+    let root = Path::new(&root);
+    for relative in ["terms.md", "case-study/parsing-ast.md", "spec-history.md"] {
+        let path = root.join(relative);
+        let source = fs::read_to_string(&path).unwrap();
+        let baseline = parse_standard(&source);
+        let (candidate, used) = parse_experimental_event_blocks(&source);
+        assert!(used, "{} did not enter the event route", path.display());
+        assert_eq!(
+            to_json(&candidate),
+            to_json(&baseline),
+            "{}",
+            path.display()
+        );
+        assert_eq!(
+            render_html(&candidate),
+            render_html(&baseline),
+            "{}",
+            path.display()
+        );
+    }
+}
+
+#[test]
+fn generated_flat_lists_keep_exact_ast_and_html() {
+    let fragments = [
+        "plain",
+        "*strong*",
+        "`code`",
+        "[link](https://example.org)",
+        "a & b",
+    ];
+    let mut state = 0x51ed_4d13_u32;
+    for case in 0..512 {
+        let ordered = case % 2 == 0;
+        let mut source = String::from("# List\n\n");
+        for item in 0..1 + case % 7 {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let text = fragments[(state as usize) % fragments.len()];
+            if ordered {
+                source.push_str(&format!("{}. {text}\n", item + 1));
+            } else {
+                source.push_str(&format!("- {text}\n"));
+            }
+            if case % 3 == 0 && item % 2 == 0 {
+                source.push_str(if ordered {
+                    "   wrapped words\n"
+                } else {
+                    "  wrapped words\n"
+                });
+            }
+        }
+        source.push_str("\nAfter the list.\n");
+        let expected = parse_standard(&source);
+        let (actual, used) = parse_experimental_event_blocks(&source);
+        assert!(used, "case {case} declined");
+        assert_eq!(
+            to_json(&actual),
+            to_json(&expected),
+            "case {case}: {source:?}"
+        );
+        assert_eq!(
+            render_html(&actual),
+            render_html(&expected),
+            "case {case}: {source:?}"
+        );
+    }
+}
+
+#[test]
+fn generated_block_combinations_keep_exact_ast_and_html() {
+    let lines = [
+        "A plain sentence.",
+        "# Heading",
+        "- item",
+        "  wrapped",
+        "1. ordered",
+        ":: term",
+        ":  definition",
+        "```",
+        "code",
+        "~~~",
+        "---",
+        "> quote",
+        "+",
+        "[ref]: /url",
+        "A [ref][x]",
+        "::: note",
+        ":::",
+        "{.class}",
+        "A ...",
+        "**bold**",
+        "A {^note^}",
+        "![alt](x)",
+        "A paragraph",
+        "",
+        "",
+        "A /italic/",
+        "%% comment",
+        "  - nested",
+        "A ![alt](x)",
+        "A (c) and (tm)",
+    ];
+    let mut state = 0x7ab3_902d_u32;
+    let mut admitted = 0usize;
+    for case in 0..16_384 {
+        let mut source = String::new();
+        for _ in 0..2 + case % 9 {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            source.push_str(lines[(state as usize) % lines.len()]);
+            source.push('\n');
+        }
+        let expected = parse_standard(&source);
+        let (actual, used) = parse_experimental_event_blocks(&source);
+        admitted += usize::from(used);
+        assert_eq!(
+            to_json(&actual),
+            to_json(&expected),
+            "case {case}: {source:?}"
+        );
+        assert_eq!(
+            render_html(&actual),
+            render_html(&expected),
+            "case {case}: {source:?}"
+        );
+    }
+    assert!(
+        admitted > 100,
+        "generated blocks must exercise the event route"
+    );
+}
+
+#[test]
+fn blank_before_complex_list_item_keeps_one_list() {
+    for source in [
+        "- a\n\n- - -\n",
+        "- a\n\n-  b\n",
+        "1. a\n\n2.  b\n",
+        "- a\n\n- # h\n",
+    ] {
+        let expected = parse_standard(source);
+        let (actual, _) = parse_experimental_event_blocks(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
 }

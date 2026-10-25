@@ -28,7 +28,10 @@ fn run(source: &str, route: &str, candidate: bool) -> (usize, bool) {
     let (doc, used) = if candidate {
         carve::parse_experimental_event_blocks(source)
     } else {
-        (carve::parse(source), false)
+        (
+            carve::parse_with_options(source, &carve::Options::default()),
+            false,
+        )
     };
     let length = match route {
         "ast" => doc.children.len(),

@@ -623,6 +623,10 @@ fn is_bare_figure_open(open: &ContainerOpen) -> bool {
 
 /// Parse Carve source with default options.
 pub fn parse(source: &str) -> Document {
+    #[cfg(feature = "experimental-event-parser")]
+    if let Some((document, _)) = event_pipeline::parse_document(source) {
+        return document;
+    }
     parse_with_options(source, &Options::default())
 }
 
@@ -630,10 +634,10 @@ pub fn parse(source: &str) -> Document {
 /// whether the event route was admitted; other inputs use the standard parser.
 #[cfg(feature = "experimental-event-parser")]
 pub fn parse_experimental_event_blocks(source: &str) -> (Document, bool) {
-    if let Some(document) = event_pipeline::parse_document(source) {
-        (document, true)
+    if let Some(result) = event_pipeline::parse_document(source) {
+        result
     } else {
-        (parse(source), false)
+        (parse_with_options(source, &Options::default()), false)
     }
 }
 
