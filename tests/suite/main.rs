@@ -111,6 +111,8 @@ mod definitions_close_nested_containers;
 mod definitions_register_only_in_their_host_column;
 #[path = "../footnote_container_paragraph_breaks.rs"]
 mod footnote_container_paragraph_breaks;
+#[path = "../indented_list_comment_retains_owner.rs"]
+mod indented_list_comment_retains_owner;
 #[path = "../unmarked_lines_follow_their_reachable_container.rs"]
 mod unmarked_lines_follow_their_reachable_container;
 
