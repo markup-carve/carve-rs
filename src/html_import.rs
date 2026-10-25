@@ -1096,9 +1096,27 @@ impl<'a> Importer<'a> {
                 }
             }
         }
-        let parent = parent_handle(pre)?;
+        let pre_class = Self::attr(pre, "class").unwrap_or_default();
+        let mut plain_classes = pre_class
+            .split(html_space)
+            .filter(|token| !token.is_empty());
+        let fallback = plain_classes.next().and_then(|token| {
+            (plain_classes.next().is_none()
+                && token.len() > 1
+                && valid(token)
+                && !token.to_ascii_lowercase().starts_with("language-")
+                && !token.to_ascii_lowercase().starts_with("lang-")
+                && !matches!(
+                    token,
+                    "mermaid" | "highlight" | "prettyprint" | "sourceCode" | "notranslate"
+                ))
+            .then(|| token.to_owned())
+        });
+        let Some(parent) = parent_handle(pre) else {
+            return fallback;
+        };
         if !self.code_language_wrapper(&parent, pre) {
-            return None;
+            return fallback;
         }
         let class = Self::attr(&parent, "class").unwrap_or_default();
         let highlight = class.split(html_space).any(|token| token == "highlight");
@@ -1113,15 +1131,17 @@ impl<'a> Importer<'a> {
             }
         }
         if highlight {
-            let outer = parent_handle(&parent)?;
-            if self.code_language_wrapper(&outer, &parent) {
-                return prefixed(
-                    &Self::attr(&outer, "class").unwrap_or_default(),
-                    "highlight-",
-                );
+            if let Some(outer) = parent_handle(&parent) {
+                if self.code_language_wrapper(&outer, &parent) {
+                    return prefixed(
+                        &Self::attr(&outer, "class").unwrap_or_default(),
+                        "highlight-",
+                    )
+                    .or(fallback);
+                }
             }
         }
-        None
+        fallback
     }
 
     fn tag(handle: &Handle) -> Option<String> {

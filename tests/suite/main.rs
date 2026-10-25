@@ -1359,6 +1359,8 @@ mod html_import_table_row_groups;
 mod html_import_table_spans;
 #[path = "../html_import_task_item_checkbox.rs"]
 mod html_import_task_item_checkbox;
+#[path = "../html_plain_pre_language.rs"]
+mod html_plain_pre_language;
 #[path = "../html_smart_typography_mode.rs"]
 mod html_smart_typography_mode;
 #[path = "../img_fence.rs"]
