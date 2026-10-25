@@ -2305,7 +2305,9 @@ impl<'a> Importer<'a> {
     /// wrapper can be derived while an attribute on it is the author's - which
     /// is why the two are asked separately at the unwrap site.
     fn is_derived_wrapper(&self, handle: &Handle, tag: &str) -> bool {
-        tag == "section" && Self::attr(handle, "role").as_deref() == Some("doc-endnotes")
+        tag == "section"
+            && (Self::attr(handle, "role").as_deref() == Some("doc-endnotes")
+                || Self::attr(handle, "data-footnotes").is_some())
     }
 
     /// Remove the attributes whose value EQUALS what the renderer derives for

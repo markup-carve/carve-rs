@@ -611,8 +611,7 @@ pub(super) fn footnote_pair_candidates(
     let mut bare_target_numbers = HashMap::new();
     let mut ambiguous_bare_targets = HashSet::new();
     for backlink in elements {
-        if Importer::tag(backlink).as_deref() != Some("a")
-            || Importer::attr(backlink, "role").as_deref() != Some("doc-backlink")
+        if Importer::tag(backlink).as_deref() != Some("a") || !is_footnote_backlink_marked(backlink)
         {
             continue;
         }
@@ -638,7 +637,7 @@ pub(super) fn footnote_pair_candidates(
         let Some(target) = target else { continue };
         let mut ancestor = parent_handle(&target);
         while let Some(node) = ancestor.as_ref() {
-            if Importer::attr(node, "role").as_deref() == Some("doc-endnotes") {
+            if is_endnotes_section(node) {
                 break;
             }
             ancestor = parent_handle(node);
@@ -651,6 +650,7 @@ pub(super) fn footnote_pair_candidates(
         // Only a generated `fnref{n}` names its note number.
         let number = href
             .strip_prefix("#fnref")
+            .map(|identity| identity.strip_prefix('-').unwrap_or(identity))
             .and_then(|identity| identity.split('-').next())
             .filter(|number| !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()));
         let target_key = node_key(&target);
@@ -672,9 +672,8 @@ pub(super) fn footnote_pair_candidates(
             anchors
                 .iter()
                 .filter(|(anchor, _)| {
-                    Importer::attr(anchor, "role").as_deref() != Some("doc-backlink")
-                        && (heuristic
-                            || Importer::attr(anchor, "role").as_deref() == Some("doc-noteref"))
+                    !is_footnote_backlink_marked(anchor)
+                        && (heuristic || is_explicit_footnote_reference(anchor))
                 })
                 .map(|(_, fragment)| fragment.clone()),
         )
@@ -707,7 +706,7 @@ pub(super) fn footnote_pair_candidates(
         // OUTSIDE THE HEURISTIC ONLY THE AUTHORED ROLE OPENS A PAIR. The vendor
         // classes belong to the heuristic: a class is a styling hook, where the
         // role is a statement about what the element IS.
-        if !heuristic && Importer::attr(&anchor, "role").as_deref() != Some("doc-noteref") {
+        if !heuristic && !is_explicit_footnote_reference(&anchor) {
             continue;
         }
         let Some(block) =
@@ -780,7 +779,7 @@ pub(super) fn resolve_footnote_definition_block(
             .map(|tag| FOOTNOTE_WRAPPER_BLOCKS.contains(&tag.as_str()))
             .unwrap_or(false);
         if wraps
-            && Importer::attr(&parent, "role").as_deref() != Some("doc-endnotes")
+            && !is_endnotes_section(&parent)
             && !Importer::attr(&parent, "id").unwrap_or_default().is_empty()
             && lookups.target_count(&parent, elements, used) == 1
         {
@@ -1013,7 +1012,7 @@ pub(super) fn attach_remaining_footnote_references(
         // `#fn1` in a role-marked document keeps the author's shape. The marked
         // candidates already sit in their groups; this loop exists for the
         // unmarked SECOND reference the heuristic binds.
-        if !heuristic && Importer::attr(element, "role").as_deref() != Some("doc-noteref") {
+        if !heuristic && !is_explicit_footnote_reference(element) {
             continue;
         }
         let href = Importer::attr(element, "href").unwrap_or_default();
@@ -1062,17 +1061,30 @@ pub(super) fn footnote_anchors_under(node: &Handle) -> Vec<Handle> {
         .collect()
 }
 
+fn is_endnotes_section(node: &Handle) -> bool {
+    Importer::tag(node).as_deref() == Some("section")
+        && (Importer::attr(node, "role").as_deref() == Some("doc-endnotes")
+            || Importer::attr(node, "data-footnotes").is_some())
+}
+
+fn is_explicit_footnote_reference(anchor: &Handle) -> bool {
+    Importer::attr(anchor, "role").as_deref() == Some("doc-noteref")
+        || Importer::attr(anchor, "data-footnote-ref").is_some()
+}
+
 /// `footnoteRef` is Pandoc 1.x's spelling of `footnote-ref`, which it used
 /// together with a back-link carrying no attributes at all.
 pub(super) fn is_footnote_reference_marked(anchor: &Handle) -> bool {
-    if Importer::attr(anchor, "role").as_deref() == Some("doc-noteref") {
+    if is_explicit_footnote_reference(anchor) {
         return true;
     }
     footnote_has_class(anchor, "footnote-ref") || footnote_has_class(anchor, "footnoteRef")
 }
 
 pub(super) fn is_footnote_backlink_marked(anchor: &Handle) -> bool {
-    if Importer::attr(anchor, "role").as_deref() == Some("doc-backlink") {
+    if Importer::attr(anchor, "role").as_deref() == Some("doc-backlink")
+        || Importer::attr(anchor, "data-footnote-backref").is_some()
+    {
         return true;
     }
     footnote_has_class(anchor, "footnote-back")
@@ -1336,6 +1348,13 @@ pub(super) fn remove_footnote_separator(first: &Handle) {
 /// because libxml has no such production, which is why its port carries a
 /// pattern for the text spelling that this one has no way to reach.
 pub(super) fn is_footnote_chrome_node(node: &Handle) -> bool {
+    if Importer::tag(node)
+        .is_some_and(|tag| matches!(tag.as_str(), "h1" | "h2" | "h3" | "h4" | "h5" | "h6"))
+        && footnote_has_class(node, "sr-only")
+        && parent_handle(node).is_some_and(|parent| is_endnotes_section(&parent))
+    {
+        return true;
+    }
     match &node.data {
         NodeData::Comment { .. } => true,
         // MEASURED (markup-carve/carve-rs#1345): read through `str::trim`, a text

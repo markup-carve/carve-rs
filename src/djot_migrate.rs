@@ -48,6 +48,8 @@ mod emphasis;
 #[path = "djot_migrate/djot_import_normalize.rs"]
 mod normalize;
 
+#[path = "djot_migrate/attribute_recovery.rs"]
+mod attribute_recovery;
 #[path = "djot_migrate/djot_div_classes.rs"]
 mod div_classes;
 #[path = "djot_migrate/djot_heading_ids.rs"]
@@ -85,7 +87,8 @@ fn djot_placeholder_prefix(source: &str, base: &str) -> String {
 
 /// Convert Djot source to Carve source.
 pub fn djot_to_carve(djot: &str) -> String {
-    djot_to_carve_prepared(&strip_footnote_definition_attributes(djot))
+    let (recovered, _) = attribute_recovery::recover(djot);
+    djot_to_carve_prepared(&strip_footnote_definition_attributes(&recovered))
 }
 
 pub(crate) fn djot_to_carve_prepared(stripped_definitions: &DjotFootnoteAttributeStrip) -> String {
@@ -792,7 +795,10 @@ fn convert_djot_document(
 
 pub(crate) fn djot_to_carve_with_losses(source: &str) -> (String, Vec<crate::MigrationDiagnostic>) {
     let _paragraph_cache = ParagraphCacheScope::new(source);
-    (djot_to_carve(source), normalize::losses(source))
+    let (recovered, dropped) = attribute_recovery::recover(source);
+    let mut losses = normalize::losses(source);
+    losses.extend(dropped);
+    (djot_to_carve(&recovered), losses)
 }
 
 fn quote_djot_attribute(value: &str, carve: bool) -> String {

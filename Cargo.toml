@@ -76,6 +76,10 @@ name = "suite"
 path = "tests/suite/main.rs"
 
 [[test]]
+name = "port_3156"
+path = "tests/port_3156.rs"
+
+[[test]]
 name = "public_api_paths"
 path = "tests/public_api_paths.rs"
 
