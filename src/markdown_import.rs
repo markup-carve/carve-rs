@@ -2180,8 +2180,22 @@ impl Builder {
             return;
         };
 
-        if tag.name.eq_ignore_ascii_case("a") && tag.closing {
-            if let Some(Frame::Link { children, .. }) = self.frames.last_mut() {
+        if tag.name.eq_ignore_ascii_case("a")
+            && tag.closing
+            && self
+                .frames
+                .iter()
+                .any(|frame| matches!(frame, Frame::Link { .. }))
+        {
+            let children = match self.frames.last_mut() {
+                Some(Frame::Link { children, .. })
+                | Some(Frame::Emphasis(_, children))
+                | Some(Frame::HtmlEmphasis { children, .. })
+                | Some(Frame::HtmlInsert { children, .. })
+                | Some(Frame::HtmlDelete { children, .. }) => Some(children),
+                _ => None,
+            };
+            if let Some(children) = children {
                 if let Some(open) = children.iter().rposition(|node| {
                     matches!(node, InlineNode::RawInline(raw)
                         if html_tag(&raw.content).is_some_and(|tag|

@@ -24,4 +24,16 @@ fn flattens_matched_html_anchors_inside_markdown_link_labels() {
     }
     let html = to_html(&migrate_markdown("<a href=\"/inner\">inner</a> and [outer](/outer)").value);
     assert!(html.contains("<a href=\"/inner\">inner</a>"), "{html}");
+
+    let nested = migrate_markdown("[outer *<a href=\"/inner\">inner</a>* tail](/outer)");
+    let html = to_html(&nested.value);
+    assert!(
+        html.contains("<a href=\"/outer\">outer <em>inner</em> tail</a>"),
+        "{html}"
+    );
+    assert!(nested
+        .report
+        .diagnostics
+        .iter()
+        .any(|row| row.code == "structure-unspellable"));
 }
