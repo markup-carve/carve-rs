@@ -489,28 +489,14 @@ impl<'a> Importer<'a> {
                 // row.
                 let declared = Self::span_count(cell, "rowspan", MAX_ROWSPAN, 0);
                 let left = remaining_in_group[r];
-                let mut rowspan = if declared == 0 {
+                let rowspan = if declared == 0 {
                     left
                 } else {
                     declared.min(left)
                 };
-                // And it stops at the head the RENDERER will synthesize. Carve
-                // derives the head from the leading run of all-header rows, so a
-                // span reaching out of that run lands in a `<thead>` with its
-                // other rows in the `<tbody>` - which browsers clip, making the
-                // written table say something the source table did not. Clipped
-                // here instead, where it can be reported: the alternative is a
-                // document that claims a grid it does not render.
-                if r < leading_header_rows && r + rowspan > leading_header_rows {
-                    self.diag(
-                        HtmlImportDiagnosticCode::TableDegraded,
-                        "Clipped a rowspan at the header rows: Carve derives the head from the leading header rows, and a span leaving them crosses a boundary browsers clip anyway".into(),
-                        HtmlImportSeverity::Warning,
-                        &p,
-                        cell,
-                    );
-                    rowspan = leading_header_rows - r;
-                }
+                // The native row group, not the derived leading-header run,
+                // bounds this span. The grid carries it into data rows in the
+                // same group as a continuation cell.
                 // THE MARKER RUN IS THE CELL'S OWN FIELD, so a mapped
                 // `text-align` / `vertical-align` lands here rather than in the
                 // attribute block `attrs` builds (markup-carve/carve#1745,
