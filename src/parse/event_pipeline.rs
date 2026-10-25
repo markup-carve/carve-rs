@@ -192,18 +192,23 @@ fn may_continue_plain_paragraph(line: &str) -> bool {
 }
 
 fn parse_event_inlines(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
-    let plain = !text.is_empty()
-        && !text.contains("..")
-        && !text.contains("(c)")
-        && !text.contains("(r)")
-        && !text.contains("(tm)")
-        && text.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric()
-                || matches!(
-                    byte,
-                    b' ' | b'\n' | b'.' | b',' | b';' | b'!' | b'?' | b'(' | b')'
-                )
-        });
+    let bytes = text.as_bytes();
+    let plain = if text.len() < 128 {
+        !text.is_empty()
+            && !text.contains("..")
+            && !text.contains("(c)")
+            && !text.contains("(r)")
+            && !text.contains("(tm)")
+            && bytes.iter().all(|byte| {
+                byte.is_ascii_alphanumeric()
+                    || matches!(
+                        byte,
+                        b' ' | b'\n' | b'.' | b',' | b';' | b'!' | b'?' | b'(' | b')'
+                    )
+            })
+    } else {
+        long_literal_inline(text)
+    };
     if !plain {
         return parse_inline_with_options(text, options);
     }
@@ -217,6 +222,68 @@ fn parse_event_inlines(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
         }
     }
     out
+}
+
+/// The long route accepts only bytes that the current inline dispatch treats
+/// as literal. Review this gate when inline constructs or symbol boundaries change.
+fn long_literal_inline(text: &str) -> bool {
+    if text.len() < 128 {
+        return false;
+    }
+    let bytes = text.as_bytes();
+    for (index, &byte) in bytes.iter().enumerate() {
+        let previous = index.checked_sub(1).and_then(|at| bytes.get(at)).copied();
+        let literal = match byte {
+            b'\n' | b' ' | b'.' | b',' | b';' | b'?' | b'&' | b'(' | b')' => true,
+            b'!' => bytes.get(index + 1) != Some(&b'='),
+            b'-' => bytes.get(index + 1) != Some(&b'-'),
+            b':' | b'#' | b'@' => {
+                previous.is_some_and(|prev| prev.is_ascii_alphanumeric() || prev == b'_')
+            }
+            b'\\' | b'%' | b'`' | b'$' | b'{' | b'}' | b'[' | b']' | b'<' | b'>' | b'/' | b'*'
+            | b'_' | b'~' | b'=' | b'^' | b'+' | b'\'' | b'"' => false,
+            _ => byte.is_ascii_alphanumeric() || !byte.is_ascii(),
+        };
+        if !literal {
+            return false;
+        }
+    }
+    !text.contains("...")
+        && !text.contains("(c)")
+        && !text.contains("(r)")
+        && !text.contains("(tm)")
+}
+
+#[cfg(test)]
+mod inline_lexer_tests {
+    use super::long_literal_inline;
+
+    #[test]
+    fn long_literal_gate_admits_only_safe_text() {
+        assert!(!long_literal_inline(&"a".repeat(127)));
+        assert!(long_literal_inline(&"a".repeat(128)));
+        for safe in ["café, 日本語", "carve#529", "foo:bar", "a@b", "a & b", "-x"] {
+            assert!(
+                long_literal_inline(&format!("{} {safe}", "a".repeat(128))),
+                "{safe}"
+            );
+        }
+        for syntax in [
+            " @user",
+            " #tag",
+            " :symbol:",
+            " !=",
+            "--",
+            "...",
+            "(c)",
+            "*strong*",
+        ] {
+            assert!(
+                !long_literal_inline(&format!("{} {syntax}", "a".repeat(128))),
+                "{syntax}"
+            );
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

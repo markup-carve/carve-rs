@@ -108,6 +108,37 @@ fn generated_prose_keeps_exact_ast_and_html() {
 }
 
 #[test]
+fn long_literal_lexer_keeps_ast_and_html_parity() {
+    let safe = [
+        "plain words and punctuation, one: two; three? yes!",
+        "Unicode text: café, Zürich, 日本語 and “curly quotes”",
+        "carve#529 and foo:bar are ordinary prose here",
+        "safe hyphenated words and a & b",
+    ];
+    let unsafe_cases = [
+        "an ellipsis ... must reach the existing inline parser",
+        "a dash -- and (c) must reach the existing inline parser",
+        "*strong* and `code` must reach the existing inline parser",
+    ];
+    for case in 0..256 {
+        let mut source = String::from("# Heading\n\nA long paragraph starts here. ");
+        for index in 0..8 {
+            source.push_str(safe[(case + index * 3) % safe.len()]);
+            source.push(' ');
+        }
+        if case % 2 == 1 {
+            source.push_str(unsafe_cases[(case / 2) % unsafe_cases.len()]);
+        }
+        source.push('\n');
+        let expected = parse_standard(&source);
+        let (actual, admitted) = parse_experimental_event_blocks(&source);
+        assert!(admitted, "case {case}");
+        assert_eq!(to_json(&actual), to_json(&expected), "case {case}");
+        assert_eq!(render_html(&actual), render_html(&expected), "case {case}");
+    }
+}
+
+#[test]
 fn authored_documents_match_when_available() {
     let Some(root) = std::env::var_os("CARVE_DOCS_ROOT") else {
         return;
