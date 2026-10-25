@@ -1062,9 +1062,9 @@ pub(super) fn footnote_anchors_under(node: &Handle) -> Vec<Handle> {
 }
 
 fn is_endnotes_section(node: &Handle) -> bool {
-    Importer::tag(node).as_deref() == Some("section")
-        && (Importer::attr(node, "role").as_deref() == Some("doc-endnotes")
-            || Importer::attr(node, "data-footnotes").is_some())
+    Importer::attr(node, "role").as_deref() == Some("doc-endnotes")
+        || (Importer::tag(node).as_deref() == Some("section")
+            && Importer::attr(node, "data-footnotes").is_some())
 }
 
 fn is_explicit_footnote_reference(anchor: &Handle) -> bool {

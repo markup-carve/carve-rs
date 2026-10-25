@@ -63,3 +63,15 @@ fn imports_github_footnotes() {
         "{value}"
     );
 }
+
+#[test]
+fn role_marked_div_still_groups_footnotes() {
+    let html = r##"<p><a href="/u">t<sup id="fnref1">1</sup></a></p>
+<div id="notes" role="doc-endnotes"><p>Notes heading</p>
+<p id="fn1">first <a href="#fnref1" role="doc-backlink">back</a></p></div>"##;
+    let value = migrate_html(html, &HtmlImportOptions::default())
+        .unwrap()
+        .value;
+    assert!(value.contains("[^1]: first"), "{value}");
+    assert!(!value.contains("[^1]: Notes"), "{value}");
+}
