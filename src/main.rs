@@ -606,6 +606,7 @@ fn parse_allowed_loss(value: Option<&str>) -> Result<&'static str, ExitCode> {
         Some("markdown-container-flattened") => Ok("markdown-container-flattened"),
         Some("markdown-caption-flattened") => Ok("markdown-caption-flattened"),
         Some("markdown-attributes-dropped") => Ok("markdown-attributes-dropped"),
+        Some("fence-title-dropped") => Ok("fence-title-dropped"),
         Some("raw-html-escaped") => Ok("raw-html-escaped"),
         _ => {
             eprintln!("carve: --allow-loss expects raw-format-dropped, ruby-flattened, editorial-comment-flattened, carrier-attribute-dropped, definition-list-flattened, list-style-dropped, list-tightness-lost, list-delimiter-changed, table-span-flattened, table-header-row-demoted, table-header-row-hoisted or table-header-cell-demoted");
@@ -2370,7 +2371,8 @@ fn print_usage() {
          list-delimiter-changed, table-span-flattened,\n                              \
          table-header-row-demoted, table-header-row-hoisted\n                              \
          table-header-cell-demoted, markdown-container-flattened,\n                              \
-         markdown-caption-flattened, markdown-attributes-dropped\n                              \
+         markdown-caption-flattened, markdown-attributes-dropped,\n                              \
+         fence-title-dropped\n                              \
          or raw-html-escaped\n  \
          --max-render-losses N       bound detailed losses (default 100)\n\n  \
          --include-root DIR          containment root for {{{{ path }}}} includes.\n                              \
