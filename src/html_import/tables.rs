@@ -515,7 +515,7 @@ impl<'a> Importer<'a> {
                 // `text-align` / `vertical-align` lands here rather than in the
                 // attribute block `attrs` builds (markup-carve/carve#1745,
                 // markup-carve/carve#1746).
-                let mut alignment = self.cell_style_alignment(cell);
+                let alignment = self.cell_style_alignment(cell);
                 let cell_attrs = self.attrs(cell, &p);
                 let (children, blocks) = if list_form {
                     (
@@ -530,28 +530,6 @@ impl<'a> Importer<'a> {
                     (trim_edge_whitespace(children?), None)
                 };
                 let header = Self::tag(cell).as_deref() == Some("th");
-                let empty = children.is_empty() && blocks.as_ref().map_or(true, Vec::is_empty);
-                if self.writing
-                    && !list_form
-                    && empty
-                    && header
-                    && (alignment.align == Some(TableAlign::Left)
-                        || alignment.valign == Some(TableVerticalAlign::Top))
-                {
-                    self.diag(
-                        HtmlImportDiagnosticCode::StyleUnmapped,
-                        "Dropped alignment on an empty header cell: without a delimiter row, Carve source cannot spell its column default".into(),
-                        HtmlImportSeverity::Warning,
-                        &p,
-                        cell,
-                    );
-                    if alignment.align == Some(TableAlign::Left) {
-                        alignment.align = None;
-                    }
-                    if alignment.valign == Some(TableVerticalAlign::Top) {
-                        alignment.valign = None;
-                    }
-                }
                 row.push(BuiltCell {
                     cell: TableCell {
                         colspan: None,
@@ -640,6 +618,39 @@ impl<'a> Importer<'a> {
             })
             .collect();
         let mut result = self.span_grid(&trs, built, &row_attrs, path, depth)?;
+        let mut columns: Vec<TableColumn> = Vec::new();
+        for row in result.iter_mut().take(leading_header_rows) {
+            for (column, cell) in row.cells.iter_mut().enumerate() {
+                if !cell.header
+                    || !cell.children.is_empty()
+                    || cell
+                        .blocks
+                        .as_ref()
+                        .is_some_and(|blocks| !blocks.is_empty())
+                {
+                    continue;
+                }
+                let left = cell.align == Some(TableAlign::Left);
+                let top = cell.valign == Some(TableVerticalAlign::Top);
+                if !left && !top {
+                    continue;
+                }
+                columns.resize(
+                    columns.len().max(column + 1),
+                    TableColumn {
+                        align: None,
+                        valign: None,
+                        width: None,
+                    },
+                );
+                if left {
+                    columns[column].align = cell.align.take();
+                }
+                if top {
+                    columns[column].valign = cell.valign.take();
+                }
+            }
+        }
 
         // A `scope` equal to the positional default carries no information the
         // renderer cannot reproduce, and importing it would write this engine's
@@ -858,7 +869,7 @@ impl<'a> Importer<'a> {
             attrs,
             caption,
             short_caption: None,
-            columns: Vec::new(),
+            columns,
             rows: result,
             row_groups: row_groups.map(Box::new),
             separator_widths: Self::reads_separator_widths(h),
