@@ -183,8 +183,16 @@ fn parse_mixed_blocks(source: &str, options: &Options<'_>) -> Option<Vec<BlockNo
 
 fn may_start_plain_paragraph(line: &str) -> bool {
     line.as_bytes().first().is_some_and(|first| {
-        first.is_ascii_alphanumeric() || matches!(first, b'*' | b'`' | b'"' | b'\'' | b'(')
+        first.is_ascii_alphanumeric()
+            || matches!(first, b'*' | b'`' | b'"' | b'\'' | b'(')
+            || may_start_extended_plain_paragraph(*first)
     })
+}
+
+#[cold]
+#[inline(never)]
+fn may_start_extended_plain_paragraph(first: u8) -> bool {
+    matches!(first, b'/' | b'_' | b'~' | b'=' | b'\\' | b'[' | b'!')
 }
 
 fn may_continue_plain_paragraph(line: &str) -> bool {
@@ -308,6 +316,7 @@ fn simple_list_marker(line: &str) -> Option<(SimpleListKind, usize, &str)> {
     };
     let content = trim_ascii_end(&line[marker_width..]);
     if content.is_empty()
+        || content.starts_with('[')
         || is_list_marker(content)
         || detect_fence_open(content).is_some()
         || thematic_break_marker(content).is_some()

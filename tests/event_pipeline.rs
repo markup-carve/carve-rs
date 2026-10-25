@@ -53,6 +53,78 @@ fn direct_route_admits_prose_and_uses_existing_list_reader() {
 }
 
 #[test]
+fn punctuation_led_paragraphs_and_task_lists_keep_exact_nodes() {
+    let prose = "/italic/\n\n_underline_\n\n[link](target)\n\n![image](target)\n";
+    let (actual, admitted) = parse_experimental_event_blocks(prose);
+    assert!(admitted);
+    assert_eq!(to_json(&actual), to_json(&parse_standard(prose)));
+    assert_eq!(render_html(&actual), render_html(&parse_standard(prose)));
+
+    let task_list = "- [ ] > q\n- [x] # h\n- [ ] ---\n- # H\n";
+    let (actual, _) = parse_experimental_event_blocks(task_list);
+    assert_eq!(to_json(&actual), to_json(&parse_standard(task_list)));
+    assert_eq!(
+        render_html(&actual),
+        render_html(&parse_standard(task_list))
+    );
+
+    for first in ["/italic/", "_underline_", "~strike~", "=mark="] {
+        let source = format!("# Heading\n\n{first}\nnext line\n");
+        let (actual, admitted) = parse_experimental_event_blocks(&source);
+        assert!(admitted, "{first}");
+        assert_eq!(
+            to_json(&actual),
+            to_json(&parse_standard(&source)),
+            "{first}"
+        );
+        assert_eq!(
+            render_html(&actual),
+            render_html(&parse_standard(&source)),
+            "{first}"
+        );
+    }
+
+    for next in ["[link](target)", "![image](target)", "\\*escaped"] {
+        let source = format!("first line\n{next}\n");
+        let (actual, admitted) = parse_experimental_event_blocks(&source);
+        assert!(admitted, "{next}");
+        assert_eq!(
+            to_json(&actual),
+            to_json(&parse_standard(&source)),
+            "{next}"
+        );
+        assert_eq!(
+            render_html(&actual),
+            render_html(&parse_standard(&source)),
+            "{next}"
+        );
+    }
+
+    for item in [
+        "/italic/",
+        "_underline_",
+        "~strike~",
+        "=mark=",
+        "\\*escaped",
+        "![image](target)",
+    ] {
+        let source = format!("- {item}\n- next\n");
+        let (actual, admitted) = parse_experimental_event_blocks(&source);
+        assert!(admitted, "{item}");
+        assert_eq!(
+            to_json(&actual),
+            to_json(&parse_standard(&source)),
+            "{item}"
+        );
+        assert_eq!(
+            render_html(&actual),
+            render_html(&parse_standard(&source)),
+            "{item}"
+        );
+    }
+}
+
+#[test]
 fn generated_prose_keeps_exact_ast_and_html() {
     let fragments = [
         "plain words",
