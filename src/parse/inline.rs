@@ -659,16 +659,23 @@ impl InlineRun<'_, '_> {
             return i + 1;
         }
 
-        // With no extension matcher able to claim an arbitrary byte, runs of
-        // ASCII prose cannot open any core inline construct. Append the whole
-        // run at once instead of sending every letter and space through all of
-        // the delimiter, link, typography and footnote dispatch below.
+        // A live cell wrap can claim an ordinary space before any text run.
         if c == b' ' && self.wraps_live {
             if let Some(wrap) = cell_wrap_at(self.sink.base + i) {
                 self.sink.push(InlineNode::CellWrap(wrap));
                 return i + 1;
             }
         }
+        // Literal punctuation and Unicode can join the ASCII prose run when
+        // neither extensions nor cell wraps can claim its bytes.
+        if self.options.extensions.is_empty() && !self.wraps_live {
+            let end = self.literal_run_end(i);
+            if end > i {
+                self.sink.buffer(i, &self.text[i..end]);
+                return end;
+            }
+        }
+        // Keep the older ASCII run for contexts with live cell wraps.
         if self.options.extensions.is_empty()
             && (c.is_ascii_alphanumeric() || c == b' ' || c == b'\t')
         {
@@ -683,6 +690,30 @@ impl InlineRun<'_, '_> {
         let ch = self.text[i..].chars().next().unwrap();
         let end = i + ch.len_utf8();
         self.sink.buffer(i, &self.text[i..end]);
+        end
+    }
+
+    /// Consume literal prose in one slice, including punctuation and Unicode
+    /// bytes that cannot open a core construct. Keep the older dispatch for
+    /// cell wraps and extension matchers, which can claim ordinary bytes.
+    fn literal_run_end(&self, start: usize) -> usize {
+        let bytes = self.bytes;
+        let mut end = start;
+        while end < bytes.len() {
+            let literal = match bytes[end] {
+                b' ' | b'\t' | b',' | b';' | b'?' | b'&' | b')' => true,
+                b'.' => !bytes[end..].starts_with(b"..."),
+                b'-' => !matches!(bytes.get(end + 1), Some(b'-' | b'>')),
+                b'(' => ![b"(c)".as_slice(), b"(r)", b"(tm)"]
+                    .iter()
+                    .any(|form| bytes[end..].starts_with(form)),
+                byte => byte.is_ascii_alphanumeric() || !byte.is_ascii(),
+            };
+            if !literal {
+                break;
+            }
+            end += 1;
+        }
         end
     }
 
@@ -2318,4 +2349,65 @@ pub(in crate::parse) fn parse_span(
         },
         after_attrs - start,
     ))
+}
+
+#[cfg(test)]
+mod literal_run_tests {
+    use super::*;
+
+    #[test]
+    fn right_arrow_stays_a_smart_punctuation_node() {
+        let nodes = parse_inline_with_options("Step 1 -> done...", &Options::default());
+        assert!(nodes.iter().any(|node| matches!(
+            node,
+            InlineNode::SmartPunctuation(punctuation) if punctuation.kind == "rightwards_arrow"
+        )));
+        assert!(nodes.iter().any(|node| matches!(
+            node,
+            InlineNode::SmartPunctuation(punctuation) if punctuation.kind == "ellipsis"
+        )));
+    }
+
+    #[test]
+    fn punctuation_and_unicode_keep_source_positions() {
+        let source = "Café (c) (tm) --flag --> -> ....";
+        let document = parse_with_options(source, &Options::default().with_positions(true));
+        let BlockNode::Paragraph(paragraph) = &document.children[0] else {
+            panic!("expected a paragraph");
+        };
+        assert!(paragraph.children.iter().any(|node| matches!(
+            node,
+            InlineNode::Text(text) if text.value.contains("--flag")
+        )));
+        let kinds: Vec<&str> = paragraph
+            .children
+            .iter()
+            .filter_map(|node| match node {
+                InlineNode::SmartPunctuation(punctuation) => {
+                    let pos = punctuation
+                        .pos
+                        .as_ref()
+                        .expect("smart punctuation position");
+                    let authored: String = source
+                        .chars()
+                        .skip(pos.start_offset)
+                        .take(pos.end_offset - pos.start_offset)
+                        .collect();
+                    assert_eq!(authored, punctuation.value);
+                    Some(punctuation.kind.as_str())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                "copyright",
+                "trademark",
+                "rightwards_arrow",
+                "rightwards_arrow",
+                "ellipsis"
+            ]
+        );
+    }
 }
