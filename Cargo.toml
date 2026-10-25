@@ -76,6 +76,10 @@ name = "suite"
 path = "tests/suite/main.rs"
 
 [[test]]
+name = "admonition_heading_id_collision"
+path = "tests/admonition_heading_id_collision.rs"
+
+[[test]]
 name = "html_image_style_dimensions"
 path = "tests/html_image_style_dimensions.rs"
 
