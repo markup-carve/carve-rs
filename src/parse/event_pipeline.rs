@@ -47,19 +47,15 @@ fn supported_line(line: &str) -> bool {
 
 /// Materialize the public nodes from borrowed line events. A complete lexical
 /// gate runs first, so an unsupported line never leaves a partly built tree.
-pub(super) fn parse_blocks(source: &str, options: &Options<'_>) -> Option<Vec<BlockNode>> {
+pub(super) fn parse_blocks(lines: &[&str], options: &Options<'_>) -> Option<Vec<BlockNode>> {
     if options.positions || options.source_lines || !options.extensions.is_empty() {
         return None;
     }
-    let lines: Vec<&str> = source.lines().collect();
     if !lines.iter().copied().all(supported_line) {
         return None;
     }
     let mut out = Vec::new();
-    for event in (Events {
-        lines: &lines,
-        next: 0,
-    }) {
+    for event in (Events { lines, next: 0 }) {
         match event {
             Event::Heading(level, text) => out.push(BlockNode::Heading(Heading {
                 attrs: None,
@@ -89,15 +85,14 @@ pub(super) fn parse_blocks(source: &str, options: &Options<'_>) -> Option<Vec<Bl
 /// Stream simple top-level blocks as events while handing list and definition
 /// bodies to the existing readers. A construct outside this subset declines the
 /// whole route before it can publish a partial AST.
-fn parse_mixed_blocks(source: &str, options: &Options<'_>) -> Option<Vec<BlockNode>> {
-    if source.lines().any(|line| {
+fn parse_mixed_blocks(lines: &[&str], options: &Options<'_>) -> Option<Vec<BlockNode>> {
+    if lines.iter().copied().any(|line| {
         let line = trim_ascii(line);
         line == "+" || line.ends_with(" +")
     }) {
         return None;
     }
-    let lines: Vec<&str> = source.lines().collect();
-    let mut cur = LineCursor::new_with_cols(&lines, None, None);
+    let mut cur = LineCursor::new_with_cols(lines, None, None);
     cur.at_document_level = true;
     let mut out = Vec::new();
     while let Some(line) = cur.peek() {
@@ -110,7 +105,7 @@ fn parse_mixed_blocks(source: &str, options: &Options<'_>) -> Option<Vec<BlockNo
             continue;
         }
         if is_list_marker(line) && !line.starts_with([' ', '\t']) {
-            if let Some((list, end)) = parse_simple_list(&lines, cur.pos, options) {
+            if let Some((list, end)) = parse_simple_list(lines, cur.pos, options) {
                 cur.pos = end;
                 out.push(BlockNode::List(list));
             } else {
@@ -125,10 +120,10 @@ fn parse_mixed_blocks(source: &str, options: &Options<'_>) -> Option<Vec<BlockNo
             continue;
         }
         if strip_blockquote_prefix(line).is_some() {
-            if let Some((quote, end)) = parse_simple_quote(&lines, cur.pos, options) {
+            if let Some((quote, end)) = parse_simple_quote(lines, cur.pos, options) {
                 cur.pos = end;
                 out.push(BlockNode::BlockQuote(quote));
-            } else if let Some((quote, end)) = parse_marked_quote(&lines, cur.pos, options) {
+            } else if let Some((quote, end)) = parse_marked_quote(lines, cur.pos, options) {
                 cur.pos = end;
                 out.push(BlockNode::BlockQuote(quote));
             } else {
@@ -276,8 +271,7 @@ fn parse_marked_quote(
     {
         return None;
     }
-    let body = parts.join("\n");
-    let children = parse_blocks(&body, options)?;
+    let children = parse_blocks(&parts, options)?;
     Some((
         BlockQuote {
             attrs: None,
@@ -602,7 +596,8 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     let (frontmatter, frontmatter_raw, body) = split_frontmatter(source, false);
     let direct = {
         let _depth = DepthGuard::enter()?;
-        parse_blocks(body, &options).or_else(|| parse_mixed_blocks(body, &options))
+        let lines: Vec<&str> = body.lines().collect();
+        parse_blocks(&lines, &options).or_else(|| parse_mixed_blocks(&lines, &options))
     };
     let used_event_route = direct.is_some();
     let children = direct.unwrap_or_else(|| {
