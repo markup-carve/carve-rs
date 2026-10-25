@@ -483,6 +483,27 @@ struct CellAlignment {
 enum StyleSlot {
     Align(TableAlign),
     Valign(TableVerticalAlign),
+    Width(u64),
+    Height(u64),
+}
+
+fn integral_pixel_dimension(value: &str) -> Option<u64> {
+    let number = value
+        .strip_suffix("px")
+        .or_else(|| (value == "0").then_some(value))?;
+    let number = number.strip_prefix('+').unwrap_or(number);
+    if number.is_empty()
+        || !number
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || byte == b'.')
+    {
+        return None;
+    }
+    let amount: f64 = number.parse().ok()?;
+    (amount.is_finite()
+        && amount.fract() == 0.0
+        && (0.0..=9_007_199_254_740_991.0).contains(&amount))
+    .then_some(amount as u64)
 }
 
 /// A `style` attribute split into lowercased property/value pairs.
@@ -575,6 +596,8 @@ fn style_refusal(value: &str) -> (String, bool) {
 /// import mode - [`Importer::style_slot`] is the one that answers for a mode.
 fn mapped_style_slot(tag: &str, property: &str, value: &str) -> Option<StyleSlot> {
     match property {
+        "width" if tag == "img" => integral_pixel_dimension(value).map(StyleSlot::Width),
+        "height" if tag == "img" => integral_pixel_dimension(value).map(StyleSlot::Height),
         "text-align" => match value {
             "left" => Some(StyleSlot::Align(TableAlign::Left)),
             "right" => Some(StyleSlot::Align(TableAlign::Right)),
@@ -596,6 +619,8 @@ fn style_slot_attribute_name(slot: StyleSlot) -> &'static str {
     match slot {
         StyleSlot::Align(_) => "align",
         StyleSlot::Valign(_) => "valign",
+        StyleSlot::Width(_) => "width",
+        StyleSlot::Height(_) => "height",
     }
 }
 
@@ -1483,6 +1508,7 @@ impl<'a> Importer<'a> {
     fn style_slot(&self, tag: &str, property: &str, value: &str) -> Option<StyleSlot> {
         if self.opts.mode == HtmlImportMode::Safe
             && !(is_table_cell(tag) && property == "text-align")
+            && !(tag == "img" && (property == "width" || property == "height"))
         {
             return None;
         }
@@ -1511,6 +1537,7 @@ impl<'a> Importer<'a> {
             match self.style_slot(&tag, &property, &value) {
                 Some(StyleSlot::Align(align)) => out.align = Some(align),
                 Some(StyleSlot::Valign(valign)) => out.valign = Some(valign),
+                Some(StyleSlot::Width(_) | StyleSlot::Height(_)) => {}
                 None => {}
             }
         }
@@ -2210,6 +2237,14 @@ impl<'a> Importer<'a> {
                 Some(StyleSlot::Align(align)) => {
                     out.key_values
                         .insert("align".to_string(), align_keyword(align).to_string());
+                }
+                Some(StyleSlot::Width(width)) => {
+                    out.key_values
+                        .insert("width".to_string(), width.to_string());
+                }
+                Some(StyleSlot::Height(height)) => {
+                    out.key_values
+                        .insert("height".to_string(), height.to_string());
                 }
                 _ => unmapped.push(property.clone()),
             }
