@@ -80,6 +80,10 @@ name = "html_image_style_dimensions"
 path = "tests/html_image_style_dimensions.rs"
 
 [[test]]
+name = "markdown_html_anchor_in_link_label"
+path = "tests/markdown_html_anchor_in_link_label.rs"
+
+[[test]]
 name = "port_3156"
 path = "tests/port_3156.rs"
 
