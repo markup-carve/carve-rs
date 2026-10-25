@@ -714,6 +714,12 @@ impl InlineRun<'_, '_> {
                     end > 0 && (bytes[end - 1].is_ascii_alphanumeric() || bytes[end - 1] == b'_')
                 }
                 b'!' => !matches!(bytes.get(end + 1), Some(b'=' | b'[' | b'`')),
+                b'*' => {
+                    end > 0
+                        && bytes[end - 1] != b'*'
+                        && bytes.get(end + 1) == Some(&b'*')
+                        && bytes.get(end + 2) != Some(&b'*')
+                }
                 b'(' => ![b"(c)".as_slice(), b"(r)", b"(tm)"]
                     .iter()
                     .any(|form| bytes[end..].starts_with(form)),
@@ -721,6 +727,10 @@ impl InlineRun<'_, '_> {
             };
             if !literal {
                 break;
+            }
+            if bytes[end] == b'*' {
+                end += 2;
+                continue;
             }
             end += 1;
         }
@@ -2446,5 +2456,20 @@ mod literal_run_tests {
         assert!(parse_caption_inline_with_options("Figure#", &options, true)
             .iter()
             .any(|node| matches!(node, InlineNode::CaptionNumber(_))));
+    }
+
+    #[test]
+    fn paired_asterisks_join_literal_prose_without_hiding_strong_markup() {
+        let options = Options::default();
+        let nodes = parse_inline_with_options("a **Core syntax** b", &options);
+        assert!(
+            matches!(nodes.as_slice(), [InlineNode::Text(text)] if text.value == "a **Core syntax** b")
+        );
+
+        let nodes = parse_inline_with_options("*x**", &options);
+        assert!(
+            matches!(nodes.first(), Some(InlineNode::Emphasis(emphasis)) if emphasis.kind == EmphasisKind::Strong)
+        );
+        assert!(matches!(nodes.last(), Some(InlineNode::Text(text)) if text.value == "*"));
     }
 }
