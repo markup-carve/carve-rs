@@ -63,6 +63,16 @@ fn mixed_route_handles_root_quote_without_changing_output() {
 }
 
 #[test]
+fn mixed_route_admits_root_table_without_changing_output() {
+    let source = "# Heading\n\n|= Fruit |= Price |\n| Apple | $1 |\n^ Fruit prices\n\nAfter.\n";
+    let (actual, admitted) = parse_experimental_event_blocks(source);
+    assert!(admitted);
+    let expected = parse_standard(source);
+    assert_eq!(to_json(&actual), to_json(&expected));
+    assert_eq!(render_html(&actual), render_html(&expected));
+}
+
+#[test]
 fn quote_marker_and_raw_fence_boundaries_use_standard_parser() {
     for source in [
         "> - a\n>+\n> tail\n",

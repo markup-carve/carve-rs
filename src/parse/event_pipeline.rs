@@ -145,6 +145,10 @@ fn parse_mixed_blocks(lines: &[&str], options: &Options<'_>) -> Option<Vec<Block
             }));
             continue;
         }
+        if !line.starts_with([' ', '\t']) && is_table_start(line) {
+            out.push(parse_table(&mut cur, options));
+            continue;
+        }
         if !may_start_plain_paragraph(line) {
             return None;
         }
