@@ -458,11 +458,11 @@ fn the_ratchet_is_the_reading_this_commit_measured_and_only_ever_less() {
     // the debt does.
     let total: usize = IDLE_ESCAPE_RATCHET.iter().map(|(_, count, _)| count).sum();
     assert!(
-        total <= MEASURED_ESCAPES,
+        total == MEASURED_ESCAPES,
         "the ratchet totals {total} invented escapes, over the {MEASURED_ESCAPES} measured"
     );
     assert!(
-        IDLE_ESCAPE_RATCHET.len() <= MEASURED_DOCUMENTS,
+        IDLE_ESCAPE_RATCHET.len() == MEASURED_DOCUMENTS,
         "the ratchet names {} documents, over the {MEASURED_DOCUMENTS} measured",
         IDLE_ESCAPE_RATCHET.len()
     );
