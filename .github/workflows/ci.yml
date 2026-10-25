@@ -2,12 +2,12 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, next-ast2]
   pull_request:
     # Performance work is intentionally split into exact-parity stacks. Run
     # the same gates while a child targets its `perf/*` parent; waiting for
     # every parent to merge would leave the widening commits untested.
-    branches: [main, "perf/**"]
+    branches: [main, next-ast2, "perf/**"]
   # A lane that proves a mutation through CI pushes the mutated branch and runs
   # the suite on it here, without opening a pull request for code that must
   # never merge.
@@ -75,6 +75,9 @@ jobs:
       # the submodule before asking - see the comment in it for why a depth-1
       # clone cannot answer the ancestry question either way.
       - run: ./scripts/check-spec-pin-ancestry.sh tests/spec
+        # The AST 2.0 integration branch pins spec next-ast2; drop this when next-ast2 merges into main.
+        env:
+          SPEC_DEFAULT_BRANCH: next-ast2
 
   schema-map:
     name: ProseMirror schema map matches carve-grammars
