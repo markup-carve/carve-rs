@@ -26,7 +26,7 @@ Task lists gain progress and blocked states. This release also follows import, l
 
 ### Improvements
 
-- Progress `[/]` and blocked `[!]` task markers round trip through AST JSON, HTML import and formatting. `[_]`, previously paused, is now an open alias (#3180).
+- Progress `[/]` and blocked `[!]` task markers round trip through AST JSON, HTML and ProseMirror import, and formatting (#3180).
 
 ## [0.1.12] - 2026-10-24
 
