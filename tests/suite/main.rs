@@ -2523,5 +2523,7 @@ mod ruled_quote_definition;
 mod canonical_literal_backslashes;
 #[path = "../djot_heading_id_collisions.rs"]
 mod djot_heading_id_collisions;
+#[path = "../empty_destination_tab_ruling.rs"]
+mod empty_destination_tab_ruling;
 #[path = "../markdown_destination_parentheses.rs"]
 mod markdown_destination_parentheses;
