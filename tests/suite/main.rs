@@ -1475,6 +1475,8 @@ mod markdown_bullet;
 mod markdown_crossref_heading_ids;
 #[path = "../markdown_delimiter_matches_the_header_row.rs"]
 mod markdown_delimiter_matches_the_header_row;
+#[path = "../markdown_destination_pipe_ruling.rs"]
+mod markdown_destination_pipe_ruling;
 #[path = "../markdown_destination_probe.rs"]
 mod markdown_destination_probe;
 #[path = "../markdown_emphasis_pads_outside_the_delimiters.rs"]
