@@ -598,7 +598,6 @@ fn parse_simple_list(lines: &[&str], start: usize, options: &Options<'_>) -> Opt
 pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     if source.contains(['\r', '\0', '\u{feff}', '\u{e005}', '\u{e006}'])
         || source.contains("[^")
-        || source.contains("][")
         || source.contains("*[")
         || source.contains("]:")
         || (!source.ends_with('\n') && source.lines().any(|line| detect_fence_open(line).is_some()))
@@ -651,6 +650,10 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         source_len: source.len(),
         ingest_payload_len: 0,
     };
+    if source.contains("][") {
+        let headings = heading_reference_index_for_document(&doc, options.heading_id_options());
+        resolve_reference_links(&mut doc, &BTreeMap::new(), &headings);
+    }
     if source.contains('^') {
         number_crossref_captions(&mut doc);
     }
