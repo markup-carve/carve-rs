@@ -2,7 +2,7 @@
 //!
 //! ```text
 //! task_marker = '[', task_state, ']', space ;
-//! task_state = ' ' | 'x' | 'X' | '-' | '_' | '>' | '?' ;
+//! task_state = ' ' | 'x' | 'X' | '-' | '_' | '/' | '!' | '>' | '?' ;
 //! ```
 //!
 //! `detect_task` checked the brackets and the trailing space but never the
@@ -21,7 +21,7 @@ fn squash(s: &str) -> String {
 
 #[test]
 fn every_enumerated_state_opens_a_task_item() {
-    for state in [' ', 'x', 'X', '-', '_', '>', '?'] {
+    for state in [' ', 'x', 'X', '-', '_', '/', '!', '>', '?'] {
         let html = to_html(&format!("- [{state}] item\n"));
         assert!(
             html.contains("type=\"checkbox\""),
@@ -40,7 +40,7 @@ fn only_x_is_checked() {
 
 #[test]
 fn a_character_outside_the_enumeration_stays_literal() {
-    for state in ['d', '1', '#', '*', '!', '~'] {
+    for state in ['d', '1', '#', '*', '%', '|', '~'] {
         assert_eq!(
             squash(&to_html(&format!("- [{state}] item\n"))),
             format!("<ul> <li>[{state}] item</li> </ul>"),
@@ -52,9 +52,9 @@ fn a_character_outside_the_enumeration_stays_literal() {
 #[test]
 fn the_bracket_text_survives() {
     // The sharp end: the marker was not reinterpreted, it was deleted.
-    let html = to_html("- [!] urgent\n");
+    let html = to_html("- [%] urgent\n");
 
-    assert!(html.contains("[!]"), "the bracket text vanished: {html}");
+    assert!(html.contains("[%]"), "the bracket text vanished: {html}");
     assert!(!html.contains("checkbox"));
 }
 

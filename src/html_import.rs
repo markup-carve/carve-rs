@@ -1606,7 +1606,7 @@ impl<'a> Importer<'a> {
             return false;
         };
         let checked = match state.as_str() {
-            "-" | "_" | ">" | "?" => false,
+            "-" | "_" | "/" | "!" | ">" | "?" => false,
             "x" => true,
             _ => return false,
         };

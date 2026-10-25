@@ -1311,9 +1311,9 @@ pub(super) fn optional_task_state(
     let Some(state) = optional_marker_char(obj, "taskState")? else {
         return Ok(None);
     };
-    if !matches!(state, ' ' | 'x' | '-' | '_' | '>' | '?') {
+    if !matches!(state, ' ' | 'x' | '-' | '_' | '/' | '!' | '>' | '?') {
         return Err(AstJsonError::new(format!(
-            "list_item.taskState must be one of ` `, `x`, `-`, `_`, `>`, or `?`, got `{state}`"
+            "list_item.taskState must be one of ` `, `x`, `-`, `_`, `/`, `!`, `>`, or `?`, got `{state}`"
         )));
     }
     if checked != Some(state == 'x') {

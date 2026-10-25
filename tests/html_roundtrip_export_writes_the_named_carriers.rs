@@ -512,7 +512,7 @@ fn every_task_state_survives_the_cycle() {
     // §13a does not carry these - §11 writes `data-task-state` on every render -
     // so this is the control that roundtrip export neither gates nor duplicates
     // a clause of its own.
-    let source = "- [ ] open\n- [x] done\n- [-] dropped\n- [_] held\n- [>] moved\n- [?] unsure\n";
+    let source = "- [ ] open\n- [x] done\n- [-] dropped\n- [_] open alias\n- [/] active\n- [!] blocked\n- [>] moved\n- [?] unsure\n";
     assert_eq!(safe(&rt(source)), source);
     assert_eq!(safe(&to_html(source)), source);
 }
