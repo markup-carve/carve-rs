@@ -87,26 +87,9 @@ const IDLE_ESCAPE_CAUSES: &[&str] = &["minimal class: "];
 /// emit. The sweep now puts SECTION 2's own question to the run whole (see
 /// `escaped_opener_runs`) and the three read 0.
 ///
-/// MINIMAL CLASS, the two that are left: both passes agree, so nothing
-/// escalated, and the escape is still idle - once because a lone authored
-/// backslash before a non-escapable character is written back doubled where the
-/// bare one re-parses the same, once because the writer's own cell padding
-/// retired an authored escape it then kept. Grouping cost
-/// `72-escape-coverage-2` two of its four as well, because a doubled backslash
-/// is ONE escape and the per-byte sweep judged its second half against
-/// whatever followed the pair.
-const IDLE_ESCAPE_RATCHET: &[(&str, usize, &str)] = &[
-    (
-        "72-escape-coverage-2",
-        2,
-        "minimal class: a lone authored backslash before a non-escapable character is written back doubled, and bare it re-parses the same",
-    ),
-    (
-        "390-a-table-cell-s-marker-run-ends-at-a-space-5",
-        1,
-        "minimal class: an authored `\\=` is kept after the writer's own cell padding retired it - padded, the `=` no longer starts the cell",
-    ),
-];
+/// The last two minimal-class entries were retired by the canonical writer's
+/// literal-backslash rule and by dropping an idle marker escape after cell padding.
+const IDLE_ESCAPE_RATCHET: &[(&str, usize, &str)] = &[];
 
 /// The reading this commit measured, pinned where a reader can find it.
 ///
@@ -131,8 +114,8 @@ const IDLE_ESCAPE_RATCHET: &[(&str, usize, &str)] = &[
 /// point: a writer-side change would have had to break the spec's own `.fmt`
 /// golden for `396-an-idle-escape-does-not-spread-from-the-block-that-needed-
 /// one`, which pins the fully escaped opener as canonical.
-const MEASURED_ESCAPES: usize = 3;
-const MEASURED_DOCUMENTS: usize = 2;
+const MEASURED_ESCAPES: usize = 0;
+const MEASURED_DOCUMENTS: usize = 0;
 
 fn corpus_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus")

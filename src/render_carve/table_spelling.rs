@@ -634,6 +634,9 @@ pub(super) fn render_table_cell(
     if prefix.is_empty() && matches!(content.as_str(), "<" | "^") {
         content.insert(0, '\\');
     }
+    if !cell.header && content.starts_with("\\= ") {
+        content.remove(0);
+    }
     // The space `pad_cell` writes after the prefix is what keeps the content's
     // first character content. The header `=` is read glued to the pipe and the
     // alignment sigil glued after it, off the UNTRIMMED cell, and a cell whose

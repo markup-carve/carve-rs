@@ -305,7 +305,11 @@ pub(super) fn escape_text(
             || role.crossing_opener
             || role.crossing_closer
             || opens_a_destination
-            || matches!(ch, '\\' | '`' | '"' | '\'')
+            || matches!(ch, '`' | '"' | '\'')
+            || (ch == '\\'
+                && chars
+                    .peek()
+                    .map_or(true, |&(_, next)| next.is_ascii_punctuation()))
             || extension_colon_at == Some(offset)
             || caret_opens_a_caption
             || caret_opens_inline

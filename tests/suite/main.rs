@@ -2519,6 +2519,8 @@ mod ruled_description_fence;
 #[path = "../ruled_quote_definition.rs"]
 mod ruled_quote_definition;
 
+#[path = "../canonical_literal_backslashes.rs"]
+mod canonical_literal_backslashes;
 #[path = "../djot_heading_id_collisions.rs"]
 mod djot_heading_id_collisions;
 #[path = "../markdown_destination_parentheses.rs"]
