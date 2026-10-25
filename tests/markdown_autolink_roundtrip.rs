@@ -27,7 +27,7 @@ fn autolinks_fall_back_when_angle_spelling_changes_the_content() {
         ),
         (
             "<https://example.com/a(b)>",
-            "[https://example.com/a(b)](https://example.com/a%28b%29)",
+            "[https://example.com/a(b)](https://example.com/a\\(b\\))",
         ),
         ("<javascript:alert1>", "[javascript:alert1]()"),
         ("<user@-x.com>", "[user@-x.com](mailto:user@-x.com)"),
