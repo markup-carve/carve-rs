@@ -704,6 +704,16 @@ impl InlineRun<'_, '_> {
                 b' ' | b'\t' | b',' | b';' | b'?' | b'&' | b')' => true,
                 b'.' => !bytes[end..].starts_with(b"..."),
                 b'-' => !matches!(bytes.get(end + 1), Some(b'-' | b'>')),
+                b':' => matches!(bytes.get(end + 1), Some(b' ' | b'\t' | b'\n')),
+                b'#' => {
+                    !self.caption_number_allowed
+                        && end > 0
+                        && (bytes[end - 1].is_ascii_alphanumeric() || bytes[end - 1] == b'_')
+                }
+                b'@' => {
+                    end > 0 && (bytes[end - 1].is_ascii_alphanumeric() || bytes[end - 1] == b'_')
+                }
+                b'!' => !matches!(bytes.get(end + 1), Some(b'=' | b'[' | b'`')),
                 b'(' => ![b"(c)".as_slice(), b"(r)", b"(tm)"]
                     .iter()
                     .any(|form| bytes[end..].starts_with(form)),
@@ -2370,7 +2380,7 @@ mod literal_run_tests {
 
     #[test]
     fn punctuation_and_unicode_keep_source_positions() {
-        let source = "Café (c) (tm) --flag --> -> ....";
+        let source = "Café term: text! carve#529 a@b (c) (tm) --flag --> -> ....";
         let document = parse_with_options(source, &Options::default().with_positions(true));
         let BlockNode::Paragraph(paragraph) = &document.children[0] else {
             panic!("expected a paragraph");
@@ -2378,6 +2388,10 @@ mod literal_run_tests {
         assert!(paragraph.children.iter().any(|node| matches!(
             node,
             InlineNode::Text(text) if text.value.contains("--flag")
+        )));
+        assert!(paragraph.children.iter().any(|node| matches!(
+            node,
+            InlineNode::Text(text) if text.value.contains("carve#529 a@b")
         )));
         let kinds: Vec<&str> = paragraph
             .children
@@ -2409,5 +2423,28 @@ mod literal_run_tests {
                 "ellipsis"
             ]
         );
+    }
+
+    #[test]
+    fn construct_openers_still_leave_the_literal_run() {
+        let options = Options::default();
+        assert!(parse_inline_with_options("a != b", &options)
+            .iter()
+            .any(|node| matches!(node, InlineNode::SmartPunctuation(p) if p.kind == "not_equal")));
+        assert!(parse_inline_with_options("x!`lit`", &options)
+            .iter()
+            .any(|node| matches!(node, InlineNode::LiteralInline(_))));
+        assert!(parse_inline_with_options("x ![a](b)", &options)
+            .iter()
+            .any(|node| matches!(node, InlineNode::Image(_))));
+        assert!(parse_inline_with_options("x #tag", &options)
+            .iter()
+            .any(|node| matches!(node, InlineNode::Tag(_))));
+        assert!(parse_inline_with_options("x @user", &options)
+            .iter()
+            .any(|node| matches!(node, InlineNode::Mention(_))));
+        assert!(parse_caption_inline_with_options("Figure#", &options, true)
+            .iter()
+            .any(|node| matches!(node, InlineNode::CaptionNumber(_))));
     }
 }
