@@ -2521,3 +2521,5 @@ mod ruled_quote_definition;
 
 #[path = "../djot_heading_id_collisions.rs"]
 mod djot_heading_id_collisions;
+#[path = "../markdown_destination_parentheses.rs"]
+mod markdown_destination_parentheses;
