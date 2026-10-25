@@ -1251,7 +1251,6 @@ pub(crate) fn is_flush_line_comment(line: &str) -> bool {
 /// front, trailing spaces and tabs off the back.
 pub(crate) fn trailing_comment_content(raw: &str) -> &str {
     raw.strip_prefix(' ')
-        .or_else(|| raw.strip_prefix('\t'))
         .unwrap_or(raw)
         .trim_end_matches([' ', '\t'])
 }

@@ -101,7 +101,6 @@ pub(in crate::parse) fn verse_comment_line(stripped: &str) -> Option<String> {
     let rest = stripped.strip_prefix("%%")?;
     Some(
         rest.strip_prefix(' ')
-            .or_else(|| rest.strip_prefix('\t'))
             .unwrap_or(rest)
             .trim_end_matches([' ', '\t'])
             .to_string(),

@@ -47,13 +47,11 @@ fn comment_content_uses_one_separator_and_drops_only_trailing_ascii_whitespace()
         ("%% \u{a0}\n", "\u{a0}"),
         ("%%\u{000b}x\n", "\u{000b}x"),
         ("%%\u{000b} x\n", "\u{000b} x"),
-        // A TAB is a separator too, and only the first one is. Removing the tab
-        // branch from all three readers left the whole suite green, so nothing
-        // else pins it (markup-carve/carve-rs#1951).
-        ("%%\t\tx\t\n", "\tx"),
-        ("z %%\t\tx\t\n", "\tx"),
-        ("::: |\na\n%%\t\tx\t\nb\n:::\n", "\tx"),
-        ("%%\t\u{a0}\n", "\u{a0}"),
+        // A tab after the marker is content (carve#3622).
+        ("%%\t\tx\t\n", "\t\tx"),
+        ("z %%\t\tx\t\n", "\t\tx"),
+        ("::: |\na\n%%\t\tx\t\nb\n:::\n", "\t\tx"),
+        ("%%\t\u{a0}\n", "\t\u{a0}"),
     ] {
         assert_eq!(comment_contents(source), [expected], "{source:?}");
         let written = to_carve(source);
@@ -67,4 +65,24 @@ fn an_ingested_inline_comment_writes_no_trailing_layout_whitespace() {
     let json = r#"{"type":"document","srcByteLength":0,"children":[{"type":"paragraph","children":[{"type":"text","value":"x "},{"type":"comment","block":false,"content":"y "}]}]}"#;
     let document = from_json(json).unwrap();
     assert_eq!(render_carve(&document).unwrap(), "x %% y\n");
+}
+
+#[test]
+fn line_comment_separator_is_one_ascii_space_in_all_readers() {
+    for (line, expected) in [
+        ("%%  x", " x"),
+        ("%%\t x", "\t x"),
+        ("%%x", "x"),
+        ("%%\u{a0}x", "\u{a0}x"),
+    ] {
+        for source in [
+            line.to_string(),
+            format!("z {line}"),
+            format!("::: |\na\n{line}\nb\n:::\n"),
+        ] {
+            assert_eq!(comment_contents(&source), [expected], "{source:?}");
+            let written = to_carve(&source);
+            assert_eq!(comment_contents(&written), [expected], "{written:?}");
+        }
+    }
 }
