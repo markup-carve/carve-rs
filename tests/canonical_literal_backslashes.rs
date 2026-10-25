@@ -20,7 +20,8 @@ fn every_backslash_follower_uses_reparse_in_inline_hosts() {
     let followers: Vec<char> = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~ \t\naZ0é中"
         .chars()
         .collect();
-    let hosts: [(&str, fn(&str) -> String); 6] = [
+    type InlineHost = (&'static str, fn(&str) -> String);
+    let hosts: [InlineHost; 6] = [
         ("paragraph", |text| format!("x{text}y\n")),
         ("emphasis", |text| format!("/x{text}y/\n")),
         ("link", |text| format!("[x{text}y](url)\n")),
