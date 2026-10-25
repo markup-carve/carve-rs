@@ -1,7 +1,9 @@
 //! Experimental physical-line ownership pass for the block parser.
 //! Admitted lines retain byte ranges into the original source.
 
-use super::{detect_list_marker_full, strip_blockquote_prefix};
+use super::{detect_list_marker_full, parse_inline_with_options, strip_blockquote_prefix, Options};
+use crate::ast::{BlockNode, BlockQuote, Document, List, ListItem, Paragraph};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum FrameKind {
@@ -14,6 +16,7 @@ pub(super) enum FrameKind {
 pub(super) struct FrameRecord {
     pub(super) kind: FrameKind,
     pub(super) parent: Option<usize>,
+    pub(super) bullet: Option<char>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -46,6 +49,7 @@ pub(super) fn scan(source: &str) -> Option<OwnedSource> {
         frames: vec![FrameRecord {
             kind: FrameKind::Root,
             parent: None,
+            bullet: None,
         }],
         lines: Vec::new(),
     };
@@ -115,11 +119,16 @@ pub(super) fn scan(source: &str) -> Option<OwnedSource> {
             return None;
         }
         loop {
-            let (kind, rest, width) = if let Some(rest) = strip_blockquote_prefix(remaining) {
-                (FrameKind::Quote, rest, remaining.len() - rest.len())
+            let (kind, rest, width, bullet) = if let Some(rest) = strip_blockquote_prefix(remaining)
+            {
+                (FrameKind::Quote, rest, remaining.len() - rest.len(), None)
             } else if let Some(marker) = detect_list_marker_full(remaining) {
                 let width = marker.content.as_ptr() as usize - remaining.as_ptr() as usize;
-                (FrameKind::ListItem, marker.content, width)
+                let bullet =
+                    (!marker.ordered && marker.checked.is_none() && marker.attrs.is_none())
+                        .then(|| remaining.trim_start().chars().next())
+                        .flatten();
+                (FrameKind::ListItem, marker.content, width, bullet)
             } else {
                 break;
             };
@@ -137,17 +146,24 @@ pub(super) fn scan(source: &str) -> Option<OwnedSource> {
             result.frames.push(FrameRecord {
                 kind,
                 parent: Some(stack.last().unwrap().id),
+                bullet,
             });
             stack.push(OpenFrame {
                 id,
                 kind,
                 content_column: width,
             });
+            if stack.len() > 64 {
+                return None;
+            }
         }
         if remaining.starts_with(['#', ':', '|', '%', '+', '{', '^', '>', '`', '~', '['])
             || detect_list_marker_full(remaining).is_some()
             || remaining.starts_with(' ')
         {
+            return None;
+        }
+        if remaining.trim().is_empty() && stack.len() > 1 {
             return None;
         }
         result.lines.push(OwnedLine {
@@ -159,6 +175,156 @@ pub(super) fn scan(source: &str) -> Option<OwnedSource> {
         previous_blank = false;
     }
     Some(result)
+}
+
+enum Entry<'a> {
+    Line(&'a str),
+    Blank,
+    Child(usize),
+}
+
+/// Build an unpositioned public tree for the scan's plain bullet/quote slice.
+/// The public parser still handles all production calls. This gives the
+/// prototype an exact AST and HTML comparison target before it is widened.
+#[allow(dead_code)]
+pub(super) fn parse_plain(source: &str) -> Option<Document> {
+    let owned = scan(source)?;
+    for line in &owned.lines {
+        let text = source[line.content_start..line.source_end].trim_end_matches(['\r', '\n']);
+        if text.trim().len() >= 3 && text.trim().bytes().all(|byte| byte == b'-') {
+            return None;
+        }
+        if text.trim_end() != text
+            || text.chars().any(|character| {
+                !(character.is_alphanumeric()
+                    || character == ' '
+                    || ".,!?;:'\"()-&".contains(character))
+            })
+        {
+            return None;
+        }
+    }
+    if owned
+        .frames
+        .iter()
+        .any(|frame| frame.kind == FrameKind::ListItem && !matches!(frame.bullet, Some('-' | '*')))
+    {
+        return None;
+    }
+    let mut entries: Vec<Vec<Entry<'_>>> = (0..owned.frames.len()).map(|_| Vec::new()).collect();
+    let mut known_frames = 1;
+    for line in &owned.lines {
+        for id in known_frames..=line.frame_id {
+            let parent = owned.frames[id].parent?;
+            entries[parent].push(Entry::Child(id));
+        }
+        known_frames = known_frames.max(line.frame_id + 1);
+        let text = source[line.content_start..line.source_end].trim_end_matches(['\r', '\n']);
+        if text.trim().is_empty() {
+            entries[line.frame_id].push(Entry::Blank);
+        } else {
+            entries[line.frame_id].push(Entry::Line(text));
+        }
+    }
+    let children = build_blocks(0, &owned.frames, &entries, &Options::default())?;
+    Some(Document {
+        frontmatter: BTreeMap::new(),
+        frontmatter_raw: None,
+        footnote_defs: BTreeMap::new(),
+        footnote_def_pos: BTreeMap::new(),
+        children,
+        source_len: source.len(),
+        ingest_payload_len: 0,
+    })
+}
+
+fn build_blocks(
+    frame: usize,
+    frames: &[FrameRecord],
+    entries: &[Vec<Entry<'_>>],
+    options: &Options<'_>,
+) -> Option<Vec<BlockNode>> {
+    let mut blocks = Vec::new();
+    let mut paragraph = Vec::new();
+    let mut items = Vec::new();
+    let mut bullet = None;
+    for entry in &entries[frame] {
+        match entry {
+            Entry::Line(text) => {
+                flush_list(&mut blocks, &mut items, &mut bullet);
+                paragraph.push(*text);
+            }
+            Entry::Blank => {
+                flush_paragraph(&mut blocks, &mut paragraph, options);
+                flush_list(&mut blocks, &mut items, &mut bullet);
+            }
+            Entry::Child(id) => {
+                flush_paragraph(&mut blocks, &mut paragraph, options);
+                let child = &frames[*id];
+                match child.kind {
+                    FrameKind::Quote => {
+                        flush_list(&mut blocks, &mut items, &mut bullet);
+                        blocks.push(BlockNode::BlockQuote(BlockQuote {
+                            attrs: None,
+                            children: build_blocks(*id, frames, entries, options)?,
+                            fenced: false,
+                            pos: None,
+                        }));
+                    }
+                    FrameKind::ListItem => {
+                        if bullet.is_some() && bullet != child.bullet {
+                            flush_list(&mut blocks, &mut items, &mut bullet);
+                        }
+                        bullet = child.bullet;
+                        items.push(ListItem {
+                            attrs: None,
+                            checked: None,
+                            task_state: None,
+                            children: build_blocks(*id, frames, entries, options)?,
+                            pos: None,
+                        });
+                    }
+                    FrameKind::Root => return None,
+                }
+            }
+        }
+    }
+    flush_paragraph(&mut blocks, &mut paragraph, options);
+    flush_list(&mut blocks, &mut items, &mut bullet);
+    Some(blocks)
+}
+
+fn flush_paragraph(blocks: &mut Vec<BlockNode>, lines: &mut Vec<&str>, options: &Options<'_>) {
+    if lines.is_empty() {
+        return;
+    }
+    let text = lines.join("\n");
+    blocks.push(BlockNode::Paragraph(Paragraph {
+        attrs: None,
+        children: parse_inline_with_options(&text, options),
+        at_content_column: true,
+        block_image: false,
+        pos: None,
+    }));
+    lines.clear();
+}
+
+fn flush_list(blocks: &mut Vec<BlockNode>, items: &mut Vec<ListItem>, bullet: &mut Option<char>) {
+    let Some(marker) = bullet.take() else {
+        return;
+    };
+    blocks.push(BlockNode::List(List {
+        attrs: None,
+        ordered: false,
+        start: None,
+        ol_type: None,
+        bare_marker: false,
+        delim: None,
+        bullet_char: (marker != '-').then_some(marker),
+        tight: true,
+        items: std::mem::take(items),
+        pos: None,
+    }));
 }
 
 #[cfg(test)]
@@ -207,6 +373,8 @@ mod tests {
             "> a\n> - b\n",
             "> a\n- b\n",
             "> - a\n- b\n",
+            "> - a\n>   \n> - b\n",
+            "> - a\n>   \n>   b\n",
         ] {
             assert!(scan(source).is_none(), "{source:?}");
         }
@@ -238,5 +406,129 @@ mod tests {
         let second_parent = owned.frames[owned.lines[1].frame_id].parent;
         assert_eq!(first_parent, second_parent);
         assert_eq!(owned.frames[first_parent.unwrap()].kind, FrameKind::Quote);
+    }
+
+    #[test]
+    fn plain_builder_matches_public_ast_and_html() {
+        for source in [
+            "plain text\n",
+            "one\ntwo\n",
+            "- first\n- second\n",
+            "> quoted\n> next\n",
+            "> - first\n> - second\n",
+            "- > quoted\n  > next\n- sibling\n",
+            "- first\r\n- second\r\n",
+        ] {
+            let candidate = parse_plain(source).unwrap();
+            let established = crate::parse(source);
+            assert_eq!(candidate, established, "AST for {source:?}");
+            assert_eq!(
+                crate::render_html(&candidate).unwrap(),
+                crate::to_html(source),
+                "HTML for {source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn admitted_spec_corpus_matches_public_ast() {
+        let corpus = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/spec/tests/corpus");
+        let mut checked = 0;
+        let mut mismatches = Vec::new();
+        for entry in std::fs::read_dir(corpus).unwrap() {
+            let path = entry.unwrap().path();
+            if path
+                .extension()
+                .map_or(true, |extension| extension != "crv")
+            {
+                continue;
+            }
+            let source = std::fs::read_to_string(&path).unwrap();
+            let Some(candidate) = parse_plain(&source) else {
+                continue;
+            };
+            checked += 1;
+            if candidate != crate::parse(&source)
+                || crate::render_html(&candidate).unwrap() != crate::to_html(&source)
+            {
+                mismatches.push(path.file_name().unwrap().to_string_lossy().into_owned());
+            }
+        }
+        eprintln!(
+            "admitted {checked} corpus files; {} mismatches",
+            mismatches.len()
+        );
+        assert!(
+            mismatches.is_empty(),
+            "first mismatches: {:?}",
+            &mismatches[..mismatches.len().min(8)]
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "paired thread CPU screen for the admitted plain subset"]
+    fn paired_complete_ast_html_cpu() {
+        use std::hint::black_box;
+
+        #[repr(C)]
+        struct Timespec {
+            seconds: i64,
+            nanoseconds: i64,
+        }
+        extern "C" {
+            fn clock_gettime(clock: i32, time: *mut Timespec) -> i32;
+        }
+        fn cpu_ns() -> i64 {
+            let mut time = Timespec {
+                seconds: 0,
+                nanoseconds: 0,
+            };
+            assert_eq!(unsafe { clock_gettime(3, &mut time) }, 0);
+            time.seconds * 1_000_000_000 + time.nanoseconds
+        }
+        fn run(source: &str, candidate: bool) {
+            let doc = if candidate {
+                parse_plain(source).unwrap()
+            } else {
+                crate::parse(source)
+            };
+            black_box(crate::render_html(&doc).unwrap());
+        }
+        for (name, source) in [
+            ("prose", "plain text\n\n".repeat(64)),
+            ("list", "- plain item\n".repeat(64)),
+            ("quote", "> plain text\n".repeat(64)),
+        ] {
+            let candidate = parse_plain(&source).unwrap();
+            let established = crate::parse(&source);
+            assert_eq!(candidate, established, "{name} AST");
+            assert_eq!(
+                crate::render_html(&candidate),
+                crate::render_html(&established)
+            );
+            let mut ratios = Vec::new();
+            for round in 0..24 {
+                let measure = |candidate| {
+                    let start = cpu_ns();
+                    for _ in 0..100 {
+                        run(&source, candidate);
+                    }
+                    cpu_ns() - start
+                };
+                let (candidate_ns, baseline_ns) = if round % 2 == 0 {
+                    (measure(true), measure(false))
+                } else {
+                    let baseline = measure(false);
+                    (measure(true), baseline)
+                };
+                ratios.push(candidate_ns as f64 / baseline_ns as f64);
+            }
+            ratios.sort_by(f64::total_cmp);
+            eprintln!(
+                "{name}: candidate/baseline median CPU ratio {:.3}",
+                ratios[12]
+            );
+        }
     }
 }
