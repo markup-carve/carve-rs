@@ -5,6 +5,24 @@ use super::{detect_list_marker_full, parse_inline_with_options, strip_blockquote
 use crate::ast::{BlockNode, BlockQuote, Document, List, ListItem, Paragraph};
 use std::collections::BTreeMap;
 
+#[cfg(all(test, target_os = "linux", target_pointer_width = "64"))]
+fn thread_cpu_ns() -> i64 {
+    #[repr(C)]
+    struct Timespec {
+        seconds: i64,
+        nanoseconds: i64,
+    }
+    extern "C" {
+        fn clock_gettime(clock: i32, time: *mut Timespec) -> i32;
+    }
+    let mut time = Timespec {
+        seconds: 0,
+        nanoseconds: 0,
+    };
+    assert_eq!(unsafe { clock_gettime(3, &mut time) }, 0);
+    time.seconds * 1_000_000_000 + time.nanoseconds
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum FrameKind {
     Root,
@@ -465,28 +483,12 @@ mod tests {
         );
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", target_pointer_width = "64"))]
     #[test]
     #[ignore = "paired thread CPU screen for the admitted plain subset"]
     fn paired_complete_ast_html_cpu() {
         use std::hint::black_box;
 
-        #[repr(C)]
-        struct Timespec {
-            seconds: i64,
-            nanoseconds: i64,
-        }
-        extern "C" {
-            fn clock_gettime(clock: i32, time: *mut Timespec) -> i32;
-        }
-        fn cpu_ns() -> i64 {
-            let mut time = Timespec {
-                seconds: 0,
-                nanoseconds: 0,
-            };
-            assert_eq!(unsafe { clock_gettime(3, &mut time) }, 0);
-            time.seconds * 1_000_000_000 + time.nanoseconds
-        }
         fn run(source: &str, candidate: bool) {
             let doc = if candidate {
                 parse_plain(source).unwrap()
@@ -510,11 +512,11 @@ mod tests {
             let mut ratios = Vec::new();
             for round in 0..24 {
                 let measure = |candidate| {
-                    let start = cpu_ns();
+                    let start = thread_cpu_ns();
                     for _ in 0..100 {
                         run(&source, candidate);
                     }
-                    cpu_ns() - start
+                    thread_cpu_ns() - start
                 };
                 let (candidate_ns, baseline_ns) = if round % 2 == 0 {
                     (measure(true), measure(false))
@@ -527,7 +529,64 @@ mod tests {
             ratios.sort_by(f64::total_cmp);
             eprintln!(
                 "{name}: candidate/baseline median CPU ratio {:.3}",
-                ratios[12]
+                (ratios[11] + ratios[12]) / 2.0
+            );
+        }
+    }
+
+    #[cfg(all(target_os = "linux", target_pointer_width = "64"))]
+    #[test]
+    #[ignore = "local authored-document screen; set CARVE_DOCS_ROOT"]
+    fn paired_authored_fallback_cpu() {
+        use std::hint::black_box;
+        use std::path::Path;
+
+        let root = std::env::var("CARVE_DOCS_ROOT").expect("set CARVE_DOCS_ROOT");
+        for (name, relative) in [
+            ("terms", "terms.md"),
+            ("parsing-ast", "case-study/parsing-ast.md"),
+            ("spec-history", "spec-history.md"),
+        ] {
+            let path = Path::new(&root).join(relative);
+            let source = std::fs::read_to_string(&path)
+                .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+            let admitted = parse_plain(&source).is_some();
+            assert!(!admitted, "{name} no longer tests the fallback route");
+            let established = crate::parse(&source);
+            let candidate = parse_plain(&source).unwrap_or_else(|| crate::parse(&source));
+            assert_eq!(candidate, established);
+            let mut ratios = Vec::new();
+            let mut deltas = Vec::new();
+            for round in 0..24 {
+                let measure = |candidate: bool| {
+                    let start = thread_cpu_ns();
+                    for _ in 0..40 {
+                        let doc = if candidate {
+                            parse_plain(&source).unwrap_or_else(|| crate::parse(&source))
+                        } else {
+                            crate::parse(&source)
+                        };
+                        black_box(crate::render_html(&doc).unwrap());
+                    }
+                    thread_cpu_ns() - start
+                };
+                let (candidate_ns, baseline_ns) = if round % 2 == 0 {
+                    (measure(true), measure(false))
+                } else {
+                    let baseline = measure(false);
+                    (measure(true), baseline)
+                };
+                ratios.push(candidate_ns as f64 / baseline_ns as f64);
+                deltas.push((candidate_ns - baseline_ns) as f64 / 40.0);
+            }
+            ratios.sort_by(f64::total_cmp);
+            deltas.sort_by(f64::total_cmp);
+            eprintln!(
+                "{name}: {} bytes at {}, fallback/baseline CPU {:.3}, delta {:.0} ns/op",
+                source.len(),
+                path.display(),
+                (ratios[11] + ratios[12]) / 2.0,
+                (deltas[11] + deltas[12]) / 2.0
             );
         }
     }
