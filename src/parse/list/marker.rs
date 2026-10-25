@@ -257,7 +257,10 @@ pub(crate) fn detect_task(line: &str) -> Option<TaskMarker<'_>> {
     // reinterpret the marker, it DELETED the `[%]` and rendered a checkbox
     // nobody wrote (carve-rs#471). Two characters were already rejected by the
     // `ab[2] != b']'` test; only the one-character case was open.
-    if !matches!(ab[1], b' ' | b'x' | b'X' | b'-' | b'_' | b'/' | b'!' | b'>' | b'?') {
+    if !matches!(
+        ab[1],
+        b' ' | b'x' | b'X' | b'-' | b'_' | b'/' | b'!' | b'>' | b'?'
+    ) {
         return None;
     }
     let checked = matches!(ab[1], b'x' | b'X');

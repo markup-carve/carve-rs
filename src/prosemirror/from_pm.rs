@@ -501,7 +501,7 @@ impl Reader {
             let state = match optional_string(attrs_obj(io), "carveTaskState") {
                 Json::String(s)
                     if checked == Json::Bool(false)
-                        && matches!(s.as_str(), " " | "-" | "_" | ">" | "?") =>
+                        && matches!(s.as_str(), " " | "-" | "_" | "/" | "!" | ">" | "?") =>
                 {
                     Json::String(s)
                 }

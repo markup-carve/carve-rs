@@ -734,7 +734,7 @@ impl<'s, 'r> ListScan<'s, 'r> {
             rows,
             scan,
             marker_shaped: regex::Regex::new(
-                r"^(?:[-+*](?: +\[[ xX\-_>?/|!]\])?|\([0-9A-Za-z]+\)|[0-9A-Za-z]+[.)]|\.)[ \t]",
+                r"^(?:[-+*](?: +\[[ xX\-_>?/!]\])?|\([0-9A-Za-z]+\)|[0-9A-Za-z]+[.)]|\.)[ \t]",
             )
             .unwrap(),
             block_opener: regex::Regex::new(r"^(?:#{1,6} +\S|>(?: |$)|`{3,}|~{3,}|::(?: |$)|:{3,}(?: |$)|!\[|\[[^\]]+\]: +\S|(?:-{3,}|\*{3,}|_{3,})[ \t]*$|\{[^{}]+\}[ \t]*$|\|.*\|[ \t]*$)").unwrap(),
@@ -876,7 +876,7 @@ impl<'s, 'r> ListScan<'s, 'r> {
         let run = view
             .chars()
             .next()
-            .filter(|c| matches!(c, '>'))
+            .filter(|c| matches!(c, '|' | '>'))
             .filter(|_| self.block_opener.is_match(view))
             .map(|kind| (kind, owner.map(|i| i.first)));
         let block_run = run

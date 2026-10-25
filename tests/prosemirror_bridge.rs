@@ -1980,6 +1980,15 @@ fn round_trip(source: &str) -> (String, String) {
 }
 
 #[test]
+fn progress_and_blocked_tasks_survive_the_prosemirror_bridge() {
+    for state in ['/', '!'] {
+        let source = format!("- [{state}] item\n");
+        let (before, after) = round_trip(&source);
+        assert_eq!(after, before, "state {state} changed on import");
+    }
+}
+
+#[test]
 fn interchange_section_and_block_cell_survive_editor_bridge() {
     let original = from_json(r#"{"type":"document","srcByteLength":0,"children":[{"type":"section","level":2,"children":[{"type":"table","rows":[{"type":"table_row","cells":[{"type":"table_cell","header":false,"blocks":[{"type":"paragraph","children":[{"type":"text","value":"one"}]},{"type":"paragraph","children":[{"type":"text","value":"two"}]}]}]}]}]}]}"#).unwrap();
     let pm = to_prosemirror(&original);
