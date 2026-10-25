@@ -84,6 +84,10 @@ name = "port_3156"
 path = "tests/port_3156.rs"
 
 [[test]]
+name = "markdown_unmatched_closing_destination"
+path = "tests/markdown_unmatched_closing_destination.rs"
+
+[[test]]
 name = "public_api_paths"
 path = "tests/public_api_paths.rs"
 

@@ -4062,13 +4062,21 @@ fn encode_markdown_destination(url: &str, pos: Option<&Pos>, sink: DeniedSink) -
     let sanitized = sanitize_md_url(&strip_controls(url), pos, sink);
     let mut out = String::new();
     let pipe_destination = sanitized.contains('|');
+    let mut open_parens = 0usize;
     for ch in sanitized.chars() {
         match ch {
             '\\' if pipe_destination => out.push_str("%5C"),
             '|' => out.push_str("%7C"),
             ' ' => out.push_str("%20"),
-            '(' => out.push_str("%28"),
-            ')' => out.push_str("%29"),
+            '(' => {
+                open_parens += 1;
+                out.push_str("%28");
+            }
+            ')' if open_parens == 0 => out.push_str("\\)"),
+            ')' => {
+                open_parens -= 1;
+                out.push_str("%29");
+            }
             '<' => out.push_str("%3C"),
             '>' => out.push_str("%3E"),
             _ => out.push(ch),
