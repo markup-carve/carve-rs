@@ -18,6 +18,7 @@ mod container;
 mod cursor;
 mod definition;
 mod footnote_prepass;
+mod frame_owner;
 mod indent_container;
 mod inline;
 mod inline_abbreviations;
