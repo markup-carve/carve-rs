@@ -11,5 +11,8 @@ fn automatic_heading_after_admonition() {
     let html = carve::to_html(source);
     assert!(html.contains("<section id=\"adm-1\">"), "{html}");
     assert!(html.contains("aria-labelledby=\"adm-1-2\""), "{html}");
-    assert!(html.contains("<p class=\"admonition-title\" id=\"adm-1-2\">"), "{html}");
+    assert!(
+        html.contains("<p class=\"admonition-title\" id=\"adm-1-2\">"),
+        "{html}"
+    );
 }
