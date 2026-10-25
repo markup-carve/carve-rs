@@ -53,6 +53,44 @@ fn direct_route_admits_prose_and_uses_existing_list_reader() {
 }
 
 #[test]
+fn mixed_route_handles_root_quote_without_changing_output() {
+    let source = "# Heading\n\n> quoted *text*\n> second line\n\nAfter.\n";
+    let (actual, admitted) = parse_experimental_event_blocks(source);
+    assert!(admitted);
+    let expected = parse_standard(source);
+    assert_eq!(to_json(&actual), to_json(&expected));
+    assert_eq!(render_html(&actual), render_html(&expected));
+}
+
+#[test]
+fn quote_marker_and_raw_fence_boundaries_use_standard_parser() {
+    for source in [
+        "> - a\n>+\n> tail\n",
+        "> ```=html\n> ",
+        "> ```=html\n> \n",
+        "> a\n\n^ caption\n",
+        "> > inner\n",
+        "> - item\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(!admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
+fn marked_quote_edges_keep_exact_output() {
+    for source in ["> # H\n> text\n", ">\n>\n", "> a\n\n> b", "> plain"] {
+        let (actual, _) = parse_experimental_event_blocks(source);
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
 fn punctuation_led_paragraphs_and_task_lists_keep_exact_nodes() {
     let prose = "/italic/\n\n_underline_\n\n[link](target)\n\n![image](target)\n";
     let (actual, admitted) = parse_experimental_event_blocks(prose);

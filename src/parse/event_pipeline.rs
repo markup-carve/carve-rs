@@ -124,6 +124,18 @@ fn parse_mixed_blocks(source: &str, options: &Options<'_>) -> Option<Vec<BlockNo
             out.push(parse_definition_list(&mut cur, options));
             continue;
         }
+        if strip_blockquote_prefix(line).is_some() {
+            if let Some((quote, end)) = parse_simple_quote(&lines, cur.pos, options) {
+                cur.pos = end;
+                out.push(BlockNode::BlockQuote(quote));
+            } else if let Some((quote, end)) = parse_marked_quote(&lines, cur.pos, options) {
+                cur.pos = end;
+                out.push(BlockNode::BlockQuote(quote));
+            } else {
+                return None;
+            }
+            continue;
+        }
         if let Some(fence) = detect_fence_open(line) {
             let mut block = *parse_fenced_block(&mut cur, fence, options);
             resolve_code_title(&mut block);
@@ -179,6 +191,152 @@ fn parse_mixed_blocks(source: &str, options: &Options<'_>) -> Option<Vec<BlockNo
         }));
     }
     Some(out)
+}
+
+fn parse_simple_quote(
+    lines: &[&str],
+    start: usize,
+    options: &Options<'_>,
+) -> Option<(BlockQuote, usize)> {
+    let mut parts = Vec::new();
+    let mut end = start;
+    while let Some(line) = lines.get(end) {
+        let Some(content) = line.strip_prefix("> ") else {
+            break;
+        };
+        if content.is_empty()
+            || !may_start_plain_paragraph(content)
+            || detect_heading(content).is_some()
+            || is_list_marker(content)
+            || is_definition_list_start(content)
+            || detect_fence_open(content).is_some()
+            || thematic_break_marker(content).is_some()
+        {
+            return None;
+        }
+        parts.push(trim_ascii_end(content));
+        end += 1;
+    }
+    if parts.is_empty() {
+        return None;
+    }
+    let mut after = end;
+    while lines.get(after).is_some_and(|line| is_blank_line(line)) {
+        after += 1;
+    }
+    if after == end && end < lines.len()
+        || lines.get(after).is_some_and(|line| line.starts_with('^'))
+    {
+        return None;
+    }
+    let joined = parts.join("\n");
+    Some((
+        BlockQuote {
+            attrs: None,
+            children: vec![BlockNode::Paragraph(Paragraph {
+                attrs: None,
+                children: parse_event_inlines(&joined, options),
+                at_content_column: true,
+                block_image: false,
+                pos: None,
+            })],
+            fenced: false,
+            pos: None,
+        },
+        end,
+    ))
+}
+
+fn parse_marked_quote(
+    lines: &[&str],
+    start: usize,
+    options: &Options<'_>,
+) -> Option<(BlockQuote, usize)> {
+    let mut parts = Vec::new();
+    let mut end = start;
+    while let Some(line) = lines.get(end) {
+        let Some(content) = strip_blockquote_prefix(line) else {
+            break;
+        };
+        if detect_fence_open(content).is_some() {
+            return None;
+        }
+        parts.push(content);
+        end += 1;
+    }
+    if parts.is_empty() {
+        return None;
+    }
+    let mut after = end;
+    while lines.get(after).is_some_and(|line| is_blank_line(line)) {
+        after += 1;
+    }
+    if (after == end && end < lines.len())
+        || lines.get(after).is_some_and(|line| line.starts_with('^'))
+    {
+        return None;
+    }
+    let body = parts.join("\n");
+    let children = parse_blocks(&body, options)?;
+    Some((
+        BlockQuote {
+            attrs: None,
+            children,
+            fenced: false,
+            pos: None,
+        },
+        end,
+    ))
+}
+
+#[cfg(test)]
+mod simple_quote_tests {
+    use super::*;
+
+    #[test]
+    fn simple_marked_quote_builds_public_nodes() {
+        let source = "> plain *text*\n> more words\n";
+        let lines: Vec<&str> = source.lines().collect();
+        let (quote, end) = parse_simple_quote(&lines, 0, &Options::default()).unwrap();
+        assert_eq!(end, 2);
+        let expected = parse_with_options(source, &Options::default());
+        assert_eq!(BlockNode::BlockQuote(quote), expected.children[0]);
+    }
+
+    #[test]
+    fn lazy_lines_and_captions_keep_the_existing_reader() {
+        let options = Options::default();
+        for source in [
+            "> quoted\nlazy line\n",
+            "> quoted\n\n^ caption\n",
+            "> # Heading\n",
+        ] {
+            let lines: Vec<&str> = source.lines().collect();
+            assert!(
+                parse_simple_quote(&lines, 0, &options).is_none(),
+                "{source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn fully_marked_paragraphs_use_the_recursive_quote_path() {
+        let source = "> first\n>\n> second\n";
+        let lines: Vec<&str> = source.lines().collect();
+        let options = Options::default();
+        assert!(parse_simple_quote(&lines, 0, &options).is_none());
+        let (quote, end) = parse_marked_quote(&lines, 0, &options).unwrap();
+        assert_eq!(end, 3);
+        let expected = parse_with_options(source, &options);
+        assert_eq!(BlockNode::BlockQuote(quote), expected.children[0]);
+    }
+
+    #[test]
+    fn fenced_quote_content_keeps_the_existing_reader() {
+        let source = "> ```=html\n>\n";
+        let lines: Vec<&str> = source.lines().collect();
+        assert!(parse_marked_quote(&lines, 0, &Options::default()).is_none());
+    }
 }
 
 fn may_start_plain_paragraph(line: &str) -> bool {
