@@ -602,9 +602,6 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         || source.contains("*[")
         || source.contains("]:")
         || (!source.ends_with('\n') && source.lines().any(|line| detect_fence_open(line).is_some()))
-        || source
-            .lines()
-            .any(|line| line.starts_with([' ', '\t']) && is_list_marker(line))
     {
         return None;
     }

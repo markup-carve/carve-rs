@@ -88,6 +88,20 @@ fn mixed_route_admits_root_sigil_blocks_without_changing_output() {
 }
 
 #[test]
+fn mixed_route_admits_nested_list_markers_when_reader_owns_them() {
+    for source in [
+        "- outer\n  - inner\n",
+        "# Heading\n\n- outer\n  - inner\n\nAfter.\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
 fn quote_marker_and_raw_fence_boundaries_use_standard_parser() {
     for source in [
         "> - a\n>+\n> tail\n",
