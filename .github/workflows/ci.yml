@@ -170,6 +170,9 @@ jobs:
       # doctests (`src/extensions/*` carry worked examples), so dropping this
       # line would silently stop testing them while the job stayed green.
       - run: cargo test --doc
+      - name: Check experimental event parser parity
+        if: matrix.toolchain == 'stable'
+        run: cargo test --locked --features experimental-event-parser --test event_pipeline
 
       # The test run already fails when a corpus category is missing from
       # IMPLEMENTED - that guard is why a spec bump lands red. This says whether
@@ -265,6 +268,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo fmt --all -- --check
       - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo clippy --locked --all-targets --features experimental-event-parser -- -D warnings
       - name: Check cyclomatic complexity
         run: |
           python3 -m venv "$RUNNER_TEMP/complexity-venv"
