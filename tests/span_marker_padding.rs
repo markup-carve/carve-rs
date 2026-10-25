@@ -69,7 +69,7 @@ fn empty_header_default_without_delimiter_is_reported() {
 }
 
 #[test]
-fn imported_empty_header_reports_unspellable_alignment_default() {
+fn imported_empty_header_preserves_its_column_alignment_default() {
     let html = "<table><tr><th style=\"text-align:left\"></th></tr><tr><td>a</td></tr></table>";
     let result = html_to_carve(
         html,
@@ -79,11 +79,12 @@ fn imported_empty_header_reports_unspellable_alignment_default() {
         },
     )
     .unwrap();
-    assert!(result
+    assert!(!result
         .report
         .diagnostics
         .iter()
         .any(|d| d.code == HtmlImportDiagnosticCode::StyleUnmapped));
+    assert!(result.value.starts_with("{aligns=left}\n"));
     assert!(!result.value.contains("< "), "{:?}", result.value);
 }
 
