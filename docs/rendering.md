@@ -267,7 +267,7 @@ rule.
 
 An ordered list's authored marker is its delimiter, which PART 10 §12's
 `data-delim` writes on every render, so `data-marker` rides the `<ul>` alone
-here. A task list's `task-list` class and its items' `data-task-state` are §11's
+here. Task markers use `[ ]` and `[_]` for open, `[/]` for progress, `[!]` for blocked, `[x]` or `[X]` for done, `[-]` for dropped, `[>]` for deferred, and `[?]` for uncertain. Only done is checked. A task list's `task-list` class and its items' `data-task-state` are §11's
 and are written with or without this option.
 
 ### What it guarantees
