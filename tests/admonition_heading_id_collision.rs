@@ -1,7 +1,7 @@
 #[test]
 fn merged_c1_corpus_row() {
-    let source = include_str!("spec/tests/corpus/663-a-titled-admonition-skips-an-authored-heading-id.crv");
-    let expected = include_str!("spec/tests/corpus/663-a-titled-admonition-skips-an-authored-heading-id.html");
+    let source = "{#adm-1}\n# H\n\n::: warning \"Careful\"\nbody\n:::\n";
+    let expected = "<section id=\"adm-1\">\n  <h1>H</h1>\n  <aside class=\"admonition warning\" aria-labelledby=\"adm-1-2\">\n    <p class=\"admonition-title\" id=\"adm-1-2\">Careful</p>\n    <p>body</p>\n  </aside>\n</section>";
     assert_eq!(carve::to_html(source).trim(), expected.trim());
 }
 
