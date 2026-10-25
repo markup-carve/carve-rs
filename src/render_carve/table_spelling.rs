@@ -148,6 +148,12 @@ pub(super) fn render_table(
     }
     let needs_delimiter = authored_widths.is_some()
         || header_row
+            && node.rows[0].cells.iter().any(|cell| {
+                cell.children.is_empty()
+                    && cell.blocks.is_none()
+                    && cell.align == Some(TableAlign::Left)
+            })
+        || header_row
             && node.rows.first().is_some_and(|row| {
                 let first_span = row.cells.iter().position(|cell| cell.span.is_some());
                 match first_span {
