@@ -305,7 +305,7 @@ pub(super) fn escape_text(
             || role.crossing_opener
             || role.crossing_closer
             || opens_a_destination
-            || matches!(ch, '\\' | '`' | '"' | '\'')
+            || matches!(ch, '`' | '"' | '\'')
             || extension_colon_at == Some(offset)
             || caret_opens_a_caption
             || caret_opens_inline
@@ -320,7 +320,8 @@ pub(super) fn escape_text(
         // one-escape spelling and both peer engines write it.
         let continues_percent_run = ch == '%' && offset > 0 && previous == '%';
         let candidate = !continues_percent_run
-            && (caret_is_a_span_marker
+            && (ch == '\\'
+                || caret_is_a_span_marker
                 || matches!(
                     ch,
                     '*' | '_'

@@ -1208,7 +1208,7 @@ pub(in crate::parse) fn read_link_target(
     // Nothing sits between the destination or the title and the `)`: the
     // production has no slot for whitespace there.
     if href.is_empty() {
-        while matches!(bytes.get(i).copied(), Some(b' ' | b'\t')) {
+        while bytes.get(i) == Some(&b' ') {
             i += 1;
         }
     }

@@ -66,7 +66,7 @@ fn markdown_autolink_fallback_keeps_literal_destination_brackets() {
         ),
         (
             "<https://e.com/a\\b>\n",
-            "[https://e.com/a\\\\b](https://e.com/a\\b)\n",
+            "[https://e.com/a\\b](https://e.com/a\\b)\n",
             &["markdown-paragraph", "markdown-autolink"],
         ),
         (

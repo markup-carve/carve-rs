@@ -148,6 +148,12 @@ pub(super) fn render_table(
     }
     let needs_delimiter = authored_widths.is_some()
         || header_row
+            && node.rows[0].cells.iter().any(|cell| {
+                cell.children.is_empty()
+                    && cell.blocks.is_none()
+                    && cell.align == Some(TableAlign::Left)
+            })
+        || header_row
             && node.rows.first().is_some_and(|row| {
                 let first_span = row.cells.iter().position(|cell| cell.span.is_some());
                 match first_span {
@@ -633,6 +639,9 @@ pub(super) fn render_table_cell(
     );
     if prefix.is_empty() && matches!(content.as_str(), "<" | "^") {
         content.insert(0, '\\');
+    }
+    if !cell.header && content.starts_with("\\= ") {
+        content.remove(0);
     }
     // The space `pad_cell` writes after the prefix is what keeps the content's
     // first character content. The header `=` is read glued to the pipe and the

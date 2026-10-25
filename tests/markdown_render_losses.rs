@@ -33,6 +33,40 @@ fn markdown_reports_each_unrepresentable_kind() {
 }
 
 #[test]
+fn markdown_reports_effective_fence_title_without_language() {
+    for source in [
+        "``` \"notes.txt\"\nbody\n```\n",
+        "{title=\"from attributes\"}\n``` \"from header\"\nbody\n```\n",
+    ] {
+        let report = to_markdown_with_report(source, CheckedRenderOptions::default()).unwrap();
+        let loss = report
+            .losses
+            .iter()
+            .find(|loss| loss.code == "fence-title-dropped")
+            .expect("dropped title must be reported");
+        assert_eq!(
+            loss.message,
+            "Dropped a code fence title without a language in Markdown"
+        );
+        assert_eq!(loss.node_type, RawNodeType::Block);
+        assert_eq!(loss.target, RenderTarget::Markdown);
+        assert!(loss.pos.is_some());
+    }
+    assert!(!codes("```rust \"notes.txt\"\nbody\n```\n").contains(&"fence-title-dropped"));
+    let options = Options::default().with_roundtrip(true);
+    let report = with_render_loss_report(
+        RenderTarget::Markdown,
+        CheckedRenderOptions::default(),
+        || try_to_markdown_with_options("``` \"notes.txt\"\nbody\n```\n", &options).unwrap(),
+    )
+    .unwrap();
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == "fence-title-dropped"));
+}
+
+#[test]
 fn markdown_loss_fields_and_source_order_are_preserved() {
     let source = ":::\np\n:::\n\n{.dangling}\n";
     let report = to_markdown_with_report(source, CheckedRenderOptions::default()).unwrap();
@@ -118,6 +152,7 @@ fn cli_accepts_the_new_codes_and_allows_an_actual_container_loss() {
         "markdown-container-flattened",
         "markdown-caption-flattened",
         "markdown-attributes-dropped",
+        "fence-title-dropped",
         "raw-html-escaped",
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_carve"))

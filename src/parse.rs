@@ -2010,7 +2010,6 @@ fn take_comment_block(cur: &mut LineCursor, options: &Options<'_>) -> CommentBlo
             .unwrap_or_default();
         let content = content
             .strip_prefix(' ')
-            .or_else(|| content.strip_prefix('\t'))
             .unwrap_or(content)
             .trim_end_matches([' ', '\t'])
             .to_string();

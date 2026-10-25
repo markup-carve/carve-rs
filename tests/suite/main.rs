@@ -111,6 +111,8 @@ mod definitions_close_nested_containers;
 mod definitions_register_only_in_their_host_column;
 #[path = "../footnote_container_paragraph_breaks.rs"]
 mod footnote_container_paragraph_breaks;
+#[path = "../indented_list_comment_retains_owner.rs"]
+mod indented_list_comment_retains_owner;
 #[path = "../unmarked_lines_follow_their_reachable_container.rs"]
 mod unmarked_lines_follow_their_reachable_container;
 
@@ -1473,6 +1475,8 @@ mod markdown_bullet;
 mod markdown_crossref_heading_ids;
 #[path = "../markdown_delimiter_matches_the_header_row.rs"]
 mod markdown_delimiter_matches_the_header_row;
+#[path = "../markdown_destination_pipe_ruling.rs"]
+mod markdown_destination_pipe_ruling;
 #[path = "../markdown_destination_probe.rs"]
 mod markdown_destination_probe;
 #[path = "../markdown_emphasis_pads_outside_the_delimiters.rs"]
@@ -2519,7 +2523,11 @@ mod ruled_description_fence;
 #[path = "../ruled_quote_definition.rs"]
 mod ruled_quote_definition;
 
+#[path = "../canonical_literal_backslashes.rs"]
+mod canonical_literal_backslashes;
 #[path = "../djot_heading_id_collisions.rs"]
 mod djot_heading_id_collisions;
+#[path = "../empty_destination_tab_ruling.rs"]
+mod empty_destination_tab_ruling;
 #[path = "../markdown_destination_parentheses.rs"]
 mod markdown_destination_parentheses;

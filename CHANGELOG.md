@@ -11,6 +11,23 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-10-25
+
+Task lists gain progress and blocked states. This release also follows import, link destination, table and comment rulings.
+
+### Fixes
+
+- Indented list items stay open after line comments, and one space after `%%` is consumed as the comment separator (#3186, #3179).
+- HTML import preserves header rowspans within row groups and empty header alignment; the writer gives empty aligned headers a delimiter row (#3182, #3165, #3184).
+- Tabs remain content in empty link destinations. Markdown destinations preserve escaped and unmatched closing parentheses, and HTML anchors inside Markdown link labels flatten on import (#3178, #3168, #3159, #3161).
+- The Carve writer chooses literal backslash spelling by reparsing its output (#3169).
+- HTML import reads a sole plain `pre` class as a code language and imports integral pixel image dimensions; Djot attributes and GitHub HTML footnotes survive import (#3162, #3160, #3157).
+- Markdown conversion reports a dropped title on a fence without a language (#3188).
+
+### Improvements
+
+- Progress `[/]` and blocked `[!]` task markers round trip through AST JSON, HTML and ProseMirror import, and formatting (#3180).
+
 ## [0.1.12] - 2026-10-24
 
 Carve 0.1.12 fixes nested container ownership, table spans, and import round trips. The CLI adds controls for alignment, includes, regions, and lint output.

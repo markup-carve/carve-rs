@@ -90,7 +90,7 @@ fn ruled_markdown_destinations() {
         (
             "A2",
             r"<https://e.com/a\b>",
-            r"[https://e.com/a\\b](https://e.com/a\b)",
+            r"[https://e.com/a\b](https://e.com/a\b)",
             &["markdown-paragraph", "markdown-autolink"],
         ),
         (

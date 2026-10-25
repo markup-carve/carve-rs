@@ -696,7 +696,7 @@ fn compact_djot_list_prefix_with_bullets(
     }
     let marker = cached_regex!(r"^(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]+").unwrap();
     let quote = cached_regex!(r"^>(?:[ \t]|$)").unwrap();
-    let task = cached_regex!(r"^\[[ xX\-_>?]\](?:[ \t]+|$)").unwrap();
+    let task = cached_regex!(r"^\[[ xX\-_>?/!]\](?:[ \t]+|$)").unwrap();
     let mut result = String::with_capacity(text.len());
     let mut at = 0;
     let mut changed = false;

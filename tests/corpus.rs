@@ -13,6 +13,12 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    "a-display-math-span-with-trailing-attributes-takes-a-caption",
+    "a-styled-display-math-span-takes-a-caption-across-one-blank-line",
+    "a-tab-after-a-comment-marker-stays-in-its-text",
+    "a-tab-cannot-pad-an-empty-link-destination",
+    "a-titled-admonition-skips-an-authored-heading-id",
+    "an-empty-link-destination-takes-spaces",
     "a-caption-after-a-continuation-marker-fence-stays-with-the-fence",
     "a-column-zero-marker-below-an-open-div-attaches-beside-the-div",
     "a-continuation-marker-stands-alone-at-column-zero-or-right-after-a-block-opener",

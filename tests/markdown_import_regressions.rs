@@ -4,6 +4,20 @@ use carve::{
 };
 
 #[test]
+fn empty_aligned_markdown_headers_have_a_source_form() {
+    for source in [
+        "|   |   |\n|:--|---|\n| 3 | 4 |\n",
+        "|   |   |\n|---|:--|\n| 3 | 4 |\n",
+        "|   |   |   |\n|---|:--|---|\n| 2 | 3 | 4 |\n",
+    ] {
+        let written = try_markdown_to_carve(source).unwrap();
+        assert!(written.contains("|:---|"), "{written:?}");
+        assert_eq!(to_carve(&written), written);
+        assert!(carve::to_html(&written).contains("text-align: left"));
+    }
+}
+
+#[test]
 fn a_blank_body_row_is_kept_as_a_row() {
     let source = "Before\n\n| A | B |\n|---|---|\n|   |   |\n| 1 | 2 |\n\nAfter\n";
     let result = migrate_markdown(source);

@@ -133,12 +133,15 @@ fn an_ordered_task_item_still_keeps_its_bracket_text() {
 }
 
 #[test]
-fn the_four_carve_only_states_are_unchanged() {
+fn task_pairs_outside_gfm_remain_text() {
     // They were already text, which is what cmark-gfm reads - the box carve-js
     // and carve-php grow there (markup-carve/carve-js#2048) was never grown
     // here, and this pins that the change did not start.
     for (markdown, item) in [
         ("- [-] foo\n", "<li>[-] foo</li>"),
+        ("- [_] foo\n", "<li>[_] foo</li>"),
+        ("- [!] foo\n", "<li>[!] foo</li>"),
+        ("- [>] foo\n", "<li>[&gt;] foo</li>"),
         ("- [?] foo\n", "<li>[?] foo</li>"),
         ("- [/] foo\n", "<li>[/] foo</li>"),
         ("- [*] foo\n", "<li>[*] foo</li>"),

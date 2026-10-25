@@ -396,18 +396,15 @@ fn the_span_grid_is_unchanged() {
     }
 }
 
-/// CONTROL: a rowspan leaving the leading header run is clipped and reported,
-/// which is a `table-degraded` and not one of the codes this change emits.
+/// A rowspan crossing the leading header run stays within its source group.
 #[test]
-fn a_rowspan_leaving_the_header_run_is_still_clipped() {
+fn a_rowspan_leaving_the_header_run_is_preserved() {
     assert_eq!(
         messages(
             "<table><tr><th rowspan=\"2\">a</th><th>b</th></tr><tr><td>c</td></tr></table>",
             HtmlImportDiagnosticCode::TableDegraded
         ),
-        vec![
-            "Clipped a rowspan at the header rows: Carve derives the head from the leading header rows, and a span leaving them crosses a boundary browsers clip anyway"
-        ]
+        Vec::<String>::new()
     );
 }
 

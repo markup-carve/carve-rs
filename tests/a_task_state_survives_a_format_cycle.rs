@@ -1,4 +1,4 @@
-//! PART 11 §6g / carve#1866. The seven task states render as two, so the tree
+//! PART 11 §6g / carve#1866. The task marker spellings render as two, so the tree
 //! carried only `checked` and the writer rewrote four of them to `[ ]`. The
 //! state is the author's spelling, recorded like `List::bullet_char`.
 
@@ -10,7 +10,7 @@ fn fmt(source: &str) -> String {
 
 #[test]
 fn the_writer_puts_every_extended_state_back() {
-    for state in ['-', '_', '>', '?'] {
+    for state in ['-', '_', '/', '!', '>', '?'] {
         let source = format!("- [{state}] a\n");
         assert_eq!(fmt(&source), source);
     }
@@ -69,7 +69,7 @@ fn a_payload_whose_fields_disagree_is_refused() {
 
 #[test]
 fn a_state_outside_the_enum_is_refused() {
-    let payload = r#"{"type":"document","srcByteLength":0,"children":[{"type":"list","ordered":false,"tight":true,"items":[{"type":"list_item","children":[],"checked":false,"taskState":"!"}]}]}"#;
+    let payload = r#"{"type":"document","srcByteLength":0,"children":[{"type":"list","ordered":false,"tight":true,"items":[{"type":"list_item","children":[],"checked":false,"taskState":"%"}]}]}"#;
     let error = from_json(payload).expect_err("a state outside the enum is refused");
     assert!(format!("{error}").contains("taskState"), "{error}");
 }

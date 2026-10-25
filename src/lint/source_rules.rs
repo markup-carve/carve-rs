@@ -124,7 +124,7 @@ fn container_view(text: &str) -> &str {
     static PREFIX: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let re = PREFIX.get_or_init(|| {
         regex::Regex::new(
-            r"^(?:[ \t]*> ?|[ \t]*(?:[-*]|(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-zA-Z])[.)])(?:\{[^{}\r\n]*\})? +(?:\[[ xX_?>-]\] +)?|[ \t]*(?:: |\[\^[^\]\r\n]+\]: +))",
+            r"^(?:[ \t]*> ?|[ \t]*(?:[-*]|(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-zA-Z])[.)])(?:\{[^{}\r\n]*\})? +(?:\[[ xX_?>/!-]\] +)?|[ \t]*(?:: |\[\^[^\]\r\n]+\]: +))",
         )
         .unwrap()
     });
@@ -311,7 +311,7 @@ impl<'d> BlockScan<'d> {
         let mut walker = BlockWalker {
             rows,
             marker: regex::Regex::new(
-                r"^([ \t]*)([-*]|(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-zA-Z])[.)])(\{[^{}\r\n]*\})?( +)(?:\[[ xX_?>-]\] +)?",
+                r"^([ \t]*)([-*]|(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-zA-Z])[.)])(\{[^{}\r\n]*\})?( +)(?:\[[ xX_?>/!-]\] +)?",
             )
             .unwrap(),
             colon: regex::Regex::new(r"^(:{3,})(?:[ \t]|$)").unwrap(),
@@ -734,7 +734,7 @@ impl<'s, 'r> ListScan<'s, 'r> {
             rows,
             scan,
             marker_shaped: regex::Regex::new(
-                r"^(?:[-+*](?: +\[[ xX\-_>?]\])?|\([0-9A-Za-z]+\)|[0-9A-Za-z]+[.)]|\.)[ \t]",
+                r"^(?:[-+*](?: +\[[ xX\-_>?/!]\])?|\([0-9A-Za-z]+\)|[0-9A-Za-z]+[.)]|\.)[ \t]",
             )
             .unwrap(),
             block_opener: regex::Regex::new(r"^(?:#{1,6} +\S|>(?: |$)|`{3,}|~{3,}|::(?: |$)|:{3,}(?: |$)|!\[|\[[^\]]+\]: +\S|(?:-{3,}|\*{3,}|_{3,})[ \t]*$|\{[^{}]+\}[ \t]*$|\|.*\|[ \t]*$)").unwrap(),

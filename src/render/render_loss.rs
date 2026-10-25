@@ -59,6 +59,7 @@ pub(crate) enum MarkdownLoss {
     Container,
     Caption,
     Attributes,
+    FenceTitle,
     RawHtml,
 }
 
@@ -76,6 +77,10 @@ impl MarkdownLoss {
             Self::Attributes => (
                 "markdown-attributes-dropped",
                 "Dropped block attributes while rendering Markdown",
+            ),
+            Self::FenceTitle => (
+                "fence-title-dropped",
+                "Dropped a code fence title without a language in Markdown",
             ),
             Self::RawHtml => (
                 "raw-html-escaped",

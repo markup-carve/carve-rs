@@ -1251,7 +1251,6 @@ pub(crate) fn is_flush_line_comment(line: &str) -> bool {
 /// front, trailing spaces and tabs off the back.
 pub(crate) fn trailing_comment_content(raw: &str) -> &str {
     raw.strip_prefix(' ')
-        .or_else(|| raw.strip_prefix('\t'))
         .unwrap_or(raw)
         .trim_end_matches([' ', '\t'])
 }
@@ -1334,7 +1333,7 @@ pub(crate) fn label_without_trailing_comment<'a>(label: &'a str, options: &Optio
     label
 }
 
-/// Does a flush-left comment at THIS frame's column 0 leave the item open?
+/// Does a comment below this frame's content column leave the item open?
 ///
 /// §24 C3's comment exception names both spellings in one breath - the `%%`
 /// line and the `%%%` fence, "whose body and closer travel with it" - and says
@@ -1349,10 +1348,10 @@ pub(crate) fn label_without_trailing_comment<'a>(label: &'a str, options: &Optio
 /// THE CLOSER IS LOOKED FOR AHEAD, not on the next line: `- x` / `%%%` / `y` /
 /// `%%%` / `z` opens a real block that hides `y` and ends the item.
 pub(crate) fn flush_comment_keeps_the_item_open(cur: &mut LineCursor<'_>, line: &str) -> bool {
-    if is_flush_line_comment(line) && !is_definition_placeholder(line) {
+    if is_line_comment_any_column(line) && !is_definition_placeholder(line) {
         return true;
     }
-    detect_comment_fence_line(line)
+    detect_comment_fence_line_any_column(line)
         .is_some_and(|open| !cur.has_comment_closer_after(cur.pos + 1, open.fence_len))
 }
 

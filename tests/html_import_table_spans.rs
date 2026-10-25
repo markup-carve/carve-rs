@@ -143,34 +143,43 @@ fn a_rowspan_stops_at_its_row_group_whatever_the_number_says() {
     assert_eq!(written, "{footer-rows=2}\n| b | x |\n| f |\n| g |\n");
 }
 
-/// Carve derives the head from the leading run of all-header rows, so a span
-/// leaving that run would land in a `<thead>` with its other rows in the
-/// `<tbody>` - which browsers clip anyway. Clipped here instead, where it can
-/// be reported.
+/// A span stays within its source row group across a header/data transition.
 #[test]
-fn a_rowspan_leaving_the_derived_head_is_clipped_and_reported() {
+fn a_rowspan_leaving_the_derived_head_is_preserved() {
     let html = "<table><tr><th rowspan=\"2\">H</th><th>A</th></tr><tr><td>B</td></tr></table>";
     let (written, rendered) = round_trip(html);
-    assert_eq!(written, "|= H |= A |\n| B |\n");
+    assert_eq!(written, "|= H |= A |\n| ^ | B |\n");
     assert!(
-        !rendered.contains("rowspan"),
-        "the clipped span was written anyway: {rendered}"
+        rendered.contains("rowspan=\"2\""),
+        "the span was lost: {rendered}"
     );
-    let reported = diagnostics(html);
-    assert_eq!(reported.len(), 1, "{reported:?}");
-    assert_eq!(reported[0].0, HtmlImportDiagnosticCode::TableDegraded);
-    assert_eq!(reported[0].1, HtmlImportSeverity::Warning);
-    assert!(
-        reported[0]
-            .2
-            .starts_with("Clipped a rowspan at the header rows"),
-        "{reported:?}"
-    );
-    let result = html_to_carve(html, &HtmlImportOptions::default()).unwrap();
-    assert_eq!(
-        result.report.diagnostics[0].path.as_deref(),
-        Some("/table[1]/tr[1]/th[1]")
-    );
+    assert_eq!(diagnostics(html), vec![]);
+}
+
+#[test]
+fn header_rowspans_cross_header_data_rows_in_the_same_group() {
+    for (html, source, span) in [
+        (
+            "<table>\n  <tbody>\n    <tr><th scope=\"col\" rowspan=\"3\">H</th><th scope=\"col\">G</th></tr>\n    <tr><td>b</td></tr>\n    <tr><td>c</td></tr>\n  </tbody>\n</table>\n",
+            "|= H |= G |\n| ^ | b |\n| ^ | c |\n",
+            "rowspan=\"3\"",
+        ),
+        (
+            "<table><tbody><tr><th>G</th><th rowspan=\"2\">H</th></tr><tr><td>b</td></tr></tbody></table>",
+            "|= G |= H |\n| b | ^ |\n",
+            "rowspan=\"2\"",
+        ),
+        (
+            "<table><tbody><tr><th rowspan=\"4\">H</th><th>G</th></tr><tr><td>b</td></tr><tr><td>c</td></tr></tbody></table>",
+            "|= H |= G |\n| ^ | b |\n| ^ | c |\n",
+            "rowspan=\"3\"",
+        ),
+    ] {
+        let (written, rendered) = round_trip(html);
+        assert_eq!(written, source, "{html}");
+        assert!(rendered.contains(span), "{rendered}");
+        assert_eq!(diagnostics(html), vec![], "{html}");
+    }
 }
 
 /// CONTROL: a span WITHIN the header rows crosses no boundary, so it is kept.

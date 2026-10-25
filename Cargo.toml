@@ -2,7 +2,7 @@
 # Published crate name (`carve` is taken on crates.io). The library is still
 # imported as `carve` (see [lib].name) and the CLI binary is still `carve`.
 name = "carve-lang"
-version = "0.1.12"
+version = "0.1.13"
 edition = "2021"
 rust-version = "1.75"
 description = "Rust parser and HTML renderer for the Carve markup language."
@@ -75,6 +75,14 @@ path = "src/main.rs"
 [[test]]
 name = "suite"
 path = "tests/suite/main.rs"
+
+[[test]]
+name = "display_math_trailing_attrs_caption"
+path = "tests/display_math_trailing_attrs_caption.rs"
+
+[[test]]
+name = "admonition_heading_id_collision"
+path = "tests/admonition_heading_id_collision.rs"
 
 [[test]]
 name = "html_image_style_dimensions"

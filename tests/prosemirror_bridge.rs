@@ -1723,7 +1723,9 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // Spec #3585 adds twelve strict table span cases.
     // Spec #3592 adds wrapped attribute cases 653-7 through 653-10. The first
     // three round trip strictly; row 10 keeps a lazy soft break in its paragraph.
-    const STRICT: usize = 2261;
+    // The move to spec 32d724d1 includes corpus 660 through 665. Rows 660
+    // through 664 round trip strictly; styled math in 665 reports a loss.
+    const STRICT: usize = 2266;
     // Spec 894ff32e adds 616-25, whose marked quote soft break reports a loss.
     // The eight parsed CSV/TSV tables lose their source fence in ProseMirror;
     // the bridge reports that loss instead of claiming a strict round trip.
@@ -1735,7 +1737,7 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // Spec bdb102a1 adds 19-smart-typography-dashes-and-quotes-35, which
     // reports a loss.
     // The soft break in 653-10 reports a loss through the bridge.
-    const LOSSY: usize = 795;
+    const LOSSY: usize = 796;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in
@@ -1977,6 +1979,15 @@ fn round_trip(source: &str) -> (String, String) {
         render_carve(&original).expect("the document writes back"),
         render_carve(&returned).expect("the returned document writes back"),
     )
+}
+
+#[test]
+fn progress_and_blocked_tasks_survive_the_prosemirror_bridge() {
+    for state in ['/', '!'] {
+        let source = format!("- [{state}] item\n");
+        let (before, after) = round_trip(&source);
+        assert_eq!(after, before, "state {state} changed on import");
+    }
 }
 
 #[test]

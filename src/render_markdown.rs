@@ -713,6 +713,13 @@ fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) 
                 .as_ref()
                 .and_then(|attrs| attrs.key_values.get("title"))
                 .or(code.title.as_ref());
+            if effective_title.is_some() && info.is_empty() && !ctx.roundtrip {
+                crate::render_loss::record_markdown_loss(
+                    MarkdownLoss::FenceTitle,
+                    RawNodeType::Block,
+                    code.pos.as_ref(),
+                );
+            }
             // A title needs a LANGUAGE in front of it. In Markdown the info
             // string's first token IS the language, so `` ``` "notes.txt" ``
             // makes a CommonMark reader emit
