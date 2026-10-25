@@ -150,6 +150,20 @@ fn parse_mixed_blocks(lines: &[&str], options: &Options<'_>) -> Option<Vec<Block
             continue;
         }
         if !may_start_plain_paragraph(line) {
+            if line.starts_with(":::") {
+                if detect_line_block_open(line).is_some() {
+                    out.push(parse_line_block(&mut cur, options));
+                    continue;
+                }
+                if detect_hardbreaks_block_open(line).is_some() {
+                    out.push(parse_hardbreaks_block(&mut cur, options));
+                    continue;
+                }
+                if detect_quote_block_open(line).is_some() {
+                    out.push(parse_quote_block(&mut cur, options));
+                    continue;
+                }
+            }
             return None;
         }
         let mut paragraph_lines = Vec::new();
