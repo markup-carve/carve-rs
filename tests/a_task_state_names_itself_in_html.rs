@@ -95,11 +95,11 @@ fn the_state_survives_a_render_and_import_cycle() {
 #[test]
 fn a_value_outside_the_enumeration_stays_the_authors_attribute() {
     let imported = html_to_carve(
-        "<ul><li data-task-state=\"/\"><input type=\"checkbox\" disabled> odd</li></ul>",
+        "<ul><li data-task-state=\"%\"><input type=\"checkbox\" disabled> odd</li></ul>",
         &HtmlImportOptions::default(),
     )
     .expect("imports");
-    assert_eq!(fmt(&imported.value), "-{data-task-state=/} [ ] odd\n");
+    assert_eq!(fmt(&imported.value), "-{data-task-state=%} [ ] odd\n");
 }
 
 #[test]
