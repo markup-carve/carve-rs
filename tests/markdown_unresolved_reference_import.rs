@@ -6,6 +6,7 @@ fn unresolved_references_keep_their_source() {
         "- [ ] [x][r]",
         "- [ ] [^n]",
         "[x][r] and [^n]",
+        "[x y][r]",
         "a [^n] b",
         r"\[^n]",
     ] {

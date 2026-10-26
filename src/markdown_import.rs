@@ -1064,9 +1064,28 @@ fn unresolved_footnote_at(source: &str, at: usize) -> Option<(String, usize)> {
     ))
 }
 
+fn plain_reference_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')
+}
+
+fn plain_reference_spelling(raw: &str) -> bool {
+    let Some((label, tail)) = raw.strip_prefix('[').and_then(|rest| rest.split_once("][")) else {
+        return false;
+    };
+    let Some(reference) = tail.strip_suffix(']') else {
+        return false;
+    };
+    !label.is_empty()
+        && label.bytes().all(plain_reference_byte)
+        && (reference.is_empty() || reference.bytes().all(plain_reference_byte))
+}
+
 fn carve_reference_spelling(raw: &str) -> bool {
     if raw.contains(['<', '>', '|', '\\', '&']) {
         return false;
+    }
+    if plain_reference_spelling(raw) {
+        return true;
     }
     let document = crate::parse(raw);
     matches!(document.children.as_slice(), [BlockNode::Paragraph(paragraph)]
