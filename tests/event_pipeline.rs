@@ -763,11 +763,7 @@ fn quote_marker_and_raw_fence_boundaries_keep_exact_output() {
         "> a\nlazy\n*[HTML]: HyperText\n\nHTML\n",
     ] {
         let (actual, admitted) = parse_experimental_event_blocks(source);
-        assert_eq!(
-            admitted,
-            !source.starts_with("> ```=html\n> "),
-            "{source:?}"
-        );
+        assert_eq!(admitted, source != "> ```=html\n> ", "{source:?}");
         let expected = parse_standard(source);
         assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
         assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
@@ -1243,4 +1239,86 @@ fn quoted_fences_without_a_final_newline_use_the_standard_route() {
         assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
         assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
     }
+}
+
+#[test]
+fn quoted_fence_reader_boundaries_match_public_ast_and_html() {
+    let mut admitted = 0usize;
+    for body in [
+        "> ```\n> x\n",
+        "> ```\n> x\n> ```\n",
+        "> ~~~js\n> x\n> ~~~\n",
+        "> ::: |\n> ```\n> x\n",
+        "> text\n> ```\n",
+        "> - item\n> ```\n> x\n",
+        "> ::: note\n> ```\n> x\n> :::\n",
+        "> ```=html\n> x\n",
+    ] {
+        for tail in [
+            "after\n",
+            "> again\n",
+            "\nAfter.\n",
+            "- item\n",
+            ":  desc\n",
+            "+\n",
+            "# Heading\n",
+            "> ```\n",
+            "",
+        ] {
+            for prefix in ["", "Before.\n\n", "# Heading\n\n", "- item\n\n"] {
+                let source = format!("{prefix}{body}{tail}");
+                let expected = parse_standard(&source);
+                let (actual, used) = parse_experimental_event_blocks(&source);
+                admitted += usize::from(used);
+                assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+                assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+            }
+        }
+    }
+    assert!(admitted > 0, "the grid must exercise the event route");
+}
+
+#[test]
+fn root_continuation_owner_grid_matches_public_ast_and_html() {
+    for source in [
+        ":: term\n: A first paragraph,\n+\nthen a flush-left block joined with +.\n",
+        "> quoted\n+\n- item\n",
+    ] {
+        let expected = parse_standard(source);
+        let (actual, used) = parse_experimental_event_blocks(source);
+        assert!(used, "root continuation owner must enter the event route");
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+    let mut admitted = 0usize;
+    for prefix in [
+        "",
+        "Text\n",
+        "# Heading\n",
+        "- item\n",
+        "> quote\n",
+        ":: term\n:  desc\n",
+        "::: note\ninside\n:::\n",
+        "---\ntitle: T\n---\n\n",
+    ] {
+        for marker in ["+\n", " +\n", "- +\n", "> +\n", ":  +\n"] {
+            for follower in [
+                "```\na\n```\n",
+                "> quote\n",
+                "- item\n",
+                "Plain.\n",
+                "::: note\nbody\n:::\n",
+            ] {
+                for tail in ["", "\nAfter.\n", "\n:: next\n:  x\n"] {
+                    let source = format!("{prefix}{marker}{follower}{tail}");
+                    let expected = parse_standard(&source);
+                    let (actual, used) = parse_experimental_event_blocks(&source);
+                    admitted += usize::from(used);
+                    assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+                    assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+                }
+            }
+        }
+    }
+    assert!(admitted > 0, "the grid must exercise the event route");
 }

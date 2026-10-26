@@ -91,13 +91,23 @@ fn parse_mixed_blocks<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
     lines: &[&str],
     options: &Options<'_>,
 ) -> Option<Vec<BlockNode>> {
-    if lines.iter().copied().any(|line| {
-        let line = trim_ascii(line);
-        line == "+" || line.ends_with(" +")
-    }) {
+    parse_mixed_blocks_mapped::<DEFINITIONS, ABBREVIATIONS>(lines, options, None)
+}
+
+fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
+    lines: &[&str],
+    options: &Options<'_>,
+    line_map: Option<&[Option<usize>]>,
+) -> Option<Vec<BlockNode>> {
+    if line_map.is_none()
+        && lines.iter().copied().any(|line| {
+            let line = trim_ascii(line);
+            line == "+" || line.ends_with(" +")
+        })
+    {
         return None;
     }
-    let mut cur = LineCursor::new_with_cols(lines, None, None);
+    let mut cur = LineCursor::new_with_cols(lines, line_map, None);
     cur.at_document_level = true;
     let mut out = Vec::new();
     let mut leading_attrs: Vec<(usize, Attrs)> = Vec::new();
@@ -160,13 +170,6 @@ fn parse_mixed_blocks<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
                 cur.pos = end;
                 out.push(BlockNode::BlockQuote(quote));
             } else {
-                if lines[cur.pos..]
-                    .iter()
-                    .map_while(|line| strip_blockquote_prefix(line))
-                    .any(|body| detect_fence_open(body).is_some())
-                {
-                    return None;
-                }
                 out.push(*parse_blockquote(&mut cur, options));
             }
             continue;
@@ -1431,6 +1434,16 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     } else {
         body
     };
+    let body_start_line = source[..body.as_ptr() as usize - source.as_ptr() as usize]
+        .bytes()
+        .filter(|byte| *byte == b'\n')
+        .count()
+        + 1;
+    let root_line_map: Option<Vec<Option<usize>>> = body_source.contains('+').then(|| {
+        (body_start_line..body_start_line + body_source.lines().count())
+            .map(Some)
+            .collect()
+    });
     let (direct, link_defs, needs_late_resolution) = {
         let _depth = DepthGuard::enter()?;
         let lines: Vec<&str> = body_source.lines().collect();
@@ -1438,9 +1451,17 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
             with_active_link_defs(link_defs, || {
                 parse_blocks(&lines, &options).or_else(|| {
                     if may_have_abbrevs {
-                        parse_mixed_blocks::<true, true>(&lines, &options)
+                        parse_mixed_blocks_mapped::<true, true>(
+                            &lines,
+                            &options,
+                            root_line_map.as_deref(),
+                        )
                     } else {
-                        parse_mixed_blocks::<true, false>(&lines, &options)
+                        parse_mixed_blocks_mapped::<true, false>(
+                            &lines,
+                            &options,
+                            root_line_map.as_deref(),
+                        )
                     }
                 })
             })
@@ -1456,9 +1477,17 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
                         }
                     }
                     if may_have_abbrevs {
-                        parse_mixed_blocks::<false, true>(&lines, &options)
+                        parse_mixed_blocks_mapped::<false, true>(
+                            &lines,
+                            &options,
+                            root_line_map.as_deref(),
+                        )
                     } else {
-                        parse_mixed_blocks::<false, false>(&lines, &options)
+                        parse_mixed_blocks_mapped::<false, false>(
+                            &lines,
+                            &options,
+                            root_line_map.as_deref(),
+                        )
                     }
                 }),
                 link_defs,
