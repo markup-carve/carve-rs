@@ -400,7 +400,7 @@ impl BracedClosers {
                 BracedStep::Jump(index(end))
             } else {
                 match bytes[at] {
-                    b'\\' => BracedStep::Jump(index(at + 2)),
+                    b'\\' => BracedStep::Jump(index((at + 2).min(bytes.len()))),
                     b'`' => match self.code_end(bytes, at) {
                         Some(end) => BracedStep::Jump(index(end)),
                         None => {
@@ -657,7 +657,7 @@ impl BracedClosers {
                 BracedStep::Jump(index(end))
             } else {
                 match bytes[at] {
-                    b'\\' => BracedStep::Jump(index(at + 2)),
+                    b'\\' => BracedStep::Jump(index((at + 2).min(bytes.len()))),
                     b'`' => match self.code_end(bytes, at) {
                         Some(end) => {
                             let end =

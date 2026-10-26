@@ -2531,3 +2531,6 @@ mod djot_heading_id_collisions;
 mod empty_destination_tab_ruling;
 #[path = "../markdown_destination_parentheses.rs"]
 mod markdown_destination_parentheses;
+
+#[path = "../trailing_escape_braced_scan.rs"]
+mod trailing_escape_braced_scan;
