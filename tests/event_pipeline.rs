@@ -184,7 +184,7 @@ fn event_route_resolves_collapsed_heading_references() {
 }
 
 #[test]
-fn quote_marker_and_raw_fence_boundaries_use_standard_parser() {
+fn quote_marker_and_raw_fence_boundaries_keep_exact_output() {
     for source in [
         "> - a\n>+\n> tail\n",
         "> ```=html\n> ",
@@ -194,7 +194,7 @@ fn quote_marker_and_raw_fence_boundaries_use_standard_parser() {
         "> - item\n",
     ] {
         let (actual, admitted) = parse_experimental_event_blocks(source);
-        assert!(!admitted, "{source:?}");
+        assert_eq!(admitted, !source.contains("```=html"), "{source:?}");
         let expected = parse_standard(source);
         assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
         assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
