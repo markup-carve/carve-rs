@@ -1,5 +1,7 @@
 use super::*;
 
+const MIXED_QUOTE_DEPTH_LIMIT: usize = 32;
+
 enum Event<'a> {
     Heading(u8, &'a str),
     Paragraph(&'a [&'a str]),
@@ -447,7 +449,7 @@ fn parse_marked_quote(
             (consumed == parts.len()).then(|| vec![BlockNode::List(list)])
         })
         .or_else(|| {
-            if NESTING_DEPTH.with(|depth| depth.get() >= 32) {
+            if NESTING_DEPTH.with(|depth| depth.get() >= MIXED_QUOTE_DEPTH_LIMIT) {
                 return None;
             }
             let _depth = DepthGuard::enter()?;
@@ -1220,7 +1222,7 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     let may_have_link_defs = source.contains("]:");
     let may_have_abbrevs = source.contains("*[");
     if source.contains("[^") {
-        return parse_document_with_footnotes(source);
+        return parse_document_with_footnotes(source, source_len);
     }
     if !source.ends_with('\n') && source.lines().any(|line| detect_fence_open(line).is_some()) {
         return None;
@@ -1341,7 +1343,7 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     Some((doc, used_event_route))
 }
 
-fn parse_document_with_footnotes(source: &str) -> Option<(Document, bool)> {
+fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Document, bool)> {
     let may_have_abbrevs = source.contains("*[");
     if source.contains(['\r', '\0', '\u{feff}', '\u{e005}', '\u{e006}'])
         || (!source.ends_with('\n') && source.lines().any(|line| detect_fence_open(line).is_some()))
@@ -1412,7 +1414,7 @@ fn parse_document_with_footnotes(source: &str) -> Option<(Document, bool)> {
         footnote_defs,
         footnote_def_pos,
         children,
-        source_len: source.len(),
+        source_len,
         ingest_payload_len: 0,
     };
     if source.contains("][") {

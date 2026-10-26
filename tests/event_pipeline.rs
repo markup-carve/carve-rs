@@ -388,6 +388,21 @@ fn event_route_lifts_simple_footnotes() {
 }
 
 #[test]
+fn normalized_footnotes_preserve_authored_source_length() {
+    for source in [
+        "Text[^n]\r\n\r\n[^n]: Note.\r\n",
+        "\u{feff}Text[^n]\n\n[^n]: Note.\n",
+        "Text[^n]\0\n\n[^n]: Note.\n",
+    ] {
+        let (actual, _) = parse_experimental_event_blocks(source);
+        let expected = parse_standard(source);
+        assert_eq!(actual.source_len, source.len(), "{source:?}");
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
 fn event_route_lifts_root_abbreviations() {
     for source in [
         "The HTML spec is long.\n*[HTML]: HyperText Markup Language\n",
