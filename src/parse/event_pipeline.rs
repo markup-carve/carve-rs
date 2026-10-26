@@ -85,7 +85,10 @@ pub(super) fn parse_blocks(lines: &[&str], options: &Options<'_>) -> Option<Vec<
 /// Stream simple top-level blocks as events while handing list and definition
 /// bodies to the existing readers. A construct outside this subset declines the
 /// whole route before it can publish a partial AST.
-fn parse_mixed_blocks(lines: &[&str], options: &Options<'_>) -> Option<Vec<BlockNode>> {
+fn parse_mixed_blocks<const DEFINITIONS: bool>(
+    lines: &[&str],
+    options: &Options<'_>,
+) -> Option<Vec<BlockNode>> {
     if lines.iter().copied().any(|line| {
         let line = trim_ascii(line);
         line == "+" || line.ends_with(" +")
@@ -96,6 +99,10 @@ fn parse_mixed_blocks(lines: &[&str], options: &Options<'_>) -> Option<Vec<Block
     cur.at_document_level = true;
     let mut out = Vec::new();
     while cur.peek().is_some() {
+        if DEFINITIONS && cur.peek().is_some_and(is_definition_placeholder) {
+            cur.consume();
+            continue;
+        }
         let invalid_brace_line = if cur.peek().is_some_and(|line| line.starts_with('{')) {
             if parse_standalone_attrs_block(&mut cur).is_some() {
                 return None;
@@ -197,6 +204,9 @@ fn parse_mixed_blocks(lines: &[&str], options: &Options<'_>) -> Option<Vec<Block
         }
         let mut paragraph_lines = Vec::new();
         while let Some(next) = cur.peek() {
+            if DEFINITIONS && is_definition_placeholder(next) {
+                break;
+            }
             if is_blank_line(next) || detect_heading(next).is_some() {
                 break;
             }
@@ -1040,9 +1050,8 @@ fn parse_deep_simple_list(
     Some((frames.pop()?.list, pos))
 }
 
-/// The admission gate excludes syntax that needs definition lifting, positions,
-/// or an unsupported container. Normalize line endings, BOM and NUL only when
-/// the existing special-character gate finds one of them.
+/// The experimental route keeps unsupported source and option shapes on the
+/// standard parser until their direct construction matches its public output.
 pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     let source_len = source.len();
     let normalized = if source.contains(['\r', '\0', '\u{feff}', '\u{e005}', '\u{e006}']) {
@@ -1054,22 +1063,52 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         None
     };
     let source = normalized.as_deref().unwrap_or(source);
+    let may_have_link_defs = source.contains("]:");
     if source.contains("[^")
+
         || source.contains("*[")
-        || source.contains("]:")
         || (!source.ends_with('\n') && source.lines().any(|line| detect_fence_open(line).is_some()))
     {
         return None;
     }
     let options = Options::default();
+    let _placeholders =
+        may_have_link_defs.then(|| PlaceholderGuard::install(pick_definition_placeholders(source)));
     let _continuation_markers = continuation_marker::Guard::install(source);
     let _source_ending = SourceEndingGuard::install(source);
     let (frontmatter, frontmatter_raw, body) = split_frontmatter(source, false);
-    let direct = {
-        let _depth = DepthGuard::enter()?;
-        let lines: Vec<&str> = body.lines().collect();
-        parse_blocks(&lines, &options).or_else(|| parse_mixed_blocks(&lines, &options))
+    let (stripped_body, link_defs) = if may_have_link_defs {
+        let mut budget = probe_budget_for(body.len());
+        extract_link_defs_guarded(body, &options, &mut budget)
+    } else {
+        (String::new(), BTreeMap::new())
     };
+    let has_link_defs = !link_defs.is_empty();
+    let body_source = if has_link_defs {
+        stripped_body.as_str()
+    } else {
+        body
+    };
+    let (direct, link_defs, needs_late_resolution) = {
+        let _depth = DepthGuard::enter()?;
+        let lines: Vec<&str> = body_source.lines().collect();
+        if has_link_defs {
+            with_active_link_defs(link_defs, || {
+                parse_blocks(&lines, &options)
+                    .or_else(|| parse_mixed_blocks::<true>(&lines, &options))
+            })
+        } else {
+            (
+                parse_blocks(&lines, &options)
+                    .or_else(|| parse_mixed_blocks::<false>(&lines, &options)),
+                link_defs,
+                false,
+            )
+        }
+    };
+    if has_link_defs && direct.is_none() {
+        return None;
+    }
     let used_event_route = direct.is_some();
     let children = direct.unwrap_or_else(|| {
         let body_start_line = source[..body.as_ptr() as usize - source.as_ptr() as usize]
@@ -1107,10 +1146,11 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         source_len,
         ingest_payload_len: 0,
     };
-    if source.contains("][") {
+    if needs_late_resolution || source.contains("][") {
         let headings = heading_reference_index_for_document(&doc, options.heading_id_options());
-        resolve_reference_links(&mut doc, &BTreeMap::new(), &headings);
+        resolve_reference_links(&mut doc, &link_defs, &headings);
     }
+    append_link_reference_definitions(&mut doc, &link_defs, source, None);
     if source.contains('^') {
         number_crossref_captions(&mut doc);
     }
@@ -1124,4 +1164,22 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         fill_crossref_hrefs(&mut doc, options.heading_id_options());
     }
     Some((doc, used_event_route))
+}
+
+#[cfg(test)]
+mod link_definition_tests {
+    use super::*;
+
+    #[test]
+    fn nested_parse_installs_its_own_definition_placeholders() {
+        let _outer = PlaceholderGuard::install(['\u{e007}', '\u{e008}']);
+        let source = "```\n%%\u{e007}\n```\n\n[ref]: /target\n\nSee [ref][]\n";
+        let (actual, admitted) = parse_document(source).unwrap();
+        assert!(admitted);
+        let expected = parse_with_options(source, &Options::default());
+        assert_eq!(
+            crate::ast_json::to_json(&actual),
+            crate::ast_json::to_json(&expected)
+        );
+    }
 }

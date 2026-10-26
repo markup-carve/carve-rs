@@ -184,6 +184,23 @@ fn event_route_resolves_collapsed_heading_references() {
 }
 
 #[test]
+fn event_route_lifts_root_link_definitions() {
+    for source in [
+        "[site][ref]\n\n[ref]: https://example.com\n",
+        "[ref]: https://example.com \"title\"\n\n[site][ref]\n",
+        "[ref]: https://first.example\n[ref]: https://second.example\n\n[ref][]\n",
+        "# Heading\n\n[Heading][]\n\n[ref]: https://example.com\n",
+        "[ref]: https://example.com\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
 fn quote_marker_and_raw_fence_boundaries_keep_exact_output() {
     for source in [
         "> - a\n>+\n> tail\n",
