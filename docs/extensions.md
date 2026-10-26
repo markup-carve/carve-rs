@@ -764,3 +764,58 @@ as a table (no usable nested list, or a row with no cell list) is left as the
 default `<div class="list-table">` so content is never silently dropped.
 
 
+
+## Semantic inline names
+
+Nine semantic inline names are built in and need no registration: `abbr`,
+`cite`, `dfn`, `kbd`, `samp`, `var`, `time`, `code`, and `mark`.
+`:name[content]{attrs}` remains an ordinary inline-extension AST node and maps
+to the same-named HTML element; unknown names retain the generic
+`<span class="ext-name">` fallback. Plain and ANSI render only the content.
+
+The same registry has compact span-attribute sugar: `[Ctrl]{kbd}` and
+`[HTML]{abbr="HyperText Markup Language"}`. Attributes can combine, for example
+`[CSS]{dfn abbr="Cascading Style Sheets"}`; non-semantic attributes remain on
+one outer span.
+`:cite[…]` is distinct from bibliographic `[@key]` citations, and `:abbr[…]`
+does not declare an automatic abbreviation.
+
+A custom renderer can handle extension nodes such as `:kbd[Ctrl]`:
+
+```rust
+use carve::{CarveExtension, InlineExtension, Options, RenderContext};
+
+struct Kbd;
+
+impl CarveExtension for Kbd {
+    fn name(&self) -> &'static str {
+        "kbd"
+    }
+
+    fn render_inline_extension(
+        &self,
+        node: &InlineExtension,
+        ctx: &RenderContext<'_>,
+    ) -> Option<String> {
+        (node.name == "kbd").then(|| {
+            format!("<kbd>{}</kbd>", ctx.render_inlines(&node.children))
+        })
+    }
+}
+
+let kbd = Kbd;
+let options = Options::new().with_extension(&kbd);
+let html = carve::to_html_with_options("Press :kbd[Ctrl].", &options);
+assert_eq!(html, "<p>Press <kbd>Ctrl</kbd>.</p>");
+```
+
+Locale-specific quote glyphs are also an opt-in extension:
+
+```rust
+use carve::{Options, SmartQuotes};
+
+let quotes = SmartQuotes::new("de");
+let options = Options::new().with_extension(&quotes);
+let html = carve::to_html_with_options("\"Hallo\"", &options);
+assert_eq!(html, "<p>„Hallo“</p>");
+```

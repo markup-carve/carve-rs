@@ -326,3 +326,45 @@ fields in PART 12 section 3.
 `try_to_carve_with_options`. For an existing `Document`, use
 `render_carve_with_options(&doc, &CarveWriterOptions::default().with_align_tables(true))`.
 The default writer keeps canonical tables unaligned.
+
+## Mention and tag resolvers
+
+`Options::with_mention_url` and `with_tag_url` remain available for route
+templates. Application lookups can instead use `with_mention_resolver` and
+`with_tag_resolver`. A resolver receives `SocialLinkResolverInput` with the
+exact parsed name, node kind, attributes, and optional opaque context. It
+returns `Ok(Some(destination))`, `Ok(None)` for unresolved, or `Err`.
+
+A configured resolver is authoritative for its kind. Unresolved values and
+errors render the ordinary inert span and never fall back to a template. A
+denied destination from either a resolver or a URL template also renders the
+inert span. Resolver errors are not otherwise exposed. A returned destination
+is complete and is not encoded a second time.
+
+## Straight quotes with smart typography
+
+
+
+Set `Options { smart_typography: SmartTypographyMode::QuotesSource,
+..Options::default() }` to emit quote and apostrophe source runs while keeping
+other smart substitutions enabled. The setting applies to HTML, Markdown,
+plain text, and ANSI. `Glyph` remains the default; `Source` still emits every
+source run. Parsing and heading IDs are unchanged; typed curly quotes and
+escapes keep their existing behavior. The CLI accepts
+`--smart-typography quotes-source`.
+
+## Whitespace and annotation offsets
+
+
+An escaped space produces a `non_breaking_space` node. Preserved line-block
+columns use the same node. Text and verbatim values keep literal Unicode,
+including U+E000. HTML renders generated spaces as `&nbsp;`; Markdown uses
+U+00A0, and plain text and ANSI use ordinary spaces.
+
+Annotation offsets count Unicode codepoints in the contract's fixed field
+order. They do not depend on JSON property insertion order or source positions.
+The shared annotation fixture covers image alt text, math, breaks and reversed
+ranges.
+
+Table body partitions and source attributes are documented in
+[Table source metadata](table-source-metadata.md).

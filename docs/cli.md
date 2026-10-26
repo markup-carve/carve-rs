@@ -153,3 +153,9 @@ be allowed.
 ---
 
 [Back to the README](../README.md)
+
+## Directory migration
+
+carve migrate --from markdown --directory docs --output docs-carve --check-loss
+
+Folder migration copies assets and writes `docs-carve/migration-report.json` with files that need review.

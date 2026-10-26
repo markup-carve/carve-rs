@@ -1,16 +1,25 @@
 # Rust guides
 
-Start with the [Carve documentation](https://markup-carve.github.io/carve/) for the language. Engine guides cover the Rust API and CLI.
+Start with the [Carve documentation](https://markup-carve.github.io/carve/) for the language.
 
-- [Additional package details](readme-details.md)
-- [API reference](reference.md)
+- [Accessibility linting](accessibility-lint.md)
 - [Command line](cli.md)
-- [Migration](migration.md)
-- [Migration reports](migration-result.md)
+- [Conformance](conformance.md)
+- [Development](development.md)
 - [Djot image alternative text](djot-image-alt-fidelity.md)
+- [Checking a binding's engine pin](engine-pin-guard.md)
 - [Extensions](extensions.md)
-- [File inclusion](reference.md#file-inclusion)
-- [Security for untrusted input](security.md)
+- [HTML import fanout measurements](html-import-fanout-performance.md)
+- [File inclusion](includes.md)
+- [Rust library API](library.md)
+- [Linting](linting.md)
+- [Shared migration results](migration-result.md)
+- [Migrating into Carve](migration.md)
+- [Parser snapshots and edits](parser-snapshots.md)
+- [ProseMirror / Tiptap](prosemirror.md)
+- [Rendering behavior](rendering.md)
+- [Reversible AST patches](reversible-patches.md)
+- [Untrusted input](security.md)
 - [Source-preserving patches](source-patches.md)
+- [Streaming render boundary](streaming-render.md)
 - [Table source metadata](table-source-metadata.md)
-- [Development and contributing](development.md)
