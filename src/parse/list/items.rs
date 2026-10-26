@@ -2109,14 +2109,15 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     // paragraph text.
     fn paragraph_lead_item(&mut self, item: ItemOpen<'l>) {
         let content = item.marker.content;
+        let paragraph_content = trim_ascii_start(content);
         let mut lead = LeadParagraph {
-            lines: vec![content.to_string()],
+            lines: vec![paragraph_content.to_string()],
             suppress_colon_interrupt: is_invalid_colon_fence_opener_text(content),
             attrs_scan_floor: self.cur.pos,
             anchors: self
                 .options
                 .positions
-                .then(|| vec![inline_anchor_for_line(self.cur, item.at, content)]),
+                .then(|| vec![inline_anchor_for_line(self.cur, item.at, paragraph_content)]),
             caption_below_content_column: false,
             literal_colon_opener: detect_container_open(content)
                 .map(|open| open.fence_len)
