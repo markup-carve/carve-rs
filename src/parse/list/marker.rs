@@ -807,6 +807,9 @@ pub(crate) fn parse_continuation_block(
             apply_attrs_to_block(node, attrs);
         }
     }
+    if let Some(node) = &mut block {
+        promote_delimited_code(node, &sub, block_start, options);
+    }
     if options.source_lines {
         if let Some(block) = &mut block {
             if let Some(line) = line_map.get(block_start).copied().flatten() {
