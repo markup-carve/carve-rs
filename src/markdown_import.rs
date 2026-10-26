@@ -1129,8 +1129,11 @@ fn markdown_to_ast_with_code_lines(
     let (native_source, native_urls) = native_destinations::prepare(parser_source, options);
     let strikes = crate::markdown_strike::prepare(&native_source, options);
     let mut reference = |link: pulldown_cmark::BrokenLink<'_>| {
-        let unknown = matches!(link.link_type, LinkType::Reference | LinkType::Collapsed)
-            || (link.link_type == LinkType::Shortcut && link.reference.starts_with('^'));
+        let image = strikes.text.as_bytes().get(link.span.start) == Some(&b'!')
+            || strikes.text.as_bytes().get(link.span.start.wrapping_sub(1)) == Some(&b'!');
+        let unknown = !image
+            && (matches!(link.link_type, LinkType::Reference | LinkType::Collapsed)
+                || (link.link_type == LinkType::Shortcut && link.reference.starts_with('^')));
         strikes
             .reference(link)
             .or_else(|| unknown.then(|| ("".into(), "".into())))

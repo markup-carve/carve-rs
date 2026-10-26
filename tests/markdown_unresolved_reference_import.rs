@@ -13,3 +13,9 @@ fn unresolved_references_keep_their_source() {
         assert_eq!(written.trim_end(), source, "{source:?}");
     }
 }
+
+#[test]
+fn an_unresolved_image_is_still_literal() {
+    let written = carve::try_markdown_to_carve("![alt][missing]").unwrap();
+    assert!(written.contains("[alt][missing]"), "{written:?}");
+}
