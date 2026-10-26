@@ -441,15 +441,18 @@ fn parse_marked_quote(
     {
         return None;
     }
-    let children = parse_blocks(&parts, options).or_else(|| {
-        if let Some((list, consumed)) = parse_simple_list(&parts, 0, options) {
-            if consumed == parts.len() {
-                return Some(vec![BlockNode::List(list)]);
+    let children = parse_blocks(&parts, options)
+        .or_else(|| {
+            let (list, consumed) = parse_simple_list(&parts, 0, options)?;
+            (consumed == parts.len()).then(|| vec![BlockNode::List(list)])
+        })
+        .or_else(|| {
+            if NESTING_DEPTH.with(|depth| depth.get() >= 32) {
+                return None;
             }
-        }
-        let _depth = DepthGuard::enter()?;
-        parse_mixed_blocks(&parts, options)
-    })?;
+            let _depth = DepthGuard::enter()?;
+            parse_mixed_blocks(&parts, options)
+        })?;
     Some((
         BlockQuote {
             attrs: None,

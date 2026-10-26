@@ -106,6 +106,82 @@ fn fully_marked_quote_lists_keep_exact_output() {
 }
 
 #[test]
+fn marked_quote_bodies_share_the_block_route() {
+    for source in [
+        "> > inner\n",
+        "> > inner\n> > more\n",
+        "> lead\n>\n> > inner\n",
+        "> # Heading\n>\n> - item\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+
+    let deep = format!("{}text\n", "> ".repeat(48));
+    let expected = parse_standard(&deep);
+    let (actual, admitted) = parse_experimental_event_blocks(&deep);
+    assert!(!admitted);
+    assert_eq!(to_json(&actual), to_json(&expected));
+    assert_eq!(render_html(&actual), render_html(&expected));
+}
+
+#[test]
+fn generated_marked_quote_bodies_keep_exact_output() {
+    let lines = [
+        "plain",
+        "",
+        "# Heading",
+        "- item",
+        "  wrapped",
+        "1. ordered",
+        "> nested",
+        "---",
+        ":: term",
+        ":  definition",
+        "{.class}",
+        "```",
+        "code",
+        "::: note",
+        "[ref]: /url",
+        "a [ref][x]",
+        "![alt](x)",
+        "%% comment",
+    ];
+    let mut state = 0x6c13_4f29_u32;
+    let mut admitted = 0;
+    for case in 0..4_096 {
+        let mut source = String::new();
+        for _ in 0..1 + case % 7 {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            source.push('>');
+            let line = lines[(state as usize) % lines.len()];
+            if !line.is_empty() {
+                source.push(' ');
+                source.push_str(line);
+            }
+            source.push('\n');
+        }
+        let (actual, used) = parse_experimental_event_blocks(&source);
+        admitted += usize::from(used);
+        let expected = parse_standard(&source);
+        assert_eq!(
+            to_json(&actual),
+            to_json(&expected),
+            "case {case}: {source:?}"
+        );
+        assert_eq!(
+            render_html(&actual),
+            render_html(&expected),
+            "case {case}: {source:?}"
+        );
+    }
+    assert!(admitted > 30, "quote bodies must exercise the event route");
+}
+
+#[test]
 fn mixed_route_admits_root_table_without_changing_output() {
     let source = "# Heading\n\n|= Fruit |= Price |\n| Apple | $1 |\n^ Fruit prices\n\nAfter.\n";
     let (actual, admitted) = parse_experimental_event_blocks(source);
@@ -306,7 +382,6 @@ fn quote_marker_and_raw_fence_boundaries_keep_exact_output() {
         "> ```=html\n> ",
         "> ```=html\n> \n",
         "> a\n\n^ caption\n",
-        "> > inner\n",
         "> quote\n*[HTML]: HyperText\n\nHTML\n",
         "> quote HTML\n*[HTML]: HyperText\n",
         "> a\n> b\n*[HTML]: HyperText\n\nHTML\n",
