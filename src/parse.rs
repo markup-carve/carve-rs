@@ -2833,6 +2833,14 @@ pub(crate) fn lint_table_cell_ranges(row: &str) -> Vec<(usize, usize)> {
         .collect()
 }
 
+pub(crate) fn lint_cell_attr_end(
+    line: &str,
+    at: usize,
+    last_close: Option<usize>,
+) -> Option<usize> {
+    read_attrs_at(line.as_bytes(), at, last_close).map(|(_, end)| end)
+}
+
 pub(crate) fn lint_reversed_cell_markers(line: &str) -> Vec<(usize, usize)> {
     if !is_table_start(line) {
         return Vec::new();

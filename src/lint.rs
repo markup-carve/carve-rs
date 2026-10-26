@@ -578,6 +578,7 @@ fn collect_table_column_warnings(source: &str, out: &mut Vec<LintWarning>) {
         let trimmed = line.trim_start();
         if trimmed.starts_with('|') {
             let bytes = line.as_bytes();
+            let last_close_brace = line.rfind('}');
             let mut i = 0;
             let mut column_byte = 0;
             let mut column_points = 0;
@@ -599,17 +600,33 @@ fn collect_table_column_warnings(source: &str, out: &mut Vec<LintWarning>) {
                         && end == start + 1
                         && matches!(bytes[start], b'^' | b'<')
                         && bytes.get(end) == Some(&b'|');
+                    let after_attrs = if bytes.get(end) == Some(&b'{') {
+                        crate::parse::lint_cell_attr_end(line, end, last_close_brace).unwrap_or(end)
+                    } else {
+                        end
+                    };
+                    if start == i + 2
+                        && end == start
+                        && bytes.get(start).is_some_and(|b| *b != b' ')
+                    {
+                        if bytes.get(after_attrs) == Some(&b' ') {
+                            i += 1;
+                            continue;
+                        }
+                        let column = line[column_byte..i + 1].chars().count() + column_points + 1;
+                        out.push(LintWarning { file: None, included_by: Vec::new(), line: index + 1, column, rule: "table-marker-run-padding", message: "The table kind marker has no terminating space, so it is literal cell content. Add a space after the marker run to make it a header.".to_string(), start: line_start + i + 1, end: line_start + i + 2 });
+                    }
                     if end > start
                         && !whole_span
-                        && bytes.get(end).is_some_and(|b| {
+                        && bytes.get(after_attrs).is_some_and(|b| {
                             !b.is_ascii_whitespace()
-                                && *b != b'{'
-                                && !matches!(b, b'<' | b'>' | b'~' | b'^' | b'v' | b'?')
+                                && (after_attrs != end
+                                    || !matches!(b, b'<' | b'>' | b'~' | b'^' | b'v' | b'?'))
                         })
                     {
                         column_points += line[column_byte..start].chars().count();
                         column_byte = start;
-                        out.push(LintWarning { file: None, included_by: Vec::new(), line: index + 1, column: column_points + 1, rule: "table-alignment-run-padding", message: format!("The table alignment run {:?} has no terminating space, so it is literal cell content. Add a space after the run to make it alignment.", &line[start..end]), start: line_start + start, end: line_start + end });
+                        out.push(LintWarning { file: None, included_by: Vec::new(), line: index + 1, column: column_points + 1, rule: "table-marker-run-padding", message: format!("The table alignment run {:?} has no terminating space, so it is literal cell content. Add a space after the run to make it alignment.", &line[start..end]), start: line_start + start, end: line_start + end });
                     }
                 }
                 i += 1;
