@@ -138,6 +138,9 @@ fn parse_mixed_blocks(lines: &[&str], options: &Options<'_>) -> Option<Vec<Block
             } else if let Some((quote, end)) = parse_marked_quote(lines, cur.pos, options) {
                 cur.pos = end;
                 out.push(BlockNode::BlockQuote(quote));
+            } else if let Some((quote, end)) = parse_simple_lazy_quote(lines, cur.pos, options) {
+                cur.pos = end;
+                out.push(BlockNode::BlockQuote(quote));
             } else {
                 return None;
             }
@@ -309,6 +312,61 @@ fn parse_marked_quote(
         BlockQuote {
             attrs: None,
             children,
+            fenced: false,
+            pos: None,
+        },
+        end,
+    ))
+}
+
+fn parse_simple_lazy_quote(
+    lines: &[&str],
+    start: usize,
+    options: &Options<'_>,
+) -> Option<(BlockQuote, usize)> {
+    let mut parts = Vec::new();
+    let mut end = start;
+    let mut lazy = false;
+    while let Some(line) = lines.get(end) {
+        let content = if !lazy { line.strip_prefix("> ") } else { None };
+        let text = content.unwrap_or(line);
+        if !may_continue_plain_paragraph(text)
+            || detect_heading(text).is_some()
+            || is_list_marker(text)
+            || is_definition_list_start(text)
+            || detect_fence_open(text).is_some()
+            || thematic_break_marker(text).is_some()
+        {
+            break;
+        }
+        if content.is_none() {
+            lazy = true;
+        }
+        parts.push(trim_ascii_end(text));
+        end += 1;
+    }
+    if !lazy || parts.is_empty() {
+        return None;
+    }
+    let mut after = end;
+    while lines.get(after).is_some_and(|line| is_blank_line(line)) {
+        after += 1;
+    }
+    if after == end && end < lines.len()
+        || lines.get(after).is_some_and(|line| line.starts_with('^'))
+    {
+        return None;
+    }
+    Some((
+        BlockQuote {
+            attrs: None,
+            children: vec![BlockNode::Paragraph(Paragraph {
+                attrs: None,
+                children: parse_event_inlines(&parts.join("\n"), options),
+                at_content_column: true,
+                block_image: false,
+                pos: None,
+            })],
             fenced: false,
             pos: None,
         },
