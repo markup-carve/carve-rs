@@ -609,8 +609,8 @@ fn parse_simple_list(lines: &[&str], start: usize, options: &Options<'_>) -> Opt
 }
 
 /// Build the common tight parent-and-child shape without collecting item bodies
-/// for the general list reader. Any continuation or blank inside the list
-/// leaves ownership to that reader.
+/// for the general list reader. Accept up to two plain parent continuation
+/// lines; a blank or a more complex continuation stays with that reader.
 fn parse_two_level_simple_list(
     lines: &[&str],
     start: usize,
@@ -625,14 +625,32 @@ fn parse_two_level_simple_list(
     } else {
         "  "
     };
-    lines
-        .get(start + 1)?
-        .strip_prefix(child_prefix)
-        .and_then(simple_list_marker)?;
+    let mut probe = start + 1;
+    let mut preface_lines = 0;
+    loop {
+        let rest = lines.get(probe)?.strip_prefix(child_prefix)?;
+        if simple_list_marker(rest).is_some() {
+            break;
+        }
+        if preface_lines == 2 {
+            return None;
+        }
+        let content = trim_ascii_end(trim_ascii_start(rest));
+        if !may_continue_plain_paragraph(content)
+            || is_list_marker(content)
+            || detect_fence_open(content).is_some()
+            || thematic_break_marker(content).is_some()
+            || detect_heading(content).is_some()
+        {
+            return None;
+        }
+        probe += 1;
+        preface_lines += 1;
+    }
     let mut parent_items = Vec::new();
     let mut pos = start;
     let mut has_child = false;
-    while let Some((kind, ordinal, content)) =
+    while let Some((kind, ordinal, first_content)) =
         lines.get(pos).and_then(|line| simple_list_marker(line))
     {
         if kind != parent_kind {
@@ -641,14 +659,46 @@ fn parse_two_level_simple_list(
         if parent_kind == SimpleListKind::Ordered && ordinal != parent_items.len() + 1 {
             return None;
         }
+        pos += 1;
+        let has_continuation = lines
+            .get(pos)
+            .and_then(|line| line.strip_prefix(child_prefix))
+            .is_some_and(|rest| simple_list_marker(rest).is_none());
+        let inlines = if has_continuation {
+            let mut item_lines = vec![first_content];
+            while let Some(rest) = lines
+                .get(pos)
+                .and_then(|line| line.strip_prefix(child_prefix))
+            {
+                if simple_list_marker(rest).is_some() {
+                    break;
+                }
+                if item_lines.len() == 3 {
+                    return None;
+                }
+                let content = trim_ascii_end(trim_ascii_start(rest));
+                if !may_continue_plain_paragraph(content)
+                    || is_list_marker(content)
+                    || detect_fence_open(content).is_some()
+                    || thematic_break_marker(content).is_some()
+                    || detect_heading(content).is_some()
+                {
+                    return None;
+                }
+                item_lines.push(content);
+                pos += 1;
+            }
+            parse_event_inlines(&item_lines.join("\n"), options)
+        } else {
+            parse_event_inlines(first_content, options)
+        };
         let mut children = vec![BlockNode::Paragraph(Paragraph {
             attrs: None,
-            children: parse_event_inlines(content, options),
+            children: inlines,
             at_content_column: true,
             block_image: false,
             pos: None,
         })];
-        pos += 1;
         if let Some(line) = lines.get(pos) {
             if let Some(rest) = line.strip_prefix(child_prefix) {
                 if let Some((child_kind, first_child_number, _)) = simple_list_marker(rest) {
