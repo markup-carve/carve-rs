@@ -2540,3 +2540,5 @@ mod symbol_quote_context;
 mod trailing_escape_braced_scan;
 #[path = "../unclosed_math_span.rs"]
 mod unclosed_math_span;
+#[path = "../unclosed_nested_definition_fence.rs"]
+mod unclosed_nested_definition_fence;

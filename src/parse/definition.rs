@@ -856,7 +856,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
                 self.item_content_columns.pop();
             }
         }
-        let opens_descendant_here = self.track_paragraph_owner(fence, line, column);
+        let opens_descendant_here = self.track_paragraph_owner(cur, fence, line, column);
         if column == 0 && self.opens_comment_span_outside_body(cur, line) {
             return BodyStep::Stop;
         }
@@ -926,6 +926,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
     /// last paragraph sits in. True when this line opens a descendant.
     fn track_paragraph_owner(
         &mut self,
+        cur: &LineCursor<'_>,
         fence: &DefinitionBodyFence,
         line: &str,
         column: usize,
@@ -939,6 +940,8 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         }
         let local = trim_ascii_start(line);
         let content_column = self.content_column;
+        let unclosed_fence =
+            detect_fence_open(local).is_some_and(|open| self.no_closer_in_body(cur, open));
         let below_owner =
             self.paragraph_column.is_some_and(|owner| column < owner) && column >= content_column;
         if below_owner && is_reference_definition(local) {
@@ -948,7 +951,8 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             && (column == content_column
                 || !self.paragraph_owner_is_item
                 || is_definition_list_start(local))
-            && (is_list_marker(local) || item_block_opener_with_invisible_arms(local, true))
+            && (is_list_marker(local)
+                || (!unclosed_fence && item_block_opener_with_invisible_arms(local, true)))
         {
             self.adopt_paragraph_owner(local, column);
             true
@@ -961,7 +965,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             self.paragraph_column.is_some()
         } else {
             if self.paragraph_column.is_some_and(|owner| column >= owner)
-                && (item_block_opener_with_invisible_arms(local, true)
+                && ((!unclosed_fence && item_block_opener_with_invisible_arms(local, true))
                     || is_line_comment_any_column(line))
             {
                 self.end_descendant_block();
