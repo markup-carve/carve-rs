@@ -394,7 +394,8 @@ fn normalized_footnotes_preserve_authored_source_length() {
         "\u{feff}Text[^n]\n\n[^n]: Note.\n",
         "Text[^n]\0\n\n[^n]: Note.\n",
     ] {
-        let (actual, _) = parse_experimental_event_blocks(source);
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
         let expected = parse_standard(source);
         assert_eq!(actual.source_len, source.len(), "{source:?}");
         assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
