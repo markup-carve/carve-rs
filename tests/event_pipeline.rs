@@ -145,6 +145,32 @@ fn unified_list_boundaries_keep_exact_output() {
 }
 
 #[test]
+fn deep_list_at_parser_cap_keeps_exact_output() {
+    std::thread::Builder::new()
+        .stack_size(16 * 1024 * 1024)
+        .spawn(|| {
+            for depth in [190, 200] {
+                let mut source = String::new();
+                for level in 0..depth {
+                    source.push_str(&"  ".repeat(level));
+                    source.push_str("- item\n");
+                }
+                let (actual, _) = parse_experimental_event_blocks(&source);
+                let expected = parse_standard(&source);
+                assert_eq!(to_json(&actual), to_json(&expected), "depth {depth}");
+                assert_eq!(
+                    render_html(&actual),
+                    render_html(&expected),
+                    "depth {depth}"
+                );
+            }
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+#[test]
 fn literal_double_star_labels_keep_exact_ast_and_html() {
     for source in [
         "**Core syntax**\n",

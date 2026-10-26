@@ -397,6 +397,10 @@ fn parse_unified_list(
     start: usize,
     options: &Options<'_>,
 ) -> Option<(List, usize)> {
+    let base_depth = NESTING_DEPTH.with(|depth| depth.get());
+    if base_depth.saturating_add(2) >= MAX_NESTING_DEPTH {
+        return None;
+    }
     let mut frames: Vec<UnifiedListFrame<'_>> = Vec::new();
     let mut pos = start;
     while let Some(&line) = lines.get(pos) {
@@ -480,7 +484,7 @@ fn parse_unified_list(
                     paragraph: Vec::new(),
                 });
             } else if indent == frames.last()?.content_indent {
-                if frames.len() + 1 >= MAX_NESTING_DEPTH {
+                if base_depth.saturating_add(frames.len() + 2) >= MAX_NESTING_DEPTH {
                     return None;
                 }
                 flush_unified_list_paragraph(frames.last_mut()?)?;
@@ -504,9 +508,6 @@ fn parse_unified_list(
                     paragraph: Vec::new(),
                 });
             } else if indent != frames.last()?.indent {
-                return None;
-            }
-            if frames.len() >= MAX_NESTING_DEPTH {
                 return None;
             }
             let frame = frames.last_mut()?;
@@ -571,6 +572,10 @@ mod unified_list_tests {
             "1. a\n   - nested\n\n2. b\n",
             "- a\n\n\n",
             "- a\n  - nested\n\n\nPara\n",
+            "- root\n  * middle\n    - leaf\n",
+            "- a\n  more\n  - child\n",
+            "* a\n  more\n  - child\n",
+            "1. a\n   more\n   - child\n",
         ] {
             let lines: Vec<&str> = source.lines().collect();
             assert!(
@@ -578,13 +583,22 @@ mod unified_list_tests {
                 "{source:?}"
             );
         }
-        for source in ["- a\nlazy line\n", "- a\n\n   wrong indent\n"] {
+        for source in [
+            "- a\nlazy line\n",
+            "- a\n\n   wrong indent\n",
+            "- a\n\n\n- b\n",
+            "- a\n  - n\n\n\n  x\n",
+        ] {
             let lines: Vec<&str> = source.lines().collect();
             assert!(
                 parse_unified_list(&lines, 0, &options).is_none(),
                 "{source:?}"
             );
         }
+        let _depth = DepthScope::set(MAX_NESTING_DEPTH - 4);
+        let source = "- a\n  - b\n    - c\n";
+        let lines: Vec<&str> = source.lines().collect();
+        assert!(parse_unified_list(&lines, 0, &options).is_none());
     }
 }
 
@@ -1088,7 +1102,7 @@ fn parse_simple_list(lines: &[&str], start: usize, options: &Options<'_>) -> Opt
     } else {
         2
     };
-    let mut items = Vec::new();
+    let mut pending_items = Vec::new();
     let mut pos = start;
     while let Some((item_kind, ordinal, content)) =
         lines.get(pos).and_then(|line| simple_list_marker(line))
@@ -1096,7 +1110,7 @@ fn parse_simple_list(lines: &[&str], start: usize, options: &Options<'_>) -> Opt
         if item_kind != kind {
             break;
         }
-        if kind == SimpleListKind::Ordered && ordinal != items.len() + 1 {
+        if kind == SimpleListKind::Ordered && ordinal != pending_items.len() + 1 {
             return None;
         }
         let mut item_lines = vec![content];
@@ -1122,20 +1136,7 @@ fn parse_simple_list(lines: &[&str], start: usize, options: &Options<'_>) -> Opt
                 return None;
             }
         }
-        let joined = item_lines.join("\n");
-        items.push(ListItem {
-            attrs: None,
-            checked: None,
-            task_state: None,
-            children: vec![BlockNode::Paragraph(Paragraph {
-                attrs: None,
-                children: parse_event_inlines(&joined, options),
-                at_content_column: true,
-                block_image: false,
-                pos: None,
-            })],
-            pos: None,
-        });
+        pending_items.push(item_lines);
         if lines.get(pos).is_some_and(|line| is_blank_line(line)) {
             let mut next = pos;
             while lines.get(next).is_some_and(|line| is_blank_line(line)) {
@@ -1157,6 +1158,29 @@ fn parse_simple_list(lines: &[&str], start: usize, options: &Options<'_>) -> Opt
             break;
         }
     }
+    let items = pending_items
+        .into_iter()
+        .map(|item_lines: Vec<&str>| {
+            let inlines = if item_lines.len() == 1 {
+                parse_event_inlines(item_lines[0], options)
+            } else {
+                parse_event_inlines(&item_lines.join("\n"), options)
+            };
+            ListItem {
+                attrs: None,
+                checked: None,
+                task_state: None,
+                children: vec![BlockNode::Paragraph(Paragraph {
+                    attrs: None,
+                    children: inlines,
+                    at_content_column: true,
+                    block_image: false,
+                    pos: None,
+                })],
+                pos: None,
+            }
+        })
+        .collect();
     Some((
         List {
             attrs: None,
