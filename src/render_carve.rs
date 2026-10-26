@@ -1426,10 +1426,7 @@ fn render_blocks(
                 let last = rendered.len() - 1;
                 rendered[last].push('\n');
                 rendered[last].push_str(&text);
-            } else if separated_from_previous
-                && !rendered.is_empty()
-                && description_body
-            {
+            } else if separated_from_previous && !rendered.is_empty() && description_body {
                 description_list_offset += 1;
                 let last = rendered.len() - 1;
                 rendered[last].push_str("\n\n");
