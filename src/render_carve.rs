@@ -814,7 +814,9 @@ fn escaping_is_redundant(
 }
 
 fn comparable_document(mut doc: Document) -> Document {
+    strip_redundant_heading_ids(&mut doc);
     doc.source_len = 0;
+    doc.ingest_payload_len = 0;
     strip_positions(&mut doc);
     for block in &mut doc.children {
         normalize_escapes_block(block);
@@ -830,6 +832,44 @@ fn comparable_document(mut doc: Document) -> Document {
         }
     }
     doc
+}
+
+fn strip_redundant_heading_ids(doc: &mut Document) {
+    use crate::include_walk::{visit_block_children, visit_inline_children, SubtreeVisitor};
+    let redundant = redundant_heading_ids(doc);
+    if redundant.is_empty() {
+        return;
+    }
+    struct Strip<'a>(&'a BTreeSet<String>);
+    impl SubtreeVisitor for Strip<'_> {
+        fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
+            for block in blocks {
+                if let BlockNode::Heading(heading) = block {
+                    if let Some(attrs) = heading.attrs.as_mut() {
+                        if attrs.id.as_ref().is_some_and(|id| self.0.contains(id))
+                            && !attrs.order.iter().any(|slot| matches!(slot, AttrSlot::Id))
+                        {
+                            attrs.id = None;
+                            if attrs.classes.is_empty() && attrs.key_values.is_empty() {
+                                heading.attrs = None;
+                            }
+                        }
+                    }
+                }
+                visit_block_children(block, self);
+            }
+        }
+        fn inlines(&mut self, inlines: &mut Vec<InlineNode>) {
+            for inline in inlines {
+                visit_inline_children(inline, self);
+            }
+        }
+    }
+    let mut strip = Strip(&redundant);
+    strip.blocks(&mut doc.children);
+    for blocks in doc.footnote_defs.values_mut() {
+        strip.blocks(blocks);
+    }
 }
 
 /// Drop every source position in the document.
@@ -976,7 +1016,10 @@ fn normalize_escapes_block(block: &mut BlockNode) {
         BlockNode::LinkReferenceDefinition(_) => {}
         BlockNode::CitationDefinition(d) => normalize_escapes_inlines(&mut d.children),
         BlockNode::Heading(h) => normalize_escapes_inlines(&mut h.children),
-        BlockNode::Paragraph(p) => normalize_escapes_inlines(&mut p.children),
+        BlockNode::Paragraph(p) => {
+            p.at_content_column = false;
+            normalize_escapes_inlines(&mut p.children);
+        }
         BlockNode::List(l) => {
             for item in &mut l.items {
                 for child in &mut item.children {
@@ -1096,7 +1139,10 @@ fn normalize_escapes_figure_target(f: &mut crate::ast::Figure) {
                 }
             }
         }
-        FigureTarget::Paragraph(p) => normalize_escapes_inlines(&mut p.children),
+        FigureTarget::Paragraph(p) => {
+            p.at_content_column = false;
+            normalize_escapes_inlines(&mut p.children);
+        }
         FigureTarget::Image(_) | FigureTarget::CodeBlock(_) => {}
     }
 }
@@ -6072,6 +6118,22 @@ fn ends_in_an_escape(written: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn interchange_ast_writes_public_quote_and_tight_list_spelling() {
+        for source in ["-\".", "- a\n  - # h\n  ```\n"] {
+            let json = crate::to_json(&crate::parse(source));
+            let ingested = crate::from_json(&json).unwrap();
+            let written = crate::render_carve(&ingested).unwrap();
+            let direct = crate::to_carve(source);
+            assert_eq!(written.trim_end(), direct.trim_end(), "{source:?}");
+            assert_eq!(crate::to_html(&written), crate::to_html(source));
+            assert_eq!(
+                crate::render_carve(&crate::parse(&written)).unwrap(),
+                written
+            );
+        }
+    }
+
     #[test]
     fn empty_code_runs_account_for_adjacent_backticks() {
         for (input, expected) in [

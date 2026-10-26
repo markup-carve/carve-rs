@@ -660,8 +660,7 @@ fn promote_ingested_block_images(doc: &mut Document) {
         for block in level {
             if let BlockNode::Paragraph(p) = block {
                 if !p.block_image {
-                    p.block_image = p.children.len() == 1
-                        && matches!(&p.children[0], InlineNode::Image(img) if !crate::parse::is_unresolved_image(img));
+                    p.block_image = crate::parse::lone_rendered_image(&p.children).is_some();
                 }
             }
             match block {

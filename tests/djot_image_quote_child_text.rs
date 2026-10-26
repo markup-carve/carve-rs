@@ -79,7 +79,7 @@ fn image_quote_wrappers_match_native_child_text() {
         let converted = carve::djot_to_carve(source);
         assert_eq!(
             shape(&carve::to_html(&converted)),
-            shape(expected),
+            shape(&super::image_paragraphs_as_images(expected)),
             "{source:?}: {converted}"
         );
     }

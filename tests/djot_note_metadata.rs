@@ -91,7 +91,7 @@ fn definition_attributes_do_not_reach_later_content() {
         if let Some(html) = row.html {
             assert_eq!(
                 normalized_html(&carve::to_html(&result.value)),
-                html,
+                super::image_paragraphs_as_images(&html),
                 "{}",
                 row.name
             );

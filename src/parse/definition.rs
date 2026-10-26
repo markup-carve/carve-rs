@@ -731,6 +731,9 @@ struct DefinitionBodyCollector<'s, 'o> {
     paragraph_column: Option<usize>,
     paragraph_marker_column: Option<usize>,
     paragraph_owner_is_item: bool,
+    // A description marker can open several list levels on one line.
+    // Later siblings at those columns must reach the list parser as markers.
+    marker_line_sibling_columns: Vec<usize>,
     item_content_columns: Vec<usize>,
     owner_item_opens_block: bool,
     descendant_marker_fence: Option<(FenceOpen, usize)>,
@@ -756,6 +759,23 @@ struct DefinitionBodyCollector<'s, 'o> {
     // line never closes the fence, so the blank-terminated form still asks the
     // question effectively once (the shape #1547 guards against).
     nested_lead_fence: Option<(FenceOpen, usize)>,
+}
+
+fn marker_line_sibling_columns(seed: Option<&str>, base: usize) -> Vec<usize> {
+    let mut columns = Vec::new();
+    let Some(mut line) = seed else { return columns };
+    let mut column = base;
+    while let Some(marker) = detect_list_marker_full(line) {
+        let Some(width) = marker_content_col(line) else {
+            break;
+        };
+        column += width;
+        line = marker.content;
+        if detect_list_marker_full(line).is_some() {
+            columns.push(column);
+        }
+    }
+    columns
 }
 
 impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
@@ -794,6 +814,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
                 .filter(|line| is_list_marker(trim_ascii_start(line)))
                 .map(|_| content_column),
             paragraph_owner_is_item,
+            marker_line_sibling_columns: marker_line_sibling_columns(last, content_column),
             item_content_columns: if paragraph_owner_is_item {
                 last.and_then(|line| paragraph_owner_column(line, content_column))
                     .into_iter()
@@ -996,6 +1017,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         } else if below_owner
             && (column == content_column
                 || !self.paragraph_owner_is_item
+                || self.marker_line_sibling_columns.contains(&column)
                 || is_definition_list_start(local))
             && (is_list_marker(local)
                 || (!unclosed_fence && item_block_opener_with_invisible_arms(local, true)))

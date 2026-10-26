@@ -55,7 +55,7 @@ writes! {
         "<p>[a](b) and <span class=c>[a](u)</span></p>" => "[a]\\(b) and [[a]\\(u)]{.c}\n",
     // Flattening the ruby clones the run's nodes; the rule still reaches them.
     a_paren_beside_a_ruby:
-        "<p>[a](b) <ruby>x<rt>y</rt></ruby></p>" => "[a]\\(b) xy\n",
+        "<p>[a](b) <ruby>x<rt>y</rt></ruby></p>" => "[a]\\(b) x(y)\n",
     a_paren_that_opens_nothing_stays_bare:
         "<p>f(x) and (see above) and [a] (b) and [a](b c) and ](x)</p>"
         => "f(x) and (see above) and [a] (b) and [a](b c) and ](x)\n",

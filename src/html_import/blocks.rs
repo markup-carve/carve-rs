@@ -1,9 +1,8 @@
 use super::footnotes::{Lifted, FOOTNOTE_PLACEMENT_TAG};
 use super::ORDERED_TASK_ITEM_UNSPELLABLE;
 use super::{
-    candidate_mark, is_admonition_title, is_div_label, is_layout_only, is_layout_space, lone_image,
-    overwritten_attr_names, share_figure_attrs, task_marker_text, text_node, trim_edge_whitespace,
-    Importer, LoneImageParagraph, ROUNDTRIP_UNWRAPPED_SECTIONING,
+    is_admonition_title, is_div_label, is_layout_only, is_layout_space, share_figure_attrs,
+    task_marker_text, text_node, trim_edge_whitespace, Importer, ROUNDTRIP_UNWRAPPED_SECTIONING,
 };
 use super::{HtmlImportDiagnosticCode, HtmlImportError, HtmlImportMode, HtmlImportSeverity};
 use crate::ast::*;
@@ -395,28 +394,22 @@ impl<'a> Importer<'a> {
         if inlines.is_empty() {
             return Ok(Vec::new());
         }
-        let candidate = lone_image(&inlines).map(|image| {
-            (
-                attrs.is_some(),
-                overwritten_attr_names(attrs.as_ref(), image.attrs.as_ref()),
-            )
-        });
-        let mut paragraph = Paragraph {
+        if inlines.len() == 1 && matches!(&inlines[0], InlineNode::Image(_)) {
+            if let InlineNode::Image(mut image) = inlines.into_iter().next().unwrap() {
+                if let Some(leading) = attrs {
+                    crate::parse::merge_leading_attrs(&mut image.attrs, leading);
+                }
+                return Ok(vec![BlockNode::BlockImage(image)]);
+            }
+            unreachable!();
+        }
+        let paragraph = Paragraph {
             attrs,
             children: inlines,
             at_content_column: true,
             block_image: false,
             pos: None,
         };
-        if let Some((attributed, overwritten)) = candidate {
-            paragraph.pos = Some(candidate_mark(self.lone_image_paragraphs.len()));
-            self.lone_image_paragraphs.push(LoneImageParagraph {
-                node: h.clone(),
-                path: path.to_string(),
-                attributed,
-                overwritten,
-            });
-        }
         return Ok(vec![BlockNode::Paragraph(paragraph)]);
     }
 

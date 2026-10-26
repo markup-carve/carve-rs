@@ -6244,7 +6244,7 @@ mod tests {
             assert!(super::losses(source).is_empty(), "{source:?}");
         }
         for label in ["[x]", "![x]"] {
-            let paragraph = if label.starts_with('!') { "{%%}" } else { "" };
+            let paragraph = "";
             assert_eq!(
                 migrate_djot(&format!("{label}(a(b{{}}c))\n")).value,
                 format!("{paragraph}{label}(a%28b{{}}c%29)\n")

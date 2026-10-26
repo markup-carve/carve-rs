@@ -401,6 +401,9 @@ impl<'a> Importer<'a> {
         if tag == "q" {
             return self.inline_quote(h, path, depth);
         }
+        if tag == "ruby" {
+            return self.inline_ruby(h, path, depth);
+        }
         if tag == "math" {
             if let Some(nodes) = self.inline_math(h, path, depth)? {
                 return Ok(nodes);
@@ -412,6 +415,208 @@ impl<'a> Importer<'a> {
         }
         let children = self.inlines(&h.children.borrow(), path, depth + 1)?;
         self.inline_from_children(h, path, &tag, attrs, children)
+    }
+
+    fn ruby_component_attrs(&mut self, h: &Handle, path: &str) {
+        let tag = Self::tag(h).unwrap_or_else(|| "ruby component".into());
+        let attrs = self.attrs(h, path);
+        self.report_unplaceable_attrs(h, attrs, &tag, "the ruby component was unwrapped", path);
+    }
+
+    fn ruby_rp(&mut self, h: &Handle, path: &str, depth: usize) -> Result<(), HtmlImportError> {
+        self.enter(depth)?;
+        self.ruby_component_attrs(h, path);
+        let text = Self::text(h);
+        let text = text.trim();
+        if !text.is_empty() && !matches!(text, "(" | ")" | "（" | "）") {
+            self.diag_with_fidelity(
+                HtmlImportDiagnosticCode::ElementDropped,
+                "Dropped non-standard <rp> fallback content".into(),
+                HtmlImportSeverity::Warning,
+                super::ImportFidelity::Degraded,
+                path,
+                h,
+            );
+        }
+        Ok(())
+    }
+
+    fn inline_ruby(
+        &mut self,
+        h: &Handle,
+        path: &str,
+        depth: usize,
+    ) -> Result<Vec<InlineNode>, HtmlImportError> {
+        let attrs = self.attrs(h, path);
+        let mut input: Vec<(Handle, String)> = Vec::new();
+        let mut retained_rtc = Vec::new();
+        for (index, child) in h.children.borrow().iter().enumerate() {
+            let child_path = Self::child_path(path, child, index);
+            match Self::tag(child).as_deref() {
+                Some("rb") => {
+                    self.enter(depth + 1)?;
+                    self.ruby_component_attrs(child, &child_path);
+                    for (nested_index, nested) in child.children.borrow().iter().enumerate() {
+                        input.push((
+                            nested.clone(),
+                            Self::child_path(&child_path, nested, nested_index),
+                        ));
+                    }
+                }
+                Some("rtc") => {
+                    self.enter(depth + 1)?;
+                    self.ruby_component_attrs(child, &child_path);
+                    let mut content = Vec::new();
+                    for (nested_index, nested) in child.children.borrow().iter().enumerate() {
+                        let nested_path = Self::child_path(&child_path, nested, nested_index);
+                        match Self::tag(nested).as_deref() {
+                            Some("rp") => self.ruby_rp(nested, &nested_path, depth + 2)?,
+                            Some("rt") => {
+                                self.enter(depth + 2)?;
+                                self.ruby_component_attrs(nested, &nested_path);
+                                content.extend(self.inlines(
+                                    &nested.children.borrow(),
+                                    &nested_path,
+                                    depth + 2,
+                                )?);
+                            }
+                            _ => content.extend(self.inline(nested, &nested_path, depth + 2)?),
+                        }
+                    }
+                    retained_rtc.push(content);
+                    self.diag(
+                        HtmlImportDiagnosticCode::ElementUnwrapped,
+                        "Unwrapped obsolete <rtc> annotation level".into(),
+                        HtmlImportSeverity::Warning,
+                        &child_path,
+                        child,
+                    );
+                }
+                _ => input.push((child.clone(), child_path)),
+            }
+        }
+
+        let mut output = Vec::new();
+        let mut run: Vec<RubyPair> = Vec::new();
+        let mut base = Vec::new();
+        let mut has_associated_base = false;
+        let mut emitted_ruby = false;
+        let flush = |output: &mut Vec<InlineNode>, run: &mut Vec<RubyPair>, emitted: &mut bool| {
+            if !run.is_empty() {
+                output.push(InlineNode::Ruby(Ruby {
+                    attrs: None,
+                    pairs: std::mem::take(run),
+                    pos: None,
+                }));
+                *emitted = true;
+            }
+        };
+        let mut index = 0;
+        while index < input.len() {
+            let (child, child_path) = &input[index];
+            if matches!(&child.data, NodeData::Comment { .. }) {
+                index += 1;
+                continue;
+            }
+            match Self::tag(child).as_deref() {
+                Some("rp") => {
+                    self.ruby_rp(child, child_path, depth + 1)?;
+                }
+                Some("rt") => {
+                    self.enter(depth + 1)?;
+                    self.ruby_component_attrs(child, child_path);
+                    let annotation =
+                        self.inlines(&child.children.borrow(), child_path, depth + 1)?;
+                    if has_associated_base || base.is_empty() {
+                        flush(&mut output, &mut run, &mut emitted_ruby);
+                        output.push(InlineNode::text("("));
+                        output.extend(annotation);
+                        output.push(InlineNode::text(")"));
+                        self.diag(
+                            HtmlImportDiagnosticCode::ElementUnwrapped,
+                            if has_associated_base {
+                                "Flattened an additional ruby annotation level"
+                            } else {
+                                "Unwrapped ruby annotation with no base"
+                            }
+                            .into(),
+                            HtmlImportSeverity::Warning,
+                            child_path,
+                            child,
+                        );
+                    } else {
+                        run.push(RubyPair {
+                            base: std::mem::take(&mut base),
+                            annotation,
+                        });
+                        has_associated_base = true;
+                    }
+                }
+                _ => {
+                    if has_associated_base
+                        && matches!(&child.data, NodeData::Text { contents } if contents.borrow().chars().all(|c| matches!(c, '\t' | '\n' | '\x0c' | '\r' | ' ')))
+                    {
+                        let next = input[index + 1..].iter().find(|(next, _)| !matches!(&next.data, NodeData::Text { contents } if contents.borrow().chars().all(|c| matches!(c, '\t' | '\n' | '\x0c' | '\r' | ' '))));
+                        if next.is_none()
+                            || matches!(
+                                next.and_then(|(next, _)| Self::tag(next)).as_deref(),
+                                Some("rt" | "rp")
+                            )
+                        {
+                            index += 1;
+                            continue;
+                        }
+                    }
+                    has_associated_base = false;
+                    base.extend(self.inline(child, child_path, depth + 1)?);
+                }
+            }
+            index += 1;
+        }
+        if !base.is_empty() {
+            flush(&mut output, &mut run, &mut emitted_ruby);
+            output.extend(base);
+            self.diag_with_fidelity(
+                HtmlImportDiagnosticCode::ElementUnwrapped,
+                "Unwrapped ruby base with no annotation".into(),
+                HtmlImportSeverity::Info,
+                super::ImportFidelity::Normalized,
+                path,
+                h,
+            );
+        }
+        flush(&mut output, &mut run, &mut emitted_ruby);
+        for content in retained_rtc {
+            output.push(InlineNode::text("("));
+            output.extend(content);
+            output.push(InlineNode::text(")"));
+        }
+        if emitted_ruby {
+            self.unspellable.push((
+                h.clone(),
+                path.to_owned(),
+                "Flattened <ruby> annotations: Carve 0.1 has no source spelling for their pairing"
+                    .into(),
+                HtmlImportDiagnosticCode::StructureUnspellable,
+            ));
+            if let Some(attrs) = attrs {
+                if output.len() == 1 {
+                    if let Some(InlineNode::Ruby(ruby)) = output.first_mut() {
+                        ruby.attrs = Some(attrs);
+                        return Ok(output);
+                    }
+                }
+                return Ok(vec![InlineNode::Span(Span {
+                    attrs: Some(attrs),
+                    children: output,
+                    injected: false,
+                    pos: None,
+                })]);
+            }
+        } else {
+            self.report_unplaceable_attrs(h, attrs, "ruby", "the ruby element was unwrapped", path);
+        }
+        Ok(output)
     }
 
     /// Recognize footnote pairs, record each reference site for `inline` to

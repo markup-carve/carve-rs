@@ -212,22 +212,16 @@ fn a_run_holding_anything_else_stays_a_paragraph() {
     }
 }
 
-/// THE OPPOSITE CALL, ON THE SAME TWO NODES. An AUTHORED `<p>` around a lone
-/// image keeps its paragraph in the tree and takes a declared
-/// `structure-unspellable` row for what the writer loses (carve-rs#1331). A fix
-/// that removed the wrapper here as well would be taking off something the
-/// document held, which is a loss and a different call entirely.
+/// An authored image-only paragraph follows the same block-image rule.
 #[test]
-fn an_authored_paragraph_around_the_same_image_is_untouched() {
+fn an_authored_paragraph_around_the_same_image_is_promoted() {
     let html = r#"<p><img src="g.jpg" alt="G"></p>"#;
-    assert_eq!(kinds(&tree(html)), vec!["Paragraph".to_string()]);
-    assert_eq!(rows(html), 1);
-    // And the bare spelling beside it, so the two are pinned against each other
-    // rather than each on its own.
+    assert_eq!(kinds(&tree(html)), vec!["BlockImage".to_string()]);
+    assert_eq!(rows(html), 0);
     let bare = r#"<img src="g.jpg" alt="G">"#;
     assert_eq!(kinds(&tree(bare)), vec!["BlockImage".to_string()]);
     assert_eq!(rows(bare), 0);
-    assert_eq!(carve(html), carve(bare), "the two write the same source");
+    assert_eq!(carve(html), carve(bare));
 }
 
 /// A FIGURE BODY WAS ALREADY RIGHT, and stays right. `caption_host` is where

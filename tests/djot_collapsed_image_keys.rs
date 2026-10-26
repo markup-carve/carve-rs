@@ -107,7 +107,7 @@ fn collapsed_image_keys_match_native_child_text() {
             continue;
         }
         let actual = carve::to_html(&report.value);
-        if shape(&actual) != shape(expected) {
+        if shape(&actual) != shape(&super::image_paragraphs_as_images(expected)) {
             failures.push(json!({"source":source,"converted":report.value,"actual":actual,"expected":expected}));
         }
     }

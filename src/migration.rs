@@ -398,10 +398,10 @@ pub fn migrate_djot(source: &str) -> MigrationResult {
 
 /// Migrate BBCode to Carve source, or return an input-boundary error.
 pub fn migrate_bbcode(source: &str) -> Result<MigrationResult, BbcodeImportError> {
-    let (value, dropped) = crate::bbcode_migrate::bbcode_to_carve_with_drops(source)?;
-    let mut result = assessed(source, value, SourceFormat::Bbcode, false);
+    let converted = crate::bbcode_migrate::bbcode_to_carve_with_all_drops(source)?;
+    let mut result = assessed(source, converted.value, SourceFormat::Bbcode, false);
     result.report.diagnostics.extend(
-        dropped
+        converted.quote_drops
             .into_iter()
             .map(|drop| MigrationDiagnostic {
                 code: "bbcode-quote-field-dropped".to_owned(),
@@ -416,12 +416,70 @@ pub fn migrate_bbcode(source: &str) -> Result<MigrationResult, BbcodeImportError
                 path: Some(format!("line:{}", drop.line)),
             }),
     );
+    result
+        .report
+        .diagnostics
+        .extend(
+            converted
+                .styling_drops
+                .into_iter()
+                .map(|(kind, value)| MigrationDiagnostic {
+                    code: "bbcode-styling-dropped".to_owned(),
+                    message: format!(
+                        "Dropped the BBCode {kind} styling wrapper with value {}.",
+                        serde_json::to_string(&value).expect("string serializes")
+                    ),
+                    severity: HtmlImportSeverity::Warning,
+                    fidelity: MigrationFidelity::Dropped,
+                    confidence: MigrationConfidence::Exact,
+                    path: None,
+                }),
+        );
     Ok(result)
 }
 
 #[cfg(test)]
 mod evidence_tests {
     use super::*;
+
+    #[test]
+    fn bbcode_reports_each_removed_styling_wrapper() {
+        let result =
+            migrate_bbcode("[color=red]a[/color] [size=20]b[/size] [font=serif]c[/font]").unwrap();
+        assert_eq!(result.value, "a b c\n");
+        let rows: Vec<_> = result
+            .report
+            .diagnostics
+            .iter()
+            .filter(|row| row.code == "bbcode-styling-dropped")
+            .collect();
+        assert_eq!(
+            rows.iter()
+                .map(|row| row.message.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "Dropped the BBCode color styling wrapper with value \"red\".",
+                "Dropped the BBCode size styling wrapper with value \"20\".",
+                "Dropped the BBCode font styling wrapper with value \"serif\".",
+            ]
+        );
+        assert!(result
+            .report
+            .diagnostics
+            .iter()
+            .any(|row| row.code == "fidelity-unverified"));
+        assert!(!migrate_bbcode("[code][color=red]x[/color][/code]")
+            .unwrap()
+            .report
+            .diagnostics
+            .iter()
+            .any(|row| row.code == "bbcode-styling-dropped"));
+        let mixed = migrate_bbcode("[color=red]x[/size]").unwrap();
+        assert_eq!(mixed.value, "x\n");
+        assert!(mixed.report.diagnostics.iter().any(
+            |row| row.message == "Dropped the BBCode color styling wrapper with value \"red\"."
+        ));
+    }
 
     #[test]
     fn same_file_fragment_rewrite_is_a_fixup_beside_a_complete_assessment() {

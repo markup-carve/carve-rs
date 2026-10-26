@@ -57,7 +57,9 @@ fn compact_and_tab_separated_div_openers_match_native_djot() {
         let source = row["source"].as_str().unwrap();
         let converted = carve::djot_to_carve(source);
         let actual = html(&carve::to_html(&converted));
-        let expected = html(row["html"].as_str().unwrap());
+        let expected = html(&super::image_paragraphs_as_images(
+            row["html"].as_str().unwrap(),
+        ));
         if actual != expected {
             failures.push(
                 json!({"source":source,"converted":converted,"actual":actual,"expected":expected}),
