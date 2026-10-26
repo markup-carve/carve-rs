@@ -727,14 +727,27 @@ fn parse_marked_quote(
         let Some(content) = strip_blockquote_prefix(line) else {
             break;
         };
-        if detect_fence_open(content).is_some() {
-            return None;
-        }
         parts.push(content);
         end += 1;
     }
     if parts.is_empty() {
         return None;
+    }
+    // A final blank quote marker can become a synthetic payload newline.
+    if parts.last().is_some_and(|line| is_blank_line(line)) {
+        let mut open = None;
+        for line in &parts {
+            if let Some(fence) = open {
+                if is_fence_close(line, fence) {
+                    open = None;
+                }
+            } else {
+                open = detect_fence_open(line);
+            }
+        }
+        if open.is_some() {
+            return None;
+        }
     }
     let mut after = end;
     while lines.get(after).is_some_and(|line| is_blank_line(line)) {
@@ -867,10 +880,19 @@ mod simple_quote_tests {
     }
 
     #[test]
-    fn fenced_quote_content_keeps_the_existing_reader() {
-        let source = "> ```=html\n>\n";
-        let lines: Vec<&str> = source.lines().collect();
-        assert!(parse_marked_quote(&lines, 0, &Options::default()).is_none());
+    fn fenced_quote_content_uses_the_recursive_quote_path() {
+        let options = Options::default();
+        for source in ["> ```\n> code\n> ```\n", "> ```=html\n> x\n> ```\n"] {
+            let lines: Vec<&str> = source.lines().collect();
+            let (quote, end) = parse_marked_quote(&lines, 0, &options).unwrap();
+            assert_eq!(end, lines.len(), "{source:?}");
+            let expected = parse_with_options(source, &options);
+            assert_eq!(
+                BlockNode::BlockQuote(quote),
+                expected.children[0],
+                "{source:?}"
+            );
+        }
     }
 }
 

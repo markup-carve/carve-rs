@@ -74,6 +74,43 @@ fn unified_list_owner_keeps_loose_and_nested_boundaries() {
 }
 
 #[test]
+fn marked_quotes_with_fences_keep_exact_output() {
+    for source in [
+        "> ```\n> code\n> ```\n",
+        "> ```=html\n> <b>x</b>\n> ```\n",
+        "> before\n>\n> ```rust\n> let x = 1;\n> ```\n",
+        "> ```\n> unclosed\n",
+        "> > ````\n> > code\n> > ````\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+    for (source, admitted) in [("> ```=html\n>", false), ("> ```=html\n> ", false)] {
+        let (actual, used) = parse_experimental_event_blocks(source);
+        assert_eq!(used, admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+    for opener in ["```", "```=html", "~~~rust"] {
+        for payload in [">", "> ", ">   ", "> text"] {
+            for closer in ["", "> ```\n"] {
+                for ending in ["", "\n"] {
+                    let source = format!("> {opener}\n{payload}\n{closer}{ending}");
+                    let (actual, _) = parse_experimental_event_blocks(&source);
+                    let expected = parse_standard(&source);
+                    assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+                    assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn generated_unified_list_owners_keep_exact_output() {
     let fragments = ["plain", "*strong*", "`code`", "a & b"];
     let mut state = 0x4a77_6d21_u32;
@@ -639,7 +676,11 @@ fn quote_marker_and_raw_fence_boundaries_keep_exact_output() {
         "> a\nlazy\n*[HTML]: HyperText\n\nHTML\n",
     ] {
         let (actual, admitted) = parse_experimental_event_blocks(source);
-        assert_eq!(admitted, !source.contains("```=html"), "{source:?}");
+        assert_eq!(
+            admitted,
+            !source.starts_with("> ```=html\n> "),
+            "{source:?}"
+        );
         let expected = parse_standard(source);
         assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
         assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
