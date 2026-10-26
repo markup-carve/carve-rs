@@ -332,9 +332,6 @@ fn parse_marked_quote(
         let Some(content) = strip_blockquote_prefix(line) else {
             break;
         };
-        if detect_fence_open(content).is_some() {
-            return None;
-        }
         parts.push(content);
         end += 1;
     }
@@ -463,10 +460,13 @@ mod simple_quote_tests {
     }
 
     #[test]
-    fn fenced_quote_content_keeps_the_existing_reader() {
+    fn fenced_quote_content_matches_the_existing_reader() {
         let source = "> ```=html\n>\n";
         let lines: Vec<&str> = source.lines().collect();
-        assert!(parse_marked_quote(&lines, 0, &Options::default()).is_none());
+        let (quote, end) = parse_marked_quote(&lines, 0, &Options::default()).unwrap();
+        assert_eq!(end, 2);
+        let expected = parse_with_options(source, &Options::default());
+        assert_eq!(BlockNode::BlockQuote(quote), expected.children[0]);
     }
 }
 
@@ -1056,7 +1056,12 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     let source = normalized.as_deref().unwrap_or(source);
     if source.contains("[^")
         || source.contains("*[")
-        || (!source.ends_with('\n') && source.lines().any(|line| detect_fence_open(line).is_some()))
+        || (!source.ends_with('\n')
+            && source.lines().any(|line| {
+                detect_fence_open(line).is_some()
+                    || strip_blockquote_prefix(line)
+                        .is_some_and(|body| detect_fence_open(body).is_some())
+            }))
     {
         return None;
     }

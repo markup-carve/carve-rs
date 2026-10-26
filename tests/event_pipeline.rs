@@ -219,7 +219,7 @@ fn quote_marker_and_raw_fence_boundaries_keep_exact_output() {
         "> - item\n",
     ] {
         let (actual, admitted) = parse_experimental_event_blocks(source);
-        assert_eq!(admitted, !source.contains("```=html"), "{source:?}");
+        assert_eq!(admitted, source != "> ```=html\n> ", "{source:?}");
         let expected = parse_standard(source);
         assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
         assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
@@ -647,4 +647,27 @@ fn blank_before_complex_list_item_keeps_one_list() {
         assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
         assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
     }
+}
+
+#[test]
+fn marked_quote_fence_grid_matches_public_ast_and_html() {
+    let mut admitted = 0usize;
+    for (open, close) in [
+        ("```", "```"),
+        ("~~~", "~~~"),
+        ("```js", "```"),
+        ("```=html", "```"),
+    ] {
+        for payload in ["x", "", "one\n> two", "::: note"] {
+            for tail in ["", "\nOutside.\n", "> More.\n"] {
+                let source = format!("> {open}\n> {payload}\n> {close}\n{tail}");
+                let expected = parse_standard(&source);
+                let (actual, used) = parse_experimental_event_blocks(&source);
+                admitted += usize::from(used);
+                assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+                assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+            }
+        }
+    }
+    assert!(admitted > 0, "the grid must exercise the event route");
 }
