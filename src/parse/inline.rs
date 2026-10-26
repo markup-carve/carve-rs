@@ -1024,6 +1024,16 @@ impl InlineRun<'_, '_> {
         if bytes.get(i + 1) != Some(&b'[') {
             return None;
         }
+        if let Some(end) = reserved_reference_tail(bytes, i + 1, &self.bounds) {
+            return Some(self.emit(
+                InlineNode::Text(Text {
+                    value: self.text[i..end].to_string(),
+                    pos: None,
+                }),
+                i,
+                end - i,
+            ));
+        }
         let (img, consumed) = parse_image_at(bytes, i, &self.bounds)
             .or_else(|| parse_reference_image(bytes, i, &self.bounds))?;
         Some(self.emit(InlineNode::Image(img), i, consumed))
@@ -1043,6 +1053,16 @@ impl InlineRun<'_, '_> {
             return None;
         }
         let bounds = &self.bounds;
+        if let Some(end) = reserved_reference_tail(bytes, i, bounds) {
+            return Some(self.emit(
+                InlineNode::Text(Text {
+                    value: self.text[i..end].to_string(),
+                    pos: None,
+                }),
+                i,
+                end - i,
+            ));
+        }
         let (node, consumed) =
             parse_inline_link_with_options(bytes, i, options, in_footnote, bounds, positions, base)
                 .or_else(|| {
@@ -1208,6 +1228,15 @@ impl InlineRun<'_, '_> {
         self.quotes.push(&mut self.sink.out, node);
         Some(end)
     }
+}
+
+fn reserved_reference_tail(bytes: &[u8], start: usize, bounds: &InlineBounds<'_>) -> Option<usize> {
+    let text_close = bracketed_close(bytes, start, bounds.matches)?;
+    let label_open = text_close + 1;
+    if bytes.get(label_open..label_open + 2) != Some(&b"[@"[..]) {
+        return None;
+    }
+    reference_label_close(bytes, label_open).map(|close| close + 1)
 }
 
 pub(in crate::parse) fn parse_critic_markup(
