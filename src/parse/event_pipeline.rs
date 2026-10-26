@@ -990,6 +990,9 @@ mod simple_quote_tests {
                 "{source:?}"
             );
         }
+        let unclosed = "> ```=html\n>\n";
+        let lines: Vec<&str> = unclosed.lines().collect();
+        assert!(parse_marked_quote(&lines, 0, &options).is_none());
     }
 }
 
@@ -1380,7 +1383,13 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     if source.contains("[^") {
         return parse_document_with_footnotes(source, source_len);
     }
-    if !source.ends_with('\n') && source.lines().any(|line| detect_fence_open(line).is_some()) {
+    if !source.ends_with('\n')
+        && source.lines().any(|line| {
+            detect_fence_open(line).is_some()
+                || strip_blockquote_prefix(line)
+                    .is_some_and(|body| detect_fence_open(body).is_some())
+        })
+    {
         return None;
     }
     let options = Options::default();
