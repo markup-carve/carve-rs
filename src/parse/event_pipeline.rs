@@ -591,6 +591,18 @@ fn may_continue_plain_paragraph(line: &str) -> bool {
 }
 
 fn parse_event_inlines(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
+    if let Some(inner) = text
+        .strip_prefix("**")
+        .and_then(|text| text.strip_suffix("**"))
+    {
+        if !inner.is_empty()
+            && inner
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b' ')
+        {
+            return vec![InlineNode::text(text.to_string())];
+        }
+    }
     let bytes = text.as_bytes();
     let plain = if text.len() < 128 {
         !text.is_empty()

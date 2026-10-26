@@ -53,6 +53,24 @@ fn direct_route_admits_prose_and_uses_existing_list_reader() {
 }
 
 #[test]
+fn literal_double_star_labels_keep_exact_ast_and_html() {
+    for source in [
+        "**Core syntax**\n",
+        "**Tier 2**\n\nAfter.\n",
+        "**bold**\n",
+        "**a*b**\n",
+        "**with (c)**\n",
+        "**\u{e9}clair**\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
 fn normalized_source_keeps_direct_ast_html_and_original_byte_length() {
     for ending in ["\n", "\r\n", "\r"] {
         for bom in ["", "\u{feff}"] {
