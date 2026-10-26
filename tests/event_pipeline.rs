@@ -74,6 +74,65 @@ fn unified_list_owner_keeps_loose_and_nested_boundaries() {
 }
 
 #[test]
+fn unified_list_owner_builds_fully_marked_quotes() {
+    for source in [
+        "- one\n  > q\n",
+        "- one\n\n  > q\n",
+        "- one\n\n  >\t\n",
+        "- one\n  > q\n  > r\n- next\n",
+        "- one\n  > ```\n  > code\n  > ```\n",
+        "- one\n  > ```\n  > code  \n  > ```\n",
+        "- one\n  > - nested\n",
+        "1. one\n   > q\n2. next\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
+fn list_quotes_keep_the_standard_nesting_cutoff() {
+    std::thread::Builder::new()
+        .stack_size(64 * 1024 * 1024)
+        .spawn(|| {
+            let mut failures = Vec::new();
+            for depth in [180, 185, 190, 194, 195, 196, 197, 198, 199, 200, 205, 210] {
+                for last in ["q", "- a"] {
+                    let source = format!("- one\n  {}{last}\n", "> ".repeat(depth));
+                    let (actual, used) = parse_experimental_event_blocks(&source);
+                    let expected = parse_standard(&source);
+                    if to_json(&actual) != to_json(&expected)
+                        || render_html(&actual) != render_html(&expected)
+                    {
+                        failures.push((depth, last, used));
+                    }
+                }
+            }
+            for depth in [180, 198, 205] {
+                for source in [
+                    format!("- outer\n  - inner\n    {}q\n", "> ".repeat(depth)),
+                    format!("> - one\n>   {}q\n", "> ".repeat(depth)),
+                ] {
+                    let (actual, used) = parse_experimental_event_blocks(&source);
+                    let expected = parse_standard(&source);
+                    if to_json(&actual) != to_json(&expected)
+                        || render_html(&actual) != render_html(&expected)
+                    {
+                        failures.push((depth, "nested", used));
+                    }
+                }
+            }
+            assert!(failures.is_empty(), "{failures:?}");
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+#[test]
 fn marked_quotes_with_fences_keep_exact_output() {
     for source in [
         "> ```\n> code\n> ```\n",

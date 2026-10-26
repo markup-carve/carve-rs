@@ -304,6 +304,7 @@ fn parse_mixed_blocks<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
 enum UnifiedListBlock<'a> {
     Paragraph(Vec<&'a str>),
     List(UnifiedListNode<'a>),
+    Quote(BlockQuote),
 }
 
 struct UnifiedListItem<'a> {
@@ -383,12 +384,65 @@ fn build_unified_list(node: UnifiedListNode<'_>, options: &Options<'_>) -> List 
                     UnifiedListBlock::List(child) => {
                         BlockNode::List(build_unified_list(child, options))
                     }
+                    UnifiedListBlock::Quote(quote) => BlockNode::BlockQuote(quote),
                 })
                 .collect(),
             pos: None,
         })
         .collect();
     list
+}
+
+#[cold]
+#[inline(never)]
+fn parse_unified_list_quote(
+    lines: &[&str],
+    start: usize,
+    content_indent: usize,
+    base_depth: usize,
+    frame_depth: usize,
+    options: &Options<'_>,
+) -> Option<(BlockQuote, usize)> {
+    let mut quote_lines = Vec::new();
+    let mut end = start;
+    while let Some(&candidate) = lines.get(end) {
+        let candidate_indent = candidate.bytes().take_while(|byte| *byte == b' ').count();
+        if candidate_indent != content_indent {
+            break;
+        }
+        let candidate = &candidate[candidate_indent..];
+        if strip_blockquote_prefix(trim_ascii_end(candidate)).is_none() {
+            break;
+        }
+        quote_lines.push(candidate);
+        end += 1;
+    }
+    if lines.get(end).is_some_and(|next| {
+        !is_blank_line(next)
+            && next.bytes().take_while(|byte| *byte == b' ').count() >= content_indent
+    }) {
+        return None;
+    }
+    let quote_depth = base_depth.saturating_add(frame_depth.saturating_mul(2));
+    if quote_depth >= MAX_NESTING_DEPTH
+        || quote_lines.iter().any(|line| {
+            let mut rest = *line;
+            let mut marker_depth = 0usize;
+            while let Some(next) = strip_blockquote_prefix(rest) {
+                marker_depth += 1;
+                rest = next;
+            }
+            // Reserve the quote's inner block, list, and item scopes.
+            quote_depth.saturating_add(marker_depth).saturating_add(3) >= MAX_NESTING_DEPTH
+        })
+    {
+        return None;
+    }
+    let (quote, consumed) = {
+        let _depth = DepthScope::set(quote_depth);
+        parse_marked_quote(&quote_lines, 0, options)?
+    };
+    (consumed == quote_lines.len()).then_some((quote, end))
 }
 
 #[inline(never)]
@@ -449,7 +503,9 @@ fn parse_unified_list(
             }
             if next_indent == frame.content_indent {
                 flush_unified_list_paragraph(frame)?;
-                frame.node.tight = false;
+                if strip_blockquote_prefix(&next[next_indent..]).is_none() {
+                    frame.node.tight = false;
+                }
                 pos = after;
                 continue;
             }
@@ -533,11 +589,31 @@ fn parse_unified_list(
         if indent == 0 && frames.len() == 1 {
             return None;
         }
+        let active_frame_depth = frames.len();
         let frame = frames.last_mut()?;
         if indent != frame.content_indent {
             return None;
         }
         let content = trim_ascii_end(&line[indent..]);
+        if content.starts_with('>') {
+            let (quote, end) = parse_unified_list_quote(
+                lines,
+                pos,
+                frame.content_indent,
+                base_depth,
+                active_frame_depth,
+                options,
+            )?;
+            flush_unified_list_paragraph(frame)?;
+            frame
+                .node
+                .items
+                .last_mut()?
+                .blocks
+                .push(UnifiedListBlock::Quote(quote));
+            pos = end;
+            continue;
+        }
         if !(if frame.paragraph.is_empty() {
             may_start_plain_paragraph(content)
         } else {
@@ -563,6 +639,27 @@ fn parse_unified_list(
 #[cfg(test)]
 mod unified_list_tests {
     use super::*;
+
+    #[test]
+    fn shared_owner_builds_marked_quote() {
+        for source in ["- one\n  > q\n", "- one\n\n  > q\n"] {
+            let lines: Vec<&str> = source.lines().collect();
+            let (list, consumed) = parse_unified_list(&lines, 0, &Options::default()).unwrap();
+            assert_eq!(consumed, lines.len());
+            assert!(list.tight);
+            assert!(matches!(
+                list.items[0].children[1],
+                BlockNode::BlockQuote(_)
+            ));
+        }
+        let lazy = "- one\n  > q\n  lazy continuation\n";
+        let lines: Vec<&str> = lazy.lines().collect();
+        assert!(parse_unified_list(&lines, 0, &Options::default()).is_none());
+
+        let trailing_tab = "- one\n\n  >\t\n";
+        let lines: Vec<&str> = trailing_tab.lines().collect();
+        assert!(parse_unified_list(&lines, 0, &Options::default()).is_none());
+    }
 
     #[test]
     fn shared_owner_accepts_loose_siblings_and_declines_lazy_lines() {
