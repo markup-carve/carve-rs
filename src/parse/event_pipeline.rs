@@ -398,6 +398,7 @@ fn parse_unified_list(
     options: &Options<'_>,
 ) -> Option<(List, usize)> {
     let base_depth = NESTING_DEPTH.with(|depth| depth.get());
+    // Leave room for the standard parser's list item and paragraph scopes.
     if base_depth.saturating_add(2) >= MAX_NESTING_DEPTH {
         return None;
     }
@@ -595,9 +596,12 @@ mod unified_list_tests {
                 "{source:?}"
             );
         }
-        let _depth = DepthScope::set(MAX_NESTING_DEPTH - 4);
         let source = "- a\n  - b\n    - c\n";
         let lines: Vec<&str> = source.lines().collect();
+        let _depth = DepthScope::set(MAX_NESTING_DEPTH - 5);
+        assert!(parse_unified_list(&lines, 0, &options).is_some());
+        drop(_depth);
+        let _depth = DepthScope::set(MAX_NESTING_DEPTH - 4);
         assert!(parse_unified_list(&lines, 0, &options).is_none());
     }
 }

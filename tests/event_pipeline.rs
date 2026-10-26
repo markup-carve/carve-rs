@@ -149,7 +149,7 @@ fn deep_list_at_parser_cap_keeps_exact_output() {
     std::thread::Builder::new()
         .stack_size(16 * 1024 * 1024)
         .spawn(|| {
-            for depth in [190, 200] {
+            for depth in [197, 198] {
                 let mut source = String::new();
                 for level in 0..depth {
                     source.push_str(&"  ".repeat(level));
