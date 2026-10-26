@@ -2559,3 +2559,18 @@ mod a_description_below_a_term_host_ends_the_item;
 mod indented_term_in_list_hosted_div;
 #[path = "../invisible_image_promotion.rs"]
 mod invisible_image_promotion;
+
+// Native Djot fixtures retain image-only paragraphs from before carve#3709.
+fn image_paragraphs_as_images(html: &str) -> String {
+    static PARAGRAPH: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    PARAGRAPH
+        .get_or_init(|| regex::Regex::new(r"<p(\s[^>]*)?>\s*(<img\b[^>]*>)\s*</p>").unwrap())
+        .replace_all(html, |captures: &regex::Captures<'_>| {
+            let image = &captures[2];
+            match captures.get(1) {
+                Some(attrs) => format!("{}{}>", &image[..image.len() - 1], attrs.as_str()),
+                None => image.to_owned(),
+            }
+        })
+        .into_owned()
+}

@@ -57,7 +57,8 @@ fn nested_labels_preserve_literal_punctuation() {
         let source = row["source"].as_str().unwrap();
         let imported = carve::djot_to_carve(source);
         let actual = carve::to_html(&imported);
-        let expected = row["html"].as_str().unwrap();
+        let expected_owned = super::image_paragraphs_as_images(row["html"].as_str().unwrap());
+        let expected = expected_owned.as_str();
         let values = |html: &str| {
             let mut values = elements(html);
             if row["imageOnly"].as_bool().unwrap_or(false) {
