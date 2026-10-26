@@ -188,6 +188,10 @@ fn parse_mixed_blocks(lines: &[&str], options: &Options<'_>) -> Option<Vec<Block
                     out.push(parse_quote_block(&mut cur, options));
                     continue;
                 }
+                if detect_container_open(line).is_some() {
+                    out.push(*parse_container(&mut cur, options));
+                    continue;
+                }
             }
             return None;
         }

@@ -202,6 +202,21 @@ fn quote_marker_and_raw_fence_boundaries_keep_exact_output() {
 }
 
 #[test]
+fn root_colon_containers_keep_exact_output_on_event_route() {
+    for source in [
+        "::: note\nA paragraph.\n:::\n",
+        "::: note\n> quoted\n:::\n",
+        "::: figure\nA paragraph.\n:::\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
 fn marked_quote_edges_keep_exact_output() {
     for source in ["> # H\n> text\n", ">\n>\n", "> a\n\n> b", "> plain"] {
         let (actual, _) = parse_experimental_event_blocks(source);
