@@ -451,7 +451,7 @@ fn parse_marked_quote(
                 return None;
             }
             let _depth = DepthGuard::enter()?;
-            parse_mixed_blocks(&parts, options)
+            parse_mixed_blocks::<false, false>(&parts, options)
         })?;
     Some((
         BlockQuote {

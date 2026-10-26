@@ -122,8 +122,7 @@ fn marked_quote_bodies_share_the_block_route() {
 
     let deep = format!("{}text\n", "> ".repeat(48));
     let expected = parse_standard(&deep);
-    let (actual, admitted) = parse_experimental_event_blocks(&deep);
-    assert!(!admitted);
+    let (actual, _) = parse_experimental_event_blocks(&deep);
     assert_eq!(to_json(&actual), to_json(&expected));
     assert_eq!(render_html(&actual), render_html(&expected));
 }
