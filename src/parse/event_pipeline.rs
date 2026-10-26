@@ -98,14 +98,16 @@ fn parse_mixed_blocks<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
     let mut cur = LineCursor::new_with_cols(lines, None, None);
     cur.at_document_level = true;
     let mut out = Vec::new();
+    let mut leading_attrs: Vec<(usize, Attrs)> = Vec::new();
     while cur.peek().is_some() {
         if DEFINITIONS && cur.peek().is_some_and(is_definition_placeholder) {
             cur.consume();
             continue;
         }
         let invalid_brace_line = if cur.peek().is_some_and(|line| line.starts_with('{')) {
-            if parse_standalone_attrs_block(&mut cur).is_some() {
-                return None;
+            if let Some(attrs) = parse_standalone_attrs_block(&mut cur) {
+                leading_attrs.push((out.len(), attrs));
+                continue;
             }
             true
         } else {
@@ -172,7 +174,14 @@ fn parse_mixed_blocks<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
         }
         if let Some(fence) = detect_fence_open(line) {
             let mut block = *parse_fenced_block(&mut cur, fence, options);
-            resolve_code_title(&mut block);
+            let has_leading_attrs = leading_attrs.last().is_some_and(|(start, _)| {
+                out[*start..].iter().all(|node| {
+                    matches!(node, BlockNode::AbbreviationDef(_) | BlockNode::Comment(_))
+                })
+            });
+            if !has_leading_attrs {
+                resolve_code_title(&mut block);
+            }
             out.push(block);
             continue;
         }
@@ -258,6 +267,38 @@ fn parse_mixed_blocks<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
             pos: None,
         }));
     }
+    if !leading_attrs.is_empty() {
+        let mut next_visible = vec![None; out.len() + 1];
+        for index in (0..out.len()).rev() {
+            next_visible[index] = if matches!(
+                out[index],
+                BlockNode::AbbreviationDef(_) | BlockNode::Comment(_)
+            ) {
+                next_visible[index + 1]
+            } else {
+                Some(index)
+            };
+        }
+        let mut target = None;
+        let mut pending = None;
+        let mut slots = None;
+        for (start, attrs) in leading_attrs {
+            let Some(next_target) = next_visible[start] else {
+                continue;
+            };
+            if target != Some(next_target) {
+                if let (Some(index), Some(attrs)) = (target, pending.take()) {
+                    apply_event_leading_attrs(&mut out[index], attrs);
+                }
+                target = Some(next_target);
+                slots = None;
+            }
+            merge_attrs_indexed(&mut pending, attrs, &mut slots);
+        }
+        if let (Some(index), Some(attrs)) = (target, pending) {
+            apply_event_leading_attrs(&mut out[index], attrs);
+        }
+    }
     Some(out)
 }
 
@@ -288,6 +329,33 @@ fn parse_event_container(cur: &mut LineCursor<'_>, options: &Options<'_>) -> Box
         options,
     );
     Box::new(out.pop().expect("container body filled"))
+}
+
+fn apply_event_leading_attrs(block: &mut BlockNode, attrs: Attrs) {
+    apply_attrs_to_block(block, attrs);
+    resolve_code_title(block);
+    if let BlockNode::CodeBlock(code) = block {
+        if let Some(table) = delimited_table::from_code(code, &[]) {
+            *block = BlockNode::Table(table);
+        }
+    }
+    if let BlockNode::Figure(figure) = block {
+        if let FigureTarget::CodeBlock(code) = &*figure.target {
+            let mut code = code.clone();
+            if let Some(attrs) = &figure.attrs {
+                let mut target = BlockNode::CodeBlock(code.clone());
+                apply_attrs_to_block(&mut target, attrs.clone());
+                if let BlockNode::CodeBlock(with_attrs) = target {
+                    code = with_attrs;
+                }
+            }
+            if let Some(mut table) = delimited_table::from_code(&code, &[]) {
+                table.caption = Some(figure.caption.clone());
+                table.pos = figure.pos.clone();
+                *block = BlockNode::Table(table);
+            }
+        }
+    }
 }
 
 fn parse_simple_quote(

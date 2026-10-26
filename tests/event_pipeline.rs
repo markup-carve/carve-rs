@@ -234,6 +234,36 @@ fn event_route_lifts_root_abbreviations() {
 }
 
 #[test]
+fn event_route_attaches_root_attributes() {
+    for source in [
+        "{#install .featured}\n## Setup\n",
+        "{.fancy}\n```php\ncode\n```\n",
+        "{#x}\n\nParagraph.\n",
+        "{#x}\n{.y}\nText.\n",
+        "{#x}\n*[HTML]: HyperText\n\nHTML text.\n",
+        "{table header-rows=0}\n```tsv\nA\tB\n```\n",
+        "{.fancy}\n``` rust \"Example\"\ncode\n```\n",
+        "{title=\"A\"}\n``` rust \"B\"\ncode\n```\n^ Cap\n",
+        "{#x .a}\n*[HTML]: HyperText\n{.b}\nHTML text.\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
+fn root_attributes_before_a_footnote_keep_exact_output() {
+    let source = "{.a}\n[^1]: note\n\nText[^1].\n";
+    let (actual, _) = parse_experimental_event_blocks(source);
+    let expected = parse_standard(source);
+    assert_eq!(to_json(&actual), to_json(&expected));
+    assert_eq!(render_html(&actual), render_html(&expected));
+}
+
+#[test]
 fn nested_footnote_definitions_use_standard_parser() {
     for source in [
         "Text[^outer]\n\n[^outer]: Inside[^inner].\n[^inner]: Nested.\n",
@@ -403,7 +433,7 @@ fn invalid_brace_lines_remain_paragraphs_in_the_event_route() {
 
     let valid_attrs = "{.class}\n# Heading\n";
     let (actual, admitted) = parse_experimental_event_blocks(valid_attrs);
-    assert!(!admitted);
+    assert!(admitted);
     assert_eq!(to_json(&actual), to_json(&parse_standard(valid_attrs)));
 }
 
