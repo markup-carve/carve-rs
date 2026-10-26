@@ -260,9 +260,9 @@ fn list_marker_requires_space_not_tab() {
 }
 
 #[test]
-fn empty_backtick_pair_after_dollar_is_code_not_math() {
-    assert_eq!(html("$``"), "<p>$<code></code></p>");
-    assert_eq!(html("$$``"), "<p>$$<code></code></p>");
+fn empty_backtick_pair_after_dollar_is_math() {
+    assert_eq!(html("$``"), "<p><span class=\"math inline\" role=\"math\">\\(\\)</span></p>");
+    assert_eq!(html("$$``"), "<p><span class=\"math display\" role=\"math\">\\[\\]</span></p>");
 }
 
 #[test]
