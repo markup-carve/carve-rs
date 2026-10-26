@@ -586,7 +586,7 @@ pub(super) fn render_definition_list(
                 }
             }
             let body = trim_non_nbsp(&at_item_content_column(ctx, |ctx| {
-                render_blocks(session, def, ctx, None)
+                render_blocks(session, def, ctx, None, true)
             }))
             .to_string();
             if body.is_empty() {

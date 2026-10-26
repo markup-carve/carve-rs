@@ -76,6 +76,10 @@ name = "suite"
 path = "tests/suite/main.rs"
 
 [[test]]
+name = "fmt_adjacent_tight_lists_in_description"
+path = "tests/fmt_adjacent_tight_lists_in_description.rs"
+
+[[test]]
 name = "markdown_unresolved_reference_import"
 path = "tests/markdown_unresolved_reference_import.rs"
 
