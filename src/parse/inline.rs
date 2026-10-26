@@ -718,8 +718,13 @@ impl InlineRun<'_, '_> {
         let bytes = self.bytes;
         let mut end = start;
         while end < bytes.len() {
-            let literal = match bytes[end] {
-                b' ' | b'\t' | b',' | b';' | b'?' | b'&' | b')' => true,
+            let byte = bytes[end];
+            if byte.is_ascii_alphanumeric() || byte == b' ' || !byte.is_ascii() {
+                end += 1;
+                continue;
+            }
+            let literal = match byte {
+                b'\t' | b',' | b';' | b'?' | b'&' | b')' => true,
                 b'.' => !bytes[end..].starts_with(b"..."),
                 b'-' => !matches!(bytes.get(end + 1), Some(b'-' | b'>')),
                 b':' => matches!(bytes.get(end + 1), Some(b' ' | b'\t' | b'\n')),
@@ -741,7 +746,7 @@ impl InlineRun<'_, '_> {
                 b'(' => ![b"(c)".as_slice(), b"(r)", b"(tm)"]
                     .iter()
                     .any(|form| bytes[end..].starts_with(form)),
-                byte => byte.is_ascii_alphanumeric() || !byte.is_ascii(),
+                _ => false,
             };
             if !literal {
                 break;
