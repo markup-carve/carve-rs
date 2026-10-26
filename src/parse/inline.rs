@@ -239,12 +239,12 @@ impl InlineBounds<'_> {
             }
             let title_at = stop + usize::from(bytes[stop] == b' ');
             let complete = match bytes.get(title_at) {
-                Some(b'"') => {
-                    quotes[0][title_at + 1].is_some_and(|end| bytes.get(end + 1) == Some(&b')'))
-                }
-                Some(b'\'') => {
-                    quotes[1][title_at + 1].is_some_and(|end| bytes.get(end + 1) == Some(&b')'))
-                }
+                Some(b'"') => quotes[0][title_at + 1].is_some_and(|end| {
+                    bytes.get(skip_link_title_padding(bytes, end + 1)) == Some(&b')')
+                }),
+                Some(b'\'') => quotes[1][title_at + 1].is_some_and(|end| {
+                    bytes.get(skip_link_title_padding(bytes, end + 1)) == Some(&b')')
+                }),
                 _ => bytes[stop] == b')',
             };
             if complete {
