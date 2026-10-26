@@ -895,12 +895,10 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 lazy_scope,
                 (false, options),
                 |src, below| {
-                    if !src.source.contains("```") && !src.source.contains("~~~") {
-                        return collected_body_takes_the_lazy_line(&src.source, below, options);
-                    }
-                    // The authored fence column must be rebased before
-                    // deciding whether a lazy line can follow it.
+                    // Probe the body at the same authored base used by the
+                    // final item parse before admitting a below-column line.
                     let mut rebased = src.clone();
+                    rebased.authored_base_at_start = true;
                     rebase_overindented_blocks(&mut rebased, false, options);
                     collected_body_takes_the_lazy_line(&rebased.source, below, options)
                 },

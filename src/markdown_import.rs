@@ -594,7 +594,10 @@ fn normalize_imported_reference_links(document: &mut Document) {
                                 link.ref_label = None;
                                 link.raw_ref = None;
                             }
-                        } else {
+                        } else if !link.href.is_empty()
+                            || link.title.is_some()
+                            || link.resolved_empty_reference
+                        {
                             link.ref_label = None;
                             link.raw_ref = None;
                         }
@@ -1035,6 +1038,70 @@ fn markdown_to_ast_with_losses(
     markdown_to_ast_with_code_lines(markdown, None, None)
 }
 
+fn unresolved_footnote_at(source: &str, at: usize) -> Option<(String, usize)> {
+    if !source.get(at..)?.starts_with("[^")
+        || source[..at]
+            .bytes()
+            .rev()
+            .take_while(|byte| *byte == b'\\')
+            .count()
+            % 2
+            != 0
+    {
+        return None;
+    }
+    let label_start = at + 2;
+    let width = source[label_start..].find([']', '\r', '\n'])?;
+    if width == 0
+        || source.as_bytes()[label_start + width] != b']'
+        || source[label_start..label_start + width].contains(['\\', '|', '['])
+    {
+        return None;
+    }
+    Some((
+        source[label_start..label_start + width].to_owned(),
+        label_start + width + 1,
+    ))
+}
+
+fn plain_reference_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')
+}
+
+fn plain_reference_spelling(raw: &str) -> bool {
+    let Some((label, tail)) = raw.strip_prefix('[').and_then(|rest| rest.split_once("][")) else {
+        return false;
+    };
+    let Some(reference) = tail.strip_suffix(']') else {
+        return false;
+    };
+    !label.is_empty()
+        && label.bytes().all(plain_reference_byte)
+        && (reference.is_empty() || reference.bytes().all(plain_reference_byte))
+}
+
+fn carve_reference_spelling(raw: &str) -> bool {
+    if raw.contains(['<', '>', '|', '\\', '&']) {
+        return false;
+    }
+    if plain_reference_spelling(raw) {
+        return true;
+    }
+    let document = crate::parse(raw);
+    matches!(document.children.as_slice(), [BlockNode::Paragraph(paragraph)]
+        if matches!(paragraph.children.as_slice(), [InlineNode::Link(link)]
+            if link.href.is_empty() && link.raw_ref.as_deref() == Some(raw)))
+}
+
+fn carve_reference_span(source: &str, span: std::ops::Range<usize>) -> bool {
+    source
+        .get(span.clone())
+        .is_some_and(carve_reference_spelling)
+        || source
+            .get(span.start..span.end.saturating_add(2))
+            .is_some_and(|raw| raw.ends_with("[]") && carve_reference_spelling(raw))
+}
+
 fn markdown_to_ast_with_code_lines(
     markdown: &str,
     code_lines: Option<&mut Vec<Option<usize>>>,
@@ -1131,7 +1198,19 @@ fn markdown_to_ast_with_code_lines(
     let mut bare_url_at = 0;
     let (native_source, native_urls) = native_destinations::prepare(parser_source, options);
     let strikes = crate::markdown_strike::prepare(&native_source, options);
-    let mut reference = |link| strikes.reference(link);
+    let mut reference = |link: pulldown_cmark::BrokenLink<'_>| {
+        let image = strikes.text.as_bytes().get(link.span.start) == Some(&b'!')
+            || strikes.text.as_bytes().get(link.span.start.wrapping_sub(1)) == Some(&b'!');
+        let unknown = !image
+            && matches!(
+                link.link_type,
+                LinkType::Reference | LinkType::Collapsed | LinkType::Shortcut
+            )
+            && carve_reference_span(&source, strikes.original_range(link.span.clone()));
+        strikes
+            .reference(link)
+            .or_else(|| unknown.then(|| ("".into(), "".into())))
+    };
     let mut parser =
         Parser::new_with_broken_link_callback(&strikes.text, options, Some(&mut reference))
             .into_offset_iter();
@@ -1169,6 +1248,7 @@ fn markdown_to_ast_with_code_lines(
     }
     let mut used_reference_ids = BTreeSet::new();
     let mut entity_lt_prefix = 0;
+    let mut unresolved_footnote_end = 0;
     while let Some((mut event, range)) = parser.next() {
         if let Event::Start(Tag::Link { id, link_type, .. }) = &event {
             if !id.is_empty()
@@ -1203,6 +1283,23 @@ fn markdown_to_ast_with_code_lines(
         }
         builder.current_line =
             claimed_lines + line_starts.partition_point(|start| *start <= range.start);
+        if matches!(event, Event::Text(_)) && range.start < unresolved_footnote_end {
+            continue;
+        }
+        if matches!(event, Event::Text(_)) {
+            if let Some((label, end)) = unresolved_footnote_at(&source, range.start) {
+                builder.inline(InlineNode::Footnote(Footnote {
+                    attrs: None,
+                    id: Some(label),
+                    inline: None,
+                    number: None,
+                    ref_id: None,
+                    pos: None,
+                }));
+                unresolved_footnote_end = end;
+                continue;
+            }
+        }
         if let Some((kept, rest)) = text_end.take().and_then(|end| {
             let (kept, rest) = stripped_line_end(&source, end)?;
             // An event starting inside the run already carries those characters.
@@ -2531,16 +2628,26 @@ impl Builder {
                 ref_label: (!id.is_empty()
                     && matches!(
                         link_type,
-                        LinkType::Reference | LinkType::Collapsed | LinkType::Shortcut
+                        LinkType::Reference
+                            | LinkType::ReferenceUnknown
+                            | LinkType::Collapsed
+                            | LinkType::CollapsedUnknown
+                            | LinkType::Shortcut
+                            | LinkType::ShortcutUnknown
                     ))
                 .then(|| id.to_string()),
                 raw_ref: (!id.is_empty()
                     && matches!(
                         link_type,
-                        LinkType::Reference | LinkType::Collapsed | LinkType::Shortcut
+                        LinkType::Reference
+                            | LinkType::ReferenceUnknown
+                            | LinkType::Collapsed
+                            | LinkType::CollapsedUnknown
+                            | LinkType::Shortcut
+                            | LinkType::ShortcutUnknown
                     ))
                 .then(|| {
-                    if link_type == LinkType::Collapsed {
+                    if matches!(link_type, LinkType::Collapsed | LinkType::CollapsedUnknown) {
                         format!("[{id}][]")
                     } else {
                         source.to_owned()

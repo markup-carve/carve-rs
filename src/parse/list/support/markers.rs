@@ -599,6 +599,9 @@ pub(crate) fn collected_body_takes_the_lazy_line(
     trailing_below_column: bool,
     options: &Options<'_>,
 ) -> bool {
+    if src.lines().last().is_some_and(is_table_start) {
+        return false;
+    }
     if let Some(content) = trailing_marker_line_content(src) {
         return body_ends_with_open_paragraph(&content, options);
     }
@@ -626,6 +629,13 @@ pub(crate) fn body_ends_in_definition_list(body: &str, options: &Options<'_>) ->
 fn ends_in_definition_list(block: Option<&BlockNode>, nested: bool) -> bool {
     match block {
         Some(BlockNode::DefinitionList(_)) => true,
+        Some(BlockNode::Div(div)) if nested => ends_in_definition_list(div.children.last(), nested),
+        Some(BlockNode::Admonition(boxed)) if nested => {
+            ends_in_definition_list(boxed.children.last(), nested)
+        }
+        Some(BlockNode::Directive(directive)) if nested => {
+            ends_in_definition_list(directive.children.last(), nested)
+        }
         Some(BlockNode::List(list)) if nested => list
             .items
             .last()
