@@ -782,9 +782,7 @@ fn as_definition(line: &[InlineNode]) -> Option<(String, Def, CitationDefinition
     let InlineNode::Text(second) = line.get(1)? else {
         return None;
     };
-    let Some(after_marker) = second.value.strip_prefix(':') else {
-        return None;
-    };
+    let after_marker = second.value.strip_prefix(':')?;
     let spaces = after_marker
         .bytes()
         .take_while(|byte| *byte == b' ')
