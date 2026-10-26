@@ -178,16 +178,13 @@ impl Guard {
 /// Container prefixes leave it after punctuation or whitespace, never a word byte.
 fn may_have_standalone_plus(source: &str) -> bool {
     source.lines().any(|line| {
-        let bytes = line.as_bytes();
-        bytes
-            .iter()
-            .rposition(|&byte| byte == b'+')
-            .is_some_and(|at| {
-                (at == 0 || !bytes[at - 1].is_ascii_alphanumeric())
-                    && bytes[at + 1..]
-                        .iter()
-                        .all(|&byte| matches!(byte, b' ' | b'\t'))
-            })
+        let trimmed = line.trim_end_matches([' ', '\t']);
+        trimmed.strip_suffix('+').is_some_and(|prefix| {
+            prefix
+                .as_bytes()
+                .last()
+                .map_or(true, |byte| !byte.is_ascii_alphanumeric())
+        })
     })
 }
 
@@ -1280,6 +1277,12 @@ mod tests {
                 "{source:?}"
             );
         }
+    }
+
+    #[test]
+    fn prose_plus_before_a_refused_marker_keeps_its_decision() {
+        let _guard = Guard::install("C++\n> - a\n>   > q\n>   +\n>   para\n");
+        assert_eq!(decision(4).unwrap().refusal, Some(Refusal::WrongColumn));
     }
 
     #[test]

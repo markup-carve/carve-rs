@@ -1245,19 +1245,31 @@ fn deep_list_node(kind: SimpleListKind) -> List {
     }
 }
 
-/// Only these bytes can start a source character normalized by the event route.
-fn may_need_event_normalization(source: &str) -> bool {
+/// Match only the characters normalized by the event route.
+fn needs_event_normalization(source: &str) -> bool {
     let bytes = source.as_bytes();
-    memchr::memchr3(b'\r', b'\0', 0xee, bytes).is_some() || memchr::memchr(0xef, bytes).is_some()
+    if memchr::memchr2(b'\r', b'\0', bytes).is_some() {
+        return true;
+    }
+    let mut start = 0;
+    while let Some(offset) = memchr::memchr2(0xee, 0xef, &bytes[start..]) {
+        let at = start + offset;
+        if bytes[at..].starts_with(b"\xef\xbb\xbf")
+            || bytes[at..].starts_with(b"\xee\x80\x85")
+            || bytes[at..].starts_with(b"\xee\x80\x86")
+        {
+            return true;
+        }
+        start = at + 1;
+    }
+    false
 }
 
 /// The experimental route keeps unsupported source and option shapes on the
 /// standard parser until their direct construction matches its public output.
 pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     let source_len = source.len();
-    let normalized = if may_need_event_normalization(source)
-        && source.contains(['\r', '\0', '\u{feff}', '\u{e005}', '\u{e006}'])
-    {
+    let normalized = if needs_event_normalization(source) {
         if source.contains(['\u{e005}', '\u{e006}']) {
             return None;
         }
@@ -1395,8 +1407,7 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
 
 fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Document, bool)> {
     let may_have_abbrevs = source.contains("*[");
-    if may_need_event_normalization(source)
-        && source.contains(['\r', '\0', '\u{feff}', '\u{e005}', '\u{e006}'])
+    if needs_event_normalization(source)
         || (!source.ends_with('\n') && source.lines().any(|line| detect_fence_open(line).is_some()))
     {
         return None;
