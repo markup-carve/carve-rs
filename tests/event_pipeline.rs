@@ -53,6 +53,97 @@ fn direct_route_admits_prose_and_uses_existing_list_reader() {
 }
 
 #[test]
+fn unified_list_owner_keeps_loose_and_nested_boundaries() {
+    for source in [
+        "- first\n\n  second paragraph\n",
+        "- first\n\n  second paragraph\n\n- next\n",
+        "1. first\n\n   second paragraph\n\n2. next\n",
+        "- first\n\n  - nested\n- next\n",
+        "- first\n\n  second paragraph\n\nRoot paragraph\n",
+        "- a\n  - nested\n\n- b\n",
+        "1. a\n   - nested\n\n2. b\n",
+        "- a\n  - nested\n\nRoot paragraph\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
+fn generated_unified_list_owners_keep_exact_output() {
+    let fragments = ["plain", "*strong*", "`code`", "a & b"];
+    let mut state = 0x4a77_6d21_u32;
+    let mut admitted = 0;
+    for case in 0..512 {
+        let ordered = case % 2 == 0;
+        let marker = if ordered { "1. " } else { "- " };
+        let prefix = if ordered { "   " } else { "  " };
+        let mut source = format!("{marker}first\n\n");
+        state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        source.push_str(prefix);
+        source.push_str(fragments[(state as usize) % fragments.len()]);
+        source.push('\n');
+        if case % 3 == 0 {
+            source.push('\n');
+            source.push_str(prefix);
+            source.push_str("another paragraph\n");
+        }
+        if case % 5 == 0 {
+            source.push('\n');
+            source.push_str(prefix);
+            source.push_str("- nested\n");
+        }
+        if case % 2 == 1 {
+            source.push('\n');
+            source.push_str("- next\n");
+        }
+        if case % 7 == 0 {
+            source.push_str("\nAfter.\n");
+        }
+        let (actual, used) = parse_experimental_event_blocks(&source);
+        admitted += usize::from(used);
+        let expected = parse_standard(&source);
+        assert_eq!(
+            to_json(&actual),
+            to_json(&expected),
+            "case {case}: {source:?}"
+        );
+        assert_eq!(
+            render_html(&actual),
+            render_html(&expected),
+            "case {case}: {source:?}"
+        );
+    }
+    assert!(
+        admitted > 200,
+        "only {admitted} cases used the direct route"
+    );
+}
+
+#[test]
+fn unified_list_boundaries_keep_exact_output() {
+    for source in [
+        "- a\n\n   three-space paragraph\n",
+        "1. a\n\n  two-space paragraph\n",
+        "- a\n\n\ttab paragraph\n",
+        "- a\n\n  : definition\n",
+        "- a\n\n* b\n",
+        "- a\n\n- - -\n",
+        "1. one\n2. two\n3. three\n4. four\n5. five\n6. six\n7. seven\n8. eight\n9. nine\n10. ten\n",
+        "- a\nlazy continuation\n",
+        "- a\n\n  second paragraph\nlazy continuation\n",
+    ] {
+        let (actual, _) = parse_experimental_event_blocks(source);
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
 fn literal_double_star_labels_keep_exact_ast_and_html() {
     for source in [
         "**Core syntax**\n",

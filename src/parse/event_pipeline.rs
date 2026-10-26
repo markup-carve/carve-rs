@@ -132,7 +132,10 @@ fn parse_mixed_blocks<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
             continue;
         }
         if is_list_marker(line) && !line.starts_with([' ', '\t']) {
-            if let Some((list, end)) = parse_simple_list(lines, cur.pos, options) {
+            if let Some((list, end)) = parse_unified_list(lines, cur.pos, options) {
+                cur.pos = end;
+                out.push(BlockNode::List(list));
+            } else if let Some((list, end)) = parse_simple_list(lines, cur.pos, options) {
                 cur.pos = end;
                 out.push(BlockNode::List(list));
             } else if let Some((list, end)) = parse_two_level_simple_list(lines, cur.pos, options) {
@@ -302,6 +305,239 @@ fn parse_mixed_blocks<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
         }
     }
     Some(out)
+}
+
+struct UnifiedListFrame<'a> {
+    list: List,
+    kind: SimpleListKind,
+    indent: usize,
+    content_indent: usize,
+    paragraph: Vec<&'a str>,
+}
+
+fn flush_unified_list_paragraph(
+    frame: &mut UnifiedListFrame<'_>,
+    options: &Options<'_>,
+) -> Option<()> {
+    if frame.paragraph.is_empty() {
+        return Some(());
+    }
+    let inlines = if frame.paragraph.len() == 1 {
+        parse_event_inlines(frame.paragraph[0], options)
+    } else {
+        parse_event_inlines(&frame.paragraph.join("\n"), options)
+    };
+    frame
+        .list
+        .items
+        .last_mut()?
+        .children
+        .push(BlockNode::Paragraph(Paragraph {
+            attrs: None,
+            children: inlines,
+            at_content_column: true,
+            block_image: false,
+            pos: None,
+        }));
+    frame.paragraph.clear();
+    Some(())
+}
+
+fn close_unified_list_frame(
+    frames: &mut Vec<UnifiedListFrame<'_>>,
+    options: &Options<'_>,
+) -> Option<()> {
+    let mut child = frames.pop()?;
+    flush_unified_list_paragraph(&mut child, options)?;
+    frames
+        .last_mut()?
+        .list
+        .items
+        .last_mut()?
+        .children
+        .push(BlockNode::List(child.list));
+    Some(())
+}
+
+#[inline(never)]
+fn parse_unified_list(
+    lines: &[&str],
+    start: usize,
+    options: &Options<'_>,
+) -> Option<(List, usize)> {
+    let mut frames: Vec<UnifiedListFrame<'_>> = Vec::new();
+    let mut pos = start;
+    while let Some(&line) = lines.get(pos) {
+        if is_blank_line(line) {
+            let mut after = pos;
+            while lines.get(after).is_some_and(|line| is_blank_line(line)) {
+                after += 1;
+            }
+            if after - pos != 1 {
+                return None;
+            }
+            let Some(&next) = lines.get(after) else { break };
+            if frames.len() > 1 {
+                if next.starts_with([' ', '\t']) {
+                    return None;
+                }
+                while frames.len() > 1 {
+                    close_unified_list_frame(&mut frames, options)?;
+                }
+            }
+            let frame = frames.last_mut()?;
+            if let Some((kind, _, _)) = simple_list_marker(next) {
+                if kind != frame.kind {
+                    break;
+                }
+                frame.list.tight = false;
+                pos = after;
+                continue;
+            }
+            let next_indent = next.bytes().take_while(|byte| *byte == b' ').count();
+            if next_indent == frame.content_indent
+                && simple_list_marker(&next[next_indent..]).is_some()
+            {
+                pos = after;
+                continue;
+            }
+            if is_list_marker(next) {
+                return None;
+            }
+            if next_indent == frame.content_indent {
+                flush_unified_list_paragraph(frame, options)?;
+                frame.list.tight = false;
+                pos = after;
+                continue;
+            }
+            if next.starts_with([' ', '\t']) {
+                return None;
+            }
+            break;
+        }
+        let indent = line.bytes().take_while(|byte| *byte == b' ').count();
+        let marker = simple_list_marker(&line[indent..]);
+        if let Some((kind, ordinal, content)) = marker {
+            while frames.len() > 1 && indent < frames.last()?.indent {
+                close_unified_list_frame(&mut frames, options)?;
+            }
+            if frames.is_empty() {
+                if indent != 0 || kind == SimpleListKind::Ordered && ordinal != 1 {
+                    return None;
+                }
+                frames.push(UnifiedListFrame {
+                    list: deep_list_node(kind),
+                    kind,
+                    indent,
+                    content_indent: indent
+                        + if kind == SimpleListKind::Ordered {
+                            3
+                        } else {
+                            2
+                        },
+                    paragraph: Vec::new(),
+                });
+            } else if indent == frames.last()?.content_indent {
+                flush_unified_list_paragraph(frames.last_mut()?, options)?;
+                if kind == SimpleListKind::Ordered && ordinal != 1 {
+                    return None;
+                }
+                frames.push(UnifiedListFrame {
+                    list: deep_list_node(kind),
+                    kind,
+                    indent,
+                    content_indent: indent
+                        + if kind == SimpleListKind::Ordered {
+                            3
+                        } else {
+                            2
+                        },
+                    paragraph: Vec::new(),
+                });
+            } else if indent != frames.last()?.indent {
+                return None;
+            }
+            if frames.len() >= MAX_NESTING_DEPTH {
+                return None;
+            }
+            let frame = frames.last_mut()?;
+            if frame.kind != kind {
+                if frames.len() == 1 && indent == 0 {
+                    break;
+                }
+                return None;
+            }
+            if kind == SimpleListKind::Ordered && ordinal != frame.list.items.len() + 1 {
+                return None;
+            }
+            flush_unified_list_paragraph(frame, options)?;
+            frame.list.items.push(ListItem {
+                attrs: None,
+                checked: None,
+                task_state: None,
+                children: Vec::new(),
+                pos: None,
+            });
+            frame.paragraph.push(content);
+            pos += 1;
+            continue;
+        }
+        if indent == 0 && frames.len() == 1 {
+            return None;
+        }
+        let frame = frames.last_mut()?;
+        if indent != frame.content_indent {
+            return None;
+        }
+        let content = trim_ascii_end(&line[indent..]);
+        if !(if frame.paragraph.is_empty() {
+            may_start_plain_paragraph(content)
+        } else {
+            may_continue_plain_paragraph(content)
+        }) || is_list_marker(content)
+            || detect_fence_open(content).is_some()
+            || thematic_break_marker(content).is_some()
+            || detect_heading(content).is_some()
+        {
+            return None;
+        }
+        frame.paragraph.push(content);
+        pos += 1;
+    }
+    while frames.len() > 1 {
+        close_unified_list_frame(&mut frames, options)?;
+    }
+    let mut root = frames.pop()?;
+    flush_unified_list_paragraph(&mut root, options)?;
+    Some((root.list, pos))
+}
+
+#[cfg(test)]
+mod unified_list_tests {
+    use super::*;
+
+    #[test]
+    fn shared_owner_accepts_loose_siblings_and_declines_lazy_lines() {
+        let options = Options::default();
+        for source in [
+            "- a\n\n  second\n",
+            "- a\n  - nested\n\n- b\n",
+            "1. a\n   - nested\n\n2. b\n",
+        ] {
+            let lines: Vec<&str> = source.lines().collect();
+            assert!(
+                parse_unified_list(&lines, 0, &options).is_some(),
+                "{source:?}"
+            );
+        }
+        for source in ["- a\nlazy line\n", "- a\n\n   wrong indent\n"] {
+            let lines: Vec<&str> = source.lines().collect();
+            assert!(
+                parse_unified_list(&lines, 0, &options).is_none(),
+                "{source:?}"
+            );
+        }
+    }
 }
 
 fn parse_event_container(cur: &mut LineCursor<'_>, options: &Options<'_>) -> Box<BlockNode> {
@@ -1060,7 +1296,7 @@ fn parse_two_level_simple_list(
         }
         if lines
             .get(after)
-            .is_some_and(|line| line.starts_with([' ', '\t']))
+            .is_some_and(|line| line.starts_with([' ', '\t']) || is_list_marker(line))
         {
             return None;
         }
