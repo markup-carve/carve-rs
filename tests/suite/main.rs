@@ -48,6 +48,8 @@ mod the_carve_3421_batch_rulings_read_like_carve_js;
 mod raw_payload_termination;
 #[path = "../relative_continuation_marker.rs"]
 mod relative_continuation_marker;
+#[path = "../table_after_nested_item_ends_lazy_plus.rs"]
+mod table_after_nested_item_ends_lazy_plus;
 
 #[path = "../a_block_at_an_item_content_column_closes_its_paragraph_before_an_unclosed_fence.rs"]
 mod a_block_at_an_item_content_column_closes_its_paragraph_before_an_unclosed_fence;

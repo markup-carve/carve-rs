@@ -395,7 +395,7 @@ pub(crate) fn collect_trailing_lazy_through_framed(
 /// ordinary dedent, which needs no floor.
 pub(crate) fn a_band_line_ends_the_chunk(
     cur: &LineCursor,
-    base_indent: usize,
+    _base_indent: usize,
     content_col: usize,
 ) -> bool {
     for candidate in cur.lines.range(cur.pos..cur.lines.len()) {
@@ -411,7 +411,7 @@ pub(crate) fn a_band_line_ends_the_chunk(
         {
             return false;
         }
-        return indent > base_indent;
+        return true;
     }
     false
 }
@@ -468,15 +468,20 @@ pub(crate) fn chunk_run_leaves_content_open(
     lead_at_column: &str,
     options: &Options<'_>,
 ) -> bool {
-    if body_ends_with_open_paragraph(lead_at_column, options) {
-        return true;
-    }
     let mut run: Vec<String> = Vec::new();
     for candidate in cur.lines.range(cur.pos..cur.lines.len()) {
         if is_blank_line(candidate) || indent_columns(candidate) < content_col {
             break;
         }
         run.push(slice_columns(candidate, content_col, false));
+    }
+    if body_ends_with_open_paragraph(lead_at_column, options) {
+        let mut complete = lead_at_column.to_owned();
+        for line in run.iter().skip(1) {
+            complete.push('\n');
+            complete.push_str(line);
+        }
+        return body_ends_with_open_paragraph(&complete, options);
     }
     if let Some(open) = detect_fence_open(lead_at_column) {
         return !run.iter().skip(1).any(|later| is_fence_close(later, open));
