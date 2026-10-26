@@ -201,6 +201,37 @@ fn event_route_lifts_root_link_definitions() {
 }
 
 #[test]
+fn event_route_lifts_simple_footnotes() {
+    for source in [
+        "Text[^n]\n\n[^n]: Note.\n",
+        "# Notes\n\nSee[^one] and[^two].\n\n[^one]: First.\n[^two]: Second.\n",
+        "Text[^n]\n\n[^n]: *emphasized* note.\n",
+        "Text[^n]\n\n[^n]: First line.\n    Second line.\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
+fn nested_footnote_definitions_use_standard_parser() {
+    for source in [
+        "Text[^outer]\n\n[^outer]: Inside[^inner].\n[^inner]: Nested.\n",
+        "- a[^n]\n\n  [^n]: note\n- b\n",
+        "1. a[^n]\n\n   [^n]: note\n2. b\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(!admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
 fn quote_marker_and_raw_fence_boundaries_keep_exact_output() {
     for source in [
         "> - a\n>+\n> tail\n",

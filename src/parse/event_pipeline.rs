@@ -1064,9 +1064,10 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     };
     let source = normalized.as_deref().unwrap_or(source);
     let may_have_link_defs = source.contains("]:");
-    if source.contains("[^")
-
-        || source.contains("*[")
+    if source.contains("[^") {
+        return parse_document_with_footnotes(source);
+    }
+    if source.contains("*[")
         || (!source.ends_with('\n') && source.lines().any(|line| detect_fence_open(line).is_some()))
     {
         return None;
@@ -1164,6 +1165,83 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         fill_crossref_hrefs(&mut doc, options.heading_id_options());
     }
     Some((doc, used_event_route))
+}
+
+fn parse_document_with_footnotes(source: &str) -> Option<(Document, bool)> {
+    if source.contains(['\r', '\0', '\u{feff}', '\u{e005}', '\u{e006}'])
+        || source.contains("*[")
+        || (!source.ends_with('\n') && source.lines().any(|line| detect_fence_open(line).is_some()))
+    {
+        return None;
+    }
+    if source
+        .lines()
+        .any(|line| line.contains("]:") && !trim_ascii_start(line).starts_with("[^"))
+    {
+        return None;
+    }
+    let options = Options::default();
+    let _placeholders = PlaceholderGuard::install(pick_definition_placeholders(source));
+    let _continuation_markers = continuation_marker::Guard::install(source);
+    let _source_ending = SourceEndingGuard::install(source);
+    let (frontmatter, frontmatter_raw, body) = split_frontmatter(source, false);
+    let body_start_line = source[..body.as_ptr() as usize - source.as_ptr() as usize]
+        .bytes()
+        .filter(|byte| *byte == b'\n')
+        .count()
+        + 1;
+    let (mapped, footnote_sources, footnote_def_pos, note_links) =
+        extract_footnote_defs(body, body_start_line, false, false, None, &options);
+    if mapped
+        .source
+        .lines()
+        .any(|line| line.starts_with([' ', '\t']) && is_definition_placeholder(line))
+        || mapped.source.contains("]:")
+        || !note_links.is_empty()
+        || footnote_sources
+            .values()
+            .any(|note| note.source.contains("[^"))
+    {
+        return None;
+    }
+    let children = {
+        let _depth = DepthGuard::enter()?;
+        let lines: Vec<&str> = mapped.source.lines().collect();
+        parse_blocks(&lines, &options).or_else(|| parse_mixed_blocks::<true>(&lines, &options))?
+    };
+    let footnote_defs = footnote_sources
+        .into_iter()
+        .map(|(label, note)| (label, parse_mapped_source(&note, &options)))
+        .collect();
+    let mut doc = Document {
+        frontmatter,
+        frontmatter_raw,
+        footnote_defs,
+        footnote_def_pos,
+        children,
+        source_len: source.len(),
+        ingest_payload_len: 0,
+    };
+    if source.contains("][") {
+        let headings = heading_reference_index_for_document(&doc, options.heading_id_options());
+        resolve_reference_links(&mut doc, &BTreeMap::new(), &headings);
+    }
+    if source.contains('^') {
+        number_crossref_captions(&mut doc);
+    }
+    stamp_generated_heading_ids(&mut doc, options.heading_id_options());
+    let _ = crate::render::collect_footnotes(&mut doc, false);
+    if source.contains("![") {
+        promote_block_images(&mut doc.children, false, true);
+        for blocks in doc.footnote_defs.values_mut() {
+            promote_block_images(blocks, false, true);
+        }
+    }
+    coalesce_text_runs(&mut doc);
+    if source.contains("</#") {
+        fill_crossref_hrefs(&mut doc, options.heading_id_options());
+    }
+    Some((doc, true))
 }
 
 #[cfg(test)]
