@@ -399,6 +399,7 @@ fn normalized_footnotes_preserve_authored_source_length() {
         assert_eq!(actual.source_len, source.len(), "{source:?}");
         assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
         assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+        assert!(carve::authored_provenance(&actual, source, None).is_ok());
     }
 }
 
