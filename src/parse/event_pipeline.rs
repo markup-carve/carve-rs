@@ -1243,7 +1243,11 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     let _placeholders =
         may_have_link_defs.then(|| PlaceholderGuard::install(pick_definition_placeholders(source)));
     let _continuation_markers = continuation_marker::Guard::install(source);
-    let _source_ending = SourceEndingGuard::install(source);
+    let _source_ending = if !options.positions && source.ends_with('\n') {
+        SourceEndingGuard::fragment()
+    } else {
+        SourceEndingGuard::install(source)
+    };
     let (frontmatter, frontmatter_raw, body) = split_frontmatter(source, false);
     let (stripped_body, link_defs) = if may_have_link_defs {
         let mut budget = probe_budget_for(body.len());
@@ -1372,7 +1376,11 @@ fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Doc
     let options = Options::default();
     let _placeholders = PlaceholderGuard::install(pick_definition_placeholders(source));
     let _continuation_markers = continuation_marker::Guard::install(source);
-    let _source_ending = SourceEndingGuard::install(source);
+    let _source_ending = if !options.positions && source.ends_with('\n') {
+        SourceEndingGuard::fragment()
+    } else {
+        SourceEndingGuard::install(source)
+    };
     let (frontmatter, frontmatter_raw, body) = split_frontmatter(source, false);
     let body_start_line = source[..body.as_ptr() as usize - source.as_ptr() as usize]
         .bytes()
