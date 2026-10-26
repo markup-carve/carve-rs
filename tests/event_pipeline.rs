@@ -53,6 +53,31 @@ fn direct_route_admits_prose_and_uses_existing_list_reader() {
 }
 
 #[test]
+fn isolated_root_link_definitions_keep_public_nodes_and_references() {
+    for source in [
+        "A [link][r].\n\n[r]: /u\n",
+        "[r]: /u\n\n# Heading\n\nA [link][r].\n",
+        "[r]: /u\n[s]: /v\n\nA [link][r] and [other][s].\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+    for source in [
+        "[r]: /first\n[r]: /second\n\nA [link][r].\n",
+        "```\n[r]: /u\n",
+        "A [r]: text in a paragraph.\n\n[s]: /u\n",
+    ] {
+        let (actual, _) = parse_experimental_event_blocks(source);
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
 fn normalized_source_keeps_direct_ast_html_and_original_byte_length() {
     for ending in ["\n", "\r\n", "\r"] {
         for bom in ["", "\u{feff}"] {

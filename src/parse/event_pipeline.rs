@@ -1056,7 +1056,6 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     let source = normalized.as_deref().unwrap_or(source);
     if source.contains("[^")
         || source.contains("*[")
-        || source.contains("]:")
         || (!source.ends_with('\n') && source.lines().any(|line| detect_fence_open(line).is_some()))
     {
         return None;
@@ -1065,11 +1064,45 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     let _continuation_markers = continuation_marker::Guard::install(source);
     let _source_ending = SourceEndingGuard::install(source);
     let (frontmatter, frontmatter_raw, body) = split_frontmatter(source, false);
+    let mut lines: Vec<&str> = body.lines().collect();
+    let mut link_defs = BTreeMap::new();
+    if body.contains("]:") {
+        let (defs, definition_lines) = super::layout::layout_link_defs(&lines)?;
+        if lines.iter().enumerate().any(|(index, line)| {
+            line.contains("]:") && definition_lines.binary_search(&index).is_err()
+        }) {
+            return None;
+        }
+        let body_start_line = source[..body.as_ptr() as usize - source.as_ptr() as usize]
+            .bytes()
+            .filter(|byte| *byte == b'\n')
+            .count();
+        link_defs = defs;
+        for index in definition_lines {
+            if let Some((label, _, _)) = parse_link_def_line_with_value(lines[index]) {
+                if let Some(def) = link_defs.get_mut(&label_key(label)) {
+                    def.line = Some(body_start_line + index);
+                }
+            }
+            lines[index] = "";
+        }
+    }
     let direct = {
         let _depth = DepthGuard::enter()?;
-        let lines: Vec<&str> = body.lines().collect();
-        parse_blocks(&lines, &options).or_else(|| parse_mixed_blocks(&lines, &options))
+        if link_defs.is_empty() {
+            parse_blocks(&lines, &options).or_else(|| parse_mixed_blocks(&lines, &options))
+        } else {
+            let (blocks, resolved_defs, _) =
+                with_active_link_defs(std::mem::take(&mut link_defs), || {
+                    parse_blocks(&lines, &options).or_else(|| parse_mixed_blocks(&lines, &options))
+                });
+            link_defs = resolved_defs;
+            blocks
+        }
     };
+    if !link_defs.is_empty() && direct.is_none() {
+        return None;
+    }
     let used_event_route = direct.is_some();
     let children = direct.unwrap_or_else(|| {
         let body_start_line = source[..body.as_ptr() as usize - source.as_ptr() as usize]
@@ -1107,9 +1140,12 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         source_len,
         ingest_payload_len: 0,
     };
-    if source.contains("][") {
+    if !link_defs.is_empty() || source.contains("][") {
         let headings = heading_reference_index_for_document(&doc, options.heading_id_options());
-        resolve_reference_links(&mut doc, &BTreeMap::new(), &headings);
+        resolve_reference_links(&mut doc, &link_defs, &headings);
+    }
+    if !link_defs.is_empty() {
+        append_link_reference_definitions(&mut doc, &link_defs, source, None);
     }
     if source.contains('^') {
         number_crossref_captions(&mut doc);
