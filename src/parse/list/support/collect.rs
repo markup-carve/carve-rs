@@ -536,19 +536,19 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         let term = indent >= strip_cols
             && fence.is_none()
             && comment_fence.is_none()
-            && colon_open.is_empty()
+            && literal_colon.is_none()
             && is_definition_list_start(trim_ascii_start(line));
         let below_definition_term = indent > parent_indent
             && indent < strip_cols
             && definition_list_column.is_some_and(|column| indent < column)
             && fence.is_none()
             && comment_fence.is_none()
-            && colon_open.is_empty()
+            && literal_colon.is_none()
             && is_definition_list_start(trim_ascii_start(line));
         let description = strip_description_prefix(trim_ascii_start(line)).is_some()
             && fence.is_none()
             && comment_fence.is_none()
-            && colon_open.is_empty();
+            && literal_colon.is_none();
         if after_definition_blank
             && !term
             && !(description && definition_list_column == Some(indent))

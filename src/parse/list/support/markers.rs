@@ -629,6 +629,13 @@ pub(crate) fn body_ends_in_definition_list(body: &str, options: &Options<'_>) ->
 fn ends_in_definition_list(block: Option<&BlockNode>, nested: bool) -> bool {
     match block {
         Some(BlockNode::DefinitionList(_)) => true,
+        Some(BlockNode::Div(div)) if nested => ends_in_definition_list(div.children.last(), nested),
+        Some(BlockNode::Admonition(boxed)) if nested => {
+            ends_in_definition_list(boxed.children.last(), nested)
+        }
+        Some(BlockNode::Directive(directive)) if nested => {
+            ends_in_definition_list(directive.children.last(), nested)
+        }
         Some(BlockNode::List(list)) if nested => list
             .items
             .last()
