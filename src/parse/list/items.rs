@@ -1275,11 +1275,12 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         };
         let after_blank = self.previous_line_blank();
         if quote_holds_a_paragraph || continuation_has_content {
-            fold_lazy_run_and_resume(
+            fold_lazy_run_and_resume_in_band(
                 self.cur,
                 &mut stream,
                 content_col,
-                options,
+                (base_indent, base_indent),
+                (false, options),
                 |src, below| {
                     !after_blank
                         && (nested_ends_with_open_paragraph_rebased(src, below, below, options)

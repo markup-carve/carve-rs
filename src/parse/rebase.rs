@@ -708,6 +708,27 @@ impl<'a, 't, 'o> BodyRebase<'a, 't, 'o> {
         {
             return;
         }
+        // A marker below the open item's content column starts a sibling list
+        // after a blank. Later markers at that same base stay in the new list.
+        if self.mode.include_sublists
+            && base > 0
+            && self.below_descendant(base)
+            && is_list_marker(&local)
+            && (self.after_blank || self.nested_list_marker_bases.last() == Some(&Some(base)))
+        {
+            while self.below_descendant(base) {
+                self.nested_columns.pop();
+                self.nested_list_marker_bases.pop();
+            }
+            if let Some(column) = marker_content_col_at(&self.lines[i], base) {
+                self.nested_columns.push(column);
+                self.nested_list_marker_bases.push(Some(base));
+            }
+            self.block_at_minimum = false;
+            self.after_blank = false;
+            self.i += 1;
+            return;
+        }
         while self.below_descendant(base) {
             self.nested_columns.pop();
             self.nested_list_marker_bases.pop();

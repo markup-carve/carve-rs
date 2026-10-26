@@ -1,26 +1,5 @@
 use super::*;
 
-/// AND NOTHING CLOSES MEANS THE CONTAINER GOES ON COLLECTING (PART 1 S4,
-/// markup-carve/carve#980).
-pub(crate) fn fold_lazy_run_and_resume(
-    cur: &mut LineCursor,
-    nested: &mut MappedSource,
-    content_col: usize,
-    options: &Options<'_>,
-    open: impl FnMut(&MappedSource, bool) -> bool,
-    resume: impl FnMut(&mut LineCursor) -> MappedSource,
-) {
-    fold_lazy_run_and_resume_in_band(
-        cur,
-        nested,
-        content_col,
-        (0, 0),
-        (false, options),
-        open,
-        resume,
-    );
-}
-
 pub(crate) fn fold_lazy_run_and_resume_in_band(
     cur: &mut LineCursor,
     nested: &mut MappedSource,
@@ -333,7 +312,7 @@ pub(crate) fn collect_trailing_lazy_through_framed(
         if is_blank_line(line)
             || indent_columns(line) > base_indent
             || (is_list_marker(line) && indent_columns(line) <= list_base)
-            || (is_plus_marker(line)
+            || (is_plus_marker(trim_ascii_start(line))
                 && cur
                     .continuation_decision(cur.pos)
                     .map_or(list_base == 0 && !cur.in_item_body, |decision| {
