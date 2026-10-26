@@ -53,6 +53,28 @@ fn direct_route_admits_prose_and_uses_existing_list_reader() {
 }
 
 #[test]
+fn normalized_source_keeps_direct_ast_html_and_original_byte_length() {
+    for ending in ["\n", "\r\n", "\r"] {
+        for bom in ["", "\u{feff}"] {
+            let source = format!("{bom}# Heading{ending}{ending}Plain *strong* text.{ending}");
+            let expected = parse_standard(&source);
+            let (actual, admitted) = parse_experimental_event_blocks(&source);
+            assert!(admitted, "line ending {ending:?}, BOM {}", !bom.is_empty());
+            assert_eq!(actual.source_len, source.len());
+            assert_eq!(to_json(&actual), to_json(&expected));
+            assert_eq!(render_html(&actual), render_html(&expected));
+        }
+        let source = format!("A\0B{ending}");
+        let expected = parse_standard(&source);
+        let (actual, admitted) = parse_experimental_event_blocks(&source);
+        assert!(admitted, "NUL with line ending {ending:?}");
+        assert_eq!(actual.source_len, source.len());
+        assert_eq!(to_json(&actual), to_json(&expected));
+        assert_eq!(render_html(&actual), render_html(&expected));
+    }
+}
+
+#[test]
 fn mixed_route_handles_root_quote_without_changing_output() {
     let source = "# Heading\n\n> quoted *text*\n> second line\n\nAfter.\n";
     let (actual, admitted) = parse_experimental_event_blocks(source);

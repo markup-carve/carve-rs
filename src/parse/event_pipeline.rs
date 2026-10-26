@@ -997,11 +997,21 @@ fn parse_deep_simple_list(
     Some((frames.pop()?.list, pos))
 }
 
-/// The admission gate excludes syntax that needs definition lifting, source
-/// normalization, positions, or a container. The standard parser handles it.
+/// The admission gate excludes syntax that needs definition lifting, positions,
+/// or an unsupported container. Normalize line endings, BOM and NUL only when
+/// the existing special-character gate finds one of them.
 pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
-    if source.contains(['\r', '\0', '\u{feff}', '\u{e005}', '\u{e006}'])
-        || source.contains("[^")
+    let source_len = source.len();
+    let normalized = if source.contains(['\r', '\0', '\u{feff}', '\u{e005}', '\u{e006}']) {
+        if source.contains(['\u{e005}', '\u{e006}']) {
+            return None;
+        }
+        Some(normalize_source(source))
+    } else {
+        None
+    };
+    let source = normalized.as_deref().unwrap_or(source);
+    if source.contains("[^")
         || source.contains("*[")
         || source.contains("]:")
         || (!source.ends_with('\n') && source.lines().any(|line| detect_fence_open(line).is_some()))
@@ -1051,7 +1061,7 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         footnote_defs: BTreeMap::new(),
         footnote_def_pos: BTreeMap::new(),
         children,
-        source_len: source.len(),
+        source_len,
         ingest_payload_len: 0,
     };
     if source.contains("][") {
