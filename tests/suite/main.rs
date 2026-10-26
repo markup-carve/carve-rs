@@ -2387,6 +2387,8 @@ mod djot_opaque_reference_targets;
 mod markdown_reference_definition_with_wrapped_fields;
 #[path = "../markdown_shortcut_reference_imports_collapsed.rs"]
 mod markdown_shortcut_reference_imports_collapsed;
+#[path = "../markdown_unresolved_reference_import.rs"]
+mod markdown_unresolved_reference_import;
 
 #[path = "../a_marker_line_footnote_leaves_its_container_open.rs"]
 mod a_marker_line_footnote_leaves_its_container_open;

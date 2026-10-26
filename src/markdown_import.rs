@@ -594,9 +594,6 @@ fn normalize_imported_reference_links(document: &mut Document) {
                                 link.ref_label = None;
                                 link.raw_ref = None;
                             }
-                        } else {
-                            link.ref_label = None;
-                            link.raw_ref = None;
                         }
                     }
                 }
@@ -1131,7 +1128,13 @@ fn markdown_to_ast_with_code_lines(
     let mut bare_url_at = 0;
     let (native_source, native_urls) = native_destinations::prepare(parser_source, options);
     let strikes = crate::markdown_strike::prepare(&native_source, options);
-    let mut reference = |link| strikes.reference(link);
+    let mut reference = |link: pulldown_cmark::BrokenLink<'_>| {
+        let unknown = matches!(link.link_type, LinkType::Reference | LinkType::Collapsed)
+            || (link.link_type == LinkType::Shortcut && link.reference.starts_with('^'));
+        strikes
+            .reference(link)
+            .or_else(|| unknown.then(|| ("".into(), "".into())))
+    };
     let mut parser =
         Parser::new_with_broken_link_callback(&strikes.text, options, Some(&mut reference))
             .into_offset_iter();
@@ -1169,6 +1172,7 @@ fn markdown_to_ast_with_code_lines(
     }
     let mut used_reference_ids = BTreeSet::new();
     let mut entity_lt_prefix = 0;
+    let mut unresolved_footnote_end = 0;
     while let Some((mut event, range)) = parser.next() {
         if let Event::Start(Tag::Link { id, link_type, .. }) = &event {
             if !id.is_empty()
@@ -1203,6 +1207,38 @@ fn markdown_to_ast_with_code_lines(
         }
         builder.current_line =
             claimed_lines + line_starts.partition_point(|start| *start <= range.start);
+        if matches!(event, Event::Text(_)) {
+            if range.start < unresolved_footnote_end {
+                continue;
+            }
+            let unescaped = source[..range.start]
+                .bytes()
+                .rev()
+                .take_while(|byte| *byte == b'\\')
+                .count()
+                % 2
+                == 0;
+            if unescaped && source[range.start..].starts_with("[^") {
+                let label_start = range.start + 2;
+                if let Some(width) = source[label_start..]
+                    .find([']', '\r', '\n'])
+                    .filter(|width| *width > 0)
+                {
+                    if source.as_bytes()[label_start + width] == b']' {
+                        builder.inline(InlineNode::Footnote(Footnote {
+                            attrs: None,
+                            id: Some(source[label_start..label_start + width].to_owned()),
+                            inline: None,
+                            number: None,
+                            ref_id: None,
+                            pos: None,
+                        }));
+                        unresolved_footnote_end = label_start + width + 1;
+                        continue;
+                    }
+                }
+            }
+        }
         if let Some((kept, rest)) = text_end.take().and_then(|end| {
             let (kept, rest) = stripped_line_end(&source, end)?;
             // An event starting inside the run already carries those characters.
@@ -2531,16 +2567,26 @@ impl Builder {
                 ref_label: (!id.is_empty()
                     && matches!(
                         link_type,
-                        LinkType::Reference | LinkType::Collapsed | LinkType::Shortcut
+                        LinkType::Reference
+                            | LinkType::ReferenceUnknown
+                            | LinkType::Collapsed
+                            | LinkType::CollapsedUnknown
+                            | LinkType::Shortcut
+                            | LinkType::ShortcutUnknown
                     ))
                 .then(|| id.to_string()),
                 raw_ref: (!id.is_empty()
                     && matches!(
                         link_type,
-                        LinkType::Reference | LinkType::Collapsed | LinkType::Shortcut
+                        LinkType::Reference
+                            | LinkType::ReferenceUnknown
+                            | LinkType::Collapsed
+                            | LinkType::CollapsedUnknown
+                            | LinkType::Shortcut
+                            | LinkType::ShortcutUnknown
                     ))
                 .then(|| {
-                    if link_type == LinkType::Collapsed {
+                    if matches!(link_type, LinkType::Collapsed | LinkType::CollapsedUnknown) {
                         format!("[{id}][]")
                     } else {
                         source.to_owned()
