@@ -120,6 +120,9 @@ fn parse_mixed_blocks(lines: &[&str], options: &Options<'_>) -> Option<Vec<Block
             } else if let Some((list, end)) = parse_two_level_simple_list(lines, cur.pos, options) {
                 cur.pos = end;
                 out.push(BlockNode::List(list));
+            } else if let Some((list, end)) = parse_deep_simple_list(lines, cur.pos, options) {
+                cur.pos = end;
+                out.push(BlockNode::List(list));
             } else {
                 let mut item_bodies = Vec::new();
                 let list = parse_list(&mut cur, options, &mut item_bodies);
@@ -859,6 +862,137 @@ fn parse_two_level_simple_list(
         },
         pos,
     ))
+}
+
+struct DeepListFrame {
+    list: List,
+    kind: SimpleListKind,
+    indent: usize,
+    content_indent: usize,
+}
+
+fn deep_list_node(kind: SimpleListKind) -> List {
+    List {
+        attrs: None,
+        ordered: kind == SimpleListKind::Ordered,
+        start: None,
+        ol_type: None,
+        bare_marker: false,
+        delim: None,
+        bullet_char: match kind {
+            SimpleListKind::Bullet(b'*') => Some('*'),
+            _ => None,
+        },
+        tight: true,
+        items: Vec::new(),
+        pos: None,
+    }
+}
+
+/// Own plain marker lines with a stack. More complex item bodies still use the
+/// general list reader until the common owner loop can handle them.
+fn parse_deep_simple_list(
+    lines: &[&str],
+    start: usize,
+    options: &Options<'_>,
+) -> Option<(List, usize)> {
+    let mut frames: Vec<DeepListFrame> = Vec::new();
+    let mut pos = start;
+    let mut deepest = 0;
+    while let Some(&line) = lines.get(pos) {
+        if is_blank_line(line) {
+            let mut after = pos;
+            while lines.get(after).is_some_and(|line| is_blank_line(line)) {
+                after += 1;
+            }
+            if lines.get(after).is_some_and(|line| is_list_marker(line)) {
+                return None;
+            }
+            break;
+        }
+        let indent = line.bytes().take_while(|byte| *byte == b' ').count();
+        let body = &line[indent..];
+        let Some((kind, ordinal, content)) = simple_list_marker(body) else {
+            return None;
+        };
+        while frames.len() > 1 && indent < frames.last()?.indent {
+            let child = frames.pop()?.list;
+            frames
+                .last_mut()?
+                .list
+                .items
+                .last_mut()?
+                .children
+                .push(BlockNode::List(child));
+        }
+        if frames.is_empty() {
+            if indent != 0 || kind == SimpleListKind::Ordered && ordinal != 1 {
+                return None;
+            }
+            frames.push(DeepListFrame {
+                list: deep_list_node(kind),
+                kind,
+                indent,
+                content_indent: if kind == SimpleListKind::Ordered {
+                    3
+                } else {
+                    2
+                },
+            });
+        } else if indent == frames.last()?.content_indent {
+            if kind == SimpleListKind::Ordered && ordinal != 1 {
+                return None;
+            }
+            frames.push(DeepListFrame {
+                list: deep_list_node(kind),
+                kind,
+                indent,
+                content_indent: indent
+                    + if kind == SimpleListKind::Ordered {
+                        3
+                    } else {
+                        2
+                    },
+            });
+        } else if indent != frames.last()?.indent {
+            return None;
+        }
+        deepest = deepest.max(frames.len());
+        let frame = frames.last_mut()?;
+        if frame.kind != kind
+            || kind == SimpleListKind::Ordered && ordinal != frame.list.items.len() + 1
+        {
+            return None;
+        }
+        frame.list.items.push(ListItem {
+            attrs: None,
+            checked: None,
+            task_state: None,
+            children: vec![BlockNode::Paragraph(Paragraph {
+                attrs: None,
+                children: parse_event_inlines(content, options),
+                at_content_column: true,
+                block_image: false,
+                pos: None,
+            })],
+            pos: None,
+        });
+        pos += 1;
+    }
+    if deepest < 3 {
+        return None;
+    }
+    while frames.len() > 1 {
+        let child = frames.pop()?.list;
+        frames
+            .last_mut()?
+            .list
+            .items
+            .last_mut()?
+            .children
+            .push(BlockNode::List(child));
+    }
+    Some((frames.pop()?.list, pos))
 }
 
 /// The admission gate excludes syntax that needs definition lifting, source

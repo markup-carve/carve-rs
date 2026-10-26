@@ -102,6 +102,51 @@ fn mixed_route_admits_nested_list_markers_when_reader_owns_them() {
 }
 
 #[test]
+fn deep_plain_lists_keep_sibling_ownership_and_exact_output() {
+    for source in [
+        "- parent\n  - child\n    - one\n    - two\n  - next child\n    - three\n- next parent\n  - last child\n    - four\n",
+        "1. parent\n   1. child\n      1. one\n      2. two\n   2. next child\n      1. three\n",
+        "- parent\n  - child\n    - one\n\nafter\n",
+        "- parent\n  - child\n    - one\nlazy\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+    for root_ordered in [false, true] {
+        for child_ordered in [false, true] {
+            for grand_ordered in [false, true] {
+                let marker = |ordered: bool, number: usize| {
+                    if ordered {
+                        format!("{number}. ")
+                    } else {
+                        "- ".to_owned()
+                    }
+                };
+                let root = marker(root_ordered, 1);
+                let child = marker(child_ordered, 1);
+                let grand = marker(grand_ordered, 1);
+                let source = format!(
+                    "{root}parent\n{root_indent}{child}child\n{grand_indent}{grand}one *emphasis*\n{grand_indent}{grand_next}two\n{root_indent}{child_next}next child\n{grand_indent}{grand}three\n{root_next}next parent\n",
+                    root_indent = " ".repeat(root.len()),
+                    grand_indent = " ".repeat(root.len() + child.len()),
+                    grand_next = marker(grand_ordered, 2),
+                    child_next = marker(child_ordered, 2),
+                    root_next = marker(root_ordered, 2),
+                );
+                let (actual, admitted) = parse_experimental_event_blocks(&source);
+                assert!(admitted, "{source:?}");
+                let expected = parse_standard(&source);
+                assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+                assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+            }
+        }
+    }
+}
+
+#[test]
 fn event_route_resolves_collapsed_heading_references() {
     for source in [
         "# a :smile: b\n\n[a b][]\n",
