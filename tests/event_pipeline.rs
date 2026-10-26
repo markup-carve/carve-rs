@@ -207,6 +207,7 @@ fn root_colon_containers_keep_exact_output_on_event_route() {
         "::: note\nA paragraph.\n:::\n",
         "::: note\n> quoted\n:::\n",
         "::: figure\nA paragraph.\n:::\n",
+        "::: note\n::: note\nPlain paragraph.\n:::\n:::\n",
     ] {
         let (actual, admitted) = parse_experimental_event_blocks(source);
         assert!(admitted, "{source:?}");

@@ -189,7 +189,7 @@ fn parse_mixed_blocks(lines: &[&str], options: &Options<'_>) -> Option<Vec<Block
                     continue;
                 }
                 if detect_container_open(line).is_some() {
-                    out.push(*parse_container(&mut cur, options));
+                    out.push(*parse_event_container(&mut cur, options));
                     continue;
                 }
             }
@@ -236,6 +236,35 @@ fn parse_mixed_blocks(lines: &[&str], options: &Options<'_>) -> Option<Vec<Block
         }));
     }
     Some(out)
+}
+
+fn parse_event_container(cur: &mut LineCursor<'_>, options: &Options<'_>) -> Box<BlockNode> {
+    let (mut node, body) = open_container(cur, options);
+    if !body.in_group && !body.inner.marker_hosted {
+        let source = &body.inner.source.inner.lines[body.inner.start..body.inner.end];
+        if !source.iter().any(|line| line.text.contains(":::")) {
+            let lines: Vec<&str> = source.iter().map(|line| line.text.as_str()).collect();
+            let _depth = DepthScope::set(body.depth);
+            if let Some(_inner_depth) = DepthGuard::enter() {
+                if let Some(children) =
+                    parse_blocks(&lines, options).or_else(|| parse_mixed_blocks(&lines, options))
+                {
+                    fill_container_children(&mut node, children);
+                    return node;
+                }
+            }
+        }
+    }
+    let mut out = vec![*node];
+    resolve_pending_bodies(
+        &mut out,
+        vec![PendingBody {
+            index: 0,
+            body: Body::Colon(body),
+        }],
+        options,
+    );
+    Box::new(out.pop().expect("container body filled"))
 }
 
 fn parse_simple_quote(
