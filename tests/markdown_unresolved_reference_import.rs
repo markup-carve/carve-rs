@@ -32,3 +32,13 @@ fn escaped_pipe_is_not_an_unresolved_footnote() {
     let html = carve::to_html(&written);
     assert!(!html.contains("role=\"doc-noteref\""), "{html}");
 }
+
+#[test]
+fn an_unfinished_footnote_opener_keeps_its_inner_link() {
+    let written = carve::try_markdown_to_carve("[^a[t](/u \"one\")").unwrap();
+    let html = carve::to_html(&written);
+    assert!(
+        html.contains("[^a<a href=\"/u\" title=\"one\">t</a>"),
+        "{html}"
+    );
+}

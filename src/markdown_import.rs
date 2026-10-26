@@ -1054,7 +1054,7 @@ fn unresolved_footnote_at(source: &str, at: usize) -> Option<(String, usize)> {
     let width = source[label_start..].find([']', '\r', '\n'])?;
     if width == 0
         || source.as_bytes()[label_start + width] != b']'
-        || source[label_start..label_start + width].contains(['\\', '|'])
+        || source[label_start..label_start + width].contains(['\\', '|', '['])
     {
         return None;
     }
