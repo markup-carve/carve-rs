@@ -233,6 +233,36 @@ fn invalid_brace_lines_remain_paragraphs_in_the_event_route() {
 }
 
 #[test]
+fn two_level_tight_lists_keep_exact_ast_and_html() {
+    for parent in ["-", "*", "1."] {
+        for child in ["-", "*", "1."] {
+            for parent_count in [1, 2] {
+                for child_count in [1, 2] {
+                    let indent = if parent == "1." { "   " } else { "  " };
+                    let mut source = String::new();
+                    for _ in 0..parent_count {
+                        source.push_str(&format!("{parent} outer\n"));
+                        for index in 0..child_count {
+                            let marker = if child == "1." {
+                                format!("{}.", index + 1)
+                            } else {
+                                child.to_string()
+                            };
+                            source.push_str(&format!("{indent}{marker} inner\n"));
+                        }
+                    }
+                    let (actual, admitted) = parse_experimental_event_blocks(&source);
+                    assert!(admitted, "{source:?}");
+                    let expected = parse_standard(&source);
+                    assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+                    assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn generated_prose_keeps_exact_ast_and_html() {
     let fragments = [
         "plain words",

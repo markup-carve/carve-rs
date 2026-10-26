@@ -117,6 +117,9 @@ fn parse_mixed_blocks(lines: &[&str], options: &Options<'_>) -> Option<Vec<Block
             if let Some((list, end)) = parse_simple_list(lines, cur.pos, options) {
                 cur.pos = end;
                 out.push(BlockNode::List(list));
+            } else if let Some((list, end)) = parse_two_level_simple_list(lines, cur.pos, options) {
+                cur.pos = end;
+                out.push(BlockNode::List(list));
             } else {
                 let mut item_bodies = Vec::new();
                 let list = parse_list(&mut cur, options, &mut item_bodies);
@@ -599,6 +602,138 @@ fn parse_simple_list(lines: &[&str], start: usize, options: &Options<'_>) -> Opt
             },
             tight: true,
             items,
+            pos: None,
+        },
+        pos,
+    ))
+}
+
+/// Build the common tight parent-and-child shape without collecting item bodies
+/// for the general list reader. Any continuation or blank inside the list
+/// leaves ownership to that reader.
+fn parse_two_level_simple_list(
+    lines: &[&str],
+    start: usize,
+    options: &Options<'_>,
+) -> Option<(List, usize)> {
+    let (parent_kind, first_number, _) = simple_list_marker(lines.get(start)?)?;
+    if parent_kind == SimpleListKind::Ordered && first_number != 1 {
+        return None;
+    }
+    let child_prefix = if parent_kind == SimpleListKind::Ordered {
+        "   "
+    } else {
+        "  "
+    };
+    lines
+        .get(start + 1)?
+        .strip_prefix(child_prefix)
+        .and_then(simple_list_marker)?;
+    let mut parent_items = Vec::new();
+    let mut pos = start;
+    let mut has_child = false;
+    while let Some((kind, ordinal, content)) =
+        lines.get(pos).and_then(|line| simple_list_marker(line))
+    {
+        if kind != parent_kind {
+            return None;
+        }
+        if parent_kind == SimpleListKind::Ordered && ordinal != parent_items.len() + 1 {
+            return None;
+        }
+        let mut children = vec![BlockNode::Paragraph(Paragraph {
+            attrs: None,
+            children: parse_event_inlines(content, options),
+            at_content_column: true,
+            block_image: false,
+            pos: None,
+        })];
+        pos += 1;
+        if let Some(line) = lines.get(pos) {
+            if let Some(rest) = line.strip_prefix(child_prefix) {
+                if let Some((child_kind, first_child_number, _)) = simple_list_marker(rest) {
+                    if child_kind == SimpleListKind::Ordered && first_child_number != 1 {
+                        return None;
+                    }
+                    let mut child_items = Vec::new();
+                    while let Some(rest) = lines
+                        .get(pos)
+                        .and_then(|line| line.strip_prefix(child_prefix))
+                    {
+                        let Some((kind, ordinal, content)) = simple_list_marker(rest) else {
+                            break;
+                        };
+                        if kind != child_kind
+                            || child_kind == SimpleListKind::Ordered
+                                && ordinal != child_items.len() + 1
+                        {
+                            return None;
+                        }
+                        child_items.push(ListItem {
+                            attrs: None,
+                            checked: None,
+                            task_state: None,
+                            children: vec![BlockNode::Paragraph(Paragraph {
+                                attrs: None,
+                                children: parse_event_inlines(content, options),
+                                at_content_column: true,
+                                block_image: false,
+                                pos: None,
+                            })],
+                            pos: None,
+                        });
+                        pos += 1;
+                    }
+                    children.push(BlockNode::List(List {
+                        attrs: None,
+                        ordered: child_kind == SimpleListKind::Ordered,
+                        start: None,
+                        ol_type: None,
+                        bare_marker: false,
+                        delim: None,
+                        bullet_char: match child_kind {
+                            SimpleListKind::Bullet(b'*') => Some('*'),
+                            _ => None,
+                        },
+                        tight: true,
+                        items: child_items,
+                        pos: None,
+                    }));
+                    has_child = true;
+                }
+            }
+        }
+        parent_items.push(ListItem {
+            attrs: None,
+            checked: None,
+            task_state: None,
+            children,
+            pos: None,
+        });
+        match lines.get(pos) {
+            None => break,
+            Some(line) if is_blank_line(line) => break,
+            Some(line) if simple_list_marker(line).is_some() => continue,
+            _ => return None,
+        }
+    }
+    if !has_child {
+        return None;
+    }
+    Some((
+        List {
+            attrs: None,
+            ordered: parent_kind == SimpleListKind::Ordered,
+            start: None,
+            ol_type: None,
+            bare_marker: false,
+            delim: None,
+            bullet_char: match parent_kind {
+                SimpleListKind::Bullet(b'*') => Some('*'),
+                _ => None,
+            },
+            tight: true,
+            items: parent_items,
             pos: None,
         },
         pos,
