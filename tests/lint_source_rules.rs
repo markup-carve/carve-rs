@@ -74,7 +74,7 @@ fn source_rules_report_the_shared_triggers() {
             "footnotes-placement-in-container",
             "Intro[^a].\n\n> ::: footnotes\n> :::\n\n[^a]: only note\n",
         ),
-        ("table-cell-attribute-before-marker", "|{#x}< content |\n"),
+        ("table-marker-run-padding", "|{#x}< content |\n"),
     ] {
         assert!(
             lint_carve(source).iter().any(|w| w.rule == rule),
@@ -143,13 +143,13 @@ fn cell_marker_advice_requires_a_real_unpadded_cell_prefix() {
         assert!(
             !lint_carve(source)
                 .iter()
-                .any(|w| w.rule == "table-cell-attribute-before-marker"),
+                .any(|w| w.rule == "table-marker-run-padding"),
             "{source:?}"
         );
     }
     assert!(lint_carve("> |{#x}< b |\n")
         .iter()
-        .any(|w| w.rule == "table-cell-attribute-before-marker"));
+        .any(|w| w.rule == "table-marker-run-padding"));
 }
 
 #[test]
@@ -184,10 +184,10 @@ fn speculative_list_parses_do_not_publish_attribute_warnings() {
 fn invalid_alignment_marker_pairs_are_not_unpadded_runs() {
     assert!(!lint_carve("|? lone |v? reversed |\n")
         .iter()
-        .any(|w| w.rule == "table-alignment-run-padding"));
+        .any(|w| w.rule == "table-marker-run-padding"));
     assert!(lint_carve("|>value |\n")
         .iter()
-        .any(|w| w.rule == "table-alignment-run-padding"));
+        .any(|w| w.rule == "table-marker-run-padding"));
 }
 
 #[test]

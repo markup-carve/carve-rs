@@ -20,7 +20,16 @@ fn table_column_rules_are_reported() {
     assert!(rules.contains(&"table-column-arity"), "{rules:?}");
     assert!(rules.contains(&"table-column-overlap"), "{rules:?}");
     assert!(rules.contains(&"table-width-total"), "{rules:?}");
-    assert!(rules.contains(&"table-alignment-run-padding"), "{rules:?}");
+    assert!(rules.contains(&"table-marker-run-padding"), "{rules:?}");
+    assert!(lint_carve("|=text |\n")
+        .iter()
+        .any(|w| w.rule == "table-marker-run-padding"));
+    assert!(lint_carve("|=|\n")
+        .iter()
+        .any(|w| w.rule == "table-marker-run-padding"));
+    assert!(lint_carve("|>{#x}value |\n")
+        .iter()
+        .any(|w| w.rule == "table-marker-run-padding"));
 }
 
 #[test]
@@ -33,8 +42,8 @@ fn whole_cell_span_markers_need_no_alignment_padding() {
     assert!(lint_carve(source).is_empty(), "{:?}", lint_carve(source));
     assert!(lint_carve("|<text|\n")
         .iter()
-        .any(|warning| warning.rule == "table-alignment-run-padding"));
+        .any(|warning| warning.rule == "table-marker-run-padding"));
     assert!(lint_carve("|=^|\n")
         .iter()
-        .any(|warning| warning.rule == "table-alignment-run-padding"));
+        .any(|warning| warning.rule == "table-marker-run-padding"));
 }

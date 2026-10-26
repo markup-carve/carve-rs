@@ -122,7 +122,7 @@ fn a_table_column_diagnostic_names_a_codepoint_column() {
     let padding = lint_carve("| éé |<x |\n");
     let run = padding
         .iter()
-        .find(|w| w.rule == "table-alignment-run-padding")
+        .find(|w| w.rule == "table-marker-run-padding")
         .expect("the padding rule fired");
     assert_eq!(run.column, 7);
     assert_eq!(run.start, 8);

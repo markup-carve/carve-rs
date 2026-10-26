@@ -1108,7 +1108,7 @@ impl<'s, 'r> LineRules<'s, 'r> {
             );
         }
         for (start, len) in crate::parse::lint_reversed_cell_markers(view) {
-            emit(out, rows, ln, at + start, len, "table-cell-attribute-before-marker", "Write the alignment marker before the cell attribute block, and end the marker run with a space.");
+            emit(out, rows, ln, at + start, len, "table-marker-run-padding", "Write the alignment marker before the cell attribute block, and end the marker run with a space.");
         }
         for m in self.include.captures_iter(row.text) {
             let inner = &m[1];
