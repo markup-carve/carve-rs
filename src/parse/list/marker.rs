@@ -56,7 +56,7 @@ pub(crate) fn marker_tail(line: &str, marker_end: usize) -> Option<(&str, Option
     let (content, attrs) = match bytes.get(marker_end) {
         Some(&b' ') => {
             let mut content_start = marker_end;
-            while matches!(bytes.get(content_start), Some(b' ' | b'\t')) {
+            while matches!(bytes.get(content_start), Some(b' ')) {
                 content_start += 1;
             }
             (trim_ascii_end(&line[content_start..]), None)
@@ -67,7 +67,7 @@ pub(crate) fn marker_tail(line: &str, marker_end: usize) -> Option<(&str, Option
                 return None;
             }
             let mut content_start = end;
-            while matches!(bytes.get(content_start), Some(b' ' | b'\t')) {
+            while matches!(bytes.get(content_start), Some(b' ')) {
                 content_start += 1;
             }
             (trim_ascii_end(&line[content_start..]), attrs)
