@@ -274,7 +274,13 @@ fn normalized_source_keeps_direct_ast_html_and_original_byte_length() {
 
 #[test]
 fn normalization_probe_keeps_sentinel_and_benign_unicode_boundaries() {
-    for benign in ["# Heading\n\nCafé.\n", "# Heading\n\nWide，punctuation.\n"] {
+    for benign in [
+        "# Heading\n\nCafé.\n",
+        "# Heading\n\nWide，punctuation.\n",
+        "# Heading\n\nX\u{e007}Y\n",
+        "# Heading\n\nX\u{e000}Y\n",
+        "# Heading\n\nX\u{fefe}Y\n",
+    ] {
         let (actual, admitted) = parse_experimental_event_blocks(benign);
         assert!(admitted, "{benign:?}");
         assert_eq!(to_json(&actual), to_json(&parse_standard(benign)));

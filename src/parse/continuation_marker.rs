@@ -1281,6 +1281,8 @@ mod tests {
 
     #[test]
     fn prose_plus_before_a_refused_marker_keeps_its_decision() {
+        assert!(may_have_standalone_plus("+x +\n"));
+        assert!(!may_have_standalone_plus("a+ \t\n"));
         let _guard = Guard::install("C++\n> - a\n>   > q\n>   +\n>   para\n");
         assert_eq!(decision(4).unwrap().refusal, Some(Refusal::WrongColumn));
     }
