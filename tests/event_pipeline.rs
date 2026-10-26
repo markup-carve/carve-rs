@@ -63,6 +63,7 @@ fn unified_list_owner_keeps_loose_and_nested_boundaries() {
         "- a\n  - nested\n\n- b\n",
         "1. a\n   - nested\n\n2. b\n",
         "- a\n  - nested\n\nRoot paragraph\n",
+        "- a\n  - nested\n\n\nRoot paragraph\n",
     ] {
         let (actual, admitted) = parse_experimental_event_blocks(source);
         assert!(admitted, "{source:?}");

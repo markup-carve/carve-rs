@@ -132,16 +132,10 @@ fn parse_mixed_blocks<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
             continue;
         }
         if is_list_marker(line) && !line.starts_with([' ', '\t']) {
-            if let Some((list, end)) = parse_unified_list(lines, cur.pos, options) {
+            if let Some((list, end)) = parse_simple_list(lines, cur.pos, options) {
                 cur.pos = end;
                 out.push(BlockNode::List(list));
-            } else if let Some((list, end)) = parse_simple_list(lines, cur.pos, options) {
-                cur.pos = end;
-                out.push(BlockNode::List(list));
-            } else if let Some((list, end)) = parse_two_level_simple_list(lines, cur.pos, options) {
-                cur.pos = end;
-                out.push(BlockNode::List(list));
-            } else if let Some((list, end)) = parse_deep_simple_list(lines, cur.pos, options) {
+            } else if let Some((list, end)) = parse_unified_list(lines, cur.pos, options) {
                 cur.pos = end;
                 out.push(BlockNode::List(list));
             } else {
@@ -307,56 +301,94 @@ fn parse_mixed_blocks<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
     Some(out)
 }
 
+enum UnifiedListBlock<'a> {
+    Paragraph(Vec<&'a str>),
+    List(UnifiedListNode<'a>),
+}
+
+struct UnifiedListItem<'a> {
+    blocks: Vec<UnifiedListBlock<'a>>,
+}
+
+struct UnifiedListNode<'a> {
+    kind: SimpleListKind,
+    tight: bool,
+    items: Vec<UnifiedListItem<'a>>,
+}
+
 struct UnifiedListFrame<'a> {
-    list: List,
+    node: UnifiedListNode<'a>,
     kind: SimpleListKind,
     indent: usize,
     content_indent: usize,
     paragraph: Vec<&'a str>,
 }
 
-fn flush_unified_list_paragraph(
-    frame: &mut UnifiedListFrame<'_>,
-    options: &Options<'_>,
-) -> Option<()> {
+fn flush_unified_list_paragraph<'a>(frame: &mut UnifiedListFrame<'a>) -> Option<()> {
     if frame.paragraph.is_empty() {
         return Some(());
     }
-    let inlines = if frame.paragraph.len() == 1 {
-        parse_event_inlines(frame.paragraph[0], options)
-    } else {
-        parse_event_inlines(&frame.paragraph.join("\n"), options)
-    };
     frame
-        .list
+        .node
         .items
         .last_mut()?
-        .children
-        .push(BlockNode::Paragraph(Paragraph {
-            attrs: None,
-            children: inlines,
-            at_content_column: true,
-            block_image: false,
-            pos: None,
-        }));
-    frame.paragraph.clear();
+        .blocks
+        .push(UnifiedListBlock::Paragraph(std::mem::take(
+            &mut frame.paragraph,
+        )));
     Some(())
 }
 
-fn close_unified_list_frame(
-    frames: &mut Vec<UnifiedListFrame<'_>>,
-    options: &Options<'_>,
-) -> Option<()> {
+fn close_unified_list_frame(frames: &mut Vec<UnifiedListFrame<'_>>) -> Option<()> {
     let mut child = frames.pop()?;
-    flush_unified_list_paragraph(&mut child, options)?;
+    flush_unified_list_paragraph(&mut child)?;
     frames
         .last_mut()?
-        .list
+        .node
         .items
         .last_mut()?
-        .children
-        .push(BlockNode::List(child.list));
+        .blocks
+        .push(UnifiedListBlock::List(child.node));
     Some(())
+}
+
+fn build_unified_list(node: UnifiedListNode<'_>, options: &Options<'_>) -> List {
+    let mut list = deep_list_node(node.kind);
+    list.tight = node.tight;
+    list.items = node
+        .items
+        .into_iter()
+        .map(|item| ListItem {
+            attrs: None,
+            checked: None,
+            task_state: None,
+            children: item
+                .blocks
+                .into_iter()
+                .map(|block| match block {
+                    UnifiedListBlock::Paragraph(lines) => {
+                        let inlines = if lines.len() == 1 {
+                            parse_event_inlines(lines[0], options)
+                        } else {
+                            parse_event_inlines(&lines.join("\n"), options)
+                        };
+                        BlockNode::Paragraph(Paragraph {
+                            attrs: None,
+                            children: inlines,
+                            at_content_column: true,
+                            block_image: false,
+                            pos: None,
+                        })
+                    }
+                    UnifiedListBlock::List(child) => {
+                        BlockNode::List(build_unified_list(child, options))
+                    }
+                })
+                .collect(),
+            pos: None,
+        })
+        .collect();
+    list
 }
 
 #[inline(never)]
@@ -373,16 +405,22 @@ fn parse_unified_list(
             while lines.get(after).is_some_and(|line| is_blank_line(line)) {
                 after += 1;
             }
+            let Some(&next) = lines.get(after) else { break };
             if after - pos != 1 {
+                if !next.starts_with([' ', '\t']) && !is_list_marker(next) {
+                    while frames.len() > 1 {
+                        close_unified_list_frame(&mut frames)?;
+                    }
+                    break;
+                }
                 return None;
             }
-            let Some(&next) = lines.get(after) else { break };
             if frames.len() > 1 {
                 if next.starts_with([' ', '\t']) {
                     return None;
                 }
                 while frames.len() > 1 {
-                    close_unified_list_frame(&mut frames, options)?;
+                    close_unified_list_frame(&mut frames)?;
                 }
             }
             let frame = frames.last_mut()?;
@@ -390,7 +428,7 @@ fn parse_unified_list(
                 if kind != frame.kind {
                     break;
                 }
-                frame.list.tight = false;
+                frame.node.tight = false;
                 pos = after;
                 continue;
             }
@@ -405,8 +443,8 @@ fn parse_unified_list(
                 return None;
             }
             if next_indent == frame.content_indent {
-                flush_unified_list_paragraph(frame, options)?;
-                frame.list.tight = false;
+                flush_unified_list_paragraph(frame)?;
+                frame.node.tight = false;
                 pos = after;
                 continue;
             }
@@ -419,14 +457,18 @@ fn parse_unified_list(
         let marker = simple_list_marker(&line[indent..]);
         if let Some((kind, ordinal, content)) = marker {
             while frames.len() > 1 && indent < frames.last()?.indent {
-                close_unified_list_frame(&mut frames, options)?;
+                close_unified_list_frame(&mut frames)?;
             }
             if frames.is_empty() {
                 if indent != 0 || kind == SimpleListKind::Ordered && ordinal != 1 {
                     return None;
                 }
                 frames.push(UnifiedListFrame {
-                    list: deep_list_node(kind),
+                    node: UnifiedListNode {
+                        kind,
+                        tight: true,
+                        items: Vec::new(),
+                    },
                     kind,
                     indent,
                     content_indent: indent
@@ -438,12 +480,19 @@ fn parse_unified_list(
                     paragraph: Vec::new(),
                 });
             } else if indent == frames.last()?.content_indent {
-                flush_unified_list_paragraph(frames.last_mut()?, options)?;
+                if frames.len() + 1 >= MAX_NESTING_DEPTH {
+                    return None;
+                }
+                flush_unified_list_paragraph(frames.last_mut()?)?;
                 if kind == SimpleListKind::Ordered && ordinal != 1 {
                     return None;
                 }
                 frames.push(UnifiedListFrame {
-                    list: deep_list_node(kind),
+                    node: UnifiedListNode {
+                        kind,
+                        tight: true,
+                        items: Vec::new(),
+                    },
                     kind,
                     indent,
                     content_indent: indent
@@ -467,17 +516,14 @@ fn parse_unified_list(
                 }
                 return None;
             }
-            if kind == SimpleListKind::Ordered && ordinal != frame.list.items.len() + 1 {
+            if kind == SimpleListKind::Ordered && ordinal != frame.node.items.len() + 1 {
                 return None;
             }
-            flush_unified_list_paragraph(frame, options)?;
-            frame.list.items.push(ListItem {
-                attrs: None,
-                checked: None,
-                task_state: None,
-                children: Vec::new(),
-                pos: None,
-            });
+            flush_unified_list_paragraph(frame)?;
+            frame
+                .node
+                .items
+                .push(UnifiedListItem { blocks: Vec::new() });
             frame.paragraph.push(content);
             pos += 1;
             continue;
@@ -505,11 +551,11 @@ fn parse_unified_list(
         pos += 1;
     }
     while frames.len() > 1 {
-        close_unified_list_frame(&mut frames, options)?;
+        close_unified_list_frame(&mut frames)?;
     }
     let mut root = frames.pop()?;
-    flush_unified_list_paragraph(&mut root, options)?;
-    Some((root.list, pos))
+    flush_unified_list_paragraph(&mut root)?;
+    Some((build_unified_list(root.node, options), pos))
 }
 
 #[cfg(test)]
@@ -523,6 +569,8 @@ mod unified_list_tests {
             "- a\n\n  second\n",
             "- a\n  - nested\n\n- b\n",
             "1. a\n   - nested\n\n2. b\n",
+            "- a\n\n\n",
+            "- a\n  - nested\n\n\nPara\n",
         ] {
             let lines: Vec<&str> = source.lines().collect();
             assert!(
@@ -1093,7 +1141,10 @@ fn parse_simple_list(lines: &[&str], start: usize, options: &Options<'_>) -> Opt
             while lines.get(next).is_some_and(|line| is_blank_line(line)) {
                 next += 1;
             }
-            if lines.get(next).is_some_and(|line| is_list_marker(line)) {
+            if lines
+                .get(next)
+                .is_some_and(|line| is_list_marker(line) || line.starts_with([' ', '\t']))
+            {
                 return None;
             }
             break;
@@ -1126,208 +1177,6 @@ fn parse_simple_list(lines: &[&str], start: usize, options: &Options<'_>) -> Opt
     ))
 }
 
-/// Build the common tight parent-and-child shape without collecting item bodies
-/// for the general list reader. Accept up to two plain parent continuation
-/// lines; a blank or a more complex continuation stays with that reader.
-#[inline(never)]
-fn parse_two_level_simple_list(
-    lines: &[&str],
-    start: usize,
-    options: &Options<'_>,
-) -> Option<(List, usize)> {
-    let (parent_kind, first_number, _) = simple_list_marker(lines.get(start)?)?;
-    if parent_kind == SimpleListKind::Ordered && first_number != 1 {
-        return None;
-    }
-    let child_prefix = if parent_kind == SimpleListKind::Ordered {
-        "   "
-    } else {
-        "  "
-    };
-    let mut probe = start + 1;
-    let mut preface_lines = 0;
-    loop {
-        let rest = lines.get(probe)?.strip_prefix(child_prefix)?;
-        if simple_list_marker(rest).is_some() {
-            break;
-        }
-        if preface_lines == 2 {
-            return None;
-        }
-        let content = trim_ascii_end(trim_ascii_start(rest));
-        if !may_continue_plain_paragraph(content)
-            || is_list_marker(content)
-            || detect_fence_open(content).is_some()
-            || thematic_break_marker(content).is_some()
-            || detect_heading(content).is_some()
-        {
-            return None;
-        }
-        probe += 1;
-        preface_lines += 1;
-    }
-    let mut parent_items = Vec::new();
-    let mut pos = start;
-    let mut has_child = false;
-    while let Some((kind, ordinal, first_content)) =
-        lines.get(pos).and_then(|line| simple_list_marker(line))
-    {
-        if kind != parent_kind {
-            return None;
-        }
-        if parent_kind == SimpleListKind::Ordered && ordinal != parent_items.len() + 1 {
-            return None;
-        }
-        pos += 1;
-        let has_continuation = lines
-            .get(pos)
-            .and_then(|line| line.strip_prefix(child_prefix))
-            .is_some_and(|rest| simple_list_marker(rest).is_none());
-        let inlines = if has_continuation {
-            let mut item_lines = vec![first_content];
-            while let Some(rest) = lines
-                .get(pos)
-                .and_then(|line| line.strip_prefix(child_prefix))
-            {
-                if simple_list_marker(rest).is_some() {
-                    break;
-                }
-                if item_lines.len() == 3 {
-                    return None;
-                }
-                let content = trim_ascii_end(trim_ascii_start(rest));
-                if !may_continue_plain_paragraph(content)
-                    || is_list_marker(content)
-                    || detect_fence_open(content).is_some()
-                    || thematic_break_marker(content).is_some()
-                    || detect_heading(content).is_some()
-                {
-                    return None;
-                }
-                item_lines.push(content);
-                pos += 1;
-            }
-            parse_event_inlines(&item_lines.join("\n"), options)
-        } else {
-            parse_event_inlines(first_content, options)
-        };
-        let mut children = vec![BlockNode::Paragraph(Paragraph {
-            attrs: None,
-            children: inlines,
-            at_content_column: true,
-            block_image: false,
-            pos: None,
-        })];
-        if let Some(line) = lines.get(pos) {
-            if let Some(rest) = line.strip_prefix(child_prefix) {
-                if let Some((child_kind, first_child_number, _)) = simple_list_marker(rest) {
-                    if child_kind == SimpleListKind::Ordered && first_child_number != 1 {
-                        return None;
-                    }
-                    let mut child_items = Vec::new();
-                    while let Some(rest) = lines
-                        .get(pos)
-                        .and_then(|line| line.strip_prefix(child_prefix))
-                    {
-                        let Some((kind, ordinal, content)) = simple_list_marker(rest) else {
-                            break;
-                        };
-                        if kind != child_kind
-                            || child_kind == SimpleListKind::Ordered
-                                && ordinal != child_items.len() + 1
-                        {
-                            return None;
-                        }
-                        child_items.push(ListItem {
-                            attrs: None,
-                            checked: None,
-                            task_state: None,
-                            children: vec![BlockNode::Paragraph(Paragraph {
-                                attrs: None,
-                                children: parse_event_inlines(content, options),
-                                at_content_column: true,
-                                block_image: false,
-                                pos: None,
-                            })],
-                            pos: None,
-                        });
-                        pos += 1;
-                    }
-                    children.push(BlockNode::List(List {
-                        attrs: None,
-                        ordered: child_kind == SimpleListKind::Ordered,
-                        start: None,
-                        ol_type: None,
-                        bare_marker: false,
-                        delim: None,
-                        bullet_char: match child_kind {
-                            SimpleListKind::Bullet(b'*') => Some('*'),
-                            _ => None,
-                        },
-                        tight: true,
-                        items: child_items,
-                        pos: None,
-                    }));
-                    has_child = true;
-                }
-            }
-        }
-        parent_items.push(ListItem {
-            attrs: None,
-            checked: None,
-            task_state: None,
-            children,
-            pos: None,
-        });
-        match lines.get(pos) {
-            None => break,
-            Some(line) if is_blank_line(line) => break,
-            Some(line) if simple_list_marker(line).is_some() => continue,
-            _ => return None,
-        }
-    }
-    if !has_child {
-        return None;
-    }
-    if lines.get(pos).is_some_and(|line| is_blank_line(line)) {
-        let mut after = pos;
-        while lines.get(after).is_some_and(|line| is_blank_line(line)) {
-            after += 1;
-        }
-        if lines
-            .get(after)
-            .is_some_and(|line| line.starts_with([' ', '\t']) || is_list_marker(line))
-        {
-            return None;
-        }
-    }
-    Some((
-        List {
-            attrs: None,
-            ordered: parent_kind == SimpleListKind::Ordered,
-            start: None,
-            ol_type: None,
-            bare_marker: false,
-            delim: None,
-            bullet_char: match parent_kind {
-                SimpleListKind::Bullet(b'*') => Some('*'),
-                _ => None,
-            },
-            tight: true,
-            items: parent_items,
-            pos: None,
-        },
-        pos,
-    ))
-}
-
-struct DeepListFrame {
-    list: List,
-    kind: SimpleListKind,
-    indent: usize,
-    content_indent: usize,
-}
-
 fn deep_list_node(kind: SimpleListKind) -> List {
     List {
         attrs: None,
@@ -1344,114 +1193,6 @@ fn deep_list_node(kind: SimpleListKind) -> List {
         items: Vec::new(),
         pos: None,
     }
-}
-
-/// Own plain marker lines with a stack. More complex item bodies still use the
-/// general list reader until the common owner loop can handle them.
-#[inline(never)]
-fn parse_deep_simple_list(
-    lines: &[&str],
-    start: usize,
-    options: &Options<'_>,
-) -> Option<(List, usize)> {
-    let mut frames: Vec<DeepListFrame> = Vec::new();
-    let mut pos = start;
-    let mut deepest = 0;
-    while let Some(&line) = lines.get(pos) {
-        if is_blank_line(line) {
-            let mut after = pos;
-            while lines.get(after).is_some_and(|line| is_blank_line(line)) {
-                after += 1;
-            }
-            if lines.get(after).is_some_and(|line| is_list_marker(line)) {
-                return None;
-            }
-            break;
-        }
-        let indent = line.bytes().take_while(|byte| *byte == b' ').count();
-        let body = &line[indent..];
-        let (kind, ordinal, content) = simple_list_marker(body)?;
-        while frames.len() > 1 && indent < frames.last()?.indent {
-            let child = frames.pop()?.list;
-            frames
-                .last_mut()?
-                .list
-                .items
-                .last_mut()?
-                .children
-                .push(BlockNode::List(child));
-        }
-        if frames.is_empty() {
-            if indent != 0 || kind == SimpleListKind::Ordered && ordinal != 1 {
-                return None;
-            }
-            frames.push(DeepListFrame {
-                list: deep_list_node(kind),
-                kind,
-                indent,
-                content_indent: if kind == SimpleListKind::Ordered {
-                    3
-                } else {
-                    2
-                },
-            });
-        } else if indent == frames.last()?.content_indent {
-            if kind == SimpleListKind::Ordered && ordinal != 1 {
-                return None;
-            }
-            frames.push(DeepListFrame {
-                list: deep_list_node(kind),
-                kind,
-                indent,
-                content_indent: indent
-                    + if kind == SimpleListKind::Ordered {
-                        3
-                    } else {
-                        2
-                    },
-            });
-        } else if indent != frames.last()?.indent {
-            return None;
-        }
-        deepest = deepest.max(frames.len());
-        if frames.len() >= MAX_NESTING_DEPTH {
-            return None;
-        }
-        let frame = frames.last_mut()?;
-        if frame.kind != kind
-            || kind == SimpleListKind::Ordered && ordinal != frame.list.items.len() + 1
-        {
-            return None;
-        }
-        frame.list.items.push(ListItem {
-            attrs: None,
-            checked: None,
-            task_state: None,
-            children: vec![BlockNode::Paragraph(Paragraph {
-                attrs: None,
-                children: parse_event_inlines(content, options),
-                at_content_column: true,
-                block_image: false,
-                pos: None,
-            })],
-            pos: None,
-        });
-        pos += 1;
-    }
-    if deepest < 3 {
-        return None;
-    }
-    while frames.len() > 1 {
-        let child = frames.pop()?.list;
-        frames
-            .last_mut()?
-            .list
-            .items
-            .last_mut()?
-            .children
-            .push(BlockNode::List(child));
-    }
-    Some((frames.pop()?.list, pos))
 }
 
 /// The experimental route keeps unsupported source and option shapes on the
