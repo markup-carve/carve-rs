@@ -2536,3 +2536,5 @@ mod markdown_destination_parentheses;
 mod trailing_escape_braced_scan;
 #[path = "../unclosed_math_span.rs"]
 mod unclosed_math_span;
+#[path = "../symbol_quote_context.rs"]
+mod symbol_quote_context;
