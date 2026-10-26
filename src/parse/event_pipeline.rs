@@ -442,6 +442,11 @@ fn parse_marked_quote(
         return None;
     }
     let children = parse_blocks(&parts, options).or_else(|| {
+        if let Some((list, consumed)) = parse_simple_list(&parts, 0, options) {
+            if consumed == parts.len() {
+                return Some(vec![BlockNode::List(list)]);
+            }
+        }
         let _depth = DepthGuard::enter()?;
         parse_mixed_blocks(&parts, options)
     })?;
