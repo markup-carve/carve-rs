@@ -217,6 +217,22 @@ fn punctuation_led_paragraphs_and_task_lists_keep_exact_nodes() {
 }
 
 #[test]
+fn invalid_brace_lines_remain_paragraphs_in_the_event_route() {
+    for source in ["{_x_}\n", "{_x_} y\n", "{+⃣x+} {+y+}\n"] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+
+    let valid_attrs = "{.class}\n# Heading\n";
+    let (actual, admitted) = parse_experimental_event_blocks(valid_attrs);
+    assert!(!admitted);
+    assert_eq!(to_json(&actual), to_json(&parse_standard(valid_attrs)));
+}
+
+#[test]
 fn generated_prose_keeps_exact_ast_and_html() {
     let fragments = [
         "plain words",

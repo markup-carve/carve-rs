@@ -95,7 +95,16 @@ fn parse_mixed_blocks(lines: &[&str], options: &Options<'_>) -> Option<Vec<Block
     let mut cur = LineCursor::new_with_cols(lines, None, None);
     cur.at_document_level = true;
     let mut out = Vec::new();
-    while let Some(line) = cur.peek() {
+    while cur.peek().is_some() {
+        let invalid_brace_line = if cur.peek().is_some_and(|line| line.starts_with('{')) {
+            if parse_standalone_attrs_block(&mut cur).is_some() {
+                return None;
+            }
+            true
+        } else {
+            false
+        };
+        let line = cur.peek().unwrap();
         if is_blank_line(line) {
             cur.consume();
             continue;
@@ -149,7 +158,7 @@ fn parse_mixed_blocks(lines: &[&str], options: &Options<'_>) -> Option<Vec<Block
             out.push(parse_table(&mut cur, options));
             continue;
         }
-        if !may_start_plain_paragraph(line) {
+        if !may_start_plain_paragraph(line) && !invalid_brace_line {
             if line.starts_with(":::") {
                 if detect_line_block_open(line).is_some() {
                     out.push(parse_line_block(&mut cur, options));
@@ -188,7 +197,10 @@ fn parse_mixed_blocks(lines: &[&str], options: &Options<'_>) -> Option<Vec<Block
             {
                 return None;
             }
-            if !may_continue_plain_paragraph(next) && !is_list_marker(next) {
+            if !may_continue_plain_paragraph(next)
+                && !is_list_marker(next)
+                && !(paragraph_lines.is_empty() && invalid_brace_line)
+            {
                 return None;
             }
             paragraph_lines.push(trim_ascii_end(trim_ascii_start(next)));
