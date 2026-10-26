@@ -2557,3 +2557,5 @@ mod unclosed_nested_definition_fence;
 mod a_description_below_a_term_host_ends_the_item;
 #[path = "../indented_term_in_list_hosted_div.rs"]
 mod indented_term_in_list_hosted_div;
+#[path = "../invisible_image_promotion.rs"]
+mod invisible_image_promotion;

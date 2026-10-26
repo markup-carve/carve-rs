@@ -606,11 +606,10 @@ fn convert_djot_document(
     resolved.push_str(&folded[cursor..]);
     let folded = resolved;
     let alt_prefix = djot_placeholder_prefix(&folded, "\0DJOTALT\0");
-    let image_paragraph = djot_placeholder_prefix(&folded, "\0DJOTIMAGEPARAGRAPH\0");
     let mut alts = Vec::new();
     let mut alt_cache = std::collections::HashMap::<(String, usize, bool), String>::new();
     let mask = mask_code_and_destinations(&folded);
-    let (image_starts, image_lines) = image_line_owners(&folded, &mask);
+    let (_, image_lines) = image_line_owners(&folded, &mask);
     let mut image_line = 0;
     let folded = replace_image_labels(&folded, &mask, |image, label, at| {
         if mask.as_bytes()[at] != b'!'
@@ -620,11 +619,6 @@ fn convert_djot_document(
         {
             return image.to_string();
         }
-        let paragraph = if image_starts.contains(&at) {
-            image_paragraph.as_str()
-        } else {
-            ""
-        };
         if label.starts_with('^') {
             return image.to_string();
         }
@@ -642,7 +636,7 @@ fn convert_djot_document(
             })
         {
             alts.push(label.to_string());
-            return format!("{paragraph}![{alt_prefix}{}\0]", alts.len() - 1);
+            return format!("![{alt_prefix}{}\0]", alts.len() - 1);
         }
         while image_lines[image_line].0 <= at {
             image_line += 1;
@@ -657,7 +651,7 @@ fn convert_djot_document(
         let cache_key = (label.to_string(), quotes, in_table);
         if let Some(alt) = alt_cache.get(&cache_key) {
             alts.push(alt.clone());
-            return format!("{paragraph}![{alt_prefix}{}\0]", alts.len() - 1);
+            return format!("![{alt_prefix}{}\0]", alts.len() - 1);
         }
         let plain = child_text_cache
             .entry(format!("1:{normalized_label}"))
@@ -683,7 +677,7 @@ fn convert_djot_document(
         }
         alt_cache.insert(cache_key, alt.clone());
         alts.push(alt);
-        format!("{paragraph}![{alt_prefix}{}\0]", alts.len() - 1)
+        format!("![{alt_prefix}{}\0]", alts.len() - 1)
     });
     let prefix = djot_placeholder_prefix(&folded, "\0DJOTSTRONG");
     let mut spans = Vec::new();
@@ -719,9 +713,7 @@ fn convert_djot_document(
         },
         omit_quote_delimiters,
     );
-    let converted = converted
-        .replace(&empty_note, "%%%%")
-        .replace(&image_paragraph, "{%%}");
+    let converted = converted.replace(&empty_note, "%%%%");
     let converted = if item_attributes.is_empty() {
         converted
     } else {

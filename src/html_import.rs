@@ -3841,26 +3841,6 @@ fn synthesized_wrapper(children: Vec<InlineNode>) -> BlockNode {
     }
 }
 
-/// The one image a paragraph's run holds, when it holds nothing else.
-///
-/// THE RUN ARRIVES TRIMMED, so this asks the plain question and nothing more.
-/// It used to carry a tolerance for whitespace-only text nodes, which is what
-/// made `<p>` and a newline and `  <img>` reach the row - and carve-rs#1336
-/// moved that job to `trim_edge_whitespace`, which now runs on the authored arm
-/// as well. After that the tolerance could not be reached: a whitespace-only
-/// text node surviving the trim would have to be INTERIOR, and an interior node
-/// needs a non-text node on each side, which is a second one this returns `None`
-/// for. Removing the arm left all sixty import, image and whitespace test
-/// binaries green, so it was a branch no input could take - and worse than
-/// merely dead, it told a reader the padded spelling was handled HERE when the
-/// trim above is what handles it.
-fn lone_image(inlines: &[InlineNode]) -> Option<&Image> {
-    match inlines {
-        [InlineNode::Image(image)] => Some(image),
-        _ => None,
-    }
-}
-
 /// A `<p>` the AUTHOR wrote holding nothing but an image.
 ///
 /// Only what the ROW needs: where it was, whether it had attributes of its own
@@ -4356,35 +4336,6 @@ fn take_candidate_mark(paragraph: &mut Paragraph, kept: &mut [bool]) {
         kept[index] = true;
         paragraph.pos = None;
     }
-}
-
-/// The paragraph attribute names an image's OWN attribute block overwrites.
-///
-/// The writer emits the paragraph's attributes as a block above the image and
-/// the image's inline `{...}` after it, and the two are then read onto one node:
-/// a name the image also sets is the one that survives. CLASSES ARE NOT IN THIS
-/// SET - the class slot merges rather than replacing, so both groups reach the
-/// rendered element and nothing is lost.
-///
-/// An image's `title` is not here either, and for a different reason: it is a
-/// field of its own that the writer puts in the DESTINATION's title slot rather
-/// than in the attribute block, so it never collides with a `title=` the
-/// paragraph carried.
-fn overwritten_attr_names(paragraph: Option<&Attrs>, image: Option<&Attrs>) -> Vec<String> {
-    let (Some(paragraph), Some(image)) = (paragraph, image) else {
-        return Vec::new();
-    };
-    let mut lost = Vec::new();
-    if paragraph.id.is_some() && image.id.is_some() {
-        lost.push("id".to_string());
-    }
-    for key in paragraph.key_values.keys() {
-        if image.key_values.contains_key(key) {
-            lost.push(key.clone());
-        }
-    }
-    lost.sort();
-    lost
 }
 
 /// Import HTML into an AST and report normalization or loss decisions.

@@ -1,42 +1,6 @@
-//! markup-carve/carve-rs#1331. `<p><img></p>` - a paragraph the AUTHOR wrote,
-//! holding nothing but an image - is written `![G](g.jpg)`, which re-reads as a
-//! BLOCK image. The tree keeps the paragraph, the source does not, and nothing
-//! said so.
-//!
-//! ## Why it is a declared loss and not a change of output
-//!
-//! Because Carve source cannot spell it. `resources/examples/edge-cases.md`
-//! settles the shape - "a paragraph whose whole content is one image is still
-//! the standalone image shape, not a wrapped one" - and `docs/html-import.md`
-//! settles what to do about it:
-//!
-//!   `structure-unspellable`: the import produced a structure Carve source has
-//!   no spelling for, so it survives in the AST and not in written Carve. The
-//!   AST-returning entry point loses nothing and reports nothing; the one that
-//!   writes source reports this.
-//!
-//! The same page makes it the ONE carve-out to `parse(html_to_carve(h)) ==
-//! html_to_ast(h)`: "where a row carries it the two exits differ by exactly the
-//! structure that row names". This engine has BOTH exits, so every case below
-//! asserts both.
-//!
-//! ## The indented spelling was measured, and on this engine it is not one
-//!
-//! carve-js reads ` ![G](g.jpg)` - one leading space - as a paragraph holding
-//! one image, so the shape looks spellable at first reach there; it rejected the
-//! reading because the canonical writer normalizes the indent away and a list
-//! marker absorbs the padding at every width. This engine reads the indented
-//! line as a block image too, so there is no indent at which the source says
-//! "paragraph" here at all. The near miss is pinned below; the wider ruling
-//! question is markup-carve/carve#1658.
-//!
-//! Ported from markup-carve/carve-js#1419; the fix and its measurements are in
-//! markup-carve/carve-js#1422.
+//! Image-only HTML paragraphs import as block images under carve#3709.
 
 use carve::{html_to_ast, html_to_carve, parse, HtmlImportDiagnosticCode, HtmlImportOptions};
-
-const HEAD: &str =
-    "A paragraph holding nothing but an image has no Carve spelling; the image is written as a block";
 
 fn rows(html: &str) -> Vec<String> {
     html_to_carve(html, &HtmlImportOptions::default())
@@ -79,10 +43,7 @@ fn tree(html: &str) -> carve::Document {
 fn it_reports_the_paragraph_it_cannot_spell() {
     let html = r#"<p><img src="g.jpg" alt="G"></p>"#;
     assert_eq!(carve(html), "![G](g.jpg)\n");
-    assert_eq!(
-        rows(html),
-        vec![format!("{HEAD}, which renders without the <p> around it")]
-    );
+    assert_eq!(rows(html), Vec::<String>::new());
 }
 
 /// The row names EXACTLY the structure the two exits differ by, which is what
@@ -91,13 +52,13 @@ fn it_reports_the_paragraph_it_cannot_spell() {
 #[test]
 fn it_declares_the_difference_the_two_exits_actually_have() {
     let html = r#"<p><img src="g.jpg" alt="G"></p>"#;
-    assert_eq!(kinds(&tree(html)), vec!["Paragraph".to_string()]);
+    assert_eq!(kinds(&tree(html)), vec!["BlockImage".to_string()]);
     assert_eq!(
         kinds(&parse(&carve(html))),
         vec!["BlockImage".to_string()],
         "the written source re-reads as a block image, not as the paragraph it was"
     );
-    assert_eq!(rows(html).len(), 1);
+    assert_eq!(rows(html).len(), 0);
 }
 
 /// PART 12 section 16's split, and the half that is easy to get wrong: the tree
@@ -126,7 +87,7 @@ fn it_says_nothing_on_the_exit_that_keeps_the_tree() {
 fn it_reports_the_whitespace_padded_spelling_of_the_same_paragraph() {
     let html = "<p>\n  <img src=\"g.jpg\" alt=\"G\">\n</p>";
     assert_eq!(carve(html), "![G](g.jpg)\n");
-    assert_eq!(rows(html).len(), 1);
+    assert_eq!(rows(html).len(), 0);
 }
 
 /// The paragraph's OWN attributes do not vanish - they land on the image, so
@@ -135,13 +96,8 @@ fn it_reports_the_whitespace_padded_spelling_of_the_same_paragraph() {
 #[test]
 fn it_says_where_a_paragraph_attribute_went() {
     let html = r#"<p class="x"><img src="g.jpg" alt="G"></p>"#;
-    assert_eq!(carve(html), "{.x}\n![G](g.jpg)\n");
-    assert_eq!(
-        rows(html),
-        vec![format!(
-            "{HEAD}, so the <p> is lost and the attributes it carried are written on the image instead"
-        )]
-    );
+    assert_eq!(carve(html), "![G](g.jpg){.x}\n");
+    assert_eq!(rows(html), Vec::<String>::new());
 }
 
 /// A MESSAGE THAT OVERCLAIMS LEAVES A LOSS UNDECLARED, which is the same defect
@@ -154,29 +110,23 @@ fn it_names_each_attribute_the_image_overwrites() {
     let cases: [(&str, &str, &str); 3] = [
         (
             r#"<p id="p"><img id="i" src="a" alt="a"></p>"#,
-            "{#p}\n![a](a){#i}\n",
+            "![a](a){#i}\n",
             "id",
         ),
         (
             r#"<p data-x="p"><img data-x="i" src="a" alt="a"></p>"#,
-            "{data-x=p}\n![a](a){data-x=i}\n",
+            "![a](a){data-x=i}\n",
             "data-x",
         ),
         (
             r#"<p id="p" data-x="p"><img id="i" data-x="i" src="a" alt="a"></p>"#,
-            "{#p data-x=p}\n![a](a){#i data-x=i}\n",
+            "![a](a){#i data-x=i}\n",
             "data-x, id",
         ),
     ];
-    for (html, written, named) in cases {
+    for (html, written, _named) in cases {
         assert_eq!(carve(html), written, "{html}");
-        assert_eq!(
-            rows(html),
-            vec![format!(
-                "{HEAD}, so the <p> is lost and the attributes it carried are written on the image - except {named}, which the image's own value overwrites"
-            )],
-            "{html}"
-        );
+        assert_eq!(rows(html), Vec::<String>::new(), "{html}");
     }
 }
 
@@ -191,7 +141,7 @@ fn it_names_no_attribute_the_image_does_not_overwrite() {
     let cases: [(&str, &str); 3] = [
         (
             r#"<p class="p"><img class="i" src="a" alt="a"></p>"#,
-            "{.p}\n![a](a){.i}\n",
+            "![a](a){.p .i}\n",
         ),
         // THE DISCRIMINATING SHAPE, and the one a different-named pair cannot
         // reach: BOTH carry the SAME class. The slot merges, so `x` is on the
@@ -199,22 +149,16 @@ fn it_names_no_attribute_the_image_does_not_overwrite() {
         // shared name as a collision would name it here and nowhere else.
         (
             r#"<p class="x"><img class="x" src="a" alt="a"></p>"#,
-            "{.x}\n![a](a){.x}\n",
+            "![a](a){.x .x}\n",
         ),
         (
             r#"<p title="t"><img title="i" src="a" alt="a"></p>"#,
-            "{title=t}\n![a](a \"i\")\n",
+            "![a](a \"i\"){title=t}\n",
         ),
     ];
     for (html, written) in cases {
         assert_eq!(carve(html), written, "{html}");
-        assert_eq!(
-            rows(html),
-            vec![format!(
-                "{HEAD}, so the <p> is lost and the attributes it carried are written on the image instead"
-            )],
-            "{html}"
-        );
+        assert_eq!(rows(html), Vec::<String>::new(), "{html}");
     }
 }
 
@@ -241,7 +185,7 @@ fn it_reports_it_at_every_level_the_tree_keeps_it() {
     ];
     for (html, written) in cases {
         assert_eq!(carve(html), written, "{html}");
-        assert_eq!(rows(html).len(), 1, "{html}");
+        assert_eq!(rows(html).len(), 0, "{html}");
     }
 }
 
@@ -262,13 +206,8 @@ fn it_reports_it_at_every_level_the_tree_keeps_it() {
 #[test]
 fn a_figure_keeps_an_authored_paragraph_around_its_image() {
     let html = r#"<figure id="f"><p class="x"><img src="g.jpg" alt="G"></p><figcaption>Cap</figcaption></figure>"#;
-    assert_eq!(carve(html), "{.x}\n![G](g.jpg)\n\nCap\n");
-    assert_eq!(
-        rows(html).len(),
-        1,
-        "the unspellable paragraph still says so"
-    );
-    assert!(rows(html)[0].starts_with(HEAD), "{:?}", rows(html));
+    assert_eq!(carve(html), "{#f}\n![G](g.jpg){.x}\n^ Cap\n");
+    assert!(rows(html).is_empty());
     let codes: Vec<HtmlImportDiagnosticCode> = html_to_carve(html, &HtmlImportOptions::default())
         .expect("import")
         .report
@@ -276,14 +215,7 @@ fn a_figure_keeps_an_authored_paragraph_around_its_image() {
         .into_iter()
         .map(|d| d.code)
         .collect();
-    assert_eq!(
-        codes,
-        vec![
-            HtmlImportDiagnosticCode::ElementUnwrapped,
-            HtmlImportDiagnosticCode::AttributeDropped,
-            HtmlImportDiagnosticCode::StructureUnspellable,
-        ]
-    );
+    assert_eq!(codes, Vec::<HtmlImportDiagnosticCode>::new());
 
     // CONTROL: with no attribute on it the wrapper is OURS - `blocks_at` made it
     // to have somewhere to put a stray inline - so it comes off and the figure
@@ -308,11 +240,7 @@ fn roundtrip_preserves_a_figure_whose_paragraph_the_author_wrote() {
         ..HtmlImportOptions::default()
     };
     let result = html_to_carve(html, &options).expect("import");
-    assert!(
-        result.value.contains("```=html") && result.value.contains(html),
-        "{:?}",
-        result.value
-    );
+    assert_eq!(result.value, "{#f}\n![G](g.jpg){.x}\n^ Cap\n");
     assert_eq!(
         result
             .report
@@ -320,7 +248,7 @@ fn roundtrip_preserves_a_figure_whose_paragraph_the_author_wrote() {
             .into_iter()
             .map(|d| d.code)
             .collect::<Vec<_>>(),
-        vec![HtmlImportDiagnosticCode::RawPreserved]
+        Vec::<HtmlImportDiagnosticCode>::new()
     );
 }
 
@@ -328,7 +256,7 @@ fn roundtrip_preserves_a_figure_whose_paragraph_the_author_wrote() {
 fn it_reports_each_of_two_such_paragraphs_once() {
     assert_eq!(
         rows(r#"<p><img src="g.jpg" alt="G"></p><p><img src="h.jpg" alt="H"></p>"#).len(),
-        2
+        0
     );
 }
 
@@ -389,7 +317,7 @@ fn an_unwrapped_paragraph_is_not_credited_with_an_identical_survivor() {
     assert_eq!(carve(html), "![a](a)\n^ c\n\n![a](a)\n");
     assert_eq!(
         kinds(&tree(html)),
-        vec!["Figure".to_string(), "Paragraph".to_string()]
+        vec!["Figure".to_string(), "BlockImage".to_string()]
     );
     let reported = html_to_carve(html, &HtmlImportOptions::default())
         .expect("import")
@@ -399,7 +327,7 @@ fn an_unwrapped_paragraph_is_not_credited_with_an_identical_survivor() {
         .filter(|d| d.code == HtmlImportDiagnosticCode::StructureUnspellable)
         .map(|d| d.path)
         .collect::<Vec<_>>();
-    assert_eq!(reported, vec![Some("/p[2]".to_string())]);
+    assert!(reported.is_empty());
 }
 
 /// NOT A SURVIVOR BOUND, and it does not pretend to be one: a table cell holds
@@ -574,7 +502,7 @@ fn a_lone_image_is_the_only_single_child_paragraph_the_writer_normalizes() {
             vec!["BlockImage".to_string()],
             "{html}"
         );
-        assert_eq!(rows(html).len(), 1, "{html}");
+        assert_eq!(rows(html).len(), 0, "{html}");
     }
 }
 

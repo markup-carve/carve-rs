@@ -1,5 +1,19 @@
 use super::*;
 
+pub(crate) fn lone_rendered_image(children: &[InlineNode]) -> Option<usize> {
+    let mut image = None;
+    for (index, child) in children.iter().enumerate() {
+        match child {
+            InlineNode::Comment(_) => continue,
+            InlineNode::Image(img) if image.is_none() && !is_unresolved_image(img) => {
+                image = Some(index)
+            }
+            _ => return None,
+        }
+    }
+    image
+}
+
 /// Collapse lone-image paragraphs for HTML regardless of source column.
 /// Parsing retains an indented lone image as a paragraph; HTML rendering
 /// promotes it on purpose (markup-carve/carve#1660).
@@ -23,9 +37,8 @@ pub(in crate::parse) fn promote_block_images(
                 && matches!(
                     block,
                     BlockNode::Paragraph(p)
-                        if (p.at_content_column || !lone_image_needs_content_column)
-                            && p.children.len() == 1
-                            && matches!(&p.children[0], InlineNode::Image(img) if !is_unresolved_image(img))
+                        if (p.at_content_column || !lone_image_needs_content_column || p.children.iter().any(|child| matches!(child, InlineNode::Comment(_))))
+                            && lone_rendered_image(&p.children).is_some()
                 );
             if single_image {
                 // Take the children out first so the paragraph borrow ends before
@@ -37,7 +50,9 @@ pub(in crate::parse) fn promote_block_images(
                     BlockNode::Paragraph(p) => (std::mem::take(&mut p.children), p.attrs.take()),
                     _ => unreachable!(),
                 };
-                if let InlineNode::Image(mut img) = children.remove(0) {
+                if let InlineNode::Image(mut img) =
+                    children.remove(lone_rendered_image(&children).unwrap())
+                {
                     if let Some(attrs) = para_attrs {
                         merge_leading_attrs(&mut img.attrs, attrs);
                     }
@@ -108,8 +123,7 @@ pub(in crate::parse) fn promote_block_images(
             }
             // The field records render semantics, so it is not column-gated.
             if let BlockNode::Paragraph(p) = block {
-                p.block_image = p.children.len() == 1
-                    && matches!(&p.children[0], InlineNode::Image(img) if !is_unresolved_image(img));
+                p.block_image = lone_rendered_image(&p.children).is_some();
             }
             match block {
                 BlockNode::BlockQuote(b) => worklist.push(b.children.as_mut_slice()),

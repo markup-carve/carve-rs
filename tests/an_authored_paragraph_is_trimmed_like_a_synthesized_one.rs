@@ -197,8 +197,8 @@ fn the_padded_lone_image_paragraph_carries_one_row_and_no_more() {
     let html = "<p>\n  <img src=\"g.jpg\" alt=\"G\">\n</p>";
     assert_eq!(
         diagnostics(html),
-        vec!["carve StructureUnspellable".to_string()],
-        "the writing exit declares the paragraph, and the tree exit says nothing"
+        Vec::<String>::new(),
+        "the image-only paragraph follows the block-image rule"
     );
     assert_eq!(tree(html), tree(r#"<p><img src="g.jpg" alt="G"></p>"#));
     assert_eq!(carve(html), "![G](g.jpg)\n");
