@@ -1201,7 +1201,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             open.content_col = indent_columns(line);
             state.note_fence = Some(open);
         } else if (!state.open_term || indent_columns(trimmed) == 0)
-            && self.hoist_note_link_def(trim_ascii_start(trimmed), *i)
+            && self.hoist_note_link_def(note_link_def_candidate(trimmed, note), *i)
         {
             // A BLOCK'S EXTENT ENDS AT A DEFINITION IT CAN
             // ONLY TAKE AS TEXT (carve#1918). Dropping the
@@ -1509,11 +1509,12 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let dedented = strip_leading_columns(line, host.note_floor);
         // A link definition at the note's own column is metadata,
         // even when an open marker-line paragraph precedes it.
+        let definition_text = note_link_def_candidate(&dedented, note);
         if indent_columns(line) >= host.note_floor
             && walk.admitted_fence.is_none()
             && walk.opacity.comment.is_none()
             && walk.opacity.code.is_none()
-            && self.hoist_note_link_def(trim_ascii_start(&dedented), *i)
+            && self.hoist_note_link_def(definition_text, *i)
         {
             note.push_with(
                 definition_placeholder(),
@@ -1722,6 +1723,26 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             self.def_positions,
             self.note_link_defs,
         )
+    }
+}
+
+fn note_link_def_candidate<'a>(line: &'a str, note: &NoteBody) -> &'a str {
+    let text = trim_ascii_start(line);
+    if !text.starts_with('>') {
+        return text;
+    }
+    // A definition after an open quote paragraph is paragraph text. A new
+    // quote, or one whose previous block ended, admits a definition at its
+    // content column just like any other note-body container.
+    let paragraph_open = note.lines.last().is_some_and(|previous| {
+        strip_blockquote_prefix(trim_ascii_start(previous)).is_some_and(|content| {
+            !is_blank_line(content) && !item_block_opener(trim_ascii_start(content))
+        })
+    });
+    if paragraph_open {
+        text
+    } else {
+        without_blockquote_prefixes(text)
     }
 }
 
