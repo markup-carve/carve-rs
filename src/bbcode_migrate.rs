@@ -196,15 +196,13 @@ fn convert_pairs(
         text = replace(text, pattern, &format!("{mark}{replacement}"));
     }
     text = convert_marks(&text, link_mark);
-    for kind in ["size", "color", "font"] {
-        let pattern = re(&format!(r"(?is)\[{kind}=([^\]]*)\](.*?)\[/{kind}\]"));
-        text = pattern
-            .replace_all(&text, |caps: &Captures<'_>| {
-                styling_drops.push((kind.to_string(), caps[1].to_string()));
-                caps[2].to_string()
-            })
-            .into_owned();
-    }
+    let styling = re(r"(?is)\[(size|color|font)=([^\]]*)\](.*?)\[/(?:size|color|font)\]");
+    text = styling
+        .replace_all(&text, |caps: &Captures<'_>| {
+            styling_drops.push((caps[1].to_ascii_lowercase(), caps[2].to_string()));
+            caps[3].to_string()
+        })
+        .into_owned();
     for (pattern, replacement) in [
         (
             r"(?is)\[(?:center|left|right)\](.*?)\[/(?:center|left|right)\]",
@@ -1306,12 +1304,18 @@ pub fn bbcode_to_carve(source: &str) -> Result<String, BbcodeImportError> {
 pub(crate) fn bbcode_to_carve_with_drops(
     source: &str,
 ) -> Result<(String, Vec<DroppedQuoteField>), BbcodeImportError> {
-    bbcode_to_carve_with_all_drops(source).map(|(value, quotes, _)| (value, quotes))
+    bbcode_to_carve_with_all_drops(source).map(|converted| (converted.value, converted.quote_drops))
+}
+
+pub(crate) struct BbcodeConversion {
+    pub value: String,
+    pub quote_drops: Vec<DroppedQuoteField>,
+    pub styling_drops: Vec<(String, String)>,
 }
 
 pub(crate) fn bbcode_to_carve_with_all_drops(
     source: &str,
-) -> Result<(String, Vec<DroppedQuoteField>, Vec<(String, String)>), BbcodeImportError> {
+) -> Result<BbcodeConversion, BbcodeImportError> {
     if source.len() > BBCODE_MAX_INPUT_LENGTH {
         return Err(BbcodeImportError::InputTooLarge {
             bytes: source.len(),
@@ -1339,11 +1343,11 @@ pub(crate) fn bbcode_to_carve_with_all_drops(
     text = convert_other(text);
     text = cleanup(text);
     let value = restore(text, open, close, &stash);
-    Ok((
+    Ok(BbcodeConversion {
         value,
-        locate_quote_drops(source, quote_drops),
+        quote_drops: locate_quote_drops(source, quote_drops),
         styling_drops,
-    ))
+    })
 }
 
 fn locate_quote_drops(source: &str, quote_drops: Vec<QuoteTagDrops>) -> Vec<DroppedQuoteField> {

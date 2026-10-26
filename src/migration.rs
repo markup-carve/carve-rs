@@ -398,11 +398,10 @@ pub fn migrate_djot(source: &str) -> MigrationResult {
 
 /// Migrate BBCode to Carve source, or return an input-boundary error.
 pub fn migrate_bbcode(source: &str) -> Result<MigrationResult, BbcodeImportError> {
-    let (value, dropped, styling_drops) =
-        crate::bbcode_migrate::bbcode_to_carve_with_all_drops(source)?;
-    let mut result = assessed(source, value, SourceFormat::Bbcode, false);
+    let converted = crate::bbcode_migrate::bbcode_to_carve_with_all_drops(source)?;
+    let mut result = assessed(source, converted.value, SourceFormat::Bbcode, false);
     result.report.diagnostics.extend(
-        dropped
+        converted.quote_drops
             .into_iter()
             .map(|drop| MigrationDiagnostic {
                 code: "bbcode-quote-field-dropped".to_owned(),
@@ -421,7 +420,8 @@ pub fn migrate_bbcode(source: &str) -> Result<MigrationResult, BbcodeImportError
         .report
         .diagnostics
         .extend(
-            styling_drops
+            converted
+                .styling_drops
                 .into_iter()
                 .map(|(kind, value)| MigrationDiagnostic {
                     code: "bbcode-styling-dropped".to_owned(),
@@ -458,8 +458,8 @@ mod evidence_tests {
                 .map(|row| row.message.as_str())
                 .collect::<Vec<_>>(),
             [
-                "Dropped the BBCode size styling wrapper with value \"20\".",
                 "Dropped the BBCode color styling wrapper with value \"red\".",
+                "Dropped the BBCode size styling wrapper with value \"20\".",
                 "Dropped the BBCode font styling wrapper with value \"serif\".",
             ]
         );
@@ -474,6 +474,11 @@ mod evidence_tests {
             .diagnostics
             .iter()
             .any(|row| row.code == "bbcode-styling-dropped"));
+        let mixed = migrate_bbcode("[color=red]x[/size]").unwrap();
+        assert_eq!(mixed.value, "x\n");
+        assert!(mixed.report.diagnostics.iter().any(
+            |row| row.message == "Dropped the BBCode color styling wrapper with value \"red\"."
+        ));
     }
 
     #[test]
