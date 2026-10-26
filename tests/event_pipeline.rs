@@ -671,3 +671,40 @@ fn marked_quote_fence_grid_matches_public_ast_and_html() {
     }
     assert!(admitted > 0, "the grid must exercise the event route");
 }
+
+#[test]
+fn quoted_fence_reader_boundaries_match_public_ast_and_html() {
+    let mut admitted = 0usize;
+    for body in [
+        "> ```\n> x\n",
+        "> ```\n> x\n> ```\n",
+        "> ~~~js\n> x\n> ~~~\n",
+        "> ::: |\n> ```\n> x\n",
+        "> text\n> ```\n",
+        "> - item\n> ```\n> x\n",
+        "> ::: note\n> ```\n> x\n> :::\n",
+        "> ```=html\n> x\n",
+    ] {
+        for tail in [
+            "after\n",
+            "> again\n",
+            "\nAfter.\n",
+            "- item\n",
+            ":  desc\n",
+            "+\n",
+            "# Heading\n",
+            "> ```\n",
+            "",
+        ] {
+            for prefix in ["", "Before.\n\n", "# Heading\n\n", "- item\n\n"] {
+                let source = format!("{prefix}{body}{tail}");
+                let expected = parse_standard(&source);
+                let (actual, used) = parse_experimental_event_blocks(&source);
+                admitted += usize::from(used);
+                assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+                assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+            }
+        }
+    }
+    assert!(admitted > 0, "the grid must exercise the event route");
+}

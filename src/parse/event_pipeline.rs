@@ -145,13 +145,6 @@ fn parse_mixed_blocks(lines: &[&str], options: &Options<'_>) -> Option<Vec<Block
                 cur.pos = end;
                 out.push(BlockNode::BlockQuote(quote));
             } else {
-                if lines[cur.pos..]
-                    .iter()
-                    .map_while(|line| strip_blockquote_prefix(line))
-                    .any(|body| detect_fence_open(body).is_some())
-                {
-                    return None;
-                }
                 out.push(*parse_blockquote(&mut cur, options));
             }
             continue;
