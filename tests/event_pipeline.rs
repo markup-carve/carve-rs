@@ -207,6 +207,7 @@ fn event_route_lifts_simple_footnotes() {
         "# Notes\n\nSee[^one] and[^two].\n\n[^one]: First.\n[^two]: Second.\n",
         "Text[^n]\n\n[^n]: *emphasized* note.\n",
         "Text[^n]\n\n[^n]: First line.\n    Second line.\n",
+        "Text[^n]\n\n[^n]: # Heading in a note\n",
     ] {
         let (actual, admitted) = parse_experimental_event_blocks(source);
         assert!(admitted, "{source:?}");

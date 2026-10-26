@@ -1248,7 +1248,16 @@ fn parse_document_with_footnotes(source: &str) -> Option<(Document, bool)> {
     };
     let footnote_defs = footnote_sources
         .into_iter()
-        .map(|(label, note)| (label, parse_mapped_source(&note, &options)))
+        .map(|(label, note)| {
+            let children = if note.source.trim_end_matches([' ', '\t', '\n']) == "{empty}" {
+                Vec::new()
+            } else {
+                let lines: Vec<&str> = note.source.lines().collect();
+                parse_blocks(&lines, &options)
+                    .unwrap_or_else(|| parse_mapped_source(&note, &options))
+            };
+            (label, children)
+        })
         .collect();
     let mut doc = Document {
         frontmatter,
