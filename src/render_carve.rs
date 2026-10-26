@@ -149,6 +149,7 @@ enum EscapeMode {
 pub struct CarveWriterOptions {
     /// Align table columns in the written source.
     pub align_tables: bool,
+    flatten_terminal_cell_breaks: bool,
 }
 
 impl CarveWriterOptions {
@@ -164,12 +165,26 @@ pub fn render_carve(doc: &Document) -> Result<String, crate::RenderCarveError> {
     render_carve_with_options(doc, &CarveWriterOptions::default())
 }
 
+pub(crate) fn render_carve_for_html_import(
+    doc: &Document,
+) -> Result<String, crate::RenderCarveError> {
+    render_carve_with_options(
+        doc,
+        &CarveWriterOptions {
+            flatten_terminal_cell_breaks: true,
+            ..CarveWriterOptions::default()
+        },
+    )
+}
+
 /// Render a tree with writer options.
 pub fn render_carve_with_options(
     doc: &Document,
     options: &CarveWriterOptions,
 ) -> Result<String, crate::RenderCarveError> {
-    let session = &RenderSession::new(options.align_tables);
+    let mut session = RenderSession::new(options.align_tables);
+    session.flatten_terminal_cell_breaks = options.flatten_terminal_cell_breaks;
+    let session = &session;
     // Reject excessive depth before recursive preparation reads the tree.
     crate::render_depth::refuse_if_too_deep(doc, "carve")?;
     crate::render_loss::record_ruby_in_document(doc);

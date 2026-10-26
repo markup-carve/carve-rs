@@ -603,7 +603,10 @@ pub(super) fn render_table_cell(
         content.truncate(content.len() - trailing);
         content.drain(..leading);
     }
-    if cell.blocks.is_none() && matches!(cell.children.last(), Some(InlineNode::HardBreak(_))) {
+    if !session.flatten_terminal_cell_breaks
+        && cell.blocks.is_none()
+        && matches!(cell.children.last(), Some(InlineNode::HardBreak(_)))
+    {
         content.push('\\');
     }
     let empty = content.is_empty();
