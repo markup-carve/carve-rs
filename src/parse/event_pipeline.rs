@@ -891,6 +891,7 @@ fn deep_list_node(kind: SimpleListKind) -> List {
 
 /// Own plain marker lines with a stack. More complex item bodies still use the
 /// general list reader until the common owner loop can handle them.
+#[inline(never)]
 fn parse_deep_simple_list(
     lines: &[&str],
     start: usize,
@@ -956,6 +957,9 @@ fn parse_deep_simple_list(
             return None;
         }
         deepest = deepest.max(frames.len());
+        if frames.len() >= MAX_NESTING_DEPTH {
+            return None;
+        }
         let frame = frames.last_mut()?;
         if frame.kind != kind
             || kind == SimpleListKind::Ordered && ordinal != frame.list.items.len() + 1
