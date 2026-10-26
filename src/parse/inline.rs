@@ -1,4 +1,5 @@
 use super::*;
+use std::borrow::Cow;
 
 // ============================================================================
 // Inline parsing
@@ -437,7 +438,8 @@ pub(in crate::parse) fn parse_inline_context_with_pairs(
         attribute_slots: None,
         sink: InlineSink {
             out: Vec::with_capacity(4),
-            buf: String::with_capacity(text.len()),
+            text,
+            buf: Cow::Borrowed(""),
             buf_start: None,
             buf_placeable: true,
             buf_src_delta: 0,
@@ -573,7 +575,8 @@ fn inline_bounds<'a>(
 /// The nodes emitted so far, plus the literal text buffered since the last one.
 struct InlineSink<'a> {
     out: Vec<InlineNode>,
-    buf: String,
+    text: &'a str,
+    buf: Cow<'a, str>,
     buf_start: Option<usize>,
     buf_placeable: bool,
     buf_src_delta: isize,
@@ -581,11 +584,12 @@ struct InlineSink<'a> {
     base: usize,
 }
 
-impl InlineSink<'_> {
+impl<'a> InlineSink<'a> {
     fn flush(&mut self) {
+        let mut buf = std::mem::replace(&mut self.buf, Cow::Borrowed("")).into_owned();
         flush_text(
             &mut self.out,
-            &mut self.buf,
+            &mut buf,
             self.positions,
             self.base,
             &mut self.buf_start,
@@ -599,11 +603,23 @@ impl InlineSink<'_> {
     }
 
     /// Appends source text to the buffer, starting it at `start` if empty.
-    fn buffer(&mut self, start: usize, source: &str) {
-        if self.buf_start.is_none() {
+    fn buffer(&mut self, start: usize, end: usize) {
+        let source = &self.text[start..end];
+        let Some(first) = self.buf_start else {
             self.buf_start = Some(start);
+            self.buf = Cow::Borrowed(source);
+            return;
+        };
+        if matches!(self.buf, Cow::Borrowed(_)) && first + self.buf.len() == start {
+            self.buf = Cow::Borrowed(&self.text[first..end]);
+        } else if let Cow::Borrowed(previous) = &self.buf {
+            let mut owned = String::with_capacity(previous.len() + source.len());
+            owned.push_str(previous);
+            owned.push_str(source);
+            self.buf = Cow::Owned(owned);
+        } else {
+            self.buf.to_mut().push_str(source);
         }
-        self.buf.push_str(source);
     }
 
     /// Ends the text run and appends `node` as is.
@@ -673,7 +689,7 @@ impl InlineRun<'_, '_> {
         if self.options.extensions.is_empty() && !self.wraps_live {
             let end = self.literal_run_end(i);
             if end > i {
-                self.sink.buffer(i, &self.text[i..end]);
+                self.sink.buffer(i, end);
                 return end;
             }
         }
@@ -691,7 +707,7 @@ impl InlineRun<'_, '_> {
         }
         let ch = self.text[i..].chars().next().unwrap();
         let end = i + ch.len_utf8();
-        self.sink.buffer(i, &self.text[i..end]);
+        self.sink.buffer(i, end);
         end
     }
 
@@ -750,7 +766,7 @@ impl InlineRun<'_, '_> {
         {
             i += 1;
         }
-        self.sink.buffer(start, &self.text[start..i]);
+        self.sink.buffer(start, i);
         i
     }
 
@@ -882,7 +898,7 @@ impl InlineRun<'_, '_> {
         // span, not a wrong one. Clearing `buf_placeable` here refused a
         // position for every line ending in a `%%` comment.
         while self.sink.buf.ends_with(' ') {
-            self.sink.buf.pop();
+            self.sink.buf.to_mut().pop();
         }
         let end = trailing_comment_end(
             bytes,
@@ -1170,7 +1186,7 @@ impl InlineRun<'_, '_> {
         // nodes where the other engines keep one, and consuming the run a byte
         // at a time would leave `-->` as a stray `-` plus a live `->` symbol.
         if let Some(run) = flag_shaped_hyphen_run(text, i) {
-            self.sink.buffer(i, &text[i..i + run]);
+            self.sink.buffer(i, i + run);
             return Some(i + run);
         }
         if let Some(next) = self.smart_punctuation(i) {
@@ -1252,7 +1268,7 @@ impl InlineRun<'_, '_> {
     /// Soft break, or a hard break when the buffered text ends in `\`.
     fn line_break(&mut self, i: usize) -> usize {
         if self.sink.buf.ends_with('\\') {
-            self.sink.buf.pop();
+            self.sink.buf.to_mut().pop();
             // `hard_break = '\', newline`, so the span covers BOTH
             // characters. Placing the newline alone left the backslash in
             // no node at all: a break reporting one character where the
