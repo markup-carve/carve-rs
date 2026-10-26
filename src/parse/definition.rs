@@ -59,7 +59,7 @@ pub(in crate::parse) fn is_definition_list_start(line: &str) -> bool {
         .is_some_and(|term| !is_blank_line(term))
 }
 
-fn definition_entry_at<'a>(line: &'a str, marker_hosted: bool, column: usize) -> Option<&'a str> {
+fn definition_entry_at(line: &str, marker_hosted: bool, column: usize) -> Option<&str> {
     if indent_columns(line) != column {
         return None;
     }
