@@ -87,6 +87,7 @@ fn mixed_route_handles_root_quote_without_changing_output() {
 #[test]
 fn fully_marked_quote_lists_keep_exact_output() {
     for source in [
+        "> - item\n",
         "> - alpha\n> - beta\n",
         "> * alpha\n> * beta\n",
         "> 1. alpha\n> 2. beta\n",
@@ -306,7 +307,6 @@ fn quote_marker_and_raw_fence_boundaries_keep_exact_output() {
         "> ```=html\n> \n",
         "> a\n\n^ caption\n",
         "> > inner\n",
-        "> - item\n",
         "> quote\n*[HTML]: HyperText\n\nHTML\n",
         "> quote HTML\n*[HTML]: HyperText\n",
         "> a\n> b\n*[HTML]: HyperText\n\nHTML\n",
