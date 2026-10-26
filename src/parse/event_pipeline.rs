@@ -689,6 +689,70 @@ enum SimpleListKind {
     Ordered,
 }
 
+#[cold]
+#[inline(never)]
+fn parse_simple_definition_list(
+    lines: &[&str],
+    start: usize,
+    options: &Options<'_>,
+) -> Option<(DefinitionList, usize)> {
+    if start != 0 || options.positions || options.source_lines || !options.extensions.is_empty() {
+        return None;
+    }
+    let mut pos = start;
+    let mut entries = Vec::new();
+    while let Some(line) = lines.get(pos) {
+        let term = trim_ascii_end(trim_ascii_start(line.strip_prefix(":: ")?));
+        if !term.as_bytes().first().is_some_and(u8::is_ascii_alphabetic) {
+            return None;
+        }
+        pos += 1;
+        let def = trim_ascii_end(trim_ascii_start(lines.get(pos)?.strip_prefix(":  ")?));
+        if !def.as_bytes().first().is_some_and(u8::is_ascii_alphabetic) || is_list_marker(def) {
+            return None;
+        }
+        pos += 1;
+        entries.push((term, def));
+        if !lines.get(pos).is_some_and(|line| line.starts_with(":: ")) {
+            break;
+        }
+    }
+    if entries.is_empty() || lines[pos..].iter().any(|line| !is_blank_line(line)) {
+        return None;
+    }
+    let items = entries
+        .into_iter()
+        .map(|(term, def)| DefinitionItem {
+            terms: vec![DefinitionTerm {
+                attrs: None,
+                children: parse_event_inlines(term, options),
+                pos: None,
+            }],
+            definitions: vec![DefinitionDef {
+                attrs: None,
+                children: vec![BlockNode::Paragraph(Paragraph {
+                    attrs: None,
+                    children: parse_event_inlines(def, options),
+                    at_content_column: true,
+                    block_image: false,
+                    pos: None,
+                })],
+                pos: None,
+            }],
+            pos: None,
+        })
+        .collect();
+    Some((
+        DefinitionList {
+            attrs: None,
+            items,
+            loose: false,
+            pos: None,
+        },
+        pos,
+    ))
+}
+
 fn simple_list_marker(line: &str) -> Option<(SimpleListKind, usize, &str)> {
     let bytes = line.as_bytes();
     let (kind, ordinal, marker_width) = match bytes {
@@ -1196,6 +1260,14 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         } else {
             (
                 parse_blocks(&lines, &options).or_else(|| {
+                    if lines
+                        .first()
+                        .is_some_and(|line| is_definition_list_start(line))
+                    {
+                        if let Some((list, _)) = parse_simple_definition_list(&lines, 0, &options) {
+                            return Some(vec![BlockNode::DefinitionList(list)]);
+                        }
+                    }
                     if may_have_abbrevs {
                         parse_mixed_blocks::<false, true>(&lines, &options)
                     } else {

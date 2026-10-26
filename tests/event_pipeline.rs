@@ -192,6 +192,80 @@ fn mixed_route_admits_root_table_without_changing_output() {
 }
 
 #[test]
+fn plain_definition_entries_build_directly() {
+    for source in [
+        ":: alpha\n:  beta\n",
+        ":: alpha\n:  beta\n:: gamma\n:  delta\n",
+        ":: alpha *bold*\n:  beta `code`\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+    for source in [
+        ":: alpha\n:  a. beta\n",
+        ":: alpha\n:  i. beta\n",
+        ":: alpha\n:  a) beta\n",
+        ":: alpha\n:  iv. beta\n",
+    ] {
+        let (actual, _) = parse_experimental_event_blocks(source);
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
+fn generated_plain_definition_entries_keep_exact_output() {
+    let terms = [
+        "term",
+        "term *strong*",
+        "term `code`",
+        "term [link](url)",
+        "term (c)",
+        "term {#id}",
+    ];
+    let defs = [
+        "definition",
+        "definition /italic/",
+        "definition `code`",
+        "definition [link](url)",
+        "definition (tm)",
+        "definition **strong**",
+    ];
+    let mut state = 0x93a6_718b_u32;
+    for case in 0..4_096 {
+        let mut source = String::new();
+        for _ in 0..1 + case % 5 {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            source.push_str(":: ");
+            source.push_str(terms[(state as usize) % terms.len()]);
+            source.push_str("\n:  ");
+            source.push_str(defs[((state >> 8) as usize) % defs.len()]);
+            source.push('\n');
+        }
+        if case % 2 == 0 {
+            source.pop();
+        }
+        let (actual, admitted) = parse_experimental_event_blocks(&source);
+        assert!(admitted, "case {case}: {source:?}");
+        let expected = parse_standard(&source);
+        assert_eq!(
+            to_json(&actual),
+            to_json(&expected),
+            "case {case}: {source:?}"
+        );
+        assert_eq!(
+            render_html(&actual),
+            render_html(&expected),
+            "case {case}: {source:?}"
+        );
+    }
+}
+
+#[test]
 fn mixed_route_admits_root_sigil_blocks_without_changing_output() {
     for source in [
         "::: |\none\ntwo\n:::\n",
