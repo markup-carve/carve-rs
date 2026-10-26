@@ -177,7 +177,11 @@ fn stash_literals(source: String) -> Result<(String, char, char, Vec<String>), B
     Ok((text, open, close, stash))
 }
 
-fn convert_pairs(mut text: String, link_mark: Option<char>) -> String {
+fn convert_pairs(
+    mut text: String,
+    link_mark: Option<char>,
+    styling_drops: &mut Vec<(String, String)>,
+) -> String {
     // The link and image passes mark each link they write, so the formatting
     // pass can tell those from a link the post's own brackets formed once a
     // tag beside them turned literal. The mark is stripped again before it
@@ -192,11 +196,16 @@ fn convert_pairs(mut text: String, link_mark: Option<char>) -> String {
         text = replace(text, pattern, &format!("{mark}{replacement}"));
     }
     text = convert_marks(&text, link_mark);
+    for kind in ["size", "color", "font"] {
+        let pattern = re(&format!(r"(?is)\[{kind}=([^\]]*)\](.*?)\[/{kind}\]"));
+        text = pattern
+            .replace_all(&text, |caps: &Captures<'_>| {
+                styling_drops.push((kind.to_string(), caps[1].to_string()));
+                caps[2].to_string()
+            })
+            .into_owned();
+    }
     for (pattern, replacement) in [
-        (
-            r"(?is)\[(?:size|color|font)=[^\]]*\](.*?)\[/(?:size|color|font)\]",
-            "$1",
-        ),
         (
             r"(?is)\[(?:center|left|right)\](.*?)\[/(?:center|left|right)\]",
             "$1",
@@ -1297,6 +1306,12 @@ pub fn bbcode_to_carve(source: &str) -> Result<String, BbcodeImportError> {
 pub(crate) fn bbcode_to_carve_with_drops(
     source: &str,
 ) -> Result<(String, Vec<DroppedQuoteField>), BbcodeImportError> {
+    bbcode_to_carve_with_all_drops(source).map(|(value, quotes, _)| (value, quotes))
+}
+
+pub(crate) fn bbcode_to_carve_with_all_drops(
+    source: &str,
+) -> Result<(String, Vec<DroppedQuoteField>, Vec<(String, String)>), BbcodeImportError> {
     if source.len() > BBCODE_MAX_INPUT_LENGTH {
         return Err(BbcodeImportError::InputTooLarge {
             bytes: source.len(),
@@ -1315,7 +1330,8 @@ pub(crate) fn bbcode_to_carve_with_drops(
     } else {
         None
     };
-    text = convert_pairs(text, link_mark);
+    let mut styling_drops = Vec::new();
+    text = convert_pairs(text, link_mark, &mut styling_drops);
     text = convert_code(text);
     let (converted, quote_drops) = convert_quotes(text);
     text = converted;
@@ -1323,7 +1339,11 @@ pub(crate) fn bbcode_to_carve_with_drops(
     text = convert_other(text);
     text = cleanup(text);
     let value = restore(text, open, close, &stash);
-    Ok((value, locate_quote_drops(source, quote_drops)))
+    Ok((
+        value,
+        locate_quote_drops(source, quote_drops),
+        styling_drops,
+    ))
 }
 
 fn locate_quote_drops(source: &str, quote_drops: Vec<QuoteTagDrops>) -> Vec<DroppedQuoteField> {
