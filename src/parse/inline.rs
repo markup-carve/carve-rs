@@ -1208,17 +1208,45 @@ impl InlineRun<'_, '_> {
     /// Smart typography (§8): parsed into AST nodes so renderers can choose
     /// glyph output or source-preserving Carve output without rescanning.
     fn smart_punctuation(&mut self, i: usize) -> Option<usize> {
-        let (nodes, consumed) =
+        let matched =
             parse_smart_punctuation_at(self.text, i, &self.sink.buf, &self.sink.out, self.options)?;
         self.sink.flush();
-        let mut local = 0usize;
-        for mut node in nodes {
-            let width = smart_punctuation_source_width(&node);
-            set_inline_node_pos(&mut node, self.sink.pos(i + local, i + local + width));
-            local += width;
-            self.quotes.push(&mut self.sink.out, node);
+        match matched {
+            SmartPunctuationMatch::Single {
+                kind,
+                value,
+                glyph,
+                consumed,
+            } => {
+                let node = InlineNode::SmartPunctuation(SmartPunctuation {
+                    kind: kind.to_string(),
+                    value: value.to_string(),
+                    glyph: glyph.map(str::to_string),
+                    pos: self.sink.pos(i, i + consumed),
+                });
+                self.quotes.push(&mut self.sink.out, node);
+                Some(i + consumed)
+            }
+            SmartPunctuationMatch::Dashes { glyphs, consumed } => {
+                let mut local = 0usize;
+                for glyph in glyphs.chars() {
+                    let (kind, width) = if glyph == '—' {
+                        ("em_dash", 3)
+                    } else {
+                        ("en_dash", 2)
+                    };
+                    let node = InlineNode::SmartPunctuation(SmartPunctuation {
+                        kind: kind.to_string(),
+                        value: self.text[i + local..i + local + width].to_string(),
+                        glyph: None,
+                        pos: self.sink.pos(i + local, i + local + width),
+                    });
+                    local += width;
+                    self.quotes.push(&mut self.sink.out, node);
+                }
+                Some(i + consumed)
+            }
         }
-        Some(i + consumed)
     }
 
     /// Soft break, or a hard break when the buffered text ends in `\`.
@@ -1813,13 +1841,26 @@ pub(in crate::parse) fn flag_shaped_hyphen_run(text: &str, i: usize) -> Option<u
     }
 }
 
+pub(in crate::parse) enum SmartPunctuationMatch {
+    Single {
+        kind: &'static str,
+        value: &'static str,
+        glyph: Option<&'static str>,
+        consumed: usize,
+    },
+    Dashes {
+        glyphs: String,
+        consumed: usize,
+    },
+}
+
 pub(in crate::parse) fn parse_smart_punctuation_at(
     text: &str,
     i: usize,
     buf: &str,
     out: &[InlineNode],
     options: &Options<'_>,
-) -> Option<(Vec<InlineNode>, usize)> {
+) -> Option<SmartPunctuationMatch> {
     if !matches!(
         text.as_bytes().get(i),
         Some(b'-' | b'<' | b'=' | b'(' | b'.' | b'>' | b'!' | b'+' | b'"' | b'\'')
@@ -1839,24 +1880,10 @@ pub(in crate::parse) fn parse_smart_punctuation_at(
             .iter()
             .take_while(|&&b| b == b'-')
             .count();
-        let glyphs = crate::render::allocate_dashes(n);
-        let mut consumed = 0usize;
-        let mut nodes = Vec::new();
-        for glyph in glyphs.chars() {
-            let (kind, width) = if glyph == '—' {
-                ("em_dash", 3)
-            } else {
-                ("en_dash", 2)
-            };
-            nodes.push(InlineNode::SmartPunctuation(SmartPunctuation {
-                kind: kind.to_string(),
-                value: text[i + consumed..i + consumed + width].to_string(),
-                glyph: None,
-                pos: None,
-            }));
-            consumed += width;
-        }
-        return Some((nodes, n));
+        return Some(SmartPunctuationMatch::Dashes {
+            glyphs: crate::render::allocate_dashes(n),
+            consumed: n,
+        });
     }
 
     // ORDERED LONGEST-FIRST, and the order is the rule (markup-carve/carve#1442):
@@ -1890,15 +1917,12 @@ pub(in crate::parse) fn parse_smart_punctuation_at(
         ("(r)", "registered"),
     ] {
         if text[i..].starts_with(source) {
-            return Some((
-                vec![InlineNode::SmartPunctuation(SmartPunctuation {
-                    kind: kind.to_string(),
-                    value: source.to_string(),
-                    glyph: None,
-                    pos: None,
-                })],
-                source.len(),
-            ));
+            return Some(SmartPunctuationMatch::Single {
+                kind,
+                value: source,
+                glyph: None,
+                consumed: source.len(),
+            });
         }
     }
 
@@ -1920,15 +1944,12 @@ pub(in crate::parse) fn parse_smart_punctuation_at(
         } else {
             "right_double_quote"
         };
-        return Some((
-            vec![InlineNode::SmartPunctuation(SmartPunctuation {
-                kind: kind.to_string(),
-                value: "\"".to_string(),
-                glyph: Some(glyph.to_string()),
-                pos: None,
-            })],
-            1,
-        ));
+        return Some(SmartPunctuationMatch::Single {
+            kind,
+            value: "\"",
+            glyph: Some(glyph),
+            consumed: 1,
+        });
     }
     if c == '\'' {
         let next = text[i + 1..].chars().next();
@@ -1947,25 +1968,15 @@ pub(in crate::parse) fn parse_smart_punctuation_at(
         } else {
             "left_single_quote"
         };
-        return Some((
-            vec![InlineNode::SmartPunctuation(SmartPunctuation {
-                kind: kind.to_string(),
-                value: "'".to_string(),
-                glyph: Some(glyph.to_string()),
-                pos: None,
-            })],
-            1,
-        ));
+        return Some(SmartPunctuationMatch::Single {
+            kind,
+            value: "'",
+            glyph: Some(glyph),
+            consumed: 1,
+        });
     }
 
     None
-}
-
-pub(in crate::parse) fn smart_punctuation_source_width(node: &InlineNode) -> usize {
-    match node {
-        InlineNode::SmartPunctuation(s) => s.value.len(),
-        _ => 0,
-    }
 }
 
 pub(in crate::parse) fn last_emitted_glyph(out: &[InlineNode], options: &Options<'_>) -> char {
