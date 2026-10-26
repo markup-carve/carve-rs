@@ -1240,8 +1240,7 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         return None;
     }
     let options = Options::default();
-    let _placeholders =
-        may_have_link_defs.then(|| PlaceholderGuard::install(pick_definition_placeholders(source)));
+    let _placeholders = PlaceholderGuard::install(pick_definition_placeholders(source));
     let _continuation_markers = continuation_marker::Guard::install(source);
     let _source_ending = if !options.positions && source.ends_with('\n') {
         SourceEndingGuard::fragment()
@@ -1472,6 +1471,19 @@ mod link_definition_tests {
         let source = "```\n%%\u{e007}\n```\n\n[ref]: /target\n\nSee [ref][]\n";
         let (actual, admitted) = parse_document(source).unwrap();
         assert!(admitted);
+        let expected = parse_with_options(source, &Options::default());
+        assert_eq!(
+            crate::ast_json::to_json(&actual),
+            crate::ast_json::to_json(&expected)
+        );
+    }
+
+    #[test]
+    fn nested_parse_without_definitions_resets_placeholder_pair() {
+        let _outer = PlaceholderGuard::install(['\u{e007}', '\u{e008}']);
+        let source = "A paragraph\n\n%%\u{e007}\n";
+        let (actual, admitted) = parse_document(source).unwrap();
+        assert!(!admitted);
         let expected = parse_with_options(source, &Options::default());
         assert_eq!(
             crate::ast_json::to_json(&actual),
