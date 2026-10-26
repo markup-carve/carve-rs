@@ -393,18 +393,20 @@ pub(in crate::parse) fn parse_inline_context_with_pairs(
     // occur, those attempts -- each an O(n) bracket scan -- can be skipped, so a
     // deeply nested run like `[[[[x]]]]` stays O(n) instead of O(n^2). Footnotes
     // (`[^...]`) are handled separately and cheaply gated on `[^`.
-    let has_link_trigger = text.contains("](") || text.contains("][") || text.contains("]{");
+    let has_open_bracket = text.contains('[');
+    let has_link_trigger =
+        has_open_bracket && (text.contains("](") || text.contains("][") || text.contains("]{"));
     // Precompute every `[`-to-`]` match once (O(n)) so the per-`[` link /
     // reference / span / image parsers locate their closing bracket in O(1)
     // instead of re-scanning O(n) each. Without this, deeply nested balanced
     // links (`[[[...x]()]()...]`) are O(n^2). Only needed when bracket
     // constructs can actually fire.
-    let has_brackets = has_link_trigger || text.contains("![");
+    let has_brackets = has_link_trigger || (has_open_bracket && text.contains("!["));
     // Two readers need the matches for a run that opens NO construct, so the
     // precompute answers for every `[`: a `%%` marker inside a bracket run ends
     // at the run's closer (CARVE-P9-041, markup-carve/carve#2576), and an
     // emphasis delimiter does not pair across one (PART 8, carve#2577).
-    let (bracket_matches, bracket_run_at) = if text.contains('[') {
+    let (bracket_matches, bracket_run_at) = if has_open_bracket {
         compute_bracket_matches(bytes)
     } else {
         (Vec::new(), Vec::new())
