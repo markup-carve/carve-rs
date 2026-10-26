@@ -60,10 +60,10 @@ pub(in crate::parse) fn is_definition_list_start(line: &str) -> bool {
 }
 
 fn definition_entry_at(line: &str, marker_hosted: bool, column: usize) -> Option<&str> {
-    if indent_columns(line) != column {
+    if (marker_hosted || column > 0) && indent_columns(line) != column {
         return None;
     }
-    Some(if marker_hosted {
+    Some(if marker_hosted || column > 0 {
         trim_ascii_start(line)
     } else {
         line
@@ -105,10 +105,10 @@ pub(in crate::parse) fn fold_term(
             }
         }
         let Some(next) = cur.peek() else { break };
-        let same_column_entry = definition_entry_at(strip_lazy(next), marker_hosted, entry_column)
-            .is_some_and(|line| {
-                is_definition_list_start(line) || strip_definition_marker(line).is_some()
-            });
+        let same_column_entry = !next.starts_with(LAZY)
+            && definition_entry_at(strip_lazy(next), marker_hosted, entry_column).is_some_and(
+                |line| is_definition_list_start(line) || strip_definition_marker(line).is_some(),
+            );
         if is_blank_line(next)
             || next.starts_with(ITEM_PARAGRAPH)
             || is_definition_list_start(strip_lazy(next))

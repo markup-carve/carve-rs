@@ -943,10 +943,11 @@ pub(crate) fn nested_ends_with_open_paragraph(
     below_outer_column: bool,
     options: &Options<'_>,
 ) -> bool {
-    // An authored term at the end of a collected list body opens a definition
-    // list even when it sits past the unclosed colon body's local base. A
-    // fragment probe has no marker-host context and would call it a paragraph.
+    // The fragment probe loses its marker host. A term at the end of an open
+    // colon body is a block there, so a following flush-left line cannot fold
+    // into a paragraph inside that body.
     if !trailing_below_column
+        && colon_fences_left_open(nested) > 0
         && nested
             .lines()
             .rev()
