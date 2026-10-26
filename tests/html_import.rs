@@ -137,7 +137,15 @@ fn ruby_import_keeps_nested_pairs_and_visible_fallback() {
         .report
         .diagnostics
         .iter()
-        .any(|row| row.code == HtmlImportDiagnosticCode::ElementDropped));
+        .any(|row| row.code == HtmlImportDiagnosticCode::ElementDropped
+            && row.fidelity == carve::ImportFidelity::Degraded));
+    let unpaired = html_to_ast("<ruby>x</ruby>", &options).unwrap();
+    assert!(unpaired
+        .report
+        .diagnostics
+        .iter()
+        .any(|row| row.code == HtmlImportDiagnosticCode::ElementUnwrapped
+            && row.fidelity == carve::ImportFidelity::Normalized));
 }
 
 #[test]

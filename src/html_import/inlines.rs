@@ -429,10 +429,11 @@ impl<'a> Importer<'a> {
         let text = Self::text(h);
         let text = text.trim();
         if !text.is_empty() && !matches!(text, "(" | ")" | "（" | "）") {
-            self.diag(
+            self.diag_with_fidelity(
                 HtmlImportDiagnosticCode::ElementDropped,
                 "Dropped non-standard <rp> fallback content".into(),
                 HtmlImportSeverity::Warning,
+                super::ImportFidelity::Degraded,
                 path,
                 h,
             );
@@ -575,10 +576,11 @@ impl<'a> Importer<'a> {
         if !base.is_empty() {
             flush(&mut output, &mut run, &mut emitted_ruby);
             output.extend(base);
-            self.diag(
+            self.diag_with_fidelity(
                 HtmlImportDiagnosticCode::ElementUnwrapped,
                 "Unwrapped ruby base with no annotation".into(),
                 HtmlImportSeverity::Info,
+                super::ImportFidelity::Normalized,
                 path,
                 h,
             );

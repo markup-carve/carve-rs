@@ -733,6 +733,24 @@ impl<'a> Importer<'a> {
         });
     }
 
+    fn diag_with_fidelity(
+        &mut self,
+        code: HtmlImportDiagnosticCode,
+        message: String,
+        severity: HtmlImportSeverity,
+        fidelity: ImportFidelity,
+        path: &str,
+        node: &Handle,
+    ) {
+        let before = self.diagnostics.len();
+        self.diag(code, message, severity, path, node);
+        if self.diagnostics.len() > before {
+            if let Some(last) = self.diagnostics.last_mut() {
+                last.diagnostic.fidelity = fidelity;
+            }
+        }
+    }
+
     /// An attribute this importer will not write as a Carve attribute. The row
     /// goes out as `attribute-dropped`, byte for byte the message the spec's
     /// `html-import` report fixtures pin; `keep_raw` takes it back where the
