@@ -1633,8 +1633,10 @@ fn math_verbatim_uses_maximal_backtick_run() {
     assert!(carve::to_html("$`a``b`").contains(r"\(a``b\)"));
     assert!(carve::to_html("$``a``").contains(r"\(a\)"));
     assert!(carve::to_html("$$``a``").contains(r"\[a\]"));
-    // Empty verbatim is a code span, not math.
-    assert_eq!(carve::to_html("$``").trim(), "<p>$<code></code></p>");
+    assert_eq!(
+        carve::to_html("$``").trim(),
+        "<p><span class=\"math inline\" role=\"math\">\\(\\)</span></p>"
+    );
 }
 
 #[test]

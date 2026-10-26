@@ -1209,7 +1209,7 @@ impl InlineRun<'_, '_> {
     /// glyph output or source-preserving Carve output without rescanning.
     fn smart_punctuation(&mut self, i: usize) -> Option<usize> {
         let (nodes, consumed) =
-            parse_smart_punctuation_at(self.text, i, &self.sink.buf, &self.sink.out)?;
+            parse_smart_punctuation_at(self.text, i, &self.sink.buf, &self.sink.out, self.options)?;
         self.sink.flush();
         let mut local = 0usize;
         for mut node in nodes {
@@ -1642,11 +1642,6 @@ pub(in crate::parse) fn parse_math(
     // '$', code_span`): a MAXIMAL backtick run opens and an equal-length run
     // closes, so `$``a``` and `$`a``b`` behave like the code span `` `a``b` ``.
     let (content, code_consumed) = parse_inline_code(bytes, tick)?;
-    // Empty verbatim content is NOT math (`$``` / `$$```): the `$` stays literal
-    // and the backtick pair is an empty code span. Matches carve-js / carve-php.
-    if content.is_empty() {
-        return None;
-    }
     let end = tick + code_consumed;
     // A trailing attribute block attaches to the math span (math reuses the
     // code-span attribute slot), EXCEPT `{=format}`, the raw-inline form,
@@ -1823,9 +1818,10 @@ pub(in crate::parse) fn parse_smart_punctuation_at(
     i: usize,
     buf: &str,
     out: &[InlineNode],
+    options: &Options<'_>,
 ) -> Option<(Vec<InlineNode>, usize)> {
     let prev = if buf.is_empty() {
-        last_emitted_glyph(out)
+        last_emitted_glyph(out, options)
     } else {
         buf.chars().last().unwrap_or_default()
     };
@@ -1963,26 +1959,34 @@ pub(in crate::parse) fn smart_punctuation_source_width(node: &InlineNode) -> usi
     }
 }
 
-pub(in crate::parse) fn last_emitted_glyph(out: &[InlineNode]) -> char {
-    match out
-        .iter()
-        .rev()
-        .find(|node| !matches!(node, InlineNode::Comment(_)))
-    {
-        Some(InlineNode::Text(t)) => t.value.chars().last().unwrap_or('\0'),
-        Some(InlineNode::SmartPunctuation(node)) => {
-            smart_punctuation_glyph(node).chars().last().unwrap_or('x')
+pub(in crate::parse) fn last_emitted_glyph(out: &[InlineNode], options: &Options<'_>) -> char {
+    for node in out.iter().rev() {
+        match node {
+            InlineNode::Comment(_) => continue,
+            InlineNode::Symbol(symbol) if symbol.attrs.is_some() => return 'x',
+            InlineNode::Symbol(symbol) => {
+                if let Some(value) = options.symbols.get(&symbol.name) {
+                    if let Some(last) = value.chars().last() {
+                        return last;
+                    }
+                    continue;
+                }
+                return ':';
+            }
+            InlineNode::Text(t) => return t.value.chars().last().unwrap_or('\0'),
+            InlineNode::SmartPunctuation(node) => {
+                return smart_punctuation_glyph(node).chars().last().unwrap_or('x');
+            }
+            // An escaped character still supplies the preceding character.
+            InlineNode::NonBreakingSpace(_) => return '\u{00a0}',
+            InlineNode::SoftBreak(_) | InlineNode::HardBreak(_) | InlineNode::CellWrap(_) => {
+                return '\n';
+            }
+            InlineNode::EscapedText(t) => return t.value.chars().last().unwrap_or('x'),
+            _ => return 'x',
         }
-        // An escaped character is its own node but still the character before
-        // the quote, and quote flanking reads that character: `\{"quoted"`
-        // opens on the brace exactly as an unescaped `{` would (corpus 163).
-        Some(InlineNode::NonBreakingSpace(_)) => '\u{00a0}',
-        // A line break is whitespace to quote flanking (markup-carve/carve#2822).
-        Some(InlineNode::SoftBreak(_) | InlineNode::HardBreak(_) | InlineNode::CellWrap(_)) => '\n',
-        Some(InlineNode::EscapedText(t)) => t.value.chars().last().unwrap_or('x'),
-        None => '\0',
-        Some(_) => 'x',
     }
+    '\0'
 }
 
 pub(in crate::parse) fn closes_after_dash(prev: char, next: Option<char>) -> bool {
