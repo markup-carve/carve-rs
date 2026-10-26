@@ -1219,3 +1219,20 @@ fn marked_quote_fence_grid_matches_public_ast_and_html() {
     }
     assert!(admitted > 0, "the grid must exercise the event route");
 }
+
+#[test]
+fn quoted_fences_without_a_final_newline_use_the_standard_route() {
+    for source in [
+        "> ```\n> code",
+        "- > ```\n  > code",
+        "1. > ```\n   > code",
+        "- > ```=html\n  > ",
+        "a[^1]\n\n> ```\n> code",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(!admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}

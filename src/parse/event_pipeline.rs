@@ -1365,6 +1365,30 @@ fn needs_event_normalization(source: &str) -> bool {
     false
 }
 
+fn has_fence_candidate_without_final_newline(source: &str) -> bool {
+    if source.ends_with('\n') || !source.contains(['`', '~']) {
+        return false;
+    }
+    if source.contains("[^") && (source.contains("```") || source.contains("~~~")) {
+        return true;
+    }
+    source.lines().any(|line| {
+        let mut content = trim_ascii_start(line);
+        loop {
+            if detect_fence_open(content).is_some() {
+                return true;
+            }
+            if let Some(body) = strip_blockquote_prefix(content) {
+                content = trim_ascii_start(body);
+            } else if let Some(marker) = detect_list_marker_full(content) {
+                content = trim_ascii_start(marker.content);
+            } else {
+                return false;
+            }
+        }
+    })
+}
+
 /// The experimental route keeps unsupported source and option shapes on the
 /// standard parser until their direct construction matches its public output.
 pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
@@ -1383,13 +1407,7 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     if source.contains("[^") {
         return parse_document_with_footnotes(source, source_len);
     }
-    if !source.ends_with('\n')
-        && source.lines().any(|line| {
-            detect_fence_open(line).is_some()
-                || strip_blockquote_prefix(line)
-                    .is_some_and(|body| detect_fence_open(body).is_some())
-        })
-    {
+    if has_fence_candidate_without_final_newline(source) {
         return None;
     }
     let options = Options::default();
@@ -1513,9 +1531,7 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
 
 fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Document, bool)> {
     let may_have_abbrevs = source.contains("*[");
-    if needs_event_normalization(source)
-        || (!source.ends_with('\n') && source.lines().any(|line| detect_fence_open(line).is_some()))
-    {
+    if needs_event_normalization(source) || has_fence_candidate_without_final_newline(source) {
         return None;
     }
     if source.lines().any(|line| {
