@@ -1589,11 +1589,6 @@ pub(in crate::parse) fn parse_math(
     // '$', code_span`): a MAXIMAL backtick run opens and an equal-length run
     // closes, so `$``a``` and `$`a``b`` behave like the code span `` `a``b` ``.
     let (content, code_consumed) = parse_inline_code(bytes, tick)?;
-    // Empty verbatim content is NOT math (`$``` / `$$```): the `$` stays literal
-    // and the backtick pair is an empty code span. Matches carve-js / carve-php.
-    if content.is_empty() {
-        return None;
-    }
     let end = tick + code_consumed;
     // A trailing attribute block attaches to the math span (math reuses the
     // code-span attribute slot), EXCEPT `{=format}`, the raw-inline form,
