@@ -312,8 +312,8 @@ fn parse_event_container(cur: &mut LineCursor<'_>, options: &Options<'_>) -> Box
             let lines: Vec<&str> = source.iter().map(|line| line.text.as_str()).collect();
             let _depth = DepthScope::set(body.depth);
             if let Some(_inner_depth) = DepthGuard::enter() {
-                if let Some(children) =
-                    parse_blocks(&lines, options).or_else(|| parse_mixed_blocks(&lines, options))
+                if let Some(children) = parse_blocks(&lines, options)
+                    .or_else(|| parse_mixed_blocks::<false, false>(&lines, options))
                 {
                     fill_container_children(&mut node, children);
                     return node;
