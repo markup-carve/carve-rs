@@ -126,7 +126,7 @@ pub(super) struct Guard(Option<Classifier>);
 
 impl Guard {
     pub(super) fn install(source: &str) -> Self {
-        if !source.contains('+') {
+        if !source.contains('+') || !may_have_standalone_plus(source) {
             return Self(CLASSIFIER.with(|slot| slot.replace(None)));
         }
         let lines: Vec<_> = source.lines().map(str::to_owned).collect();
@@ -172,6 +172,23 @@ impl Guard {
         };
         Self(CLASSIFIER.with(|slot| slot.replace(Some(classifier))))
     }
+}
+
+/// A marker's `+` is the last non-whitespace byte of its physical line.
+/// Container prefixes leave it after punctuation or whitespace, never a word byte.
+fn may_have_standalone_plus(source: &str) -> bool {
+    source.lines().any(|line| {
+        let bytes = line.as_bytes();
+        bytes
+            .iter()
+            .rposition(|&byte| byte == b'+')
+            .is_some_and(|at| {
+                (at == 0 || !bytes[at - 1].is_ascii_alphanumeric())
+                    && bytes[at + 1..]
+                        .iter()
+                        .all(|&byte| matches!(byte, b' ' | b'\t'))
+            })
+    })
 }
 
 impl Drop for Guard {
@@ -1229,6 +1246,43 @@ mod tests {
     use super::*;
 
     #[test]
+    fn prose_plus_signs_do_not_allocate_a_classifier() {
+        for source in [
+            "Block+\nNext line\n",
+            "C++ and A+B\n",
+            "A + B\n",
+            "> quoted+\n",
+        ] {
+            let _guard = Guard::install(source);
+            assert!(
+                CLASSIFIER.with(|slot| slot.borrow().is_none()),
+                "{source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn standalone_marker_gate_keeps_container_prefixes() {
+        for source in [
+            "+\n",
+            "  + \t\n",
+            "- +\n",
+            "> +\n",
+            "> > +\n",
+            "[^n]: +\n",
+            "[^n]:+\n",
+            ": +\n",
+        ] {
+            assert!(may_have_standalone_plus(source), "{source:?}");
+            let _guard = Guard::install(source);
+            assert!(
+                CLASSIFIER.with(|slot| slot.borrow().is_some()),
+                "{source:?}"
+            );
+        }
+    }
+
+    #[test]
     fn owners_and_refusals_use_physical_columns() {
         for (source, marker_line, owner, refusal) in [
             ("- a\n  - b\n  +\n  > q", 3, Kind::List, None),
@@ -1359,7 +1413,7 @@ mod tests {
 
     #[test]
     fn repeated_tight_quote_markers_have_linear_classification_work() {
-        let pattern = ["> - a", ">+", "> tail", "> > - b", "> >+", "> > end"];
+        let pattern = ["> - a", ">+", "> +", "> tail", "> > - b", "> >+", "> > end"];
         let mut previous = None;
         for count in [2_000, 8_000, 32_000] {
             let source = pattern

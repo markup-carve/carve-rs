@@ -1245,11 +1245,19 @@ fn deep_list_node(kind: SimpleListKind) -> List {
     }
 }
 
+/// Only these bytes can start a source character normalized by the event route.
+fn may_need_event_normalization(source: &str) -> bool {
+    let bytes = source.as_bytes();
+    memchr::memchr3(b'\r', b'\0', 0xee, bytes).is_some() || memchr::memchr(0xef, bytes).is_some()
+}
+
 /// The experimental route keeps unsupported source and option shapes on the
 /// standard parser until their direct construction matches its public output.
 pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     let source_len = source.len();
-    let normalized = if source.contains(['\r', '\0', '\u{feff}', '\u{e005}', '\u{e006}']) {
+    let normalized = if may_need_event_normalization(source)
+        && source.contains(['\r', '\0', '\u{feff}', '\u{e005}', '\u{e006}'])
+    {
         if source.contains(['\u{e005}', '\u{e006}']) {
             return None;
         }
@@ -1387,7 +1395,8 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
 
 fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Document, bool)> {
     let may_have_abbrevs = source.contains("*[");
-    if source.contains(['\r', '\0', '\u{feff}', '\u{e005}', '\u{e006}'])
+    if may_need_event_normalization(source)
+        && source.contains(['\r', '\0', '\u{feff}', '\u{e005}', '\u{e006}'])
         || (!source.ends_with('\n') && source.lines().any(|line| detect_fence_open(line).is_some()))
     {
         return None;

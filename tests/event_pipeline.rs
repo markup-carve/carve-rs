@@ -273,6 +273,27 @@ fn normalized_source_keeps_direct_ast_html_and_original_byte_length() {
 }
 
 #[test]
+fn normalization_probe_keeps_sentinel_and_benign_unicode_boundaries() {
+    let benign = "# Heading\n\nCafé.\n";
+    let (actual, admitted) = parse_experimental_event_blocks(benign);
+    assert!(admitted);
+    assert_eq!(to_json(&actual), to_json(&parse_standard(benign)));
+    for source in [
+        "# Heading\n\nX\u{e005}Y\n",
+        "# Heading\n\nX\u{e006}Y\n",
+        "Text[^n]\n\n[^n]: Note\u{e005}.\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(!admitted, "{source:?}");
+        assert_eq!(
+            to_json(&actual),
+            to_json(&parse_standard(source)),
+            "{source:?}"
+        );
+    }
+}
+
+#[test]
 fn mixed_route_handles_root_quote_without_changing_output() {
     let source = "# Heading\n\n> quoted *text*\n> second line\n\nAfter.\n";
     let (actual, admitted) = parse_experimental_event_blocks(source);
