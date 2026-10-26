@@ -86,13 +86,23 @@ pub(super) fn parse_blocks(lines: &[&str], options: &Options<'_>) -> Option<Vec<
 /// bodies to the existing readers. A construct outside this subset declines the
 /// whole route before it can publish a partial AST.
 fn parse_mixed_blocks(lines: &[&str], options: &Options<'_>) -> Option<Vec<BlockNode>> {
-    if lines.iter().copied().any(|line| {
-        let line = trim_ascii(line);
-        line == "+" || line.ends_with(" +")
-    }) {
+    parse_mixed_blocks_mapped(lines, options, None)
+}
+
+fn parse_mixed_blocks_mapped(
+    lines: &[&str],
+    options: &Options<'_>,
+    line_map: Option<&[Option<usize>]>,
+) -> Option<Vec<BlockNode>> {
+    if line_map.is_none()
+        && lines.iter().copied().any(|line| {
+            let line = trim_ascii(line);
+            line == "+" || line.ends_with(" +")
+        })
+    {
         return None;
     }
-    let mut cur = LineCursor::new_with_cols(lines, None, None);
+    let mut cur = LineCursor::new_with_cols(lines, line_map, None);
     cur.at_document_level = true;
     let mut out = Vec::new();
     while cur.peek().is_some() {
@@ -1063,6 +1073,16 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     let _source_ending = SourceEndingGuard::install(source);
     let (frontmatter, frontmatter_raw, body) = split_frontmatter(source, false);
     let mut lines: Vec<&str> = body.lines().collect();
+    let body_start_line = source[..body.as_ptr() as usize - source.as_ptr() as usize]
+        .bytes()
+        .filter(|byte| *byte == b'\n')
+        .count()
+        + 1;
+    let root_line_map: Option<Vec<Option<usize>>> = body.contains('+').then(|| {
+        (body_start_line..body_start_line + lines.len())
+            .map(Some)
+            .collect()
+    });
     let mut link_defs = BTreeMap::new();
     if body.contains("]:") {
         let (defs, definition_lines) = super::layout::layout_link_defs(&lines)?;
@@ -1088,11 +1108,14 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     let direct = {
         let _depth = DepthGuard::enter()?;
         if link_defs.is_empty() {
-            parse_blocks(&lines, &options).or_else(|| parse_mixed_blocks(&lines, &options))
+            parse_blocks(&lines, &options)
+                .or_else(|| parse_mixed_blocks_mapped(&lines, &options, root_line_map.as_deref()))
         } else {
             let (blocks, resolved_defs, _) =
                 with_active_link_defs(std::mem::take(&mut link_defs), || {
-                    parse_blocks(&lines, &options).or_else(|| parse_mixed_blocks(&lines, &options))
+                    parse_blocks(&lines, &options).or_else(|| {
+                        parse_mixed_blocks_mapped(&lines, &options, root_line_map.as_deref())
+                    })
                 });
             link_defs = resolved_defs;
             blocks
