@@ -463,7 +463,7 @@ fn plain_inline_text(
     let bytes = text.as_bytes();
     if !(options.extensions.is_empty()
         && !bytes.is_empty()
-        && bytes.len() <= 64
+        && bytes.len() <= 128
         && {
             // Keep the ASCII check cheap. Only a Unicode byte needs the
             // character scan for letters and combining marks.
