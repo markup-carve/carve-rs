@@ -2818,6 +2818,7 @@ impl<'a> Importer<'a> {
                     | "noscript"
                     | "q"
                     | "math"
+                    | "ruby"
                     | "span"
                     | "em"
                     | "i"

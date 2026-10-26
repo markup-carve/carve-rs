@@ -56,14 +56,88 @@ fn roundtrip_mode_preserves_unknown_markup_as_raw_html() {
         mode: HtmlImportMode::Roundtrip,
         ..Default::default()
     };
-    // `<ruby>` rather than `<kbd>`: this test needs an element Carve cannot
-    // express, and `<kbd>` stopped being one (carve#1140).
-    let result = html_to_carve("<p><ruby>x</ruby></p>", &options).unwrap();
-    assert!(result.value.contains("`<ruby>x</ruby>`{=html}"));
+    let result = html_to_carve("<p><unknown>x</unknown></p>", &options).unwrap();
+    assert!(result.value.contains("`<unknown>x</unknown>`{=html}"));
     assert_eq!(
         result.report.diagnostics[0].code,
         HtmlImportDiagnosticCode::RawPreserved
     );
+}
+
+#[test]
+fn ruby_import_keeps_each_base_with_its_annotation() {
+    let source = "<ruby>漢<rt>かん</rt><em>字</em><rt></rt></ruby>";
+    for mode in [
+        HtmlImportMode::Safe,
+        HtmlImportMode::Semantic,
+        HtmlImportMode::Roundtrip,
+    ] {
+        let options = HtmlImportOptions {
+            mode,
+            ..Default::default()
+        };
+        let ast = html_to_ast(source, &options).unwrap();
+        let json = carve::to_json(&ast.value);
+        assert!(json.contains("\"type\":\"ruby\""), "{json}");
+        assert!(
+            json.contains("\"annotation\":[{\"type\":\"text\",\"value\":\"かん\"}]"),
+            "{json}"
+        );
+        assert!(json.contains("\"annotation\":[]"), "{json}");
+        assert!(!ast
+            .report
+            .diagnostics
+            .iter()
+            .any(|row| row.code == HtmlImportDiagnosticCode::StructureUnspellable));
+        let written = html_to_carve(source, &options).unwrap();
+        assert_eq!(written.value, "漢(かん)/字/()\n");
+        assert_eq!(
+            written
+                .report
+                .diagnostics
+                .iter()
+                .filter(|row| row.code == HtmlImportDiagnosticCode::StructureUnspellable)
+                .count(),
+            1
+        );
+    }
+}
+
+#[test]
+fn ruby_import_keeps_nested_pairs_and_visible_fallback() {
+    let options = HtmlImportOptions::default();
+    let nested = html_to_ast(
+        "<ruby><em>a</em><rt><ruby>b<rt>c</rt></ruby></rt></ruby>",
+        &options,
+    )
+    .unwrap();
+    let json = carve::to_json(&nested.value);
+    assert_eq!(json.matches("\"type\":\"ruby\"").count(), 2, "{json}");
+    assert!(
+        nested.report.diagnostics.is_empty(),
+        "{:?}",
+        nested.report.diagnostics
+    );
+    let extra = html_to_carve("<ruby>a<rt>b</rt><rt>c</rt></ruby>", &options).unwrap();
+    assert_eq!(extra.value, "a(b)\\(c)\n");
+    assert!(extra
+        .report
+        .diagnostics
+        .iter()
+        .any(|row| row.code == HtmlImportDiagnosticCode::ElementUnwrapped));
+    let obsolete = html_to_carve(
+        "<ruby><rb>a</rb><rt>b</rt><rtc><rt>c</rt></rtc></ruby>",
+        &options,
+    )
+    .unwrap();
+    assert_eq!(obsolete.value, "a(b)\\(c)\n");
+    let fallback = html_to_carve("<ruby>a<rp>other</rp><rt>b</rt></ruby>", &options).unwrap();
+    assert_eq!(fallback.value, "a(b)\n");
+    assert!(fallback
+        .report
+        .diagnostics
+        .iter()
+        .any(|row| row.code == HtmlImportDiagnosticCode::ElementDropped));
 }
 
 #[test]

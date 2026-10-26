@@ -239,8 +239,8 @@ fn html_report_pins_degraded_preserved_and_truncated_classifications() {
     let unwrapped = migrate_html("<ruby>x<rt>y</rt></ruby>", &HtmlImportOptions::default())
         .expect("HTML import succeeds");
     assert!(unwrapped.report.diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == "element-unwrapped"
-            && diagnostic.fidelity == MigrationFidelity::Degraded
+        diagnostic.code == "structure-unspellable"
+            && diagnostic.fidelity == MigrationFidelity::Dropped
             && diagnostic.confidence == MigrationConfidence::Exact
     }));
 
