@@ -1222,8 +1222,7 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     if source.contains("[^") {
         return parse_document_with_footnotes(source);
     }
-    if !source.ends_with('\n') && source.lines().any(|line| detect_fence_open(line).is_some())
-    {
+    if !source.ends_with('\n') && source.lines().any(|line| detect_fence_open(line).is_some()) {
         return None;
     }
     let options = Options::default();
