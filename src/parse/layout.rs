@@ -1702,8 +1702,9 @@ mod layout_html_tests {
         // Corpus 15-heading-ids-5 and 119-trojan-source-heading-ids-are-nfc-normalized-and-strip-invisible-controls
         // now take the borrowed layout.
         // Spec cc388b35 adds corpus 630-5; the unchanged scanner's exact shadow parity is checked above.
+        // Corpus 673 adds one accepted link-title-padding document.
         assert_eq!(
-            accepted, 73,
+            accepted, 74,
             "update the pinned acceptance count only after reviewing the exact-parity widening"
         );
     }

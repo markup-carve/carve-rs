@@ -199,18 +199,16 @@ fn every_slot_is_exactly_one_space() {
     );
 }
 
-/// The run between a title and the closing `)` is NOT `link_title` - the
-/// production puts no slot there at all, so neither a space nor a tab is
-/// grammatical and the link does not form (carve-rs#1796).
+/// ASCII spaces after an inline title are padding; tabs are not (carve#3671).
 #[test]
-fn the_run_after_an_inline_title_is_no_slot_either() {
+fn spaces_after_an_inline_title_pad_but_tabs_do_not() {
     assert!(
         !html("[t](/u \"T\"\t)\n").contains("<a "),
         "a tab after the title closed the link"
     );
     assert!(
-        !html("[t](/u \"T\" )\n").contains("<a "),
-        "a space after the title closed the link"
+        html("[t](/u \"T\" )\n").contains("<a "),
+        "a space after the title did not close the link"
     );
 }
 

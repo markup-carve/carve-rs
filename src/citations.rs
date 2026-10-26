@@ -782,14 +782,19 @@ fn as_definition(line: &[InlineNode]) -> Option<(String, Def, CitationDefinition
     let InlineNode::Text(second) = line.get(1)? else {
         return None;
     };
-    if !second.value.starts_with(':') {
+    let after_marker = second.value.strip_prefix(':')?;
+    let spaces = after_marker
+        .bytes()
+        .take_while(|byte| *byte == b' ')
+        .count();
+    if spaces == 0 {
         return None;
     }
 
     let pos = definition_pos(line, &group.raw);
     let mut entry = line[1..].to_vec();
     if let InlineNode::Text(head) = &mut entry[0] {
-        head.value = head.value.trim_start_matches(':').trim_start().to_string();
+        head.value = after_marker[spaces..].to_string();
     }
     let mut def = Def {
         entry,

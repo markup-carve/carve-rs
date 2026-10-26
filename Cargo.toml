@@ -81,6 +81,10 @@ name = "display_math_trailing_attrs_caption"
 path = "tests/display_math_trailing_attrs_caption.rs"
 
 [[test]]
+name = "link_title_padding_and_citation_separator"
+path = "tests/link_title_padding_and_citation_separator.rs"
+
+[[test]]
 name = "admonition_heading_id_collision"
 path = "tests/admonition_heading_id_collision.rs"
 

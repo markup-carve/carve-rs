@@ -1,5 +1,12 @@
 use super::*;
 
+pub(in crate::parse) fn skip_link_title_padding(bytes: &[u8], mut at: usize) -> usize {
+    while bytes.get(at) == Some(&b' ') {
+        at += 1;
+    }
+    at
+}
+
 pub(in crate::parse) fn read_empty_attrs_at(bytes: &[u8], start: usize) -> Option<(Attrs, usize)> {
     if bytes.get(start) != Some(&b'{') {
         return None;
@@ -1205,12 +1212,10 @@ pub(in crate::parse) fn read_link_target(
         ));
         i += 1;
     }
-    // Nothing sits between the destination or the title and the `)`: the
-    // production has no slot for whitespace there.
-    if href.is_empty() {
-        while bytes.get(i) == Some(&b' ') {
-            i += 1;
-        }
+    // ASCII spaces may follow a title with either destination. An empty
+    // destination also takes spaces without a title.
+    if href.is_empty() || title.is_some() {
+        i = skip_link_title_padding(bytes, i);
     }
     if bytes.get(i) != Some(&b')') {
         return None;

@@ -13,6 +13,14 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    "a-fence-with-no-host-prefix-leaves-an-inline-run",
+    "a-line-at-the-marker-column-leaves-a-closed-nested-body",
+    "bidi-controls-in-math-content",
+    "empty-heading-slugs-use-the-ordinary-duplicate-suffix",
+    "escaped-space-in-inline-text",
+    "lazy-text-stays-in-an-unclosed-quoted-admonition",
+    "link-titles-accept-trailing-ascii-padding-with-either-destination",
+    "table-content-parses-inline-markup",
     "a-display-math-span-with-trailing-attributes-takes-a-caption",
     "a-styled-display-math-span-takes-a-caption-across-one-blank-line",
     "a-tab-after-a-comment-marker-stays-in-its-text",
