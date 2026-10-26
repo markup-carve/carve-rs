@@ -778,6 +778,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 && !is_list_marker(line)
                 && lines.last().is_some_and(|prior| {
                     line_starts_paragraph(prior)
+                        && opens_colon_body_paragraph(prior, None, true).is_some()
                         && exact_colon_fence_len(trim_ascii_start(prior)).is_none()
                         && detect_comment_fence_line_any_column(prior).is_none()
                         && detect_fence_open(trim_ascii_start(prior)).is_none()

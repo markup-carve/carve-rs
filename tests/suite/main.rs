@@ -2542,5 +2542,9 @@ mod post_marker_tab_content;
 mod symbol_quote_context;
 #[path = "../trailing_escape_braced_scan.rs"]
 mod trailing_escape_braced_scan;
+#[path = "../unclosed_div_table_column.rs"]
+mod unclosed_div_table_column;
 #[path = "../unclosed_math_span.rs"]
 mod unclosed_math_span;
+#[path = "../unclosed_nested_definition_fence.rs"]
+mod unclosed_nested_definition_fence;
