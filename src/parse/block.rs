@@ -638,7 +638,10 @@ pub(in crate::parse) fn parse_block(
     if !line.starts_with([' ', '\t']) && is_table_start(line) {
         return Some(boxed_block(cur, options, parse_table));
     }
-    if is_definition_list_start(line) {
+    if is_definition_list_start(line)
+        || (cur.colon_view.is_some_and(|view| view.marker_hosted)
+            && is_definition_list_start(trim_ascii_start(line)))
+    {
         return Some(boxed_block(cur, options, parse_definition_list));
     }
     // A `::: |` line block or `::: \` hard-break block opens ONLY flush-left

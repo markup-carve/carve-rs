@@ -2555,3 +2555,5 @@ mod unclosed_nested_definition_fence;
 
 #[path = "../a_description_below_a_term_host_ends_the_item.rs"]
 mod a_description_below_a_term_host_ends_the_item;
+#[path = "../indented_term_in_list_hosted_div.rs"]
+mod indented_term_in_list_hosted_div;

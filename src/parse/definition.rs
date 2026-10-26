@@ -59,6 +59,17 @@ pub(in crate::parse) fn is_definition_list_start(line: &str) -> bool {
         .is_some_and(|term| !is_blank_line(term))
 }
 
+fn definition_entry_at<'a>(line: &'a str, marker_hosted: bool, column: usize) -> Option<&'a str> {
+    if indent_columns(line) != column {
+        return None;
+    }
+    Some(if marker_hosted {
+        trim_ascii_start(line)
+    } else {
+        line
+    })
+}
+
 /// Fold a term's continuation lines and parse its inline content.
 ///
 /// A term folds a following plain line as a soft break, so a wrapped term line
@@ -72,6 +83,8 @@ pub(in crate::parse) fn fold_term(
     options: &Options<'_>,
     first: String,
     first_anchor: Option<Option<(usize, isize)>>,
+    entry_column: usize,
+    marker_hosted: bool,
 ) -> Vec<InlineNode> {
     enum Part {
         Run(String, Option<Vec<Option<(usize, isize)>>>),
@@ -92,6 +105,10 @@ pub(in crate::parse) fn fold_term(
             }
         }
         let Some(next) = cur.peek() else { break };
+        let same_column_entry = definition_entry_at(strip_lazy(next), marker_hosted, entry_column)
+            .is_some_and(|line| {
+                is_definition_list_start(line) || strip_definition_marker(line).is_some()
+            });
         if is_blank_line(next)
             || next.starts_with(ITEM_PARAGRAPH)
             || is_definition_list_start(strip_lazy(next))
@@ -99,6 +116,7 @@ pub(in crate::parse) fn fold_term(
                 .strip_prefix(":: ")
                 .is_some_and(|rest| is_blank_line(rest) && rest.contains('\t'))
             || (!next.starts_with(LAZY) && strip_definition_marker(strip_lazy(next)).is_some())
+            || same_column_entry
             || is_list_marker(next)
             || caption_content(next).is_some()
         {
@@ -189,6 +207,8 @@ pub(in crate::parse) fn parse_definition_list(
     options: &Options<'_>,
 ) -> BlockNode {
     let list_start = cur.pos;
+    let marker_hosted = cur.colon_view.is_some_and(|view| view.marker_hosted);
+    let list_column = cur.peek().map_or(0, indent_columns);
     let mut items = Vec::new();
     while let Some(line) = cur.peek() {
         // A LAZY-FRAMED marker line (`LAZY:: u`) reached this open list by the
@@ -196,7 +216,9 @@ pub(in crate::parse) fn parse_definition_list(
         // the marker is recognized - at column 0, whatever the container depth
         // the line was written at (markup-carve/carve-rs#1538). The frame is a
         // no-op on an ordinary flush-left term, so unframed lists are unchanged.
-        let Some(term) = strip_lazy(line).strip_prefix(":: ") else {
+        let Some(term) = definition_entry_at(strip_lazy(line), marker_hosted, list_column)
+            .and_then(|line| line.strip_prefix(":: "))
+        else {
             break;
         };
         if is_blank_line(term) {
@@ -218,7 +240,14 @@ pub(in crate::parse) fn parse_definition_list(
         let anchor = options
             .positions
             .then(|| inline_anchor_for_line(cur, term_start, term));
-        let children = fold_term(cur, options, trim_ascii_end(term).to_string(), anchor);
+        let children = fold_term(
+            cur,
+            options,
+            trim_ascii_end(term).to_string(),
+            anchor,
+            list_column,
+            marker_hosted,
+        );
         // The span covers the `:: ` marker and every line the term folded, the
         // same way a heading's covers its `#`.
         let mut terms = vec![DefinitionTerm {
@@ -235,7 +264,9 @@ pub(in crate::parse) fn parse_definition_list(
         // was an internal nobody could see, until the AST became something
         // engines hand each other (PART 12).
         while let Some(next) = cur.peek() {
-            let Some(next_term) = strip_lazy(next).strip_prefix(":: ") else {
+            let Some(next_term) = definition_entry_at(strip_lazy(next), marker_hosted, list_column)
+                .and_then(|line| line.strip_prefix(":: "))
+            else {
                 break;
             };
             if is_blank_line(next_term) {
@@ -250,7 +281,14 @@ pub(in crate::parse) fn parse_definition_list(
             let anchor = options
                 .positions
                 .then(|| inline_anchor_for_line(cur, next_start, next_term));
-            let children = fold_term(cur, options, trim_ascii_end(next_term).to_string(), anchor);
+            let children = fold_term(
+                cur,
+                options,
+                trim_ascii_end(next_term).to_string(),
+                anchor,
+                list_column,
+                marker_hosted,
+            );
             terms.push(DefinitionTerm {
                 attrs: source_line_attrs(None, next_source_line, options),
                 children,
@@ -273,7 +311,12 @@ pub(in crate::parse) fn parse_definition_list(
                 match cur.lines.line(cur.pos + look) {
                     Some(after)
                         if !after.starts_with(ITEM_PARAGRAPH)
-                            && strip_definition_marker(strip_lazy(after)).is_some() =>
+                            && definition_entry_at(
+                                strip_lazy(after),
+                                marker_hosted,
+                                list_column,
+                            )
+                            .is_some_and(|line| strip_definition_marker(line).is_some()) =>
                     {
                         for _ in 0..look {
                             cur.consume();
@@ -286,7 +329,10 @@ pub(in crate::parse) fn parse_definition_list(
                 break;
             };
             let Some((def, definition_column)) = (!line.starts_with(ITEM_PARAGRAPH))
-                .then(|| strip_definition_marker(strip_lazy(line)))
+                .then(|| {
+                    definition_entry_at(strip_lazy(line), marker_hosted, list_column)
+                        .and_then(strip_definition_marker)
+                })
                 .flatten()
             else {
                 break;
@@ -300,7 +346,7 @@ pub(in crate::parse) fn parse_definition_list(
             // container already took so a nested block maps back to the document.
             let def_source_col = cur
                 .source_col(cur.pos)
-                .map(|c| c + definition_column as isize);
+                .map(|c| c + (list_column + definition_column) as isize);
             cur.consume();
             let def_trimmed = trim_ascii_end(def);
             // First-block form (`:  +`, mirroring the list `- +`): when the sole
@@ -367,7 +413,7 @@ pub(in crate::parse) fn parse_definition_list(
                 cur,
                 &mut fence,
                 &seed,
-                definition_column,
+                list_column + definition_column,
                 options,
             ));
             // The span covers the `:  ` marker through the last line the body
@@ -417,10 +463,10 @@ pub(in crate::parse) fn parse_definition_list(
         while matches!(cur.peek(), Some(line) if is_blank_line(line)) {
             cur.consume();
         }
-        if !cur
-            .peek()
-            .is_some_and(|l| is_definition_list_start(strip_lazy(l)))
-        {
+        if !cur.peek().is_some_and(|l| {
+            definition_entry_at(strip_lazy(l), marker_hosted, list_column)
+                .is_some_and(is_definition_list_start)
+        }) {
             cur.pos = saved;
             break;
         }

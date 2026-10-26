@@ -1557,7 +1557,8 @@ fn parse_eof_closed_colon_ladder(
             .any(|line| exact_colon_fence_len(line).is_some())
         || lines.iter().any(|line| {
             line.starts_with([' ', '\t'])
-                && strip_blockquote_prefix(trim_ascii_start(line)).is_some()
+                && (strip_blockquote_prefix(trim_ascii_start(line)).is_some()
+                    || is_definition_list_start(trim_ascii_start(line)))
         })
     {
         return None;
