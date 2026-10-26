@@ -1820,11 +1820,12 @@ pub(in crate::parse) fn parse_smart_punctuation_at(
     out: &[InlineNode],
     options: &Options<'_>,
 ) -> Option<(Vec<InlineNode>, usize)> {
-    let prev = if buf.is_empty() {
-        last_emitted_glyph(out, options)
-    } else {
-        buf.chars().last().unwrap_or_default()
-    };
+    if !matches!(
+        text.as_bytes().get(i),
+        Some(b'-' | b'<' | b'=' | b'(' | b'.' | b'>' | b'!' | b'+' | b'"' | b'\'')
+    ) {
+        return None;
+    }
     // The hyphen-run pass must not claim `-->` or `<-->`: the FIXED TOKENS below
     // spell the canonical rightwards and bidirectional arrows with a doubled run
     // (markup-carve/carve#1442), and a run decomposed into dashes here can never
@@ -1902,6 +1903,14 @@ pub(in crate::parse) fn parse_smart_punctuation_at(
     }
 
     let c = text[i..].chars().next()?;
+    if c != '"' && c != '\'' {
+        return None;
+    }
+    let prev = if buf.is_empty() {
+        last_emitted_glyph(out, options)
+    } else {
+        buf.chars().last().unwrap_or_default()
+    };
     if c == '"' {
         let open =
             quote_open_context(prev) && !closes_after_dash(prev, text[i + 1..].chars().next());
