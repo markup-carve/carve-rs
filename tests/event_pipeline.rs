@@ -145,6 +145,29 @@ fn marked_quote_edges_keep_exact_output() {
 }
 
 #[test]
+fn bounded_lazy_quote_paragraphs_keep_exact_output() {
+    for marked_lines in [1, 2] {
+        for lazy_lines in [1, 2] {
+            for suffix in ["", "\nAfter.\n"] {
+                let mut source = String::new();
+                for _ in 0..marked_lines {
+                    source.push_str("> marked text\n");
+                }
+                for _ in 0..lazy_lines {
+                    source.push_str("plain continuation\n");
+                }
+                source.push_str(suffix);
+                let (actual, admitted) = parse_experimental_event_blocks(&source);
+                assert!(admitted, "{source:?}");
+                let expected = parse_standard(&source);
+                assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+                assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+            }
+        }
+    }
+}
+
+#[test]
 fn punctuation_led_paragraphs_and_task_lists_keep_exact_nodes() {
     let prose = "/italic/\n\n_underline_\n\n[link](target)\n\n![image](target)\n";
     let (actual, admitted) = parse_experimental_event_blocks(prose);
