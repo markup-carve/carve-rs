@@ -611,6 +611,7 @@ fn parse_simple_list(lines: &[&str], start: usize, options: &Options<'_>) -> Opt
 /// Build the common tight parent-and-child shape without collecting item bodies
 /// for the general list reader. Accept up to two plain parent continuation
 /// lines; a blank or a more complex continuation stays with that reader.
+#[inline(never)]
 fn parse_two_level_simple_list(
     lines: &[&str],
     start: usize,
