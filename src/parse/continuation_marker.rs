@@ -1337,7 +1337,8 @@ mod tests {
             LINES_CLASSIFIED.with(|c| c.set(0));
             STACK_ENTRIES_EXAMINED.with(|c| c.set(0));
             FOLLOWER_PROBES.with(|c| c.set(0));
-            let _document = super::super::parse(&source);
+            let _document =
+                super::super::parse_with_options(&source, &super::super::Options::default());
             let counters = (
                 LINES_CLASSIFIED.with(std::cell::Cell::get),
                 STACK_ENTRIES_EXAMINED.with(std::cell::Cell::get),
@@ -1371,7 +1372,8 @@ mod tests {
             LINES_CLASSIFIED.with(|c| c.set(0));
             STACK_ENTRIES_EXAMINED.with(|c| c.set(0));
             FOLLOWER_PROBES.with(|c| c.set(0));
-            let _document = super::super::parse(&source);
+            let _document =
+                super::super::parse_with_options(&source, &super::super::Options::default());
             let counters = (
                 LINES_CLASSIFIED.with(std::cell::Cell::get),
                 STACK_ENTRIES_EXAMINED.with(std::cell::Cell::get),
