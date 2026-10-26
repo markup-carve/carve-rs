@@ -912,9 +912,7 @@ fn parse_deep_simple_list(
         }
         let indent = line.bytes().take_while(|byte| *byte == b' ').count();
         let body = &line[indent..];
-        let Some((kind, ordinal, content)) = simple_list_marker(body) else {
-            return None;
-        };
+        let (kind, ordinal, content) = simple_list_marker(body)?;
         while frames.len() > 1 && indent < frames.last()?.indent {
             let child = frames.pop()?.list;
             frames
