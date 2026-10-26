@@ -268,6 +268,20 @@ fn two_level_tight_lists_keep_exact_ast_and_html() {
 }
 
 #[test]
+fn nested_list_keeps_indented_blocks_after_a_blank() {
+    for source in [
+        "- a\n  - b\n\n   > q\n",
+        "- outer\n  - head\n\n    ```\n    a\n  ```\n\n  tail\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
 fn generated_prose_keeps_exact_ast_and_html() {
     let fragments = [
         "plain words",

@@ -770,6 +770,18 @@ fn parse_two_level_simple_list(
     if !has_child {
         return None;
     }
+    if lines.get(pos).is_some_and(|line| is_blank_line(line)) {
+        let mut after = pos;
+        while lines.get(after).is_some_and(|line| is_blank_line(line)) {
+            after += 1;
+        }
+        if lines
+            .get(after)
+            .is_some_and(|line| line.starts_with([' ', '\t']))
+        {
+            return None;
+        }
+    }
     Some((
         List {
             attrs: None,
