@@ -2534,6 +2534,8 @@ mod markdown_destination_parentheses;
 
 #[path = "../description_list_column_band.rs"]
 mod description_list_column_band;
+#[path = "../indented_quoted_item_lazy_line.rs"]
+mod indented_quoted_item_lazy_line;
 #[path = "../post_marker_tab_content.rs"]
 mod post_marker_tab_content;
 #[path = "../symbol_quote_context.rs"]
