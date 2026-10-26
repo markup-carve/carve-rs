@@ -85,7 +85,7 @@ pub(super) fn parse_blocks(lines: &[&str], options: &Options<'_>) -> Option<Vec<
 /// Stream simple top-level blocks as events while handing list and definition
 /// bodies to the existing readers. A construct outside this subset declines the
 /// whole route before it can publish a partial AST.
-fn parse_mixed_blocks<const DEFINITIONS: bool>(
+fn parse_mixed_blocks<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
     lines: &[&str],
     options: &Options<'_>,
 ) -> Option<Vec<BlockNode>> {
@@ -115,6 +115,13 @@ fn parse_mixed_blocks<const DEFINITIONS: bool>(
         if is_blank_line(line) {
             cur.consume();
             continue;
+        }
+        if ABBREVIATIONS {
+            if let Some(definition) = detect_abbreviation_def(line) {
+                cur.consume();
+                out.push(BlockNode::AbbreviationDef(definition));
+                continue;
+            }
         }
         if let Some((level, text)) = detect_heading(line) {
             out.push(*parse_heading_block(&mut cur, level, text, options));
@@ -205,6 +212,12 @@ fn parse_mixed_blocks<const DEFINITIONS: bool>(
         let mut paragraph_lines = Vec::new();
         while let Some(next) = cur.peek() {
             if DEFINITIONS && is_definition_placeholder(next) {
+                break;
+            }
+            if ABBREVIATIONS
+                && !paragraph_lines.is_empty()
+                && detect_abbreviation_def(next).is_some()
+            {
                 break;
             }
             if is_blank_line(next) || detect_heading(next).is_some() {
@@ -390,6 +403,7 @@ fn parse_simple_lazy_quote(
             || detect_heading(text).is_some()
             || is_list_marker(text)
             || is_definition_list_start(text)
+            || (content.is_none() && detect_abbreviation_def(text).is_some())
             || detect_fence_open(text).is_some()
             || thematic_break_marker(text).is_some()
         {
@@ -1064,11 +1078,11 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     };
     let source = normalized.as_deref().unwrap_or(source);
     let may_have_link_defs = source.contains("]:");
+    let may_have_abbrevs = source.contains("*[");
     if source.contains("[^") {
         return parse_document_with_footnotes(source);
     }
-    if source.contains("*[")
-        || (!source.ends_with('\n') && source.lines().any(|line| detect_fence_open(line).is_some()))
+    if !source.ends_with('\n') && source.lines().any(|line| detect_fence_open(line).is_some())
     {
         return None;
     }
@@ -1095,13 +1109,23 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         let lines: Vec<&str> = body_source.lines().collect();
         if has_link_defs {
             with_active_link_defs(link_defs, || {
-                parse_blocks(&lines, &options)
-                    .or_else(|| parse_mixed_blocks::<true>(&lines, &options))
+                parse_blocks(&lines, &options).or_else(|| {
+                    if may_have_abbrevs {
+                        parse_mixed_blocks::<true, true>(&lines, &options)
+                    } else {
+                        parse_mixed_blocks::<true, false>(&lines, &options)
+                    }
+                })
             })
         } else {
             (
-                parse_blocks(&lines, &options)
-                    .or_else(|| parse_mixed_blocks::<false>(&lines, &options)),
+                parse_blocks(&lines, &options).or_else(|| {
+                    if may_have_abbrevs {
+                        parse_mixed_blocks::<false, true>(&lines, &options)
+                    } else {
+                        parse_mixed_blocks::<false, false>(&lines, &options)
+                    }
+                }),
                 link_defs,
                 false,
             )
@@ -1152,6 +1176,9 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         resolve_reference_links(&mut doc, &link_defs, &headings);
     }
     append_link_reference_definitions(&mut doc, &link_defs, source, None);
+    if may_have_abbrevs {
+        apply_abbreviations(&mut doc);
+    }
     if source.contains('^') {
         number_crossref_captions(&mut doc);
     }
@@ -1168,16 +1195,17 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
 }
 
 fn parse_document_with_footnotes(source: &str) -> Option<(Document, bool)> {
+    let may_have_abbrevs = source.contains("*[");
     if source.contains(['\r', '\0', '\u{feff}', '\u{e005}', '\u{e006}'])
-        || source.contains("*[")
         || (!source.ends_with('\n') && source.lines().any(|line| detect_fence_open(line).is_some()))
     {
         return None;
     }
-    if source
-        .lines()
-        .any(|line| line.contains("]:") && !trim_ascii_start(line).starts_with("[^"))
-    {
+    if source.lines().any(|line| {
+        line.contains("]:")
+            && !trim_ascii_start(line).starts_with("[^")
+            && detect_abbreviation_def(line).is_none()
+    }) {
         return None;
     }
     let options = Options::default();
@@ -1196,18 +1224,27 @@ fn parse_document_with_footnotes(source: &str) -> Option<(Document, bool)> {
         .source
         .lines()
         .any(|line| line.starts_with([' ', '\t']) && is_definition_placeholder(line))
-        || mapped.source.contains("]:")
+        || mapped
+            .source
+            .lines()
+            .any(|line| line.contains("]:") && detect_abbreviation_def(line).is_none())
         || !note_links.is_empty()
         || footnote_sources
             .values()
-            .any(|note| note.source.contains("[^"))
+            .any(|note| note.source.contains("[^") || note.source.contains("*["))
     {
         return None;
     }
     let children = {
         let _depth = DepthGuard::enter()?;
         let lines: Vec<&str> = mapped.source.lines().collect();
-        parse_blocks(&lines, &options).or_else(|| parse_mixed_blocks::<true>(&lines, &options))?
+        parse_blocks(&lines, &options).or_else(|| {
+            if may_have_abbrevs {
+                parse_mixed_blocks::<true, true>(&lines, &options)
+            } else {
+                parse_mixed_blocks::<true, false>(&lines, &options)
+            }
+        })?
     };
     let footnote_defs = footnote_sources
         .into_iter()
@@ -1225,6 +1262,9 @@ fn parse_document_with_footnotes(source: &str) -> Option<(Document, bool)> {
     if source.contains("][") {
         let headings = heading_reference_index_for_document(&doc, options.heading_id_options());
         resolve_reference_links(&mut doc, &BTreeMap::new(), &headings);
+    }
+    if may_have_abbrevs {
+        apply_abbreviations(&mut doc);
     }
     if source.contains('^') {
         number_crossref_captions(&mut doc);

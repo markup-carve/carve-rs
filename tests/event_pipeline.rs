@@ -217,6 +217,22 @@ fn event_route_lifts_simple_footnotes() {
 }
 
 #[test]
+fn event_route_lifts_root_abbreviations() {
+    for source in [
+        "The HTML spec is long.\n*[HTML]: HyperText Markup Language\n",
+        "*[API]: Application Programming Interface\n\nAn API call.\n",
+        "# HTML\n\n*[HTML]: HyperText Markup Language\n\nHTML again.\n",
+        "Text[^n] uses HTML.\n\n[^n]: Note.\n\n*[HTML]: HyperText Markup Language\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
 fn nested_footnote_definitions_use_standard_parser() {
     for source in [
         "Text[^outer]\n\n[^outer]: Inside[^inner].\n[^inner]: Nested.\n",
@@ -240,6 +256,10 @@ fn quote_marker_and_raw_fence_boundaries_keep_exact_output() {
         "> a\n\n^ caption\n",
         "> > inner\n",
         "> - item\n",
+        "> quote\n*[HTML]: HyperText\n\nHTML\n",
+        "> quote HTML\n*[HTML]: HyperText\n",
+        "> a\n> b\n*[HTML]: HyperText\n\nHTML\n",
+        "> a\nlazy\n*[HTML]: HyperText\n\nHTML\n",
     ] {
         let (actual, admitted) = parse_experimental_event_blocks(source);
         assert_eq!(admitted, !source.contains("```=html"), "{source:?}");
