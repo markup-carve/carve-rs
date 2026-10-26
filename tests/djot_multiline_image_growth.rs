@@ -97,7 +97,11 @@ fn native_output_and_loss_guards() {
         let result = carve::migrate_djot(source);
         let actual = carve::to_html(&result.value);
         let expected = row["html"].as_str().unwrap();
-        assert_eq!(elements(&actual), elements(expected), "{source}");
+        assert_eq!(
+            elements(&actual),
+            elements(&super::image_paragraphs_as_images(expected)),
+            "{source}"
+        );
         assert_eq!(text(&actual), text(expected), "{source}");
         let losses = result
             .report

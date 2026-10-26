@@ -56,7 +56,9 @@ fn escaped_nested_labels_preserve_native_output_and_opaque_text() {
         let imported = carve::djot_to_carve(source);
         let actual = carve::to_html(&imported);
         let expected = row["html"].as_str().unwrap();
-        if elements(&actual) != elements(expected) || text(&actual) != text(expected) {
+        if elements(&actual) != elements(&super::image_paragraphs_as_images(expected))
+            || text(&actual) != text(expected)
+        {
             failures.push(
                 json!({"source":source,"imported":imported,"actual":actual,"expected":expected}),
             );

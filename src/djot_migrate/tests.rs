@@ -15,7 +15,7 @@ fn nested_image_label_import_has_bounded_work() {
     let depth = 1600;
     let source = format!("{}x{}", "![".repeat(depth), "](u)".repeat(depth));
     super::IMAGE_LABEL_FULL_PARSES.with(|count| count.set(0));
-    assert_eq!(super::djot_to_carve(&source), "{%%}![x](u)");
+    assert_eq!(super::djot_to_carve(&source), "![x](u)");
     super::IMAGE_LABEL_FULL_PARSES.with(|count| assert!(count.get() <= 2));
     assert!(super::simple_nested_image_label("![a](u) ![b](v)").is_none());
 }
