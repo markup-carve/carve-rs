@@ -154,14 +154,14 @@ pub fn conversion_diagnostics(
     max_diagnostics: usize,
 ) -> Result<ConversionDiagnostics, AstJsonError> {
     let ast = parse_value(&try_to_json(doc)?)?;
-    let mut pending = vec![(&ast, false)];
+    let mut pending = vec![(&ast, false, false)];
     let mut report = ConversionDiagnostics {
         file: None,
         diagnostics: Vec::new(),
         total_diagnostics: 0,
         truncated: false,
     };
-    while let Some((value, in_table_cell)) = pending.pop() {
+    while let Some((value, in_table_cell, direct_cell_children)) = pending.pop() {
         match value {
             Value::Object(object) => {
                 let ty = object.get("type").and_then(Value::as_str);
@@ -351,11 +351,19 @@ pub fn conversion_diagnostics(
                             && (in_table_cell
                                 || (ty == Some("table_cell")
                                     && (field == "children" || field == "blocks"))),
+                        ty == Some("table_cell")
+                            && field == "children"
+                            && !object.contains_key("span"),
                     )
                 }));
             }
             Value::Array(values) => {
-                pending.extend(values.iter().rev().map(|value| (value, in_table_cell)))
+                pending.extend(values.iter().enumerate().rev().map(|(index, value)| {
+                    let terminal_break = direct_cell_children
+                        && index + 1 == values.len()
+                        && value.get("type").and_then(Value::as_str) == Some("hard_break");
+                    (value, in_table_cell && !terminal_break, false)
+                }))
             }
             _ => {}
         }

@@ -603,6 +603,9 @@ pub(super) fn render_table_cell(
         content.truncate(content.len() - trailing);
         content.drain(..leading);
     }
+    if cell.blocks.is_none() && matches!(cell.children.last(), Some(InlineNode::HardBreak(_))) {
+        content.push('\\');
+    }
     let empty = content.is_empty();
     if empty
         && header_default_without_delimiter
