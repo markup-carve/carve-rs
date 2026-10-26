@@ -2518,6 +2518,8 @@ mod lint_reports_a_document_plus_only_before_a_block;
 mod markdown_blank_below_a_nested_list_before_an_image;
 #[path = "../markdown_figure_in_a_tight_item.rs"]
 mod markdown_figure_in_a_tight_item;
+#[path = "../nested_term_separator_columns.rs"]
+mod nested_term_separator_columns;
 #[path = "../ruled_description_fence.rs"]
 mod ruled_description_fence;
 #[path = "../ruled_quote_definition.rs"]

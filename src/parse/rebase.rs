@@ -1148,7 +1148,9 @@ impl<'a, 't, 'o> BodyRebase<'a, 't, 'o> {
             return;
         }
         self.paragraph_open = line_starts_paragraph(strip_lazy(&self.lines[i]));
-        self.item_separator_paragraph = self.lines[i].starts_with(ITEM_PARAGRAPH);
+        self.item_separator_paragraph = self.lines[i].starts_with(ITEM_PARAGRAPH)
+            || (self.lines[i].starts_with(LAZY)
+                && strip_description_prefix(strip_lazy(&self.lines[i])).is_some());
         self.own_paragraph = self.paragraph_open;
         if self.paragraph_open {
             self.term_boundary = false;

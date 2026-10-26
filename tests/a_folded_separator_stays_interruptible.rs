@@ -16,7 +16,7 @@ fn html(source: &str) -> String {
 fn folded_separator_stays_interruptible() {
     assert_eq!(
         html("- a\n   :: term\n  :  detail\n    :: term\n    :  detail\n      [^n]: note\n       q\n1. ordered\n"),
-        "<ul><li>a <dl><dt>term</dt></dl> : detail <dl><dt>term</dt><dd>detail</dd></dl> q </li></ul><ol><li>ordered</li></ol>"
+        "<ul><li>a <dl><dt>term : detail</dt><dt>term</dt><dd>detail</dd></dl> q </li></ul><ol><li>ordered</li></ol>"
     );
 }
 
@@ -24,23 +24,23 @@ fn folded_separator_stays_interruptible() {
 fn separator_at_item_column_starts_item_text() {
     assert_eq!(
         html("- a\n   :: term\n  :  detail\n"),
-        "<ul><li>a <dl><dt>term</dt></dl> : detail </li></ul>"
+        "<ul><li>a <dl><dt>term : detail</dt></dl></li></ul>"
     );
     assert_eq!(
         html("- a\n   :: term\n  :  detail\n  x\n"),
-        "<ul><li>a <dl><dt>term</dt></dl> : detail x </li></ul>"
+        "<ul><li>a <dl><dt>term : detail x</dt></dl></li></ul>"
     );
     assert_eq!(
         html("- a\n   :: term\n  :  detail\n  :: t2\n"),
-        "<ul><li>a <dl><dt>term</dt></dl> : detail <dl><dt>t2</dt></dl></li></ul>"
+        "<ul><li>a <dl><dt>term : detail</dt><dt>t2</dt></dl></li></ul>"
     );
     assert_eq!(
         html("- a\n    :: m\n   : l\n"),
-        "<ul><li>a <dl><dt>m</dt></dl> : l </li></ul>"
+        "<ul><li>a <dl><dt>m : l</dt></dl></li></ul>"
     );
     assert_eq!(
         html("- a\n  - b\n      :: m\n    : l\n"),
-        "<ul><li>a <ul><li>b <dl><dt>m</dt></dl> : l </li></ul></li></ul>"
+        "<ul><li>a <ul><li>b <dl><dt>m : l</dt></dl></li></ul></li></ul>"
     );
 }
 

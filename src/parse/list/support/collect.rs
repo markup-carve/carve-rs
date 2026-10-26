@@ -610,6 +610,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         let separator_in_own_item = below_definition_separator
             && !separator_at_nested_marker
             && indent >= strip_cols
+            && definition_list_column.is_some_and(|column| column <= strip_cols)
             && nested_owner_content.is_none();
         // Past a nested owner's content column the nested collector decides.
         let separator_for_nested_item = below_definition_separator
