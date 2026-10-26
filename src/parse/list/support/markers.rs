@@ -943,6 +943,21 @@ pub(crate) fn nested_ends_with_open_paragraph(
     below_outer_column: bool,
     options: &Options<'_>,
 ) -> bool {
+    // The fragment probe loses its marker host. A term at the end of an open
+    // colon body is a block there, so a following flush-left line cannot fold
+    // into a paragraph inside that body.
+    if !trailing_below_column
+        && colon_fences_left_open(nested) > 0
+        && nested
+            .lines()
+            .rev()
+            .find(|line| !is_blank_line(line))
+            .is_some_and(|line| {
+                !line.starts_with(LAZY) && is_definition_list_start(trim_ascii_start(line))
+            })
+    {
+        return false;
+    }
     // A wrapped attribute is one construct wherever its closer sits (carve#3421), so a
     // closer below the column still ends the body on an attribute block.
     let wrapped_attribute_tail = || {
