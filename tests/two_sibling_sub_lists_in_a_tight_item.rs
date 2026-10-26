@@ -225,7 +225,7 @@ fn spells_the_boundary_with_every_host_prefix_however_deep() {
     round_trips("- x\n\n  > - o\n  >\n  >   - a\n  >\n  >\n  >\n  >   - b\n");
     assert_eq!(
         fmt(":: t\n: - a\n\n\n\n   - b\n"),
-        ":: t\n: - a\n\n\n\n  - b\n"
+        ":: t\n: - a\n\n   - b\n"
     );
     round_trips(":: t\n: - a\n\n\n\n   - b\n");
     round_trips("::: note\n- a\n\n\n\n- b\n:::\n");
