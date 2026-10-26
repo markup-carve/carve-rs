@@ -2532,6 +2532,8 @@ mod empty_destination_tab_ruling;
 #[path = "../markdown_destination_parentheses.rs"]
 mod markdown_destination_parentheses;
 
+#[path = "../post_marker_tab_content.rs"]
+mod post_marker_tab_content;
 #[path = "../symbol_quote_context.rs"]
 mod symbol_quote_context;
 #[path = "../trailing_escape_braced_scan.rs"]
