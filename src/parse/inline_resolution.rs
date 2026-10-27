@@ -949,11 +949,7 @@ pub(in crate::parse) fn enforce_no_nesting_inline(
             }
             InlineNode::AutoLink(a) => {
                 if inside_link {
-                    let display = a
-                        .href
-                        .strip_prefix("mailto:")
-                        .unwrap_or(&a.href)
-                        .to_string();
+                    let display = a.text.clone();
                     out.push(InlineNode::Text(Text {
                         pos: unwrapped_autolink_pos(&a, &display),
                         value: display,
