@@ -3200,6 +3200,7 @@ fn expand_blocks(blocks: &mut Vec<BlockNode>, state: &mut State<'_>) {
             BlockNode::Div(d) => expand_blocks(&mut d.children, state),
             BlockNode::Section(d) => expand_blocks(&mut d.children, state),
             BlockNode::Admonition(a) => expand_blocks(&mut a.children, state),
+            BlockNode::FigureGroup(g) => expand_blocks(&mut g.children, state),
             BlockNode::List(l) => {
                 for item in &mut l.items {
                     expand_blocks(&mut item.children, state);

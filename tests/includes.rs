@@ -234,6 +234,17 @@ fn expand(source: &str, files: &[(&str, &str)]) -> Expanded {
     expand_with(source, &resolver, IncludeOptions::new())
 }
 
+#[test]
+fn block_includes_expand_in_figure_groups() {
+    let result = expand(
+        "::: figure\n{{ data/t.crv }}\n:::\n",
+        &[("data/t.crv", "x\n")],
+    );
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert!(result.html.contains("<p>x</p>"), "{}", result.html);
+    assert!(!result.html.contains("{{ data/t.crv }}"), "{}", result.html);
+}
+
 fn expand_opts(source: &str, files: &[(&str, &str)], opts: IncludeOptions<'_>) -> Expanded {
     let resolver = MapResolver::new(files);
     expand_with(source, &resolver, opts)
