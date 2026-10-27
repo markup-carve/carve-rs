@@ -62,7 +62,7 @@ fn option_aware_event_entry_preserves_supported_and_fallback_output() {
     }
     let options = Options::default().with_positions(true);
     let (candidate, admitted) = parse_experimental_event_blocks_with_options(source, &options);
-    assert!(!admitted);
+    assert!(admitted);
     assert_eq!(candidate, parse_with_options(source, &options));
 }
 
@@ -95,6 +95,46 @@ fn supported_options_match_across_direct_block_families() {
                 render_html_with_options(&candidate, &options).unwrap(),
                 render_html_with_options(&baseline, &options).unwrap(),
                 "{source:?}"
+            );
+        }
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn positioned_event_entry_matches_editor_spans() {
+    let sources = [
+        ("\u{feff}# Étage\r\n\r\nCafé /é/.\r\n", true),
+        ("# Heading\n\nOne\nTwo\n", true),
+        ("- one\n- two\n", true),
+        ("> quote\n> more\n", true),
+        ("```rust\ncode\n```\n", true),
+        (":: term\n:  meaning\n", true),
+        ("::: note\nbody\n:::\n", true),
+        ("![alt](/image)\n", true),
+        ("[ref]: /target\n\nSee [ref][].\n", false),
+        ("```tsv\nA\tB\n```\n", true),
+    ];
+    for (source, expected_admission) in sources {
+        for source_lines in [false, true] {
+            let options = Options::default()
+                .with_positions(true)
+                .with_source_lines(source_lines);
+            let (candidate, admitted) =
+                parse_experimental_event_blocks_with_options(source, &options);
+            assert_eq!(
+                admitted, expected_admission,
+                "{source:?}; source_lines={source_lines}"
+            );
+            let baseline = parse_with_options(source, &options);
+            assert_eq!(
+                candidate, baseline,
+                "{source:?}; source_lines={source_lines}"
+            );
+            assert_eq!(
+                render_html_with_options(&candidate, &options).unwrap(),
+                render_html_with_options(&baseline, &options).unwrap(),
+                "{source:?}; source_lines={source_lines}"
             );
         }
     }
@@ -352,8 +392,12 @@ fn option_aware_event_corpus_matches_full_document() {
             .with_tag_url("https://tags.example/{name}"),
         Options::default().with_profile(Profile::default()),
         Options::default().with_lint_includes(IncludeOptions::new()),
+        Options::default().with_positions(true),
+        Options::default()
+            .with_positions(true)
+            .with_source_lines(true),
     ];
-    let mut admitted = [0usize; 9];
+    let mut admitted = [0usize; 11];
     let mut total = 0usize;
     for entry in fs::read_dir(corpus).unwrap() {
         let path = entry.unwrap().path();
@@ -384,6 +428,8 @@ fn option_aware_event_corpus_matches_full_document() {
     );
     assert_eq!(admitted[7], admitted[0], "{admitted:?}");
     assert_eq!(admitted[8], admitted[0], "{admitted:?}");
+    assert!(admitted[9] > 2200, "{admitted:?}");
+    assert!(admitted[10] > 2200, "{admitted:?}");
 }
 
 #[test]

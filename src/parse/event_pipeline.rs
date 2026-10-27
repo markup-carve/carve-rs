@@ -482,6 +482,43 @@ fn parse_blocks_mapped(
     Some(out)
 }
 
+#[cfg(feature = "experimental-event-parser-options")]
+fn parse_positioned_simple_blocks(
+    lines: &[&str],
+    options: &Options<'_>,
+    line_map: &[Option<usize>],
+) -> Option<Vec<BlockNode>> {
+    if !options.positions || !lines.iter().copied().all(supported_line) {
+        return None;
+    }
+    let col_map = vec![Some(0); lines.len()];
+    let mut cur = LineCursor::new_with_cols(lines, Some(line_map), Some(&col_map));
+    cur.at_document_level = true;
+    let mut out = Vec::new();
+    for event in (Events { lines, next: 0 }) {
+        let (start, end, mut node) = match event {
+            Event::Heading(start, level, text) => {
+                cur.pos = start;
+                let node = *parse_heading_block(&mut cur, level, text, options);
+                (start, start + 1, node)
+            }
+            Event::Paragraph(start, paragraph_lines) => {
+                cur.pos = start;
+                let node = parse_paragraph(&mut cur, options);
+                (start, start + paragraph_lines.len(), node)
+            }
+        };
+        if cur.pos != end {
+            return None;
+        }
+        if options.source_lines {
+            stamp_source_line(&mut node, line_map.get(start).copied().flatten()?);
+        }
+        out.push(node);
+    }
+    Some(out)
+}
+
 /// Stream simple top-level blocks as events while handing list and definition
 /// bodies to the existing readers. A construct outside this subset declines the
 /// whole route before it can publish a partial AST.
@@ -508,7 +545,8 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
     {
         return None;
     }
-    let mut cur = LineCursor::new_with_cols(lines, line_map, None);
+    let col_map = options.positions.then(|| vec![Some(0); lines.len()]);
+    let mut cur = LineCursor::new_with_cols(lines, line_map, col_map.as_deref());
     cur.at_document_level = at_document_level;
     let mut out = Vec::new();
     #[cfg(feature = "experimental-event-parser-options")]
@@ -574,7 +612,7 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                     .iter()
                     .find(|line| !is_blank_line(line))
                     .is_some_and(|line| line.starts_with([' ', '\t']));
-            let direct = if options.source_lines {
+            let direct = if options.source_lines || options.positions {
                 None
             } else if blank_then_indented {
                 parse_unified_list_mapped(lines, cur.pos, options, line_map)
@@ -596,7 +634,7 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             continue;
         }
         if is_definition_list_start(line) {
-            let direct = if options.source_lines {
+            let direct = if options.source_lines || options.positions {
                 None
             } else {
                 parse_simple_definition_list_prefix(lines, cur.pos, options, false)
@@ -610,7 +648,7 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             continue;
         }
         if strip_blockquote_prefix(line).is_some() {
-            let direct = if options.source_lines {
+            let direct = if options.source_lines || options.positions {
                 None
             } else {
                 parse_simple_quote(lines, cur.pos, options)
@@ -646,17 +684,22 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             continue;
         }
         if let Some(marker) = thematic_break_marker(line) {
+            let at = cur.pos;
             cur.consume();
             emit!(
                 _block_source_line,
                 BlockNode::ThematicBreak(ThematicBreak {
                     marker: (marker != '-').then_some(marker),
+                    pos: span_of(&cur, at, cur.pos, options),
                     ..Default::default()
                 })
             );
             continue;
         }
         if !line.starts_with([' ', '\t']) && is_table_start(line) {
+            if options.positions {
+                return None;
+            }
             emit!(_block_source_line, parse_table(&mut cur, options));
             continue;
         }
@@ -719,6 +762,10 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                 }
             }
             return None;
+        }
+        if options.positions {
+            emit!(_block_source_line, parse_paragraph(&mut cur, options));
+            continue;
         }
         let mut paragraph_lines = Vec::new();
         while let Some(next) = cur.peek() {
@@ -804,6 +851,9 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
         if let (Some(index), Some(attrs)) = (target, pending) {
             apply_event_leading_attrs(&mut out[index], attrs);
         }
+    }
+    if options.positions && out.iter().any(|node| matches!(node, BlockNode::Table(_))) {
+        return None;
     }
     #[cfg(feature = "experimental-event-parser-options")]
     if options.source_lines {
@@ -1689,7 +1739,7 @@ mod unified_list_tests {
 
 fn parse_event_container(cur: &mut LineCursor<'_>, options: &Options<'_>) -> Box<BlockNode> {
     let (mut node, body) = open_container(cur, options);
-    if !options.source_lines && !body.in_group && !body.inner.marker_hosted {
+    if !options.positions && !options.source_lines && !body.in_group && !body.inner.marker_hosted {
         let source = &body.inner.source.inner.lines[body.inner.start..body.inner.end];
         if !source.iter().any(|line| line.text.contains(":::")) {
             let lines: Vec<&str> = source.iter().map(|line| line.text.as_str()).collect();
@@ -2880,7 +2930,7 @@ pub(super) fn parse_document_with_options(
     source: &str,
     options: &Options<'_>,
 ) -> Option<(Document, bool)> {
-    if options.positions || !options.extensions.is_empty() {
+    if !options.extensions.is_empty() {
         return None;
     }
     parse_document_with_custom_options(source, options)
@@ -2891,6 +2941,7 @@ fn parse_document_with_custom_options(
     source: &str,
     options: &Options<'_>,
 ) -> Option<(Document, bool)> {
+    let original_source = source;
     let source_len = source.len();
     let normalized = if needs_event_normalization(source) {
         if source.contains(['\u{e005}', '\u{e006}']) {
@@ -2904,10 +2955,13 @@ fn parse_document_with_custom_options(
     let may_have_link_defs = source.contains("]:");
     let may_have_abbrevs = source.contains("*[");
     if source.contains("[^") {
-        if options.source_lines {
+        if options.positions || options.source_lines {
             return None;
         }
         return parse_document_with_footnotes_options(source, source_len, options);
+    }
+    if options.positions && may_have_link_defs {
+        return None;
     }
     if has_fence_candidate_without_final_newline(source) {
         return None;
@@ -2919,7 +2973,7 @@ fn parse_document_with_custom_options(
     } else {
         SourceEndingGuard::install(source)
     };
-    let (frontmatter, frontmatter_raw, body) = split_frontmatter(source, false);
+    let (frontmatter, frontmatter_raw, body) = split_frontmatter(source, options.positions);
     let (stripped_body, link_defs) = if may_have_link_defs {
         let mut budget = probe_budget_for(body.len());
         extract_link_defs_guarded(body, options, &mut budget)
@@ -2938,7 +2992,7 @@ fn parse_document_with_custom_options(
         .count()
         + 1;
     let root_line_map: Option<Vec<Option<usize>>> =
-        (continuation_marker::active() || options.source_lines).then(|| {
+        (continuation_marker::active() || options.source_lines || options.positions).then(|| {
             (body_start_line..body_start_line + body_source.lines().count())
                 .map(Some)
                 .collect()
@@ -2946,7 +3000,22 @@ fn parse_document_with_custom_options(
     let (direct, link_defs, needs_late_resolution) = {
         let _depth = DepthGuard::enter()?;
         let lines: Vec<&str> = body_source.lines().collect();
-        if has_link_defs {
+        if options.positions {
+            (
+                parse_positioned_simple_blocks(&lines, options, root_line_map.as_deref()?).or_else(
+                    || {
+                        parse_mixed_blocks_mapped::<false, false>(
+                            &lines,
+                            options,
+                            root_line_map.as_deref(),
+                            true,
+                        )
+                    },
+                ),
+                link_defs,
+                false,
+            )
+        } else if has_link_defs {
             with_active_link_defs(link_defs, || {
                 parse_blocks_mapped(&lines, options, root_line_map.as_deref()).or_else(|| {
                     if may_have_abbrevs {
@@ -2998,37 +3067,43 @@ fn parse_document_with_custom_options(
             )
         }
     };
-    if has_link_defs && direct.is_none() {
-        return None;
-    }
     let used_event_route = direct.is_some();
-    let children = direct.unwrap_or_else(|| {
-        let body_start_line = source[..body.as_ptr() as usize - source.as_ptr() as usize]
-            .bytes()
-            .filter(|byte| *byte == b'\n')
-            .count()
-            + 1;
-        let line_count = body.lines().count();
-        let joined = joined_source(&body.lines().collect::<Vec<_>>());
-        let mapped = MappedSource {
-            source: joined,
-            line_map: (body_start_line..body_start_line + line_count)
-                .map(Some)
-                .collect(),
-            col_map: Vec::new(),
-            reached: Vec::new(),
-            opaque_blank_lines: Vec::new(),
-            discarded_outer_blank: false,
-            outer_plus_after_blank: false,
-            authored_base_at_start: false,
-            item_marker_at_start: false,
-            marker_colon_rebased: false,
-            marker_tail: None,
-            in_quoted_body: false,
-            sublists_carry_authored_base: false,
-        };
-        parse_mapped_source_at_document_level(&mapped, options)
-    });
+    let mut children = match direct {
+        Some(children) => children,
+        None if has_link_defs || options.positions => return None,
+        None => {
+            let body_start_line = source[..body.as_ptr() as usize - source.as_ptr() as usize]
+                .bytes()
+                .filter(|byte| *byte == b'\n')
+                .count()
+                + 1;
+            let line_count = body.lines().count();
+            let joined = joined_source(&body.lines().collect::<Vec<_>>());
+            let mapped = MappedSource {
+                source: joined,
+                line_map: (body_start_line..body_start_line + line_count)
+                    .map(Some)
+                    .collect(),
+                col_map: Vec::new(),
+                reached: Vec::new(),
+                opaque_blank_lines: Vec::new(),
+                discarded_outer_blank: false,
+                outer_plus_after_blank: false,
+                authored_base_at_start: false,
+                item_marker_at_start: false,
+                marker_colon_rebased: false,
+                marker_tail: None,
+                in_quoted_body: false,
+                sublists_carry_authored_base: false,
+            };
+            parse_mapped_source_at_document_level(&mapped, options)
+        }
+    };
+    if options.positions {
+        let line_starts = CodepointLineStarts::original(original_source);
+        fill_offsets(&mut children, &line_starts);
+        narrow_to_last_placed_child(&mut children, &original_source.lines().collect::<Vec<_>>());
+    }
     let mut doc = Document {
         frontmatter,
         frontmatter_raw,
