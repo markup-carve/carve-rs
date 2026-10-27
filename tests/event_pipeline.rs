@@ -151,6 +151,21 @@ fn root_comments_use_event_route() {
 }
 
 #[test]
+fn long_fenced_list_matches_public_ast_and_html() {
+    let mut source = String::new();
+    for index in 0..300 {
+        source.push_str(&format!(
+            "- item {index}\n  ```rs\n  let x = {index};\n  ```\n"
+        ));
+    }
+    let (actual, admitted) = parse_experimental_event_blocks(&source);
+    assert!(admitted);
+    let expected = parse_standard(&source);
+    assert_eq!(to_json(&actual), to_json(&expected));
+    assert_eq!(render_html(&actual), render_html(&expected));
+}
+
+#[test]
 fn unified_list_owner_keeps_loose_and_nested_boundaries() {
     for source in [
         "- first\n\n  second paragraph\n",
