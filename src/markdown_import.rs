@@ -1283,10 +1283,22 @@ fn markdown_to_ast_with_code_lines(
         }
         builder.current_line =
             claimed_lines + line_starts.partition_point(|start| *start <= range.start);
-        if matches!(event, Event::Text(_)) && range.start < unresolved_footnote_end {
+        let verbatim_text = matches!(
+            builder.frames.last(),
+            Some(
+                Frame::CodeBlock { .. }
+                    | Frame::HtmlCode { .. }
+                    | Frame::RawHtml(_)
+                    | Frame::Metadata(_)
+            )
+        );
+        if matches!(event, Event::Text(_))
+            && !verbatim_text
+            && range.start < unresolved_footnote_end
+        {
             continue;
         }
-        if matches!(event, Event::Text(_)) {
+        if matches!(event, Event::Text(_)) && !verbatim_text {
             if let Some((label, end)) = unresolved_footnote_at(&source, range.start) {
                 builder.inline(InlineNode::Footnote(Footnote {
                     attrs: None,
