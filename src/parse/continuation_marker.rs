@@ -488,6 +488,15 @@ impl Classifier {
             return;
         }
         if is_blank_line(body) {
+            if depth > 0
+                && !walk
+                    .stack
+                    .iter()
+                    .any(|entry| entry.kind == Kind::Quote && entry.depth >= depth)
+            {
+                walk.close_before_line(shape, body);
+                walk.push_quote_prefixes(line, depth);
+            }
             walk.blank(depth);
             return;
         }

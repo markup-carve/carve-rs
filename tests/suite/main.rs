@@ -2578,3 +2578,6 @@ fn image_paragraphs_as_images(html: &str) -> String {
         })
         .into_owned()
 }
+
+#[path = "../empty_quote_continuation.rs"]
+mod empty_quote_continuation;
