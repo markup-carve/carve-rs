@@ -814,22 +814,14 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                     }
                 }
             }
-            if !paragraph_lines.is_empty()
+            if (!paragraph_lines.is_empty()
                 && (is_definition_list_start(next)
                     || detect_fence_open(next).is_some()
-                    || thematic_break_marker(next).is_some())
-            {
-                if !at_document_level {
-                    return None;
-                }
-                cur.pos = paragraph_start;
-                emit!(_block_source_line, parse_paragraph(&mut cur, options));
-                continue 'blocks;
-            }
-            if !may_continue_plain_paragraph(next)
-                && !is_list_marker(next)
-                && !(paragraph_lines.is_empty() && invalid_brace_line)
-                && !(paragraph_lines.is_empty() && root_indented_text)
+                    || thematic_break_marker(next).is_some()))
+                || (!may_continue_plain_paragraph(next)
+                    && !is_list_marker(next)
+                    && !(paragraph_lines.is_empty() && invalid_brace_line)
+                    && !(paragraph_lines.is_empty() && root_indented_text))
             {
                 if !at_document_level {
                     return None;
