@@ -2150,8 +2150,12 @@ impl<'a> QuoteBody<'a> {
             // nothing linear instead of scanned once per line.
             QuotedAttrsBlock::NoneWithin(window) => {
                 self.attrs_scan_floor = at + window;
-                self.unclosed_nested_attribute =
-                    nested && prior_paragraph && trim_ascii_start(stripped).starts_with('{');
+                self.unclosed_nested_attribute = trim_ascii_start(stripped).starts_with('{')
+                    && (nested && prior_paragraph
+                        || !nested
+                            && cur
+                                .peek()
+                                .is_some_and(|next| strip_blockquote_prefix(next).is_none()));
             }
             QuotedAttrsBlock::No => {}
         }

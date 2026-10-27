@@ -2590,3 +2590,6 @@ mod bare_delimiter_after_literal_brackets;
 
 #[path = "../outer_item_loose_after_nested_first_block.rs"]
 mod outer_item_loose_after_nested_first_block;
+
+#[path = "../quoted_attribute_without_quote_prefix.rs"]
+mod quoted_attribute_without_quote_prefix;
