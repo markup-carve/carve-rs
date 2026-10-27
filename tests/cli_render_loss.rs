@@ -156,7 +156,7 @@ fn allow_loss_offers_every_code_but_destination_denied() {
         let stderr = String::from_utf8_lossy(&refused.stderr);
         assert_eq!(
             stderr.trim_end(),
-            "carve: --allow-loss expects raw-format-dropped, ruby-flattened, editorial-comment-flattened, carrier-attribute-dropped, definition-list-flattened, list-style-dropped, list-tightness-lost, list-delimiter-changed, table-span-flattened, table-header-row-demoted, table-header-row-hoisted or table-header-cell-demoted"
+            "carve[usage]: --allow-loss expects raw-format-dropped, ruby-flattened, editorial-comment-flattened, carrier-attribute-dropped, definition-list-flattened, list-style-dropped, list-tightness-lost, list-delimiter-changed, table-span-flattened, table-header-row-demoted, table-header-row-hoisted or table-header-cell-demoted"
         );
     }
     let help = run_input(&["--help"], "");

@@ -1107,6 +1107,23 @@ impl<'s, 'r> LineRules<'s, 'r> {
                 "A blockquote marker must be bare or followed by a space.",
             );
         }
+        for (start, end, part) in crate::parse::lint_unpadded_cell_runs(view) {
+            use crate::parse::UnpaddedCellRun;
+            let message = match part {
+                UnpaddedCellRun::Kind => "The table kind marker has no terminating space, so it is literal cell content. Add a space after the marker run to make it a header.".to_string(),
+                UnpaddedCellRun::Align => format!("The table alignment run {:?} has no terminating space, so it is literal cell content. Add a space after the run to make it alignment.", &view[start..end]),
+                UnpaddedCellRun::Attrs => "The table cell attribute block has no terminating space, so it is literal cell content. Add a space after the attribute block to apply it.".to_string(),
+            };
+            emit(
+                out,
+                rows,
+                ln,
+                at + start,
+                end - start,
+                "table-marker-run-padding",
+                &message,
+            );
+        }
         for (start, len) in crate::parse::lint_reversed_cell_markers(view) {
             emit(out, rows, ln, at + start, len, "table-marker-run-padding", "Write the alignment marker before the cell attribute block, and end the marker run with a space.");
         }

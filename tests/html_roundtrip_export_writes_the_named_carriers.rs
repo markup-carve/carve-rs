@@ -328,6 +328,16 @@ fn the_abbreviation_definitions_ride_a_template() {
     assert!(!rt("No abbreviation here.\n").contains("data-carve-abbreviations"));
 }
 
+#[test]
+fn abbreviation_template_escapes_no_break_space_as_element_text() {
+    let html = rt("*[A]: \u{a0}x\n\nA\n");
+    assert!(html.contains("<abbr title=\"\u{a0}x\">A</abbr>"), "{html}");
+    assert!(
+        html.contains("<template data-carve-abbreviations>*[A]: &nbsp;x</template>"),
+        "{html}"
+    );
+}
+
 // ---------------------------------------------------------------- collisions
 
 #[test]
@@ -661,7 +671,7 @@ mod cli {
         assert!(!ok);
         assert!(stdout.is_empty(), "{stdout}");
         assert!(
-            stderr.contains(&format!("carve: unknown option: {flag}")),
+            stderr.contains(&format!("carve[usage]: unknown option: {flag}")),
             "{stderr}"
         );
     }

@@ -989,17 +989,25 @@ pub(in crate::parse) fn parse_cell_content(
     parsed
 }
 
-pub(in crate::parse) fn parse_table_cell(
-    cell: &str,
-    options: &Options<'_>,
-    anchor: Option<(usize, isize)>,
-    extra: &[CellFragment],
-) -> TableCell {
+/// The kind marker, alignment run and attribute block a cell opens with, read
+/// without the T11 terminator check so the linter can report a run that lacks
+/// its space. Offsets are bytes into the cell.
+pub(in crate::parse) struct CellMarkerRun {
+    pub header: bool,
+    pub align: Option<TableAlign>,
+    pub valign: Option<TableVerticalAlign>,
+    pub attrs: Option<Attrs>,
+    pub align_run: Option<(usize, usize)>,
+    pub attr_span: Option<(usize, usize)>,
+    pub run_len: usize,
+}
+
+pub(in crate::parse) fn scan_cell_marker_run(cell: &str) -> CellMarkerRun {
     // A leading `=` marks a HEADER cell, but only when GLUED to the `|` (no
     // leading whitespace), per grammar §20. `| =x |` (space before `=`) is a
     // literal `<td>`, matching carve-js / carve-php; check the RAW cell, not
     // the trimmed one.
-    let mut header = cell.starts_with('=');
+    let header = cell.starts_with('=');
     // NOT trimmed: the alignment marker is GLUED to the opening `|` (grammar
     // §20, `data_cell` / `header_cell`), so whether whitespace precedes it is
     // the whole distinction. Reading the marker off the TRIMMED cell threw that
@@ -1016,7 +1024,8 @@ pub(in crate::parse) fn parse_table_cell(
                                            // A lone span glyph wins over an empty alignment run in every padding form.
     let lone_span = !header && matches!(trimmed, "^" | "<");
     let mut after_markers = body;
-    let (mut align, mut valign) = if lone_span {
+    let mut align_run = None;
+    let (align, valign) = if lone_span {
         (None, None)
     } else {
         let run = body
@@ -1070,13 +1079,13 @@ pub(in crate::parse) fn parse_table_cell(
             }
         }
         let markers = &body.as_bytes()[..run];
-        let terminated = body
-            .as_bytes()
-            .get(run)
-            .is_some_and(|b| *b == b' ' || *b == b'{');
-        let valid = run > 0 && axes_valid && (saw_horizontal || inherited_horizontal) && terminated;
+        // No terminator test here: T11 below rejects a run that is not
+        // followed by a space, and the linter needs the run either way.
+        let valid = run > 0 && axes_valid && (saw_horizontal || inherited_horizontal);
         if valid {
             after_markers = &body[run..];
+            let at = cell.len() - body.len();
+            align_run = Some((at, at + run));
         }
         let horizontal_marker = (valid && !inherited_horizontal)
             .then(|| {
@@ -1127,6 +1136,7 @@ pub(in crate::parse) fn parse_table_cell(
     // partially-invalid or empty block reads as None and the `{` stays content.
     // A space before the brace (`| {.x}`, `|= {.x}`) is also ordinary content.
     let mut attrs = None;
+    let mut attr_span = None;
     let mut rest = after_markers;
     if after_markers.as_bytes().first() == Some(&b'{') {
         let after_bytes = after_markers.as_bytes();
@@ -1134,8 +1144,36 @@ pub(in crate::parse) fn parse_table_cell(
         if let Some((read, next)) = read_attrs_at(after_bytes, 0, last_close_brace) {
             attrs = Some(read);
             rest = &after_markers[next..];
+            let at = cell.len() - after_markers.len();
+            attr_span = Some((at, at + next));
         }
     }
+    CellMarkerRun {
+        header,
+        align,
+        valign,
+        attrs,
+        align_run,
+        attr_span,
+        run_len: cell.len() - rest.len(),
+    }
+}
+
+pub(in crate::parse) fn parse_table_cell(
+    cell: &str,
+    options: &Options<'_>,
+    anchor: Option<(usize, isize)>,
+    extra: &[CellFragment],
+) -> TableCell {
+    let CellMarkerRun {
+        mut header,
+        mut align,
+        mut valign,
+        mut attrs,
+        run_len,
+        ..
+    } = scan_cell_marker_run(cell);
+    let mut rest = &cell[run_len..];
     // A MARKER RUN ENDS AT A SPACE (grammar §20 T11, corpus
     // 390-a-table-cell-s-marker-run-ends-at-a-space). The kind marker, the
     // alignment run and the attribute block are ONE run, and a cell carrying
@@ -1148,7 +1186,6 @@ pub(in crate::parse) fn parse_table_cell(
     // wins, the rest is content" reading the clause replaces. The closing pipe
     // is not a terminator (`|= |` is the empty header cell) and neither is a
     // tab, which PART 7 gives no padding role inline.
-    let run_len = cell.len() - rest.len();
     if run_len > 0 && rest.as_bytes().first() != Some(&b' ') {
         header = false;
         align = None;

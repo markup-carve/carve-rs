@@ -136,6 +136,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         .map_or(parent_indent, |marker| marker.indent);
     let marker_ordered = marker_lead.as_ref().is_some_and(|marker| marker.ordered);
     let marker_content = marker_lead.map(|marker| marker.content);
+    let mut table_seen = marker_content.is_some_and(is_table_start);
+    let mut table_caption_open = false;
     nested_item_columns.fence_seen |= marker_content.is_some_and(|content| {
         content.contains(['`', '~'])
             && detect_fence_open(innermost_marker_content(content)).is_some()
@@ -262,8 +264,18 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let mut nested_folded_fence = false;
     let mut nested_blank_run: Option<(usize, usize, bool)> = None;
     run_indented_body!(cur.lines, cur.pos, container, |line, admission| {
+        if admission.blank {
+            table_caption_open = false;
+        }
+        let caption_follower = table_caption_open
+            && !admission.blank
+            && caption_content(trim_ascii_start(line)).is_none()
+            && !is_line_comment_any_column(line)
+            && !is_list_marker(line)
+            && !interrupts_lazy_continuation_as_container(cur, trim_ascii_start(line));
         after_definition_blank |= is_blank_line(line);
-        let follows_first_block = !lead_is_continuation
+        let follows_first_block = (!lead_is_continuation
+            || item_block_opener(trim_ascii_start(line)))
             && cur.pos.checked_sub(1).is_some_and(|previous| {
                 cur.continuation_decision(previous)
                     .is_some_and(|decision| decision.first_block && decision.refusal.is_none())
@@ -278,7 +290,12 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                         &mut cur.comment_closer_last_index,
                         &mut cur.code_closer_last_index,
                         options,
-                        &mut |next, _| is_blank_line(next) || is_plus_marker(next),
+                        &mut |next, _| {
+                            is_blank_line(next)
+                                || is_plus_marker(next)
+                                || detect_list_marker_full(next)
+                                    .is_some_and(|marker| marker.indent <= parent_indent)
+                        },
                     )
                 })
                 .max(start + 1);
@@ -421,7 +438,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                     }))
             {
                 let end = container.blank_run_end(cur.lines, cur.pos + 1);
-                let applies = cur.lines.line(end).is_some_and(|next| {
+                let outer_follower = cur.lines.line(end).is_some_and(|next| {
                     !is_blank_line(next)
                         && indent_columns(next) >= strip_cols
                         && !container.owns_continuation(next, cur.continuation_decision(end))
@@ -430,6 +447,23 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                                 && is_fence_close(trim_ascii_start(next), open)
                         })
                 });
+                let direct_fence_payload = lines.is_empty()
+                    || lines
+                        .iter()
+                        .rev()
+                        .find(|line| !is_blank_line(line))
+                        .is_some_and(|line| {
+                            detect_fence_open(innermost_marker_content(line)).is_some()
+                        });
+                let applies = outer_follower
+                    && (!direct_fence_payload
+                        || cur
+                            .lines
+                            .line(end)
+                            .is_some_and(|next| is_plus_marker(trim_ascii_start(next))));
+                if outer_follower && direct_fence_payload && !applies {
+                    discarded_outer_blank = true;
+                }
                 nested_blank_run = Some((end, 0, applies));
             }
             if let Some((end, kept, applies)) = nested_blank_run.as_mut() {
@@ -977,6 +1011,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && !fence_owns_flush_left
             && !comment_fence.is_some_and(|(run, _)| is_comment_fence_close_any_column(line, run))
             && !closes_a_held_comment_span(&lines, line)
+            && !caption_follower
         {
             break;
         }
@@ -1886,11 +1921,25 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             );
         }
         // Lazy text of a descendant's paragraph, which the reparse must not read as a fence.
+        let term_comment_below_column = marker_is_definition_term
+            && !marker_definition_has_description
+            && indent > 0
+            && indent < strip_cols
+            && is_line_comment_any_column(line)
+            && !is_definition_placeholder(line);
         lines.push(if frame_lazy_fence {
             format!("{LAZY}{}", trim_ascii_start(&sliced))
+        } else if term_comment_below_column {
+            format!(" {sliced}")
         } else {
             sliced
         });
+        table_seen |= is_table_start(trim_ascii_start(line));
+        table_caption_open = if caption_content(trim_ascii_start(line)).is_some() {
+            table_seen
+        } else {
+            caption_follower
+        };
         carried_lazy_owner = marker_paragraph_owner
             .or_else(|| carried_lazy_owner.filter(|&owner| plain_nested_lazy && indent >= owner));
         if marker_paragraph_owner.is_some() {
@@ -1902,7 +1951,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         reached.push(indent >= strip_cols);
         if building_maps {
             col_map.push(cur.source_col(cur.pos).map(|outer| {
-                outer + consumed as isize + trimmed_after_slice as isize - synthetic as isize
+                outer + consumed as isize + trimmed_after_slice as isize
+                    - synthetic as isize
+                    - usize::from(term_comment_below_column) as isize
             }));
         }
         cur.consume();

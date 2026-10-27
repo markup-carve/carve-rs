@@ -1064,6 +1064,43 @@ fn unresolved_footnote_at(source: &str, at: usize) -> Option<(String, usize)> {
     ))
 }
 
+fn fallback_footnote_text(
+    event: &Event<'_>,
+    source: &str,
+    at: usize,
+    consumed_until: usize,
+    frames: &[Frame],
+) -> Option<(Option<Footnote>, usize)> {
+    if !matches!(event, Event::Text(_))
+        || matches!(
+            frames.last(),
+            Some(
+                Frame::CodeBlock { .. }
+                    | Frame::HtmlCode { .. }
+                    | Frame::RawHtml(_)
+                    | Frame::Metadata(_)
+            )
+        )
+    {
+        return None;
+    }
+    if at < consumed_until {
+        return Some((None, consumed_until));
+    }
+    let (label, end) = unresolved_footnote_at(source, at)?;
+    Some((
+        Some(Footnote {
+            attrs: None,
+            id: Some(label),
+            inline: None,
+            number: None,
+            ref_id: None,
+            pos: None,
+        }),
+        end,
+    ))
+}
+
 fn plain_reference_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')
 }
@@ -1100,6 +1137,31 @@ fn carve_reference_span(source: &str, span: std::ops::Range<usize>) -> bool {
         || source
             .get(span.start..span.end.saturating_add(2))
             .is_some_and(|raw| raw.ends_with("[]") && carve_reference_spelling(raw))
+}
+
+fn following_defined_reference(
+    source: &str,
+    end: usize,
+    definitions: &pulldown_cmark::Parser<'_>,
+) -> bool {
+    let mut tail = source.get(end..).unwrap_or_default();
+    for _ in 0..2 {
+        let Some(rest) = tail.strip_prefix('[') else {
+            return false;
+        };
+        let Some(close) = rest.find(']') else {
+            return false;
+        };
+        let label = &rest[..close];
+        if label.contains(['[', '\n', '\r']) {
+            return false;
+        }
+        if definitions.reference_definitions().get(label).is_some() {
+            return true;
+        }
+        tail = &rest[close + 1..];
+    }
+    false
 }
 
 fn markdown_to_ast_with_code_lines(
@@ -1196,8 +1258,13 @@ fn markdown_to_ast_with_code_lines(
         .as_ref()
         .map_or(&[][..], |prepared| prepared.1.as_slice());
     let mut bare_url_at = 0;
-    let (native_source, native_urls) = native_destinations::prepare(parser_source, options);
+    let (native_source, native_urls, link_footnotes) =
+        native_destinations::prepare_with_footnotes(parser_source, options);
+    let footnote_marker = link_footnotes
+        .first()
+        .map(|note| native_source.as_bytes()[note.start]);
     let strikes = crate::markdown_strike::prepare(&native_source, options);
+    let reference_definitions = Parser::new_ext(&strikes.text, options);
     let mut reference = |link: pulldown_cmark::BrokenLink<'_>| {
         let image = strikes.text.as_bytes().get(link.span.start) == Some(&b'!')
             || strikes.text.as_bytes().get(link.span.start.wrapping_sub(1)) == Some(&b'!');
@@ -1206,7 +1273,8 @@ fn markdown_to_ast_with_code_lines(
                 link.link_type,
                 LinkType::Reference | LinkType::Collapsed | LinkType::Shortcut
             )
-            && carve_reference_span(&source, strikes.original_range(link.span.clone()));
+            && carve_reference_span(&source, strikes.original_range(link.span.clone()))
+            && !following_defined_reference(&strikes.text, link.span.end, &reference_definitions);
         strikes
             .reference(link)
             .or_else(|| unknown.then(|| ("".into(), "".into())))
@@ -1246,6 +1314,65 @@ fn markdown_to_ast_with_code_lines(
             builder.text(value);
         }
     }
+    fn push_link_footnotes(
+        builder: &mut Builder,
+        pending: &mut u8,
+        text: &str,
+        range: &std::ops::Range<usize>,
+        source: &str,
+        masks: &[native_destinations::FootnoteMask],
+        marker: Option<u8>,
+    ) -> bool {
+        let Some(marker) = marker else {
+            return false;
+        };
+        if !text.as_bytes().contains(&marker) {
+            return false;
+        }
+        let first = masks.partition_point(|mask| mask.end <= range.start);
+        // Search parsed text because entity decoding can shorten text before a marker.
+        let relevant: Vec<_> = masks[first..]
+            .iter()
+            .take_while(|mask| mask.start < range.end)
+            .collect();
+        if relevant.is_empty() {
+            return false;
+        }
+        let mut segments = Vec::with_capacity(relevant.len());
+        let mut cursor = 0;
+        for mask in &relevant {
+            let Some(offset) = text.as_bytes()[cursor..]
+                .iter()
+                .position(|byte| *byte == marker)
+            else {
+                return false;
+            };
+            let start = cursor + offset;
+            let end = start + mask.end - mask.start;
+            if text
+                .as_bytes()
+                .get(start..end)
+                .map_or(true, |run| run.iter().any(|byte| *byte != marker))
+            {
+                return false;
+            }
+            segments.push((start, end, *mask));
+            cursor = end;
+        }
+        cursor = 0;
+        for (start, end, mask) in segments {
+            push_text_after_entity_lt(builder, pending, &text[cursor..start], false);
+            *pending = 0;
+            builder.push(
+                Event::FootnoteReference(mask.label.clone().into()),
+                &source[mask.start..mask.end],
+                false,
+            );
+            cursor = end;
+        }
+        push_text_after_entity_lt(builder, pending, &text[cursor..], false);
+        true
+    }
     let mut used_reference_ids = BTreeSet::new();
     let mut entity_lt_prefix = 0;
     let mut unresolved_footnote_end = 0;
@@ -1283,22 +1410,18 @@ fn markdown_to_ast_with_code_lines(
         }
         builder.current_line =
             claimed_lines + line_starts.partition_point(|start| *start <= range.start);
-        if matches!(event, Event::Text(_)) && range.start < unresolved_footnote_end {
-            continue;
-        }
-        if matches!(event, Event::Text(_)) {
-            if let Some((label, end)) = unresolved_footnote_at(&source, range.start) {
-                builder.inline(InlineNode::Footnote(Footnote {
-                    attrs: None,
-                    id: Some(label),
-                    inline: None,
-                    number: None,
-                    ref_id: None,
-                    pos: None,
-                }));
-                unresolved_footnote_end = end;
-                continue;
+        if let Some((footnote, end)) = fallback_footnote_text(
+            &event,
+            &source,
+            range.start,
+            unresolved_footnote_end,
+            &builder.frames,
+        ) {
+            unresolved_footnote_end = end;
+            if let Some(footnote) = footnote {
+                builder.inline(InlineNode::Footnote(footnote));
             }
+            continue;
         }
         if let Some((kept, rest)) = text_end.take().and_then(|end| {
             let (kept, rest) = stripped_line_end(&source, end)?;
@@ -1475,6 +1598,19 @@ fn markdown_to_ast_with_code_lines(
                 entity_lt_prefix = 0;
                 builder.push(event, &source[range], empty_title);
                 continue;
+            }
+            if let Event::Text(text) = &event {
+                if push_link_footnotes(
+                    &mut builder,
+                    &mut entity_lt_prefix,
+                    text,
+                    &range,
+                    &source,
+                    &link_footnotes,
+                    footnote_marker,
+                ) {
+                    continue;
+                }
             }
             while bare_urls
                 .get(bare_url_at)
@@ -3433,13 +3569,40 @@ fn flush_inline_run(
 /// `alt` is a plain string on the node, so an emphasis, a code span or a link
 /// written inside `![...]` has no node to become. CommonMark flattens it the
 /// same way - `![a *b* c](i.png)` carries `alt="a b c"` - so the text is what
-/// is kept. A break contributes nothing, which is what this importer already
-/// did with one and is deliberately not changed here: a newline inside `alt`
-/// would have to be written back into a single-line image spelling.
+/// is kept. A break contributes its authored newline to the image alt scalar.
+fn critic_body_probe_text(node: &InlineNode, out: &mut String) {
+    match node {
+        // Delimiters inside verbatim nodes cannot close the surrounding deletion.
+        // A separator also prevents delimiters on either side from pairing.
+        InlineNode::Code(_) | InlineNode::LiteralInline(_) | InlineNode::RawInline(_) => {
+            out.push(' ')
+        }
+        InlineNode::Emphasis(emphasis) => {
+            for child in &emphasis.children {
+                critic_body_probe_text(child, out);
+            }
+        }
+        InlineNode::Link(link) => {
+            for child in &link.children {
+                critic_body_probe_text(child, out);
+            }
+        }
+        InlineNode::Span(span) => {
+            for child in &span.children {
+                critic_body_probe_text(child, out);
+            }
+        }
+        _ => out.push_str(&inline_text(node)),
+    }
+}
+
 /// A deletion body that would close or re-open the braced construct it is about
 /// to be written into (markup-carve/carve#2845).
 fn breaks_out_of_a_critic_body(children: &[InlineNode]) -> bool {
-    let text: String = children.iter().map(inline_text).collect();
+    let mut text = String::new();
+    for child in children {
+        critic_body_probe_text(child, &mut text);
+    }
     text.contains(['{', '}', '\\', '\n']) || text.contains("~>")
 }
 
@@ -3451,6 +3614,7 @@ fn inline_text(node: &InlineNode) -> String {
         InlineNode::Link(link) => inline_run_text(&link.children),
         InlineNode::Span(span) => inline_run_text(&span.children),
         InlineNode::Image(image) => image.alt.clone(),
+        InlineNode::SoftBreak(_) | InlineNode::HardBreak(_) => "\n".into(),
         _ => String::new(),
     }
 }

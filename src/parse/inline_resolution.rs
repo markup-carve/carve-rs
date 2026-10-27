@@ -34,12 +34,8 @@ pub(in crate::parse) fn promote_block_images(
     while let Some(level) = worklist.pop() {
         for block in level {
             let single_image = !figures_only
-                && matches!(
-                    block,
-                    BlockNode::Paragraph(p)
-                        if (p.at_content_column || !lone_image_needs_content_column || p.children.iter().any(|child| matches!(child, InlineNode::Comment(_))))
-                            && lone_rendered_image(&p.children).is_some()
-                );
+                && !lone_image_needs_content_column
+                && matches!(block, BlockNode::Paragraph(p) if lone_rendered_image(&p.children).is_some());
             if single_image {
                 // Take the children out first so the paragraph borrow ends before
                 // `block` is reassigned. A leading block-attribute line (`{#id}`)
@@ -1093,8 +1089,8 @@ pub(in crate::parse) fn de_typography(text: &str) -> String {
             '©' => out.push_str("(c)"),
             '®' => out.push_str("(r)"),
             '–' | '—' => out.push('-'),
-            '‘' | '’' => out.push('\''),
-            '“' | '”' => out.push('"'),
+            '‘' | '’' | '‚' | '‛' => out.push('\''),
+            '“' | '”' | '„' | '‟' | '«' | '»' => out.push('"'),
             other => out.push(other),
         }
     }
@@ -1513,8 +1509,16 @@ pub(in crate::parse) fn bold_italic_close(
 ) -> Option<usize> {
     let closers = memo.bold_italic.get_or_insert_with(|| {
         let mut index: HashMap<Option<usize>, Vec<usize>> = HashMap::new();
-        for (close, pair) in bytes.windows(2).enumerate() {
-            if pair == b"*/"
+        let mut close = 0;
+        while close + 1 < bytes.len() {
+            if bytes[close] == b'`' {
+                if let Some((_, consumed)) = parse_inline_code(bytes, close) {
+                    close += consumed;
+                    continue;
+                }
+            }
+            if bytes[close] == b'*'
+                && bytes[close + 1] == b'/'
                 && close > 0
                 && !is_carve_ws(bytes[close - 1])
                 && !followed_by_grapheme_extender(bytes, close + 2)
@@ -1525,6 +1529,7 @@ pub(in crate::parse) fn bold_italic_close(
                     .or_default()
                     .push(close);
             }
+            close += 1;
         }
         index
     });
@@ -1559,9 +1564,13 @@ pub(in crate::parse) fn cached_find_emphasis_close(
         &mut visited,
     );
     if close.is_none() {
+        let regions = memo.atomic.as_deref().unwrap_or(&[]);
+        let opener_run = emphasis_run_at(bounds, regions, from);
         let marks = failed.get_or_insert_with(|| vec![false; bytes.len() + 1]);
         for j in visited {
-            marks[j] = true;
+            if emphasis_run_at(bounds, regions, j) == opener_run {
+                marks[j] = true;
+            }
         }
     }
     memo.failed[idx] = failed;
@@ -1665,10 +1674,14 @@ pub(in crate::parse) fn find_emphasis_close(
         .get_or_insert_with(|| atomic_link_regions(bytes, bounds).into())
         .clone();
     let opener_run = emphasis_run_at(bounds, &regions, from);
+    let opener_end = opener_run.map(|open| bounds.matches[open]);
     let mut attached = HashMap::new();
     let mut j = from;
     while j < bytes.len() {
-        if failed.is_some_and(|f| f[j]) {
+        if opener_end.is_some_and(|end| j > end) {
+            return None;
+        }
+        if failed.is_some_and(|f| f[j]) && emphasis_run_at(bounds, &regions, j) == opener_run {
             return None;
         }
         visited.push(j);

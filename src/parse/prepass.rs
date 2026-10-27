@@ -105,7 +105,8 @@ pub(in crate::parse) fn open_frame(blocks: &[BlockNode]) -> OpenFrame {
         };
         frame.contains_quote |= matches!(last, BlockNode::BlockQuote(_));
         let kind = std::mem::discriminant(last);
-        frame.ends_in_paragraph = kind == paragraph;
+        frame.ends_in_paragraph = kind == paragraph
+            || matches!(last, BlockNode::Figure(figure) if !figure.caption.is_empty());
         frame.levels.push((ProbeLevel::Blocks(kind), blocks.len()));
         match probe_children(last) {
             ProbeChildren::Blocks(children) => blocks = children,

@@ -116,10 +116,10 @@ fn render_html_inner(
     // the parse tree deliberately does not (markup-carve/carve#1660). This is
     // the one place that difference is resolved, ahead of every layout decision
     // below, so nothing downstream has to know about the second shape.
+    crate::parse::collapse_lone_image_paragraphs(&mut doc);
     if options.html_carriers() {
         crate::roundtrip::report_reserved_attributes(&mut doc);
     }
-    crate::parse::collapse_lone_image_paragraphs(&mut doc);
     let crossref_index = crossref_index.unwrap_or_else(|| {
         crate::parse::crossref_index_for_document(&doc, options.heading_id_options())
     });
@@ -363,7 +363,7 @@ fn abbreviation_template(doc: &Document) -> Option<String> {
         crate::render_loss::RawNodeType::Block,
     );
     out.push('>');
-    write_escaped_text(&mut out, &lines.join("\n"));
+    write_escaped_text_nbsp(&mut out, &lines.join("\n"));
     out.push_str("</template>");
     Some(out)
 }
@@ -593,7 +593,8 @@ fn render_dropped_raw_block(
     options: &Options<'_>,
     state: &mut RenderState,
 ) -> bool {
-    if !matches!(block, BlockNode::RawBlock(raw) if raw.format != "html") {
+    if !matches!(block, BlockNode::RawBlock(raw) if raw.format != "html" && raw.format != "html-document")
+    {
         return false;
     }
     let mut sink = String::new();
@@ -767,6 +768,9 @@ fn render_section(
     render_heading_without_section_id(out, heading, level + 1, options, state);
     let mut i = start + 1;
     while i < nodes.len() {
+        if matches!(&nodes[i], BlockNode::RawBlock(raw) if raw.format == "html-document") {
+            break;
+        }
         if let BlockNode::Heading(next) = &nodes[i] {
             if next.level <= heading.level {
                 break;
@@ -876,7 +880,7 @@ fn render_block(
         BlockNode::FigureGroup(g) => render_figure_group(out, g, level, options, state),
         BlockNode::AbbreviationDef(_) => {}
         BlockNode::RawBlock(r) => {
-            if r.format == "html" {
+            if r.format == "html" || r.format == "html-document" {
                 if options.allow_raw_html {
                     indent(out, level);
                     out.push_str(r.target_content());
@@ -1293,7 +1297,11 @@ fn render_escaped_raw_block(out: &mut String, r: &RawBlock, level: usize) {
     let content = r.content.clone();
     let code = CodeBlock {
         attrs: r.attrs.clone(),
-        lang: Some(r.format.clone()),
+        lang: Some(if r.format == "html-document" {
+            "html".into()
+        } else {
+            r.format.clone()
+        }),
         title: None,
         label: None,
         content,
@@ -1608,7 +1616,7 @@ fn renders_nothing(node: &BlockNode) -> bool {
         | BlockNode::LinkReferenceDefinition(_)
         | BlockNode::CitationDefinition(_)
         | BlockNode::AbbreviationDef(_) => true,
-        BlockNode::RawBlock(r) => r.format != "html",
+        BlockNode::RawBlock(r) => r.format != "html" && r.format != "html-document",
         BlockNode::BlockExtension(n) => renders_nothing(&n.fallback),
         _ => false,
     }

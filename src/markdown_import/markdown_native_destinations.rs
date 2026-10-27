@@ -13,6 +13,14 @@ struct Destination {
 struct Open {
     at: usize,
     nested_link: bool,
+    footnotes: Vec<FootnoteMask>,
+}
+
+#[derive(Clone)]
+pub(super) struct FootnoteMask {
+    pub start: usize,
+    pub end: usize,
+    pub label: String,
 }
 
 fn whitespace(byte: u8) -> bool {
@@ -242,8 +250,11 @@ fn escaped(bytes: &[u8], at: usize) -> bool {
     (at - before) % 2 != 0
 }
 
-fn opaque_ranges(parser: Parser<'_>) -> Vec<std::ops::Range<usize>> {
+fn opaque_ranges(
+    parser: Parser<'_>,
+) -> (Vec<std::ops::Range<usize>>, HashMap<usize, FootnoteMask>) {
     let mut ranges = Vec::new();
+    let mut footnotes = HashMap::new();
     let mut block_start = None;
     for (event, range) in parser.into_offset_iter() {
         match event {
@@ -254,28 +265,48 @@ fn opaque_ranges(parser: Parser<'_>) -> Vec<std::ops::Range<usize>> {
                 }
             }
             Event::Code(_) | Event::InlineHtml(_) | Event::Html(_) => ranges.push(range),
+            Event::FootnoteReference(label) => {
+                footnotes.insert(
+                    range.start,
+                    FootnoteMask {
+                        start: range.start,
+                        end: range.end,
+                        label: label.to_string(),
+                    },
+                );
+            }
             _ => {}
         }
     }
     ranges.sort_by_key(|range| range.start);
-    ranges
+    (ranges, footnotes)
 }
 
+#[cfg(test)]
 pub(super) fn prepare(source: &str, options: Options) -> (String, HashMap<usize, String>) {
-    if !source.contains("](") {
-        return (source.to_owned(), HashMap::new());
+    let (prepared, urls, _) = prepare_with_footnotes(source, options);
+    (prepared, urls)
+}
+
+pub(super) fn prepare_with_footnotes(
+    source: &str,
+    options: Options,
+) -> (String, HashMap<usize, String>, Vec<FootnoteMask>) {
+    if !source.contains("](") && !source.contains("[^") {
+        return (source.to_owned(), HashMap::new(), Vec::new());
     }
     let bytes = source.as_bytes();
     let mut output = bytes.to_vec();
     let mut links = HashMap::new();
     let mut rewritten = Vec::new();
+    let mut masked = Vec::new();
     let parser = Parser::new_ext(source, options);
     let references: HashSet<String> = parser
         .reference_definitions()
         .iter()
         .map(|(key, _)| reference_key(key))
         .collect();
-    let opaque = opaque_ranges(parser);
+    let (opaque, mut footnotes) = opaque_ranges(parser);
     let mut opaque_at = 0;
     let mut opens: Vec<Open> = Vec::new();
     let mut at = 0;
@@ -316,15 +347,26 @@ pub(super) fn prepare(source: &str, options: Options) -> (String, HashMap<usize,
             opens.push(Open {
                 at,
                 nested_link: false,
+                footnotes: Vec::new(),
             });
             at += 1;
             continue;
         }
         if bytes[at] == b']' {
             if let Some(open) = opens.pop() {
+                if let Some(note) = footnotes.remove(&open.at) {
+                    if let Some(parent) = opens.last_mut() {
+                        parent.footnotes.push(note);
+                    }
+                    at += 1;
+                    continue;
+                }
                 let image =
                     open.at > 0 && bytes[open.at - 1] == b'!' && !escaped(bytes, open.at - 1);
                 if let Some(dest) = inline_destination(bytes, at + 1) {
+                    if !image && !open.nested_link {
+                        masked.extend(open.footnotes.iter().cloned().map(|note| (open.at, note)));
+                    }
                     if dest.needs_rewrite && (image || !open.nested_link) {
                         let raw = &source[dest.start..dest.stop];
                         let decoded = if dest.angle {
@@ -363,6 +405,7 @@ pub(super) fn prepare(source: &str, options: Options) -> (String, HashMap<usize,
                     &source[open.at + 1..at]
                 };
                 if !image && !open.nested_link && references.contains(&reference_key(reference)) {
+                    masked.extend(open.footnotes.iter().cloned().map(|note| (open.at, note)));
                     for parent in &mut opens {
                         parent.nested_link = true;
                     }
@@ -373,40 +416,63 @@ pub(super) fn prepare(source: &str, options: Options) -> (String, HashMap<usize,
                         }
                     }
                 }
+                if !image && !references.contains(&reference_key(reference)) {
+                    if let Some(parent) = opens.last_mut() {
+                        parent.footnotes.extend(open.footnotes);
+                    }
+                }
             }
         }
         at += 1;
     }
-    if !rewritten.is_empty() {
+    // A marker absent from the source keeps offsets stable while pulldown finds the link.
+    let marker = (!masked.is_empty())
+        .then(|| (1u8..=31).find(|byte| !bytes.contains(byte) && *byte != b'\n' && *byte != b'\r'))
+        .flatten();
+    if let Some(marker) = marker {
+        for (_, note) in &masked {
+            output[note.start..note.end].fill(marker);
+        }
+    } else {
+        masked.clear();
+    }
+    if !rewritten.is_empty() || !masked.is_empty() {
         let candidate = std::str::from_utf8(&output).expect("replacement keeps UTF-8");
-        let active: HashSet<usize> = Parser::new_ext(candidate, options)
+        let active: Vec<_> = Parser::new_ext(candidate, options)
             .into_offset_iter()
-            .filter_map(|(event, range)| {
-                matches!(
-                    event,
-                    Event::Start(
-                        Tag::Link {
-                            link_type: LinkType::Inline,
-                            ..
-                        } | Tag::Image {
-                            link_type: LinkType::Inline,
-                            ..
-                        }
-                    )
-                )
-                .then_some(range.start)
+            .filter_map(|(event, range)| match event {
+                Event::Start(Tag::Link { link_type, .. } | Tag::Image { link_type, .. }) => {
+                    Some((range.start, link_type))
+                }
+                _ => None,
             })
             .collect();
+        let active_inline: HashSet<_> = active
+            .iter()
+            .filter_map(|(at, kind)| (*kind == LinkType::Inline).then_some(*at))
+            .collect();
+        let active_links: HashSet<_> = active.into_iter().map(|(at, _)| at).collect();
         for (key, start, stop) in rewritten {
-            if !active.contains(&key) {
+            if !active_inline.contains(&key) {
                 output[start..stop].copy_from_slice(&bytes[start..stop]);
                 links.remove(&key);
             }
         }
+        masked.retain(|(owner, note)| {
+            if active_links.contains(owner) {
+                true
+            } else {
+                output[note.start..note.end].copy_from_slice(&bytes[note.start..note.end]);
+                false
+            }
+        });
     }
+    let mut footnotes: Vec<_> = masked.into_iter().map(|(_, note)| note).collect();
+    footnotes.sort_by_key(|note| note.start);
     (
         String::from_utf8(output).expect("replacement keeps UTF-8"),
         links,
+        footnotes,
     )
 }
 

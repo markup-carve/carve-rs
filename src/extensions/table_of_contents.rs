@@ -231,7 +231,11 @@ impl CarveExtension for TableOfContents {
         };
         let toc = BlockNode::RawBlock(RawBlock {
             attrs: None,
-            format: "html".into(),
+            format: if self.opts.position == Position::Bottom {
+                "html-document".into()
+            } else {
+                "html".into()
+            },
             content: html,
             // Synthesized by an extension: no source span to report (PART 12 §4).
             pos: None,

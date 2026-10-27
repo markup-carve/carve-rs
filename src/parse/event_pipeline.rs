@@ -565,6 +565,10 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             continue;
         }
         if strip_blockquote_prefix(line).is_some() {
+            if line.contains("![") {
+                out.push(*parse_blockquote(&mut cur, options));
+                continue;
+            }
             if let Some((quote, end)) = parse_simple_quote(lines, cur.pos, options) {
                 cur.pos = end;
                 out.push(BlockNode::BlockQuote(quote));
@@ -641,6 +645,15 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
         } else {
             false
         };
+        if trim_ascii_start(line).starts_with("![") && detect_block_image(line).is_some() {
+            let mut item_bodies = Vec::new();
+            let block = parse_block(&mut cur, options, &mut item_bodies)?;
+            if !item_bodies.is_empty() {
+                return None;
+            }
+            out.push(*block);
+            continue;
+        }
         if !may_start_plain_paragraph(line) && !invalid_brace_line && !root_indented_text {
             if line.starts_with(":::") {
                 if detect_line_block_open(line).is_some() {
