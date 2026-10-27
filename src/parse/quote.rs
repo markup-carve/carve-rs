@@ -1437,7 +1437,7 @@ pub(in crate::parse) fn collect_blockquote_body(
         {
             continue;
         }
-        if body.lazy_ends_quote(cur, line) {
+        if body.lazy_ends_quote(cur, options, line) {
             break;
         }
         body.fold_lazy_line(cur, line);
@@ -2376,7 +2376,12 @@ impl<'a> QuoteBody<'a> {
     // and it already returns false for bullet/task/ordered markers, so we
     // simply defer to it. A heading is the sole construct a list marker
     // would otherwise end, and headings still interrupt via that predicate.
-    fn lazy_ends_quote(&mut self, cur: &mut LineCursor<'a>, line: &str) -> bool {
+    fn lazy_ends_quote(
+        &mut self,
+        cur: &mut LineCursor<'a>,
+        options: &Options<'_>,
+        line: &str,
+    ) -> bool {
         if self.attrs_closed_last {
             return true;
         }
@@ -2429,6 +2434,13 @@ impl<'a> QuoteBody<'a> {
         } else {
             fenced_below.unwrap_or_else(|| self.para_open.get())
         };
+        if self.inner.lines.last().is_some_and(|last| {
+            !last.text.starts_with(LAZY)
+                && detect_list_marker_full(strip_all_quotes(&last.text).0).is_some()
+                && !body_ends_with_open_paragraph(&last.text, options)
+        }) {
+            return true;
+        }
         let empty_marker_leaf = self.inner.lines.len() == 1
             && self.inner.lines.first().is_some_and(|source| {
                 let (leaf, levels) = strip_all_quotes(innermost_marker_content(&source.text));

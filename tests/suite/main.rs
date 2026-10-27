@@ -2605,3 +2605,6 @@ mod successive_continuation_markers;
 
 #[path = "../quoted_term_after_paragraph.rs"]
 mod quoted_term_after_paragraph;
+
+#[path = "../closed_nested_quote_leaf.rs"]
+mod closed_nested_quote_leaf;
