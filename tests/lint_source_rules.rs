@@ -426,6 +426,36 @@ fn repeated_unicode_warnings_keep_codepoint_columns() {
 }
 
 #[test]
+fn markdown_star_habit_reaches_parsed_emphasis_markers() {
+    for (source, line, column) in [
+        ("/**/ /**/", 1, 2),
+        ("/**/\n/**/", 1, 2),
+        ("> /**/ /**/", 1, 4),
+        ("- /**/ /**/", 1, 4),
+        ("::: note\n/**/ /**/\n:::", 2, 2),
+    ] {
+        let warnings: Vec<_> = lint_carve(source)
+            .into_iter()
+            .filter(|warning| warning.rule == "markdown-strong-double-star")
+            .collect();
+        assert!(
+            warnings
+                .iter()
+                .any(|warning| (warning.line, warning.column) == (line, column)),
+            "{source:?}: {warnings:?}"
+        );
+    }
+    for source in ["`/**/ /**/`", "```txt\n/**/ /**/\n```"] {
+        assert!(
+            !lint_carve(source)
+                .iter()
+                .any(|warning| warning.rule == "markdown-strong-double-star"),
+            "{source:?}"
+        );
+    }
+}
+
+#[test]
 fn region_marker_rendering_warning() {
     for source in [
         "#region demo",

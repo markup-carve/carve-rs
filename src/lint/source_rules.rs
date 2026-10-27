@@ -260,7 +260,14 @@ pub(super) fn collect(
         &scan.payload,
         out,
     );
-    collect_habits(source, &rows, &scan.text_runs, out);
+    collect_habits(
+        source,
+        &rows,
+        &scan.text_runs,
+        &scan.emphasis_runs,
+        &scan.opaque_runs,
+        out,
+    );
     scan.items.sort_by_key(|i| (i.first, i.content));
     let list_lines = ListScan::new(&rows, &scan, out).run(out);
     LineRules::new(&rows, &scan, &list_lines).run(out);
@@ -286,6 +293,8 @@ struct BlockScan<'d> {
     attached: BTreeSet<usize>,
     payload: BTreeSet<usize>,
     text_runs: Vec<(usize, usize)>,
+    emphasis_runs: Vec<(usize, usize)>,
+    opaque_runs: Vec<(usize, usize)>,
 }
 
 struct BlockWalker<'d, 'r> {
@@ -340,17 +349,26 @@ impl<'d> BlockScan<'d> {
         to_byte: &dyn Fn(usize) -> usize,
     ) {
         let mut text_spans = Vec::new();
+        let mut emphasis_spans = Vec::new();
+        let mut opaque_spans = Vec::new();
         while let Some((node, depth)) = inlines.pop() {
-            if matches!(
+            let opaque = matches!(
                 node,
                 InlineNode::Code(_)
                     | InlineNode::Math(_)
                     | InlineNode::RawInline(_)
                     | InlineNode::LiteralInline(_)
                     | InlineNode::Comment(_)
-            ) {
+            );
+            if opaque {
                 if let Some(pos) = node.pos() {
                     self.payload.extend((pos.start_line + 1)..=pos.end_line);
+                    opaque_spans.push((to_byte(pos.start_offset), to_byte(pos.end_offset)));
+                }
+            }
+            if let InlineNode::Emphasis(emphasis) = node {
+                if let Some(pos) = &emphasis.pos {
+                    emphasis_spans.push((to_byte(pos.start_offset), to_byte(pos.end_offset)));
                 }
             }
             if matches!(
@@ -363,20 +381,33 @@ impl<'d> BlockScan<'d> {
             }
             push_inline_children(node, depth, &mut inlines);
         }
-        text_spans.sort_unstable();
-        for (start, end) in text_spans {
-            if let Some(last) = self.text_runs.last_mut().filter(|last| last.1 == start) {
-                last.1 = end;
-            } else {
-                self.text_runs.push((start, end));
-            }
+        self.text_runs = merged_spans(text_spans);
+        self.emphasis_runs = merged_spans(emphasis_spans);
+        self.opaque_runs = merged_spans(opaque_spans);
+    }
+}
+
+fn merged_spans(mut spans: Vec<(usize, usize)>) -> Vec<(usize, usize)> {
+    spans.sort_unstable();
+    let mut merged: Vec<(usize, usize)> = Vec::new();
+    for (start, end) in spans {
+        if let Some(last) = merged.last_mut().filter(|last| last.1 >= start) {
+            last.1 = last.1.max(end);
+        } else {
+            merged.push((start, end));
         }
     }
+    merged
 }
 
 fn in_text(text_runs: &[(usize, usize)], start: usize, end: usize) -> bool {
     let i = text_runs.partition_point(|span| span.0 <= start);
     i > 0 && text_runs[i - 1].1 >= end
+}
+
+fn overlaps(spans: &[(usize, usize)], start: usize, end: usize) -> bool {
+    let i = spans.partition_point(|span| span.1 <= start);
+    spans.get(i).is_some_and(|span| span.0 < end)
 }
 
 fn byte_at_column(text: &str, column: usize) -> usize {
@@ -610,6 +641,8 @@ fn collect_habits(
     source: &str,
     rows: &[Line<'_>],
     text_runs: &[(usize, usize)],
+    emphasis_runs: &[(usize, usize)],
+    opaque_runs: &[(usize, usize)],
     out: &mut Vec<LintWarning>,
 ) {
     let habits = [
@@ -654,9 +687,13 @@ fn collect_habits(
             if slashes % 2 == 1 {
                 continue;
             }
-            if !in_text(text_runs, m.start(), m.start() + width)
-                || !in_text(text_runs, m.end() - width, m.end())
-            {
+            let authored = |start, end| {
+                (in_text(text_runs, start, end)
+                    || (*rule == "markdown-strong-double-star"
+                        && in_text(emphasis_runs, start, end)))
+                    && !overlaps(opaque_runs, start, end)
+            };
+            if !authored(m.start(), m.start() + width) || !authored(m.end() - width, m.end()) {
                 search = m.start() + 1;
                 continue;
             }
