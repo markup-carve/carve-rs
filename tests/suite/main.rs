@@ -2649,6 +2649,8 @@ mod list_table_caption_flush_follower;
 mod literal_quote_list_lead;
 #[path = "../markdown_link_footnotes.rs"]
 mod markdown_link_footnotes;
+#[path = "../nested_fence_blank_payload.rs"]
+mod nested_fence_blank_payload;
 #[path = "../outer_quote_after_lazy_inner.rs"]
 mod outer_quote_after_lazy_inner;
 #[path = "../quote_lazy_marker_ownership.rs"]

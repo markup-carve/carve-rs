@@ -433,7 +433,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                     }))
             {
                 let end = container.blank_run_end(cur.lines, cur.pos + 1);
-                let applies = cur.lines.line(end).is_some_and(|next| {
+                let outer_follower = cur.lines.line(end).is_some_and(|next| {
                     !is_blank_line(next)
                         && indent_columns(next) >= strip_cols
                         && !container.owns_continuation(next, cur.continuation_decision(end))
@@ -442,6 +442,14 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                                 && is_fence_close(trim_ascii_start(next), open)
                         })
                 });
+                let applies = outer_follower
+                    && cur
+                        .lines
+                        .line(end)
+                        .is_some_and(|next| is_plus_marker(trim_ascii_start(next)));
+                if outer_follower && !applies {
+                    discarded_outer_blank = true;
+                }
                 nested_blank_run = Some((end, 0, applies));
             }
             if let Some((end, kept, applies)) = nested_blank_run.as_mut() {
