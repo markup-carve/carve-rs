@@ -568,6 +568,33 @@ fn parse_unified_list(
             }
             if frames.len() > 1 {
                 if next.starts_with([' ', '\t']) {
+                    let next_indent = next.bytes().take_while(|byte| *byte == b' ').count();
+                    let frame = frames.last_mut()?;
+                    if next_indent == frame.content_indent {
+                        let content = &next[next_indent..];
+                        if strip_blockquote_prefix(content).is_some()
+                            || detect_fence_open(content).is_some()
+                            || detect_heading(content).is_some()
+                        {
+                            flush_unified_list_paragraph(frame)?;
+                            pos = after;
+                            continue;
+                        }
+                        if !is_list_marker(content) && may_start_plain_paragraph(content) {
+                            flush_unified_list_paragraph(frame)?;
+                            frame.node.tight = false;
+                            pos = after;
+                            continue;
+                        }
+                    }
+                    if next_indent == frame.indent
+                        && unified_list_marker(&next[next_indent..])
+                            .is_some_and(|(kind, _, _)| kind == frame.kind)
+                    {
+                        frame.node.tight = false;
+                        pos = after;
+                        continue;
+                    }
                     return None;
                 }
                 while frames.len() > 1 {
@@ -575,7 +602,7 @@ fn parse_unified_list(
                 }
             }
             let frame = frames.last_mut()?;
-            if let Some((kind, _, _)) = simple_list_marker(next) {
+            if let Some((kind, _, _)) = unified_list_marker(next) {
                 if kind != frame.kind {
                     break;
                 }
@@ -585,7 +612,7 @@ fn parse_unified_list(
             }
             let next_indent = next.bytes().take_while(|byte| *byte == b' ').count();
             if next_indent == frame.content_indent
-                && simple_list_marker(&next[next_indent..]).is_some()
+                && unified_list_marker(&next[next_indent..]).is_some()
             {
                 pos = after;
                 continue;
@@ -618,7 +645,7 @@ fn parse_unified_list(
             break;
         }
         let indent = line.bytes().take_while(|byte| *byte == b' ').count();
-        let marker = simple_list_marker(&line[indent..]);
+        let marker = unified_list_marker(&line[indent..]);
         if let Some((kind, ordinal, content)) = marker {
             while frames.len() > 1 && indent < frames.last()?.indent {
                 close_unified_list_frame(&mut frames)?;
@@ -685,7 +712,36 @@ fn parse_unified_list(
                 .node
                 .items
                 .push(UnifiedListItem { blocks: Vec::new() });
-            frame.paragraph.push(content);
+            let mut content = content;
+            while let Some((nested_kind, nested_ordinal, nested_content)) =
+                strict_list_marker(content)
+            {
+                if nested_kind == SimpleListKind::Ordered && nested_ordinal != 1 {
+                    return None;
+                }
+                if base_depth.saturating_add(frames.len() + 2) >= MAX_NESTING_DEPTH {
+                    return None;
+                }
+                let nested_indent = frames.last()?.content_indent;
+                frames.push(UnifiedListFrame {
+                    node: UnifiedListNode {
+                        kind: nested_kind,
+                        tight: true,
+                        items: vec![UnifiedListItem { blocks: Vec::new() }],
+                    },
+                    kind: nested_kind,
+                    indent: nested_indent,
+                    content_indent: nested_indent
+                        + if nested_kind == SimpleListKind::Ordered {
+                            3
+                        } else {
+                            2
+                        },
+                    paragraph: Vec::new(),
+                });
+                content = nested_content;
+            }
+            frames.last_mut()?.paragraph.push(content);
             pos += 1;
             continue;
         }
@@ -923,6 +979,79 @@ mod unified_list_tests {
         drop(_depth);
         let _depth = DepthScope::set(MAX_NESTING_DEPTH - 4);
         assert!(parse_unified_list(&lines, 0, &options).is_none());
+    }
+
+    #[test]
+    fn shared_owner_keeps_blank_separated_nested_item_content() {
+        let options = Options::default();
+        for source in [
+            "- - A\n\n    second\n  - B\n",
+            "- - A\n\n  - B\n",
+            "- - A\n\n    second\n\n  - B\n",
+        ] {
+            let lines: Vec<&str> = source.lines().collect();
+            let (list, consumed) =
+                parse_unified_list(&lines, 0, &options).unwrap_or_else(|| panic!("{source:?}"));
+            assert_eq!(consumed, lines.len(), "{source:?}");
+            assert_eq!(
+                BlockNode::List(list),
+                parse_with_options(source, &options).children[0]
+            );
+        }
+    }
+
+    #[test]
+    fn raw_fence_does_not_loosen_nested_list() {
+        let source = "- a\n\n  - b\n\n    ```=latex\n    \\x\n    ```\n";
+        let lines: Vec<&str> = source.lines().collect();
+        let direct = parse_unified_list(&lines, 0, &Options::default());
+        assert!(direct.is_some());
+        let (candidate, _) = parse_document(source).unwrap();
+        let standard = parse_with_options(source, &Options::default());
+        assert_eq!(candidate, standard);
+    }
+
+    #[test]
+    fn marker_line_nested_owner_matrix_matches_full_ast() {
+        let options = Options::default();
+        let mut checked = 0;
+        for outer in ["-", "1."] {
+            for inner in ["-", "1."] {
+                let content_indent = outer.len() + inner.len() + 2;
+                let sibling = if inner == "1." { "2." } else { "-" };
+                for blank in ["", "\n"] {
+                    for continuation in ["more", "# heading", "> quote", "```\ncode\n```"] {
+                        for has_sibling in [false, true] {
+                            let prefix = " ".repeat(content_indent);
+                            let continuation = continuation
+                                .lines()
+                                .map(|line| format!("{prefix}{line}\n"))
+                                .collect::<String>();
+                            let mut source = format!("{outer} {inner} a\n{blank}{continuation}");
+                            if has_sibling {
+                                source.push_str(&format!(
+                                    "{}{} b\n",
+                                    " ".repeat(outer.len() + 1),
+                                    sibling
+                                ));
+                            }
+                            let lines: Vec<&str> = source.lines().collect();
+                            if let Some((_, consumed)) = parse_unified_list(&lines, 0, &options) {
+                                if consumed == lines.len() {
+                                    checked += 1;
+                                    let expected = parse_with_options(&source, &options);
+                                    assert_eq!(expected.children.len(), 1, "{source:?}");
+                                    let (candidate, used) = parse_document(&source).unwrap();
+                                    assert!(used, "{source:?}");
+                                    assert_eq!(candidate, expected, "{source:?}");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(checked >= 20, "only {checked} generated cases were owned");
     }
 }
 
@@ -1552,6 +1681,20 @@ fn parse_simple_definition_list(
 }
 
 fn simple_list_marker(line: &str) -> Option<(SimpleListKind, usize, &str)> {
+    let (kind, ordinal, content) = strict_list_marker(line)?;
+    simple_list_content(content).then_some((kind, ordinal, content))
+}
+
+fn simple_list_content(content: &str) -> bool {
+    !(content.starts_with('[')
+        || is_list_marker(content)
+        || detect_heading(content).is_some()
+        || detect_fence_open(content).is_some()
+        || thematic_break_marker(content).is_some()
+        || !may_start_plain_paragraph(content))
+}
+
+fn strict_list_marker(line: &str) -> Option<(SimpleListKind, usize, &str)> {
     let bytes = line.as_bytes();
     let (kind, ordinal, marker_width) = match bytes {
         [b'-' | b'*', b' ', b' ', ..] => return None,
@@ -1566,17 +1709,27 @@ fn simple_list_marker(line: &str) -> Option<(SimpleListKind, usize, &str)> {
         _ => return None,
     };
     let content = trim_ascii_end(&line[marker_width..]);
-    if content.is_empty()
-        || content.starts_with('[')
-        || is_list_marker(content)
-        || detect_heading(content).is_some()
-        || detect_fence_open(content).is_some()
-        || thematic_break_marker(content).is_some()
-        || !may_start_plain_paragraph(content)
-    {
+    if content.is_empty() {
         return None;
     }
     Some((kind, ordinal, content))
+}
+
+fn unified_list_marker(line: &str) -> Option<(SimpleListKind, usize, &str)> {
+    let marker = strict_list_marker(line)?;
+    if simple_list_content(marker.2) {
+        return Some(marker);
+    }
+    let mut content = marker.2;
+    let mut nested = false;
+    while let Some((kind, ordinal, inner)) = strict_list_marker(content) {
+        if kind == SimpleListKind::Ordered && ordinal != 1 {
+            return None;
+        }
+        nested = true;
+        content = inner;
+    }
+    (nested && simple_list_content(content)).then_some(marker)
 }
 
 fn parse_simple_list(lines: &[&str], start: usize, options: &Options<'_>) -> Option<(List, usize)> {

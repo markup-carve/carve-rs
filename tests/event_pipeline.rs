@@ -96,6 +96,18 @@ fn nested_list_abbreviation_line_stays_in_list_item() {
 }
 
 #[test]
+fn repeated_marker_line_nested_lists_match_full_ast() {
+    let source = (0..300)
+        .map(|index| {
+            format!("- - item {index}\n\n    continuation {index}\n  - sibling {index}\n\n")
+        })
+        .collect::<String>();
+    let (candidate, admitted) = parse_experimental_event_blocks(&source);
+    assert!(admitted);
+    assert_eq!(candidate, parse_standard(&source));
+}
+
+#[test]
 fn indented_root_owner_matrix_matches_full_document() {
     let leads = [
         "",
