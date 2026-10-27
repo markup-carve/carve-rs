@@ -2629,6 +2629,8 @@ mod closed_nested_quote_leaf;
 
 #[path = "../block_image_paragraph_shape.rs"]
 mod block_image_paragraph_shape;
+#[path = "../braced_opener_marker_is_not_closer.rs"]
+mod braced_opener_marker_is_not_closer;
 #[path = "../combined_emphasis_code_visibility.rs"]
 mod combined_emphasis_code_visibility;
 #[path = "../indented_image_flush_caption.rs"]

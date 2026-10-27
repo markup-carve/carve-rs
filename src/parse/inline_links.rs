@@ -1304,6 +1304,26 @@ pub(in crate::parse) fn match_emphasis(
     base: usize,
 ) -> Option<(InlineNode, usize)> {
     let c = bytes[i];
+    if i > 0 && bytes[i - 1] == b'{' {
+        let unescaped_brace = |mark: usize| {
+            let brace = mark - 1;
+            let mut before = brace;
+            while before > 0 && bytes[before - 1] == b'\\' {
+                before -= 1;
+            }
+            (brace - before) % 2 == 0
+        };
+        if unescaped_brace(i)
+            && cached_find_emphasis_close(bytes, i + 1, c, no_close, bounds).is_some_and(|close| {
+                close > 0
+                    && bytes[close - 1] == b'{'
+                    && bytes.get(close + 1) == Some(&b'}')
+                    && unescaped_brace(close)
+            })
+        {
+            return None;
+        }
+    }
 
     // /*bold italic*/ -- a combined Strong>Emphasis span. The grammar
     // (`boldItalic = "/*" ~spaceOrEnd biInner+ "*/"`) requires the content to
