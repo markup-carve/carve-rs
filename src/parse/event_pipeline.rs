@@ -2879,33 +2879,9 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     Some((doc, used_event_route))
 }
 
-fn has_embedded_footnote_definition(line: &str) -> bool {
-    line.find("[^")
-        .is_some_and(|start| parse_footnote_def_line(&line[start..]).is_some())
-}
-
-fn has_link_definition_after_prefix(line: &str) -> bool {
-    if !line.contains("]:") {
-        return false;
-    }
-    if line.len() > 1024 && line.match_indices('[').nth(32).is_some() {
-        return true;
-    }
-    line.match_indices('[')
-        .any(|(start, _)| parse_link_def_line(&line[start..]).is_some())
-}
-
 fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Document, bool)> {
     let may_have_abbrevs = source.contains("*[");
     if needs_event_normalization(source) || has_fence_candidate_without_final_newline(source) {
-        return None;
-    }
-    if source.lines().any(|line| {
-        line.contains("]:")
-            && !trim_ascii_start(line).starts_with("[^")
-            && detect_abbreviation_def(line).is_none()
-            && !has_embedded_footnote_definition(line)
-    }) {
         return None;
     }
     let options = Options::default();
@@ -2935,38 +2911,55 @@ fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Doc
             &options,
         );
     }
-    if mapped.source.lines().any(has_link_definition_after_prefix)
-        || !note_links.is_empty()
-        || footnote_sources
-            .values()
-            .any(|note| note.source.contains("*["))
+    if footnote_sources
+        .values()
+        .any(|note| note.source.contains("*["))
     {
         return None;
     }
-    let children = {
+    let mut budget = probe_budget_for(mapped.source.len());
+    let (body_source, mut link_defs) =
+        extract_link_defs_guarded(&mapped.source, &options, &mut budget);
+    for def in link_defs.values_mut() {
+        if let Some(line) = def.line {
+            def.line = mapped
+                .line_map
+                .get(line)
+                .and_then(|mapped| *mapped)
+                .map(|authored| authored - 1)
+                .or(def.line);
+        }
+    }
+    for (label, def) in note_links {
+        link_defs.entry(label).or_insert(def);
+    }
+    let mapped = remap_source(body_source, &mapped);
+    let (parsed, link_defs, needs_late_resolution) = with_active_link_defs(link_defs, || {
         let _depth = DepthGuard::enter()?;
+        let footnote_defs = footnote_sources
+            .into_iter()
+            .map(|(label, note)| {
+                let children = if note.source.trim_end_matches([' ', '\t', '\n']) == "{empty}" {
+                    Vec::new()
+                } else {
+                    let lines: Vec<&str> = note.source.lines().collect();
+                    parse_blocks(&lines, &options)
+                        .unwrap_or_else(|| parse_mapped_source(&note, &options))
+                };
+                (label, children)
+            })
+            .collect();
         let lines: Vec<&str> = mapped.source.lines().collect();
-        parse_blocks(&lines, &options).or_else(|| {
+        let children = parse_blocks(&lines, &options).or_else(|| {
             if may_have_abbrevs {
                 parse_mixed_blocks::<true, true>(&lines, &options, true)
             } else {
                 parse_mixed_blocks::<true, false>(&lines, &options, true)
             }
-        })?
-    };
-    let footnote_defs = footnote_sources
-        .into_iter()
-        .map(|(label, note)| {
-            let children = if note.source.trim_end_matches([' ', '\t', '\n']) == "{empty}" {
-                Vec::new()
-            } else {
-                let lines: Vec<&str> = note.source.lines().collect();
-                parse_blocks(&lines, &options)
-                    .unwrap_or_else(|| parse_mapped_source(&note, &options))
-            };
-            (label, children)
-        })
-        .collect();
+        })?;
+        Some((children, footnote_defs))
+    });
+    let (children, footnote_defs) = parsed?;
     let mut doc = Document {
         frontmatter,
         frontmatter_raw,
@@ -2976,10 +2969,11 @@ fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Doc
         source_len,
         ingest_payload_len: 0,
     };
-    if source.contains("][") {
+    if needs_late_resolution || source.contains("][") {
         let headings = heading_reference_index_for_document(&doc, options.heading_id_options());
-        resolve_reference_links(&mut doc, &BTreeMap::new(), &headings);
+        resolve_reference_links(&mut doc, &link_defs, &headings);
     }
+    append_link_reference_definitions(&mut doc, &link_defs, source, None);
     if may_have_abbrevs {
         apply_abbreviations(&mut doc);
     }
@@ -3244,14 +3238,6 @@ fn parse_document_with_footnotes_options(
     if needs_event_normalization(source) || has_fence_candidate_without_final_newline(source) {
         return None;
     }
-    if source.lines().any(|line| {
-        line.contains("]:")
-            && !trim_ascii_start(line).starts_with("[^")
-            && detect_abbreviation_def(line).is_none()
-            && !has_embedded_footnote_definition(line)
-    }) {
-        return None;
-    }
     let _placeholders = PlaceholderGuard::install(pick_definition_placeholders(source));
     let _continuation_markers = continuation_marker::Guard::install(source);
     let _source_ending = if !options.positions && source.ends_with('\n') {
@@ -3285,11 +3271,9 @@ fn parse_document_with_footnotes_options(
             options,
         );
     }
-    if mapped.source.lines().any(has_link_definition_after_prefix)
-        || !note_links.is_empty()
-        || footnote_sources
-            .values()
-            .any(|note| note.source.contains("*["))
+    if footnote_sources
+        .values()
+        .any(|note| note.source.contains("*["))
     {
         return None;
     }
@@ -3298,10 +3282,27 @@ fn parse_document_with_footnotes_options(
     {
         return None;
     }
-    let children = {
+    let mut budget = probe_budget_for(mapped.source.len());
+    let (body_source, mut link_defs) =
+        extract_link_defs_guarded(&mapped.source, options, &mut budget);
+    for def in link_defs.values_mut() {
+        if let Some(line) = def.line {
+            def.line = mapped
+                .line_map
+                .get(line)
+                .and_then(|mapped| *mapped)
+                .map(|authored| authored - 1)
+                .or(def.line);
+        }
+    }
+    for (label, def) in note_links {
+        link_defs.entry(label).or_insert(def);
+    }
+    let mapped = remap_source(body_source, &mapped);
+    let (parsed, link_defs, needs_late_resolution) = with_active_link_defs(link_defs, || {
         let _depth = DepthGuard::enter()?;
         let lines: Vec<&str> = mapped.source.lines().collect();
-        if options.positions || options.source_lines {
+        let children = if options.positions || options.source_lines {
             parse_mixed_blocks_mapped::<true, false>(&lines, options, Some(&mapped.line_map), true)?
         } else {
             parse_blocks(&lines, options).or_else(|| {
@@ -3311,25 +3312,27 @@ fn parse_document_with_footnotes_options(
                     parse_mixed_blocks::<true, false>(&lines, options, true)
                 }
             })?
-        }
-    };
-    let footnote_defs = footnote_sources
-        .into_iter()
-        .map(|(label, note)| {
-            let children = if note.source.trim_end_matches([' ', '\t', '\n']) == "{empty}" {
-                Vec::new()
-            } else {
-                let lines: Vec<&str> = note.source.lines().collect();
-                if options.positions || options.source_lines {
-                    parse_mapped_source(&note, options)
+        };
+        let footnote_defs = footnote_sources
+            .into_iter()
+            .map(|(label, note)| {
+                let children = if note.source.trim_end_matches([' ', '\t', '\n']) == "{empty}" {
+                    Vec::new()
                 } else {
-                    parse_blocks(&lines, options)
-                        .unwrap_or_else(|| parse_mapped_source(&note, options))
-                }
-            };
-            (label, children)
-        })
-        .collect();
+                    let lines: Vec<&str> = note.source.lines().collect();
+                    if options.positions || options.source_lines {
+                        parse_mapped_source(&note, options)
+                    } else {
+                        parse_blocks(&lines, options)
+                            .unwrap_or_else(|| parse_mapped_source(&note, options))
+                    }
+                };
+                (label, children)
+            })
+            .collect();
+        Some((children, footnote_defs))
+    });
+    let (children, footnote_defs) = parsed?;
     let mut doc = Document {
         frontmatter,
         frontmatter_raw,
@@ -3360,10 +3363,14 @@ fn parse_document_with_footnotes_options(
             end_at_last_placed_child(pos, last);
         }
     }
-    if source.contains("][") {
+    if needs_late_resolution || source.contains("][") {
         let headings = heading_reference_index_for_document(&doc, options.heading_id_options());
-        resolve_reference_links(&mut doc, &BTreeMap::new(), &headings);
+        resolve_reference_links(&mut doc, &link_defs, &headings);
     }
+    let original_line_starts = options
+        .positions
+        .then(|| CodepointLineStarts::original(original_source));
+    append_link_reference_definitions(&mut doc, &link_defs, source, original_line_starts.as_ref());
     if may_have_abbrevs {
         apply_abbreviations(&mut doc);
     }

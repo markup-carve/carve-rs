@@ -2063,7 +2063,7 @@ fn nested_footnote_markers_survive_link_definition_guard() {
         "x[^n]\n\n[^n]: [x][id]\n  [id]: /x\n",
     ] {
         let (candidate, admitted) = parse_experimental_event_blocks(source);
-        assert!(!admitted, "{source:?}");
+        assert!(admitted, "{source:?}");
         assert_eq!(candidate, parse_standard(source), "{source:?}");
         for options in [
             Options::default(),
@@ -2075,7 +2075,7 @@ fn nested_footnote_markers_survive_link_definition_guard() {
         ] {
             let (candidate, admitted) =
                 parse_experimental_event_blocks_with_options(source, &options);
-            assert!(!admitted, "{source:?}");
+            assert!(admitted, "{source:?}");
             assert_eq!(
                 candidate,
                 parse_with_options(source, &options),
@@ -2193,16 +2193,16 @@ fn footnote_like_lines_after_extraction_keep_link_semantics() {
     }
     let source = "[^]: /url\n\nsee [x][^].\n";
     let (_, admitted) = parse_experimental_event_blocks(source);
-    assert!(!admitted);
+    assert!(admitted);
     let source = "> [r]: /url \"[^a]: x\"\n\nroot [r][]\n";
     let (_, admitted) = parse_experimental_event_blocks(source);
-    assert!(!admitted);
+    assert!(admitted);
     let bracket_heavy = format!(
         "see[^n]\n\n{}{}[^n]: note\n",
         "[".repeat(33),
         "x".repeat(1025)
     );
     let (candidate, admitted) = parse_experimental_event_blocks(&bracket_heavy);
-    assert!(!admitted);
+    assert!(admitted);
     assert_eq!(candidate, parse_standard(&bracket_heavy));
 }
