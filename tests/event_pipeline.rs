@@ -63,7 +63,8 @@ fn hash_prose_does_not_turn_a_list_heading_into_a_paragraph() {
         "- # In an item\n\nSee [In an item][].\n",
         "- ## In an item\n\nSee [In an item][].\n",
     ] {
-        let (actual, _) = parse_experimental_event_blocks(heading_in_item);
+        let (actual, admitted) = parse_experimental_event_blocks(heading_in_item);
+        assert!(admitted, "{heading_in_item:?}");
         let expected = parse_standard(heading_in_item);
         assert_eq!(to_json(&actual), to_json(&expected));
         assert_eq!(render_html(&actual), render_html(&expected));
