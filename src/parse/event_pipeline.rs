@@ -1111,6 +1111,20 @@ fn parse_unified_list(
     parse_unified_list_mapped(lines, start, options, None)
 }
 
+fn direct_list_image_line_is_supported(content: &str) -> Option<()> {
+    detect_block_image(content).is_none().then_some(())
+}
+
+fn unified_list_paragraph_accepts(content: &str, has_paragraph: bool) -> bool {
+    (if has_paragraph {
+        may_continue_plain_paragraph(content)
+    } else {
+        may_start_plain_paragraph(content)
+    }) && !is_list_marker(content)
+        && detect_fence_open(content).is_none()
+        && thematic_break_marker(content).is_none()
+}
+
 fn parse_unified_list_mapped(
     lines: &[&str],
     start: usize,
@@ -1310,9 +1324,7 @@ fn parse_unified_list_mapped(
             if is_plus_marker(content) {
                 start_marker_line_list_continuation(&mut frames, decision)?;
             } else {
-                if detect_block_image(content).is_some() {
-                    return None;
-                }
+                direct_list_image_line_is_supported(content)?;
                 frames.last_mut()?.paragraph.push(content);
             }
             pos += 1;
@@ -1327,9 +1339,7 @@ fn parse_unified_list_mapped(
             return None;
         }
         let content = trim_ascii_end(&line[indent..]);
-        if detect_block_image(content).is_some() {
-            return None;
-        }
+        direct_list_image_line_is_supported(content)?;
         if detect_fence_open(content).is_some() {
             let (block, end) = parse_unified_list_fence(lines, pos, frame.content_indent, options)?;
             flush_unified_list_paragraph(frame)?;
@@ -1381,14 +1391,7 @@ fn parse_unified_list_mapped(
             pos += 1;
             continue;
         }
-        if !(if frame.paragraph.is_empty() {
-            may_start_plain_paragraph(content)
-        } else {
-            may_continue_plain_paragraph(content)
-        }) || is_list_marker(content)
-            || detect_fence_open(content).is_some()
-            || thematic_break_marker(content).is_some()
-        {
+        if !unified_list_paragraph_accepts(content, !frame.paragraph.is_empty()) {
             return None;
         }
         frame.paragraph.push(content);
