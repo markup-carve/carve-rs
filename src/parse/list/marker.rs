@@ -657,7 +657,19 @@ pub(crate) fn parse_continuation_block(
     pull_indent: usize,
 ) -> Option<BlockNode> {
     // Definitions belong to the attached block. Nested lists manage their own markers.
-    while cur.peek().is_some_and(is_document_definition_placeholder) {
+    let mut next_visible = cur.pos;
+    while cur.lines.line(next_visible).is_some_and(|line| {
+        is_document_definition_placeholder(line) || is_line_comment_any_column(line)
+    }) {
+        next_visible += 1;
+    }
+    let comments_precede_block = cur.lines.line(next_visible).is_some_and(|line| {
+        !is_blank_line(line) && !(trim_ascii(line) == "+" && indent_columns(line) == base_indent)
+    });
+    while cur.peek().is_some_and(|line| {
+        is_document_definition_placeholder(line)
+            || comments_precede_block && is_line_comment_any_column(line)
+    }) {
         cur.consume();
     }
     if let Some(line) = cur.peek() {

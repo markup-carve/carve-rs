@@ -2260,13 +2260,15 @@ impl<'a> QuoteBody<'a> {
                 is_blank_line(next) || (trim_ascii(next) == "+" && indent_columns(next) == 0)
             },
         );
-        if cursor_lines
-            .line(cur.pos)
-            .is_some_and(is_line_comment_any_column)
+        while attach_end > cur.pos
             && cursor_lines
-                .line(attach_end)
-                .is_some_and(|next| indent_columns(next) == 0 && line_starts_paragraph(next))
+                .line(attach_end - 1)
+                .is_some_and(is_line_comment_any_column)
+            && cursor_lines.line(attach_end).is_some_and(|next| {
+                !is_blank_line(next) && !(trim_ascii(next) == "+" && indent_columns(next) == 0)
+            })
         {
+            let prior_end = attach_end;
             attach_end = attached_block_lines_classified(
                 cursor_lines,
                 attach_end,
@@ -2275,6 +2277,9 @@ impl<'a> QuoteBody<'a> {
                 options,
                 &mut |next, _| is_blank_line(next) || is_plus_marker(next),
             );
+            if attach_end == prior_end {
+                break;
+            }
         }
         while cur.pos < attach_end {
             let next = cur.lines.at(cur.pos);
