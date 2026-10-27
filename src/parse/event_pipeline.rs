@@ -1075,17 +1075,19 @@ fn long_literal_inline(text: &str) -> bool {
     }
     let bytes = text.as_bytes();
     for (index, &byte) in bytes.iter().enumerate() {
-        let previous = index.checked_sub(1).and_then(|at| bytes.get(at)).copied();
+        if byte.is_ascii_alphanumeric() || !byte.is_ascii() {
+            continue;
+        }
         let literal = match byte {
             b'\n' | b' ' | b'.' | b',' | b';' | b'?' | b'&' | b'(' | b')' => true,
             b'!' => bytes.get(index + 1) != Some(&b'='),
             b'-' => bytes.get(index + 1) != Some(&b'-'),
             b':' | b'#' | b'@' => {
-                previous.is_some_and(|prev| prev.is_ascii_alphanumeric() || prev == b'_')
+                index > 0 && (bytes[index - 1].is_ascii_alphanumeric() || bytes[index - 1] == b'_')
             }
             b'\\' | b'%' | b'`' | b'$' | b'{' | b'}' | b'[' | b']' | b'<' | b'>' | b'/' | b'*'
             | b'_' | b'~' | b'=' | b'^' | b'+' | b'\'' | b'"' => false,
-            _ => byte.is_ascii_alphanumeric() || !byte.is_ascii(),
+            _ => false,
         };
         if !literal {
             return false;
@@ -1105,7 +1107,15 @@ mod inline_lexer_tests {
     fn long_literal_gate_admits_only_safe_text() {
         assert!(!long_literal_inline(&"a".repeat(127)));
         assert!(long_literal_inline(&"a".repeat(128)));
-        for safe in ["café, 日本語", "carve#529", "foo:bar", "a@b", "a & b", "-x"] {
+        for safe in [
+            "café, 日本語",
+            "carve#529",
+            "foo:bar",
+            "a@b",
+            "a & b",
+            "-x",
+            "x!",
+        ] {
             assert!(
                 long_literal_inline(&format!("{} {safe}", "a".repeat(128))),
                 "{safe}"
@@ -1120,11 +1130,21 @@ mod inline_lexer_tests {
             "...",
             "(c)",
             "*strong*",
+            "\t",
+            "\r",
+            "|",
+            "é:x",
         ] {
             assert!(
                 !long_literal_inline(&format!("{} {syntax}", "a".repeat(128))),
                 "{syntax}"
             );
+        }
+        for marker in ["#tag", ":symbol:", "@mention"] {
+            assert!(!long_literal_inline(&format!(
+                "{marker} {}",
+                "a".repeat(128)
+            )));
         }
     }
 }
