@@ -2587,3 +2587,6 @@ mod html_shortcut_parser_parity;
 
 #[path = "../bare_delimiter_after_literal_brackets.rs"]
 mod bare_delimiter_after_literal_brackets;
+
+#[path = "../outer_item_loose_after_nested_first_block.rs"]
+mod outer_item_loose_after_nested_first_block;

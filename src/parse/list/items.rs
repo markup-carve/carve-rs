@@ -1805,17 +1805,16 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // (carve-rs#490). #476 fixed the attribute-block, quote and heading
         // leads beside this one and left the sub-list lead open, because
         // carve-php agreed with this engine at the time and carve-js did not.
-        // The bare nested marker is a separate event: its following blank
-        // reaches the outer content column before the deferred child tree
-        // exists, so carry this boundary into the list's tightness now.
-        let blank_after_bare_nested_marker = lead.nested_lead_is_continuation
-            && self.cur.lines.line(item_at + 1).is_some_and(is_blank_line)
-            && self.cur.lines.line(item_at + 2).is_some_and(|line| {
-                indent_columns(line) == content_col
-                    && (is_plus_marker(trim_ascii_start(line))
-                        || line_starts_paragraph(trim_ascii_start(line)))
-            });
-        if blank_after_bare_nested_marker {
+        // A stacked first block can consume its following blank before the
+        // deferred child tree exists. Keep that boundary for the outer item.
+        let blank_after_nested_first_block =
+            self.cur.lines.line(item_at + 1).is_some_and(is_blank_line)
+                && self.cur.lines.line(item_at + 2).is_some_and(|line| {
+                    indent_columns(line) == content_col
+                        && (is_plus_marker(trim_ascii_start(line))
+                            || line_starts_paragraph(trim_ascii_start(line)))
+                });
+        if blank_after_nested_first_block {
             self.tight = false;
         }
         if sublist_source_trailing_invisible_separation(&stream.source) {
