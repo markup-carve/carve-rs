@@ -1305,17 +1305,47 @@ fn root_attributes_before_a_footnote_keep_exact_output() {
 }
 
 #[test]
-fn nested_footnote_definitions_use_standard_parser() {
-    for source in [
-        "Text[^outer]\n\n[^outer]: Inside[^inner].\n[^inner]: Nested.\n",
-        "- a[^n]\n\n  [^n]: note\n- b\n",
-        "1. a[^n]\n\n   [^n]: note\n2. b\n",
+fn nested_footnote_definitions_keep_exact_output() {
+    for (source, expected_admission) in [
+        (
+            "Text[^outer]\n\n[^outer]: Inside[^inner].\n[^inner]: Nested.\n",
+            true,
+        ),
+        ("- a[^n]\n\n  [^n]: note\n- b\n", false),
+        ("1. a[^n]\n\n   [^n]: note\n2. b\n", false),
     ] {
         let (actual, admitted) = parse_experimental_event_blocks(source);
-        assert!(!admitted, "{source:?}");
+        assert_eq!(admitted, expected_admission, "{source:?}");
         let expected = parse_standard(source);
         assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
         assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn nested_footnote_definitions_keep_source_lines_and_positions() {
+    for source in [
+        "Text[^outer]\n\n[^outer]: Inside[^inner].\n[^inner]: Nested.\n",
+        "[^outer]: intro\n\n     [^inner]: note\n\n     see[^inner]\n\nsee[^outer]\n",
+    ] {
+        for options in [
+            Options::default(),
+            Options::default().with_source_lines(true),
+            Options::default().with_positions(true),
+            Options::default()
+                .with_positions(true)
+                .with_source_lines(true),
+        ] {
+            let (candidate, admitted) =
+                parse_experimental_event_blocks_with_options(source, &options);
+            assert!(admitted, "{source:?}");
+            assert_eq!(
+                candidate,
+                parse_with_options(source, &options),
+                "{source:?}"
+            );
+        }
     }
 }
 

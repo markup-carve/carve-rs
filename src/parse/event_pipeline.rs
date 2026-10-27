@@ -2867,8 +2867,19 @@ fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Doc
         .filter(|byte| *byte == b'\n')
         .count()
         + 1;
-    let (mapped, footnote_sources, footnote_def_pos, note_links) =
+    let (mapped, mut footnote_sources, mut footnote_def_pos, mut note_links) =
         extract_footnote_defs(body, body_start_line, false, false, None, &options);
+    if footnote_sources
+        .values()
+        .any(|note| note.source.contains("[^"))
+    {
+        extract_nested_footnote_defs(
+            &mut footnote_sources,
+            &mut footnote_def_pos,
+            &mut note_links,
+            &options,
+        );
+    }
     if mapped
         .source
         .lines()
@@ -2880,7 +2891,7 @@ fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Doc
         || !note_links.is_empty()
         || footnote_sources
             .values()
-            .any(|note| note.source.contains("[^") || note.source.contains("*["))
+            .any(|note| note.source.contains("*["))
     {
         return None;
     }
@@ -3205,14 +3216,26 @@ fn parse_document_with_footnotes_options(
         .filter(|byte| *byte == b'\n')
         .count()
         + 1;
-    let (mapped, footnote_sources, footnote_def_pos, note_links) = extract_footnote_defs(
-        body,
-        body_start_line,
-        options.positions,
-        false,
-        None,
-        options,
-    );
+    let (mapped, mut footnote_sources, mut footnote_def_pos, mut note_links) =
+        extract_footnote_defs(
+            body,
+            body_start_line,
+            options.positions,
+            false,
+            None,
+            options,
+        );
+    if footnote_sources
+        .values()
+        .any(|note| note.source.contains("[^"))
+    {
+        extract_nested_footnote_defs(
+            &mut footnote_sources,
+            &mut footnote_def_pos,
+            &mut note_links,
+            options,
+        );
+    }
     if mapped
         .source
         .lines()
@@ -3224,7 +3247,7 @@ fn parse_document_with_footnotes_options(
         || !note_links.is_empty()
         || footnote_sources
             .values()
-            .any(|note| note.source.contains("[^") || note.source.contains("*["))
+            .any(|note| note.source.contains("*["))
     {
         return None;
     }
