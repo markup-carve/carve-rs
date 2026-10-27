@@ -1053,16 +1053,33 @@ mod rules {
     fn i1_syntax_an_inverted_line_range_warns_and_stays_literal() {
         let source = "{{ child @lines:3-1 }}";
         let result = expand(source, &[("child", "a\nb\nc")]);
-        assert_eq!(result.rules(), vec!["include-unknown-option"]);
+        assert_eq!(result.rules(), vec!["include-lines-invalid"]);
         assert_eq!(result.html, literal_html(source));
+        assert_eq!(result.dependencies, vec![dep("child", true)]);
     }
 
     #[test]
     fn i1_syntax_a_zero_based_line_range_is_malformed() {
         let source = "{{ child @lines:0-2 }}";
         let result = expand(source, &[("child", "a\nb\nc")]);
-        assert_eq!(result.rules(), vec!["include-unknown-option"]);
+        assert_eq!(result.rules(), vec!["include-lines-invalid"]);
         assert_eq!(result.html, literal_html(source));
+        assert_eq!(result.dependencies, vec![dep("child", true)]);
+    }
+
+    #[test]
+    fn i1_invalid_line_selectors_keep_resolved_dependencies_in_both_positions() {
+        for value in ["01-2", "2-1", "0-2", "x", "1-"] {
+            for source in [
+                format!("{{{{ child @lines:{value} }}}}"),
+                format!("before {{{{ child @lines:{value} }}}} after"),
+            ] {
+                let result = expand(&source, &[("child", "one\ntwo\n")]);
+                assert_eq!(result.rules(), vec!["include-lines-invalid"], "{source}");
+                assert_eq!(result.dependencies, vec![dep("child", true)], "{source}");
+                assert_eq!(result.html, literal_html(&source), "{source}");
+            }
+        }
     }
 
     #[test]
