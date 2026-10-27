@@ -62,6 +62,7 @@ fn hash_prose_does_not_turn_a_list_heading_into_a_paragraph() {
     for heading_in_item in [
         "- # In an item\n\nSee [In an item][].\n",
         "- ## In an item\n\nSee [In an item][].\n",
+        "> - a\n>\n>   ### b ###\n",
     ] {
         let (actual, admitted) = parse_experimental_event_blocks(heading_in_item);
         assert!(admitted, "{heading_in_item:?}");
@@ -69,6 +70,18 @@ fn hash_prose_does_not_turn_a_list_heading_into_a_paragraph() {
         assert_eq!(to_json(&actual), to_json(&expected));
         assert_eq!(render_html(&actual), render_html(&expected));
     }
+}
+
+#[test]
+fn headings_inside_list_frames_match_public_output() {
+    let source = (0..120)
+        .map(|index| format!("- item {index}\n  # Heading {index}\n"))
+        .collect::<String>();
+    let (actual, admitted) = parse_experimental_event_blocks(&source);
+    assert!(admitted);
+    let expected = parse_standard(&source);
+    assert_eq!(to_json(&actual), to_json(&expected));
+    assert_eq!(render_html(&actual), render_html(&expected));
 }
 
 #[test]

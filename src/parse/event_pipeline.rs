@@ -336,8 +336,7 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
 enum UnifiedListBlock<'a> {
     Paragraph(Vec<&'a str>),
     List(UnifiedListNode<'a>),
-    Quote(BlockQuote),
-    Fenced(BlockNode),
+    Block(Box<BlockNode>),
 }
 
 struct UnifiedListItem<'a> {
@@ -417,8 +416,7 @@ fn build_unified_list(node: UnifiedListNode<'_>, options: &Options<'_>) -> List 
                     UnifiedListBlock::List(child) => {
                         BlockNode::List(build_unified_list(child, options))
                     }
-                    UnifiedListBlock::Quote(quote) => BlockNode::BlockQuote(quote),
-                    UnifiedListBlock::Fenced(block) => block,
+                    UnifiedListBlock::Block(block) => *block,
                 })
                 .collect(),
             pos: None,
@@ -576,6 +574,7 @@ fn parse_unified_list(
                 flush_unified_list_paragraph(frame)?;
                 if strip_blockquote_prefix(&next[next_indent..]).is_none()
                     && detect_fence_open(&next[next_indent..]).is_none()
+                    && detect_heading(&next[next_indent..]).is_none()
                 {
                     frame.node.tight = false;
                 }
@@ -676,7 +675,7 @@ fn parse_unified_list(
                 .items
                 .last_mut()?
                 .blocks
-                .push(UnifiedListBlock::Fenced(block));
+                .push(UnifiedListBlock::Block(Box::new(block)));
             pos = end;
             continue;
         }
@@ -695,8 +694,28 @@ fn parse_unified_list(
                 .items
                 .last_mut()?
                 .blocks
-                .push(UnifiedListBlock::Quote(quote));
+                .push(UnifiedListBlock::Block(Box::new(BlockNode::BlockQuote(
+                    quote,
+                ))));
             pos = end;
+            continue;
+        }
+        if let Some((level, text)) = detect_heading(content) {
+            flush_unified_list_paragraph(frame)?;
+            frame
+                .node
+                .items
+                .last_mut()?
+                .blocks
+                .push(UnifiedListBlock::Block(Box::new(BlockNode::Heading(
+                    Heading {
+                        attrs: None,
+                        level,
+                        children: parse_event_inlines(trim_ascii_end(text), options),
+                        pos: None,
+                    },
+                ))));
+            pos += 1;
             continue;
         }
         if !(if frame.paragraph.is_empty() {
@@ -706,7 +725,6 @@ fn parse_unified_list(
         }) || is_list_marker(content)
             || detect_fence_open(content).is_some()
             || thematic_break_marker(content).is_some()
-            || detect_heading(content).is_some()
         {
             return None;
         }
@@ -724,6 +742,17 @@ fn parse_unified_list(
 #[cfg(test)]
 mod unified_list_tests {
     use super::*;
+
+    #[test]
+    fn shared_owner_builds_item_headings() {
+        for source in ["- a\n  # H\n", "- a\n\n  # H\n"] {
+            let lines: Vec<&str> = source.lines().collect();
+            let (list, consumed) = parse_unified_list(&lines, 0, &Options::default()).unwrap();
+            assert_eq!(consumed, lines.len());
+            assert!(list.tight);
+            assert!(matches!(list.items[0].children[1], BlockNode::Heading(_)));
+        }
+    }
 
     #[test]
     fn shared_owner_builds_marked_quote() {
