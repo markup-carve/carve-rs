@@ -1673,6 +1673,11 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     ) {
         let content_col = self.content_col;
         loop {
+            if self.cur.peek().is_some_and(|line| {
+                marked_quote_at_ancestor_column(line, content_col, lead.nested_content_col)
+            }) {
+                break;
+            }
             if ended_on_blank {
                 break;
             }
@@ -1808,15 +1813,21 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             return None;
         }
         let before = cur.pos;
-        collect_trailing_lazy_through(
+        collect_marker_sublist_lazy_through(
             cur,
             stream,
             nested_content_col.saturating_sub(1),
             base_indent,
             nested_content_col,
+            content_col,
         );
         if cur.pos == before {
             return None;
+        }
+        if cur.peek().is_some_and(|line| {
+            marked_quote_at_ancestor_column(line, content_col, nested_content_col)
+        }) {
+            return Some(false);
         }
         let before_block = cur.pos;
         stream.append(collect_indented_block_mapped(
