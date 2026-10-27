@@ -1064,6 +1064,43 @@ fn unresolved_footnote_at(source: &str, at: usize) -> Option<(String, usize)> {
     ))
 }
 
+fn fallback_footnote_text(
+    event: &Event<'_>,
+    source: &str,
+    at: usize,
+    consumed_until: usize,
+    frames: &[Frame],
+) -> Option<(Option<Footnote>, usize)> {
+    if !matches!(event, Event::Text(_))
+        || matches!(
+            frames.last(),
+            Some(
+                Frame::CodeBlock { .. }
+                    | Frame::HtmlCode { .. }
+                    | Frame::RawHtml(_)
+                    | Frame::Metadata(_)
+            )
+        )
+    {
+        return None;
+    }
+    if at < consumed_until {
+        return Some((None, consumed_until));
+    }
+    let (label, end) = unresolved_footnote_at(source, at)?;
+    Some((
+        Some(Footnote {
+            attrs: None,
+            id: Some(label),
+            inline: None,
+            number: None,
+            ref_id: None,
+            pos: None,
+        }),
+        end,
+    ))
+}
+
 fn plain_reference_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')
 }
@@ -1283,34 +1320,18 @@ fn markdown_to_ast_with_code_lines(
         }
         builder.current_line =
             claimed_lines + line_starts.partition_point(|start| *start <= range.start);
-        let verbatim_text = matches!(
-            builder.frames.last(),
-            Some(
-                Frame::CodeBlock { .. }
-                    | Frame::HtmlCode { .. }
-                    | Frame::RawHtml(_)
-                    | Frame::Metadata(_)
-            )
-        );
-        if matches!(event, Event::Text(_))
-            && !verbatim_text
-            && range.start < unresolved_footnote_end
-        {
-            continue;
-        }
-        if matches!(event, Event::Text(_)) && !verbatim_text {
-            if let Some((label, end)) = unresolved_footnote_at(&source, range.start) {
-                builder.inline(InlineNode::Footnote(Footnote {
-                    attrs: None,
-                    id: Some(label),
-                    inline: None,
-                    number: None,
-                    ref_id: None,
-                    pos: None,
-                }));
-                unresolved_footnote_end = end;
-                continue;
+        if let Some((footnote, end)) = fallback_footnote_text(
+            &event,
+            &source,
+            range.start,
+            unresolved_footnote_end,
+            &builder.frames,
+        ) {
+            unresolved_footnote_end = end;
+            if let Some(footnote) = footnote {
+                builder.inline(InlineNode::Footnote(footnote));
             }
+            continue;
         }
         if let Some((kept, rest)) = text_end.take().and_then(|end| {
             let (kept, rest) = stripped_line_end(&source, end)?;
