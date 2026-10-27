@@ -2623,3 +2623,6 @@ mod quoted_nested_inline_code_lazy;
 
 #[path = "../nested_list_caption_continuation.rs"]
 mod nested_list_caption_continuation;
+
+#[path = "../closed_nested_quote_leaf.rs"]
+mod closed_nested_quote_leaf;
