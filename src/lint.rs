@@ -341,7 +341,13 @@ pub(crate) fn lint_with_recovery(source: &str, options: &Options<'_>) -> (Vec<Li
         }
     }
     reference_rules::collect(source, &doc, options, &to_byte, &mut out);
-    let recovered_metadata = source_rules::collect(source, &doc, &to_byte, &mut out);
+    let recovered_metadata = source_rules::collect(
+        source,
+        &doc,
+        &to_byte,
+        options.lint_caption_looking_paragraph,
+        &mut out,
+    );
     collect_template_source_warning(source, &doc, &mut out);
     collect_unattached_block_attribute_warnings(source, &unattached, &to_byte, &mut out);
     collect_table_column_warnings(source, &mut out);

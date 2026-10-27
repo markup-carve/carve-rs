@@ -13,6 +13,29 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    // Spec 14e66c05 adds 39 corpus pairs in these categories. Each new pair
+    // was checked against its committed HTML before the spec pin moved.
+    "a-contentless-description-marker-folds-under-a-quoted-term",
+    "a-first-block-item-takes-the-next-owned-block",
+    "a-lone-brace-stays-inside-forced-emphasis",
+    "a-nested-first-block-item-releases-the-next-root-block",
+    "a-quoted-include-with-no-resolver-parses-inline-content",
+    "a-second-plus-starts-its-own-paragraph-after-attachment",
+    "an-enclosing-closer-ends-a-tag-name",
+    "an-overindented-colon-opener-keeps-the-quote-paragraph-open",
+    "an-unclosed-nested-fence-keeps-blanks-before-outer-text",
+    "citation-shaped-lines-remain-core-text",
+    "combined-emphasis-finds-a-later-nonempty-closer",
+    "compact-single-paragraph-quote",
+    "consecutive-continuation-markers-in-a-div-hosted-quote",
+    "invalid-include-line-ranges-remain-literal-in-core",
+    "invalid-line-range-includes-within-paragraphs-stay-literal",
+    "loose-list-starts-directly-on-its-first-paragraph",
+    "multiple-footnote-backlinks-follow-inline-content",
+    "paired-german-quotes-leave-no-quote-in-a-heading-id",
+    "raw-inline-image-bytes-stay-inside-a-paragraph",
+    "unresolved-footnote-literal-escapes-html-text",
+    "url-sinks-reject-schemes-after-emitted-value-normalization",
     "a-fence-with-no-host-prefix-leaves-an-inline-run",
     "a-line-at-the-marker-column-leaves-a-closed-nested-body",
     "bidi-controls-in-math-content",
