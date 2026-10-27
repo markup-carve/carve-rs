@@ -72,6 +72,55 @@ fn hash_prose_does_not_turn_a_list_heading_into_a_paragraph() {
 }
 
 #[test]
+fn root_block_images_and_captions_use_event_route() {
+    for source in [
+        "![Apollo 11](apollo.jpg)\n",
+        "![Apollo 11](apollo.jpg)",
+        "![Apollo 11](apollo.jpg)\n^ Figure 1: First moon landing\n",
+        "![Apollo 11](apollo.jpg)\n^ Figure 1: First moon landing",
+        "![Apollo 11](apollo.jpg){.hero}\n^ Figure 1: First moon landing\n",
+        "{.gallery}\n![Apollo 11](apollo.jpg)\n^ Figure 1: First moon landing\n",
+        "![Apollo 11](apollo.jpg)\n\n^ Figure 1: First moon landing\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+
+    for image in [
+        "![alt](/image.png)",
+        "![alt](/image.png){.hero}",
+        "![alt][ref]",
+        "![alt](/image.png) trailing",
+    ] {
+        for gap in ["\n", "\n\n", "\n\n\n"] {
+            for caption in [
+                "^ cap\n",
+                "^ Figure #: cap\n",
+                "^ cap\ncontinued\n",
+                "^ cap\n- list\n",
+                "^ cap\n> quote\n",
+            ] {
+                let source = format!("{image}{gap}{caption}");
+                let (actual, _) = parse_experimental_event_blocks(&source);
+                let expected = parse_standard(&source);
+                assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+                assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+            }
+        }
+    }
+    for source in [
+        "![alt][ref]\n^ cap\n",
+        "![alt](/image.png)\n\n\n^ cap\n",
+    ] {
+        let (_, admitted) = parse_experimental_event_blocks(source);
+        assert!(!admitted, "{source:?}");
+    }
+}
+
+#[test]
 fn unified_list_owner_keeps_loose_and_nested_boundaries() {
     for source in [
         "- first\n\n  second paragraph\n",

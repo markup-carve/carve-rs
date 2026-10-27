@@ -199,6 +199,26 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             out.push(parse_table(&mut cur, options));
             continue;
         }
+        if let Some(mut image) = detect_block_image(line) {
+            if image_is_block(&mut cur) {
+                let image_at = cur.pos;
+                cur.consume();
+                image.pos = span_of(&cur, image_at, image_at + 1, options);
+                if let Some(caption) = consume_caption(&mut cur, options) {
+                    out.push(BlockNode::Figure(Figure {
+                        attrs: None,
+                        target: Box::new(FigureTarget::Image(image)),
+                        rendered_target: None,
+                        caption,
+                        short_caption: None,
+                        pos: span_of(&cur, image_at, cur.pos, options),
+                    }));
+                } else {
+                    out.push(BlockNode::BlockImage(image));
+                }
+                continue;
+            }
+        }
         if !may_start_plain_paragraph(line) && !invalid_brace_line {
             if line.starts_with(":::") {
                 if detect_line_block_open(line).is_some() {
