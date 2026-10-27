@@ -127,16 +127,25 @@ impl ContentColumns {
             self.observe_segment(level, bare, was_prev_blank, line_index);
             return self.current().cols.last().copied().unwrap_or(0);
         }
-        if strip_blockquote_prefix(raw_line).is_some() && !self.frames[0].cols.is_empty() {
-            self.frames.truncate(1);
-            self.frames[0] = ColumnFrame::default();
-        }
         let mut rest = raw_line;
         let mut level = 0usize;
+        let mut quote_at_content_column = false;
         loop {
             while let Some(inner) = strip_blockquote_prefix(rest) {
+                // A quote reached through an item content column stays in the item.
+                // A flush quote at that depth leaves the item for a sibling quote.
+                if !quote_at_content_column
+                    && self
+                        .frames
+                        .get(level)
+                        .is_some_and(|frame| !frame.cols.is_empty())
+                {
+                    self.frames.truncate(level + 1);
+                    self.frames[level] = ColumnFrame::default();
+                }
                 rest = inner;
                 level += 1;
+                quote_at_content_column = false;
             }
             while self.frames.len() <= level {
                 self.frames.push(ColumnFrame::default());
@@ -150,6 +159,7 @@ impl ContentColumns {
                 break;
             };
             rest = &rest[offset..];
+            quote_at_content_column = true;
         }
         self.frames.truncate(level + 1);
         self.current().cols.last().copied().unwrap_or(0)
