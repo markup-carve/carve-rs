@@ -2581,3 +2581,6 @@ fn image_paragraphs_as_images(html: &str) -> String {
 
 #[path = "../empty_quote_continuation.rs"]
 mod empty_quote_continuation;
+
+#[path = "../html_shortcut_parser_parity.rs"]
+mod html_shortcut_parser_parity;

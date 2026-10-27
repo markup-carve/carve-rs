@@ -203,22 +203,22 @@ impl AcceptanceCounters {
     }
 }
 
+#[cfg(test)]
 struct LayoutOutput {
     html: String,
-    #[cfg_attr(not(test), allow(dead_code))]
     accepted: AcceptanceCounters,
 }
 
 /// Borrowed block-layout facade for the common, stateless core grammar.
 ///
-/// It is deliberately conservative: any shape whose block boundaries require
-/// the full collector returns `None` before publishing output, and `to_html`
-/// falls back to the authoritative AST pipeline. Inline syntax is never
-/// reimplemented; accepted events use the normal inline parser and renderer.
+/// The test facade checks accepted shapes against the full parser. Inline
+/// syntax is never reimplemented; accepted events use the normal inline parser.
+#[cfg(test)]
 pub(crate) fn try_layout_html(source: &str, options: &Options<'_>) -> Option<String> {
     try_layout(source, options).map(|output| output.html)
 }
 
+#[cfg(test)]
 fn try_layout(source: &str, options: &Options<'_>) -> Option<LayoutOutput> {
     let mut html = String::with_capacity(source.len().saturating_mul(3));
     let accepted = try_layout_into(source, options, &mut html)?;
