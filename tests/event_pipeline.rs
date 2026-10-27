@@ -53,6 +53,24 @@ fn direct_route_admits_prose_and_uses_existing_list_reader() {
 }
 
 #[test]
+fn hash_prose_does_not_turn_a_list_heading_into_a_paragraph() {
+    let prose = "#notaheading\n";
+    let (actual, admitted) = parse_experimental_event_blocks(prose);
+    assert!(admitted);
+    assert_eq!(to_json(&actual), to_json(&parse_standard(prose)));
+
+    for heading_in_item in [
+        "- # In an item\n\nSee [In an item][].\n",
+        "- ## In an item\n\nSee [In an item][].\n",
+    ] {
+        let (actual, _) = parse_experimental_event_blocks(heading_in_item);
+        let expected = parse_standard(heading_in_item);
+        assert_eq!(to_json(&actual), to_json(&expected));
+        assert_eq!(render_html(&actual), render_html(&expected));
+    }
+}
+
+#[test]
 fn isolated_root_link_definitions_keep_public_nodes_and_references() {
     for source in [
         "A [link][r].\n\n[r]: /u\n",

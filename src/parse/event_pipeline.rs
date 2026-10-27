@@ -484,11 +484,16 @@ fn may_start_plain_paragraph(line: &str) -> bool {
 #[cold]
 #[inline(never)]
 fn may_start_extended_plain_paragraph(first: u8) -> bool {
-    matches!(first, b'/' | b'_' | b'~' | b'=' | b'\\' | b'[' | b'!')
+    matches!(
+        first,
+        b'/' | b'_' | b'~' | b'=' | b'\\' | b'[' | b'!' | b'#'
+    )
 }
 
 fn may_continue_plain_paragraph(line: &str) -> bool {
-    may_start_plain_paragraph(line) || line.starts_with(": ") || line.starts_with('(')
+    (may_start_plain_paragraph(line) && detect_heading(line).is_none())
+        || line.starts_with(": ")
+        || line.starts_with('(')
 }
 
 fn parse_event_inlines(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
@@ -610,6 +615,7 @@ fn simple_list_marker(line: &str) -> Option<(SimpleListKind, usize, &str)> {
     if content.is_empty()
         || content.starts_with('[')
         || is_list_marker(content)
+        || detect_heading(content).is_some()
         || detect_fence_open(content).is_some()
         || thematic_break_marker(content).is_some()
         || !may_start_plain_paragraph(content)
