@@ -593,6 +593,10 @@ impl NestedFenceReplay {
         open: FenceOpen,
     ) {
         let here = &mut self.chain[pos.level];
+        // A below-column code run continues an open item paragraph as text.
+        if here.para && line.col < line.floor {
+            return;
+        }
         // The host holds the fence whether the opener sits AT its
         // content column or past it. A fence after an open paragraph
         // still needs a closer ahead (section 10). Inside a colon

@@ -2602,3 +2602,6 @@ mod stacked_first_block_quote;
 
 #[path = "../successive_continuation_markers.rs"]
 mod successive_continuation_markers;
+
+#[path = "../quoted_nested_inline_code_lazy.rs"]
+mod quoted_nested_inline_code_lazy;
