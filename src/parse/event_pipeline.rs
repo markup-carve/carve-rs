@@ -337,6 +337,7 @@ enum UnifiedListBlock<'a> {
     Paragraph(Vec<&'a str>),
     List(UnifiedListNode<'a>),
     Quote(BlockQuote),
+    Fenced(BlockNode),
 }
 
 struct UnifiedListItem<'a> {
@@ -417,6 +418,7 @@ fn build_unified_list(node: UnifiedListNode<'_>, options: &Options<'_>) -> List 
                         BlockNode::List(build_unified_list(child, options))
                     }
                     UnifiedListBlock::Quote(quote) => BlockNode::BlockQuote(quote),
+                    UnifiedListBlock::Fenced(block) => block,
                 })
                 .collect(),
             pos: None,
@@ -477,6 +479,43 @@ fn parse_unified_list_quote(
     (consumed == quote_lines.len()).then_some((quote, end))
 }
 
+#[cold]
+#[inline(never)]
+fn parse_unified_list_fence(
+    lines: &[&str],
+    start: usize,
+    content_indent: usize,
+    options: &Options<'_>,
+) -> Option<(BlockNode, usize)> {
+    let prefix = " ".repeat(content_indent);
+    let first = lines.get(start)?.strip_prefix(prefix.as_str())?;
+    let open = detect_fence_open(first)?;
+    let mut collected = vec![first];
+    let mut end = start + 1;
+    while let Some(&line) = lines.get(end) {
+        let content = if is_blank_line(line) {
+            if line.len() > content_indent || !line.bytes().all(|byte| byte == b' ') {
+                return None;
+            }
+            ""
+        } else {
+            line.strip_prefix(prefix.as_str())?
+        };
+        collected.push(content);
+        end += 1;
+        if is_fence_close(content, open) {
+            let mut cur = LineCursor::new_with_cols(&collected, None, None);
+            let mut block = *parse_fenced_block(&mut cur, open, options);
+            if cur.pos != collected.len() {
+                return None;
+            }
+            resolve_code_title(&mut block);
+            return Some((block, end));
+        }
+    }
+    None
+}
+
 #[inline(never)]
 fn parse_unified_list(
     lines: &[&str],
@@ -535,7 +574,9 @@ fn parse_unified_list(
             }
             if next_indent == frame.content_indent {
                 flush_unified_list_paragraph(frame)?;
-                if strip_blockquote_prefix(&next[next_indent..]).is_none() {
+                if strip_blockquote_prefix(&next[next_indent..]).is_none()
+                    && detect_fence_open(&next[next_indent..]).is_none()
+                {
                     frame.node.tight = false;
                 }
                 pos = after;
@@ -627,6 +668,18 @@ fn parse_unified_list(
             return None;
         }
         let content = trim_ascii_end(&line[indent..]);
+        if detect_fence_open(content).is_some() {
+            let (block, end) = parse_unified_list_fence(lines, pos, frame.content_indent, options)?;
+            flush_unified_list_paragraph(frame)?;
+            frame
+                .node
+                .items
+                .last_mut()?
+                .blocks
+                .push(UnifiedListBlock::Fenced(block));
+            pos = end;
+            continue;
+        }
         if content.starts_with('>') {
             let (quote, end) = parse_unified_list_quote(
                 lines,
@@ -691,6 +744,77 @@ mod unified_list_tests {
         let trailing_tab = "- one\n\n  >\t\n";
         let lines: Vec<&str> = trailing_tab.lines().collect();
         assert!(parse_unified_list(&lines, 0, &Options::default()).is_none());
+    }
+
+    #[test]
+    fn shared_owner_builds_closed_fences() {
+        for source in [
+            "- a\n  ```rs\n  let x = 1;\n  ```\n",
+            "- a\n\n  ```rs\n  let x = 1;\n  ```\n",
+            "- a\n\n  ```rs\n  let x = 1;\n  ```\n\n- b\n",
+            "- a\n  ```rs\n  let x = 1;\n  ```\n\n  following\n",
+            "- a\n  ```=latex\n  \\x\n  ```\n",
+            "- a\n  ```rs\n  let x = 1;\n  ```\n- b\n",
+        ] {
+            let lines: Vec<&str> = source.lines().collect();
+            let (list, consumed) = parse_unified_list(&lines, 0, &Options::default()).unwrap();
+            assert_eq!(consumed, lines.len());
+            let actual = BlockNode::List(list);
+            let expected = parse_with_options(source, &Options::default());
+            assert_eq!(actual, expected.children[0], "{source:?}");
+        }
+        let mut checked = 0;
+        for marker in ["```", "~~~~", "````"] {
+            for before in ["", "\n"] {
+                for after in ["", "\n", "\n- b\n"] {
+                    for body in ["code", "", "code\n  more"] {
+                        let source =
+                            format!("- a\n{before}  {marker}rs\n  {body}\n  {marker}\n{after}");
+                        let lines: Vec<&str> = source.lines().collect();
+                        let Some((list, consumed)) =
+                            parse_unified_list(&lines, 0, &Options::default())
+                        else {
+                            continue;
+                        };
+                        if consumed != lines.len() {
+                            continue;
+                        }
+                        let expected = parse_with_options(&source, &Options::default());
+                        assert_eq!(BlockNode::List(list), expected.children[0], "{source:?}");
+                        checked += 1;
+                    }
+                }
+            }
+        }
+        for source in [
+            "- a\n  ```rs\n  code\n  ```",
+            "- a\n  ```=latex\n  \\x\n  ```\n- b\n",
+            "- a\n  ```csv\n  x,y\n  1,2\n  ```\n",
+            "- a\n  ```\n\n  code\n  ```\n",
+        ] {
+            let lines: Vec<&str> = source.lines().collect();
+            let (list, consumed) = parse_unified_list(&lines, 0, &Options::default())
+                .unwrap_or_else(|| panic!("{source:?}"));
+            assert_eq!(consumed, lines.len(), "{source:?}");
+            let expected = parse_with_options(source, &Options::default());
+            assert_eq!(BlockNode::List(list), expected.children[0], "{source:?}");
+            checked += 1;
+        }
+        assert!(checked >= 20);
+        for blank in ["   ", "      ", "\t", "\x0c"] {
+            let source = format!("- a\n  ```\n  x\n{blank}\n  y\n  ```\n");
+            let lines: Vec<&str> = source.lines().collect();
+            assert!(
+                parse_unified_list(&lines, 0, &Options::default()).is_none(),
+                "{source:?}"
+            );
+            let (actual, _) = parse_document(&source).unwrap();
+            let expected = parse_with_options(&source, &Options::default());
+            assert_eq!(
+                crate::ast_json::to_json(&actual),
+                crate::ast_json::to_json(&expected)
+            );
+        }
     }
 
     #[test]
