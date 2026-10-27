@@ -76,6 +76,10 @@ name = "suite"
 path = "tests/suite/main.rs"
 
 [[test]]
+name = "authoring_lint_port"
+path = "tests/authoring_lint_port.rs"
+
+[[test]]
 name = "quoted_link_definition_in_footnote"
 path = "tests/quoted_link_definition_in_footnote.rs"
 
