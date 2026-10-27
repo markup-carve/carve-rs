@@ -671,7 +671,7 @@ mod cli {
         assert!(!ok);
         assert!(stdout.is_empty(), "{stdout}");
         assert!(
-            stderr.contains(&format!("carve: unknown option: {flag}")),
+            stderr.contains(&format!("carve[usage]: unknown option: {flag}")),
             "{stderr}"
         );
     }

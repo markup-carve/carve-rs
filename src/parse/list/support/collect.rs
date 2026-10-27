@@ -290,7 +290,12 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                         &mut cur.comment_closer_last_index,
                         &mut cur.code_closer_last_index,
                         options,
-                        &mut |next, _| is_blank_line(next) || is_plus_marker(next),
+                        &mut |next, _| {
+                            is_blank_line(next)
+                                || is_plus_marker(next)
+                                || detect_list_marker_full(next)
+                                    .is_some_and(|marker| marker.indent <= parent_indent)
+                        },
                     )
                 })
                 .max(start + 1);

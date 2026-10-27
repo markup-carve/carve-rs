@@ -37,6 +37,8 @@ mod folded_fence_closer_shapes;
 mod nested_colon_div_plus_attachment;
 #[path = "../nested_fence_attached_block_extent.rs"]
 mod nested_fence_attached_block_extent;
+#[path = "../open_bug_contracts.rs"]
+mod open_bug_contracts;
 #[path = "../refused_plus_open_fence_payload.rs"]
 mod refused_plus_open_fence_payload;
 #[path = "../ruled_plus_shapes.rs"]

@@ -1136,6 +1136,7 @@ impl Walk {
         follower: FirstBlockFollower<'_>,
     ) -> bool {
         follower.column == owner.column
+            || owner.kind == Kind::List && follower.column == owner.content_column
             || follower.opener_column == shape.column
             || self.stack.iter().any(|entry| {
                 #[cfg(test)]
