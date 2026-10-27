@@ -76,8 +76,7 @@ pub(crate) fn fold_lazy_run_and_resume_in_band(
                 list_base,
                 content_col,
                 frame_band_lines,
-                false,
-                None,
+                (false, None),
             );
             if retained_fence {
                 break;
@@ -166,8 +165,7 @@ pub(crate) fn fold_lazy_run_and_resume_in_band(
             list_base,
             content_col,
             frame_band_lines,
-            false,
-            None,
+            (false, None),
         );
         if cur.pos == before {
             break;
@@ -243,8 +241,7 @@ pub(crate) fn collect_trailing_lazy_through(
         list_base,
         content_col,
         false,
-        false,
-        None,
+        (false, None),
     )
 }
 
@@ -262,8 +259,7 @@ pub(crate) fn collect_comment_lazy_through(
         list_base,
         content_col,
         false,
-        true,
-        None,
+        (true, None),
     )
 }
 
@@ -282,8 +278,7 @@ pub(crate) fn collect_marker_sublist_lazy_through(
         list_base,
         content_col,
         false,
-        false,
-        Some(ancestor_column),
+        (false, Some(ancestor_column)),
     )
 }
 
@@ -294,9 +289,9 @@ pub(crate) fn collect_trailing_lazy_through_framed(
     list_base: usize,
     content_col: usize,
     frame_band_lines: bool,
-    after_comment: bool,
-    ancestor_quote_column: Option<usize>,
+    lazy_scope: (bool, Option<usize>),
 ) -> bool {
+    let (after_comment, ancestor_quote_column) = lazy_scope;
     let mut buffered = frame_band_lines.then(LineBuffer::default);
     if cur.peek().is_some_and(|line| {
         matches!(line.as_bytes().first(), Some(b'`' | b'~'))
