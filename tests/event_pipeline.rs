@@ -113,6 +113,8 @@ fn positioned_event_entry_matches_editor_spans() {
         ("::: note\nbody\n:::\n", true),
         ("![alt](/image)\n", true),
         ("[ref]: /target\n\nSee [ref][].\n", false),
+        ("A literal ]: token.\n", true),
+        ("*[dl]: definition list\n\nA dl.\n", false),
         ("[^note]: footnote\n\nSee [^note].\n", false),
         ("| A | B |\n| - | - |\n| 1 | 2 |\n", false),
         ("{.a}\n---\n", true),

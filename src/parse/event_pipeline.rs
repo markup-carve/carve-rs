@@ -2960,9 +2960,6 @@ fn parse_document_with_custom_options(
         }
         return parse_document_with_footnotes_options(source, source_len, options);
     }
-    if options.positions && may_have_link_defs {
-        return None;
-    }
     if has_fence_candidate_without_final_newline(source) {
         return None;
     }
@@ -2981,6 +2978,9 @@ fn parse_document_with_custom_options(
         (String::new(), BTreeMap::new())
     };
     let has_link_defs = !link_defs.is_empty();
+    if options.positions && (has_link_defs || may_have_abbrevs) {
+        return None;
+    }
     let body_source = if has_link_defs {
         stripped_body.as_str()
     } else {
