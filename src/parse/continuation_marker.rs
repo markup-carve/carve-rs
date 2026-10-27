@@ -177,15 +177,31 @@ impl Guard {
 /// A marker's `+` is the last non-whitespace byte of its physical line.
 /// Container prefixes leave it after punctuation or whitespace, never a word byte.
 fn may_have_standalone_plus(source: &str) -> bool {
-    source.lines().any(|line| {
-        let trimmed = line.trim_end_matches([' ', '\t']);
-        trimmed.strip_suffix('+').is_some_and(|prefix| {
-            prefix
-                .as_bytes()
-                .last()
-                .map_or(true, |byte| !byte.is_ascii_alphanumeric())
-        })
-    })
+    let bytes = source.as_bytes();
+    let mut line_start = 0;
+    while let Some(offset) = memchr::memchr(b'+', &bytes[line_start..]) {
+        let plus = line_start + offset;
+        let line_end =
+            memchr::memchr(b'\n', &bytes[plus..]).map_or(bytes.len(), |offset| plus + offset);
+        let mut end = line_end;
+        if end > line_start && bytes[end - 1] == b'\r' && line_end < bytes.len() {
+            end -= 1;
+        }
+        while end > line_start && matches!(bytes[end - 1], b' ' | b'\t') {
+            end -= 1;
+        }
+        if end > line_start && bytes[end - 1] == b'+' {
+            let at = end - 1;
+            if at == line_start || !bytes[at - 1].is_ascii_alphanumeric() {
+                return true;
+            }
+        }
+        if line_end == bytes.len() {
+            break;
+        }
+        line_start = line_end + 1;
+    }
+    false
 }
 
 impl Drop for Guard {
@@ -1241,6 +1257,37 @@ fn first_block_refusal(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn standalone_plus_probe_matches_line_iterator() {
+        fn reference(source: &str) -> bool {
+            source.lines().any(|line| {
+                let trimmed = line.trim_end_matches([' ', '\t']);
+                trimmed.strip_suffix('+').is_some_and(|prefix| {
+                    prefix
+                        .as_bytes()
+                        .last()
+                        .map_or(true, |byte| !byte.is_ascii_alphanumeric())
+                })
+            })
+        }
+        let fragments = [
+            "", "+", "a+", "a +", "> +", "é+", "é +", "a+b+", "x\r+", "+x",
+        ];
+        let endings = ["", "\n", "\r\n", " \n", " \t\r\n", "\r"];
+        for fragment in fragments {
+            for ending in endings {
+                for prefix in ["", "plain line\n", "plain+text\r\n"] {
+                    let source = format!("{prefix}{fragment}{ending}");
+                    assert_eq!(
+                        may_have_standalone_plus(&source),
+                        reference(&source),
+                        "{source:?}"
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn prose_plus_signs_do_not_allocate_a_classifier() {
