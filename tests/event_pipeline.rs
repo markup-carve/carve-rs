@@ -155,6 +155,19 @@ fn positioned_event_entry_matches_editor_spans() {
 }
 
 #[test]
+fn unsupported_root_literals_preserve_block_ownership() {
+    for source in ["--\n", ": stray definition\n", "::: \tnote\n", "  {#id}\n"] {
+        let (candidate, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        assert_eq!(candidate, parse_standard(source), "{source:?}");
+    }
+    let nested = "  - :: term\n    : definition\n\n~~~\ncode\n~~~\n";
+    let (candidate, admitted) = parse_experimental_event_blocks(nested);
+    assert!(!admitted);
+    assert_eq!(candidate, parse_standard(nested));
+}
+
+#[test]
 fn post_blank_list_line_returns_to_root_at_authored_column() {
     for source in [
         "- one\n\n > q\n",
@@ -526,15 +539,18 @@ fn root_block_images_and_captions_use_event_route() {
                 let source = format!("{image}{gap}{caption}");
                 let (actual, _) = parse_experimental_event_blocks(&source);
                 let expected = parse_standard(&source);
+                assert_eq!(actual, expected, "{source:?}");
                 assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
                 assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
             }
         }
     }
-    for source in ["![alt][ref]\n^ cap\n", "![alt](/image.png)\n\n\n^ cap\n"] {
-        let (_, admitted) = parse_experimental_event_blocks(source);
-        assert!(!admitted, "{source:?}");
-    }
+    let (_, admitted) = parse_experimental_event_blocks("![alt][ref]\n^ cap\n");
+    assert!(!admitted);
+    let source = "![alt](/image.png)\n\n\n^ cap\n";
+    let (actual, admitted) = parse_experimental_event_blocks(source);
+    assert!(admitted);
+    assert_eq!(actual, parse_standard(source));
 }
 
 #[test]

@@ -772,7 +772,18 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                     continue;
                 }
             }
-            return None;
+            if is_list_marker(trim_ascii_start(line))
+                || trim_ascii(line) == "+"
+                || line.ends_with(" +")
+            {
+                return None;
+            }
+            let mut paragraph = parse_paragraph(&mut cur, options);
+            if let BlockNode::Paragraph(node) = &mut paragraph {
+                node.at_content_column = !line.starts_with([' ', '\t']);
+            }
+            emit!(_block_source_line, paragraph);
+            continue;
         }
         if options.positions {
             emit!(_block_source_line, parse_paragraph(&mut cur, options));
