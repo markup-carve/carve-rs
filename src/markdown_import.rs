@@ -1139,6 +1139,31 @@ fn carve_reference_span(source: &str, span: std::ops::Range<usize>) -> bool {
             .is_some_and(|raw| raw.ends_with("[]") && carve_reference_spelling(raw))
 }
 
+fn following_defined_reference(
+    source: &str,
+    end: usize,
+    definitions: &pulldown_cmark::Parser<'_>,
+) -> bool {
+    let mut tail = source.get(end..).unwrap_or_default();
+    for _ in 0..2 {
+        let Some(rest) = tail.strip_prefix('[') else {
+            return false;
+        };
+        let Some(close) = rest.find(']') else {
+            return false;
+        };
+        let label = &rest[..close];
+        if label.contains(['[', '\n', '\r']) {
+            return false;
+        }
+        if definitions.reference_definitions().get(label).is_some() {
+            return true;
+        }
+        tail = &rest[close + 1..];
+    }
+    false
+}
+
 fn markdown_to_ast_with_code_lines(
     markdown: &str,
     code_lines: Option<&mut Vec<Option<usize>>>,
@@ -1239,6 +1264,7 @@ fn markdown_to_ast_with_code_lines(
         .first()
         .map(|note| native_source.as_bytes()[note.start]);
     let strikes = crate::markdown_strike::prepare(&native_source, options);
+    let reference_definitions = Parser::new_ext(&strikes.text, options);
     let mut reference = |link: pulldown_cmark::BrokenLink<'_>| {
         let image = strikes.text.as_bytes().get(link.span.start) == Some(&b'!')
             || strikes.text.as_bytes().get(link.span.start.wrapping_sub(1)) == Some(&b'!');
@@ -1247,7 +1273,8 @@ fn markdown_to_ast_with_code_lines(
                 link.link_type,
                 LinkType::Reference | LinkType::Collapsed | LinkType::Shortcut
             )
-            && carve_reference_span(&source, strikes.original_range(link.span.clone()));
+            && carve_reference_span(&source, strikes.original_range(link.span.clone()))
+            && !following_defined_reference(&strikes.text, link.span.end, &reference_definitions);
         strikes
             .reference(link)
             .or_else(|| unknown.then(|| ("".into(), "".into())))
