@@ -127,3 +127,15 @@ fn below_column_list_marker_leaves_empty_quote_item() {
     assert!(nested.contains("<ul>"), "{nested}");
     assert!(!nested.contains("</ol>\n<ul>"), "{nested}");
 }
+
+#[test]
+fn definition_shaped_marker_stays_in_figure_caption() {
+    for continuation in ["- [a]: /u", "- [^f]: note"] {
+        let source = format!("> q\n^ c\n{continuation}\n");
+        let html = carve::to_html(&source);
+        assert!(
+            html.contains(&format!("<figcaption>c\n{continuation}</figcaption>")),
+            "{html}"
+        );
+    }
+}
