@@ -125,6 +125,22 @@ mod continuation_owner_tests {
     use super::*;
 
     #[test]
+    fn non_marker_plus_keeps_direct_document_parity() {
+        for source in [
+            "plain a+b\n",
+            "plain a + b\n",
+            "code `+` inline\n",
+            "- item + detail\n",
+        ] {
+            let _guard = continuation_marker::Guard::install(source);
+            assert!(!continuation_marker::active(), "{source:?}");
+            let (candidate, used) = parse_document(source).unwrap();
+            assert!(used, "{source:?}");
+            assert_eq!(candidate, parse_with_options(source, &Options::default()));
+        }
+    }
+
+    #[test]
     fn owned_list_continuations_match_full_ast() {
         for source in ["- +\nx\n", "- a\n+\nb\n", "1. - +\npara\n"] {
             let _guard = continuation_marker::Guard::install(source);
@@ -405,6 +421,7 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
     at_document_level: bool,
 ) -> Option<Vec<BlockNode>> {
     if line_map.is_none()
+        && (!at_document_level || continuation_marker::active())
         && lines.iter().copied().any(|line| {
             let line = trim_ascii(line);
             line == "+" || line.ends_with(" +")
@@ -2471,7 +2488,7 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         .filter(|byte| *byte == b'\n')
         .count()
         + 1;
-    let root_line_map: Option<Vec<Option<usize>>> = body_source.contains('+').then(|| {
+    let root_line_map: Option<Vec<Option<usize>>> = continuation_marker::active().then(|| {
         (body_start_line..body_start_line + body_source.lines().count())
             .map(Some)
             .collect()
