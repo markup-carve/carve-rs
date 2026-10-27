@@ -1307,6 +1307,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // where `- x` / blank / `Body.` went loose - on the same blank line
         // (carve-rs#476).
         stream.authored_base_at_start |= after_blank;
+        rebase_quoted_fence_payload(&mut stream, innermost);
         let children = item_body(
             self.deferred,
             self.items.len(),
@@ -2533,4 +2534,53 @@ fn finish_list(
         tight,
         items,
     })
+}
+
+/// Keep a quoted fence's payload at the quote prefix after stripping the list column.
+fn rebase_quoted_fence_payload(stream: &mut MappedSource, marker_leaf: &str) {
+    let Some(first_fence) = detect_fence_open(marker_leaf) else {
+        return;
+    };
+    let mut open = Some(first_fence);
+    let mut payload_column = None;
+    let mut lines = Vec::new();
+    for (at, line) in stream.source.split('\n').enumerate() {
+        if at == 0 {
+            lines.push(line.to_string());
+            continue;
+        }
+        let leading = indent_columns(line);
+        let stripped = trim_ascii_start(line);
+        if open.is_some()
+            && payload_column.is_none()
+            && strip_blockquote_prefix(stripped).is_some_and(|body| {
+                !is_blank_line(body) && !open.is_some_and(|fence| is_fence_close(body, fence))
+            })
+        {
+            payload_column = Some(leading);
+        }
+        let line = if open.is_some()
+            && leading > 0
+            && payload_column.is_some_and(|column| leading <= column)
+            && strip_blockquote_prefix(stripped).is_some()
+        {
+            if let Some(column) = stream.col_map.get_mut(at).and_then(Option::as_mut) {
+                *column += leading as isize;
+            }
+            stripped
+        } else {
+            line
+        };
+        if let Some(body) = strip_blockquote_prefix(line) {
+            if open.is_some_and(|fence| is_fence_close(body, fence)) {
+                open = None;
+                payload_column = None;
+            } else if open.is_none() {
+                open = detect_fence_open(body);
+                payload_column = None;
+            }
+        }
+        lines.push(line.to_string());
+    }
+    stream.source = lines.join("\n");
 }

@@ -2605,3 +2605,6 @@ mod successive_continuation_markers;
 
 #[path = "../quoted_term_after_paragraph.rs"]
 mod quoted_term_after_paragraph;
+
+#[path = "../quoted_list_fence_payload.rs"]
+mod quoted_list_fence_payload;
