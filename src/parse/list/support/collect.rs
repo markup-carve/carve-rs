@@ -136,6 +136,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         .map_or(parent_indent, |marker| marker.indent);
     let marker_ordered = marker_lead.as_ref().is_some_and(|marker| marker.ordered);
     let marker_content = marker_lead.map(|marker| marker.content);
+    let mut table_seen = marker_content.is_some_and(is_table_start);
+    let mut table_caption_open = false;
     nested_item_columns.fence_seen |= marker_content.is_some_and(|content| {
         content.contains(['`', '~'])
             && detect_fence_open(innermost_marker_content(content)).is_some()
@@ -262,6 +264,15 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let mut nested_folded_fence = false;
     let mut nested_blank_run: Option<(usize, usize, bool)> = None;
     run_indented_body!(cur.lines, cur.pos, container, |line, admission| {
+        if admission.blank {
+            table_caption_open = false;
+        }
+        let caption_follower = table_caption_open
+            && !admission.blank
+            && caption_content(trim_ascii_start(line)).is_none()
+            && !is_line_comment_any_column(line)
+            && !is_list_marker(line)
+            && !interrupts_lazy_continuation_as_container(cur, trim_ascii_start(line));
         after_definition_blank |= is_blank_line(line);
         let follows_first_block = (!lead_is_continuation
             || item_block_opener(trim_ascii_start(line)))
@@ -978,6 +989,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && !fence_owns_flush_left
             && !comment_fence.is_some_and(|(run, _)| is_comment_fence_close_any_column(line, run))
             && !closes_a_held_comment_span(&lines, line)
+            && !caption_follower
         {
             break;
         }
@@ -1892,6 +1904,12 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         } else {
             sliced
         });
+        table_seen |= is_table_start(trim_ascii_start(line));
+        table_caption_open = if caption_content(trim_ascii_start(line)).is_some() {
+            table_seen
+        } else {
+            caption_follower
+        };
         carried_lazy_owner = marker_paragraph_owner
             .or_else(|| carried_lazy_owner.filter(|&owner| plain_nested_lazy && indent >= owner));
         if marker_paragraph_owner.is_some() {

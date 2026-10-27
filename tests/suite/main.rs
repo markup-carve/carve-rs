@@ -2635,6 +2635,8 @@ mod braced_opener_marker_is_not_closer;
 mod combined_emphasis_code_visibility;
 #[path = "../indented_image_flush_caption.rs"]
 mod indented_image_flush_caption;
+#[path = "../list_table_caption_flush_follower.rs"]
+mod list_table_caption_flush_follower;
 #[path = "../literal_quote_list_lead.rs"]
 mod literal_quote_list_lead;
 #[path = "../markdown_link_footnotes.rs"]
