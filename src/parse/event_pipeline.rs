@@ -766,6 +766,12 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                     continue;
                 }
             }
+            if trim_ascii_start(line).starts_with("$$`") {
+                if let Some(equation) = parse_equation_block(&mut cur, options) {
+                    emit!(_block_source_line, equation);
+                    continue;
+                }
+            }
             return None;
         }
         if options.positions {

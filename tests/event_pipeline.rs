@@ -125,6 +125,8 @@ fn positioned_event_entry_matches_editor_spans() {
         ("> {table}\n> ```csv\n> a,b\n> ```\n> ^ Cap\n", true),
         ("::: note\n{table}\n```csv\na,b\n```\n^ Cap\n:::\n", true),
         ("{.a}\n---\n", true),
+        ("$$`x`\n", true),
+        ("{#eq-emc}\n$$`E = mc^2`\n^ Equation #: mass-energy\n", true),
         ("```tsv\nA\tB\n```\n", true),
     ];
     for (source, expected_admission) in sources {
