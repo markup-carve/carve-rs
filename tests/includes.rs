@@ -21,6 +21,37 @@ use carve::{
 use carve::FileSystemResolver;
 
 #[test]
+fn invalid_line_range_directives_are_literal_in_core_rendering() {
+    let mut variants = 0;
+    for range in ["01-2", "0-2", "3-1", "x", "2", "2-00", "00-1", "1-x"] {
+        for language in ["csv", "rust", "text", "js"] {
+            for path in ["data/p2.csv", "missing.crv", "src/a.rs", "x.txt"] {
+                let directive = format!("{{{{ {path} @code:{language} @lines:{range} }}}}");
+                for source in [
+                    directive.clone(),
+                    format!("before {directive} after"),
+                    format!("> {directive}"),
+                    format!("- {directive}"),
+                    format!("::: note\n{directive}\n:::"),
+                    format!("intro\n\n{directive}"),
+                    format!("{directive}\n\noutro"),
+                    format!("## Heading\n\n{directive}"),
+                ] {
+                    let html = carve::to_html(&source);
+                    assert!(
+                        !html.contains("<span class=\"mention\""),
+                        "{source}: {html}"
+                    );
+                    assert!(html.contains(&directive), "{source}: {html}");
+                    variants += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(variants, 1024);
+}
+
+#[test]
 fn include_warnings_locate_block_and_inline_directives() {
     let source = "{{ missing }}\n\n😀 Ahead {{ gone }}.\n";
     let resolver = MapResolver::new(&[]);
