@@ -38,7 +38,10 @@ fn invalid_line_range_directives_are_literal_in_core_rendering() {
                     format!("## Heading\n\n{directive}"),
                 ] {
                     let html = carve::to_html(&source);
-                    assert!(!html.contains("<span class=\"mention\""), "{source}: {html}");
+                    assert!(
+                        !html.contains("<span class=\"mention\""),
+                        "{source}: {html}"
+                    );
                     assert!(html.contains(&directive), "{source}: {html}");
                     variants += 1;
                 }
