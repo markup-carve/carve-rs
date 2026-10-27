@@ -828,6 +828,13 @@ fn parse_full_directive(text: &str) -> ParsedDirective {
     }
 }
 
+/// Invalid line selectors remain one literal inline run in the core parser.
+/// The processor still validates the directive and reports its warning.
+pub(crate) fn invalid_line_directive_end(text: &str, start: usize) -> Option<usize> {
+    let (end, raw) = match_directive_at(text, start)?;
+    matches!(parse_options(raw), ParsedDirective::InvalidLines(_)).then_some(end)
+}
+
 /// Byte range of the first SHAPE-well-formed directive at or after `from`.
 ///
 /// "Shape-well-formed" is deliberately WIDER than what expansion accepts: the
