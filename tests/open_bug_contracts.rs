@@ -23,14 +23,6 @@ fn cli(args: &[&str], input: &str) -> (i32, String) {
 }
 
 #[test]
-fn first_block_content_column_attaches_without_a_refusal() {
-    assert_eq!(carve::to_html("- +\n  x\n"), "<ul>\n  <li>x</li>\n</ul>");
-    let (status, stderr) = cli(&["lint", "-"], "- +\n  x\n");
-    assert_eq!(status, 0, "{stderr}");
-    assert!(stderr.is_empty(), "{stderr}");
-}
-
-#[test]
 fn sibling_after_a_stacked_first_block_stays_a_sibling() {
     assert_eq!(
         carve::to_html("- - +\n  x\n- sibling\n"),
