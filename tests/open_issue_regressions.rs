@@ -1,6 +1,15 @@
 use carve::{parse, to_carve, to_html, to_json};
 
 #[test]
+fn markdown_link_label_protects_a_closing_bracket_in_an_angle_run() {
+    let source = "[a </#x]> b](u)\n";
+    let markdown = carve::to_markdown(source);
+    assert!(markdown.contains("\\]>"), "{markdown}");
+    let imported = carve::markdown_to_carve(&markdown);
+    assert!(to_html(&imported).contains("<a href=\"u\">"), "{markdown}");
+}
+
+#[test]
 fn a_caption_tag_is_not_a_number_placeholder() {
     for tag in ["#1", "#_", "#-a"] {
         let html = to_html(&format!("![p](p.png)\n^ Figure {tag} q\n"));

@@ -317,6 +317,18 @@ fn render_feature(feature: &str, source: &str, target: Target) -> Option<String>
             source,
             &Options::new().with_sections(false).with_source_lines(true),
         ),
+        "toc-placement" => target.render(
+            source,
+            &Options::new().with_extension(&carve::TocPlacement::new()),
+        ),
+        "profile-comment" => target.render(
+            source,
+            &Options::new().with_profile(carve::Profile::comment()),
+        ),
+        "profile-minimal" => target.render(
+            source,
+            &Options::new().with_profile(carve::Profile::minimal()),
+        ),
         _ => return None,
     };
     Some(output)

@@ -77,10 +77,9 @@ impl IncludeBudgets {
 }
 
 fn parse_budget(value: Option<&String>, flag: &str) -> Result<usize, ExitCode> {
-    value.and_then(|value| value.parse().ok()).ok_or_else(|| {
-        eprintln!("carve: {flag} requires a non-negative integer");
-        ExitCode::from(2)
-    })
+    value
+        .and_then(|value| value.parse().ok())
+        .ok_or_else(|| cli_error("usage", format!("{flag} requires a non-negative integer")))
 }
 
 /// The stamp modes answer a question about the document rather than rendering
@@ -245,11 +244,10 @@ fn main() -> ExitCode {
         match arg.into_string() {
             Ok(arg) => raw_args.push(arg),
             Err(arg) => {
-                eprintln!(
-                    "carve: argument is not valid UTF-8: {}",
-                    arg.to_string_lossy()
+                return cli_error(
+                    "usage",
+                    format!("argument is not valid UTF-8: {}", arg.to_string_lossy()),
                 );
-                return ExitCode::from(2);
             }
         }
     }
@@ -314,6 +312,11 @@ fn main() -> ExitCode {
     }
 
     run_render(cli, &bundled)
+}
+
+fn cli_error(category: &str, detail: impl std::fmt::Display) -> ExitCode {
+    eprintln!("carve[{category}]: {detail}");
+    ExitCode::from(2)
 }
 
 fn parse_args<'a>(raw_args: Vec<String>) -> Result<CliArgs<'a>, ExitCode> {
@@ -383,33 +386,35 @@ fn parse_args<'a>(raw_args: Vec<String>) -> Result<CliArgs<'a>, ExitCode> {
             "--stamp-check" => cli.stamp_mode = Some(StampMode::Check),
             "--mention-url" => {
                 let Some(value) = args.next() else {
-                    eprintln!("carve: --mention-url requires a template");
-                    return Err(ExitCode::FAILURE);
+                    eprintln!("carve[usage]: --mention-url requires a template");
+                    return Err(ExitCode::from(2));
                 };
                 cli.options = cli.options.with_mention_url(value);
             }
             "--tag-url" => {
                 let Some(value) = args.next() else {
-                    eprintln!("carve: --tag-url requires a template");
-                    return Err(ExitCode::FAILURE);
+                    eprintln!("carve[usage]: --tag-url requires a template");
+                    return Err(ExitCode::from(2));
                 };
                 cli.options = cli.options.with_tag_url(value);
             }
             "--symbol" => {
                 let Some(value) = args.next() else {
-                    eprintln!("carve: --symbol requires name=value");
-                    return Err(ExitCode::FAILURE);
+                    eprintln!("carve[usage]: --symbol requires name=value");
+                    return Err(ExitCode::from(2));
                 };
                 let Some((name, glyph)) = value.split_once('=') else {
-                    eprintln!("carve: --symbol requires name=value");
-                    return Err(ExitCode::FAILURE);
+                    eprintln!("carve[usage]: --symbol requires name=value");
+                    return Err(ExitCode::from(2));
                 };
                 cli.options = cli.options.with_symbol(name, glyph);
             }
             "--profile" => {
                 let Some(value) = args.next() else {
-                    eprintln!("carve: --profile requires a name (full|article|comment|minimal)");
-                    return Err(ExitCode::FAILURE);
+                    eprintln!(
+                        "carve[usage]: --profile requires a name (full|article|comment|minimal)"
+                    );
+                    return Err(ExitCode::from(2));
                 };
                 cli.options = cli.options.with_profile(parse_profile(&value)?);
             }
@@ -421,23 +426,23 @@ fn parse_args<'a>(raw_args: Vec<String>) -> Result<CliArgs<'a>, ExitCode> {
                 // only in the library API.
                 let Some(value) = args.next() else {
                     eprintln!(
-                        "carve: --smart-typography requires a mode (glyph|source|quotes-source)"
+                        "carve[usage]: --smart-typography requires a mode (glyph|source|quotes-source)"
                     );
-                    return Err(ExitCode::FAILURE);
+                    return Err(ExitCode::from(2));
                 };
                 cli.options.smart_typography = parse_smart_typography(&value)?;
             }
             "--quote-locale" => {
                 let Some(value) = args.next() else {
-                    eprintln!("carve: --quote-locale requires a locale");
-                    return Err(ExitCode::FAILURE);
+                    eprintln!("carve[usage]: --quote-locale requires a locale");
+                    return Err(ExitCode::from(2));
                 };
                 cli.quote_locale = Some(value);
             }
             "--profile-base-host" => {
                 let Some(value) = args.next() else {
-                    eprintln!("carve: --profile-base-host requires a host");
-                    return Err(ExitCode::FAILURE);
+                    eprintln!("carve[usage]: --profile-base-host requires a host");
+                    return Err(ExitCode::from(2));
                 };
                 cli.options = cli.options.with_profile_base_host(value);
             }
@@ -456,14 +461,14 @@ fn parse_args<'a>(raw_args: Vec<String>) -> Result<CliArgs<'a>, ExitCode> {
             "--strict-losses" => cli.reports.strict_losses = true,
             "--report-losses" => {
                 let Some(value) = args.next() else {
-                    eprintln!("carve: --report-losses requires a file or -");
+                    eprintln!("carve[usage]: --report-losses requires a file or -");
                     return Err(ExitCode::from(2));
                 };
                 cli.reports.report_losses = Some(value);
             }
             "--report-includes" => {
                 let Some(value) = args.next() else {
-                    eprintln!("carve: --report-includes requires a file or -");
+                    eprintln!("carve[usage]: --report-includes requires a file or -");
                     return Err(ExitCode::from(2));
                 };
                 cli.reports.report_includes = Some(value);
@@ -474,7 +479,7 @@ fn parse_args<'a>(raw_args: Vec<String>) -> Result<CliArgs<'a>, ExitCode> {
             }
             "--max-render-losses" => {
                 let Some(value) = args.next().and_then(|value| value.parse::<usize>().ok()) else {
-                    eprintln!("carve: --max-render-losses requires a non-negative integer");
+                    eprintln!("carve[usage]: --max-render-losses requires a non-negative integer");
                     return Err(ExitCode::from(2));
                 };
                 cli.max_render_losses = value;
@@ -485,15 +490,17 @@ fn parse_args<'a>(raw_args: Vec<String>) -> Result<CliArgs<'a>, ExitCode> {
             "--extension" => {
                 cli.selective_render_options = true;
                 let Some(value) = args.next() else {
-                    eprintln!("carve: --extension requires a registry key");
-                    return Err(ExitCode::FAILURE);
+                    eprintln!("carve[usage]: --extension requires a registry key");
+                    return Err(ExitCode::from(2));
                 };
                 if !carve::extensions::registry::keys().any(|key| key == value) {
                     let known = carve::extensions::registry::keys()
                         .collect::<Vec<_>>()
                         .join(", ");
-                    eprintln!("carve: unknown extension: {value} (expected one of: {known})");
-                    return Err(ExitCode::FAILURE);
+                    eprintln!(
+                        "carve[usage]: unknown extension: {value} (expected one of: {known})"
+                    );
+                    return Err(ExitCode::from(2));
                 }
                 if !cli.extension_keys.contains(&value) {
                     cli.extension_keys.push(value);
@@ -502,8 +509,8 @@ fn parse_args<'a>(raw_args: Vec<String>) -> Result<CliArgs<'a>, ExitCode> {
             "--tabs-mode" => {
                 cli.selective_render_options = true;
                 let Some(value) = args.next() else {
-                    eprintln!("carve: --tabs-mode requires css or aria");
-                    return Err(ExitCode::FAILURE);
+                    eprintln!("carve[usage]: --tabs-mode requires css or aria");
+                    return Err(ExitCode::from(2));
                 };
                 cli.tabs_mode = parse_tabs_mode(&value)?;
                 cli.tabs_mode_set = true;
@@ -511,8 +518,8 @@ fn parse_args<'a>(raw_args: Vec<String>) -> Result<CliArgs<'a>, ExitCode> {
             "--citation-mode" => {
                 cli.selective_render_options = true;
                 let Some(value) = args.next() else {
-                    eprintln!("carve: --citation-mode requires numbered or author-date");
-                    return Err(ExitCode::FAILURE);
+                    eprintln!("carve[usage]: --citation-mode requires numbered or author-date");
+                    return Err(ExitCode::from(2));
                 };
                 cli.citation_mode = parse_citation_mode(&value)?;
                 cli.citation_mode_set = true;
@@ -527,8 +534,8 @@ fn parse_args<'a>(raw_args: Vec<String>) -> Result<CliArgs<'a>, ExitCode> {
             }
             "--include-root" => {
                 let Some(value) = args.next() else {
-                    eprintln!("carve: --include-root requires a directory");
-                    return Err(ExitCode::FAILURE);
+                    eprintln!("carve[usage]: --include-root requires a directory");
+                    return Err(ExitCode::from(2));
                 };
                 cli.include_root = Some(include_root_flag(value)?);
             }
@@ -547,13 +554,11 @@ fn parse_args<'a>(raw_args: Vec<String>) -> Result<CliArgs<'a>, ExitCode> {
             "-" if cli.command == Command::Render => cli.input_paths.clear(),
             "-" if cli.command == Command::Fmt => cli.input_paths.push(arg),
             path if path.starts_with('-') => {
-                eprintln!("carve: unknown option: {path}");
-                return Err(ExitCode::FAILURE);
+                return Err(cli_error("usage", format!("unknown option: {path}")));
             }
             path => {
                 if cli.command == Command::Render && !cli.input_paths.is_empty() {
-                    eprintln!("carve: multiple input files specified");
-                    return Err(ExitCode::FAILURE);
+                    return Err(cli_error("usage", "multiple input files specified"));
                 }
                 cli.input_paths.push(path.to_string());
             }
@@ -569,8 +574,10 @@ fn parse_profile(value: &str) -> Result<carve::Profile, ExitCode> {
         "comment" => Ok(carve::Profile::comment()),
         "minimal" => Ok(carve::Profile::minimal()),
         other => {
-            eprintln!("carve: unknown profile: {other} (expected full|article|comment|minimal)");
-            Err(ExitCode::FAILURE)
+            eprintln!(
+                "carve[usage]: unknown profile: {other} (expected full|article|comment|minimal)"
+            );
+            Err(ExitCode::from(2))
         }
     }
 }
@@ -582,9 +589,9 @@ fn parse_smart_typography(value: &str) -> Result<carve::SmartTypographyMode, Exi
         "quotes-source" => Ok(carve::SmartTypographyMode::QuotesSource),
         other => {
             eprintln!(
-                "carve: unknown smart typography mode: {other} (expected glyph|source|quotes-source)"
+                "carve[usage]: unknown smart typography mode: {other} (expected glyph|source|quotes-source)"
             );
-            Err(ExitCode::FAILURE)
+            Err(ExitCode::from(2))
         }
     }
 }
@@ -609,7 +616,7 @@ fn parse_allowed_loss(value: Option<&str>) -> Result<&'static str, ExitCode> {
         Some("fence-title-dropped") => Ok("fence-title-dropped"),
         Some("raw-html-escaped") => Ok("raw-html-escaped"),
         _ => {
-            eprintln!("carve: --allow-loss expects raw-format-dropped, ruby-flattened, editorial-comment-flattened, carrier-attribute-dropped, definition-list-flattened, list-style-dropped, list-tightness-lost, list-delimiter-changed, table-span-flattened, table-header-row-demoted, table-header-row-hoisted or table-header-cell-demoted");
+            eprintln!("carve[usage]: --allow-loss expects raw-format-dropped, ruby-flattened, editorial-comment-flattened, carrier-attribute-dropped, definition-list-flattened, list-style-dropped, list-tightness-lost, list-delimiter-changed, table-span-flattened, table-header-row-demoted, table-header-row-hoisted or table-header-cell-demoted");
             Err(ExitCode::from(2))
         }
     }
@@ -620,8 +627,8 @@ fn parse_tabs_mode(value: &str) -> Result<carve::TabsMode, ExitCode> {
         "css" => Ok(carve::TabsMode::Css),
         "aria" => Ok(carve::TabsMode::Aria),
         other => {
-            eprintln!("carve: unknown tabs mode: {other} (expected css|aria)");
-            Err(ExitCode::FAILURE)
+            eprintln!("carve[usage]: unknown tabs mode: {other} (expected css|aria)");
+            Err(ExitCode::from(2))
         }
     }
 }
@@ -631,8 +638,10 @@ fn parse_citation_mode(value: &str) -> Result<carve::CitationMode, ExitCode> {
         "numbered" => Ok(carve::CitationMode::Numbered),
         "author-date" => Ok(carve::CitationMode::AuthorDate),
         other => {
-            eprintln!("carve: unknown citation mode: {other} (expected numbered|author-date)");
-            Err(ExitCode::FAILURE)
+            eprintln!(
+                "carve[usage]: unknown citation mode: {other} (expected numbered|author-date)"
+            );
+            Err(ExitCode::from(2))
         }
     }
 }
@@ -644,8 +653,10 @@ fn include_root_flag(value: String) -> Result<String, ExitCode> {
     #[cfg(not(feature = "fs"))]
     {
         let _ = value;
-        eprintln!("carve: --include-root needs the `fs` feature, which this build does not have");
-        Err(ExitCode::FAILURE)
+        eprintln!(
+            "carve[usage]: --include-root needs the `fs` feature, which this build does not have"
+        );
+        Err(ExitCode::from(2))
     }
     #[cfg(feature = "fs")]
     {
@@ -846,17 +857,19 @@ fn read_source(input: Option<&str>) -> Result<String, ExitCode> {
         None | Some("-") => {
             let mut buf = String::new();
             if let Err(err) = read_stdin_lossy(&mut buf) {
-                eprintln!("carve: cannot read stdin: {err}");
-                return Err(ExitCode::FAILURE);
+                return Err(cli_error(
+                    "input-unreadable",
+                    format!("cannot read stdin: {err}"),
+                ));
             }
             Ok(buf)
         }
         Some(path) => match read_path_lossy(path) {
             Ok(s) => Ok(s),
-            Err(err) => {
-                eprintln!("carve: cannot read {path}: {err}");
-                Err(ExitCode::FAILURE)
-            }
+            Err(err) => Err(cli_error(
+                "input-unreadable",
+                format!("cannot read {path}: {err}"),
+            )),
         },
     }
 }
@@ -954,8 +967,10 @@ fn render_from_json(
     let doc = match carve::from_json(source) {
         Ok(doc) => doc,
         Err(err) => {
-            eprintln!("carve: cannot decode JSON AST: {err}");
-            return Err(ExitCode::FAILURE);
+            return Err(cli_error(
+                "ast-json-invalid",
+                format!("cannot decode JSON AST: {err}"),
+            ));
         }
     };
     let checked = carve::with_render_loss_report(target, checked_options, || {
@@ -1253,8 +1268,7 @@ fn run_migrate(args: &[String]) -> ExitCode {
             from.clone().unwrap_or_default()
         }
         Some(other) => {
-            eprintln!("carve migrate: unknown source format {other}");
-            return ExitCode::from(2);
+            return cli_error("usage", format!("migrate: unknown source format {other}"));
         }
         None => {
             eprintln!("carve migrate: --from html, markdown, djot or bbcode is required");
@@ -1289,16 +1303,21 @@ fn run_migrate(args: &[String]) -> ExitCode {
     let source = match input {
         None | Some("-") => {
             let mut s = String::new();
-            if read_stdin_lossy(&mut s).is_err() {
-                return ExitCode::from(2);
+            if let Err(err) = read_stdin_lossy(&mut s) {
+                return cli_error(
+                    "input-unreadable",
+                    format!("migrate: cannot read stdin: {err}"),
+                );
             }
             s
         }
         Some(path) => match read_path_lossy(path) {
             Ok(s) => s,
             Err(e) => {
-                eprintln!("carve migrate: cannot read {path}: {e}");
-                return ExitCode::from(2);
+                return cli_error(
+                    "input-unreadable",
+                    format!("migrate: cannot read {path}: {e}"),
+                );
             }
         },
     };
@@ -1431,8 +1450,10 @@ fn run_merge(args: &[String]) -> ExitCode {
         let source = match read_path_lossy(path) {
             Ok(source) => source,
             Err(error) => {
-                eprintln!("carve merge: cannot read {path}: {error}");
-                return ExitCode::from(2);
+                return cli_error(
+                    "input-unreadable",
+                    format!("merge: cannot read {path}: {error}"),
+                );
             }
         };
         documents.push(carve::parse(&source));
@@ -1695,15 +1716,19 @@ fn run_region(args: &[String]) -> ExitCode {
     match operands.get(1).copied().unwrap_or("-") {
         "-" => {
             if let Err(err) = read_stdin_lossy(&mut source) {
-                eprintln!("carve region: cannot read stdin: {err}");
-                return ExitCode::from(2);
+                return cli_error(
+                    "input-unreadable",
+                    format!("region: cannot read stdin: {err}"),
+                );
             }
         }
         path => match read_path_lossy(path) {
             Ok(value) => source = value,
             Err(err) => {
-                eprintln!("carve region: cannot read {path}: {err}");
-                return ExitCode::from(2);
+                return cli_error(
+                    "input-unreadable",
+                    format!("region: cannot read {path}: {err}"),
+                );
             }
         },
     }
@@ -2000,8 +2025,10 @@ fn run_lint_paths(
     if paths.is_empty() || paths == ["-"] {
         let mut buf = String::new();
         if let Err(err) = read_stdin_lossy(&mut buf) {
-            eprintln!("carve lint: cannot read stdin: {err}");
-            return ExitCode::from(2);
+            return cli_error(
+                "input-unreadable",
+                format!("lint: cannot read stdin: {err}"),
+            );
         }
         lint_source(&buf, "<stdin>");
     } else {
@@ -2009,7 +2036,10 @@ fn run_lint_paths(
             if *path == "-" {
                 let mut buf = String::new();
                 if let Err(err) = read_stdin_lossy(&mut buf) {
-                    eprintln!("carve lint: cannot read stdin: {err}");
+                    cli_error(
+                        "input-unreadable",
+                        format!("lint: cannot read stdin: {err}"),
+                    );
                     unreadable = true;
                     continue;
                 }
@@ -2022,7 +2052,10 @@ fn run_lint_paths(
                     // Reported and skipped rather than fatal, so one bad path in
                     // a glob still lets every other document be checked - the
                     // whole point of running this over a tree.
-                    eprintln!("carve lint: cannot read {path}: {err}");
+                    cli_error(
+                        "input-unreadable",
+                        format!("lint: cannot read {path}: {err}"),
+                    );
                     unreadable = true;
                 }
             }
@@ -2070,15 +2103,19 @@ fn run_flatten(
         Some(path) if path != "-" => match read_path_lossy(path) {
             Ok(source) => (source, Some(path.to_string())),
             Err(err) => {
-                eprintln!("carve flatten: cannot read {path}: {err}");
-                return ExitCode::FAILURE;
+                return cli_error(
+                    "input-unreadable",
+                    format!("flatten: cannot read {path}: {err}"),
+                );
             }
         },
         _ => {
             let mut source = String::new();
             if let Err(err) = read_stdin_lossy(&mut source) {
-                eprintln!("carve flatten: cannot read stdin: {err}");
-                return ExitCode::FAILURE;
+                return cli_error(
+                    "input-unreadable",
+                    format!("flatten: cannot read stdin: {err}"),
+                );
             }
             (source, None)
         }
@@ -2176,8 +2213,7 @@ fn run_fmt(
         }
         let mut source = String::new();
         if let Err(err) = read_stdin_lossy(&mut source) {
-            eprintln!("carve fmt: cannot read stdin: {err}");
-            return ExitCode::FAILURE;
+            return cli_error("input-unreadable", format!("fmt: cannot read stdin: {err}"));
         }
         return match format_carve(&source, stamp, migrate, align_tables) {
             Ok(formatted) => write_stdout(&formatted),
@@ -2198,8 +2234,10 @@ fn run_fmt(
         let bytes = match std::fs::read(path) {
             Ok(bytes) => bytes,
             Err(err) => {
-                eprintln!("carve fmt: cannot read {path}: {err}");
-                return ExitCode::FAILURE;
+                return cli_error(
+                    "input-unreadable",
+                    format!("fmt: cannot read {path}: {err}"),
+                );
             }
         };
         // Printing replaces ill-formed input like every other read; --write and
@@ -2207,8 +2245,10 @@ fn run_fmt(
         let source = match String::from_utf8(bytes) {
             Ok(source) => source,
             Err(_) if write || check => {
-                eprintln!("carve fmt: cannot read {path}: stream did not contain valid UTF-8");
-                return ExitCode::FAILURE;
+                return cli_error(
+                    "input-unreadable",
+                    format!("fmt: cannot read {path}: stream did not contain valid UTF-8"),
+                );
             }
             Err(err) => String::from_utf8_lossy(err.as_bytes()).into_owned(),
         };

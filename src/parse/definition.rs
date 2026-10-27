@@ -89,10 +89,15 @@ pub(in crate::parse) fn fold_term(
     enum Part {
         Run(String, Option<Vec<Option<(usize, isize)>>>),
         Comment(Comment),
+        InvisibleComment(Option<Pos>),
     }
     let mut parts = vec![Part::Run(first, first_anchor.map(|anchor| vec![anchor]))];
     while let Some(next) = cur.peek() {
-        if next.starts_with([' ', '\t']) && trim_ascii_start(next).starts_with("%%") {
+        if next.starts_with([' ', '\t'])
+            && trim_ascii_start(next).starts_with("%%")
+            && !is_definition_placeholder(next)
+        {
+            let comment_start = cur.pos;
             match take_comment_block(cur, options) {
                 CommentBlock::Consumed(Some(node)) => {
                     if let BlockNode::Comment(comment) = *node {
@@ -100,7 +105,15 @@ pub(in crate::parse) fn fold_term(
                     }
                     continue;
                 }
-                CommentBlock::Consumed(None) => continue,
+                CommentBlock::Consumed(None) => {
+                    parts.push(Part::InvisibleComment(span_of(
+                        cur,
+                        comment_start,
+                        cur.pos,
+                        options,
+                    )));
+                    continue;
+                }
                 CommentBlock::NotAComment => {}
             }
         }
@@ -166,11 +179,16 @@ pub(in crate::parse) fn fold_term(
     let mut boundaries = Vec::new();
     for (index, part) in parts.into_iter().enumerate() {
         if index > 0 {
-            boundaries.push(children.len());
+            let target = match &part {
+                Part::InvisibleComment(pos) => pos.clone(),
+                _ => None,
+            };
+            boundaries.push((children.len(), target));
             children.push(InlineNode::SoftBreak(Break { pos: None }));
         }
         match part {
             Part::Comment(comment) => children.push(InlineNode::Comment(comment)),
+            Part::InvisibleComment(_) => {}
             Part::Run(text, Some(anchors)) => {
                 children.extend(parse_inline_lines_with_anchor(&text, options, anchors));
             }
@@ -180,12 +198,17 @@ pub(in crate::parse) fn fold_term(
     // A part-boundary break is placed once both its neighbours exist: from the
     // preceding sibling's end to the following sibling's start, the span the
     // fold's own in-part breaks already publish (carve#2469).
-    for index in boundaries {
+    for (index, target) in boundaries {
         let pos = index
             .checked_sub(1)
             .and_then(|previous| children.get(previous))
             .and_then(InlineNode::pos)
-            .zip(children.get(index + 1).and_then(InlineNode::pos))
+            .zip(
+                children
+                    .get(index + 1)
+                    .and_then(InlineNode::pos)
+                    .or(target.as_ref()),
+            )
             .map(|(prev, next)| Pos {
                 start_line: prev.end_line,
                 end_line: next.start_line,
@@ -1134,15 +1157,22 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         cur.consume();
         let mut attached = LineBuffer::default();
         let cursor_lines = cur.lines;
+        let attached_start = cur.pos;
+        let refused_first_plus = cur
+            .continuation_decision(attached_start)
+            .is_some_and(|decision| decision.refusal.is_some())
+            && cursor_lines
+                .line(attached_start + 1)
+                .map_or(true, is_blank_line);
         let end = attached_block_lines_classified(
             cursor_lines,
             cur.pos,
             &mut cur.comment_closer_last_index,
             &mut cur.code_closer_last_index,
             self.options,
-            &mut |a, _| {
+            &mut |a, at| {
                 is_blank_line(a)
-                    || is_plus_marker(a)
+                    || (is_plus_marker(a) && !(at == attached_start && refused_first_plus))
                     || a.strip_prefix(":: ").is_some()
                     || strip_definition_marker(a).is_some()
             },

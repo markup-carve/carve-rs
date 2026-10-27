@@ -572,6 +572,35 @@ fn root_block_images_and_captions_use_event_route() {
     assert_eq!(actual, parse_standard(source));
 }
 
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn indented_image_with_flush_caption_keeps_figure() {
+    for source in [
+        "  ![a](b)\n^ cap\n",
+        "  ![a](b)\n\n^ cap\n",
+        "  ![a][r]\n^ cap\n\n[r]: /x\n",
+        "> x\n>\n>   ![a](b)\n> ^ cap\n",
+    ] {
+        for options in [
+            Options::default(),
+            Options::default().with_source_lines(true),
+            Options::default().with_positions(true),
+            Options::default()
+                .with_positions(true)
+                .with_source_lines(true),
+        ] {
+            let (candidate, admitted) =
+                parse_experimental_event_blocks_with_options(source, &options);
+            assert!(admitted, "{source:?}");
+            assert_eq!(
+                candidate,
+                parse_with_options(source, &options),
+                "{source:?}"
+            );
+        }
+    }
+}
+
 #[test]
 fn root_comments_use_event_route() {
     for source in [

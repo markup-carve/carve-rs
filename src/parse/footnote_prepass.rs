@@ -1140,14 +1140,22 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         *i += 1;
         let mut attached: Vec<String> = Vec::new();
         let attached_start = *i;
+        let refused_first_plus = self
+            .decision_at(self.first_source_line + attached_start)
+            .is_some_and(|decision| decision.refusal.is_some())
+            && lines
+                .get(attached_start + 1)
+                .map_or(true, |line| is_blank_line(line));
         let end = attached_block_lines_classified(
             CursorLines::Slice(lines),
             *i,
             &mut self.comment_closers,
             &mut self.closer_index,
             self.options,
-            &mut |a, _| {
-                is_blank_line(a) || is_plus_marker(a) || parse_footnote_def_line(a).is_some()
+            &mut |a, at| {
+                is_blank_line(a)
+                    || (is_plus_marker(a) && !(at == attached_start && refused_first_plus))
+                    || parse_footnote_def_line(a).is_some()
             },
         );
         while *i < end {

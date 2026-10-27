@@ -317,12 +317,21 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 .continuation_decision(self.cur.pos)
                 .is_some_and(|decision| {
                     decision.owner == Some(continuation_marker::Kind::List)
-                        && decision.refusal == Some(continuation_marker::Refusal::Blank)
+                        && (decision.refusal.is_some()
+                            || self.cur.lines.line(self.cur.pos + 1).is_some_and(|line| {
+                                detect_list_marker_full(line)
+                                    .is_some_and(|marker| marker.indent <= base_indent)
+                            }))
                 })
         {
-            let mut bodies = Vec::new();
-            if let Some(block) = parse_block(self.cur, options, &mut bodies) {
-                self.place_in_last_item(vec![*block]);
+            let literal = MappedSource::new_line_at(
+                self.cur.lines.at(self.cur.pos).to_string(),
+                self.cur.source_line(self.cur.pos),
+                self.cur.source_col(self.cur.pos),
+            );
+            self.cur.consume();
+            if let Some(last_item) = self.items.len().checked_sub(1) {
+                item_body(self.deferred, last_item, literal, None, false, options);
             }
         }
         if let Some(block) = attached {
@@ -766,7 +775,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // a second paragraph rather than a continuation of the
         // first: a comment ends the paragraph above it (§10) while
         // leaving its container open.
-        let retained_fence = collect_trailing_lazy_through(
+        let retained_fence = collect_comment_lazy_through(
             self.cur,
             &mut nested,
             base_indent,
@@ -1081,7 +1090,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // from djot-php, whose marker-line handling deviates from reference
         // djot. The combined stream reuses the normal nested-list/absorption
         // logic (collect_indented_block + recursive parse) -- no separate path.
-        if content.starts_with('>') {
+        if strip_blockquote_prefix(content).is_some() {
             return self.quote_lead_item(item);
         }
         // Braces ALONE on the marker line are a block-attribute line for the
@@ -1091,7 +1100,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // (`- {.c} literal text`), which is why the whole content must parse as
         // a standalone attribute line. Routed through the block stream so the
         // pending-attribute machinery, not this lead-paragraph path, sees it.
-        if parse_standalone_attrs(content).is_some() {
+        if parse_standalone_attrs(content).is_some()
+            || marker_content_is_attr_block(content, self.cur, self.content_col)
+        {
             self.attr_lead_item(item);
             return NEXT;
         }
@@ -1100,7 +1111,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         }
         let content_col = self.content_col;
         if marker_content_starts_block(content, self.cur, content_col)
-            || marker_content_is_attr_block(content, self.cur, content_col)
             || marker_content_is_captioned_inline(content, self.cur, content_col, self.options)
         {
             return self.block_lead_item(item);
@@ -1298,6 +1308,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // where `- x` / blank / `Body.` went loose - on the same blank line
         // (carve-rs#476).
         stream.authored_base_at_start |= after_blank;
+        rebase_quoted_fence_payload(&mut stream, innermost);
         let children = item_body(
             self.deferred,
             self.items.len(),
@@ -1518,6 +1529,28 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         let (content_col, options) = (self.content_col, self.options);
         self.last_item_marker_attr_only = true;
         let mut stream = item_marker_source(self.cur, item.marker.content, item.at);
+        let attribute_lines =
+            standalone_attrs_block_len_iter(std::iter::once(item.marker.content).chain(
+                (self.cur.pos..self.cur.lines.len()).map_while(|at| self.cur.lines.line(at)),
+            ))
+            .unwrap_or(1);
+        for _ in 1..attribute_lines {
+            let line = self.cur.peek().unwrap();
+            let (body, consumed) = if indent_columns(line) >= content_col {
+                let (body, consumed, _) = slice_columns_mapped(line, content_col, false);
+                (body, consumed)
+            } else {
+                (trim_ascii_start(line).to_string(), leading_ws(line))
+            };
+            stream.push_newline_at(
+                body,
+                self.cur.source_line(self.cur.pos),
+                self.cur
+                    .source_col(self.cur.pos)
+                    .map(|col| col + consumed as isize),
+            );
+            self.cur.consume();
+        }
         // The marker-line attribute opens no paragraph. Only a following
         // line that reaches the item's content column can be its target;
         // a genuinely below-column line closes the item under PART 1 S4
@@ -1640,6 +1673,11 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     ) {
         let content_col = self.content_col;
         loop {
+            if self.cur.peek().is_some_and(|line| {
+                marked_quote_at_ancestor_column(line, content_col, lead.nested_content_col)
+            }) {
+                break;
+            }
             if ended_on_blank {
                 break;
             }
@@ -1766,19 +1804,30 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             last_consumed_line_below_column(cur, nested_content_col),
             last_consumed_line_below_column(cur, content_col),
             options,
-        ) {
+        ) && !stream
+            .source
+            .lines()
+            .last()
+            .is_some_and(|line| caption_content(trim_ascii_start(line)).is_some())
+        {
             return None;
         }
         let before = cur.pos;
-        collect_trailing_lazy_through(
+        collect_marker_sublist_lazy_through(
             cur,
             stream,
             nested_content_col.saturating_sub(1),
             base_indent,
             nested_content_col,
+            content_col,
         );
         if cur.pos == before {
             return None;
+        }
+        if cur.peek().is_some_and(|line| {
+            marked_quote_at_ancestor_column(line, content_col, nested_content_col)
+        }) {
+            return Some(false);
         }
         let before_block = cur.pos;
         stream.append(collect_indented_block_mapped(
@@ -1805,17 +1854,16 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // (carve-rs#490). #476 fixed the attribute-block, quote and heading
         // leads beside this one and left the sub-list lead open, because
         // carve-php agreed with this engine at the time and carve-js did not.
-        // The bare nested marker is a separate event: its following blank
-        // reaches the outer content column before the deferred child tree
-        // exists, so carry this boundary into the list's tightness now.
-        let blank_after_bare_nested_marker = lead.nested_lead_is_continuation
-            && self.cur.lines.line(item_at + 1).is_some_and(is_blank_line)
-            && self.cur.lines.line(item_at + 2).is_some_and(|line| {
-                indent_columns(line) == content_col
-                    && (is_plus_marker(trim_ascii_start(line))
-                        || line_starts_paragraph(trim_ascii_start(line)))
-            });
-        if blank_after_bare_nested_marker {
+        // A stacked first block can consume its following blank before the
+        // deferred child tree exists. Keep that boundary for the outer item.
+        let blank_after_nested_first_block =
+            self.cur.lines.line(item_at + 1).is_some_and(is_blank_line)
+                && self.cur.lines.line(item_at + 2).is_some_and(|line| {
+                    indent_columns(line) == content_col
+                        && (is_plus_marker(trim_ascii_start(line))
+                            || line_starts_paragraph(trim_ascii_start(line)))
+                });
+        if blank_after_nested_first_block {
             self.tight = false;
         }
         if sublist_source_trailing_invisible_separation(&stream.source) {
@@ -2525,4 +2573,53 @@ fn finish_list(
         tight,
         items,
     })
+}
+
+/// Keep a quoted fence's payload at the quote prefix after stripping the list column.
+fn rebase_quoted_fence_payload(stream: &mut MappedSource, marker_leaf: &str) {
+    let Some(first_fence) = detect_fence_open(marker_leaf) else {
+        return;
+    };
+    let mut open = Some(first_fence);
+    let mut payload_column = None;
+    let mut lines = Vec::new();
+    for (at, line) in stream.source.split('\n').enumerate() {
+        if at == 0 {
+            lines.push(line.to_string());
+            continue;
+        }
+        let leading = indent_columns(line);
+        let stripped = trim_ascii_start(line);
+        if open.is_some()
+            && payload_column.is_none()
+            && strip_blockquote_prefix(stripped).is_some_and(|body| {
+                !is_blank_line(body) && !open.is_some_and(|fence| is_fence_close(body, fence))
+            })
+        {
+            payload_column = Some(leading);
+        }
+        let line = if open.is_some()
+            && leading > 0
+            && payload_column.is_some_and(|column| leading <= column)
+            && strip_blockquote_prefix(stripped).is_some()
+        {
+            if let Some(column) = stream.col_map.get_mut(at).and_then(Option::as_mut) {
+                *column += leading as isize;
+            }
+            stripped
+        } else {
+            line
+        };
+        if let Some(body) = strip_blockquote_prefix(line) {
+            if open.is_some_and(|fence| is_fence_close(body, fence)) {
+                open = None;
+                payload_column = None;
+            } else if open.is_none() {
+                open = detect_fence_open(body);
+                payload_column = None;
+            }
+        }
+        lines.push(line.to_string());
+    }
+    stream.source = lines.join("\n");
 }

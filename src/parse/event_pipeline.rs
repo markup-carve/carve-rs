@@ -530,6 +530,22 @@ fn parse_mixed_blocks<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
     parse_mixed_blocks_mapped::<DEFINITIONS, ABBREVIATIONS>(lines, options, None, at_document_level)
 }
 
+fn event_paragraph_needs_reader(
+    next: &str,
+    has_lines: bool,
+    invalid_brace_line: bool,
+    root_indented_text: bool,
+) -> bool {
+    (has_lines
+        && (is_definition_list_start(next)
+            || detect_fence_open(next).is_some()
+            || thematic_break_marker(next).is_some()))
+        || (!may_continue_plain_paragraph(next)
+            && !is_list_marker(next)
+            && !(!has_lines && invalid_brace_line)
+            && !(!has_lines && root_indented_text))
+}
+
 fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
     lines: &[&str],
     options: &Options<'_>,
@@ -656,7 +672,7 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             continue;
         }
         if strip_blockquote_prefix(line).is_some() {
-            let direct = if options.source_lines || options.positions {
+            let direct = if options.source_lines || options.positions || line.contains("![") {
                 None
             } else {
                 parse_simple_quote(lines, cur.pos, options)
@@ -741,6 +757,26 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
         } else {
             false
         };
+        if trim_ascii_start(line).starts_with("![") && detect_block_image(line).is_some() {
+            let mut item_bodies = Vec::new();
+            let block = parse_block(&mut cur, options, &mut item_bodies)?;
+            if !item_bodies.is_empty() {
+                return None;
+            }
+            emit!(_block_source_line, *block);
+            continue;
+        }
+        if line.starts_with("![")
+            && lines
+                .get(cur.pos + 1)
+                .is_some_and(|next| is_blank_line(next))
+            && lines
+                .get(cur.pos + 2)
+                .is_some_and(|next| caption_content(next).is_some())
+        {
+            emit!(_block_source_line, parse_paragraph(&mut cur, options));
+            continue;
+        }
         if !may_start_plain_paragraph(line) && !invalid_brace_line && !root_indented_text {
             if line.starts_with(":::") {
                 if detect_line_block_open(line).is_some() {
@@ -778,11 +814,7 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             {
                 return None;
             }
-            let mut paragraph = parse_paragraph(&mut cur, options);
-            if let BlockNode::Paragraph(node) = &mut paragraph {
-                node.at_content_column = !line.starts_with([' ', '\t']);
-            }
-            emit!(_block_source_line, paragraph);
+            emit!(_block_source_line, parse_paragraph(&mut cur, options));
             continue;
         }
         if options.positions {
@@ -814,15 +846,12 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                     }
                 }
             }
-            if (!paragraph_lines.is_empty()
-                && (is_definition_list_start(next)
-                    || detect_fence_open(next).is_some()
-                    || thematic_break_marker(next).is_some()))
-                || (!may_continue_plain_paragraph(next)
-                    && !is_list_marker(next)
-                    && !(paragraph_lines.is_empty() && invalid_brace_line)
-                    && !(paragraph_lines.is_empty() && root_indented_text))
-            {
+            if event_paragraph_needs_reader(
+                next,
+                !paragraph_lines.is_empty(),
+                invalid_brace_line,
+                root_indented_text,
+            ) {
                 if !at_document_level {
                     return None;
                 }
@@ -1251,6 +1280,20 @@ fn parse_unified_list(
     parse_unified_list_mapped(lines, start, options, None)
 }
 
+fn direct_list_image_line_is_supported(content: &str) -> Option<()> {
+    detect_block_image(content).is_none().then_some(())
+}
+
+fn unified_list_paragraph_accepts(content: &str, has_paragraph: bool) -> bool {
+    (if has_paragraph {
+        may_continue_plain_paragraph(content)
+    } else {
+        may_start_plain_paragraph(content)
+    }) && !is_list_marker(content)
+        && detect_fence_open(content).is_none()
+        && thematic_break_marker(content).is_none()
+}
+
 fn parse_unified_list_mapped(
     lines: &[&str],
     start: usize,
@@ -1450,6 +1493,7 @@ fn parse_unified_list_mapped(
             if is_plus_marker(content) {
                 start_marker_line_list_continuation(&mut frames, decision)?;
             } else {
+                direct_list_image_line_is_supported(content)?;
                 frames.last_mut()?.paragraph.push(content);
             }
             pos += 1;
@@ -1464,6 +1508,7 @@ fn parse_unified_list_mapped(
             return None;
         }
         let content = trim_ascii_end(&line[indent..]);
+        direct_list_image_line_is_supported(content)?;
         if detect_fence_open(content).is_some() {
             let (block, end) = parse_unified_list_fence(lines, pos, frame.content_indent, options)?;
             flush_unified_list_paragraph(frame)?;
@@ -1515,14 +1560,7 @@ fn parse_unified_list_mapped(
             pos += 1;
             continue;
         }
-        if !(if frame.paragraph.is_empty() {
-            may_start_plain_paragraph(content)
-        } else {
-            may_continue_plain_paragraph(content)
-        }) || is_list_marker(content)
-            || detect_fence_open(content).is_some()
-            || thematic_break_marker(content).is_some()
-        {
+        if !unified_list_paragraph_accepts(content, !frame.paragraph.is_empty()) {
             return None;
         }
         frame.paragraph.push(content);

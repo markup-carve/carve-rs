@@ -430,3 +430,20 @@ fn markdown_image_paragraphs_have_exact_assessment() {
         .iter()
         .any(|d| d.code == "fidelity-unverified"));
 }
+
+#[test]
+fn image_alt_keeps_markdown_line_break() {
+    let result = migrate_markdown("![a\nb](u)\n");
+    assert_eq!(result.value, "![a\nb](u)\n");
+    assert!(carve::to_html(&result.value).contains("alt=\"a\nb\""));
+}
+
+#[test]
+fn note_shaped_text_inside_markdown_fence_stays_code() {
+    let source = "x[^f]\n\n[^f]: n\n\n    ```\n    [^z]: z\n    ```\n";
+    let converted = markdown_to_carve(source);
+    assert_eq!(converted.matches("[^z]: z").count(), 1, "{converted}");
+    let html = carve::to_html(&converted);
+    assert!(html.contains("<code>[^z]: z"), "{html}");
+    assert!(!html.contains("[^z]</p>"), "{html}");
+}

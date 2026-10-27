@@ -43,3 +43,16 @@ fn an_unfinished_footnote_opener_keeps_its_inner_link() {
         "{html}"
     );
 }
+
+#[test]
+fn a_reference_chain_keeps_the_linked_pair() {
+    for destination in ["/url", "/url1"] {
+        let source = format!("[foo][bar][baz]\n\n[baz]: {destination}\n");
+        let written = carve::try_markdown_to_carve(&source).unwrap();
+        let html = carve::to_html(&written);
+        assert!(
+            html.contains(&format!("[foo]<a href=\"{destination}\">bar</a>")),
+            "{written:?} produced {html:?}"
+        );
+    }
+}
