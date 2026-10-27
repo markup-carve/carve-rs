@@ -2155,3 +2155,54 @@ fn generated_indented_footnote_placeholders_keep_full_document() {
     }
     assert!(admitted > 100, "only {admitted} generated cases admitted");
 }
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn footnote_like_lines_after_extraction_keep_link_semantics() {
+    let options = [
+        Options::default(),
+        Options::default().with_source_lines(true),
+        Options::default().with_positions(true),
+        Options::default()
+            .with_positions(true)
+            .with_source_lines(true),
+    ];
+    for line in [
+        "[^a]:",
+        "[^a]:\tTabbed",
+        "[^]: /url",
+        " [^a]: literal",
+        "> [^a]: note",
+        "> - [^a]: note",
+        "[r]: /url",
+        "  [r]: /url",
+        "> [r]: /url",
+        "[r]: /url [^a]: note",
+        "> [r]: /url \"[^a]: x\"",
+        "- [r]: /url {title=\"[^a]: x\"}",
+        "1. [r]: /url '[^a]: x'",
+        "- [ ] [r]: /url \"[^a]: x\"",
+    ] {
+        for lead in ["", "see[^a]\n\n", "- item\n\n"] {
+            let source = format!("{lead}{line}\nroot\n");
+            for option in &options {
+                let (candidate, _) = parse_experimental_event_blocks_with_options(&source, option);
+                assert_eq!(candidate, parse_with_options(&source, option), "{source:?}");
+            }
+        }
+    }
+    let source = "[^]: /url\n\nsee [x][^].\n";
+    let (_, admitted) = parse_experimental_event_blocks(source);
+    assert!(!admitted);
+    let source = "> [r]: /url \"[^a]: x\"\n\nroot [r][]\n";
+    let (_, admitted) = parse_experimental_event_blocks(source);
+    assert!(!admitted);
+    let bracket_heavy = format!(
+        "see[^n]\n\n{}{}[^n]: note\n",
+        "[".repeat(33),
+        "x".repeat(1025)
+    );
+    let (candidate, admitted) = parse_experimental_event_blocks(&bracket_heavy);
+    assert!(!admitted);
+    assert_eq!(candidate, parse_standard(&bracket_heavy));
+}

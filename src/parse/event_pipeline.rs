@@ -2884,6 +2884,17 @@ fn has_embedded_footnote_definition(line: &str) -> bool {
         .is_some_and(|start| parse_footnote_def_line(&line[start..]).is_some())
 }
 
+fn has_link_definition_after_prefix(line: &str) -> bool {
+    if !line.contains("]:") {
+        return false;
+    }
+    if line.len() > 1024 && line.match_indices('[').nth(32).is_some() {
+        return true;
+    }
+    line.match_indices('[')
+        .any(|(start, _)| parse_link_def_line(&line[start..]).is_some())
+}
+
 fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Document, bool)> {
     let may_have_abbrevs = source.contains("*[");
     if needs_event_normalization(source) || has_fence_candidate_without_final_newline(source) {
@@ -2924,10 +2935,7 @@ fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Doc
             &options,
         );
     }
-    if mapped
-        .source
-        .lines()
-        .any(|line| line.contains("]:") && detect_abbreviation_def(line).is_none())
+    if mapped.source.lines().any(has_link_definition_after_prefix)
         || !note_links.is_empty()
         || footnote_sources
             .values()
@@ -3277,10 +3285,7 @@ fn parse_document_with_footnotes_options(
             options,
         );
     }
-    if mapped
-        .source
-        .lines()
-        .any(|line| line.contains("]:") && detect_abbreviation_def(line).is_none())
+    if mapped.source.lines().any(has_link_definition_after_prefix)
         || !note_links.is_empty()
         || footnote_sources
             .values()
