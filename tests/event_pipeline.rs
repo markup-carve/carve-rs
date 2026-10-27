@@ -563,8 +563,9 @@ fn root_block_images_and_captions_use_event_route() {
             }
         }
     }
-    let (_, admitted) = parse_experimental_event_blocks("![alt][ref]\n^ cap\n");
-    assert!(!admitted);
+    let (actual, admitted) = parse_experimental_event_blocks("![alt][ref]\n^ cap\n");
+    assert!(admitted);
+    assert_eq!(actual, parse_standard("![alt][ref]\n^ cap\n"));
     let source = "![alt](/image.png)\n\n\n^ cap\n";
     let (actual, admitted) = parse_experimental_event_blocks(source);
     assert!(admitted);
@@ -600,8 +601,9 @@ fn root_comments_use_event_route() {
         assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
         assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
     }
-    let (_, admitted) = parse_experimental_event_blocks("Paragraph.\n%% comment\n");
-    assert!(!admitted);
+    let (actual, admitted) = parse_experimental_event_blocks("Paragraph.\n%% comment\n");
+    assert!(admitted);
+    assert_eq!(actual, parse_standard("Paragraph.\n%% comment\n"));
 }
 
 #[test]
@@ -1888,4 +1890,80 @@ fn root_continuation_owner_grid_matches_public_ast_and_html() {
         }
     }
     assert!(admitted > 0, "the grid must exercise the event route");
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn delegated_paragraph_owner_keeps_exact_document() {
+    let cases = [
+        "Prose\n```js title=\"x\"\ncode\n```\n",
+        "![a][ok]\n^ cap\n\n[ok]: /p.png\n",
+        "x\n  %% indented comment\ny\n",
+        "Prose\n- item\nnext\n",
+        "A paragraph\n:: term\n:  meaning\n",
+        "Text\n{.class}\n\nAfter.\n",
+    ];
+    for source in cases {
+        for options in [
+            Options::default(),
+            Options::default().with_source_lines(true),
+            Options::default().with_positions(true),
+            Options::default()
+                .with_positions(true)
+                .with_source_lines(true),
+        ] {
+            let (candidate, admitted) =
+                parse_experimental_event_blocks_with_options(source, &options);
+            assert!(admitted, "{source:?}");
+            assert_eq!(
+                candidate,
+                parse_with_options(source, &options),
+                "{source:?}"
+            );
+        }
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn generated_delegated_paragraph_boundaries_keep_exact_document() {
+    let fragments = [
+        "plain",
+        "  indented",
+        "- item",
+        ":: term\n:  meaning",
+        "```x\ny\n```",
+        "%% comment",
+        "{.a}",
+        "![a](b)",
+        "^ caption",
+        "> quoted",
+        "::: note\nhi\n:::",
+    ];
+    let mut state = 0x6283_f911_u32;
+    let mut admitted = 0;
+    for case in 0..4096 {
+        let mut source = String::new();
+        for _ in 0..4 {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            if !source.is_empty() && (state & 3) == 0 {
+                source.push('\n');
+            }
+            source.push_str(fragments[(state as usize) % fragments.len()]);
+            source.push('\n');
+        }
+        for options in [
+            Options::default(),
+            Options::default().with_source_lines(true),
+        ] {
+            let (candidate, used) = parse_experimental_event_blocks_with_options(&source, &options);
+            admitted += usize::from(used);
+            assert_eq!(
+                candidate,
+                parse_with_options(&source, &options),
+                "case {case}: {source:?}"
+            );
+        }
+    }
+    assert!(admitted > 5000, "only {admitted} cases admitted");
 }

@@ -566,7 +566,7 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
         }};
     }
     let mut leading_attrs: Vec<(usize, Attrs)> = Vec::new();
-    while cur.peek().is_some() {
+    'blocks: while cur.peek().is_some() {
         if options.positions {
             current_block_start.set(cur.pos);
         }
@@ -789,6 +789,7 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             emit!(_block_source_line, parse_paragraph(&mut cur, options));
             continue;
         }
+        let paragraph_start = cur.pos;
         let mut paragraph_lines = Vec::new();
         while let Some(next) = cur.peek() {
             if DEFINITIONS && is_definition_placeholder(next) {
@@ -818,14 +819,18 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                     || detect_fence_open(next).is_some()
                     || thematic_break_marker(next).is_some())
             {
-                return None;
+                cur.pos = paragraph_start;
+                emit!(_block_source_line, parse_paragraph(&mut cur, options));
+                continue 'blocks;
             }
             if !may_continue_plain_paragraph(next)
                 && !is_list_marker(next)
                 && !(paragraph_lines.is_empty() && invalid_brace_line)
                 && !(paragraph_lines.is_empty() && root_indented_text)
             {
-                return None;
+                cur.pos = paragraph_start;
+                emit!(_block_source_line, parse_paragraph(&mut cur, options));
+                continue 'blocks;
             }
             paragraph_lines.push(trim_ascii_end(trim_ascii_start(next)));
             cur.consume();
