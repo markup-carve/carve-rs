@@ -2620,3 +2620,6 @@ mod quoted_literal_colon_boundary;
 
 #[path = "../quoted_nested_inline_code_lazy.rs"]
 mod quoted_nested_inline_code_lazy;
+
+#[path = "../nested_list_caption_continuation.rs"]
+mod nested_list_caption_continuation;

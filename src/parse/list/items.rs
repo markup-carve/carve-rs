@@ -1776,7 +1776,12 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             last_consumed_line_below_column(cur, nested_content_col),
             last_consumed_line_below_column(cur, content_col),
             options,
-        ) {
+        ) && !stream
+            .source
+            .lines()
+            .last()
+            .is_some_and(|line| caption_content(trim_ascii_start(line)).is_some())
+        {
             return None;
         }
         let before = cur.pos;
