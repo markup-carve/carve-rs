@@ -2629,5 +2629,7 @@ mod closed_nested_quote_leaf;
 
 #[path = "../block_image_paragraph_shape.rs"]
 mod block_image_paragraph_shape;
+#[path = "../literal_quote_list_lead.rs"]
+mod literal_quote_list_lead;
 #[path = "../markdown_link_footnotes.rs"]
 mod markdown_link_footnotes;

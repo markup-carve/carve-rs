@@ -1090,7 +1090,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // from djot-php, whose marker-line handling deviates from reference
         // djot. The combined stream reuses the normal nested-list/absorption
         // logic (collect_indented_block + recursive parse) -- no separate path.
-        if content.starts_with('>') {
+        if strip_blockquote_prefix(content).is_some() {
             return self.quote_lead_item(item);
         }
         // Braces ALONE on the marker line are a block-attribute line for the
