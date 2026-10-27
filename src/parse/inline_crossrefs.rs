@@ -76,6 +76,7 @@ pub(crate) fn crossref_index_for_document(
     crossref_index(titles, labels)
 }
 
+#[cfg(feature = "experimental-event-parser")]
 #[cold]
 #[inline(never)]
 pub(in crate::parse) fn crossref_index_and_heading_ids_for_document(
