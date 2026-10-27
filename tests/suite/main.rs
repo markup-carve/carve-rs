@@ -2629,6 +2629,8 @@ mod closed_nested_quote_leaf;
 
 #[path = "../block_image_paragraph_shape.rs"]
 mod block_image_paragraph_shape;
+#[path = "../indented_image_flush_caption.rs"]
+mod indented_image_flush_caption;
 #[path = "../literal_quote_list_lead.rs"]
 mod literal_quote_list_lead;
 #[path = "../markdown_link_footnotes.rs"]

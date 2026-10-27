@@ -66,17 +66,30 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
                     && decision.owner != Some(continuation_marker::Kind::Footnote)
                     && !decision.after_quote_blank
             });
-    // Whether the first line sits at the container's content column (flush-left
-    // here, since the caller has dedented to that column). Only a content-column
-    // image + `^ caption` promotes to a `<figure>` later; an indented one stays
-    // literal (strict column-0 rule).
-    let at_content_column = cur.peek().is_some_and(|l| !l.starts_with([' ', '\t']));
+    // A caption at the content column can attach to an indented image-only
+    // paragraph. An indented caption remains literal paragraph text.
+    let image_lead = cur.peek().is_some_and(|line| {
+        let content = trim_ascii_start(line);
+        detect_block_image(content).is_some() || reference_image_line(content)
+    });
+    let mut at_content_column = cur.peek().is_some_and(|l| !l.starts_with([' ', '\t']));
     let reference_caption_candidate = cur.peek().is_some_and(reference_image_line);
     let mut reference_caption_claimed = false;
     let mut lines: Vec<&str> = Vec::new();
+    let mut line_indices = Vec::new();
     let mut suppress_colon_interrupt = false;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
+            if image_lead
+                && lines.len() == 1
+                && cur
+                    .lines
+                    .line(cur.pos + 1)
+                    .is_some_and(|next| caption_content(next).is_some())
+            {
+                cur.consume();
+                continue;
+            }
             break;
         }
         // First line is always part of the paragraph; from the second on, a
@@ -116,11 +129,19 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
             break;
         }
         report_unclaimed_document_plus(cur, line);
+        if image_lead
+            && lines.len() == 1
+            && caption_content(line).is_some()
+            && !line.starts_with([' ', '\t'])
+        {
+            at_content_column = true;
+        }
         cur.consume();
         let trimmed = trim_ascii_end(trim_ascii_start(line));
         suppress_colon_interrupt |= is_invalid_colon_fence_opener_text(trimmed);
         reference_caption_claimed |=
             reference_caption_candidate && lines.len() == 1 && caption_content(line).is_some();
+        line_indices.push(cur.pos - 1);
         lines.push(trimmed);
     }
     // A paragraph never carries its OWN trailing attribute block: a standalone
@@ -148,8 +169,8 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
     let children = if options.positions {
         let anchors = lines
             .iter()
-            .enumerate()
-            .map(|(idx, line)| inline_anchor_for_line(cur, span_start + idx, line))
+            .zip(&line_indices)
+            .map(|(line, &index)| inline_anchor_for_line(cur, index, line))
             .collect();
         parse_inline_lines_with_anchor(joined, options, anchors)
     } else {
