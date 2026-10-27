@@ -593,7 +593,8 @@ fn render_dropped_raw_block(
     options: &Options<'_>,
     state: &mut RenderState,
 ) -> bool {
-    if !matches!(block, BlockNode::RawBlock(raw) if raw.format != "html") {
+    if !matches!(block, BlockNode::RawBlock(raw) if raw.format != "html" && raw.format != "html-document")
+    {
         return false;
     }
     let mut sink = String::new();
@@ -767,6 +768,9 @@ fn render_section(
     render_heading_without_section_id(out, heading, level + 1, options, state);
     let mut i = start + 1;
     while i < nodes.len() {
+        if matches!(&nodes[i], BlockNode::RawBlock(raw) if raw.format == "html-document") {
+            break;
+        }
         if let BlockNode::Heading(next) = &nodes[i] {
             if next.level <= heading.level {
                 break;
@@ -876,7 +880,7 @@ fn render_block(
         BlockNode::FigureGroup(g) => render_figure_group(out, g, level, options, state),
         BlockNode::AbbreviationDef(_) => {}
         BlockNode::RawBlock(r) => {
-            if r.format == "html" {
+            if r.format == "html" || r.format == "html-document" {
                 if options.allow_raw_html {
                     indent(out, level);
                     out.push_str(r.target_content());
@@ -1293,7 +1297,11 @@ fn render_escaped_raw_block(out: &mut String, r: &RawBlock, level: usize) {
     let content = r.content.clone();
     let code = CodeBlock {
         attrs: r.attrs.clone(),
-        lang: Some(r.format.clone()),
+        lang: Some(if r.format == "html-document" {
+            "html".into()
+        } else {
+            r.format.clone()
+        }),
         title: None,
         label: None,
         content,
@@ -1608,7 +1616,7 @@ fn renders_nothing(node: &BlockNode) -> bool {
         | BlockNode::LinkReferenceDefinition(_)
         | BlockNode::CitationDefinition(_)
         | BlockNode::AbbreviationDef(_) => true,
-        BlockNode::RawBlock(r) => r.format != "html",
+        BlockNode::RawBlock(r) => r.format != "html" && r.format != "html-document",
         BlockNode::BlockExtension(n) => renders_nothing(&n.fallback),
         _ => false,
     }
