@@ -2633,6 +2633,8 @@ mod block_image_paragraph_shape;
 mod braced_opener_marker_is_not_closer;
 #[path = "../combined_emphasis_code_visibility.rs"]
 mod combined_emphasis_code_visibility;
+#[path = "../consecutive_plus_host_paragraph.rs"]
+mod consecutive_plus_host_paragraph;
 #[path = "../indented_image_flush_caption.rs"]
 mod indented_image_flush_caption;
 #[path = "../inline_link_depth_boundary.rs"]

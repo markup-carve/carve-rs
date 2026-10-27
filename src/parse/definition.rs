@@ -1157,15 +1157,22 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         cur.consume();
         let mut attached = LineBuffer::default();
         let cursor_lines = cur.lines;
+        let attached_start = cur.pos;
+        let refused_first_plus = cur
+            .continuation_decision(attached_start)
+            .is_some_and(|decision| decision.refusal.is_some())
+            && cursor_lines
+                .line(attached_start + 1)
+                .map_or(true, is_blank_line);
         let end = attached_block_lines_classified(
             cursor_lines,
             cur.pos,
             &mut cur.comment_closer_last_index,
             &mut cur.code_closer_last_index,
             self.options,
-            &mut |a, _| {
+            &mut |a, at| {
                 is_blank_line(a)
-                    || is_plus_marker(a)
+                    || (is_plus_marker(a) && !(at == attached_start && refused_first_plus))
                     || a.strip_prefix(":: ").is_some()
                     || strip_definition_marker(a).is_some()
             },
