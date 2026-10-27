@@ -34,12 +34,8 @@ pub(in crate::parse) fn promote_block_images(
     while let Some(level) = worklist.pop() {
         for block in level {
             let single_image = !figures_only
-                && matches!(
-                    block,
-                    BlockNode::Paragraph(p)
-                        if (p.at_content_column || !lone_image_needs_content_column || p.children.iter().any(|child| matches!(child, InlineNode::Comment(_))))
-                            && lone_rendered_image(&p.children).is_some()
-                );
+                && !lone_image_needs_content_column
+                && matches!(block, BlockNode::Paragraph(p) if lone_rendered_image(&p.children).is_some());
             if single_image {
                 // Take the children out first so the paragraph borrow ends before
                 // `block` is reassigned. A leading block-attribute line (`{#id}`)

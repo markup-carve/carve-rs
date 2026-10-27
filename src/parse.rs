@@ -972,9 +972,9 @@ fn parse_with_options_mode_and_index(
         if !matches!(mode, ParseMode::HtmlFacade) {
             let _ = crate::render::collect_footnotes(&mut doc, false);
         }
-        // A resolved reference image lands as a one-image paragraph (the
-        // syntactic block-image check ran before resolution); promote it to a
-        // block image like a standalone direct image, matching carve-php.
+        // A resolved reference image lands in a paragraph because resolution
+        // follows block parsing. Mark that paragraph as a block image without
+        // discarding its inline children.
         if source.contains("![") {
             promote_block_images(&mut doc.children, false, true);
             for blocks in doc.footnote_defs.values_mut() {
