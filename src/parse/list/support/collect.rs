@@ -1899,8 +1899,16 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             );
         }
         // Lazy text of a descendant's paragraph, which the reparse must not read as a fence.
+        let term_comment_below_column = marker_is_definition_term
+            && !marker_definition_has_description
+            && indent > 0
+            && indent < strip_cols
+            && is_line_comment_any_column(line)
+            && !is_definition_placeholder(line);
         lines.push(if frame_lazy_fence {
             format!("{LAZY}{}", trim_ascii_start(&sliced))
+        } else if term_comment_below_column {
+            format!(" {sliced}")
         } else {
             sliced
         });
@@ -1921,7 +1929,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         reached.push(indent >= strip_cols);
         if building_maps {
             col_map.push(cur.source_col(cur.pos).map(|outer| {
-                outer + consumed as isize + trimmed_after_slice as isize - synthetic as isize
+                outer + consumed as isize + trimmed_after_slice as isize
+                    - synthetic as isize
+                    - usize::from(term_comment_below_column) as isize
             }));
         }
         cur.consume();
