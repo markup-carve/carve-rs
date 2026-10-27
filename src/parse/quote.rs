@@ -2443,11 +2443,15 @@ impl<'a> QuoteBody<'a> {
         } else {
             fenced_below.unwrap_or_else(|| self.para_open.get())
         };
-        if self.inner.lines.last().is_some_and(|last| {
-            !last.text.starts_with(LAZY)
-                && detect_list_marker_full(strip_all_quotes(&last.text).0).is_some()
-                && !body_ends_with_open_paragraph(&last.text, options)
-        }) {
+        // A marker folded into an open paragraph is text, not a closed leaf.
+        if (self.item_opened_at.is_some() && self.item_opened_at == self.last_quoted_at
+            || self.last_nested)
+            && self.inner.lines.last().is_some_and(|last| {
+                !last.text.starts_with(LAZY)
+                    && detect_list_marker_full(strip_all_quotes(&last.text).0).is_some()
+                    && !body_ends_with_open_paragraph(&last.text, options)
+            })
+        {
             return true;
         }
         let empty_marker_leaf = self.inner.lines.len() == 1
