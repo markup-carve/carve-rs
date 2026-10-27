@@ -565,12 +565,27 @@ fn match_directive_at(text: &str, start: usize) -> Option<(usize, RawDirective)>
     let mut j = 0usize;
     let mut open_quote: Option<u8> = None;
     let mut fallback: Option<usize> = None;
+    let mut saw_lines = false;
     let hit = loop {
         if j >= tail_bytes.len() {
             break fallback?;
         }
         let c = tail_bytes[j];
         let Some(quote) = open_quote else {
+            if c == b'@' && tail[j..].starts_with("@lines:") {
+                saw_lines = true;
+            }
+            // A separate nested opener before the line selector makes this
+            // candidate ineligible. Stop here rather than rescan to the same
+            // distant closer once for every opener in a malformed run.
+            if c == b'{'
+                && tail_bytes.get(j + 1) == Some(&b'{')
+                && j > 0
+                && tail_bytes[j - 1] == b' '
+                && !saw_lines
+            {
+                return None;
+            }
             if c == b'"' || c == b'\'' {
                 open_quote = Some(c);
             } else if is_closer(j) {
