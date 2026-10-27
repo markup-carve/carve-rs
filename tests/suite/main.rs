@@ -2635,6 +2635,8 @@ mod braced_opener_marker_is_not_closer;
 mod combined_emphasis_code_visibility;
 #[path = "../indented_image_flush_caption.rs"]
 mod indented_image_flush_caption;
+#[path = "../inline_link_depth_boundary.rs"]
+mod inline_link_depth_boundary;
 #[path = "../invisible_comment_plus_attachment.rs"]
 mod invisible_comment_plus_attachment;
 #[path = "../list_comment_lazy_paragraph.rs"]

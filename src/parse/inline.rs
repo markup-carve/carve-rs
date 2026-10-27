@@ -365,6 +365,43 @@ pub(in crate::parse) fn parse_inline_context(
     )
 }
 
+thread_local! {
+    static INLINE_FRAMES: Cell<usize> = const { Cell::new(0) };
+}
+
+struct InlineFrame {
+    waived_block_root: bool,
+}
+
+impl InlineFrame {
+    fn enter(has_bracket_construct: bool) -> (Self, bool) {
+        INLINE_FRAMES.with(|frames| {
+            let nested = frames.get() > 0;
+            frames.set(frames.get() + 1);
+            let waived_block_root = !nested
+                && has_bracket_construct
+                && NESTING_DEPTH.with(|depth| {
+                    if depth.get() > 0 {
+                        depth.set(depth.get() - 1);
+                        true
+                    } else {
+                        false
+                    }
+                });
+            (Self { waived_block_root }, nested)
+        })
+    }
+}
+
+impl Drop for InlineFrame {
+    fn drop(&mut self) {
+        INLINE_FRAMES.with(|frames| frames.set(frames.get() - 1));
+        if self.waived_block_root {
+            NESTING_DEPTH.with(|depth| depth.set(depth.get() + 1));
+        }
+    }
+}
+
 pub(in crate::parse) fn parse_inline_context_with_pairs(
     text: &str,
     options: &Options<'_>,
@@ -380,12 +417,29 @@ pub(in crate::parse) fn parse_inline_context_with_pairs(
     // input like `[[[[[…x]]]]]`). Shares the depth counter with block parsing.
     let quotes = quote_state::Frame::enter();
     let kinds = OpenKinds::enter();
-    let Some(_depth) = DepthGuard::enter() else {
-        return vec![InlineNode::text(text.to_string())];
-    };
     let _kinds = kinds;
     if let Some(plain) = plain_inline_text(text, options, positions, base) {
         return plain;
+    }
+    let has_link_trigger = text.contains("](") || text.contains("][") || text.contains("]{");
+    let (inline_frame, nested) = InlineFrame::enter(has_link_trigger);
+    let _inline_frame = inline_frame;
+    // A bracketed inline tree spends its depth budget on its constructs, not
+    // on the enclosing block and initial scan. Its descendants still share
+    // the cap with block parsing.
+    let _depth = if nested || !has_link_trigger {
+        match DepthGuard::enter() {
+            Some(depth) => Some(depth),
+            None => return vec![InlineNode::text(text.to_string())],
+        }
+    } else {
+        if NESTING_DEPTH.with(Cell::get) >= MAX_NESTING_DEPTH {
+            return vec![InlineNode::text(text.to_string())];
+        }
+        None
+    };
+    if nested && has_link_trigger && NESTING_DEPTH.with(Cell::get) >= MAX_NESTING_DEPTH {
+        return vec![InlineNode::text(text.to_string())];
     }
     let bytes = text.as_bytes();
     // A `[` only opens an inline link, reference link, or span when a `](`,
@@ -393,7 +447,6 @@ pub(in crate::parse) fn parse_inline_context_with_pairs(
     // occur, those attempts -- each an O(n) bracket scan -- can be skipped, so a
     // deeply nested run like `[[[[x]]]]` stays O(n) instead of O(n^2). Footnotes
     // (`[^...]`) are handled separately and cheaply gated on `[^`.
-    let has_link_trigger = text.contains("](") || text.contains("][") || text.contains("]{");
     // Precompute every `[`-to-`]` match once (O(n)) so the per-`[` link /
     // reference / span / image parsers locate their closing bracket in O(1)
     // instead of re-scanning O(n) each. Without this, deeply nested balanced
