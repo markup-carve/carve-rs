@@ -118,6 +118,39 @@ fn root_block_images_and_captions_use_event_route() {
 }
 
 #[test]
+fn root_comments_use_event_route() {
+    for source in [
+        "%% line comment\n",
+        "%% line comment",
+        "%%%\nfenced comment\n%%%\n",
+        "%%%\nfenced comment\n%%%",
+        "%%% opening text\nbody\n%%%\n",
+        "%% comment\n\nAfterward.\n",
+        "{.lead}\n%% comment\n\nAfterward.\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+    for source in [
+        "%%%\nno closer\n",
+        "Paragraph.\n%% comment\n",
+        "%% comment\n- item\n",
+        "  %% indented\n",
+        "%% comment\n![alt](image.png)\n",
+    ] {
+        let (actual, _) = parse_experimental_event_blocks(source);
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+    let (_, admitted) = parse_experimental_event_blocks("Paragraph.\n%% comment\n");
+    assert!(!admitted);
+}
+
+#[test]
 fn unified_list_owner_keeps_loose_and_nested_boundaries() {
     for source in [
         "- first\n\n  second paragraph\n",

@@ -130,6 +130,15 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             cur.consume();
             continue;
         }
+        match take_comment_block(&mut cur, options) {
+            CommentBlock::NotAComment => {}
+            CommentBlock::Consumed(None) => continue,
+            CommentBlock::Consumed(Some(node)) => {
+                out.push(*node);
+                continue;
+            }
+        }
+        let line = cur.peek().unwrap();
         if ABBREVIATIONS {
             if let Some(definition) = detect_abbreviation_def(line) {
                 cur.consume();
@@ -1727,7 +1736,7 @@ mod link_definition_tests {
         let _outer = PlaceholderGuard::install(['\u{e007}', '\u{e008}']);
         let source = "A paragraph\n\n%%\u{e007}\n";
         let (actual, admitted) = parse_document(source).unwrap();
-        assert!(!admitted);
+        assert!(admitted);
         let expected = parse_with_options(source, &Options::default());
         assert_eq!(
             crate::ast_json::to_json(&actual),
