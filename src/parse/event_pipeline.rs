@@ -90,14 +90,16 @@ pub(super) fn parse_blocks(lines: &[&str], options: &Options<'_>) -> Option<Vec<
 fn parse_mixed_blocks<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
     lines: &[&str],
     options: &Options<'_>,
+    at_document_level: bool,
 ) -> Option<Vec<BlockNode>> {
-    parse_mixed_blocks_mapped::<DEFINITIONS, ABBREVIATIONS>(lines, options, None)
+    parse_mixed_blocks_mapped::<DEFINITIONS, ABBREVIATIONS>(lines, options, None, at_document_level)
 }
 
 fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
     lines: &[&str],
     options: &Options<'_>,
     line_map: Option<&[Option<usize>]>,
+    at_document_level: bool,
 ) -> Option<Vec<BlockNode>> {
     if line_map.is_none()
         && lines.iter().copied().any(|line| {
@@ -108,7 +110,7 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
         return None;
     }
     let mut cur = LineCursor::new_with_cols(lines, line_map, None);
-    cur.at_document_level = true;
+    cur.at_document_level = at_document_level;
     let mut out = Vec::new();
     let mut leading_attrs: Vec<(usize, Attrs)> = Vec::new();
     while cur.peek().is_some() {
@@ -151,10 +153,20 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             continue;
         }
         if is_list_marker(line) && !line.starts_with([' ', '\t']) {
-            if let Some((list, end)) = parse_simple_list(lines, cur.pos, options) {
-                cur.pos = end;
-                out.push(BlockNode::List(list));
-            } else if let Some((list, end)) = parse_unified_list(lines, cur.pos, options) {
+            let blank_then_indented = lines
+                .get(cur.pos + 1)
+                .is_some_and(|line| is_blank_line(line))
+                && lines[cur.pos + 2..]
+                    .iter()
+                    .find(|line| !is_blank_line(line))
+                    .is_some_and(|line| line.starts_with([' ', '\t']));
+            let direct = if blank_then_indented {
+                parse_unified_list(lines, cur.pos, options)
+            } else {
+                parse_simple_list(lines, cur.pos, options)
+                    .or_else(|| parse_unified_list(lines, cur.pos, options))
+            };
+            if let Some((list, end)) = direct {
                 cur.pos = end;
                 out.push(BlockNode::List(list));
             } else {
@@ -228,8 +240,17 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                 continue;
             }
         }
-        let root_literal_quote = line.starts_with(' ') && trim_ascii_start(line).starts_with('>');
-        if !may_start_plain_paragraph(line) && !invalid_brace_line && !root_literal_quote {
+        let root_indented_text = if line.starts_with(' ') {
+            let content = trim_ascii_start(line);
+            content
+                .as_bytes()
+                .first()
+                .is_some_and(|byte| *byte == b'>' || byte.is_ascii_alphabetic())
+                && !is_list_marker(content)
+        } else {
+            false
+        };
+        if !may_start_plain_paragraph(line) && !invalid_brace_line && !root_indented_text {
             if line.starts_with(":::") {
                 if detect_line_block_open(line).is_some() {
                     out.push(parse_line_block(&mut cur, options));
@@ -284,7 +305,7 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             if !may_continue_plain_paragraph(next)
                 && !is_list_marker(next)
                 && !(paragraph_lines.is_empty() && invalid_brace_line)
-                && !(paragraph_lines.is_empty() && root_literal_quote)
+                && !(paragraph_lines.is_empty() && root_indented_text)
             {
                 return None;
             }
@@ -295,7 +316,7 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
         out.push(BlockNode::Paragraph(Paragraph {
             attrs: None,
             children: parse_event_inlines(&joined, options),
-            at_content_column: true,
+            at_content_column: !line.starts_with([' ', '\t']),
             block_image: false,
             pos: None,
         }));
@@ -914,7 +935,7 @@ fn parse_event_container(cur: &mut LineCursor<'_>, options: &Options<'_>) -> Box
             let _depth = DepthScope::set(body.depth);
             if let Some(_inner_depth) = DepthGuard::enter() {
                 if let Some(children) = parse_blocks(&lines, options)
-                    .or_else(|| parse_mixed_blocks::<false, false>(&lines, options))
+                    .or_else(|| parse_mixed_blocks::<false, false>(&lines, options, false))
                 {
                     fill_container_children(&mut node, children);
                     return node;
@@ -1067,7 +1088,7 @@ fn parse_marked_quote(
                 return None;
             }
             let _depth = DepthGuard::enter()?;
-            parse_mixed_blocks::<false, false>(&parts, options)
+            parse_mixed_blocks::<false, false>(&parts, options, false)
         })?;
     Some((
         BlockQuote {
@@ -1792,12 +1813,14 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
                             &lines,
                             &options,
                             root_line_map.as_deref(),
+                            true,
                         )
                     } else {
                         parse_mixed_blocks_mapped::<true, false>(
                             &lines,
                             &options,
                             root_line_map.as_deref(),
+                            true,
                         )
                     }
                 })
@@ -1818,12 +1841,14 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
                             &lines,
                             &options,
                             root_line_map.as_deref(),
+                            true,
                         )
                     } else {
                         parse_mixed_blocks_mapped::<false, false>(
                             &lines,
                             &options,
                             root_line_map.as_deref(),
+                            true,
                         )
                     }
                 }),
@@ -1943,9 +1968,9 @@ fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Doc
         let lines: Vec<&str> = mapped.source.lines().collect();
         parse_blocks(&lines, &options).or_else(|| {
             if may_have_abbrevs {
-                parse_mixed_blocks::<true, true>(&lines, &options)
+                parse_mixed_blocks::<true, true>(&lines, &options, true)
             } else {
-                parse_mixed_blocks::<true, false>(&lines, &options)
+                parse_mixed_blocks::<true, false>(&lines, &options, true)
             }
         })?
     };

@@ -17,6 +17,7 @@ fn post_blank_list_line_returns_to_root_at_authored_column() {
         let (candidate, admitted) = parse_experimental_event_blocks(source);
         assert!(admitted, "{source:?}");
         let baseline = parse_standard(source);
+        assert_eq!(candidate, baseline, "{source:?}");
         assert_eq!(to_json(&candidate), to_json(&baseline), "{source:?}");
         assert_eq!(
             render_html(&candidate),
@@ -34,6 +35,7 @@ fn post_blank_list_line_returns_to_root_at_authored_column() {
                     if admitted {
                         admitted_generated += 1;
                         let baseline = parse_standard(&source);
+                        assert_eq!(candidate, baseline, "{source:?}");
                         assert_eq!(to_json(&candidate), to_json(&baseline), "{source:?}");
                         assert_eq!(
                             render_html(&candidate),
@@ -49,6 +51,7 @@ fn post_blank_list_line_returns_to_root_at_authored_column() {
     let tab_after_space = "- one\n\n \t> q\n";
     let (candidate, _) = parse_experimental_event_blocks(tab_after_space);
     let baseline = parse_standard(tab_after_space);
+    assert_eq!(candidate, baseline);
     assert_eq!(to_json(&candidate), to_json(&baseline));
     assert_eq!(render_html(&candidate), render_html(&baseline));
     let repeated = (0..40)
@@ -57,8 +60,84 @@ fn post_blank_list_line_returns_to_root_at_authored_column() {
     let (candidate, admitted) = parse_experimental_event_blocks(&repeated);
     assert!(admitted);
     let baseline = parse_standard(&repeated);
+    assert_eq!(candidate, baseline);
     assert_eq!(to_json(&candidate), to_json(&baseline));
     assert_eq!(render_html(&candidate), render_html(&baseline));
+}
+
+#[test]
+fn indented_root_text_preserves_the_full_ast() {
+    for source in [
+        " y\n",
+        "  word\n",
+        "- one\n\n y\n",
+        ":: t\n:  definition\n\n  after\n",
+    ] {
+        let (candidate, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        assert_eq!(candidate, parse_standard(source), "{source:?}");
+    }
+    for source in [" x. x\n", " I. x\n", " iv) x\n"] {
+        let (candidate, _) = parse_experimental_event_blocks(source);
+        assert_eq!(candidate, parse_standard(source), "{source:?}");
+    }
+}
+
+#[test]
+fn nested_list_abbreviation_line_stays_in_list_item() {
+    for source in [
+        "> - a\n>\n>   a\n> *[X]: y\n>\n>   more\n",
+        "::: note\n- a\n\n  a\n*[X]: y\n\n  more\n:::\n",
+    ] {
+        let (candidate, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        assert_eq!(candidate, parse_standard(source), "{source:?}");
+    }
+}
+
+#[test]
+fn indented_root_owner_matrix_matches_full_document() {
+    let leads = [
+        "",
+        "- item\n",
+        "- item\n\n",
+        "1. item\n\n",
+        "> quote\n",
+        "> quote\n\n",
+        ":: term\n:  definition\n",
+        "%% c\n",
+        "%% c\n\n",
+        "```\nx\n```\n",
+        "::: note\npara\n:::\n",
+    ];
+    let tails = [
+        "a",
+        "y",
+        "a b",
+        "a :symbol:",
+        "a `code`",
+        "a\ncontinued",
+        "a\n  b",
+        "a. x",
+        "iv) x",
+        "P. S.",
+    ];
+    let mut admitted = 0;
+    for lead in leads {
+        for indent in 1..=5 {
+            for tail in tails {
+                for trailing in ["\n", "\n\nnext\n"] {
+                    let source = format!("{lead}{}{tail}{trailing}", " ".repeat(indent));
+                    let (candidate, used) = parse_experimental_event_blocks(&source);
+                    if used {
+                        admitted += 1;
+                        assert_eq!(candidate, parse_standard(&source), "{source:?}");
+                    }
+                }
+            }
+        }
+    }
+    assert!(admitted >= 700);
 }
 
 #[test]
@@ -76,6 +155,9 @@ fn exact_corpus_ast_and_html() {
         let (candidate, used) = parse_experimental_event_blocks(&source);
         admitted += usize::from(used);
         total += 1;
+        if used {
+            assert_eq!(candidate, baseline, "{}", path.display());
+        }
         assert_eq!(
             to_json(&candidate),
             to_json(&baseline),
