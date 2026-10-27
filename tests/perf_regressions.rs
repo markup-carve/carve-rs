@@ -2216,7 +2216,7 @@ fn repeated_lint_warning_columns_scale_near_linearly() {
         ("markdown warning columns", "é **word** "),
         ("bidi warning columns", "é\u{202e}"),
         ("empty include warning columns", "é {{ }} "),
-        ("table warning columns", "|<é "),
+        ("table warning columns", "|{.x}a |"),
         ("template warning positions", "é {% raw %} {% endraw %}\n"),
     ] {
         assert_conversion_near_linear_at(
