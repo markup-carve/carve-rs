@@ -1100,7 +1100,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // (`- {.c} literal text`), which is why the whole content must parse as
         // a standalone attribute line. Routed through the block stream so the
         // pending-attribute machinery, not this lead-paragraph path, sees it.
-        if parse_standalone_attrs(content).is_some() {
+        if parse_standalone_attrs(content).is_some()
+            || marker_content_is_attr_block(content, self.cur, self.content_col)
+        {
             self.attr_lead_item(item);
             return NEXT;
         }
@@ -1109,7 +1111,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         }
         let content_col = self.content_col;
         if marker_content_starts_block(content, self.cur, content_col)
-            || marker_content_is_attr_block(content, self.cur, content_col)
             || marker_content_is_captioned_inline(content, self.cur, content_col, self.options)
         {
             return self.block_lead_item(item);
@@ -1528,6 +1529,28 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         let (content_col, options) = (self.content_col, self.options);
         self.last_item_marker_attr_only = true;
         let mut stream = item_marker_source(self.cur, item.marker.content, item.at);
+        let attribute_lines =
+            standalone_attrs_block_len_iter(std::iter::once(item.marker.content).chain(
+                (self.cur.pos..self.cur.lines.len()).map_while(|at| self.cur.lines.line(at)),
+            ))
+            .unwrap_or(1);
+        for _ in 1..attribute_lines {
+            let line = self.cur.peek().unwrap();
+            let (body, consumed) = if indent_columns(line) >= content_col {
+                let (body, consumed, _) = slice_columns_mapped(line, content_col, false);
+                (body, consumed)
+            } else {
+                (trim_ascii_start(line).to_string(), leading_ws(line))
+            };
+            stream.push_newline_at(
+                body,
+                self.cur.source_line(self.cur.pos),
+                self.cur
+                    .source_col(self.cur.pos)
+                    .map(|col| col + consumed as isize),
+            );
+            self.cur.consume();
+        }
         // The marker-line attribute opens no paragraph. Only a following
         // line that reaches the item's content column can be its target;
         // a genuinely below-column line closes the item under PART 1 S4
