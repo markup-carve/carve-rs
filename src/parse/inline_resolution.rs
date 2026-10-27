@@ -1089,8 +1089,8 @@ pub(in crate::parse) fn de_typography(text: &str) -> String {
             '©' => out.push_str("(c)"),
             '®' => out.push_str("(r)"),
             '–' | '—' => out.push('-'),
-            '‘' | '’' => out.push('\''),
-            '“' | '”' => out.push('"'),
+            '‘' | '’' | '‚' | '‛' => out.push('\''),
+            '“' | '”' | '„' | '‟' | '«' | '»' => out.push('"'),
             other => out.push(other),
         }
     }

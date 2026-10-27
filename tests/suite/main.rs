@@ -2667,3 +2667,6 @@ mod refused_plus_after_indented_list;
 mod term_invisible_comment_break;
 #[path = "../wrapped_marker_attr_owner.rs"]
 mod wrapped_marker_attr_owner;
+
+#[path = "../paired_heading_quotes.rs"]
+mod paired_heading_quotes;
