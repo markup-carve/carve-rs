@@ -7,6 +7,61 @@ fn parse_standard(source: &str) -> carve::Document {
 }
 
 #[test]
+fn post_blank_list_line_returns_to_root_at_authored_column() {
+    for source in [
+        "- one\n\n > q\n",
+        "- one\n\n  > q\n",
+        "- one\n\n   # h\n",
+        "- one\n > q\n",
+    ] {
+        let (candidate, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let baseline = parse_standard(source);
+        assert_eq!(to_json(&candidate), to_json(&baseline), "{source:?}");
+        assert_eq!(
+            render_html(&candidate),
+            render_html(&baseline),
+            "{source:?}"
+        );
+    }
+    let mut admitted_generated = 0;
+    for marker in ["-", "*", "1."] {
+        for blank in ["", "\n", "\n\n"] {
+            for indent in 0..=4 {
+                for tail in ["> q", "# h", "plain", "```"] {
+                    let source = format!("{marker} one\n{blank}{}{tail}\n", " ".repeat(indent));
+                    let (candidate, admitted) = parse_experimental_event_blocks(&source);
+                    if admitted {
+                        admitted_generated += 1;
+                        let baseline = parse_standard(&source);
+                        assert_eq!(to_json(&candidate), to_json(&baseline), "{source:?}");
+                        assert_eq!(
+                            render_html(&candidate),
+                            render_html(&baseline),
+                            "{source:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+    assert!(admitted_generated >= 150);
+    let tab_after_space = "- one\n\n \t> q\n";
+    let (candidate, _) = parse_experimental_event_blocks(tab_after_space);
+    let baseline = parse_standard(tab_after_space);
+    assert_eq!(to_json(&candidate), to_json(&baseline));
+    assert_eq!(render_html(&candidate), render_html(&baseline));
+    let repeated = (0..40)
+        .map(|index| format!("- item {index}\n\n > quote {index}\n\n"))
+        .collect::<String>();
+    let (candidate, admitted) = parse_experimental_event_blocks(&repeated);
+    assert!(admitted);
+    let baseline = parse_standard(&repeated);
+    assert_eq!(to_json(&candidate), to_json(&baseline));
+    assert_eq!(render_html(&candidate), render_html(&baseline));
+}
+
+#[test]
 fn exact_corpus_ast_and_html() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     let mut admitted = 0usize;

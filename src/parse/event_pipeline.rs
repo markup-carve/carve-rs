@@ -228,7 +228,8 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                 continue;
             }
         }
-        if !may_start_plain_paragraph(line) && !invalid_brace_line {
+        let root_literal_quote = line.starts_with(' ') && trim_ascii_start(line).starts_with('>');
+        if !may_start_plain_paragraph(line) && !invalid_brace_line && !root_literal_quote {
             if line.starts_with(":::") {
                 if detect_line_block_open(line).is_some() {
                     out.push(parse_line_block(&mut cur, options));
@@ -283,6 +284,7 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             if !may_continue_plain_paragraph(next)
                 && !is_list_marker(next)
                 && !(paragraph_lines.is_empty() && invalid_brace_line)
+                && !(paragraph_lines.is_empty() && root_literal_quote)
             {
                 return None;
             }
@@ -582,6 +584,14 @@ fn parse_unified_list(
                 continue;
             }
             if next.starts_with([' ', '\t']) {
+                if next.as_bytes().get(next_indent) != Some(&b'\t')
+                    && next_indent < frames[0].content_indent
+                {
+                    while frames.len() > 1 {
+                        close_unified_list_frame(&mut frames)?;
+                    }
+                    break;
+                }
                 return None;
             }
             break;
@@ -772,6 +782,13 @@ mod unified_list_tests {
 
         let trailing_tab = "- one\n\n  >\t\n";
         let lines: Vec<&str> = trailing_tab.lines().collect();
+        assert!(parse_unified_list(&lines, 0, &Options::default()).is_none());
+    }
+
+    #[test]
+    fn post_blank_tab_does_not_close_list_at_space_count() {
+        let source = "- one\n\n \t> q\n";
+        let lines: Vec<&str> = source.lines().collect();
         assert!(parse_unified_list(&lines, 0, &Options::default()).is_none());
     }
 
