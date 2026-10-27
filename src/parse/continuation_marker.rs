@@ -225,12 +225,13 @@ pub(super) fn document_column(source_line: usize) -> Option<usize> {
     })
 }
 
-pub(super) fn preceding_nested_list_marker(source_line: usize) -> bool {
+pub(super) fn preceding_nested_list_marker(source_line: usize, require_blank: bool) -> bool {
     CLASSIFIER.with(|slot| {
         let slot = slot.borrow();
         let Some(classifier) = slot.as_ref() else {
             return false;
         };
+        let mut found_marker = false;
         for line in classifier
             .lines
             .iter()
@@ -238,13 +239,19 @@ pub(super) fn preceding_nested_list_marker(source_line: usize) -> bool {
             .rev()
             .skip_while(|line| is_blank_line(line))
         {
-            if is_blank_line(line) || detect_fence_open(line.trim_start()).is_some() {
-                break;
+            if is_blank_line(line) {
+                return require_blank && found_marker;
+            }
+            if detect_fence_open(line.trim_start()).is_some() {
+                return false;
             }
             if indent_columns(line) > 0
                 && detect_list_marker_full(line.trim_start_matches([' ', '\t'])).is_some()
             {
-                return true;
+                if !require_blank {
+                    return true;
+                }
+                found_marker = true;
             }
         }
         false

@@ -114,9 +114,12 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
                         .continuation_decision(span_start)
                         .is_some_and(|decision| {
                             (decision.owner.is_some()
-                                || cur
-                                    .source_line(span_start)
-                                    .is_some_and(continuation_marker::preceding_nested_list_marker))
+                                || cur.source_line(span_start).is_some_and(|source_line| {
+                                    continuation_marker::preceding_nested_list_marker(
+                                        source_line,
+                                        decision.quote_depth == 0,
+                                    )
+                                }))
                                 && decision.sibling_interrupt
                         })
                     && is_list_marker(line)

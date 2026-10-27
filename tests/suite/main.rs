@@ -2637,3 +2637,5 @@ mod indented_image_flush_caption;
 mod literal_quote_list_lead;
 #[path = "../markdown_link_footnotes.rs"]
 mod markdown_link_footnotes;
+#[path = "../refused_plus_after_indented_list.rs"]
+mod refused_plus_after_indented_list;
