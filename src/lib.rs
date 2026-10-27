@@ -229,7 +229,10 @@ pub use stream::{try_render_html_streaming, StreamOutcome};
 /// renderers' ceiling, so the §25 refusal is unreachable from a source string
 /// (see [`RenderDepthError`], which the tree-taking renderers return).
 pub fn to_html(source: &str) -> String {
-    let options = Options::default().with_positions(true);
+    let options = Options::default();
+    if let Some(html) = parse::try_layout_html(source, &options) {
+        return html;
+    }
     let (doc, crossref_index) = parse::parse_with_render_index(source, &options);
     render::render_html_owned_with_index(
         doc,
