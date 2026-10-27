@@ -2639,6 +2639,8 @@ mod braced_opener_marker_is_not_closer;
 mod combined_emphasis_code_visibility;
 #[path = "../consecutive_plus_host_paragraph.rs"]
 mod consecutive_plus_host_paragraph;
+#[path = "../div_hosted_quote_plus.rs"]
+mod div_hosted_quote_plus;
 #[path = "../indented_image_flush_caption.rs"]
 mod indented_image_flush_caption;
 #[path = "../inline_link_depth_boundary.rs"]

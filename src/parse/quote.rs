@@ -2232,8 +2232,22 @@ impl<'a> QuoteBody<'a> {
         options: &Options<'_>,
         line: &str,
     ) -> bool {
+        // A following marker that owns a block stays the attachment point.
+        // The earlier `+` can still continue the open quote paragraph.
+        if cur.lines.line(cur.pos + 1).is_some_and(is_plus_marker)
+            && cur.lines.line(cur.pos + 2).is_some()
+            && cur
+                .continuation_decision(cur.pos + 1)
+                .is_some_and(|decision| {
+                    decision.owner == Some(continuation_marker::Kind::Quote)
+                        && decision.refusal.is_none()
+                })
+        {
+            return false;
+        }
         if !(trim_ascii(line) == "+"
             && indent_columns(line) == 0
+            && cur.lines.line(cur.pos + 1).is_some()
             && (!cur.in_item_body || cur.continuation_decision(cur.pos).is_some())
             && (cur.continuation_decision(cur.pos).is_some()
                 || cur.carried_reach(cur.pos) != Some(false))
@@ -2251,12 +2265,13 @@ impl<'a> QuoteBody<'a> {
         let mut attached = LineBuffer::default();
         let cursor_lines = cur.lines;
         let attached_start = cur.pos;
-        let refused_first_plus = cur
-            .continuation_decision(attached_start)
-            .is_some_and(|decision| decision.refusal.is_some())
-            && cursor_lines
-                .line(attached_start + 1)
-                .map_or(true, is_blank_line);
+        let refused_first_plus = cursor_lines
+            .line(attached_start + 1)
+            .map_or(true, is_blank_line)
+            && (cursor_lines.line(attached_start + 1).is_none()
+                || cur
+                    .continuation_decision(attached_start)
+                    .is_some_and(|decision| decision.refusal.is_some()));
         let mut attach_end = attached_block_lines_classified(
             cursor_lines,
             cur.pos,
