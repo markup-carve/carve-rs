@@ -3,6 +3,63 @@ use super::*;
 const MIXED_QUOTE_DEPTH_LIMIT: usize = 32;
 
 #[cfg(test)]
+mod mixed_definition_owner_tests {
+    use super::*;
+
+    #[test]
+    fn keeps_following_root_blocks_and_declines_continuations() {
+        for (source, start) in [
+            ("# heading\n\n:: term\n:  definition\n\n# tail\n", 2),
+            (":: a\n:  alpha\n:: b\n:  beta\n\nroot\n", 0),
+        ] {
+            let lines: Vec<&str> = source.lines().collect();
+            assert!(
+                parse_simple_definition_list_prefix(&lines, start, &Options::default(), false)
+                    .is_some(),
+                "{source:?}"
+            );
+            let (candidate, used) = parse_document(source).expect("event document");
+            assert!(used, "{source:?}");
+            assert_eq!(candidate, parse_with_options(source, &Options::default()));
+        }
+        for source in [
+            ":: term\n:  definition\n a\n",
+            ":: t\n:  head\n\n     %%%\n     a\n",
+            ":: term\n:  definition\nroot\n",
+            ":: a\n:  x\n\n:: b\n:  y\n",
+        ] {
+            let lines: Vec<&str> = source.lines().collect();
+            assert!(
+                parse_simple_definition_list_prefix(&lines, 0, &Options::default(), false)
+                    .is_none(),
+                "{source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn repeated_mixed_definitions_match_full_document() {
+        let source = (0..300)
+            .map(|index| format!(":: term{index}\n:  definition{index}\n\nroot{index}\n\n"))
+            .collect::<String>();
+        let lines: Vec<&str> = source.lines().collect();
+        let direct = lines
+            .iter()
+            .enumerate()
+            .filter(|(_, line)| line.starts_with(":: "))
+            .filter(|(at, _)| {
+                parse_simple_definition_list_prefix(&lines, *at, &Options::default(), false)
+                    .is_some()
+            })
+            .count();
+        assert_eq!(direct, 300);
+        let (candidate, used) = parse_document(&source).expect("event document");
+        assert!(used);
+        assert_eq!(candidate, parse_with_options(&source, &Options::default()));
+    }
+}
+
+#[cfg(test)]
 mod root_fence_owner_tests {
     use super::*;
 
@@ -497,7 +554,14 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             continue;
         }
         if is_definition_list_start(line) {
-            out.push(parse_definition_list(&mut cur, options));
+            if let Some((list, end)) =
+                parse_simple_definition_list_prefix(lines, cur.pos, options, false)
+            {
+                cur.pos = end;
+                out.push(BlockNode::DefinitionList(list));
+            } else {
+                out.push(parse_definition_list(&mut cur, options));
+            }
             continue;
         }
         if strip_blockquote_prefix(line).is_some() {
@@ -2122,7 +2186,21 @@ fn parse_simple_definition_list(
     start: usize,
     options: &Options<'_>,
 ) -> Option<(DefinitionList, usize)> {
-    if start != 0 || options.positions || options.source_lines || !options.extensions.is_empty() {
+    if start != 0 {
+        return None;
+    }
+    parse_simple_definition_list_prefix(lines, start, options, true)
+}
+
+#[cold]
+#[inline(never)]
+fn parse_simple_definition_list_prefix(
+    lines: &[&str],
+    start: usize,
+    options: &Options<'_>,
+    require_end: bool,
+) -> Option<(DefinitionList, usize)> {
+    if options.positions || options.source_lines || !options.extensions.is_empty() {
         return None;
     }
     let mut pos = start;
@@ -2143,7 +2221,15 @@ fn parse_simple_definition_list(
             break;
         }
     }
-    if entries.is_empty() || lines[pos..].iter().any(|line| !is_blank_line(line)) {
+    if entries.is_empty()
+        || (require_end && lines[pos..].iter().any(|line| !is_blank_line(line)))
+        || (!require_end && lines.get(pos).is_some_and(|line| !is_blank_line(line)))
+        || (!require_end
+            && lines[pos..]
+                .iter()
+                .find(|line| !is_blank_line(line))
+                .is_some_and(|line| line.starts_with([' ', '\t', ':'])))
+    {
         return None;
     }
     let items = entries
