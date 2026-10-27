@@ -363,7 +363,7 @@ fn abbreviation_template(doc: &Document) -> Option<String> {
         crate::render_loss::RawNodeType::Block,
     );
     out.push('>');
-    write_escaped_text(&mut out, &lines.join("\n"));
+    write_escaped_text_nbsp(&mut out, &lines.join("\n"));
     out.push_str("</template>");
     Some(out)
 }
