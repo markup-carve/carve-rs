@@ -775,7 +775,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // a second paragraph rather than a continuation of the
         // first: a comment ends the paragraph above it (§10) while
         // leaving its container open.
-        let retained_fence = collect_trailing_lazy_through(
+        let retained_fence = collect_comment_lazy_through(
             self.cur,
             &mut nested,
             base_indent,
