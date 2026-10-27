@@ -13,6 +13,45 @@ fn parse_standard(source: &str) -> carve::Document {
 
 #[cfg(feature = "experimental-event-parser-options")]
 #[test]
+fn footnote_abbreviation_scopes_match_full_document() {
+    let sources = [
+        "[^a]: intro\n  *[A]: a\n  more\n\nsee[^a] A\n",
+        "see[^a] A\n\n[^a]: *[A]: a\n  A again\n",
+        "*[A]: root\n\n[^a]: *[A]: note\n  A again\n\nA[^a]\n",
+        "[^a]: *[A]: first\n  *[A]: second\n  A\n\nA[^a]\n",
+        "[^a]: intro\n  > *[A]: note\n  > A\n\nA[^a]\n",
+        "[^a]: intro\n  - *[A]: note\n    A\n\nA[^a]\n",
+        "[^a]: intro\n  ```\n  *[A]: literal\n  ```\n\nA[^a]\n",
+        "[^a]: intro\n  *[A]: a\n\n[^b]: A\n\nA[^a][^b]\n",
+    ];
+    for source in sources {
+        for (option_index, options) in [
+            Options::default(),
+            Options::default().with_source_lines(true),
+            Options::default().with_positions(true),
+            Options::default()
+                .with_positions(true)
+                .with_source_lines(true),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let (candidate, admitted) =
+                parse_experimental_event_blocks_with_options(source, &options);
+            if option_index == 0 {
+                assert!(admitted);
+            }
+            assert_eq!(
+                candidate,
+                parse_with_options(source, &options),
+                "{source:?}"
+            );
+        }
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
 fn option_aware_event_entry_preserves_supported_and_fallback_output() {
     for (source, options) in [
         (

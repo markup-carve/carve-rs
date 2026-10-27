@@ -2911,12 +2911,6 @@ fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Doc
             &options,
         );
     }
-    if footnote_sources
-        .values()
-        .any(|note| note.source.contains("*["))
-    {
-        return None;
-    }
     let mut budget = probe_budget_for(mapped.source.len());
     let (body_source, mut link_defs) =
         extract_link_defs_guarded(&mapped.source, &options, &mut budget);
@@ -3270,12 +3264,6 @@ fn parse_document_with_footnotes_options(
             &mut note_links,
             options,
         );
-    }
-    if footnote_sources
-        .values()
-        .any(|note| note.source.contains("*["))
-    {
-        return None;
     }
     if ((options.positions || options.source_lines) && may_have_abbrevs)
         || (options.positions && mapped.col_map.iter().any(|column| *column != Some(0)))
