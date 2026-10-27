@@ -1,7 +1,9 @@
 use crate::ast::*;
 use crate::extension::Options;
 use crate::parse::unwrap_nested_anchors;
-use crate::render_text::{strip_high_controls as strip_controls, trim_non_nbsp};
+use crate::render_text::{
+    strip_high_controls as strip_controls, trim_non_nbsp, unresolved_reference_text,
+};
 
 use crate::render::MAX_RENDER_DEPTH;
 
@@ -771,7 +773,9 @@ fn render_inline(node: &InlineNode, depth: usize) -> String {
         InlineNode::Code(code) => strip_controls(&code.value),
         InlineNode::Link(link) => {
             if crate::parse::is_unresolved_reference(link) {
-                strip_controls(link.raw_ref.as_deref().unwrap_or_default())
+                strip_controls(&unresolved_reference_text(
+                    link.raw_ref.as_deref().unwrap_or_default(),
+                ))
             } else {
                 // Render the label through the anchor-unwrapping view.
                 let children = unwrap_nested_anchors(&link.children);
@@ -923,7 +927,9 @@ fn render_inline(node: &InlineNode, depth: usize) -> String {
 
 fn render_image(image: &Image) -> String {
     if crate::parse::is_unresolved_image(image) {
-        strip_controls(image.raw_ref.as_deref().unwrap_or_default())
+        strip_controls(&unresolved_reference_text(
+            image.raw_ref.as_deref().unwrap_or_default(),
+        ))
     } else {
         strip_controls(&image.alt)
     }

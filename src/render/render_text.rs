@@ -316,6 +316,12 @@ pub(crate) fn strip_high_controls(input: &str) -> String {
     input.chars().filter(|c| !is_not_emitted(*c)).collect()
 }
 
+/// A stored unresolved reference is source text, but its line feeds still
+/// represent ordinary soft breaks in text targets.
+pub(crate) fn unresolved_reference_text(input: &str) -> String {
+    input.replace('\n', " ")
+}
+
 /// DEL (U+007F), the C1 controls (U+0080..U+009F), the carriage return, and
 /// §26's bidi override/isolate controls on every presentation target.
 fn is_not_emitted(c: char) -> bool {

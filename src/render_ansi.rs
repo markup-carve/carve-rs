@@ -1,7 +1,7 @@
 use crate::ast::*;
 use crate::extension::Options;
 use crate::parse::unwrap_nested_anchors;
-use crate::render_text::{strip_terminal_controls, trim_non_nbsp};
+use crate::render_text::{strip_terminal_controls, trim_non_nbsp, unresolved_reference_text};
 
 use crate::render::MAX_RENDER_DEPTH;
 
@@ -783,7 +783,9 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
         InlineNode::Code(code) => style(&strip_terminal_controls(&code.value), FG_BRIGHT_YELLOW),
         InlineNode::Link(link) => {
             if crate::parse::is_unresolved_reference(link) {
-                return strip_terminal_controls(link.raw_ref.as_deref().unwrap_or_default());
+                return strip_terminal_controls(&unresolved_reference_text(
+                    link.raw_ref.as_deref().unwrap_or_default(),
+                ));
             }
             ctx.link_depth += 1;
             // Render the label through the anchor-unwrapping view.
@@ -1023,7 +1025,9 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
 
 fn render_image(node: &Image) -> String {
     if crate::parse::is_unresolved_image(node) {
-        return strip_terminal_controls(node.raw_ref.as_deref().unwrap_or_default());
+        return strip_terminal_controls(&unresolved_reference_text(
+            node.raw_ref.as_deref().unwrap_or_default(),
+        ));
     }
     format!(
         "{}{}{}",

@@ -2,6 +2,39 @@ fn h(source: &str) -> String {
     carve::to_html(source).trim().to_string()
 }
 
+#[test]
+fn multiline_unresolved_reference_labels_use_soft_breaks_in_text_targets() {
+    let mut variants = 0;
+    for text in ["t", "alpha", "word", "z"] {
+        for first in ["r", "missing", "key", "nope"] {
+            for second in ["x", "y", "extra", "z"] {
+                for image in [false, true] {
+                    let bang = if image { "!" } else { "" };
+                    let raw = format!("{bang}[{text}][{first}\n{second}]");
+                    let expected = format!("{bang}[{text}][{first} {second}]");
+                    for source in [
+                        raw.clone(),
+                        format!("before {raw}"),
+                        format!("{raw} after"),
+                        format!("before {raw} after"),
+                        format!("::: note\n{raw}\n:::"),
+                        format!("intro\n\n{raw}"),
+                        format!("{raw}\n\noutro"),
+                        format!("## Heading\n\n{raw}"),
+                    ] {
+                        let plain = carve::to_plain_text(&source);
+                        let ansi = carve::to_ansi(&source);
+                        assert!(plain.contains(&expected), "{source}: {plain}");
+                        assert!(ansi.contains(&expected), "{source}: {ansi}");
+                        variants += 1;
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(variants, 1024);
+}
+
 fn paragraph_children(doc: &carve::Document) -> &[carve::InlineNode] {
     // FIND the paragraph rather than require it to be the only child: a document
     // with a `[label]: /url` line also carries the hoisted definition node now
