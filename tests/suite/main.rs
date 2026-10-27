@@ -2614,3 +2614,6 @@ mod profile_code_block_text;
 
 #[path = "../reference_image_caption_boundary.rs"]
 mod reference_image_caption_boundary;
+
+#[path = "../quoted_literal_colon_boundary.rs"]
+mod quoted_literal_colon_boundary;
