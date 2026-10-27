@@ -2599,3 +2599,6 @@ mod quoted_attribute_shaped_lazy_tail;
 
 #[path = "../stacked_first_block_quote.rs"]
 mod stacked_first_block_quote;
+
+#[path = "../successive_continuation_markers.rs"]
+mod successive_continuation_markers;

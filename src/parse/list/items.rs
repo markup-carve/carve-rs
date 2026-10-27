@@ -317,12 +317,21 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 .continuation_decision(self.cur.pos)
                 .is_some_and(|decision| {
                     decision.owner == Some(continuation_marker::Kind::List)
-                        && decision.refusal == Some(continuation_marker::Refusal::Blank)
+                        && (decision.refusal.is_some()
+                            || self.cur.lines.line(self.cur.pos + 1).is_some_and(|line| {
+                                detect_list_marker_full(line)
+                                    .is_some_and(|marker| marker.indent <= base_indent)
+                            }))
                 })
         {
-            let mut bodies = Vec::new();
-            if let Some(block) = parse_block(self.cur, options, &mut bodies) {
-                self.place_in_last_item(vec![*block]);
+            let literal = MappedSource::new_line_at(
+                self.cur.lines.at(self.cur.pos).to_string(),
+                self.cur.source_line(self.cur.pos),
+                self.cur.source_col(self.cur.pos),
+            );
+            self.cur.consume();
+            if let Some(last_item) = self.items.len().checked_sub(1) {
+                item_body(self.deferred, last_item, literal, None, false, options);
             }
         }
         if let Some(block) = attached {
