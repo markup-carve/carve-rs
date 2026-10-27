@@ -111,10 +111,7 @@ fn root_block_images_and_captions_use_event_route() {
             }
         }
     }
-    for source in [
-        "![alt][ref]\n^ cap\n",
-        "![alt](/image.png)\n\n\n^ cap\n",
-    ] {
+    for source in ["![alt][ref]\n^ cap\n", "![alt](/image.png)\n\n\n^ cap\n"] {
         let (_, admitted) = parse_experimental_event_blocks(source);
         assert!(!admitted, "{source:?}");
     }
