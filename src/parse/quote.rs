@@ -2050,7 +2050,12 @@ impl<'a> QuoteBody<'a> {
         // inherits goes WITH it, so §12 is decided by the same walk
         // instead of forcing one of its own.
         let inherited_absorption = if self.para_open.may_carry_absorption() {
-            self.para_open.absorption()
+            let prior_depth = self
+                .inner
+                .lines
+                .last()
+                .map_or(0, |line| strip_all_quotes(&line.text).1);
+            (strip_all_quotes(stripped).1 >= prior_depth) && self.para_open.absorption()
         } else {
             false
         };

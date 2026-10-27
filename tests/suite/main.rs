@@ -2599,3 +2599,6 @@ mod quoted_attribute_shaped_lazy_tail;
 
 #[path = "../stacked_first_block_quote.rs"]
 mod stacked_first_block_quote;
+
+#[path = "../quoted_literal_colon_boundary.rs"]
+mod quoted_literal_colon_boundary;
