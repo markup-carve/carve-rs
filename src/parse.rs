@@ -989,9 +989,9 @@ fn parse_with_options_mode_and_index(
         if !matches!(mode, ParseMode::HtmlFacade) {
             let _ = crate::render::collect_footnotes(&mut doc, false);
         }
-        // A resolved reference image lands as a one-image paragraph (the
-        // syntactic block-image check ran before resolution); promote it to a
-        // block image like a standalone direct image, matching carve-php.
+        // A resolved reference image lands in a paragraph because resolution
+        // follows block parsing. Mark that paragraph as a block image without
+        // discarding its inline children.
         if source.contains("![") {
             promote_block_images(&mut doc.children, false, true);
             for blocks in doc.footnote_defs.values_mut() {
@@ -2860,14 +2860,6 @@ pub(crate) fn lint_table_cell_ranges(row: &str) -> Vec<(usize, usize)> {
         .collect()
 }
 
-pub(crate) fn lint_cell_attr_end(
-    line: &str,
-    at: usize,
-    last_close: Option<usize>,
-) -> Option<usize> {
-    read_attrs_at(line.as_bytes(), at, last_close).map(|(_, end)| end)
-}
-
 pub(crate) fn lint_reversed_cell_markers(line: &str) -> Vec<(usize, usize)> {
     if !is_table_start(line) {
         return Vec::new();
@@ -2892,6 +2884,62 @@ pub(crate) fn lint_reversed_cell_markers(line: &str) -> Vec<(usize, usize)> {
                 .get(close)
                 .filter(|&&b| b"<>~^v?".contains(&b))
                 .map(|_| (prefix + start, close + 1))
+        })
+        .collect()
+}
+
+/// Which part of a cell's marker run the padding rule points at.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum UnpaddedCellRun {
+    Kind,
+    Align,
+    Attrs,
+}
+
+/// Cells whose marker run the parser reads but T11 rejects for want of a
+/// space, as `(start, end, part)` byte ranges into `line`. A kind marker
+/// followed by a rejected alignment glyph (`=^`, `=<<`) is literal for that
+/// reason instead, and a reversed `{...}<` run belongs to its own advice.
+pub(crate) fn lint_unpadded_cell_runs(line: &str) -> Vec<(usize, usize, UnpaddedCellRun)> {
+    if !is_table_start(line) {
+        return Vec::new();
+    }
+    let (_, body) = split_row_attrs(line);
+    let content = strip_row_closing_pipe(body.strip_prefix('|').unwrap_or(body));
+    let prefix = content.as_ptr() as usize - line.as_ptr() as usize;
+    let offsets: Vec<_> = content
+        .char_indices()
+        .map(|(at, _)| at)
+        .chain(std::iter::once(content.len()))
+        .collect();
+    let glyph = |b: Option<&u8>| b.is_some_and(|b| b"<>~^v?".contains(b));
+    split_table_cells_ranged(content)
+        .cells
+        .into_iter()
+        .filter_map(|cell| {
+            let at = offsets[cell.start];
+            let raw = &content[at..offsets[cell.end]];
+            let run = scan_cell_marker_run(raw);
+            let bytes = raw.as_bytes();
+            if run.run_len == 0 || bytes.get(run.run_len) == Some(&b' ') {
+                return None;
+            }
+            if run.header && run.align_run.is_none() && glyph(bytes.get(1)) {
+                return None;
+            }
+            if bytes.first() == Some(&b'{') && glyph(bytes.get(run.run_len)) {
+                return None;
+            }
+            let at = prefix + at;
+            let (start, end, part) = if let Some((s, e)) = run.align_run {
+                (s, e, UnpaddedCellRun::Align)
+            } else if run.header {
+                (0, 1, UnpaddedCellRun::Kind)
+            } else {
+                let (s, e) = run.attr_span?;
+                (s, e, UnpaddedCellRun::Attrs)
+            };
+            Some((at + start, at + end, part))
         })
         .collect()
 }

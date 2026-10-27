@@ -365,12 +365,25 @@ fn collect_parser_events(
     use std::collections::HashSet;
     let lines: Vec<&str> = source.split('\n').collect();
     let mut fences = HashSet::new();
+    let mut attached_first_block_items = HashSet::new();
     let mut blocks: Vec<_> = doc.children.iter().map(|block| (block, 0)).collect();
     for body in doc.footnote_defs.values() {
         blocks.extend(body.iter().map(|block| (block, 0)));
     }
     while let Some((block, depth)) = blocks.pop() {
         match block {
+            BlockNode::List(list) => {
+                for item in &list.items {
+                    if let (Some(marker), Some(child)) = (
+                        item.pos.as_ref(),
+                        item.children.first().and_then(crate::ast_json::block_pos),
+                    ) {
+                        if child.start_line == marker.start_line + 1 {
+                            attached_first_block_items.insert(marker.start_line);
+                        }
+                    }
+                }
+            }
             BlockNode::CodeBlock(code) => {
                 if let Some(pos) = &code.pos {
                     fences.insert((pos.start_line, pos.start_column));
@@ -425,6 +438,10 @@ fn collect_parser_events(
                 reason,
                 first_block,
             } => {
+                if *first_block && *host == "list item" && attached_first_block_items.contains(line)
+                {
+                    continue;
+                }
                 let explanation = match *reason {
                     "blank" => "a blank line follows it",
                     "document" => "it reaches the end of the document",
@@ -576,64 +593,10 @@ fn collect_table_column_warnings(source: &str, out: &mut Vec<LintWarning>) {
     let mut line_start = 0usize;
     for (index, line) in lines.iter().enumerate() {
         let trimmed = line.trim_start();
-        if trimmed.starts_with('|') {
-            let bytes = line.as_bytes();
-            let last_close_brace = line.rfind('}');
-            let mut i = 0;
-            let mut column_byte = 0;
-            let mut column_points = 0;
-            while i < bytes.len() {
-                if bytes[i] == b'|' {
-                    let mut start = i + 1;
-                    if bytes.get(start) == Some(&b'=') {
-                        start += 1;
-                    }
-                    let mut end = start;
-                    while matches!(
-                        bytes.get(end),
-                        Some(b'<' | b'>' | b'~' | b'^' | b'v' | b'?')
-                    ) && end - start < 2
-                    {
-                        end += 1;
-                    }
-                    let whole_span = start == i + 1
-                        && end == start + 1
-                        && matches!(bytes[start], b'^' | b'<')
-                        && bytes.get(end) == Some(&b'|');
-                    let after_attrs = if bytes.get(end) == Some(&b'{') {
-                        crate::parse::lint_cell_attr_end(line, end, last_close_brace).unwrap_or(end)
-                    } else {
-                        end
-                    };
-                    if start == i + 2
-                        && end == start
-                        && bytes.get(start).is_some_and(|b| *b != b' ')
-                    {
-                        if bytes.get(after_attrs) == Some(&b' ') {
-                            i += 1;
-                            continue;
-                        }
-                        let column = line[column_byte..i + 1].chars().count() + column_points + 1;
-                        out.push(LintWarning { file: None, included_by: Vec::new(), line: index + 1, column, rule: "table-marker-run-padding", message: "The table kind marker has no terminating space, so it is literal cell content. Add a space after the marker run to make it a header.".to_string(), start: line_start + i + 1, end: line_start + i + 2 });
-                    }
-                    if end > start
-                        && !whole_span
-                        && bytes.get(after_attrs).is_some_and(|b| {
-                            !b.is_ascii_whitespace()
-                                && (after_attrs != end
-                                    || !matches!(b, b'<' | b'>' | b'~' | b'^' | b'v' | b'?'))
-                        })
-                    {
-                        column_points += line[column_byte..start].chars().count();
-                        column_byte = start;
-                        out.push(LintWarning { file: None, included_by: Vec::new(), line: index + 1, column: column_points + 1, rule: "table-marker-run-padding", message: format!("The table alignment run {:?} has no terminating space, so it is literal cell content. Add a space after the run to make it alignment.", &line[start..end]), start: line_start + start, end: line_start + end });
-                    }
-                }
-                i += 1;
-            }
-        } else if ["aligns", "valigns", "widths"]
-            .iter()
-            .any(|k| line.contains(&format!("{k}=")))
+        if !trimmed.starts_with('|')
+            && ["aligns", "valigns", "widths"]
+                .iter()
+                .any(|k| line.contains(&format!("{k}=")))
         {
             let next = lines.get(index + 1).copied().unwrap_or("");
             // THE LINE HAS TO BE A BLOCK-ATTRIBUTE LINE, not merely hold a

@@ -18,7 +18,8 @@ fn html(source: &str) -> String {
 fn a_critic_closer_outside_the_openers_run_closes_nothing() {
     assert_eq!(html("[{+a]+}\n"), "<p>[{+a]+}</p>");
     assert_eq!(html("[{-a]-}\n"), "<p>[{-a]-}</p>");
-    assert_eq!(html("[{~a]~>b~}\n"), "<p>[{~a]~&gt;b~}</p>");
+    // The refused critic opener leaves two bare tildes outside the run.
+    assert_eq!(html("[{~a]~>b~}\n"), "<p>[{~a]<s>&gt;b</s>}</p>");
 }
 
 /// The forced emphasis spellings, which already read the rule. Listed here so

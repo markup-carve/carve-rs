@@ -1184,20 +1184,13 @@ fn toc_bottom_ol_golden() {
     let opts = Options::new()
         .with_extension(&ext)
         .with_lowercase_heading_ids(true);
-    // The generated <nav> HTML is byte-identical to carve-js; the ONLY
-    // difference is leading indentation. carve-js renders the appended
-    // bottom-position raw block as a flat top-level child (no indent), while
-    // carve-rs's core `render_section` absorbs a trailing top-level block into
-    // the last open <section> and indents it. That section-absorption is a
-    // pre-existing CORE rendering trait, unrelated to this extension, so the
-    // assertion encodes the carve-rs output (nav contents match js exactly).
     let html = carve::to_html_with_options("# Alpha\n\n## Beta\n", &opts);
     assert!(html.contains(
         "<nav class=\"toc\" aria-label=\"Table of contents\">\n<ol>\n<li><a href=\"#alpha\">Alpha</a>\n<ol>\n<li><a href=\"#beta\">Beta</a></li>\n</ol>\n</li>\n</ol>\n</nav>"
     ));
     assert_eq!(
         html,
-        "<section id=\"alpha\">\n  <h1>Alpha</h1>\n  <section id=\"beta\">\n    <h2>Beta</h2>\n    <nav class=\"toc\" aria-label=\"Table of contents\">\n<ol>\n<li><a href=\"#alpha\">Alpha</a>\n<ol>\n<li><a href=\"#beta\">Beta</a></li>\n</ol>\n</li>\n</ol>\n</nav>\n  </section>\n</section>"
+        "<section id=\"alpha\">\n  <h1>Alpha</h1>\n  <section id=\"beta\">\n    <h2>Beta</h2>\n  </section>\n</section>\n<nav class=\"toc\" aria-label=\"Table of contents\">\n<ol>\n<li><a href=\"#alpha\">Alpha</a>\n<ol>\n<li><a href=\"#beta\">Beta</a></li>\n</ol>\n</li>\n</ol>\n</nav>"
     );
 }
 
@@ -1659,4 +1652,16 @@ fn editorial_markup_takes_trailing_attribute_block() {
         carve::to_html("{--d--}{#i}").trim(),
         "<p><del id=\"i\">-d-</del></p>"
     );
+}
+
+#[test]
+fn bottom_toc_follows_single_heading_section() {
+    let ext = TableOfContents::with_options(TableOfContentsOptions {
+        position: Position::Bottom,
+        ..Default::default()
+    });
+    let html = carve::to_html_with_options("# A\n", &Options::new().with_extension(&ext));
+    let close = html.find("</section>").unwrap();
+    let nav = html.find("<nav class=\"toc\"").unwrap();
+    assert!(close < nav, "{html}");
 }

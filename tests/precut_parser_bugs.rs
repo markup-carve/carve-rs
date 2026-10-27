@@ -127,3 +127,27 @@ fn below_column_list_marker_leaves_empty_quote_item() {
     assert!(nested.contains("<ul>"), "{nested}");
     assert!(!nested.contains("</ol>\n<ul>"), "{nested}");
 }
+
+#[test]
+fn definition_shaped_marker_stays_in_figure_caption() {
+    for continuation in ["- [a]: /u", "- [^f]: note"] {
+        let source = format!("> q\n^ c\n{continuation}\n");
+        let html = carve::to_html(&source);
+        assert!(
+            html.contains(&format!("<figcaption>c\n{continuation}</figcaption>")),
+            "{html}"
+        );
+    }
+}
+
+#[test]
+fn new_quote_does_not_inherit_nested_list_definition_column() {
+    let html = carve::to_html("> - > - p\n> >   [^f]: n\n");
+    assert!(
+        html.contains("<blockquote><p>[^f]: n</p></blockquote>"),
+        "{html}"
+    );
+    let at_column = carve::to_html("> - > - p\n> > [^f]: n\n\nx[^f]\n");
+    assert!(!at_column.contains("[^f]: n"), "{at_column}");
+    assert!(at_column.contains("role=\"doc-endnotes\""), "{at_column}");
+}

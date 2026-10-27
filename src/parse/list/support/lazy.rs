@@ -76,6 +76,7 @@ pub(crate) fn fold_lazy_run_and_resume_in_band(
                 list_base,
                 content_col,
                 frame_band_lines,
+                (false, None),
             );
             if retained_fence {
                 break;
@@ -164,6 +165,7 @@ pub(crate) fn fold_lazy_run_and_resume_in_band(
             list_base,
             content_col,
             frame_band_lines,
+            (false, None),
         );
         if cur.pos == before {
             break;
@@ -232,7 +234,52 @@ pub(crate) fn collect_trailing_lazy_through(
     list_base: usize,
     content_col: usize,
 ) -> bool {
-    collect_trailing_lazy_through_framed(cur, nested, base_indent, list_base, content_col, false)
+    collect_trailing_lazy_through_framed(
+        cur,
+        nested,
+        base_indent,
+        list_base,
+        content_col,
+        false,
+        (false, None),
+    )
+}
+
+pub(crate) fn collect_comment_lazy_through(
+    cur: &mut LineCursor,
+    nested: &mut MappedSource,
+    base_indent: usize,
+    list_base: usize,
+    content_col: usize,
+) -> bool {
+    collect_trailing_lazy_through_framed(
+        cur,
+        nested,
+        base_indent,
+        list_base,
+        content_col,
+        false,
+        (true, None),
+    )
+}
+
+pub(crate) fn collect_marker_sublist_lazy_through(
+    cur: &mut LineCursor,
+    nested: &mut MappedSource,
+    base_indent: usize,
+    list_base: usize,
+    content_col: usize,
+    ancestor_column: usize,
+) -> bool {
+    collect_trailing_lazy_through_framed(
+        cur,
+        nested,
+        base_indent,
+        list_base,
+        content_col,
+        false,
+        (false, Some(ancestor_column)),
+    )
 }
 
 pub(crate) fn collect_trailing_lazy_through_framed(
@@ -242,7 +289,9 @@ pub(crate) fn collect_trailing_lazy_through_framed(
     list_base: usize,
     content_col: usize,
     frame_band_lines: bool,
+    lazy_scope: (bool, Option<usize>),
 ) -> bool {
+    let (after_comment, ancestor_quote_column) = lazy_scope;
     let mut buffered = frame_band_lines.then(LineBuffer::default);
     if cur.peek().is_some_and(|line| {
         matches!(line.as_bytes().first(), Some(b'`' | b'~'))
@@ -311,8 +360,15 @@ pub(crate) fn collect_trailing_lazy_through_framed(
         }
     }
     while let Some(line) = cur.peek() {
+        let indent = indent_columns(line);
         if is_blank_line(line)
-            || indent_columns(line) > base_indent
+            || (indent > base_indent
+                && !(after_comment
+                    && indent < content_col
+                    && line_starts_paragraph(trim_ascii_start(line))
+                    && !item_block_opener(trim_ascii_start(line))))
+            || ancestor_quote_column
+                .is_some_and(|column| marked_quote_at_ancestor_column(line, column, content_col))
             || (is_list_marker(line) && indent_columns(line) <= list_base)
             || (is_plus_marker(trim_ascii_start(line))
                 && cur
@@ -378,6 +434,16 @@ pub(crate) fn collect_trailing_lazy_through_framed(
     false
 }
 
+pub(crate) fn marked_quote_at_ancestor_column(
+    line: &str,
+    ancestor_column: usize,
+    content_col: usize,
+) -> bool {
+    let indent = indent_columns(line);
+    strip_blockquote_prefix(trim_ascii_start(line)).is_some()
+        && indent >= ancestor_column
+        && indent < content_col
+}
 /// Is the line that ends this chunk a BAND line, strictly between the list's base
 /// and the item's content column?
 ///

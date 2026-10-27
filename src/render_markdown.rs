@@ -3250,7 +3250,17 @@ fn render_inline_body(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize
                 // and `</#a<script>` is a complete opening tag once this
                 // Markdown is rendered, so the target takes the HTML pass while
                 // the writer's own delimiters stay literal (carve-rs#807).
-                None => format!("</#{}>", escape_md_html(&strip_controls(&crossref.target))),
+                None => {
+                    let target = escape_md_html(&strip_controls(&crossref.target));
+                    // An angle run in a Markdown link label is still label text.
+                    // Its closing bracket must not end the surrounding link.
+                    let target = if ctx.link_depth > 0 {
+                        target.replace(']', "\\]")
+                    } else {
+                        target
+                    };
+                    format!("</#{target}>")
+                }
                 Some((id, title)) => {
                     let rejected = crate::abbr_budget::label_rejected(&crossref.target);
                     let label = if rejected {

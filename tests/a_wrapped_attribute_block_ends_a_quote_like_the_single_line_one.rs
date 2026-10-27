@@ -119,21 +119,11 @@ fn control_an_indented_wrapped_block_is_lazy_text() {
 
 #[test]
 fn a_block_whose_closer_sits_at_a_shallower_depth() {
-    // THE LOOKAHEAD READS THE INNERMOST CONTENT OF EACH LINE, so an opener at
-    // depth two and a closer at depth one join. Refusing the join on a depth
-    // mismatch was considered and rejected: it puts this document straight back
-    // on the answer the ticket is about, with `tail` INSIDE the inner quote
-    // wearing attributes written to end it, which is what this engine published
-    // before the fix.
-    //
-    // The two brace lines then reach the quote's own body parse, where an
-    // attribute block with nothing after it attaches to nothing and is dropped.
-    // That half is untouched here and carve-js agrees with it byte for byte.
-    // What the row pins is the STRUCTURE: the paragraph closes and the
-    // column-0 line reaches no container.
+    // The closer lacks the inner quote's prefix. Both brace lines remain
+    // paragraph text, and the open paragraph takes the lazy tail.
     assert_eq!(
         html("> > q\n> > {.k\n> #x}\ntail\n"),
-        "<blockquote>\n  <blockquote><p>q</p></blockquote>\n</blockquote>\n<p>tail</p>"
+        "<blockquote>\n  <blockquote><p>q\n{.k\n<span class=\"tag\"><strong>#x</strong></span>}\ntail</p></blockquote>\n</blockquote>"
     );
     // The SINGLE-LINE spelling is a different document, not a twin: `{.k}` is
     // complete at depth two, so `#x}` is ordinary content of the OUTER quote

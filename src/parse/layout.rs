@@ -1150,7 +1150,7 @@ where
 {
     let mut i = start + 2;
     let mut rows: Vec<C> = Vec::new();
-    while i < lines.len() && lines[i].trim_start().starts_with('|') {
+    while i < lines.len() && lines[i].starts_with('|') {
         let cells: C = layout_pipe_cells(lines[i])?;
         if cells.as_ref().len() != alignments.len() {
             return None;

@@ -219,13 +219,15 @@ pub(in crate::parse) fn quoted_attrs_block_len<'a>(
     if !stripped.contains('{') {
         return QuotedAttrsBlock::No;
     }
-    fn innermost(mut line: &str) -> &str {
+    fn innermost(mut line: &str) -> (&str, usize) {
+        let mut depth = 0;
         while let Some(next) = strip_blockquote_prefix(line) {
             line = next;
+            depth += 1;
         }
-        line
+        (line, depth)
     }
-    let first = innermost(stripped);
+    let (first, nested_depth) = innermost(stripped);
     if first.starts_with([' ', '\t']) || !first.starts_with('{') {
         return QuotedAttrsBlock::No;
     }
@@ -244,7 +246,19 @@ pub(in crate::parse) fn quoted_attrs_block_len<'a>(
         let Some(next) = strip_blockquote_prefix(line) else {
             break;
         };
-        let inner = innermost(next);
+        let mut inner = next;
+        let mut matched_depth = true;
+        for _ in 0..nested_depth {
+            if let Some(rest) = strip_blockquote_prefix(inner) {
+                inner = rest;
+            } else {
+                matched_depth = false;
+                break;
+            }
+        }
+        if !matched_depth || strip_blockquote_prefix(inner).is_some() {
+            break;
+        }
         #[cfg(test)]
         ATTRS_LOOKAHEAD_BYTES.with(|work| work.set(work.get() + inner.len()));
         if !is_blank_line(inner) && !valid_wrapped_attr_continuation(inner) {

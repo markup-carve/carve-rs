@@ -1134,6 +1134,22 @@ mod ascii_heading_id_tests {
             }
         }
     }
+
+    #[test]
+    fn paired_quote_glyphs_reverse_before_slugging() {
+        let options = HeadingIdOptions::default();
+        for source in ["q ‘2 active’", "q ‚2 active‛"] {
+            assert_eq!(slugify_parse(source, options), "q-2-active");
+        }
+        for source in [
+            "q “2 active”",
+            "q „2 active“",
+            "q ‟2 active‟",
+            "q «2 active»",
+        ] {
+            assert_eq!(slugify_parse(source, options), "q-2-active");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2656,4 +2672,15 @@ mod ladder_body_reparses {
             }
         }
     }
+}
+
+#[test]
+fn verse_spacing_does_not_enter_a_link_destination() {
+    let literal = crate::to_html("::: |\n[a](/u\t\"t\")\n");
+    assert!(!literal.contains("<a "), "{literal}");
+    assert!(literal.contains("[a](/u"), "{literal}");
+    assert!(literal.contains("&nbsp;"), "{literal}");
+
+    let linked = crate::to_html("::: |\n[a](/u \"t\")\n");
+    assert!(linked.contains("<a href=\"/u\""), "{linked}");
 }

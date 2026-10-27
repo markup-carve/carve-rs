@@ -622,6 +622,9 @@ struct RawDirective {
 /// so an unknown key or malformed value degrades to a warning + literal (I1/I7).
 enum ParsedDirective {
     Ok(Box<Directive>),
+    /// A recognized line selector with a malformed range. Keep its path so
+    /// the rejected directive can still record a resolved dependency.
+    InvalidLines(String),
     /// An `@…`-shaped option that is unknown or malformed; carries the offending token.
     BadOption(String),
     /// Not directive-shaped at all; no warning, stays literal silently.
@@ -726,6 +729,9 @@ fn parse_options(raw: RawDirective) -> ParsedDirective {
             && value
                 .chars()
                 .all(|c| !matches!(c, '@' | '}') && !c.is_whitespace());
+        if key == "lines" && !value_ok {
+            return ParsedDirective::InvalidLines(raw.path);
+        }
         if !key_ok || !value_ok {
             return bad();
         }
@@ -746,7 +752,7 @@ fn parse_options(raw: RawDirective) -> ParsedDirective {
             }
             "lines" => {
                 let Some((a_raw, b_raw)) = value.split_once('-') else {
-                    return bad();
+                    return ParsedDirective::InvalidLines(raw.path);
                 };
                 // `[1-9]\d*` on both sides: 1-based, so a leading zero is
                 // malformed rather than silently normalized.
@@ -757,7 +763,7 @@ fn parse_options(raw: RawDirective) -> ParsedDirective {
                         && s.parse::<usize>().is_ok()
                 };
                 if !positive(a_raw) || !positive(b_raw) {
-                    return bad();
+                    return ParsedDirective::InvalidLines(raw.path);
                 }
                 let (a, b) = (
                     a_raw.parse::<usize>().unwrap_or(0),
@@ -765,7 +771,7 @@ fn parse_options(raw: RawDirective) -> ParsedDirective {
                 );
                 // An inverted range is an error, not an empty selection.
                 if b < a {
-                    return bad();
+                    return ParsedDirective::InvalidLines(raw.path);
                 }
                 if !seen.insert("lines") {
                     return repeated();
@@ -1354,6 +1360,24 @@ fn resolve_child(d: &Directive, state: &mut State<'_>) -> Option<ResolvedChild> 
         position_base,
         selected_range: range,
     })
+}
+
+fn reject_invalid_lines(path: &str, state: &mut State<'_>) {
+    // Resolve the named file through the normal bounded path so a malformed
+    // selector still has the dependency required by I11.
+    let directive = Directive {
+        path: path.to_string(),
+        section: None,
+        lines: None,
+        region: None,
+        code: None,
+        shift: Shift::By(0),
+    };
+    let _ = resolve_child(&directive, state);
+    state.warn(
+        "include-lines-invalid",
+        format!("Include line range for \"{path}\" is invalid."),
+    );
 }
 
 fn heading_id(h: &Heading) -> String {
@@ -2878,6 +2902,10 @@ fn expand_run(run: &[InlineNode], state: &mut State<'_>) -> Vec<InlineNode> {
         let replacement = state.at(slicer.position(start), |state| {
             let d = match parse_options(raw) {
                 ParsedDirective::Ok(d) => d,
+                ParsedDirective::InvalidLines(path) => {
+                    reject_invalid_lines(&path, state);
+                    return None;
+                }
                 ParsedDirective::BadOption(part) => {
                     state.warn(
                         "include-unknown-option",
@@ -3142,6 +3170,12 @@ fn expand_paragraph(block: &mut Paragraph, state: &mut State<'_>) -> Option<Vec<
                     merged
                 });
             }
+            ParsedDirective::InvalidLines(path) => {
+                return state.at(position, |state| {
+                    reject_invalid_lines(&path, state);
+                    None
+                });
+            }
             ParsedDirective::BadOption(part) => {
                 return state.at(position, |state| {
                     state.warn(
@@ -3200,6 +3234,7 @@ fn expand_blocks(blocks: &mut Vec<BlockNode>, state: &mut State<'_>) {
             BlockNode::Div(d) => expand_blocks(&mut d.children, state),
             BlockNode::Section(d) => expand_blocks(&mut d.children, state),
             BlockNode::Admonition(a) => expand_blocks(&mut a.children, state),
+            BlockNode::FigureGroup(g) => expand_blocks(&mut g.children, state),
             BlockNode::List(l) => {
                 for item in &mut l.items {
                     expand_blocks(&mut item.children, state);

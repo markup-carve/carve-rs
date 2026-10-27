@@ -589,13 +589,10 @@ pub struct Paragraph {
     pub attrs: Option<Attrs>,
     /// Inline content of the paragraph.
     pub children: Vec<InlineNode>,
-    /// Whether the paragraph's first source line began at its container's content
-    /// column (column 0 at the top level), i.e. was NOT indented above it. Used
-    /// only by the post-parse image-figure promotion: an image + `^ caption`
-    /// paragraph promotes to a `<figure>` only when the image sat at the content
-    /// column (strict column-0 rule, docs/divergence-from-djot.md §11). An
-    /// indented image + caption stays a literal paragraph, matching carve-php /
-    /// carve-js.
+    /// Whether an image plus caption paragraph can promote to a figure. The
+    /// first line normally sits at the container's content column. An indented
+    /// image also qualifies when its following caption starts at that column.
+    /// A caption folded from below the column does not qualify.
     ///
     /// EVERY construction site must set this deliberately. The claim that used to
     /// stand here - that the sites leaving it `false` never build an image +

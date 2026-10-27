@@ -225,12 +225,13 @@ pub(super) fn document_column(source_line: usize) -> Option<usize> {
     })
 }
 
-pub(super) fn preceding_nested_list_marker(source_line: usize) -> bool {
+pub(super) fn preceding_nested_list_marker(source_line: usize, require_blank: bool) -> bool {
     CLASSIFIER.with(|slot| {
         let slot = slot.borrow();
         let Some(classifier) = slot.as_ref() else {
             return false;
         };
+        let mut found_marker = false;
         for line in classifier
             .lines
             .iter()
@@ -238,13 +239,19 @@ pub(super) fn preceding_nested_list_marker(source_line: usize) -> bool {
             .rev()
             .skip_while(|line| is_blank_line(line))
         {
-            if is_blank_line(line) || detect_fence_open(line.trim_start()).is_some() {
-                break;
+            if is_blank_line(line) {
+                return require_blank && found_marker;
+            }
+            if detect_fence_open(line.trim_start()).is_some() {
+                return false;
             }
             if indent_columns(line) > 0
                 && detect_list_marker_full(line.trim_start_matches([' ', '\t'])).is_some()
             {
-                return true;
+                if !require_blank {
+                    return true;
+                }
+                found_marker = true;
             }
         }
         false
@@ -488,6 +495,15 @@ impl Classifier {
             return;
         }
         if is_blank_line(body) {
+            if depth > 0
+                && !walk
+                    .stack
+                    .iter()
+                    .any(|entry| entry.kind == Kind::Quote && entry.depth >= depth)
+            {
+                walk.close_before_line(shape, body);
+                walk.push_quote_prefixes(line, depth);
+            }
             walk.blank(depth);
             return;
         }
@@ -775,7 +791,12 @@ impl Walk {
         if follower.line.is_none() {
             return Some(Refusal::Document);
         }
-        if is_blank_line(follower.body) {
+        if is_blank_line(follower.body)
+            && !(follower.depth.is_some_and(|next_depth| next_depth > depth)
+                && follower
+                    .line
+                    .is_some_and(|line| strip_blockquote_prefix(line).is_some()))
+        {
             return Some(Refusal::Blank);
         }
         if claim.first_block_quote && !claim.first_block_attaches {
@@ -844,11 +865,11 @@ impl Walk {
         // A lazy paragraph line closes no container (§17 L3 keeps the item's `+` column).
         if self.paragraph_open
             && !self.pending_blank
-            && self
-                .stack
-                .iter()
-                .any(|entry| entry.kind == Kind::Quote && entry.depth >= depth)
-                == (depth > 0)
+            && (depth == 0
+                || self
+                    .stack
+                    .iter()
+                    .any(|entry| entry.kind == Kind::Quote && entry.depth >= depth))
             && line_starts_paragraph(text)
             && !item_block_opener(text)
             && detect_list_marker_full(text).is_none()
@@ -1209,7 +1230,7 @@ fn first_block_refusal(
         });
     if follower.line.is_none() {
         Some(Refusal::Document)
-    } else if is_blank_line(follower.body) {
+    } else if follower.line.is_some_and(is_blank_line) {
         Some(Refusal::Blank)
     } else if column_zero_list {
         Some(Refusal::List)

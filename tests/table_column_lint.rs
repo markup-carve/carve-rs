@@ -43,7 +43,43 @@ fn whole_cell_span_markers_need_no_alignment_padding() {
     assert!(lint_carve("|<text|\n")
         .iter()
         .any(|warning| warning.rule == "table-marker-run-padding"));
-    assert!(lint_carve("|=^|\n")
+    assert!(!lint_carve("|=^|\n")
         .iter()
         .any(|warning| warning.rule == "table-marker-run-padding"));
+}
+
+fn padding_spans(source: &str) -> Vec<(usize, &str)> {
+    lint_carve(source)
+        .into_iter()
+        .filter(|w| w.rule == "table-marker-run-padding")
+        .map(|w| (w.column, &source[w.start..w.end]))
+        .collect()
+}
+
+#[test]
+fn a_glued_attribute_block_without_padding_is_reported_at_the_brace() {
+    assert_eq!(padding_spans("|{.x}a |\n"), [(2, "{.x}")]);
+    assert_eq!(padding_spans("| b |{.x k=v}\ta |\n"), [(6, "{.x k=v}")]);
+    assert_eq!(padding_spans("|={.x}a |\n"), [(2, "=")]);
+    assert_eq!(padding_spans("|=<{.x}a |\n"), [(3, "<")]);
+    for source in ["|{.x} a |\n", "| {.x}a |\n", "|{.x a |\n", "|{}a |\n"] {
+        assert_eq!(padding_spans(source), [], "{source:?}");
+    }
+}
+
+#[test]
+fn the_padding_rule_fires_only_where_the_missing_space_makes_the_cell_literal() {
+    for source in ["|>\ta |\n", "|=<\ta |\n", "|<^{.x}\ta |\n", "|=\ta |\n"] {
+        assert_eq!(padding_spans(source).len(), 1, "{source:?}");
+    }
+    for source in [
+        "|^a |\n",
+        "|=^ a |\n",
+        "|=<< a |\n",
+        "|<> a |\n",
+        "|=> a |\n",
+        "|<|\n",
+    ] {
+        assert_eq!(padding_spans(source), [], "{source:?}");
+    }
 }

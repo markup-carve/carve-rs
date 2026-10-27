@@ -944,13 +944,11 @@ fn extract_block_text(node: &BlockNode, smart: SmartTypographyMode) -> String {
                 .collect();
             prefix + &text
         }
-        BlockNode::CodeBlock(c) => {
-            if c.content.contains('\n') {
-                format!("```\n{}\n```", c.content)
-            } else {
-                format!("`{}`", c.content)
-            }
-        }
+        BlockNode::CodeBlock(c) => c
+            .content
+            .strip_suffix('\n')
+            .unwrap_or(&c.content)
+            .to_string(),
         BlockNode::Table(t) => {
             let mut rows = Vec::new();
             for row in &t.rows {

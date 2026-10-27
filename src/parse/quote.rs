@@ -87,6 +87,7 @@ pub(in crate::parse) enum DefHalf {
 #[derive(Default)]
 pub(in crate::parse) struct QuotedEntryScan {
     scanned: usize,
+    quote_depth: usize,
     half: Option<DefHalf>,
     content_col: Option<usize>,
     description_col: Option<usize>,
@@ -118,8 +119,17 @@ impl QuotedEntryScan {
             // term (markup-carve/carve-rs#1538). The single-quote sweeps did not
             // exercise this, which is why the earlier no-peel form measured clean.
             let mut peeled = line.as_str();
+            let mut quote_depth = 0;
             while let Some(after) = strip_blockquote_prefix(peeled) {
                 peeled = after;
+                quote_depth += 1;
+            }
+            if quote_depth != self.quote_depth {
+                self.half = None;
+                self.description_col = None;
+                self.content_col = None;
+                self.closed_by_block = false;
+                self.quote_depth = quote_depth;
             }
             let column = indent_columns(peeled);
             let rest = trim_ascii_start(peeled);
@@ -135,7 +145,7 @@ impl QuotedEntryScan {
                 self.half = Some(DefHalf::Term);
                 self.description_col = None;
                 self.closed_by_block = false;
-            } else if strip_definition_marker(content).is_some() {
+            } else if self.half.is_some() && strip_definition_marker(content).is_some() {
                 self.half = Some(DefHalf::Description);
                 self.description_col =
                     definition_body_content_col(content).map(|body_col| column + ladder + body_col);
@@ -583,6 +593,10 @@ impl NestedFenceReplay {
         open: FenceOpen,
     ) {
         let here = &mut self.chain[pos.level];
+        // A below-column code run continues an open item paragraph as text.
+        if here.para && line.col < line.floor {
+            return;
+        }
         // The host holds the fence whether the opener sits AT its
         // content column or past it. A fence after an open paragraph
         // still needs a closer ahead (section 10). Inside a colon
@@ -1427,7 +1441,7 @@ pub(in crate::parse) fn collect_blockquote_body(
         {
             continue;
         }
-        if body.lazy_ends_quote(cur, line) {
+        if body.lazy_ends_quote(cur, options, line) {
             break;
         }
         body.fold_lazy_line(cur, line);
@@ -1677,10 +1691,12 @@ impl<'a> QuoteBody<'a> {
             self.list_open = false;
             self.list_content_columns.clear();
         }
-        if !self.may_have_term && stripped.contains(":: ") {
+        if !self.may_have_term && self.in_fence.is_none() && stripped.contains(":: ") {
             let trimmed = trim_ascii_start(stripped);
+            let leaf = strip_all_quotes(stripped).0;
             self.may_have_term = (self.inner.lines.is_empty()
-                || detect_list_marker_full(trimmed).is_some())
+                || detect_list_marker_full(trimmed).is_some()
+                || leaf.starts_with(":: "))
                 && (trimmed.starts_with('>')
                     || innermost_marker_content(trimmed).starts_with(":: "));
         }
@@ -2040,7 +2056,12 @@ impl<'a> QuoteBody<'a> {
         // inherits goes WITH it, so §12 is decided by the same walk
         // instead of forcing one of its own.
         let inherited_absorption = if self.para_open.may_carry_absorption() {
-            self.para_open.absorption()
+            let prior_depth = self
+                .inner
+                .lines
+                .last()
+                .map_or(0, |line| strip_all_quotes(&line.text).1);
+            (strip_all_quotes(stripped).1 >= prior_depth) && self.para_open.absorption()
         } else {
             false
         };
@@ -2150,8 +2171,12 @@ impl<'a> QuoteBody<'a> {
             // nothing linear instead of scanned once per line.
             QuotedAttrsBlock::NoneWithin(window) => {
                 self.attrs_scan_floor = at + window;
-                self.unclosed_nested_attribute =
-                    nested && prior_paragraph && trim_ascii_start(stripped).starts_with('{');
+                self.unclosed_nested_attribute = trim_ascii_start(stripped).starts_with('{')
+                    && (nested && prior_paragraph
+                        || !nested
+                            && cur
+                                .peek()
+                                .is_some_and(|next| strip_blockquote_prefix(next).is_none()));
             }
             QuotedAttrsBlock::No => {}
         }
@@ -2207,8 +2232,22 @@ impl<'a> QuoteBody<'a> {
         options: &Options<'_>,
         line: &str,
     ) -> bool {
+        // A following marker that owns a block stays the attachment point.
+        // The earlier `+` can still continue the open quote paragraph.
+        if cur.lines.line(cur.pos + 1).is_some_and(is_plus_marker)
+            && cur.lines.line(cur.pos + 2).is_some()
+            && cur
+                .continuation_decision(cur.pos + 1)
+                .is_some_and(|decision| {
+                    decision.owner == Some(continuation_marker::Kind::Quote)
+                        && decision.refusal.is_none()
+                })
+        {
+            return false;
+        }
         if !(trim_ascii(line) == "+"
             && indent_columns(line) == 0
+            && cur.lines.line(cur.pos + 1).is_some()
             && (!cur.in_item_body || cur.continuation_decision(cur.pos).is_some())
             && (cur.continuation_decision(cur.pos).is_some()
                 || cur.carried_reach(cur.pos) != Some(false))
@@ -2225,23 +2264,36 @@ impl<'a> QuoteBody<'a> {
         cur.consume();
         let mut attached = LineBuffer::default();
         let cursor_lines = cur.lines;
+        let attached_start = cur.pos;
+        let refused_first_plus = cursor_lines
+            .line(attached_start + 1)
+            .map_or(true, is_blank_line)
+            && (cursor_lines.line(attached_start + 1).is_none()
+                || cur
+                    .continuation_decision(attached_start)
+                    .is_some_and(|decision| decision.refusal.is_some()));
         let mut attach_end = attached_block_lines_classified(
             cursor_lines,
             cur.pos,
             &mut cur.comment_closer_last_index,
             &mut cur.code_closer_last_index,
             options,
-            &mut |next, _| {
-                is_blank_line(next) || (trim_ascii(next) == "+" && indent_columns(next) == 0)
+            &mut |next, at| {
+                is_blank_line(next)
+                    || (trim_ascii(next) == "+"
+                        && indent_columns(next) == 0
+                        && !(at == attached_start && refused_first_plus))
             },
         );
-        if cursor_lines
-            .line(cur.pos)
-            .is_some_and(is_line_comment_any_column)
+        while attach_end > cur.pos
             && cursor_lines
-                .line(attach_end)
-                .is_some_and(|next| indent_columns(next) == 0 && line_starts_paragraph(next))
+                .line(attach_end - 1)
+                .is_some_and(is_line_comment_any_column)
+            && cursor_lines.line(attach_end).is_some_and(|next| {
+                !is_blank_line(next) && !(trim_ascii(next) == "+" && indent_columns(next) == 0)
+            })
         {
+            let prior_end = attach_end;
             attach_end = attached_block_lines_classified(
                 cursor_lines,
                 attach_end,
@@ -2250,6 +2302,9 @@ impl<'a> QuoteBody<'a> {
                 options,
                 &mut |next, _| is_blank_line(next) || is_plus_marker(next),
             );
+            if attach_end == prior_end {
+                break;
+            }
         }
         while cur.pos < attach_end {
             let next = cur.lines.at(cur.pos);
@@ -2360,7 +2415,12 @@ impl<'a> QuoteBody<'a> {
     // and it already returns false for bullet/task/ordered markers, so we
     // simply defer to it. A heading is the sole construct a list marker
     // would otherwise end, and headings still interrupt via that predicate.
-    fn lazy_ends_quote(&mut self, cur: &mut LineCursor<'a>, line: &str) -> bool {
+    fn lazy_ends_quote(
+        &mut self,
+        cur: &mut LineCursor<'a>,
+        options: &Options<'_>,
+        line: &str,
+    ) -> bool {
         if self.attrs_closed_last {
             return true;
         }
@@ -2413,6 +2473,17 @@ impl<'a> QuoteBody<'a> {
         } else {
             fenced_below.unwrap_or_else(|| self.para_open.get())
         };
+        // A marker folded into an open paragraph is text, not a closed leaf.
+        if (self.item_opened_at.is_some() && self.item_opened_at == self.last_quoted_at
+            || self.last_nested)
+            && self.inner.lines.last().is_some_and(|last| {
+                !last.text.starts_with(LAZY)
+                    && detect_list_marker_full(strip_all_quotes(&last.text).0).is_some()
+                    && !body_ends_with_open_paragraph(&last.text, options)
+            })
+        {
+            return true;
+        }
         let empty_marker_leaf = self.inner.lines.len() == 1
             && self.inner.lines.first().is_some_and(|source| {
                 let (leaf, levels) = strip_all_quotes(innermost_marker_content(&source.text));

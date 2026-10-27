@@ -33,10 +33,14 @@ mod an_unclosed_attached_fence_ends_with_its_block_before_a_blank;
 mod an_unclosed_fence_below_a_marker_line_quote_is_lazy_text;
 #[path = "../folded_fence_closer_shapes.rs"]
 mod folded_fence_closer_shapes;
+#[path = "../lint_first_block_actual_attachment.rs"]
+mod lint_first_block_actual_attachment;
 #[path = "../nested_colon_div_plus_attachment.rs"]
 mod nested_colon_div_plus_attachment;
 #[path = "../nested_fence_attached_block_extent.rs"]
 mod nested_fence_attached_block_extent;
+#[path = "../open_bug_contracts.rs"]
+mod open_bug_contracts;
 #[path = "../refused_plus_open_fence_payload.rs"]
 mod refused_plus_open_fence_payload;
 #[path = "../ruled_plus_shapes.rs"]
@@ -2578,3 +2582,91 @@ fn image_paragraphs_as_images(html: &str) -> String {
         })
         .into_owned()
 }
+
+#[path = "../empty_quote_continuation.rs"]
+mod empty_quote_continuation;
+
+#[path = "../html_shortcut_parser_parity.rs"]
+mod html_shortcut_parser_parity;
+
+#[path = "../bare_delimiter_after_literal_brackets.rs"]
+mod bare_delimiter_after_literal_brackets;
+
+#[path = "../outer_item_loose_after_nested_first_block.rs"]
+mod outer_item_loose_after_nested_first_block;
+
+#[path = "../quoted_attribute_without_quote_prefix.rs"]
+mod quoted_attribute_without_quote_prefix;
+
+#[path = "../quoted_attribute_shaped_lazy_tail.rs"]
+mod quoted_attribute_shaped_lazy_tail;
+
+#[path = "../stacked_first_block_quote.rs"]
+mod stacked_first_block_quote;
+
+#[path = "../successive_continuation_markers.rs"]
+mod successive_continuation_markers;
+
+#[path = "../quoted_term_after_paragraph.rs"]
+mod quoted_term_after_paragraph;
+
+#[path = "../quoted_list_fence_payload.rs"]
+mod quoted_list_fence_payload;
+
+#[path = "../profile_code_block_text.rs"]
+mod profile_code_block_text;
+
+#[path = "../reference_image_caption_boundary.rs"]
+mod reference_image_caption_boundary;
+
+#[path = "../quoted_literal_colon_boundary.rs"]
+mod quoted_literal_colon_boundary;
+
+#[path = "../quoted_nested_inline_code_lazy.rs"]
+mod quoted_nested_inline_code_lazy;
+
+#[path = "../nested_list_caption_continuation.rs"]
+mod nested_list_caption_continuation;
+
+#[path = "../closed_nested_quote_leaf.rs"]
+mod closed_nested_quote_leaf;
+
+#[path = "../block_image_paragraph_shape.rs"]
+mod block_image_paragraph_shape;
+#[path = "../braced_opener_marker_is_not_closer.rs"]
+mod braced_opener_marker_is_not_closer;
+#[path = "../combined_emphasis_code_visibility.rs"]
+mod combined_emphasis_code_visibility;
+#[path = "../consecutive_plus_host_paragraph.rs"]
+mod consecutive_plus_host_paragraph;
+#[path = "../div_hosted_quote_plus.rs"]
+mod div_hosted_quote_plus;
+#[path = "../indented_image_flush_caption.rs"]
+mod indented_image_flush_caption;
+#[path = "../inline_link_depth_boundary.rs"]
+mod inline_link_depth_boundary;
+#[path = "../invisible_comment_plus_attachment.rs"]
+mod invisible_comment_plus_attachment;
+#[path = "../list_comment_lazy_paragraph.rs"]
+mod list_comment_lazy_paragraph;
+#[path = "../list_table_caption_flush_follower.rs"]
+mod list_table_caption_flush_follower;
+#[path = "../literal_quote_list_lead.rs"]
+mod literal_quote_list_lead;
+#[path = "../markdown_link_footnotes.rs"]
+mod markdown_link_footnotes;
+#[path = "../nested_fence_blank_payload.rs"]
+mod nested_fence_blank_payload;
+#[path = "../outer_quote_after_lazy_inner.rs"]
+mod outer_quote_after_lazy_inner;
+#[path = "../quote_lazy_marker_ownership.rs"]
+mod quote_lazy_marker_ownership;
+#[path = "../refused_plus_after_indented_list.rs"]
+mod refused_plus_after_indented_list;
+#[path = "../term_invisible_comment_break.rs"]
+mod term_invisible_comment_break;
+#[path = "../wrapped_marker_attr_owner.rs"]
+mod wrapped_marker_attr_owner;
+
+#[path = "../paired_heading_quotes.rs"]
+mod paired_heading_quotes;
