@@ -67,6 +67,11 @@ const KNOWN_DIFFERENCES: &[(&str, &str)] = &[];
 const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
     (
         "i01-inverted-line-range",
+        "html",
+        r#""<p>{{ child @lines:3-1 }}</p>""#,
+    ),
+    (
+        "i01-inverted-line-range",
         "warnings",
         r#"[{"rule":"include-lines-invalid"}]"#,
     ),
