@@ -751,6 +751,12 @@ impl InlineRun<'_, '_> {
         {
             return self.prose_run(i);
         }
+        if c == b'{' && self.bytes.get(i + 1) == Some(&b'{') {
+            if let Some(end) = crate::includes::invalid_line_directive_end(self.text, i) {
+                self.sink.buffer(i, end);
+                return end;
+            }
+        }
         if let Some(next) = self.delimited_construct(c, i) {
             return next;
         }
