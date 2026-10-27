@@ -753,7 +753,7 @@ impl InlineRun<'_, '_> {
         }
         if c == b'{' && self.bytes.get(i + 1) == Some(&b'{') {
             if let Some(end) = crate::includes::invalid_line_directive_end(self.text, i) {
-                self.sink.buffer(i, &self.text[i..end]);
+                self.sink.buffer(i, end);
                 return end;
             }
         }
