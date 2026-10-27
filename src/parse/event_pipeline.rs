@@ -1189,7 +1189,7 @@ fn parse_event_inlines(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
         }
     }
     let bytes = text.as_bytes();
-    let plain = if text.len() < 128 {
+    let plain = (if text.len() < 128 {
         !text.is_empty()
             && !text.contains("..")
             && !text.contains("(c)")
@@ -1204,7 +1204,7 @@ fn parse_event_inlines(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
             })
     } else {
         long_literal_inline(text)
-    };
+    }) || leading_double_star_literal_inline(text);
     if !plain {
         return parse_inline_with_options(text, options);
     }
@@ -1218,6 +1218,57 @@ fn parse_event_inlines(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
         }
     }
     out
+}
+
+/// A leading double-star label and later balanced double-star pairs are
+/// literal when the rest of the run contains only literal inline bytes.
+fn leading_double_star_literal_inline(text: &str) -> bool {
+    if !text.starts_with("**") || text.starts_with("***") {
+        return false;
+    }
+    let bytes = text.as_bytes();
+    let mut index = 0;
+    let mut pairs = 0;
+    while let Some(&byte) = bytes.get(index) {
+        if byte.is_ascii_alphanumeric()
+            || !byte.is_ascii()
+            || matches!(
+                byte,
+                b' ' | b'\n' | b'.' | b',' | b';' | b'!' | b'?' | b'(' | b')'
+            )
+        {
+            index += 1;
+            continue;
+        }
+        if byte == b'*'
+            && bytes.get(index + 1) == Some(&b'*')
+            && bytes.get(index + 2) != Some(&b'*')
+            && (index == 0 || bytes[index - 1] != b'*')
+        {
+            pairs += 1;
+            index += 2;
+            continue;
+        }
+        if byte == b':'
+            && index > 0
+            && bytes[index - 1] == b'\n'
+            && bytes.get(index + 1) == Some(&b' ')
+        {
+            index += 1;
+            continue;
+        }
+        if byte == b'-' && bytes.get(index + 1) != Some(&b'-') {
+            index += 1;
+            continue;
+        }
+        return false;
+    }
+    pairs > 0
+        && pairs % 2 == 0
+        && !text.contains("..")
+        && !text.contains("(c)")
+        && !text.contains("(r)")
+        && !text.contains("(tm)")
 }
 
 /// The long route accepts only bytes that the current inline dispatch treats
@@ -1254,7 +1305,68 @@ fn long_literal_inline(text: &str) -> bool {
 
 #[cfg(test)]
 mod inline_lexer_tests {
-    use super::long_literal_inline;
+    use super::{leading_double_star_literal_inline, long_literal_inline, parse_event_inlines};
+    use crate::parse::parse_inline_with_options;
+    use crate::Options;
+
+    #[test]
+    fn leading_double_star_gate_matches_general_scanner() {
+        let options = Options::default();
+        for first in [
+            "**a**",
+            "**a b**",
+            "**éclair**",
+            "**a*b**",
+            "**a***",
+            "***a***",
+        ] {
+            for tail in [
+                "",
+                " and more.",
+                " and **other**.",
+                "\n: A definition follows.",
+                "\nMore text.",
+                " (c)",
+                " ...",
+                " `code`",
+                " [link](url)",
+                " -- dash",
+            ] {
+                let text = format!("{first}{tail}");
+                if leading_double_star_literal_inline(&text) {
+                    assert_eq!(
+                        parse_event_inlines(&text, &options),
+                        parse_inline_with_options(&text, &options),
+                        "{text:?}"
+                    );
+                }
+            }
+        }
+        assert!(leading_double_star_literal_inline(
+            "**Core syntax**\n: The specification defines it."
+        ));
+        assert!(leading_double_star_literal_inline(
+            "**Tier 2** and **Tier 3**."
+        ));
+        assert!(!leading_double_star_literal_inline("***strong***"));
+        assert!(!leading_double_star_literal_inline("**label** `code`"));
+        for left in [
+            "", "a", " ", ".", "-", "!", "?", "(", ")", ": ", "\n: ", "**b**", "é",
+        ] {
+            for right in [
+                "", "a", " ", ".", "-", "!", "?", "(", ")", ": ", "\n: ", "**b**", "é",
+            ] {
+                let text = format!("**a**{left}{right}");
+                if leading_double_star_literal_inline(&text) {
+                    assert_eq!(
+                        parse_event_inlines(&text, &options),
+                        parse_inline_with_options(&text, &options),
+                        "{text:?}"
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn long_literal_gate_admits_only_safe_text() {
