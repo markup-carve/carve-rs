@@ -2626,3 +2626,6 @@ mod nested_list_caption_continuation;
 
 #[path = "../closed_nested_quote_leaf.rs"]
 mod closed_nested_quote_leaf;
+
+#[path = "../markdown_link_footnotes.rs"]
+mod markdown_link_footnotes;

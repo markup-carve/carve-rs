@@ -1233,7 +1233,11 @@ fn markdown_to_ast_with_code_lines(
         .as_ref()
         .map_or(&[][..], |prepared| prepared.1.as_slice());
     let mut bare_url_at = 0;
-    let (native_source, native_urls) = native_destinations::prepare(parser_source, options);
+    let (native_source, native_urls, link_footnotes) =
+        native_destinations::prepare_with_footnotes(parser_source, options);
+    let footnote_marker = link_footnotes
+        .first()
+        .map(|note| native_source.as_bytes()[note.start]);
     let strikes = crate::markdown_strike::prepare(&native_source, options);
     let mut reference = |link: pulldown_cmark::BrokenLink<'_>| {
         let image = strikes.text.as_bytes().get(link.span.start) == Some(&b'!')
@@ -1282,6 +1286,65 @@ fn markdown_to_ast_with_code_lines(
         if !value.is_empty() {
             builder.text(value);
         }
+    }
+    fn push_link_footnotes(
+        builder: &mut Builder,
+        pending: &mut u8,
+        text: &str,
+        range: &std::ops::Range<usize>,
+        source: &str,
+        masks: &[native_destinations::FootnoteMask],
+        marker: Option<u8>,
+    ) -> bool {
+        let Some(marker) = marker else {
+            return false;
+        };
+        if !text.as_bytes().contains(&marker) {
+            return false;
+        }
+        let first = masks.partition_point(|mask| mask.end <= range.start);
+        // Search parsed text because entity decoding can shorten text before a marker.
+        let relevant: Vec<_> = masks[first..]
+            .iter()
+            .take_while(|mask| mask.start < range.end)
+            .collect();
+        if relevant.is_empty() {
+            return false;
+        }
+        let mut segments = Vec::with_capacity(relevant.len());
+        let mut cursor = 0;
+        for mask in &relevant {
+            let Some(offset) = text.as_bytes()[cursor..]
+                .iter()
+                .position(|byte| *byte == marker)
+            else {
+                return false;
+            };
+            let start = cursor + offset;
+            let end = start + mask.end - mask.start;
+            if text
+                .as_bytes()
+                .get(start..end)
+                .map_or(true, |run| run.iter().any(|byte| *byte != marker))
+            {
+                return false;
+            }
+            segments.push((start, end, *mask));
+            cursor = end;
+        }
+        cursor = 0;
+        for (start, end, mask) in segments {
+            push_text_after_entity_lt(builder, pending, &text[cursor..start], false);
+            *pending = 0;
+            builder.push(
+                Event::FootnoteReference(mask.label.clone().into()),
+                &source[mask.start..mask.end],
+                false,
+            );
+            cursor = end;
+        }
+        push_text_after_entity_lt(builder, pending, &text[cursor..], false);
+        true
     }
     let mut used_reference_ids = BTreeSet::new();
     let mut entity_lt_prefix = 0;
@@ -1508,6 +1571,19 @@ fn markdown_to_ast_with_code_lines(
                 entity_lt_prefix = 0;
                 builder.push(event, &source[range], empty_title);
                 continue;
+            }
+            if let Event::Text(text) = &event {
+                if push_link_footnotes(
+                    &mut builder,
+                    &mut entity_lt_prefix,
+                    text,
+                    &range,
+                    &source,
+                    &link_footnotes,
+                    footnote_marker,
+                ) {
+                    continue;
+                }
             }
             while bare_urls
                 .get(bare_url_at)
