@@ -641,6 +641,20 @@ pub fn parse_experimental_event_blocks(source: &str) -> (Document, bool) {
     }
 }
 
+/// Try the opt-in line-event parser with parser options. Unsupported option
+/// combinations use the standard parser and return `false` for admission.
+#[cfg(feature = "experimental-event-parser-options")]
+pub fn parse_experimental_event_blocks_with_options(
+    source: &str,
+    options: &Options<'_>,
+) -> (Document, bool) {
+    if let Some(result) = event_pipeline::parse_document_with_options(source, options) {
+        result
+    } else {
+        (parse_with_options(source, options), false)
+    }
+}
+
 /// Parse Carve source using the supplied parser options.
 pub fn parse_with_options(source: &str, options: &Options<'_>) -> Document {
     parse_with_options_mode(source, options, ParseMode::Html)

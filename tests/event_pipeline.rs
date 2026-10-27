@@ -1,9 +1,99 @@
 use carve::{parse_experimental_event_blocks, parse_with_options, render_html, to_json, Options};
+#[cfg(feature = "experimental-event-parser-options")]
+use carve::{
+    parse_experimental_event_blocks_with_options, render_html_with_options, AsciiHeadingIds,
+    Profile,
+};
 use std::fs;
 use std::path::Path;
 
 fn parse_standard(source: &str) -> carve::Document {
     parse_with_options(source, &Options::default())
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn option_aware_event_entry_preserves_supported_and_fallback_output() {
+    for (source, options) in [
+        (
+            "# Étage\n\nSee </#Étage>.\n",
+            Options::default().with_lowercase_heading_ids(true),
+        ),
+        (
+            "# Étage\n\nSee </#Etage>.\n",
+            Options::default().with_ascii_heading_ids(AsciiHeadingIds::Strict),
+        ),
+        (
+            "See @alice and #topic.\n",
+            Options::default()
+                .with_mention_url("https://people.example/{name}")
+                .with_tag_url("https://tags.example/{name}"),
+        ),
+        (
+            "# Notes\n\nSee[^n].\n\n[^n]: Note.\n",
+            Options::default().with_lowercase_heading_ids(true),
+        ),
+    ] {
+        let (candidate, admitted) = parse_experimental_event_blocks_with_options(source, &options);
+        assert!(admitted, "{source:?}");
+        assert_eq!(
+            candidate,
+            parse_with_options(source, &options),
+            "{source:?}"
+        );
+        assert_eq!(
+            render_html_with_options(&candidate, &options).unwrap(),
+            render_html_with_options(&parse_with_options(source, &options), &options).unwrap(),
+            "{source:?}"
+        );
+    }
+    let source = "# Heading\n\nText.\n";
+    let options = Options::default().with_source_lines(true);
+    let (candidate, admitted) = parse_experimental_event_blocks_with_options(source, &options);
+    assert!(admitted);
+    assert_eq!(candidate, parse_with_options(source, &options));
+    for options in [
+        Options::default().with_positions(true),
+        Options::default().with_profile(Profile::default()),
+    ] {
+        let (candidate, admitted) = parse_experimental_event_blocks_with_options(source, &options);
+        assert!(!admitted);
+        assert_eq!(candidate, parse_with_options(source, &options));
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn supported_options_match_across_direct_block_families() {
+    for source in [
+        "# Heading\n\nParagraph.\n",
+        "- first\n- second\n",
+        "> quoted\n",
+        ":: term\n:  meaning\n",
+        "Text[^n]\n\n[^n]: Note.\n",
+        "```rust\ncode\n```\n",
+        "[ref]: /target\n\nSee [ref][].\n",
+    ] {
+        for options in [
+            Options::default(),
+            Options::default().with_lowercase_heading_ids(true),
+            Options::default().with_ascii_heading_ids(AsciiHeadingIds::Strict),
+            Options::default()
+                .with_mention_url("https://people.example/{name}")
+                .with_tag_url("https://tags.example/{name}"),
+        ] {
+            let (candidate, admitted) =
+                parse_experimental_event_blocks_with_options(source, &options);
+            assert!(admitted, "{source:?}");
+            let baseline = parse_with_options(source, &options);
+            assert_eq!(candidate, baseline, "{source:?}");
+            assert_eq!(
+                render_html_with_options(&candidate, &options).unwrap(),
+                render_html_with_options(&baseline, &options).unwrap(),
+                "{source:?}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -233,6 +323,59 @@ fn shared_crossref_index_preserves_heading_ids_and_hrefs() {
             "{source:?}"
         );
     }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn option_aware_event_corpus_matches_full_document() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    let options = [
+        Options::default().with_lowercase_heading_ids(true),
+        Options::default().with_ascii_heading_ids(AsciiHeadingIds::Strict),
+        Options::default()
+            .with_mention_url("https://people.example/{name}")
+            .with_tag_url("https://tags.example/{name}"),
+        Options::default().with_source_lines(true),
+        Options::default()
+            .with_source_lines(true)
+            .with_lowercase_heading_ids(true),
+        Options::default()
+            .with_source_lines(true)
+            .with_ascii_heading_ids(AsciiHeadingIds::Strict),
+        Options::default()
+            .with_source_lines(true)
+            .with_mention_url("https://people.example/{name}")
+            .with_tag_url("https://tags.example/{name}"),
+    ];
+    let mut admitted = [0usize; 7];
+    let mut total = 0usize;
+    for entry in fs::read_dir(corpus).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("crv") {
+            continue;
+        }
+        let source = fs::read_to_string(&path).unwrap();
+        total += 1;
+        for (index, options) in options.iter().enumerate() {
+            let (candidate, used) = parse_experimental_event_blocks_with_options(&source, options);
+            admitted[index] += usize::from(used);
+            assert_eq!(
+                candidate,
+                parse_with_options(&source, options),
+                "{}",
+                path.display()
+            );
+        }
+    }
+    assert!(total > 3000);
+    assert!(
+        admitted[..3].iter().all(|count| *count > 2000),
+        "{admitted:?}"
+    );
+    assert!(
+        admitted[3..].iter().all(|count| *count > 2500),
+        "{admitted:?}"
+    );
 }
 
 #[test]

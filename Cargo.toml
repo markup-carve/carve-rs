@@ -32,6 +32,7 @@ include = ["/src/**/*", "/resources/**/*", "/Cargo.toml", "/README.md", "/LICENS
 default = ["fs"]
 fs = []
 experimental-event-parser = []
+experimental-event-parser-options = ["experimental-event-parser"]
 
 [dependencies]
 # THESE TWO MOVE TOGETHER OR NOT AT ALL. markup5ever_rcdom is the DOM sink
