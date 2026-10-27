@@ -3451,6 +3451,7 @@ fn inline_text(node: &InlineNode) -> String {
         InlineNode::Link(link) => inline_run_text(&link.children),
         InlineNode::Span(span) => inline_run_text(&span.children),
         InlineNode::Image(image) => image.alt.clone(),
+        InlineNode::SoftBreak(_) | InlineNode::HardBreak(_) => "\n".into(),
         _ => String::new(),
     }
 }

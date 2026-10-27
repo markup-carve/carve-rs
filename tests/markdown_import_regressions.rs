@@ -430,3 +430,10 @@ fn markdown_image_paragraphs_have_exact_assessment() {
         .iter()
         .any(|d| d.code == "fidelity-unverified"));
 }
+
+#[test]
+fn image_alt_keeps_markdown_line_break() {
+    let result = migrate_markdown("![a\nb](u)\n");
+    assert_eq!(result.value, "![a\nb](u)\n");
+    assert!(carve::to_html(&result.value).contains("alt=\"a\nb\""));
+}
