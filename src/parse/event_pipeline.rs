@@ -2972,14 +2972,14 @@ fn parse_document_with_custom_options(
         SourceEndingGuard::install(source)
     };
     let (frontmatter, frontmatter_raw, body) = split_frontmatter(source, options.positions);
-    let (stripped_body, link_defs) = if may_have_link_defs {
+    let (stripped_body, mut link_defs) = if may_have_link_defs {
         let mut budget = probe_budget_for(body.len());
         extract_link_defs_guarded(body, options, &mut budget)
     } else {
         (String::new(), BTreeMap::new())
     };
     let has_link_defs = !link_defs.is_empty();
-    if options.positions && (has_link_defs || may_have_abbrevs) {
+    if options.positions && may_have_abbrevs {
         return None;
     }
     let body_source = if has_link_defs {
@@ -2992,6 +2992,11 @@ fn parse_document_with_custom_options(
         .filter(|byte| *byte == b'\n')
         .count()
         + 1;
+    if options.positions && has_link_defs {
+        for def in link_defs.values_mut() {
+            def.line = def.line.map(|line| line + body_start_line - 1);
+        }
+    }
     let root_line_map: Option<Vec<Option<usize>>> =
         (continuation_marker::active() || options.source_lines || options.positions).then(|| {
             (body_start_line..body_start_line + body_source.lines().count())
@@ -3002,20 +3007,26 @@ fn parse_document_with_custom_options(
         let _depth = DepthGuard::enter()?;
         let lines: Vec<&str> = body_source.lines().collect();
         if options.positions {
-            (
-                parse_positioned_simple_blocks(&lines, options, root_line_map.as_deref()?).or_else(
-                    || {
-                        parse_mixed_blocks_mapped::<false, false>(
-                            &lines,
-                            options,
-                            root_line_map.as_deref(),
-                            true,
-                        )
-                    },
-                ),
-                link_defs,
-                false,
-            )
+            with_active_link_defs(link_defs, || {
+                if has_link_defs {
+                    parse_mixed_blocks_mapped::<true, false>(
+                        &lines,
+                        options,
+                        root_line_map.as_deref(),
+                        true,
+                    )
+                } else {
+                    parse_positioned_simple_blocks(&lines, options, root_line_map.as_deref()?)
+                        .or_else(|| {
+                            parse_mixed_blocks_mapped::<false, false>(
+                                &lines,
+                                options,
+                                root_line_map.as_deref(),
+                                true,
+                            )
+                        })
+                }
+            })
         } else if has_link_defs {
             with_active_link_defs(link_defs, || {
                 parse_blocks_mapped(&lines, options, root_line_map.as_deref()).or_else(|| {
@@ -3118,7 +3129,10 @@ fn parse_document_with_custom_options(
         let headings = heading_reference_index_for_document(&doc, options.heading_id_options());
         resolve_reference_links(&mut doc, &link_defs, &headings);
     }
-    append_link_reference_definitions(&mut doc, &link_defs, source, None);
+    let original_line_starts = options
+        .positions
+        .then(|| CodepointLineStarts::original(original_source));
+    append_link_reference_definitions(&mut doc, &link_defs, source, original_line_starts.as_ref());
     if may_have_abbrevs {
         apply_abbreviations(&mut doc);
     }
