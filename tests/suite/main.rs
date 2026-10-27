@@ -2608,3 +2608,6 @@ mod quoted_term_after_paragraph;
 
 #[path = "../quoted_list_fence_payload.rs"]
 mod quoted_list_fence_payload;
+
+#[path = "../profile_code_block_text.rs"]
+mod profile_code_block_text;
