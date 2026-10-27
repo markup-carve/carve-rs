@@ -1687,10 +1687,12 @@ impl<'a> QuoteBody<'a> {
             self.list_open = false;
             self.list_content_columns.clear();
         }
-        if !self.may_have_term && stripped.contains(":: ") {
+        if !self.may_have_term && self.in_fence.is_none() && stripped.contains(":: ") {
             let trimmed = trim_ascii_start(stripped);
+            let leaf = strip_all_quotes(stripped).0;
             self.may_have_term = (self.inner.lines.is_empty()
-                || detect_list_marker_full(trimmed).is_some())
+                || detect_list_marker_full(trimmed).is_some()
+                || leaf.starts_with(":: "))
                 && (trimmed.starts_with('>')
                     || innermost_marker_content(trimmed).starts_with(":: "));
         }
