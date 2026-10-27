@@ -2971,9 +2971,6 @@ fn parse_document_with_custom_options(
     let may_have_link_defs = source.contains("]:");
     let may_have_abbrevs = source.contains("*[");
     if source.contains("[^") {
-        if options.source_lines && !options.positions {
-            return None;
-        }
         return parse_document_with_footnotes_options(source, original_source, source_len, options);
     }
     if has_fence_candidate_without_final_newline(source) {
@@ -3228,15 +3225,15 @@ fn parse_document_with_footnotes_options(
     {
         return None;
     }
-    if options.positions
-        && (may_have_abbrevs || mapped.col_map.iter().any(|column| *column != Some(0)))
+    if ((options.positions || options.source_lines) && may_have_abbrevs)
+        || (options.positions && mapped.col_map.iter().any(|column| *column != Some(0)))
     {
         return None;
     }
     let children = {
         let _depth = DepthGuard::enter()?;
         let lines: Vec<&str> = mapped.source.lines().collect();
-        if options.positions {
+        if options.positions || options.source_lines {
             parse_mixed_blocks_mapped::<true, false>(&lines, options, Some(&mapped.line_map), true)?
         } else {
             parse_blocks(&lines, options).or_else(|| {
@@ -3255,7 +3252,7 @@ fn parse_document_with_footnotes_options(
                 Vec::new()
             } else {
                 let lines: Vec<&str> = note.source.lines().collect();
-                if options.positions {
+                if options.positions || options.source_lines {
                     parse_mapped_source(&note, options)
                 } else {
                     parse_blocks(&lines, options)

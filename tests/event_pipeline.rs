@@ -154,6 +154,24 @@ fn positioned_event_entry_matches_editor_spans() {
     }
 }
 
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn source_line_footnotes_match_standard_document() {
+    for source in [
+        "[^note]: footnote\n\nSee [^note].\n",
+        "[^note]: intro\n  > quote\n\nSee [^note].\n",
+    ] {
+        let options = Options::default().with_source_lines(true);
+        let (candidate, admitted) = parse_experimental_event_blocks_with_options(source, &options);
+        assert!(admitted, "{source:?}");
+        assert_eq!(
+            candidate,
+            parse_with_options(source, &options),
+            "{source:?}"
+        );
+    }
+}
+
 #[test]
 fn unsupported_root_literals_preserve_block_ownership() {
     for source in ["--\n", ": stray definition\n", "::: \tnote\n", "  {#id}\n"] {
