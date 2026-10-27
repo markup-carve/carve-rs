@@ -87,6 +87,7 @@ pub(in crate::parse) enum DefHalf {
 #[derive(Default)]
 pub(in crate::parse) struct QuotedEntryScan {
     scanned: usize,
+    quote_depth: usize,
     half: Option<DefHalf>,
     content_col: Option<usize>,
     description_col: Option<usize>,
@@ -118,8 +119,17 @@ impl QuotedEntryScan {
             // term (markup-carve/carve-rs#1538). The single-quote sweeps did not
             // exercise this, which is why the earlier no-peel form measured clean.
             let mut peeled = line.as_str();
+            let mut quote_depth = 0;
             while let Some(after) = strip_blockquote_prefix(peeled) {
                 peeled = after;
+                quote_depth += 1;
+            }
+            if quote_depth != self.quote_depth {
+                self.half = None;
+                self.description_col = None;
+                self.content_col = None;
+                self.closed_by_block = false;
+                self.quote_depth = quote_depth;
             }
             let column = indent_columns(peeled);
             let rest = trim_ascii_start(peeled);
@@ -135,7 +145,7 @@ impl QuotedEntryScan {
                 self.half = Some(DefHalf::Term);
                 self.description_col = None;
                 self.closed_by_block = false;
-            } else if strip_definition_marker(content).is_some() {
+            } else if self.half.is_some() && strip_definition_marker(content).is_some() {
                 self.half = Some(DefHalf::Description);
                 self.description_col =
                     definition_body_content_col(content).map(|body_col| column + ladder + body_col);

@@ -2593,3 +2593,6 @@ mod outer_item_loose_after_nested_first_block;
 
 #[path = "../quoted_attribute_without_quote_prefix.rs"]
 mod quoted_attribute_without_quote_prefix;
+
+#[path = "../quoted_attribute_shaped_lazy_tail.rs"]
+mod quoted_attribute_shaped_lazy_tail;
