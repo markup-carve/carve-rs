@@ -1069,6 +1069,12 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             at,
             source_line,
         };
+        // A tab after the marker's space is content. Structural readers that
+        // skip leading whitespace must not see a second opener behind it.
+        if content.starts_with('\t') {
+            self.paragraph_lead_item(item);
+            return NEXT;
+        }
         // First-block form `- +` (grammar §17): a lone `+` as the marker
         // content means the item's first block is the following flush-left
         // block (no inline paragraph).
