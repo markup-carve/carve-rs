@@ -1310,6 +1310,9 @@ fn parse_unified_list_mapped(
             if is_plus_marker(content) {
                 start_marker_line_list_continuation(&mut frames, decision)?;
             } else {
+                if detect_block_image(content).is_some() {
+                    return None;
+                }
                 frames.last_mut()?.paragraph.push(content);
             }
             pos += 1;
@@ -1324,6 +1327,9 @@ fn parse_unified_list_mapped(
             return None;
         }
         let content = trim_ascii_end(&line[indent..]);
+        if detect_block_image(content).is_some() {
+            return None;
+        }
         if detect_fence_open(content).is_some() {
             let (block, end) = parse_unified_list_fence(lines, pos, frame.content_indent, options)?;
             flush_unified_list_paragraph(frame)?;
