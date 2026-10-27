@@ -1509,8 +1509,16 @@ pub(in crate::parse) fn bold_italic_close(
 ) -> Option<usize> {
     let closers = memo.bold_italic.get_or_insert_with(|| {
         let mut index: HashMap<Option<usize>, Vec<usize>> = HashMap::new();
-        for (close, pair) in bytes.windows(2).enumerate() {
-            if pair == b"*/"
+        let mut close = 0;
+        while close + 1 < bytes.len() {
+            if bytes[close] == b'`' {
+                if let Some((_, consumed)) = parse_inline_code(bytes, close) {
+                    close += consumed;
+                    continue;
+                }
+            }
+            if bytes[close] == b'*'
+                && bytes[close + 1] == b'/'
                 && close > 0
                 && !is_carve_ws(bytes[close - 1])
                 && !followed_by_grapheme_extender(bytes, close + 2)
@@ -1521,6 +1529,7 @@ pub(in crate::parse) fn bold_italic_close(
                     .or_default()
                     .push(close);
             }
+            close += 1;
         }
         index
     });
