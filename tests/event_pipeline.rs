@@ -189,6 +189,53 @@ fn exact_corpus_ast_and_html() {
 }
 
 #[test]
+fn shared_crossref_index_preserves_heading_ids_and_hrefs() {
+    for source in [
+        "# Heading\n\nSee </#heading>.\n",
+        "# Heading\n\n# Heading\n\nSee </#heading> and </#heading-2>.\n",
+        "# Heading {#chosen}\n\nSee </#chosen>.\n",
+        "# Heading\n\n[x]{#heading}\n\n# Heading\n\nSee </#heading-2>.\n",
+        "[x]{#heading}\n\n# Heading\n\nSee </#heading-2>.\n",
+        "[x]{#intro}\n\n# intro\n\nSee </#intro>.\n",
+        "{#intro}\n> q\n\n# intro\n\nSee </#intro>.\n",
+        "{#intro}\n```\ncode\n```\n\n# intro\n\nSee </#intro>.\n",
+        "{#intro}\n- item\n\n# intro\n\nSee </#intro>.\n",
+        "{#intro}\n***\n\n# intro\n\nSee </#intro>.\n",
+        "{#intro}\n![Alt](image.png)\n\n# intro\n\nSee </#intro>.\n",
+        "> # Quoted\n\nSee </#quoted>.\n",
+        "{#fig-sun}\n![A sunset](sun.jpg)\n^ Figure #: A *bold* -- sunset\n\nSee </#fig-sun>.\n",
+    ] {
+        let (candidate, used) = parse_experimental_event_blocks(source);
+        assert!(used, "{source:?}");
+        let baseline = parse_standard(source);
+        assert_eq!(candidate, baseline, "{source:?}");
+        assert_eq!(
+            render_html(&candidate),
+            render_html(&baseline),
+            "{source:?}"
+        );
+    }
+    for title in [
+        "A *bold* label",
+        "A `code` label",
+        "A [link](https://example.org) label",
+        "A \\*literal\\* label",
+        "A -- dash label",
+    ] {
+        let source = format!("# {title} {{#target}}\n\nSee </#target>.\n");
+        let (candidate, used) = parse_experimental_event_blocks(&source);
+        assert!(used, "{source:?}");
+        let baseline = parse_standard(&source);
+        assert_eq!(candidate, baseline, "{source:?}");
+        assert_eq!(
+            render_html(&candidate),
+            render_html(&baseline),
+            "{source:?}"
+        );
+    }
+}
+
+#[test]
 fn direct_route_admits_prose_and_uses_existing_list_reader() {
     let prose = "# Heading\n\nA paragraph with *strong* text.\n";
     let (doc, admitted) = parse_experimental_event_blocks(prose);

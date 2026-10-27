@@ -1123,7 +1123,10 @@ fn extract_nested_footnote_defs(
 /// resolve a tree that arrived without hrefs at all.
 fn fill_crossref_hrefs(doc: &mut Document, id_opts: HeadingIdOptions) -> CrossrefIndex {
     let index = crossref_index_for_document(doc, id_opts);
+    fill_crossref_hrefs_from_index(doc, index)
+}
 
+fn fill_crossref_hrefs_from_index(doc: &mut Document, index: CrossrefIndex) -> CrossrefIndex {
     fn inlines(nodes: &mut [InlineNode], index: &CrossrefIndex) {
         for node in nodes {
             match node {

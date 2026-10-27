@@ -2685,14 +2685,22 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     if source.contains('^') {
         number_crossref_captions(&mut doc);
     }
-    stamp_generated_heading_ids(&mut doc, options.heading_id_options());
+    let crossref_index = if source.contains("</#") {
+        let (index, ids) =
+            crossref_index_and_heading_ids_for_document(&doc, options.heading_id_options());
+        stamp_generated_heading_ids_from(&mut doc, ids);
+        Some(index)
+    } else {
+        stamp_generated_heading_ids(&mut doc, options.heading_id_options());
+        None
+    };
     let _ = crate::render::collect_footnotes(&mut doc, false);
     if source.contains("![") {
         promote_block_images(&mut doc.children, false, true);
     }
     coalesce_text_runs(&mut doc);
-    if source.contains("</#") {
-        fill_crossref_hrefs(&mut doc, options.heading_id_options());
+    if let Some(index) = crossref_index {
+        fill_crossref_hrefs_from_index(&mut doc, index);
     }
     Some((doc, used_event_route))
 }

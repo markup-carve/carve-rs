@@ -76,6 +76,31 @@ pub(crate) fn crossref_index_for_document(
     crossref_index(titles, labels)
 }
 
+#[cold]
+#[inline(never)]
+pub(in crate::parse) fn crossref_index_and_heading_ids_for_document(
+    doc: &Document,
+    id_opts: HeadingIdOptions,
+) -> (CrossrefIndex, Vec<String>) {
+    let explicit_ids = crate::document_ids::authored_ids(
+        std::iter::once(doc.children.as_slice())
+            .chain(doc.footnote_defs.values().map(Vec::as_slice)),
+    );
+    let (mut index, ids) = heading_index_with_explicit_ids(
+        &doc.children,
+        &doc.footnote_defs,
+        id_opts,
+        true,
+        false,
+        &explicit_ids,
+    );
+    collect_caption_titles(&doc.children, &mut index.titles);
+    for blocks in doc.footnote_defs.values() {
+        collect_caption_titles(blocks, &mut index.titles);
+    }
+    (index, ids)
+}
+
 /// The index a collapsed `[text][]` reference resolves against, built from a
 /// parsed document.
 pub(crate) fn heading_reference_index_for_document(
@@ -92,14 +117,32 @@ pub(in crate::parse) fn heading_index(
     collect_crossrefs: bool,
     collect_heading_refs: bool,
 ) -> (CrossrefIndex, Vec<String>) {
-    let mut counts = BTreeMap::new();
-    let mut titles = BTreeMap::new();
-    let mut labels = BTreeMap::new();
     let mut explicit_ids = std::collections::BTreeSet::new();
     collect_explicit_ids(children, &mut explicit_ids);
     for blocks in footnote_defs.values() {
         collect_explicit_ids(blocks, &mut explicit_ids);
     }
+    heading_index_with_explicit_ids(
+        children,
+        footnote_defs,
+        id_opts,
+        collect_crossrefs,
+        collect_heading_refs,
+        &explicit_ids,
+    )
+}
+
+fn heading_index_with_explicit_ids(
+    children: &[BlockNode],
+    footnote_defs: &BTreeMap<String, Vec<BlockNode>>,
+    id_opts: HeadingIdOptions,
+    collect_crossrefs: bool,
+    collect_heading_refs: bool,
+    explicit_ids: &std::collections::BTreeSet<String>,
+) -> (CrossrefIndex, Vec<String>) {
+    let mut counts = BTreeMap::new();
+    let mut titles = BTreeMap::new();
+    let mut labels = BTreeMap::new();
     let mut quoted = std::collections::BTreeSet::new();
     let mut by_text = BTreeMap::new();
     let mut assigned = Vec::new();
@@ -116,7 +159,7 @@ pub(in crate::parse) fn heading_index(
             collect_heading_refs,
         },
         id_opts,
-        &explicit_ids,
+        explicit_ids,
         false,
     );
     for blocks in footnote_defs.values() {
@@ -133,7 +176,7 @@ pub(in crate::parse) fn heading_index(
                 collect_heading_refs,
             },
             id_opts,
-            &explicit_ids,
+            explicit_ids,
             false,
         );
     }
