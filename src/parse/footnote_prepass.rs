@@ -1213,10 +1213,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             // renders nothing and stands at the definition's
             // own column, which is the signal the recursive
             // pass reads.
+            let candidate = note_link_def_candidate(trimmed, note);
             note.push_with(
                 format!(
                     "{}{}",
-                    " ".repeat(indent_columns(trimmed)),
+                    &trimmed[..trimmed.len() - candidate.len()],
                     definition_placeholder()
                 ),
                 Some(self.first_source_line + *i),
@@ -1517,7 +1518,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             && self.hoist_note_link_def(definition_text, *i)
         {
             note.push_with(
-                definition_placeholder(),
+                format!(
+                    "{}{}",
+                    &dedented[..dedented.len() - definition_text.len()],
+                    definition_placeholder()
+                ),
                 Some(self.first_source_line + *i),
                 |_| {
                     let prefix = raw.chars().count() - line.chars().count();

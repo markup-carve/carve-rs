@@ -461,6 +461,8 @@ mod a_footnote_backlink_says_where_it_goes;
 mod a_footnote_chrome_test_reads_a_content_space_as_content;
 #[path = "../a_footnote_continuation_survives_a_blank_run.rs"]
 mod a_footnote_continuation_survives_a_blank_run;
+#[path = "../a_footnote_keeps_an_emptied_quote.rs"]
+mod a_footnote_keeps_an_emptied_quote;
 #[path = "../a_footnote_nested_past_a_footnote_body_is_its_own_note.rs"]
 mod a_footnote_nested_past_a_footnote_body_is_its_own_note;
 #[path = "../a_foreign_figure_imports_as_a_caption_line.rs"]

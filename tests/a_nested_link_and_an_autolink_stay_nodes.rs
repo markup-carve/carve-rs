@@ -143,24 +143,19 @@ fn every_target_still_unwraps_the_nested_autolink() {
     );
 }
 
-/// The seam keeps the DISPLAY rewrite too: a `mailto:` scheme the author wrote
-/// is dropped from the visible text. That transformation is the renderer's, and
-/// moving the fold must not have left it behind in the parser.
+/// A URL autolink displays the scheme that the author wrote (CARVE-P3-010).
 #[test]
-fn the_render_seam_still_strips_a_mailto_scheme() {
+fn the_render_seam_keeps_an_explicit_mailto_scheme() {
     let src = "[a <mailto:x@e.com> b](z)\n";
     assert_eq!(
         carve::to_html(src).trim(),
-        "<p><a href=\"z\">a x@e.com b</a></p>"
+        "<p><a href=\"z\">a mailto:x@e.com b</a></p>"
     );
-    assert_eq!(carve::to_markdown(src).trim(), "[a x@e.com b](z)");
-    // The PLAIN renderer is the quiet one: with no unwrap it prints the href
-    // the author wrote, scheme and all, and every other shape in this file
-    // renders the same either way. Without this line its seam is untested.
-    assert_eq!(carve::to_plain_text(src).trim(), "a x@e.com b");
+    assert_eq!(carve::to_markdown(src).trim(), "[a mailto:x@e.com b](z)");
+    assert_eq!(carve::to_plain_text(src).trim(), "a mailto:x@e.com b");
     assert_eq!(
         carve::to_ansi(src).trim(),
-        "\u{1b}[4m\u{1b}[34ma x@e.com b\u{1b}[0m\u{1b}[2m (z)\u{1b}[0m"
+        "\u{1b}[4m\u{1b}[34ma mailto:x@e.com b\u{1b}[0m\u{1b}[2m (z)\u{1b}[0m"
     );
 }
 
