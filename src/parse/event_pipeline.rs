@@ -3,6 +3,124 @@ use super::*;
 const MIXED_QUOTE_DEPTH_LIMIT: usize = 32;
 
 #[cfg(test)]
+mod root_fence_owner_tests {
+    use super::*;
+
+    #[test]
+    fn closed_root_code_fences_match_full_document() {
+        for source in [
+            "```\ncode\n```\n",
+            "```rust\ncode\n```\n",
+            "~~~~\n\n~~~~\n",
+            "```\n```\n",
+            "```\ncode\n```\n\n# next\n",
+        ] {
+            let lines: Vec<&str> = source.lines().collect();
+            let open = detect_fence_open(lines[0]).unwrap();
+            let (block, end) = parse_direct_root_code_fence(&lines, 0, open, &Options::default())
+                .unwrap_or_else(|| panic!("{source:?}"));
+            assert!(matches!(block, BlockNode::CodeBlock(_)));
+            assert!(end >= 2);
+            let (candidate, used) = parse_document(source).unwrap();
+            assert!(used);
+            assert_eq!(candidate, parse_with_options(source, &Options::default()));
+        }
+    }
+
+    #[test]
+    fn raw_caption_and_unclosed_fences_decline_direct_owner() {
+        for source in [
+            "```=html\n<b>x</b>\n```\n",
+            "```\nx\n```\n^ caption\n",
+            "```\nx\n```\n\n^ caption\n",
+            "```\nx\n",
+        ] {
+            let lines: Vec<&str> = source.lines().collect();
+            let open = detect_fence_open(lines[0]).unwrap();
+            assert!(
+                parse_direct_root_code_fence(&lines, 0, open, &Options::default()).is_none(),
+                "{source:?}"
+            );
+            if let Some((candidate, _)) = parse_document(source) {
+                assert_eq!(candidate, parse_with_options(source, &Options::default()));
+            }
+        }
+    }
+
+    #[test]
+    fn root_fence_matrix_matches_full_document() {
+        let mut direct = 0;
+        for marker in ['`', '~'] {
+            for count in [3, 4] {
+                let fence = marker.to_string().repeat(count);
+                for info in ["", " rust", " \"title\""] {
+                    for payload in ["", "x\n", "x\n\n", "```\ninner\n"] {
+                        for tail in ["", "\n", "# after\n", "^ caption\n"] {
+                            let source = format!("{fence}{info}\n{payload}{fence}\n{tail}");
+                            let lines: Vec<&str> = source.lines().collect();
+                            let Some(open) = detect_fence_open(lines[0]) else {
+                                continue;
+                            };
+                            direct += usize::from(
+                                parse_direct_root_code_fence(&lines, 0, open, &Options::default())
+                                    .is_some(),
+                            );
+                            if let Some((candidate, _)) = parse_document(&source) {
+                                assert_eq!(
+                                    candidate,
+                                    parse_with_options(&source, &Options::default()),
+                                    "{source:?}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(direct > 0);
+    }
+
+    #[test]
+    fn repeated_root_code_fences_match_full_document() {
+        let source = (0..300)
+            .map(|index| format!("```rust\nlet item_{index} = {index};\n```\n\n"))
+            .collect::<String>();
+        let (candidate, used) = parse_document(&source).unwrap();
+        assert!(used);
+        assert_eq!(candidate, parse_with_options(&source, &Options::default()));
+    }
+
+    #[test]
+    fn fenced_code_inside_quotes_and_containers_matches_full_document() {
+        for source in [
+            "> ```rust\n> code\n> ```\n",
+            "::: note\n```rust\ncode\n```\n:::\n",
+            "- ```rust\n  code\n  ```\n",
+        ] {
+            if let Some((candidate, _)) = parse_document(source) {
+                assert_eq!(candidate, parse_with_options(source, &Options::default()));
+            }
+        }
+    }
+
+    #[test]
+    fn direct_fence_waits_for_position_and_source_line_support() {
+        let lines = ["```", "code", "```"];
+        let open = detect_fence_open(lines[0]).unwrap();
+        let positioned = Options {
+            positions: true,
+            ..Options::default()
+        };
+        assert!(parse_direct_root_code_fence(&lines, 0, open, &positioned).is_none());
+        let source_lines = Options {
+            source_lines: true,
+            ..Options::default()
+        };
+        assert!(parse_direct_root_code_fence(&lines, 0, open, &source_lines).is_none());
+    }
+}
+
+#[cfg(test)]
 mod continuation_owner_tests {
     use super::*;
 
@@ -381,7 +499,14 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             continue;
         }
         if let Some(fence) = detect_fence_open(line) {
-            let mut block = *parse_fenced_block(&mut cur, fence, options);
+            let mut block = if let Some((block, end)) =
+                parse_direct_root_code_fence(lines, cur.pos, fence, options)
+            {
+                cur.pos = end;
+                block
+            } else {
+                *parse_fenced_block(&mut cur, fence, options)
+            };
             let has_leading_attrs = leading_attrs.last().is_some_and(|(start, _)| {
                 out[*start..].iter().all(|node| {
                     matches!(node, BlockNode::AbbreviationDef(_) | BlockNode::Comment(_))
@@ -539,6 +664,74 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
         }
     }
     Some(out)
+}
+
+#[cold]
+#[inline(never)]
+fn parse_direct_root_code_fence(
+    lines: &[&str],
+    start: usize,
+    open: FenceOpen,
+    options: &Options<'_>,
+) -> Option<(BlockNode, usize)> {
+    if options.positions || options.source_lines || !options.extensions.is_empty() {
+        return None;
+    }
+    let first = *lines.get(start)?;
+    if first[open.lang_start..].trim().starts_with('=') {
+        return None;
+    }
+    let close = (start + 1..lines.len()).find(|&at| {
+        is_fence_close(lines[at], open)
+            || lines[at].starts_with(LAZY) && is_fence_close(strip_lazy(lines[at]), open)
+    })?;
+    if lines[close].starts_with(LAZY) {
+        return None;
+    }
+    if lines[start + 1..close]
+        .iter()
+        .any(|line| line.starts_with(LAZY) || is_definition_placeholder(line))
+    {
+        return None;
+    }
+    let next = close + 1;
+    if lines
+        .get(next)
+        .and_then(|line| caption_content(line))
+        .is_some()
+        || lines.get(next).is_some_and(|line| is_blank_line(line))
+            && lines
+                .get(next + 1)
+                .and_then(|line| caption_content(line))
+                .is_some()
+    {
+        return None;
+    }
+    let mut content = lines[start + 1..close].join("\n");
+    if close > start + 1 {
+        content.push('\n');
+    }
+    let lang = (open.lang_start < open.lang_end)
+        .then(|| first[open.lang_start..open.lang_end].to_string());
+    let title = open
+        .title_start
+        .zip(open.title_end)
+        .map(|(begin, end)| first[begin..end].to_string());
+    let label = open
+        .label_start
+        .zip(open.label_end)
+        .map(|(begin, end)| first[begin..end].to_string());
+    Some((
+        BlockNode::CodeBlock(CodeBlock {
+            attrs: None,
+            lang,
+            title,
+            label,
+            content,
+            pos: None,
+        }),
+        next,
+    ))
 }
 
 enum UnifiedListBlock<'a> {
