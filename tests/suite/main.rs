@@ -2596,3 +2596,6 @@ mod quoted_attribute_without_quote_prefix;
 
 #[path = "../quoted_attribute_shaped_lazy_tail.rs"]
 mod quoted_attribute_shaped_lazy_tail;
+
+#[path = "../stacked_first_block_quote.rs"]
+mod stacked_first_block_quote;

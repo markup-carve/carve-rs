@@ -263,7 +263,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let mut nested_blank_run: Option<(usize, usize, bool)> = None;
     run_indented_body!(cur.lines, cur.pos, container, |line, admission| {
         after_definition_blank |= is_blank_line(line);
-        let follows_first_block = !lead_is_continuation
+        let follows_first_block = (!lead_is_continuation
+            || item_block_opener(trim_ascii_start(line)))
             && cur.pos.checked_sub(1).is_some_and(|previous| {
                 cur.continuation_decision(previous)
                     .is_some_and(|decision| decision.first_block && decision.refusal.is_none())

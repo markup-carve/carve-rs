@@ -1218,7 +1218,7 @@ fn first_block_refusal(
         });
     if follower.line.is_none() {
         Some(Refusal::Document)
-    } else if is_blank_line(follower.body) {
+    } else if follower.line.is_some_and(is_blank_line) {
         Some(Refusal::Blank)
     } else if column_zero_list {
         Some(Refusal::List)
