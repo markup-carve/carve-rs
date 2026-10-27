@@ -408,6 +408,33 @@ fn close_unified_list_frame(frames: &mut Vec<UnifiedListFrame<'_>>) -> Option<()
     Some(())
 }
 
+fn resume_nested_list_after_blank(frames: &mut [UnifiedListFrame<'_>], next: &str) -> Option<()> {
+    let next_indent = next.bytes().take_while(|byte| *byte == b' ').count();
+    let frame = frames.last_mut()?;
+    if next_indent == frame.content_indent {
+        let content = &next[next_indent..];
+        if strip_blockquote_prefix(content).is_some()
+            || detect_fence_open(content).is_some()
+            || detect_heading(content).is_some()
+        {
+            flush_unified_list_paragraph(frame)?;
+            return Some(());
+        }
+        if !is_list_marker(content) && may_start_plain_paragraph(content) {
+            flush_unified_list_paragraph(frame)?;
+            frame.node.tight = false;
+            return Some(());
+        }
+    }
+    if next_indent == frame.indent
+        && unified_list_marker(&next[next_indent..]).is_some_and(|(kind, _, _)| kind == frame.kind)
+    {
+        frame.node.tight = false;
+        return Some(());
+    }
+    None
+}
+
 fn build_unified_list(node: UnifiedListNode<'_>, options: &Options<'_>) -> List {
     let mut list = deep_list_node(node.kind);
     list.tight = node.tight;
@@ -568,34 +595,9 @@ fn parse_unified_list(
             }
             if frames.len() > 1 {
                 if next.starts_with([' ', '\t']) {
-                    let next_indent = next.bytes().take_while(|byte| *byte == b' ').count();
-                    let frame = frames.last_mut()?;
-                    if next_indent == frame.content_indent {
-                        let content = &next[next_indent..];
-                        if strip_blockquote_prefix(content).is_some()
-                            || detect_fence_open(content).is_some()
-                            || detect_heading(content).is_some()
-                        {
-                            flush_unified_list_paragraph(frame)?;
-                            pos = after;
-                            continue;
-                        }
-                        if !is_list_marker(content) && may_start_plain_paragraph(content) {
-                            flush_unified_list_paragraph(frame)?;
-                            frame.node.tight = false;
-                            pos = after;
-                            continue;
-                        }
-                    }
-                    if next_indent == frame.indent
-                        && unified_list_marker(&next[next_indent..])
-                            .is_some_and(|(kind, _, _)| kind == frame.kind)
-                    {
-                        frame.node.tight = false;
-                        pos = after;
-                        continue;
-                    }
-                    return None;
+                    resume_nested_list_after_blank(&mut frames, next)?;
+                    pos = after;
+                    continue;
                 }
                 while frames.len() > 1 {
                     close_unified_list_frame(&mut frames)?;
