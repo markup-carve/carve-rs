@@ -116,7 +116,8 @@ fn positioned_event_entry_matches_editor_spans() {
         ("A literal ]: token.\n", true),
         ("*[dl]: definition list\n\nA dl.\n", false),
         ("[^note]: footnote\n\nSee [^note].\n", false),
-        ("| A | B |\n| - | - |\n| 1 | 2 |\n", false),
+        ("| A | B |\n| - | - |\n| 1 | 2 |\n", true),
+        ("{table header-rows=0}\n```tsv\nA\tB\n```\n", false),
         ("{.a}\n---\n", true),
         ("```tsv\nA\tB\n```\n", true),
     ];

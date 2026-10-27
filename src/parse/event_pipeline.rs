@@ -697,9 +697,6 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             continue;
         }
         if !line.starts_with([' ', '\t']) && is_table_start(line) {
-            if options.positions {
-                return None;
-            }
             emit!(_block_source_line, parse_table(&mut cur, options));
             continue;
         }
@@ -852,7 +849,11 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             apply_event_leading_attrs(&mut out[index], attrs);
         }
     }
-    if options.positions && out.iter().any(|node| matches!(node, BlockNode::Table(_))) {
+    if options.positions
+        && out
+            .iter()
+            .any(|node| matches!(node, BlockNode::Table(table) if table.source_format.is_some()))
+    {
         return None;
     }
     #[cfg(feature = "experimental-event-parser-options")]
