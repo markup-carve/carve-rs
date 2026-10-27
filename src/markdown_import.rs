@@ -3445,13 +3445,40 @@ fn flush_inline_run(
 /// `alt` is a plain string on the node, so an emphasis, a code span or a link
 /// written inside `![...]` has no node to become. CommonMark flattens it the
 /// same way - `![a *b* c](i.png)` carries `alt="a b c"` - so the text is what
-/// is kept. A break contributes nothing, which is what this importer already
-/// did with one and is deliberately not changed here: a newline inside `alt`
-/// would have to be written back into a single-line image spelling.
+/// is kept. A break contributes its authored newline to the image alt scalar.
+fn critic_body_probe_text(node: &InlineNode, out: &mut String) {
+    match node {
+        // Delimiters inside verbatim nodes cannot close the surrounding deletion.
+        // A separator also prevents delimiters on either side from pairing.
+        InlineNode::Code(_) | InlineNode::LiteralInline(_) | InlineNode::RawInline(_) => {
+            out.push(' ')
+        }
+        InlineNode::Emphasis(emphasis) => {
+            for child in &emphasis.children {
+                critic_body_probe_text(child, out);
+            }
+        }
+        InlineNode::Link(link) => {
+            for child in &link.children {
+                critic_body_probe_text(child, out);
+            }
+        }
+        InlineNode::Span(span) => {
+            for child in &span.children {
+                critic_body_probe_text(child, out);
+            }
+        }
+        _ => out.push_str(&inline_text(node)),
+    }
+}
+
 /// A deletion body that would close or re-open the braced construct it is about
 /// to be written into (markup-carve/carve#2845).
 fn breaks_out_of_a_critic_body(children: &[InlineNode]) -> bool {
-    let text: String = children.iter().map(inline_text).collect();
+    let mut text = String::new();
+    for child in children {
+        critic_body_probe_text(child, &mut text);
+    }
     text.contains(['{', '}', '\\', '\n']) || text.contains("~>")
 }
 

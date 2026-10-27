@@ -91,3 +91,13 @@ fn the_neighboring_constructs_still_round_trip() {
         "strike ~str~ here\n"
     );
 }
+
+#[test]
+fn code_span_closer_inside_deletion_stays_editorial() {
+    let converted = markdown_to_carve("<del class=\"critic-delete\">a `~>` b</del>\n");
+    assert!(converted.contains("{-"), "{converted}");
+    assert!(!converted.contains("{=html}"), "{converted}");
+    let html = to_html(&converted);
+    assert!(html.contains("<del>"), "{html}");
+    assert!(!html.contains("critic-delete"), "{html}");
+}
