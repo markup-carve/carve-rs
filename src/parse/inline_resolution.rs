@@ -1559,9 +1559,13 @@ pub(in crate::parse) fn cached_find_emphasis_close(
         &mut visited,
     );
     if close.is_none() {
+        let regions = memo.atomic.as_deref().unwrap_or(&[]);
+        let opener_run = emphasis_run_at(bounds, regions, from);
         let marks = failed.get_or_insert_with(|| vec![false; bytes.len() + 1]);
         for j in visited {
-            marks[j] = true;
+            if emphasis_run_at(bounds, regions, j) == opener_run {
+                marks[j] = true;
+            }
         }
     }
     memo.failed[idx] = failed;
@@ -1665,10 +1669,14 @@ pub(in crate::parse) fn find_emphasis_close(
         .get_or_insert_with(|| atomic_link_regions(bytes, bounds).into())
         .clone();
     let opener_run = emphasis_run_at(bounds, &regions, from);
+    let opener_end = opener_run.map(|open| bounds.matches[open]);
     let mut attached = HashMap::new();
     let mut j = from;
     while j < bytes.len() {
-        if failed.is_some_and(|f| f[j]) {
+        if opener_end.is_some_and(|end| j > end) {
+            return None;
+        }
+        if failed.is_some_and(|f| f[j]) && emphasis_run_at(bounds, &regions, j) == opener_run {
             return None;
         }
         visited.push(j);
