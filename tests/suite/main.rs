@@ -2647,6 +2647,8 @@ mod literal_quote_list_lead;
 mod markdown_link_footnotes;
 #[path = "../refused_plus_after_indented_list.rs"]
 mod refused_plus_after_indented_list;
+#[path = "../quote_lazy_marker_ownership.rs"]
+mod quote_lazy_marker_ownership;
 #[path = "../term_invisible_comment_break.rs"]
 mod term_invisible_comment_break;
 #[path = "../wrapped_marker_attr_owner.rs"]

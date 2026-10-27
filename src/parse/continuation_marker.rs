@@ -791,7 +791,12 @@ impl Walk {
         if follower.line.is_none() {
             return Some(Refusal::Document);
         }
-        if is_blank_line(follower.body) {
+        if is_blank_line(follower.body)
+            && !(follower.depth.is_some_and(|next_depth| next_depth > depth)
+                && follower
+                    .line
+                    .is_some_and(|line| strip_blockquote_prefix(line).is_some()))
+        {
             return Some(Refusal::Blank);
         }
         if claim.first_block_quote && !claim.first_block_attaches {
@@ -860,11 +865,11 @@ impl Walk {
         // A lazy paragraph line closes no container (§17 L3 keeps the item's `+` column).
         if self.paragraph_open
             && !self.pending_blank
-            && self
-                .stack
-                .iter()
-                .any(|entry| entry.kind == Kind::Quote && entry.depth >= depth)
-                == (depth > 0)
+            && (depth == 0
+                || self
+                    .stack
+                    .iter()
+                    .any(|entry| entry.kind == Kind::Quote && entry.depth >= depth))
             && line_starts_paragraph(text)
             && !item_block_opener(text)
             && detect_list_marker_full(text).is_none()
