@@ -2880,11 +2880,7 @@ pub(super) fn parse_document_with_options(
     source: &str,
     options: &Options<'_>,
 ) -> Option<(Document, bool)> {
-    if options.positions
-        || !options.extensions.is_empty()
-        || options.profile.is_some()
-        || options.lint_includes.is_some()
-    {
+    if options.positions || !options.extensions.is_empty() {
         return None;
     }
     parse_document_with_custom_options(source, options)

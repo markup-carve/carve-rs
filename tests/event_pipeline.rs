@@ -2,7 +2,7 @@ use carve::{parse_experimental_event_blocks, parse_with_options, render_html, to
 #[cfg(feature = "experimental-event-parser-options")]
 use carve::{
     parse_experimental_event_blocks_with_options, render_html_with_options, AsciiHeadingIds,
-    Profile,
+    IncludeOptions, Profile,
 };
 use std::fs;
 use std::path::Path;
@@ -53,13 +53,17 @@ fn option_aware_event_entry_preserves_supported_and_fallback_output() {
     assert!(admitted);
     assert_eq!(candidate, parse_with_options(source, &options));
     for options in [
-        Options::default().with_positions(true),
         Options::default().with_profile(Profile::default()),
+        Options::default().with_lint_includes(IncludeOptions::new()),
     ] {
         let (candidate, admitted) = parse_experimental_event_blocks_with_options(source, &options);
-        assert!(!admitted);
+        assert!(admitted);
         assert_eq!(candidate, parse_with_options(source, &options));
     }
+    let options = Options::default().with_positions(true);
+    let (candidate, admitted) = parse_experimental_event_blocks_with_options(source, &options);
+    assert!(!admitted);
+    assert_eq!(candidate, parse_with_options(source, &options));
 }
 
 #[cfg(feature = "experimental-event-parser-options")]
@@ -346,8 +350,10 @@ fn option_aware_event_corpus_matches_full_document() {
             .with_source_lines(true)
             .with_mention_url("https://people.example/{name}")
             .with_tag_url("https://tags.example/{name}"),
+        Options::default().with_profile(Profile::default()),
+        Options::default().with_lint_includes(IncludeOptions::new()),
     ];
-    let mut admitted = [0usize; 7];
+    let mut admitted = [0usize; 9];
     let mut total = 0usize;
     for entry in fs::read_dir(corpus).unwrap() {
         let path = entry.unwrap().path();
@@ -373,9 +379,11 @@ fn option_aware_event_corpus_matches_full_document() {
         "{admitted:?}"
     );
     assert!(
-        admitted[3..].iter().all(|count| *count > 2500),
+        admitted[3..7].iter().all(|count| *count > 2500),
         "{admitted:?}"
     );
+    assert_eq!(admitted[7], admitted[0], "{admitted:?}");
+    assert_eq!(admitted[8], admitted[0], "{admitted:?}");
 }
 
 #[test]
