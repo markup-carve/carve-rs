@@ -1340,8 +1340,8 @@ fn nested_footnote_definitions_keep_exact_output() {
             "Text[^outer]\n\n[^outer]: Inside[^inner].\n[^inner]: Nested.\n",
             true,
         ),
-        ("- a[^n]\n\n  [^n]: note\n- b\n", false),
-        ("1. a[^n]\n\n   [^n]: note\n2. b\n", false),
+        ("- a[^n]\n\n  [^n]: note\n- b\n", true),
+        ("1. a[^n]\n\n   [^n]: note\n2. b\n", true),
     ] {
         let (actual, admitted) = parse_experimental_event_blocks(source);
         assert_eq!(admitted, expected_admission, "{source:?}");
@@ -2032,6 +2032,7 @@ fn generated_delegated_paragraph_boundaries_keep_exact_document() {
 fn nested_footnote_markers_survive_link_definition_guard() {
     let nested = [
         "x[^c]\n\n:: t\n: [^c]: para\n    # H\n",
+        ":: t\n: - para\n    [^p]: n\nx\n",
         "- > para\n  > [^f]: n\n  >   - sub\ntail[^f]\n",
         "x[^c]\n\n:: t\n: [^c]: para\n     > q\ntail\n",
     ];
@@ -2111,4 +2112,46 @@ fn nested_note_and_link_definition_prefixes_keep_exact_document() {
             }
         }
     }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn generated_indented_footnote_placeholders_keep_full_document() {
+    let options = [
+        Options::default(),
+        Options::default().with_source_lines(true),
+        Options::default().with_positions(true),
+        Options::default()
+            .with_positions(true)
+            .with_source_lines(true),
+    ];
+    let mut admitted = 0;
+    for prefix in [
+        "  ",
+        "\t",
+        "- ",
+        "1. ",
+        "> ",
+        "  > ",
+        ": ",
+        ":: t\n: ",
+        "- > ",
+        "> - ",
+        "::: box\n  ",
+    ] {
+        for body in ["note", "", "para\n    # H", "x\n  y"] {
+            for lead in ["", "intro\n\n", "- a\n\n"] {
+                for tail in ["", "root\n", "# Tail\n", "  continuation\n", "%% note\n"] {
+                    let source = format!("{lead}{prefix}[^n]: {body}\n{tail}");
+                    for option in &options {
+                        let (candidate, used) =
+                            parse_experimental_event_blocks_with_options(&source, option);
+                        admitted += usize::from(used);
+                        assert_eq!(candidate, parse_with_options(&source, option), "{source:?}");
+                    }
+                }
+            }
+        }
+    }
+    assert!(admitted > 100, "only {admitted} generated cases admitted");
 }

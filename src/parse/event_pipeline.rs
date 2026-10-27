@@ -2927,11 +2927,7 @@ fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Doc
     if mapped
         .source
         .lines()
-        .any(|line| line.starts_with([' ', '\t']) && is_definition_placeholder(line))
-        || mapped
-            .source
-            .lines()
-            .any(|line| line.contains("]:") && detect_abbreviation_def(line).is_none())
+        .any(|line| line.contains("]:") && detect_abbreviation_def(line).is_none())
         || !note_links.is_empty()
         || footnote_sources
             .values()
@@ -3284,11 +3280,7 @@ fn parse_document_with_footnotes_options(
     if mapped
         .source
         .lines()
-        .any(|line| line.starts_with([' ', '\t']) && is_definition_placeholder(line))
-        || mapped
-            .source
-            .lines()
-            .any(|line| line.contains("]:") && detect_abbreviation_def(line).is_none())
+        .any(|line| line.contains("]:") && detect_abbreviation_def(line).is_none())
         || !note_links.is_empty()
         || footnote_sources
             .values()
