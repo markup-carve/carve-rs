@@ -30,6 +30,30 @@ pub(super) fn detect_block_image(line: &str) -> Option<Image> {
     Some(img)
 }
 
+fn reference_image_line(line: &str) -> bool {
+    if !line.starts_with("![") {
+        return false;
+    }
+    let bytes = line.as_bytes();
+    let (bracket_matches, bracket_run_at) = compute_bracket_matches(bytes);
+    let bracket_openers = compute_bracket_openers(&bracket_matches);
+    let bounds = InlineBounds {
+        matches: &bracket_matches,
+        openers: &bracket_openers,
+        run_at: &bracket_run_at,
+        last_close_paren: bytes.iter().rposition(|&b| b == b')'),
+        last_close_brace: bytes.iter().rposition(|&b| b == b'}'),
+        last_close_bracket: bytes.iter().rposition(|&b| b == b']'),
+        last_gt: bytes.iter().rposition(|&b| b == b'>'),
+        crossref_invalid_range: Cell::new(None),
+        delim_brace: [None; DELIM_BRACE_SLOTS],
+        braced_closers: RefCell::new(None),
+        native_pairs: None,
+    };
+    parse_reference_image(bytes, 0, &bounds)
+        .is_some_and(|(_, consumed)| trim_ascii(&line[consumed..]).is_empty())
+}
+
 pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let span_start = cur.pos;
     let refused_plus = cur
@@ -47,6 +71,8 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
     // image + `^ caption` promotes to a `<figure>` later; an indented one stays
     // literal (strict column-0 rule).
     let at_content_column = cur.peek().is_some_and(|l| !l.starts_with([' ', '\t']));
+    let reference_caption_candidate = cur.peek().is_some_and(reference_image_line);
+    let mut reference_caption_claimed = false;
     let mut lines: Vec<&str> = Vec::new();
     let mut suppress_colon_interrupt = false;
     while let Some(line) = cur.peek() {
@@ -65,8 +91,9 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
             })
             .unwrap_or(true);
         if !lines.is_empty()
-            && ((!refused_plus || !is_list_marker(&line_owned) || same_authored_column)
-                && interrupts_paragraph(cur, &line_owned)
+            && ((reference_caption_claimed && caption_content(line).is_some())
+                || (!refused_plus || !is_list_marker(&line_owned) || same_authored_column)
+                    && interrupts_paragraph(cur, &line_owned)
                 || (refused_plus
                     && lines.len() == 1
                     && cur.lines.at(span_start).starts_with('+')
@@ -92,6 +119,8 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
         cur.consume();
         let trimmed = trim_ascii_end(trim_ascii_start(line));
         suppress_colon_interrupt |= is_invalid_colon_fence_opener_text(trimmed);
+        reference_caption_claimed |=
+            reference_caption_candidate && lines.len() == 1 && caption_content(line).is_some();
         lines.push(trimmed);
     }
     // A paragraph never carries its OWN trailing attribute block: a standalone

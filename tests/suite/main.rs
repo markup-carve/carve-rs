@@ -2611,3 +2611,6 @@ mod quoted_list_fence_payload;
 
 #[path = "../profile_code_block_text.rs"]
 mod profile_code_block_text;
+
+#[path = "../reference_image_caption_boundary.rs"]
+mod reference_image_caption_boundary;
