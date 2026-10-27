@@ -120,7 +120,10 @@ fn positioned_event_entry_matches_editor_spans() {
         ("[^note]: intro\n  > quote\n\nSee [^note].\n", true),
         ("\u{feff}[^note]: footnote\r\n\r\nSee [^note].\r\n", true),
         ("| A | B |\n| - | - |\n| 1 | 2 |\n", true),
-        ("{table header-rows=0}\n```tsv\nA\tB\n```\n", false),
+        ("{table header-rows=0}\n```tsv\nA\tB\n```\n", true),
+        ("{table}\n```csv\na,b\n```\n^ Cap\n", true),
+        ("> {table}\n> ```csv\n> a,b\n> ```\n> ^ Cap\n", true),
+        ("::: note\n{table}\n```csv\na,b\n```\n^ Cap\n:::\n", true),
         ("{.a}\n---\n", true),
         ("```tsv\nA\tB\n```\n", true),
     ];

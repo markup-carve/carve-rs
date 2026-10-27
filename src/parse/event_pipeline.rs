@@ -549,10 +549,15 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
     let mut cur = LineCursor::new_with_cols(lines, line_map, col_map.as_deref());
     cur.at_document_level = at_document_level;
     let mut out = Vec::new();
+    let mut block_start_indices = Vec::new();
+    let current_block_start = std::cell::Cell::new(0usize);
     #[cfg(feature = "experimental-event-parser-options")]
     let mut source_lines = Vec::new();
     macro_rules! emit {
         ($line:expr, $node:expr) => {{
+            if options.positions {
+                block_start_indices.push(current_block_start.get());
+            }
             #[cfg(feature = "experimental-event-parser-options")]
             if options.source_lines {
                 source_lines.push($line);
@@ -562,6 +567,9 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
     }
     let mut leading_attrs: Vec<(usize, Attrs)> = Vec::new();
     while cur.peek().is_some() {
+        if options.positions {
+            current_block_start.set(cur.pos);
+        }
         let _block_source_line = cur.source_line(cur.pos);
         if DEFINITIONS && cur.peek().is_some_and(is_definition_placeholder) {
             cur.consume();
@@ -838,7 +846,13 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             };
             if target != Some(next_target) {
                 if let (Some(index), Some(attrs)) = (target, pending.take()) {
-                    apply_event_leading_attrs(&mut out[index], attrs);
+                    apply_event_leading_attrs(
+                        &mut out[index],
+                        attrs,
+                        &cur,
+                        block_start_indices.get(index).copied().unwrap_or(0),
+                        options,
+                    );
                 }
                 target = Some(next_target);
                 slots = None;
@@ -846,15 +860,14 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             merge_attrs_indexed(&mut pending, attrs, &mut slots);
         }
         if let (Some(index), Some(attrs)) = (target, pending) {
-            apply_event_leading_attrs(&mut out[index], attrs);
+            apply_event_leading_attrs(
+                &mut out[index],
+                attrs,
+                &cur,
+                block_start_indices.get(index).copied().unwrap_or(0),
+                options,
+            );
         }
-    }
-    if options.positions
-        && out
-            .iter()
-            .any(|node| matches!(node, BlockNode::Table(table) if table.source_format.is_some()))
-    {
-        return None;
     }
     #[cfg(feature = "experimental-event-parser-options")]
     if options.source_lines {
@@ -1767,31 +1780,16 @@ fn parse_event_container(cur: &mut LineCursor<'_>, options: &Options<'_>) -> Box
     Box::new(out.pop().expect("container body filled"))
 }
 
-fn apply_event_leading_attrs(block: &mut BlockNode, attrs: Attrs) {
+fn apply_event_leading_attrs(
+    block: &mut BlockNode,
+    attrs: Attrs,
+    cur: &LineCursor<'_>,
+    start_line: usize,
+    options: &Options<'_>,
+) {
     apply_attrs_to_block(block, attrs);
     resolve_code_title(block);
-    if let BlockNode::CodeBlock(code) = block {
-        if let Some(table) = delimited_table::from_code(code, &[]) {
-            *block = BlockNode::Table(table);
-        }
-    }
-    if let BlockNode::Figure(figure) = block {
-        if let FigureTarget::CodeBlock(code) = &*figure.target {
-            let mut code = code.clone();
-            if let Some(attrs) = &figure.attrs {
-                let mut target = BlockNode::CodeBlock(code.clone());
-                apply_attrs_to_block(&mut target, attrs.clone());
-                if let BlockNode::CodeBlock(with_attrs) = target {
-                    code = with_attrs;
-                }
-            }
-            if let Some(mut table) = delimited_table::from_code(&code, &[]) {
-                table.caption = Some(figure.caption.clone());
-                table.pos = figure.pos.clone();
-                *block = BlockNode::Table(table);
-            }
-        }
-    }
+    promote_delimited_code(block, cur, start_line, options);
 }
 
 fn parse_simple_quote(
