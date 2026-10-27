@@ -4574,10 +4574,13 @@ pub fn html_to_carve(
     options: &HtmlImportOptions,
 ) -> Result<HtmlImportResult<String>, HtmlImportError> {
     let result = import(html, options, true)?;
-    let value = render_carve(&result.value).map_err(|error| match error {
-        RenderCarveError::Depth(_) => HtmlImportError::RenderDepth,
-        RenderCarveError::SourceUnspellable(_) => HtmlImportError::SourceUnspellable,
-    })?;
+    let value =
+        crate::render_carve::render_carve_for_html_import(&result.value).map_err(|error| {
+            match error {
+                RenderCarveError::Depth(_) => HtmlImportError::RenderDepth,
+                RenderCarveError::SourceUnspellable(_) => HtmlImportError::SourceUnspellable,
+            }
+        })?;
     Ok(HtmlImportResult {
         value,
         report: result.report,
