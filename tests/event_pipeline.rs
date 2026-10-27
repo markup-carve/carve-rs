@@ -2026,3 +2026,89 @@ fn generated_delegated_paragraph_boundaries_keep_exact_document() {
     }
     assert!(admitted > 5000, "only {admitted} cases admitted");
 }
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn nested_footnote_markers_survive_link_definition_guard() {
+    let nested = [
+        "x[^c]\n\n:: t\n: [^c]: para\n    # H\n",
+        "- > para\n  > [^f]: n\n  >   - sub\ntail[^f]\n",
+        "x[^c]\n\n:: t\n: [^c]: para\n     > q\ntail\n",
+    ];
+    for source in nested {
+        let (plain, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        assert_eq!(plain, parse_standard(source), "{source:?}");
+        for options in [
+            Options::default(),
+            Options::default().with_source_lines(true),
+            Options::default().with_positions(true),
+            Options::default()
+                .with_positions(true)
+                .with_source_lines(true),
+        ] {
+            let (candidate, admitted) =
+                parse_experimental_event_blocks_with_options(source, &options);
+            assert!(admitted, "{source:?}");
+            assert_eq!(
+                candidate,
+                parse_with_options(source, &options),
+                "{source:?}"
+            );
+        }
+    }
+    for source in [
+        "See [x][id] and [^n].\n\n[id]: /x\n\n[^n]: note\n",
+        "x[^n]\n\n[^n]: [x][id]\n  [id]: /x\n",
+    ] {
+        let (candidate, admitted) = parse_experimental_event_blocks(source);
+        assert!(!admitted, "{source:?}");
+        assert_eq!(candidate, parse_standard(source), "{source:?}");
+        for options in [
+            Options::default(),
+            Options::default().with_source_lines(true),
+            Options::default().with_positions(true),
+            Options::default()
+                .with_positions(true)
+                .with_source_lines(true),
+        ] {
+            let (candidate, admitted) =
+                parse_experimental_event_blocks_with_options(source, &options);
+            assert!(!admitted, "{source:?}");
+            assert_eq!(
+                candidate,
+                parse_with_options(source, &options),
+                "{source:?}"
+            );
+        }
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn nested_note_and_link_definition_prefixes_keep_exact_document() {
+    let options = [
+        Options::default(),
+        Options::default().with_source_lines(true),
+        Options::default().with_positions(true),
+        Options::default()
+            .with_positions(true)
+            .with_source_lines(true),
+    ];
+    for prefix in ["", "  ", "> ", "- ", ": ", "- > "] {
+        for tail in [
+            "[^n]: note",
+            "[id]: /target",
+            "[^n]: [x][id]",
+            "[id]: /target\n[^n]: note",
+            "[^n]: note\n  [id]: /target",
+            "[^n]: [x][id]\n  [id]: /target",
+        ] {
+            let source = format!("See [^n] and [x][id].\n\n{prefix}{tail}\n");
+            for option in &options {
+                let (candidate, _) = parse_experimental_event_blocks_with_options(&source, option);
+                assert_eq!(candidate, parse_with_options(&source, option), "{source:?}");
+            }
+        }
+    }
+}

@@ -2879,6 +2879,11 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     Some((doc, used_event_route))
 }
 
+fn has_embedded_footnote_definition(line: &str) -> bool {
+    line.find("[^")
+        .is_some_and(|start| parse_footnote_def_line(&line[start..]).is_some())
+}
+
 fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Document, bool)> {
     let may_have_abbrevs = source.contains("*[");
     if needs_event_normalization(source) || has_fence_candidate_without_final_newline(source) {
@@ -2888,6 +2893,7 @@ fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Doc
         line.contains("]:")
             && !trim_ascii_start(line).starts_with("[^")
             && detect_abbreviation_def(line).is_none()
+            && !has_embedded_footnote_definition(line)
     }) {
         return None;
     }
@@ -3238,6 +3244,7 @@ fn parse_document_with_footnotes_options(
         line.contains("]:")
             && !trim_ascii_start(line).starts_with("[^")
             && detect_abbreviation_def(line).is_none()
+            && !has_embedded_footnote_definition(line)
     }) {
         return None;
     }
