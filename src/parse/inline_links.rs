@@ -1181,6 +1181,11 @@ pub(in crate::parse) fn read_link_target(
         } else {
             scan_balanced_destination(bytes, start)?
         };
+    // Verse layout expands a tab or aligned gap into this internal marker.
+    // It is spacing, so it cannot become a destination character.
+    if href.contains(crate::NBSP_PLACEHOLDER) {
+        return None;
+    }
     let title_at = if bytes.get(i) == Some(&b' ') {
         i + 1
     } else {

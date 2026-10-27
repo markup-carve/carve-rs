@@ -2642,3 +2642,14 @@ mod ladder_body_reparses {
         }
     }
 }
+
+#[test]
+fn verse_spacing_does_not_enter_a_link_destination() {
+    let literal = crate::to_html("::: |\n[a](/u\t\"t\")\n");
+    assert!(!literal.contains("<a "), "{literal}");
+    assert!(literal.contains("[a](/u"), "{literal}");
+    assert!(literal.contains("&nbsp;"), "{literal}");
+
+    let linked = crate::to_html("::: |\n[a](/u \"t\")\n");
+    assert!(linked.contains("<a href=\"/u\""), "{linked}");
+}
