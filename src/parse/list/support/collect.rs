@@ -29,6 +29,38 @@ pub(crate) fn collect_indented_block_mapped_with(
     )
 }
 
+/// Do the collected lines end in a `+`, or in a `+` and the attribute blocks it
+/// carries to its block (carve#1238)? Either way the next line is the block it attaches.
+fn follows_plus_marker(lines: &[String]) -> bool {
+    let run_start = lines
+        .iter()
+        .rposition(|line| is_blank_line(line))
+        .map_or(0, |at| at + 1);
+    let Some(plus) = lines[run_start..]
+        .iter()
+        .rposition(|line| is_plus_marker(trim_ascii_start(line)))
+        .map(|at| run_start + at)
+    else {
+        return false;
+    };
+    let column = indent_columns(&lines[plus]);
+    let trimmed: Vec<&str> = lines[plus + 1..]
+        .iter()
+        .map(|line| trim_ascii_start(line))
+        .collect();
+    let mut at = plus + 1;
+    while at < lines.len() {
+        if indent_columns(&lines[at]) != column {
+            return false;
+        }
+        match standalone_attrs_block_len(&trimmed[at - plus - 1..]) {
+            Some(len) if at + len <= lines.len() => at += len,
+            _ => return false,
+        }
+    }
+    true
+}
+
 #[derive(Default)]
 pub(crate) struct NestedCollectionState {
     columns: Vec<(usize, usize)>,
@@ -1172,9 +1204,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && nested_item_columns
                 .last()
                 .is_some_and(|&(_, child)| child > indent)
-            && !lines
-                .last()
-                .is_some_and(|previous| is_plus_marker(trim_ascii_start(previous)))
+            && !follows_plus_marker(&lines)
             && fence.is_none()
             && comment_fence.is_none()
             && colon_open.is_empty()

@@ -2123,6 +2123,42 @@ fn delimited_payload_lines(
     payload
 }
 
+/// A `csv` / `tsv` fence that carries `table` becomes a table, once its attributes are on.
+pub(in crate::parse) fn promote_delimited_code(
+    node: &mut BlockNode,
+    cur: &LineCursor,
+    start_line: usize,
+    options: &Options<'_>,
+) {
+    match &*node {
+        BlockNode::CodeBlock(code) => {
+            let payload = delimited_payload_lines(cur, start_line, code, options);
+            if let Some(table) = delimited_table::from_code(code, &payload) {
+                *node = BlockNode::Table(table);
+            }
+        }
+        BlockNode::Figure(figure) => {
+            if let FigureTarget::CodeBlock(code) = &*figure.target {
+                let mut code = code.clone();
+                if let Some(attrs) = &figure.attrs {
+                    let mut block = BlockNode::CodeBlock(code.clone());
+                    apply_attrs_to_block(&mut block, attrs.clone());
+                    if let BlockNode::CodeBlock(with_attrs) = block {
+                        code = with_attrs;
+                    }
+                }
+                let payload = delimited_payload_lines(cur, start_line, &code, options);
+                if let Some(mut table) = delimited_table::from_code(&code, &payload) {
+                    table.caption = Some(figure.caption.clone());
+                    table.pos = figure.pos.clone();
+                    *node = BlockNode::Table(table);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
 #[inline(never)]
 fn append_parsed_block(
     out: &mut Vec<BlockNode>,
@@ -2141,33 +2177,7 @@ fn append_parsed_block(
             *pending_attrs_pos = None;
         }
     }
-    match &node {
-        BlockNode::CodeBlock(code) => {
-            let payload = delimited_payload_lines(cur, start_line, code, options);
-            if let Some(table) = delimited_table::from_code(code, &payload) {
-                node = BlockNode::Table(table);
-            }
-        }
-        BlockNode::Figure(figure) => {
-            if let FigureTarget::CodeBlock(code) = &*figure.target {
-                let mut code = code.clone();
-                if let Some(attrs) = &figure.attrs {
-                    let mut block = BlockNode::CodeBlock(code.clone());
-                    apply_attrs_to_block(&mut block, attrs.clone());
-                    if let BlockNode::CodeBlock(with_attrs) = block {
-                        code = with_attrs;
-                    }
-                }
-                let payload = delimited_payload_lines(cur, start_line, &code, options);
-                if let Some(mut table) = delimited_table::from_code(&code, &payload) {
-                    table.caption = Some(figure.caption.clone());
-                    table.pos = figure.pos.clone();
-                    node = BlockNode::Table(table);
-                }
-            }
-        }
-        _ => {}
-    }
+    promote_delimited_code(&mut node, cur, start_line, options);
     resolve_code_title(&mut node);
     if options.source_lines {
         if let Some(line) = cur.source_line(start_line) {

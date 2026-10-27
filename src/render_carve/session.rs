@@ -28,6 +28,7 @@ pub(super) struct PassState {
 
 pub(super) struct RenderSession {
     pub(super) align_tables: bool,
+    pub(super) flatten_terminal_cell_breaks: bool,
     pub(super) pass: PassState,
     pub(super) crossref_targets: Slot<RefCell<BTreeSet<String>>>,
     pub(super) redundant_ids: Slot<RefCell<BTreeSet<String>>>,
@@ -49,6 +50,7 @@ impl RenderSession {
     pub(super) fn new(align_tables: bool) -> Self {
         Self {
             align_tables,
+            flatten_terminal_cell_breaks: false,
             pass: PassState {
                 unit_counter: Slot(Cell::new(0)),
                 escape_call_indexes: Slot(RefCell::new(HashMap::new())),

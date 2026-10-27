@@ -107,6 +107,45 @@ fn a_marker_inside_a_nested_list_attaches_to_its_item() {
     );
 }
 
+#[test]
+fn a_fence_after_a_marker_inside_a_nested_list_attaches_to_its_item() {
+    // The fence at the outer item's column is the nested `+`'s block, attribute
+    // line or not; it used to fall to the outer item and lose the attributes.
+    assert_eq!(
+        carve::to_html("- a\n  - b\n  +\n  {.x}\n  ```\n  code\n  ```\n"),
+        "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre class=\"x\"><code>code\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>"
+    );
+    assert_eq!(
+        carve::to_html("- a\n  - b\n  +\n  {#t .x}\n  {.z}\n  ~~~\n  code\n  ~~~\n- c\n"),
+        "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre id=\"t\" class=\"x z\"><code>code\n</code></pre>\n      </li>\n    </ul>\n  </li>\n  <li>c</li>\n</ul>"
+    );
+    assert_eq!(
+        carve::to_html("- a\n  - b\n  +\n  {.x\n   .z}\n  ```\n  code\n  ```\n"),
+        "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre class=\"x z\"><code>code\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>"
+    );
+}
+
+#[test]
+fn a_table_attribute_turns_the_attached_csv_fence_into_a_table() {
+    let table = "<table>\n      <thead>\n        <tr><th scope=\"col\">a</th><th scope=\"col\">b</th></tr>\n      </thead>\n      <tbody>\n        <tr><td>1</td><td>2</td></tr>\n      </tbody>\n    </table>";
+    assert_eq!(
+        carve::to_html("- a\n+\n{table}\n```csv\na,b\n1,2\n```\n"),
+        format!("<ul>\n  <li>a\n    {table}\n  </li>\n</ul>")
+    );
+    assert_eq!(
+        carve::to_html("- a\n+\n{table .x}\n```csv\na,b\n1,2\n```\n"),
+        format!(
+            "<ul>\n  <li>a\n    {}\n  </li>\n</ul>",
+            table.replacen("<table>", "<table class=\"x\">", 1)
+        )
+    );
+    // The indented spelling, which always built the table.
+    assert_eq!(
+        carve::to_html("- a\n\n  {table}\n  ```csv\n  a,b\n  1,2\n  ```\n"),
+        format!("<ul>\n  <li>a\n    {table}\n  </li>\n</ul>")
+    );
+}
+
 // ---------------------------------------------------------------------------
 // The attribute block's own shapes.
 // ---------------------------------------------------------------------------

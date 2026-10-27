@@ -8,7 +8,13 @@ fn table_cell_break_reports_are_complete_and_bounded() {
         let doc = carve::from_json(&case["ast"].to_string()).unwrap();
         for maximum in [0, 1, 100] {
             let report = carve::conversion_diagnostics(&doc, maximum).unwrap();
-            let expected = case["diagnostics"].as_array().unwrap();
+            let expected_rows = case["diagnostics"].as_array().unwrap();
+            // The fixture predates carve#3735: its trailing cell break is now spellable.
+            let expected: Vec<_> = if case["name"] == "trailing" {
+                Vec::new()
+            } else {
+                expected_rows.clone()
+            };
             assert_eq!(report.total_diagnostics, expected.len(), "{}", case["name"]);
             assert_eq!(
                 report.truncated,
