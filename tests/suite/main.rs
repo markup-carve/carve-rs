@@ -33,6 +33,8 @@ mod an_unclosed_attached_fence_ends_with_its_block_before_a_blank;
 mod an_unclosed_fence_below_a_marker_line_quote_is_lazy_text;
 #[path = "../folded_fence_closer_shapes.rs"]
 mod folded_fence_closer_shapes;
+#[path = "../lint_first_block_actual_attachment.rs"]
+mod lint_first_block_actual_attachment;
 #[path = "../nested_colon_div_plus_attachment.rs"]
 mod nested_colon_div_plus_attachment;
 #[path = "../nested_fence_attached_block_extent.rs"]

@@ -461,11 +461,12 @@ fn region_marker_rendering_warning() {
 }
 
 #[test]
-fn a_refused_item_first_block_right_explains_the_column_once() {
+fn an_attached_item_first_block_right_has_no_refusal_warning() {
     let warnings = lint_carve("- +\n    x\n");
-    let warning = warnings
-        .iter()
-        .find(|warning| warning.rule == "continuation-marker-refused")
-        .unwrap();
-    assert_eq!(warning.message.matches("follows the").count(), 1);
+    assert!(
+        warnings
+            .iter()
+            .all(|warning| warning.rule != "continuation-marker-refused"),
+        "{warnings:?}"
+    );
 }

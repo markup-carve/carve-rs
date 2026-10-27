@@ -365,12 +365,25 @@ fn collect_parser_events(
     use std::collections::HashSet;
     let lines: Vec<&str> = source.split('\n').collect();
     let mut fences = HashSet::new();
+    let mut attached_first_block_items = HashSet::new();
     let mut blocks: Vec<_> = doc.children.iter().map(|block| (block, 0)).collect();
     for body in doc.footnote_defs.values() {
         blocks.extend(body.iter().map(|block| (block, 0)));
     }
     while let Some((block, depth)) = blocks.pop() {
         match block {
+            BlockNode::List(list) => {
+                for item in &list.items {
+                    if let (Some(marker), Some(child)) = (
+                        item.pos.as_ref(),
+                        item.children.first().and_then(crate::ast_json::block_pos),
+                    ) {
+                        if child.start_line == marker.start_line + 1 {
+                            attached_first_block_items.insert(marker.start_line);
+                        }
+                    }
+                }
+            }
             BlockNode::CodeBlock(code) => {
                 if let Some(pos) = &code.pos {
                     fences.insert((pos.start_line, pos.start_column));
@@ -425,6 +438,10 @@ fn collect_parser_events(
                 reason,
                 first_block,
             } => {
+                if *first_block && *host == "list item" && attached_first_block_items.contains(line)
+                {
+                    continue;
+                }
                 let explanation = match *reason {
                     "blank" => "a blank line follows it",
                     "document" => "it reaches the end of the document",
