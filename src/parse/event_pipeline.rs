@@ -2956,10 +2956,10 @@ fn parse_document_with_custom_options(
     let may_have_link_defs = source.contains("]:");
     let may_have_abbrevs = source.contains("*[");
     if source.contains("[^") {
-        if options.positions || options.source_lines {
+        if options.source_lines && !options.positions {
             return None;
         }
-        return parse_document_with_footnotes_options(source, source_len, options);
+        return parse_document_with_footnotes_options(source, original_source, source_len, options);
     }
     if has_fence_candidate_without_final_newline(source) {
         return None;
@@ -3162,6 +3162,7 @@ fn parse_document_with_custom_options(
 #[cfg(feature = "experimental-event-parser-options")]
 fn parse_document_with_footnotes_options(
     source: &str,
+    original_source: &str,
     source_len: usize,
     options: &Options<'_>,
 ) -> Option<(Document, bool)> {
@@ -3183,14 +3184,20 @@ fn parse_document_with_footnotes_options(
     } else {
         SourceEndingGuard::install(source)
     };
-    let (frontmatter, frontmatter_raw, body) = split_frontmatter(source, false);
+    let (frontmatter, frontmatter_raw, body) = split_frontmatter(source, options.positions);
     let body_start_line = source[..body.as_ptr() as usize - source.as_ptr() as usize]
         .bytes()
         .filter(|byte| *byte == b'\n')
         .count()
         + 1;
-    let (mapped, footnote_sources, footnote_def_pos, note_links) =
-        extract_footnote_defs(body, body_start_line, false, false, None, options);
+    let (mapped, footnote_sources, footnote_def_pos, note_links) = extract_footnote_defs(
+        body,
+        body_start_line,
+        options.positions,
+        false,
+        None,
+        options,
+    );
     if mapped
         .source
         .lines()
@@ -3206,16 +3213,25 @@ fn parse_document_with_footnotes_options(
     {
         return None;
     }
+    if options.positions
+        && (may_have_abbrevs || mapped.col_map.iter().any(|column| *column != Some(0)))
+    {
+        return None;
+    }
     let children = {
         let _depth = DepthGuard::enter()?;
         let lines: Vec<&str> = mapped.source.lines().collect();
-        parse_blocks(&lines, options).or_else(|| {
-            if may_have_abbrevs {
-                parse_mixed_blocks::<true, true>(&lines, options, true)
-            } else {
-                parse_mixed_blocks::<true, false>(&lines, options, true)
-            }
-        })?
+        if options.positions {
+            parse_mixed_blocks_mapped::<true, false>(&lines, options, Some(&mapped.line_map), true)?
+        } else {
+            parse_blocks(&lines, options).or_else(|| {
+                if may_have_abbrevs {
+                    parse_mixed_blocks::<true, true>(&lines, options, true)
+                } else {
+                    parse_mixed_blocks::<true, false>(&lines, options, true)
+                }
+            })?
+        }
     };
     let footnote_defs = footnote_sources
         .into_iter()
@@ -3224,7 +3240,12 @@ fn parse_document_with_footnotes_options(
                 Vec::new()
             } else {
                 let lines: Vec<&str> = note.source.lines().collect();
-                parse_blocks(&lines, options).unwrap_or_else(|| parse_mapped_source(&note, options))
+                if options.positions {
+                    parse_mapped_source(&note, options)
+                } else {
+                    parse_blocks(&lines, options)
+                        .unwrap_or_else(|| parse_mapped_source(&note, options))
+                }
             };
             (label, children)
         })
@@ -3238,6 +3259,27 @@ fn parse_document_with_footnotes_options(
         source_len,
         ingest_payload_len: 0,
     };
+    if options.positions {
+        let starts = CodepointLineStarts::original(original_source);
+        fill_offsets(&mut doc.children, &starts);
+        let source_lines: Vec<&str> = original_source.lines().collect();
+        narrow_to_last_placed_child(&mut doc.children, &source_lines);
+        for blocks in doc.footnote_defs.values_mut() {
+            fill_offsets(blocks, &starts);
+            narrow_to_last_placed_child(blocks, &source_lines);
+        }
+        for pos in doc.footnote_def_pos.values_mut() {
+            apply_offsets(pos, &starts);
+        }
+        for (label, pos) in &mut doc.footnote_def_pos {
+            let last = doc
+                .footnote_defs
+                .get(label)
+                .and_then(|blocks| blocks.iter().rev().find_map(crate::ast_json::block_pos))
+                .cloned();
+            end_at_last_placed_child(pos, last);
+        }
+    }
     if source.contains("][") {
         let headings = heading_reference_index_for_document(&doc, options.heading_id_options());
         resolve_reference_links(&mut doc, &BTreeMap::new(), &headings);
