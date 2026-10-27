@@ -442,12 +442,21 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                                 && is_fence_close(trim_ascii_start(next), open)
                         })
                 });
+                let direct_fence_payload = lines.is_empty()
+                    || lines
+                        .iter()
+                        .rev()
+                        .find(|line| !is_blank_line(line))
+                        .is_some_and(|line| {
+                            detect_fence_open(innermost_marker_content(line)).is_some()
+                        });
                 let applies = outer_follower
-                    && cur
-                        .lines
-                        .line(end)
-                        .is_some_and(|next| is_plus_marker(trim_ascii_start(next)));
-                if outer_follower && !applies {
+                    && (!direct_fence_payload
+                        || cur
+                            .lines
+                            .line(end)
+                            .is_some_and(|next| is_plus_marker(trim_ascii_start(next))));
+                if outer_follower && direct_fence_payload && !applies {
                     discarded_outer_blank = true;
                 }
                 nested_blank_run = Some((end, 0, applies));
