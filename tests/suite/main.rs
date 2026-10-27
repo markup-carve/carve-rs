@@ -2617,3 +2617,6 @@ mod reference_image_caption_boundary;
 
 #[path = "../quoted_literal_colon_boundary.rs"]
 mod quoted_literal_colon_boundary;
+
+#[path = "../quoted_nested_inline_code_lazy.rs"]
+mod quoted_nested_inline_code_lazy;
