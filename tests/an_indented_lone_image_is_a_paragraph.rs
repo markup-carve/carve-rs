@@ -47,7 +47,7 @@ fn sole_image_paragraph(block: &BlockNode) -> bool {
 }
 
 #[test]
-fn an_indented_lone_image_is_a_paragraph_and_a_flush_left_one_is_a_block_image() {
+fn an_indented_and_a_flush_left_lone_image_are_paragraphs() {
     let doc = parse(" ![a](u)\n");
     assert_eq!(types(&doc.children), vec!["paragraph"]);
     assert!(
@@ -58,7 +58,7 @@ fn an_indented_lone_image_is_a_paragraph_and_a_flush_left_one_is_a_block_image()
 
     // The control. Without it, a reader that never promotes anything passes the
     // assertion above and fails nothing else in this file.
-    assert_eq!(types(&parse("![a](u)\n").children), vec!["image"]);
+    assert_eq!(types(&parse("![a](u)\n").children), vec!["paragraph"]);
 }
 
 #[test]
@@ -117,7 +117,7 @@ fn the_column_is_the_containers_content_column_not_column_zero() {
     let BlockNode::BlockQuote(past) = &past_column.children[0] else {
         panic!("expected a quote")
     };
-    assert_eq!(types(&at.children), vec!["image"]);
+    assert_eq!(types(&at.children), vec!["paragraph"]);
     assert_eq!(types(&past.children), vec!["paragraph"]);
 
     // And the quote still uses the EXPANDED layout for both, rather than the

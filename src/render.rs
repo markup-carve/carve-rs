@@ -1798,10 +1798,25 @@ fn render_table(
                     .all(|(i, cell)| cell.header || resolved(i))
         })
         .count();
-    let header_count = t
-        .row_groups
-        .as_ref()
-        .map_or(derived_header_count, |groups| groups.head_rows);
+    let invalid_source_partition = t.row_groups.is_none()
+        && t.attrs.as_ref().is_some_and(|attrs| {
+            [
+                "header-rows",
+                "footer-rows",
+                "body-rows",
+                "body-header-rows",
+                "body-header-cols",
+            ]
+            .iter()
+            .any(|key| attrs.key_values.contains_key(*key))
+        });
+    let header_count = if invalid_source_partition {
+        0
+    } else {
+        t.row_groups
+            .as_ref()
+            .map_or(derived_header_count, |groups| groups.head_rows)
+    };
     let footer_count = t.row_groups.as_ref().map_or(0, |groups| groups.foot_rows);
     let footer_start = t.rows.len() - footer_count;
     let mut section_ends = vec![false; t.rows.len() + 1];

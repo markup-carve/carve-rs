@@ -117,10 +117,11 @@ pub(crate) fn from_code(code: &CodeBlock, payload: &[PayloadLine]) -> Option<Tab
             }
         })
         .collect();
-    let columns = attrs
+    let mut columns = attrs
         .as_ref()
         .map(super::table_columns_from_attrs)
         .unwrap_or_default();
+    columns.truncate(rows.iter().map(|row| row.cells.len()).max().unwrap_or(0));
     let row_groups = attrs.as_ref().and_then(|attrs| {
         if ![
             "header-rows",

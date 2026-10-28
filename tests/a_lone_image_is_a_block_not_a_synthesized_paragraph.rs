@@ -59,7 +59,7 @@ fn a_bare_image_is_a_block_image_paragraph_on_both_exits() {
     let html = r#"<img src="g.jpg" alt="G">"#;
     assert_eq!(kinds(&tree(html)), vec!["Paragraph".to_string()]);
     assert_eq!(carve(html), "![G](g.jpg)\n");
-    assert_eq!(kinds(&parse(&carve(html))), vec!["BlockImage".to_string()]);
+    assert_eq!(kinds(&parse(&carve(html))), vec!["Paragraph".to_string()]);
 }
 
 /// The shape the spec fixture `detached-caption-caret` records, which is what

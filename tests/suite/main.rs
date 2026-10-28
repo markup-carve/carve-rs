@@ -31,6 +31,8 @@ mod an_opener_in_a_description_in_an_item_is_not_overindented;
 mod an_unclosed_attached_fence_ends_with_its_block_before_a_blank;
 #[path = "../an_unclosed_fence_below_a_marker_line_quote_is_lazy_text.rs"]
 mod an_unclosed_fence_below_a_marker_line_quote_is_lazy_text;
+#[path = "../ast_table_followups.rs"]
+mod ast_table_followups;
 #[path = "../folded_fence_closer_shapes.rs"]
 mod folded_fence_closer_shapes;
 #[path = "../lint_first_block_actual_attachment.rs"]
