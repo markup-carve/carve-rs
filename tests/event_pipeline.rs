@@ -28,6 +28,7 @@ fn indented_root_list_frames_match_full_document() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     for name in [
         "05-lists-14.crv",
+        "151-indented-ordered-marker-content-column-includes-the-marker-indent.crv",
         "277-a-below-column-marker-after-a-comment-where-no-paragraph-is-open.crv",
         "277-a-below-column-marker-after-a-comment-where-no-paragraph-is-open-2.crv",
         "290-adjacent-sibling-lists-survive-the-round-trip.crv",
@@ -54,6 +55,38 @@ fn indented_root_list_frames_match_full_document() {
                     let source = format!("{prefix}{}{marker}\n{following}", " ".repeat(indent));
                     let (candidate, used) = parse_experimental_event_blocks(&source);
                     if prefix.is_empty() && following.is_empty() && indent <= 4 {
+                        assert!(used, "{source:?}");
+                    }
+                    assert_eq!(candidate, parse_standard(&source), "{source:?}");
+                }
+            }
+        }
+    }
+
+    for marker_indent in 1..=4 {
+        for follower_indent in 0..marker_indent {
+            for marker in ["- a", "1. a"] {
+                for follower in [
+                    "text",
+                    "| x |",
+                    "|= h |",
+                    "| a |{.c}",
+                    "| a",
+                    "# heading",
+                    "- sibling",
+                    "> quote",
+                    "```",
+                    "![x](y.png)",
+                    "*[X]: y",
+                    ": foo",
+                ] {
+                    let source = format!(
+                        "{}{marker}\n{}{follower}\n",
+                        " ".repeat(marker_indent),
+                        " ".repeat(follower_indent)
+                    );
+                    let (candidate, used) = parse_experimental_event_blocks(&source);
+                    if follower == "text" || follower == "| x |" && follower_indent >= 2 {
                         assert!(used, "{source:?}");
                     }
                     assert_eq!(candidate, parse_standard(&source), "{source:?}");

@@ -1513,6 +1513,19 @@ fn parse_unified_list_mapped_with_exit(
             }
         }
         let indent = line.bytes().take_while(|byte| *byte == b' ').count();
+        if frames.len() == 1 && indent < frames[0].indent {
+            let content = trim_ascii_end(trim_ascii_start(line));
+            if frames[0].paragraph.is_empty()
+                || !(unified_list_paragraph_accepts(content, true)
+                    || indent >= 2 && content.starts_with('|'))
+            {
+                return None;
+            }
+            direct_list_image_line_is_supported(content)?;
+            frames[0].paragraph.push(content);
+            pos += 1;
+            continue;
+        }
         let decision = trim_ascii_end(line)
             .ends_with('+')
             .then(|| list_continuation_decision(line_map, pos))
