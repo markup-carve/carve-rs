@@ -223,3 +223,7 @@ path = "tests/reserved_citation_reference_tail.rs"
 [[test]]
 name = "tab_after_list_marker"
 path = "tests/tab_after_list_marker.rs"
+
+[[test]]
+name = "fx27_nested_term_ownership"
+path = "tests/fx27_nested_term_ownership.rs"
