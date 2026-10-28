@@ -391,7 +391,7 @@ fn collect_authoring(
                 emit(out, rows, line, authored_first_nonspace(row.text), 1, "list-marker-without-blank-line", "This list marker is part of the preceding paragraph; add a blank line before the list.");
             }
             if index > 0
-                && definition.is_match(row.text)
+                && definition.is_match(&row.text[quote_prefix(row.text).0..])
                 && paragraphs.contains_key(&(line - 1))
                 && !rows[index - 1].text.trim_start().starts_with(":: ")
             {
@@ -465,10 +465,11 @@ fn collect_authoring(
                     continue;
                 }
                 let end_line = paragraphs[&line];
-                let closed = view[marker.end()..].contains(delimiter)
+                let closed = has_visible(row, prefix + marker.end(), delimiter, scan)
                     || ((line + 1)..=end_line).any(|next| {
                         rows.get(next - 1).is_some_and(|next_row| {
-                            container_view(next_row.text).contains(delimiter)
+                            let from = next_row.text.len() - container_view(next_row.text).len();
+                            has_visible(next_row, from, delimiter, scan)
                         })
                     });
                 if !closed {
@@ -511,6 +512,12 @@ fn collect_authoring(
             }
         }
     }
+}
+
+fn has_visible(row: &Line<'_>, from: usize, delimiter: &str, scan: &BlockScan<'_>) -> bool {
+    row.text[from..]
+        .match_indices(delimiter)
+        .any(|(at, _)| source_visible(row, from + at, delimiter.len(), scan))
 }
 
 fn source_visible(row: &Line<'_>, start: usize, len: usize, scan: &BlockScan<'_>) -> bool {
@@ -617,6 +624,9 @@ impl<'d> BlockScan<'d> {
                     | InlineNode::RawInline(_)
                     | InlineNode::LiteralInline(_)
                     | InlineNode::Comment(_)
+                    | InlineNode::CrossRef(_)
+                    | InlineNode::AutoLink(_)
+                    | InlineNode::Image(_)
             );
             if opaque {
                 if let Some(pos) = node.pos() {

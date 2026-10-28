@@ -72,6 +72,9 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
         let content = trim_ascii_start(line);
         detect_block_image(content).is_some() || reference_image_line(content)
     });
+    let image_opener = cur
+        .peek()
+        .is_some_and(|line| trim_ascii_start(line).starts_with("!["));
     let mut at_content_column = cur.peek().is_some_and(|l| !l.starts_with([' ', '\t']));
     let reference_caption_candidate = cur.peek().is_some_and(reference_image_line);
     let mut reference_caption_claimed = false;
@@ -132,8 +135,8 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
             break;
         }
         report_unclaimed_document_plus(cur, line);
-        if image_lead
-            && lines.len() == 1
+        if image_opener
+            && !lines.is_empty()
             && caption_content(line).is_some()
             && !line.starts_with([' ', '\t'])
         {
