@@ -1390,6 +1390,7 @@ struct NoteBuffer {
     body: Vec<String>,
     converted_body: Option<String>,
     carry_task_attributes: bool,
+    separate_after_close: bool,
     paragraph: bool,
     blank: bool,
     paragraph_depth: usize,
@@ -1651,7 +1652,7 @@ impl NoteScanner<'_> {
                         .is_some_and(|current| *current <= column)
             });
         let head = self.note_header(&view, outside_main_item);
-        let had_note = !self.notes.is_empty();
+        let had_empty_task_note = self.notes.iter().any(|note| note.separate_after_close);
         let (returned_note_attributes, returned_scope) = self.close_notes(&view, head.is_some());
         if let Some(scope) = returned_scope {
             self.place_returned_attributes(&view, scope, returned_note_attributes);
@@ -1662,7 +1663,7 @@ impl NoteScanner<'_> {
         }
         self.track_held_code(&view);
         if self.notes.is_empty() {
-            if had_note
+            if had_empty_task_note
                 && !text.is_empty()
                 && !self.re.block.is_match(text)
                 && !self.re.item.is_match(text)
@@ -1935,6 +1936,7 @@ impl NoteScanner<'_> {
             label: caps[1].to_owned(),
             body: vec![format!("{}{body}", " ".repeat(first_padding))],
             converted_body: None,
+            separate_after_close: empty_djot_task_tail_end(body, true).is_some(),
             carry_task_attributes: !empty_task
                 && empty_djot_task_tail_end(body, true).is_some()
                 && self.lines.get(note_line_index + 1).is_some_and(|line| {
@@ -2018,6 +2020,7 @@ impl NoteScanner<'_> {
                 }],
                 converted_body: None,
                 carry_task_attributes: false,
+                separate_after_close: empty_djot_task_tail_end(nested_body, true).is_some(),
                 item_column: child_item
                     .then_some(child_column + nested.as_str().encode_utf16().count()),
                 paragraph_depth: depth,

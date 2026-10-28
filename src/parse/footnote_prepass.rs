@@ -142,6 +142,9 @@ impl NoteBody {
     }
 
     fn can_fold_below_owner(&mut self, line: &str, options: &Options<'_>) -> bool {
+        if indent_columns(line) == 0 && detect_list_marker_full(trim_ascii_start(line)).is_some() {
+            return false;
+        }
         !is_blank_line(line)
             && !self.lines.last().is_some_and(|last| is_blank_line(last))
             && *self.lazy_open.get_or_insert_with(|| {
@@ -166,6 +169,7 @@ fn below_owner_interrupts(line: &str, owner_column: usize) -> bool {
 /// What one document line looks like once its container prefix is stripped.
 struct LineScan<'a> {
     stripped: StrippedContainerLine<'a>,
+    previous_non_blank: &'a str,
     after_term: bool,
     retained_unclosed_fence: bool,
     fence_line: &'a str,
@@ -185,6 +189,7 @@ struct IndentedNote<'a> {
     first: &'a str,
     container: IndentContainer,
     body_indent: usize,
+    description_host: bool,
     note_fence: Option<FenceOpen>,
     // Is this note's body still open for an INDENTED definition below
     // it? A flush line opens it and a block opener closes it. Only
@@ -205,6 +210,7 @@ struct NoteHost {
     owner_column: usize,
     note_floor: usize,
     marker_note: bool,
+    description_host: bool,
 }
 
 impl NoteHost {
@@ -442,7 +448,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         // loose. Asking the line above left the `:  ` marker unstripped after
         // one, so a definition written as that description's body was consumed
         // by the parser and collected by nobody (#1500).
-        let after_term = opens_definition_entry(self.previous_non_blank);
+        let previous_non_blank = self.previous_non_blank;
+        let after_term = opens_definition_entry(previous_non_blank);
         let stripped = strip_container_prefixes_at(line, &self.columns, after_term);
         remember_prepass_paragraph_line(&self.folded_into_term, i, line, &stripped, &self.columns);
         if !is_blank_line(line) {
@@ -461,6 +468,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         };
         LineScan {
             stripped,
+            previous_non_blank,
             after_term,
             retained_unclosed_fence,
             fence_line,
@@ -746,6 +754,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 first: def.first,
                 container,
                 body_indent,
+                description_host: definition_body_content_col(scan.previous_non_blank).is_some()
+                    && indent_columns(scan.previous_non_blank) < indent_columns(raw_def_line),
                 note_fence: None,
                 body_open_below: false,
                 open_term: term_start_column(def.first).is_some(),
@@ -976,6 +986,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         let owner_column = state.body_indent.saturating_sub(2);
         if owner_column > 0
+            && !state.description_host
             && column >= owner_column
             && column < state.body_indent
             && detect_list_marker_full(trim_ascii_start(line)).is_some()
@@ -1022,7 +1033,10 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             && if column < owner_column {
                 note.lazy_claim && note.can_fold_below_owner(line, self.options)
             } else {
-                note.can_fold_below(line, self.options)
+                (state.description_host
+                    && detect_list_marker_full(trim_ascii_start(line)).is_some()
+                    && note.can_fold_below_owner(line, self.options))
+                    || note.can_fold_below(line, self.options)
             }
         {
             let kept = if column < owner_column {
@@ -1534,6 +1548,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             note_floor: prefix_cols + footnote_body_floor(def.def_line),
             marker_note: detect_list_marker_full(inside)
                 .is_some_and(|marker| parse_footnote_def_line(marker.content).is_some()),
+            description_host: definition_body_content_col(inside).is_some(),
         };
         let i = self.quoted_plus_first_block(&host, note, i, def.first);
         let mut i = self.attach_quoted_plus_block(&host, note, i, raw_def_line);
@@ -1573,7 +1588,10 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                         && if indent_columns(line) < host.owner_column {
                             note.lazy_claim && note.can_fold_below_owner(line, self.options)
                         } else {
-                            note.can_fold_below(line, self.options)
+                            (host.description_host
+                                && detect_list_marker_full(trim_ascii_start(line)).is_some()
+                                && note.can_fold_below_owner(line, self.options))
+                                || note.can_fold_below(line, self.options)
                         }
                 })
         {
@@ -1739,6 +1757,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         if note.lazy_claim
             && column >= host.owner_column
             && column <= host.note_floor
+            && !host.description_host
             && item_block_opener_with_invisible_arms(trim_ascii_start(line), false)
             && !detect_fence_open(trim_ascii_start(line))
                 .is_some_and(|_| !self.closed_note_fence(host, *i))
@@ -1748,6 +1767,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         if !walk.reaches_floor(host, raw) {
             if self.nested
                 || (!host.marker_note
+                    && !host.description_host
                     && host.owner_column > 0
                     && column >= host.owner_column
                     && detect_list_marker_full(trim_ascii_start(line)).is_some())
@@ -1756,7 +1776,10 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 || !if column < host.owner_column {
                     note.lazy_claim && note.can_fold_below_owner(line, self.options)
                 } else {
-                    note.can_fold_below(line, self.options)
+                    (host.description_host
+                        && detect_list_marker_full(trim_ascii_start(line)).is_some()
+                        && note.can_fold_below_owner(line, self.options))
+                        || note.can_fold_below(line, self.options)
                 }
             {
                 return Flow::Stop;

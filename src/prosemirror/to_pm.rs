@@ -37,12 +37,20 @@ pub fn to_prosemirror(doc: &Document) -> ProseMirrorDoc {
     for (label, blocks) in &doc.footnote_defs {
         let mut attrs = Object::new();
         attrs.insert("label".into(), Json::String(label.clone()));
-        let pos = doc
-            .footnote_def_pos
-            .get(label)
-            .or_else(|| blocks.first().and_then(crate::ast_json::block_pos));
+        let pos = blocks
+            .first()
+            .and_then(crate::ast_json::block_pos)
+            .or_else(|| {
+                blocks
+                    .is_empty()
+                    .then(|| doc.footnote_def_pos.get(label))
+                    .flatten()
+            });
         if let Some(pos) = pos {
             attrs.insert("carvePos".into(), position(pos));
+        }
+        if let Some(pos) = doc.footnote_def_pos.get(label) {
+            attrs.insert("carveDefPos".into(), position(pos));
         }
         if let Some(name) = renderer.name("footnote") {
             let children = renderer.blocks(blocks);

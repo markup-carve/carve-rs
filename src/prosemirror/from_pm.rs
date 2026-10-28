@@ -118,6 +118,18 @@ impl Reader {
                         string_json(attrs_obj(child_obj), "label", ""),
                     );
                     if let Some(pos) = position_value(attrs_obj(child_obj)) {
+                        match o.get_mut("children") {
+                            Some(Json::Array(children)) if !children.is_empty() => {
+                                if let Json::Object(first) = &mut children[0] {
+                                    first.insert("pos".into(), pos.clone());
+                                }
+                            }
+                            _ => {
+                                o.insert("pos".into(), pos.clone());
+                            }
+                        }
+                    }
+                    if let Some(pos) = position_named_value(attrs_obj(child_obj), "carveDefPos") {
                         o.insert("pos".into(), pos.clone());
                     }
                 }
@@ -1358,7 +1370,11 @@ fn with_attrs(mut n: Json, a: &Object) -> Json {
 }
 
 fn position_value(attrs: &Object) -> Option<&Json> {
-    let value = attrs.get("carvePos")?;
+    position_named_value(attrs, "carvePos")
+}
+
+fn position_named_value<'a>(attrs: &'a Object, key: &str) -> Option<&'a Json> {
+    let value = attrs.get(key)?;
     let Json::Object(pos) = value else {
         return None;
     };
@@ -1459,6 +1475,7 @@ fn is_structural_attr(k: &str) -> bool {
     matches!(
         k,
         "alt"
+            | "carveDefPos"
             | "carveAuthoredHref"
             | "carveAuthoredSrc"
             | "alignment"
