@@ -1440,6 +1440,22 @@ fn advance_unified_list_blank(
         return Some(BlankListStep::Continue(after));
     }
     if is_list_marker(next) {
+        if next_indent == frame.indent {
+            if unified_list_marker(&next[next_indent..]).is_some_and(|(kind, ordinal, _)| {
+                kind == frame.kind
+                    && (kind != SimpleListKind::Ordered || ordinal == frame.node.items.len() + 1)
+            }) {
+                frame.node.tight = false;
+                return Some(BlankListStep::Continue(after));
+            }
+            return None;
+        }
+        if next_indent > 0
+            && next.as_bytes().get(next_indent) != Some(&b'\t')
+            && next_indent < frames[0].content_indent
+        {
+            return Some(BlankListStep::Break);
+        }
         return None;
     }
     if next_indent == frame.content_indent {

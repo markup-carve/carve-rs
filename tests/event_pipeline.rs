@@ -32,6 +32,7 @@ fn indented_root_list_frames_match_full_document() {
         "277-a-below-column-marker-after-a-comment-where-no-paragraph-is-open.crv",
         "277-a-below-column-marker-after-a-comment-where-no-paragraph-is-open-2.crv",
         "290-adjacent-sibling-lists-survive-the-round-trip.crv",
+        "290-adjacent-sibling-lists-survive-the-round-trip-2.crv",
         "507-a-list-marker-in-a-raised-colon-container-folds-into-its-open-paragraph-16.crv",
         "556-a-closed-block-leaves-no-frame-for-the-line-below-7.crv",
     ] {
@@ -93,6 +94,31 @@ fn indented_root_list_frames_match_full_document() {
                 }
             }
         }
+    }
+
+    for first_indent in 0..=3 {
+        for second_indent in 0..=4 {
+            for first_marker in ["- a", "1. a"] {
+                for second_marker in ["- b", "* b", "1. b"] {
+                    let source = format!(
+                        "{}{first_marker}\n\n{}{second_marker}\n",
+                        " ".repeat(first_indent),
+                        " ".repeat(second_indent)
+                    );
+                    let (candidate, _) = parse_experimental_event_blocks(&source);
+                    assert_eq!(candidate, parse_standard(&source), "{source:?}");
+                }
+            }
+        }
+    }
+    for source in [
+        "- a\n\n \t- b\n",
+        "1. a\n\n \t1. b\n",
+        "  - a\n\n \t- b\n",
+        "  1. a\n\n \t1. b\n",
+    ] {
+        let (candidate, _) = parse_experimental_event_blocks(source);
+        assert_eq!(candidate, parse_standard(source), "{source:?}");
     }
 }
 
