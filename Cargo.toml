@@ -31,6 +31,7 @@ include = ["/src/**/*", "/resources/**/*", "/Cargo.toml", "/README.md", "/LICENS
 # keeps it true.
 default = ["fs"]
 fs = []
+experimental-event-parser = []
 
 [dependencies]
 # THESE TWO MOVE TOGETHER OR NOT AT ALL. markup5ever_rcdom is the DOM sink
@@ -142,6 +143,16 @@ path = "tests/public_api_paths.rs"
 [[test]]
 name = "perf_regressions"
 path = "tests/perf_regressions.rs"
+
+[[test]]
+name = "event_pipeline"
+path = "tests/event_pipeline.rs"
+required-features = ["experimental-event-parser"]
+
+[[example]]
+name = "event_route_cpu"
+path = "examples/event_route_cpu.rs"
+required-features = ["experimental-event-parser"]
 
 [[test]]
 name = "includes"

@@ -17,6 +17,8 @@ mod columns;
 mod container;
 mod cursor;
 mod definition;
+#[cfg(feature = "experimental-event-parser")]
+mod event_pipeline;
 mod footnote_prepass;
 mod indent_container;
 mod inline;
@@ -621,7 +623,22 @@ fn is_bare_figure_open(open: &ContainerOpen) -> bool {
 
 /// Parse Carve source with default options.
 pub fn parse(source: &str) -> Document {
+    #[cfg(feature = "experimental-event-parser")]
+    if let Some((document, _)) = event_pipeline::parse_document(source) {
+        return document;
+    }
     parse_with_options(source, &Options::default())
+}
+
+/// Try the opt-in line-event parser for simple documents. The boolean reports
+/// whether the event route was admitted; other inputs use the standard parser.
+#[cfg(feature = "experimental-event-parser")]
+pub fn parse_experimental_event_blocks(source: &str) -> (Document, bool) {
+    if let Some(result) = event_pipeline::parse_document(source) {
+        result
+    } else {
+        (parse_with_options(source, &Options::default()), false)
+    }
 }
 
 /// Parse Carve source using the supplied parser options.

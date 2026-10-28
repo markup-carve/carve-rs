@@ -194,6 +194,8 @@ pub use migration::{
     try_migrate_markdown_for_directory_with_destinations, MigrationConfidence, MigrationDiagnostic,
     MigrationFidelity, MigrationReport, MigrationResult, SourceFormat,
 };
+#[cfg(feature = "experimental-event-parser")]
+pub use parse::parse_experimental_event_blocks;
 pub use parse::{parse, parse_with_options};
 pub use profile::{DisallowedAction, LinkPolicy, Profile, ProfileViolation, ProfileViolationError};
 pub use profile_filter::{apply_profile, apply_profile_with_typography, ProfileFilterResult};

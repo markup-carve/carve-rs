@@ -387,7 +387,7 @@ fn try_layout_into(
     Some(output)
 }
 
-fn layout_link_defs(lines: &[&str]) -> Option<(BTreeMap<String, LinkDef>, Vec<usize>)> {
+pub(super) fn layout_link_defs(lines: &[&str]) -> Option<(BTreeMap<String, LinkDef>, Vec<usize>)> {
     let mut defs = BTreeMap::new();
     let mut definition_lines = Vec::new();
     let Some(last_candidate) = lines.iter().rposition(|line| line.contains("]:")) else {

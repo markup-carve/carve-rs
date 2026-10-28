@@ -457,17 +457,18 @@ pub(in crate::parse) fn parse_inline_context_with_pairs(
     // occur, those attempts -- each an O(n) bracket scan -- can be skipped, so a
     // deeply nested run like `[[[[x]]]]` stays O(n) instead of O(n^2). Footnotes
     // (`[^...]`) are handled separately and cheaply gated on `[^`.
+    let has_open_bracket = text.contains('[');
     // Precompute every `[`-to-`]` match once (O(n)) so the per-`[` link /
     // reference / span / image parsers locate their closing bracket in O(1)
     // instead of re-scanning O(n) each. Without this, deeply nested balanced
     // links (`[[[...x]()]()...]`) are O(n^2). Only needed when bracket
     // constructs can actually fire.
-    let has_brackets = has_link_trigger || text.contains("![");
+    let has_brackets = has_link_trigger || (has_open_bracket && text.contains("!["));
     // Two readers need the matches for a run that opens NO construct, so the
     // precompute answers for every `[`: a `%%` marker inside a bracket run ends
     // at the run's closer (CARVE-P9-041, markup-carve/carve#2576), and an
     // emphasis delimiter does not pair across one (PART 8, carve#2577).
-    let (bracket_matches, bracket_run_at) = if text.contains('[') {
+    let (bracket_matches, bracket_run_at) = if has_open_bracket {
         compute_bracket_matches(bytes)
     } else {
         (Vec::new(), Vec::new())
@@ -526,7 +527,7 @@ fn plain_inline_text(
     let bytes = text.as_bytes();
     if !(options.extensions.is_empty()
         && !bytes.is_empty()
-        && bytes.len() <= 64
+        && bytes.len() <= 512
         && {
             // Keep the ASCII check cheap. Only a Unicode byte needs the
             // character scan for letters and combining marks.
@@ -722,16 +723,23 @@ impl InlineRun<'_, '_> {
             return i + 1;
         }
 
-        // With no extension matcher able to claim an arbitrary byte, runs of
-        // ASCII prose cannot open any core inline construct. Append the whole
-        // run at once instead of sending every letter and space through all of
-        // the delimiter, link, typography and footnote dispatch below.
+        // A live cell wrap can claim an ordinary space before any text run.
         if c == b' ' && self.wraps_live {
             if let Some(wrap) = cell_wrap_at(self.sink.base + i) {
                 self.sink.push(InlineNode::CellWrap(wrap));
                 return i + 1;
             }
         }
+        // Literal punctuation and Unicode can join the ASCII prose run when
+        // neither extensions nor cell wraps can claim its bytes.
+        if self.options.extensions.is_empty() && !self.wraps_live {
+            let end = self.literal_run_end(i);
+            if end > i {
+                self.sink.buffer(i, &self.text[i..end]);
+                return end;
+            }
+        }
+        // Keep the older ASCII run for contexts with live cell wraps.
         if self.options.extensions.is_empty()
             && (c.is_ascii_alphanumeric() || c == b' ' || c == b'\t')
         {
@@ -752,6 +760,50 @@ impl InlineRun<'_, '_> {
         let ch = self.text[i..].chars().next().unwrap();
         let end = i + ch.len_utf8();
         self.sink.buffer(i, &self.text[i..end]);
+        end
+    }
+
+    /// Consume literal prose in one slice, including punctuation and Unicode
+    /// bytes that cannot open a core construct. Keep the older dispatch for
+    /// cell wraps and extension matchers, which can claim ordinary bytes.
+    fn literal_run_end(&self, start: usize) -> usize {
+        let bytes = self.bytes;
+        let mut end = start;
+        while end < bytes.len() {
+            let literal = match bytes[end] {
+                b' ' | b'\t' | b',' | b';' | b'?' | b'&' | b')' => true,
+                b'.' => !bytes[end..].starts_with(b"..."),
+                b'-' => !matches!(bytes.get(end + 1), Some(b'-' | b'>')),
+                b':' => matches!(bytes.get(end + 1), Some(b' ' | b'\t' | b'\n')),
+                b'#' => {
+                    !self.caption_number_allowed
+                        && end > 0
+                        && (bytes[end - 1].is_ascii_alphanumeric() || bytes[end - 1] == b'_')
+                }
+                b'@' => {
+                    end > 0 && (bytes[end - 1].is_ascii_alphanumeric() || bytes[end - 1] == b'_')
+                }
+                b'!' => !matches!(bytes.get(end + 1), Some(b'=' | b'[' | b'`')),
+                b'*' => {
+                    end > 0
+                        && bytes[end - 1] != b'*'
+                        && bytes.get(end + 1) == Some(&b'*')
+                        && bytes.get(end + 2) != Some(&b'*')
+                }
+                b'(' => ![b"(c)".as_slice(), b"(r)", b"(tm)"]
+                    .iter()
+                    .any(|form| bytes[end..].starts_with(form)),
+                byte => byte.is_ascii_alphanumeric() || !byte.is_ascii(),
+            };
+            if !literal {
+                break;
+            }
+            if bytes[end] == b'*' {
+                end += 2;
+                continue;
+            }
+            end += 1;
+        }
         end
     }
 
@@ -1244,7 +1296,7 @@ impl InlineRun<'_, '_> {
     /// Smart typography (§8): parsed into AST nodes so renderers can choose
     /// glyph output or source-preserving Carve output without rescanning.
     fn smart_punctuation(&mut self, i: usize) -> Option<usize> {
-        let (nodes, consumed) = parse_smart_punctuation_at(
+        let matched = parse_smart_punctuation_at(
             self.text,
             i,
             self.sink.base,
@@ -1253,14 +1305,42 @@ impl InlineRun<'_, '_> {
             self.options,
         )?;
         self.sink.flush();
-        let mut local = 0usize;
-        for mut node in nodes {
-            let width = smart_punctuation_source_width(&node);
-            set_inline_node_pos(&mut node, self.sink.pos(i + local, i + local + width));
-            local += width;
-            self.quotes.push(&mut self.sink.out, node);
+        match matched {
+            SmartPunctuationMatch::Single {
+                kind,
+                value,
+                glyph,
+                consumed,
+            } => {
+                let node = InlineNode::SmartPunctuation(SmartPunctuation {
+                    kind: kind.to_string(),
+                    value: value.to_string(),
+                    glyph: glyph.map(str::to_string),
+                    pos: self.sink.pos(i, i + consumed),
+                });
+                self.quotes.push(&mut self.sink.out, node);
+                Some(i + consumed)
+            }
+            SmartPunctuationMatch::Dashes { glyphs, consumed } => {
+                let mut local = 0usize;
+                for glyph in glyphs.chars() {
+                    let (kind, width) = if glyph == '—' {
+                        ("em_dash", 3)
+                    } else {
+                        ("en_dash", 2)
+                    };
+                    let node = InlineNode::SmartPunctuation(SmartPunctuation {
+                        kind: kind.to_string(),
+                        value: self.text[i + local..i + local + width].to_string(),
+                        glyph: None,
+                        pos: self.sink.pos(i + local, i + local + width),
+                    });
+                    local += width;
+                    self.quotes.push(&mut self.sink.out, node);
+                }
+                Some(i + consumed)
+            }
         }
-        Some(i + consumed)
     }
 
     /// Soft break, or a hard break when the buffered text ends in `\`.
@@ -1864,6 +1944,19 @@ pub(in crate::parse) fn flag_shaped_hyphen_run(text: &str, i: usize) -> Option<u
     }
 }
 
+pub(in crate::parse) enum SmartPunctuationMatch {
+    Single {
+        kind: &'static str,
+        value: &'static str,
+        glyph: Option<&'static str>,
+        consumed: usize,
+    },
+    Dashes {
+        glyphs: String,
+        consumed: usize,
+    },
+}
+
 fn next_source_char(text: &str, base: usize, after: usize) -> Option<char> {
     INLINE_SOURCE.with(|source| {
         let source = source.borrow();
@@ -1884,12 +1977,13 @@ pub(in crate::parse) fn parse_smart_punctuation_at(
     buf: &str,
     out: &[InlineNode],
     options: &Options<'_>,
-) -> Option<(Vec<InlineNode>, usize)> {
-    let prev = if buf.is_empty() {
-        last_emitted_glyph(out, options)
-    } else {
-        buf.chars().last().unwrap_or_default()
-    };
+) -> Option<SmartPunctuationMatch> {
+    if !matches!(
+        text.as_bytes().get(i),
+        Some(b'-' | b'<' | b'=' | b'(' | b'.' | b'>' | b'!' | b'+' | b'"' | b'\'')
+    ) {
+        return None;
+    }
     // The hyphen-run pass must not claim `-->` or `<-->`: the FIXED TOKENS below
     // spell the canonical rightwards and bidirectional arrows with a doubled run
     // (markup-carve/carve#1442), and a run decomposed into dashes here can never
@@ -1903,24 +1997,10 @@ pub(in crate::parse) fn parse_smart_punctuation_at(
             .iter()
             .take_while(|&&b| b == b'-')
             .count();
-        let glyphs = crate::render::allocate_dashes(n);
-        let mut consumed = 0usize;
-        let mut nodes = Vec::new();
-        for glyph in glyphs.chars() {
-            let (kind, width) = if glyph == '—' {
-                ("em_dash", 3)
-            } else {
-                ("en_dash", 2)
-            };
-            nodes.push(InlineNode::SmartPunctuation(SmartPunctuation {
-                kind: kind.to_string(),
-                value: text[i + consumed..i + consumed + width].to_string(),
-                glyph: None,
-                pos: None,
-            }));
-            consumed += width;
-        }
-        return Some((nodes, n));
+        return Some(SmartPunctuationMatch::Dashes {
+            glyphs: crate::render::allocate_dashes(n),
+            consumed: n,
+        });
     }
 
     // ORDERED LONGEST-FIRST, and the order is the rule (markup-carve/carve#1442):
@@ -1954,19 +2034,24 @@ pub(in crate::parse) fn parse_smart_punctuation_at(
         ("(r)", "registered"),
     ] {
         if text[i..].starts_with(source) {
-            return Some((
-                vec![InlineNode::SmartPunctuation(SmartPunctuation {
-                    kind: kind.to_string(),
-                    value: source.to_string(),
-                    glyph: None,
-                    pos: None,
-                })],
-                source.len(),
-            ));
+            return Some(SmartPunctuationMatch::Single {
+                kind,
+                value: source,
+                glyph: None,
+                consumed: source.len(),
+            });
         }
     }
 
     let c = text[i..].chars().next()?;
+    if c != '"' && c != '\'' {
+        return None;
+    }
+    let prev = if buf.is_empty() {
+        last_emitted_glyph(out, options)
+    } else {
+        buf.chars().last().unwrap_or_default()
+    };
     if c == '"' {
         let next = text[i + 1..]
             .chars()
@@ -1979,15 +2064,12 @@ pub(in crate::parse) fn parse_smart_punctuation_at(
         } else {
             "right_double_quote"
         };
-        return Some((
-            vec![InlineNode::SmartPunctuation(SmartPunctuation {
-                kind: kind.to_string(),
-                value: "\"".to_string(),
-                glyph: Some(glyph.to_string()),
-                pos: None,
-            })],
-            1,
-        ));
+        return Some(SmartPunctuationMatch::Single {
+            kind,
+            value: "\"",
+            glyph: Some(glyph),
+            consumed: 1,
+        });
     }
     if c == '\'' {
         let next = text[i + 1..]
@@ -2009,25 +2091,15 @@ pub(in crate::parse) fn parse_smart_punctuation_at(
         } else {
             "left_single_quote"
         };
-        return Some((
-            vec![InlineNode::SmartPunctuation(SmartPunctuation {
-                kind: kind.to_string(),
-                value: "'".to_string(),
-                glyph: Some(glyph.to_string()),
-                pos: None,
-            })],
-            1,
-        ));
+        return Some(SmartPunctuationMatch::Single {
+            kind,
+            value: "'",
+            glyph: Some(glyph),
+            consumed: 1,
+        });
     }
 
     None
-}
-
-pub(in crate::parse) fn smart_punctuation_source_width(node: &InlineNode) -> usize {
-    match node {
-        InlineNode::SmartPunctuation(s) => s.value.len(),
-        _ => 0,
-    }
 }
 
 pub(in crate::parse) fn last_emitted_glyph(out: &[InlineNode], options: &Options<'_>) -> char {
@@ -2446,4 +2518,107 @@ pub(in crate::parse) fn parse_span(
         },
         after_attrs - start,
     ))
+}
+
+#[cfg(test)]
+mod literal_run_tests {
+    use super::*;
+
+    #[test]
+    fn right_arrow_stays_a_smart_punctuation_node() {
+        let nodes = parse_inline_with_options("Step 1 -> done...", &Options::default());
+        assert!(nodes.iter().any(|node| matches!(
+            node,
+            InlineNode::SmartPunctuation(punctuation) if punctuation.kind == "rightwards_arrow"
+        )));
+        assert!(nodes.iter().any(|node| matches!(
+            node,
+            InlineNode::SmartPunctuation(punctuation) if punctuation.kind == "ellipsis"
+        )));
+    }
+
+    #[test]
+    fn punctuation_and_unicode_keep_source_positions() {
+        let source = "Café term: text! carve#529 a@b (c) (tm) --flag --> -> ....";
+        let document = parse_with_options(source, &Options::default().with_positions(true));
+        let BlockNode::Paragraph(paragraph) = &document.children[0] else {
+            panic!("expected a paragraph");
+        };
+        assert!(paragraph.children.iter().any(|node| matches!(
+            node,
+            InlineNode::Text(text) if text.value.contains("--flag")
+        )));
+        assert!(paragraph.children.iter().any(|node| matches!(
+            node,
+            InlineNode::Text(text) if text.value.contains("carve#529 a@b")
+        )));
+        let kinds: Vec<&str> = paragraph
+            .children
+            .iter()
+            .filter_map(|node| match node {
+                InlineNode::SmartPunctuation(punctuation) => {
+                    let pos = punctuation
+                        .pos
+                        .as_ref()
+                        .expect("smart punctuation position");
+                    let authored: String = source
+                        .chars()
+                        .skip(pos.start_offset)
+                        .take(pos.end_offset - pos.start_offset)
+                        .collect();
+                    assert_eq!(authored, punctuation.value);
+                    Some(punctuation.kind.as_str())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                "copyright",
+                "trademark",
+                "rightwards_arrow",
+                "rightwards_arrow",
+                "ellipsis"
+            ]
+        );
+    }
+
+    #[test]
+    fn construct_openers_still_leave_the_literal_run() {
+        let options = Options::default();
+        assert!(parse_inline_with_options("a != b", &options)
+            .iter()
+            .any(|node| matches!(node, InlineNode::SmartPunctuation(p) if p.kind == "not_equal")));
+        assert!(parse_inline_with_options("x!`lit`", &options)
+            .iter()
+            .any(|node| matches!(node, InlineNode::LiteralInline(_))));
+        assert!(parse_inline_with_options("x ![a](b)", &options)
+            .iter()
+            .any(|node| matches!(node, InlineNode::Image(_))));
+        assert!(parse_inline_with_options("x #tag", &options)
+            .iter()
+            .any(|node| matches!(node, InlineNode::Tag(_))));
+        assert!(parse_inline_with_options("x @user", &options)
+            .iter()
+            .any(|node| matches!(node, InlineNode::Mention(_))));
+        assert!(parse_caption_inline_with_options("Figure#", &options, true)
+            .iter()
+            .any(|node| matches!(node, InlineNode::CaptionNumber(_))));
+    }
+
+    #[test]
+    fn paired_asterisks_join_literal_prose_without_hiding_strong_markup() {
+        let options = Options::default();
+        let nodes = parse_inline_with_options("a **Core syntax** b", &options);
+        assert!(
+            matches!(nodes.as_slice(), [InlineNode::Text(text)] if text.value == "a **Core syntax** b")
+        );
+
+        let nodes = parse_inline_with_options("*x**", &options);
+        assert!(
+            matches!(nodes.first(), Some(InlineNode::Emphasis(emphasis)) if emphasis.kind == EmphasisKind::Strong)
+        );
+        assert!(matches!(nodes.last(), Some(InlineNode::Text(text)) if text.value == "*"));
+    }
 }

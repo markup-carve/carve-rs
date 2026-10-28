@@ -1,0 +1,773 @@
+use carve::{parse_experimental_event_blocks, parse_with_options, render_html, to_json, Options};
+use std::fs;
+use std::path::Path;
+
+fn parse_standard(source: &str) -> carve::Document {
+    parse_with_options(source, &Options::default())
+}
+
+#[test]
+fn exact_corpus_ast_and_html() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    let mut admitted = 0usize;
+    let mut total = 0usize;
+    for entry in fs::read_dir(corpus).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("crv") {
+            continue;
+        }
+        let source = fs::read_to_string(&path).unwrap();
+        let baseline = parse_standard(&source);
+        let (candidate, used) = parse_experimental_event_blocks(&source);
+        admitted += usize::from(used);
+        total += 1;
+        assert_eq!(
+            to_json(&candidate),
+            to_json(&baseline),
+            "{}",
+            path.display()
+        );
+        assert_eq!(
+            render_html(&candidate),
+            render_html(&baseline),
+            "{}",
+            path.display()
+        );
+    }
+    eprintln!("event parser admitted {admitted}/{total} corpus files");
+    assert!(total > 3000, "the spec corpus must be available");
+    assert!(admitted > 100, "the event route must exercise corpus files");
+}
+
+#[test]
+fn direct_route_admits_prose_and_uses_existing_list_reader() {
+    let prose = "# Heading\n\nA paragraph with *strong* text.\n";
+    let (doc, admitted) = parse_experimental_event_blocks(prose);
+    assert!(admitted);
+    assert_eq!(to_json(&doc), to_json(&parse_standard(prose)));
+
+    let list = "- item\n";
+    let (doc, admitted) = parse_experimental_event_blocks(list);
+    assert!(admitted);
+    assert_eq!(to_json(&doc), to_json(&parse_standard(list)));
+}
+
+#[test]
+fn hash_prose_does_not_turn_a_list_heading_into_a_paragraph() {
+    let prose = "#notaheading\n";
+    let (actual, admitted) = parse_experimental_event_blocks(prose);
+    assert!(admitted);
+    assert_eq!(to_json(&actual), to_json(&parse_standard(prose)));
+
+    for heading_in_item in [
+        "- # In an item\n\nSee [In an item][].\n",
+        "- ## In an item\n\nSee [In an item][].\n",
+    ] {
+        let (actual, _) = parse_experimental_event_blocks(heading_in_item);
+        let expected = parse_standard(heading_in_item);
+        assert_eq!(to_json(&actual), to_json(&expected));
+        assert_eq!(render_html(&actual), render_html(&expected));
+    }
+}
+
+#[test]
+fn isolated_root_link_definitions_keep_public_nodes_and_references() {
+    for source in [
+        "A [link][r].\n\n[r]: /u\n",
+        "[r]: /u\n\n# Heading\n\nA [link][r].\n",
+        "[r]: /u\n[s]: /v\n\nA [link][r] and [other][s].\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+    for source in [
+        "[r]: /first\n[r]: /second\n\nA [link][r].\n",
+        "```\n[r]: /u\n",
+        "A [r]: text in a paragraph.\n\n[s]: /u\n",
+    ] {
+        let (actual, _) = parse_experimental_event_blocks(source);
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
+fn normalized_source_keeps_direct_ast_html_and_original_byte_length() {
+    for ending in ["\n", "\r\n", "\r"] {
+        for bom in ["", "\u{feff}"] {
+            let source = format!("{bom}# Heading{ending}{ending}Plain *strong* text.{ending}");
+            let expected = parse_standard(&source);
+            let (actual, admitted) = parse_experimental_event_blocks(&source);
+            assert!(admitted, "line ending {ending:?}, BOM {}", !bom.is_empty());
+            assert_eq!(actual.source_len, source.len());
+            assert_eq!(to_json(&actual), to_json(&expected));
+            assert_eq!(render_html(&actual), render_html(&expected));
+        }
+        let source = format!("A\0B{ending}");
+        let expected = parse_standard(&source);
+        let (actual, admitted) = parse_experimental_event_blocks(&source);
+        assert!(admitted, "NUL with line ending {ending:?}");
+        assert_eq!(actual.source_len, source.len());
+        assert_eq!(to_json(&actual), to_json(&expected));
+        assert_eq!(render_html(&actual), render_html(&expected));
+    }
+}
+
+#[test]
+fn mixed_route_handles_root_quote_without_changing_output() {
+    let source = "# Heading\n\n> quoted *text*\n> second line\n\nAfter.\n";
+    let (actual, admitted) = parse_experimental_event_blocks(source);
+    assert!(admitted);
+    let expected = parse_standard(source);
+    assert_eq!(to_json(&actual), to_json(&expected));
+    assert_eq!(render_html(&actual), render_html(&expected));
+}
+
+#[test]
+fn mixed_route_admits_root_table_without_changing_output() {
+    let source = "# Heading\n\n|= Fruit |= Price |\n| Apple | $1 |\n^ Fruit prices\n\nAfter.\n";
+    let (actual, admitted) = parse_experimental_event_blocks(source);
+    assert!(admitted);
+    let expected = parse_standard(source);
+    assert_eq!(to_json(&actual), to_json(&expected));
+    assert_eq!(render_html(&actual), render_html(&expected));
+}
+
+#[test]
+fn mixed_route_admits_root_sigil_blocks_without_changing_output() {
+    for source in [
+        "::: |\none\ntwo\n:::\n",
+        "::: \\\none\ntwo\n:::\n",
+        "::: >\nquoted\n:::\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
+fn mixed_route_admits_nested_list_markers_when_reader_owns_them() {
+    for source in [
+        "- outer\n  - inner\n",
+        "# Heading\n\n- outer\n  - inner\n\nAfter.\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
+fn deep_plain_lists_keep_sibling_ownership_and_exact_output() {
+    for source in [
+        "- parent\n  - child\n    - one\n    - two\n  - next child\n    - three\n- next parent\n  - last child\n    - four\n",
+        "1. parent\n   1. child\n      1. one\n      2. two\n   2. next child\n      1. three\n",
+        "- parent\n  - child\n    - one\n\nafter\n",
+        "- parent\n  - child\n    - one\nlazy\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+    for root_ordered in [false, true] {
+        for child_ordered in [false, true] {
+            for grand_ordered in [false, true] {
+                let marker = |ordered: bool, number: usize| {
+                    if ordered {
+                        format!("{number}. ")
+                    } else {
+                        "- ".to_owned()
+                    }
+                };
+                let root = marker(root_ordered, 1);
+                let child = marker(child_ordered, 1);
+                let grand = marker(grand_ordered, 1);
+                let source = format!(
+                    "{root}parent\n{root_indent}{child}child\n{grand_indent}{grand}one *emphasis*\n{grand_indent}{grand_next}two\n{root_indent}{child_next}next child\n{grand_indent}{grand}three\n{root_next}next parent\n",
+                    root_indent = " ".repeat(root.len()),
+                    grand_indent = " ".repeat(root.len() + child.len()),
+                    grand_next = marker(grand_ordered, 2),
+                    child_next = marker(child_ordered, 2),
+                    root_next = marker(root_ordered, 2),
+                );
+                let (actual, admitted) = parse_experimental_event_blocks(&source);
+                assert!(admitted, "{source:?}");
+                let expected = parse_standard(&source);
+                assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+                assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn event_route_resolves_collapsed_heading_references() {
+    for source in [
+        "# a :smile: b\n\n[a b][]\n",
+        "[Later][]\n\n# Later\n",
+        "# Same\n\n# Same\n\n[Same][]\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
+fn quote_marker_and_raw_fence_boundaries_keep_exact_output() {
+    for source in [
+        "> - a\n>+\n> tail\n",
+        "> ```=html\n> ",
+        "> ```=html\n> \n",
+        "> a\n\n^ caption\n",
+        "> > inner\n",
+        "> - item\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert_eq!(admitted, source != "> ```=html\n> ", "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
+fn root_colon_containers_keep_exact_output_on_event_route() {
+    for source in [
+        "::: note\nA paragraph.\n:::\n",
+        "::: note\n> quoted\n:::\n",
+        "::: figure\nA paragraph.\n:::\n",
+        "::: note\n::: note\nPlain paragraph.\n:::\n:::\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
+fn marked_quote_edges_keep_exact_output() {
+    for source in ["> # H\n> text\n", ">\n>\n", "> a\n\n> b", "> plain"] {
+        let (actual, _) = parse_experimental_event_blocks(source);
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
+fn bounded_lazy_quote_paragraphs_keep_exact_output() {
+    for marked_lines in [1, 2] {
+        for lazy_lines in [1, 2] {
+            for suffix in ["", "\nAfter.\n"] {
+                let mut source = String::new();
+                for _ in 0..marked_lines {
+                    source.push_str("> marked text\n");
+                }
+                for _ in 0..lazy_lines {
+                    source.push_str("plain continuation\n");
+                }
+                source.push_str(suffix);
+                let (actual, admitted) = parse_experimental_event_blocks(&source);
+                assert!(admitted, "{source:?}");
+                let expected = parse_standard(&source);
+                assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+                assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn punctuation_led_paragraphs_and_task_lists_keep_exact_nodes() {
+    let prose = "/italic/\n\n_underline_\n\n[link](target)\n\n![image](target)\n";
+    let (actual, admitted) = parse_experimental_event_blocks(prose);
+    assert!(admitted);
+    assert_eq!(to_json(&actual), to_json(&parse_standard(prose)));
+    assert_eq!(render_html(&actual), render_html(&parse_standard(prose)));
+
+    let task_list = "- [ ] > q\n- [x] # h\n- [ ] ---\n- # H\n";
+    let (actual, _) = parse_experimental_event_blocks(task_list);
+    assert_eq!(to_json(&actual), to_json(&parse_standard(task_list)));
+    assert_eq!(
+        render_html(&actual),
+        render_html(&parse_standard(task_list))
+    );
+
+    for first in ["/italic/", "_underline_", "~strike~", "=mark="] {
+        let source = format!("# Heading\n\n{first}\nnext line\n");
+        let (actual, admitted) = parse_experimental_event_blocks(&source);
+        assert!(admitted, "{first}");
+        assert_eq!(
+            to_json(&actual),
+            to_json(&parse_standard(&source)),
+            "{first}"
+        );
+        assert_eq!(
+            render_html(&actual),
+            render_html(&parse_standard(&source)),
+            "{first}"
+        );
+    }
+
+    for next in ["[link](target)", "![image](target)", "\\*escaped"] {
+        let source = format!("first line\n{next}\n");
+        let (actual, admitted) = parse_experimental_event_blocks(&source);
+        assert!(admitted, "{next}");
+        assert_eq!(
+            to_json(&actual),
+            to_json(&parse_standard(&source)),
+            "{next}"
+        );
+        assert_eq!(
+            render_html(&actual),
+            render_html(&parse_standard(&source)),
+            "{next}"
+        );
+    }
+
+    for item in [
+        "/italic/",
+        "_underline_",
+        "~strike~",
+        "=mark=",
+        "\\*escaped",
+        "![image](target)",
+    ] {
+        let source = format!("- {item}\n- next\n");
+        let (actual, admitted) = parse_experimental_event_blocks(&source);
+        assert!(admitted, "{item}");
+        assert_eq!(
+            to_json(&actual),
+            to_json(&parse_standard(&source)),
+            "{item}"
+        );
+        assert_eq!(
+            render_html(&actual),
+            render_html(&parse_standard(&source)),
+            "{item}"
+        );
+    }
+}
+
+#[test]
+fn invalid_brace_lines_remain_paragraphs_in_the_event_route() {
+    for source in ["{_x_}\n", "{_x_} y\n", "{+⃣x+} {+y+}\n"] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+
+    let valid_attrs = "{.class}\n# Heading\n";
+    let (actual, admitted) = parse_experimental_event_blocks(valid_attrs);
+    assert!(!admitted);
+    assert_eq!(to_json(&actual), to_json(&parse_standard(valid_attrs)));
+}
+
+#[test]
+fn two_level_tight_lists_keep_exact_ast_and_html() {
+    for parent in ["-", "*", "1."] {
+        for child in ["-", "*", "1."] {
+            for parent_count in [1, 2] {
+                for child_count in [1, 2] {
+                    for continuation_lines in [0, 1, 2] {
+                        let indent = if parent == "1." { "   " } else { "  " };
+                        let mut source = String::new();
+                        for _ in 0..parent_count {
+                            source.push_str(&format!("{parent} outer\n"));
+                            for _ in 0..continuation_lines {
+                                source.push_str(&format!("{indent}continued\n"));
+                            }
+                            for index in 0..child_count {
+                                let marker = if child == "1." {
+                                    format!("{}.", index + 1)
+                                } else {
+                                    child.to_string()
+                                };
+                                source.push_str(&format!("{indent}{marker} inner\n"));
+                            }
+                        }
+                        let (actual, admitted) = parse_experimental_event_blocks(&source);
+                        assert!(admitted, "{source:?}");
+                        let expected = parse_standard(&source);
+                        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+                        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn nested_list_keeps_indented_blocks_after_a_blank() {
+    for source in [
+        "- a\n  - b\n\n   > q\n",
+        "- outer\n  - head\n\n    ```\n    a\n  ```\n\n  tail\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
+fn generated_prose_keeps_exact_ast_and_html() {
+    let fragments = [
+        "plain words",
+        "*strong*",
+        "/italic/",
+        "[link](https://example.org)",
+        "`code`",
+        "a & b",
+        "(c) (r) (tm)",
+        "a\\*b",
+        "{=mark=}",
+        "--",
+        "...",
+        "\"quote\"",
+    ];
+    let mut state = 0x9e37_79b9_u32;
+    let mut admitted = 0usize;
+    for case in 0..1024 {
+        let mut source = String::new();
+        if case % 3 == 0 {
+            source.push_str("# Generated heading\n\n");
+        }
+        for line in 0..1 + case % 4 {
+            source.push('A');
+            for _ in 0..1 + (case + line) % 5 {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                source.push(' ');
+                source.push_str(fragments[(state as usize) % fragments.len()]);
+            }
+            source.push('\n');
+        }
+        if case % 2 == 0 {
+            source.push('\n');
+        }
+        let expected = parse_standard(&source);
+        let (actual, used) = parse_experimental_event_blocks(&source);
+        admitted += usize::from(used);
+        assert_eq!(
+            to_json(&actual),
+            to_json(&expected),
+            "case {case}: {source:?}"
+        );
+        assert_eq!(
+            render_html(&actual),
+            render_html(&expected),
+            "case {case}: {source:?}"
+        );
+    }
+    assert!(
+        admitted > 0,
+        "generated cases must exercise the event route"
+    );
+}
+
+#[test]
+fn long_literal_lexer_keeps_ast_and_html_parity() {
+    let safe = [
+        "plain words and punctuation, one: two; three? yes!",
+        "Unicode text: café, Zürich, 日本語 and “curly quotes”",
+        "carve#529 and foo:bar are ordinary prose here",
+        "safe hyphenated words and a & b",
+    ];
+    let unsafe_cases = [
+        "an ellipsis ... must reach the existing inline parser",
+        "a dash -- and (c) must reach the existing inline parser",
+        "*strong* and `code` must reach the existing inline parser",
+    ];
+    for case in 0..256 {
+        let mut source = String::from("# Heading\n\nA long paragraph starts here. ");
+        for index in 0..8 {
+            source.push_str(safe[(case + index * 3) % safe.len()]);
+            source.push(' ');
+        }
+        if case % 2 == 1 {
+            source.push_str(unsafe_cases[(case / 2) % unsafe_cases.len()]);
+        }
+        source.push('\n');
+        let expected = parse_standard(&source);
+        let (actual, admitted) = parse_experimental_event_blocks(&source);
+        assert!(admitted, "case {case}");
+        assert_eq!(to_json(&actual), to_json(&expected), "case {case}");
+        assert_eq!(render_html(&actual), render_html(&expected), "case {case}");
+    }
+}
+
+#[test]
+fn authored_documents_match_when_available() {
+    let Some(root) = std::env::var_os("CARVE_DOCS_ROOT") else {
+        return;
+    };
+    let root = Path::new(&root);
+    for relative in ["terms.md", "case-study/parsing-ast.md", "spec-history.md"] {
+        let path = root.join(relative);
+        let source = fs::read_to_string(&path).unwrap();
+        let baseline = parse_standard(&source);
+        let (candidate, used) = parse_experimental_event_blocks(&source);
+        assert!(used, "{} did not enter the event route", path.display());
+        assert_eq!(
+            to_json(&candidate),
+            to_json(&baseline),
+            "{}",
+            path.display()
+        );
+        assert_eq!(
+            render_html(&candidate),
+            render_html(&baseline),
+            "{}",
+            path.display()
+        );
+    }
+}
+
+#[test]
+fn generated_flat_lists_keep_exact_ast_and_html() {
+    let fragments = [
+        "plain",
+        "*strong*",
+        "`code`",
+        "[link](https://example.org)",
+        "a & b",
+    ];
+    let mut state = 0x51ed_4d13_u32;
+    for case in 0..512 {
+        let ordered = case % 2 == 0;
+        let mut source = String::from("# List\n\n");
+        for item in 0..1 + case % 7 {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let text = fragments[(state as usize) % fragments.len()];
+            if ordered {
+                source.push_str(&format!("{}. {text}\n", item + 1));
+            } else {
+                source.push_str(&format!("- {text}\n"));
+            }
+            if case % 3 == 0 && item % 2 == 0 {
+                source.push_str(if ordered {
+                    "   wrapped words\n"
+                } else {
+                    "  wrapped words\n"
+                });
+            }
+        }
+        source.push_str("\nAfter the list.\n");
+        let expected = parse_standard(&source);
+        let (actual, used) = parse_experimental_event_blocks(&source);
+        assert!(used, "case {case} declined");
+        assert_eq!(
+            to_json(&actual),
+            to_json(&expected),
+            "case {case}: {source:?}"
+        );
+        assert_eq!(
+            render_html(&actual),
+            render_html(&expected),
+            "case {case}: {source:?}"
+        );
+    }
+}
+
+#[test]
+fn generated_block_combinations_keep_exact_ast_and_html() {
+    let lines = [
+        "A plain sentence.",
+        "# Heading",
+        "- item",
+        "  wrapped",
+        "1. ordered",
+        ":: term",
+        ":  definition",
+        "```",
+        "code",
+        "~~~",
+        "---",
+        "> quote",
+        "+",
+        "[ref]: /url",
+        "A [ref][x]",
+        "::: note",
+        ":::",
+        "{.class}",
+        "A ...",
+        "**bold**",
+        "A {^note^}",
+        "![alt](x)",
+        "A paragraph",
+        "",
+        "",
+        "A /italic/",
+        "%% comment",
+        "  - nested",
+        "A ![alt](x)",
+        "A (c) and (tm)",
+    ];
+    let mut state = 0x7ab3_902d_u32;
+    let mut admitted = 0usize;
+    for case in 0..16_384 {
+        let mut source = String::new();
+        for _ in 0..2 + case % 9 {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            source.push_str(lines[(state as usize) % lines.len()]);
+            source.push('\n');
+        }
+        let expected = parse_standard(&source);
+        let (actual, used) = parse_experimental_event_blocks(&source);
+        admitted += usize::from(used);
+        assert_eq!(
+            to_json(&actual),
+            to_json(&expected),
+            "case {case}: {source:?}"
+        );
+        assert_eq!(
+            render_html(&actual),
+            render_html(&expected),
+            "case {case}: {source:?}"
+        );
+    }
+    assert!(
+        admitted > 100,
+        "generated blocks must exercise the event route"
+    );
+}
+
+#[test]
+fn blank_before_complex_list_item_keeps_one_list() {
+    for source in [
+        "- a\n\n- - -\n",
+        "- a\n\n-  b\n",
+        "1. a\n\n2.  b\n",
+        "- a\n\n- # h\n",
+    ] {
+        let expected = parse_standard(source);
+        let (actual, _) = parse_experimental_event_blocks(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
+fn marked_quote_fence_grid_matches_public_ast_and_html() {
+    let mut admitted = 0usize;
+    for (open, close) in [
+        ("```", "```"),
+        ("~~~", "~~~"),
+        ("```js", "```"),
+        ("```=html", "```"),
+    ] {
+        for payload in ["x", "", "one\n> two", "::: note"] {
+            for tail in ["", "\nOutside.\n", "> More.\n"] {
+                let source = format!("> {open}\n> {payload}\n> {close}\n{tail}");
+                let expected = parse_standard(&source);
+                let (actual, used) = parse_experimental_event_blocks(&source);
+                admitted += usize::from(used);
+                assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+                assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+            }
+        }
+    }
+    assert!(admitted > 0, "the grid must exercise the event route");
+}
+
+#[test]
+fn quoted_fence_reader_boundaries_match_public_ast_and_html() {
+    let mut admitted = 0usize;
+    for body in [
+        "> ```\n> x\n",
+        "> ```\n> x\n> ```\n",
+        "> ~~~js\n> x\n> ~~~\n",
+        "> ::: |\n> ```\n> x\n",
+        "> text\n> ```\n",
+        "> - item\n> ```\n> x\n",
+        "> ::: note\n> ```\n> x\n> :::\n",
+        "> ```=html\n> x\n",
+    ] {
+        for tail in [
+            "after\n",
+            "> again\n",
+            "\nAfter.\n",
+            "- item\n",
+            ":  desc\n",
+            "+\n",
+            "# Heading\n",
+            "> ```\n",
+            "",
+        ] {
+            for prefix in ["", "Before.\n\n", "# Heading\n\n", "- item\n\n"] {
+                let source = format!("{prefix}{body}{tail}");
+                let expected = parse_standard(&source);
+                let (actual, used) = parse_experimental_event_blocks(&source);
+                admitted += usize::from(used);
+                assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+                assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+            }
+        }
+    }
+    assert!(admitted > 0, "the grid must exercise the event route");
+}
+
+#[test]
+fn root_continuation_owner_grid_matches_public_ast_and_html() {
+    for source in [
+        ":: term\n: A first paragraph,\n+\nthen a flush-left block joined with +.\n",
+        "> quoted\n+\n- item\n",
+    ] {
+        let expected = parse_standard(source);
+        let (actual, used) = parse_experimental_event_blocks(source);
+        assert!(used, "root continuation owner must enter the event route");
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+    let mut admitted = 0usize;
+    for prefix in [
+        "",
+        "Text\n",
+        "# Heading\n",
+        "- item\n",
+        "> quote\n",
+        ":: term\n:  desc\n",
+        "::: note\ninside\n:::\n",
+        "---\ntitle: T\n---\n\n",
+    ] {
+        for marker in ["+\n", " +\n", "- +\n", "> +\n", ":  +\n"] {
+            for follower in [
+                "```\na\n```\n",
+                "> quote\n",
+                "- item\n",
+                "Plain.\n",
+                "::: note\nbody\n:::\n",
+            ] {
+                for tail in ["", "\nAfter.\n", "\n:: next\n:  x\n"] {
+                    let source = format!("{prefix}{marker}{follower}{tail}");
+                    let expected = parse_standard(&source);
+                    let (actual, used) = parse_experimental_event_blocks(&source);
+                    admitted += usize::from(used);
+                    assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+                    assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+                }
+            }
+        }
+    }
+    assert!(admitted > 0, "the grid must exercise the event route");
+}
