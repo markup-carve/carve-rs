@@ -11,6 +11,53 @@ fn parse_standard(source: &str) -> carve::Document {
     parse_with_options(source, &Options::default())
 }
 
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn abbreviation_definitions_keep_editor_positions_and_source_lines() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    for name in [
+        "223-an-abbreviation-term-is-one-ascii-alphanumeric-word.crv",
+        "432-an-abbreviation-definition-outside-document-level-is-not-an-invisible-line-2.crv",
+    ] {
+        let source = fs::read_to_string(corpus.join(name)).unwrap();
+        for positions in [false, true] {
+            for source_lines in [false, true] {
+                let options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines);
+                let (candidate, used) =
+                    parse_experimental_event_blocks_with_options(&source, &options);
+                assert!(
+                    used,
+                    "{name}; positions={positions}; source_lines={source_lines}"
+                );
+                assert_eq!(candidate, parse_with_options(&source, &options), "{name}");
+            }
+        }
+    }
+    for source in [
+        "*[A]: alpha\n\nA.\n",
+        "A first.\n\n*[A]: alpha\n",
+        "*[A1]: alpha one\n\n# A1\n\n- A1\n",
+        "[^n]: note\n  *[A]: alpha\n  more\n\nA[^n]\n",
+        "\u{feff}*[A]: alpha\r\n\r\nA.\r\n",
+    ] {
+        for positions in [false, true] {
+            for source_lines in [false, true] {
+                let options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines);
+                let (candidate, _) = parse_experimental_event_blocks_with_options(source, &options);
+                assert_eq!(
+                    candidate,
+                    parse_with_options(source, &options),
+                    "{source:?}"
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn marker_column_colon_line_stays_in_open_list_paragraph() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
@@ -559,7 +606,7 @@ fn positioned_event_entry_matches_editor_spans() {
         ("[ref]: /target\n\nSee [ref][].\n", true),
         ("\u{feff}[ref]: /target\r\n\r\nSee [ref][].\r\n", true),
         ("A literal ]: token.\n", true),
-        ("*[dl]: definition list\n\nA dl.\n", false),
+        ("*[dl]: definition list\n\nA dl.\n", true),
         ("[^note]: footnote\n\nSee [^note].\n", true),
         ("[^note]: intro\n  > quote\n\nSee [^note].\n", true),
         ("\u{feff}[^note]: footnote\r\n\r\nSee [^note].\r\n", true),
@@ -907,18 +954,7 @@ fn option_aware_event_corpus_matches_full_document() {
         }
     }
     assert!(total > 3000);
-    assert!(
-        admitted[..3].iter().all(|count| *count > 2000),
-        "{admitted:?}"
-    );
-    assert!(
-        admitted[3..7].iter().all(|count| *count > 2500),
-        "{admitted:?}"
-    );
-    assert_eq!(admitted[7], admitted[0], "{admitted:?}");
-    assert_eq!(admitted[8], admitted[0], "{admitted:?}");
-    assert!(admitted[9] > 2200, "{admitted:?}");
-    assert!(admitted[10] > 2200, "{admitted:?}");
+    assert_eq!(admitted, [total; 11]);
 }
 
 #[test]

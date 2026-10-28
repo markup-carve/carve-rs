@@ -673,8 +673,10 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
         }
         let line = cur.peek().unwrap();
         if ABBREVIATIONS {
-            if let Some(definition) = detect_abbreviation_def(line) {
+            if let Some(mut definition) = detect_abbreviation_def(line) {
+                let at = cur.pos;
                 cur.consume();
+                definition.pos = span_of(&cur, at, cur.pos, options);
                 emit!(_block_source_line, BlockNode::AbbreviationDef(definition));
                 continue;
             }
@@ -3428,9 +3430,6 @@ fn parse_document_with_custom_options(
         (String::new(), BTreeMap::new())
     };
     let has_link_defs = !link_defs.is_empty();
-    if options.positions && may_have_abbrevs {
-        return None;
-    }
     let body_source = if has_link_defs {
         stripped_body.as_str()
     } else {
@@ -3458,7 +3457,23 @@ fn parse_document_with_custom_options(
         if options.positions {
             with_active_link_defs(link_defs, || {
                 if has_link_defs {
-                    parse_mixed_blocks_mapped::<true, false>(
+                    if may_have_abbrevs {
+                        parse_mixed_blocks_mapped::<true, true>(
+                            &lines,
+                            options,
+                            root_line_map.as_deref(),
+                            true,
+                        )
+                    } else {
+                        parse_mixed_blocks_mapped::<true, false>(
+                            &lines,
+                            options,
+                            root_line_map.as_deref(),
+                            true,
+                        )
+                    }
+                } else if may_have_abbrevs {
+                    parse_mixed_blocks_mapped::<false, true>(
                         &lines,
                         options,
                         root_line_map.as_deref(),
@@ -3652,9 +3667,7 @@ fn parse_document_with_footnotes_options(
             options,
         );
     }
-    if ((options.positions || options.source_lines) && may_have_abbrevs)
-        || (options.positions && mapped.col_map.iter().any(|column| *column != Some(0)))
-    {
+    if options.positions && mapped.col_map.iter().any(|column| *column != Some(0)) {
         return None;
     }
     let mut budget = probe_budget_for(mapped.source.len());
@@ -3678,7 +3691,21 @@ fn parse_document_with_footnotes_options(
         let _depth = DepthGuard::enter()?;
         let lines: Vec<&str> = mapped.source.lines().collect();
         let children = if options.positions || options.source_lines {
-            parse_mixed_blocks_mapped::<true, false>(&lines, options, Some(&mapped.line_map), true)?
+            if may_have_abbrevs {
+                parse_mixed_blocks_mapped::<true, true>(
+                    &lines,
+                    options,
+                    Some(&mapped.line_map),
+                    true,
+                )?
+            } else {
+                parse_mixed_blocks_mapped::<true, false>(
+                    &lines,
+                    options,
+                    Some(&mapped.line_map),
+                    true,
+                )?
+            }
         } else {
             parse_blocks(&lines, options).or_else(|| {
                 if may_have_abbrevs {
