@@ -210,6 +210,7 @@ fn simple_extension_route_preserves_hooks_and_single_invocation() {
     assert_eq!(admitted, total);
 }
 
+#[cfg(feature = "experimental-event-parser-options")]
 #[test]
 fn complex_extension_route_keeps_callback_order_and_one_parse() {
     use carve::{
