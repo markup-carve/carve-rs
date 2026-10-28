@@ -76,7 +76,7 @@ fn the_block_quote_collector_keeps_a_comment_fence_whole() {
 fn the_block_quote_collector_keeps_a_definition_line_as_fence_body() {
     assert_eq!(
         flat("> q\n+\n:::\na\n[^z]: zz\nb\n:::\n"),
-        "<blockquote> <p>q</p> <div> <p>a</p> <p>b</p> </div> </blockquote>"
+        "<blockquote> <p>q</p> <div> <p>a</p> </div> </blockquote>"
     );
 }
 

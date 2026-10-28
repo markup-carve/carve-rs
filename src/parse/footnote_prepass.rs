@@ -955,7 +955,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         let owner_column = state.body_indent.saturating_sub(2);
         if !self.nested
-            && (column >= owner_column || note.lazy_claim)
+            && column >= owner_column
             && !below_owner_interrupts(line, owner_column)
             && note.can_fold_below(line, self.options)
         {
@@ -1281,7 +1281,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             open.content_col = indent_columns(line);
             state.note_fence = Some(open);
         } else if (!state.open_term || indent_columns(trimmed) == 0)
-            && self.hoist_note_link_def(note_link_def_candidate(trimmed, note), *i)
+            && self.hoist_note_link_def(note_link_def_candidate(trimmed), *i)
         {
             // A BLOCK'S EXTENT ENDS AT A DEFINITION IT CAN
             // ONLY TAKE AS TEXT (carve#1918). Dropping the
@@ -1293,7 +1293,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             // renders nothing and stands at the definition's
             // own column, which is the signal the recursive
             // pass reads.
-            let candidate = note_link_def_candidate(trimmed, note);
+            let candidate = note_link_def_candidate(trimmed);
             note.push_with(
                 format!(
                     "{}{}",
@@ -1685,7 +1685,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let dedented = strip_leading_columns(line, host.note_floor);
         // A link definition at the note's own column is metadata,
         // even when an open marker-line paragraph precedes it.
-        let definition_text = note_link_def_candidate(&dedented, note);
+        let definition_text = note_link_def_candidate(&dedented);
         if indent_columns(line) >= host.note_floor
             && walk.admitted_fence.is_none()
             && walk.opacity.comment.is_none()
@@ -1913,24 +1913,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
     }
 }
 
-fn note_link_def_candidate<'a>(line: &'a str, note: &NoteBody) -> &'a str {
+fn note_link_def_candidate(line: &str) -> &str {
     let text = trim_ascii_start(line);
-    if !text.starts_with('>') {
-        return text;
-    }
-    // A definition after an open quote paragraph is paragraph text. A new
-    // quote, or one whose previous block ended, admits a definition at its
-    // content column just like any other note-body container.
-    let paragraph_open = note.lines.last().is_some_and(|previous| {
-        strip_blockquote_prefix(trim_ascii_start(previous)).is_some_and(|content| {
-            !is_blank_line(content) && !item_block_opener(trim_ascii_start(content))
-        })
-    });
-    if paragraph_open {
-        text
-    } else {
-        without_blockquote_prefixes(text)
-    }
+    // I5 consumes reference definitions at their quote content column,
+    // including when the preceding quote line is paragraph text.
+    without_blockquote_prefixes(text)
 }
 
 /// Does the note body end on a comment that is still open at line `at`?

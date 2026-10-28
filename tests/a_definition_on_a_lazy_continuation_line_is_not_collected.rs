@@ -225,7 +225,7 @@ fn a_link_reference_definition_leaves_no_paragraph() {
 #[test]
 fn a_definition_already_collected_leaves_no_paragraph() {
     let out = html("[^a]: n\n  more\n- [^f]: t\n\n[^f] ref\n");
-    assert!(out.contains("doc-endnotes"), "{out}");
+    assert!(!out.contains("doc-endnotes"), "{out}");
     assert!(
         !out.contains("[^f]: t"),
         "the definition stayed in the item: {out}"

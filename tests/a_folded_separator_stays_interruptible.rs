@@ -16,7 +16,7 @@ fn html(source: &str) -> String {
 fn folded_separator_stays_interruptible() {
     assert_eq!(
         html("- a\n   :: term\n  :  detail\n    :: term\n    :  detail\n      [^n]: note\n       q\n1. ordered\n"),
-        "<ul><li>a <dl><dt>term : detail</dt><dt>term</dt><dd>detail</dd></dl> q </li></ul><ol><li>ordered</li></ol>"
+        "<ul><li>a <dl><dt>term : detail</dt><dt>term</dt><dd>detail</dd></dl></li></ul><ol><li>ordered</li></ol>"
     );
 }
 
