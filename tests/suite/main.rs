@@ -293,6 +293,8 @@ mod a_colon_followed_by_only_whitespace_is_not_a_description;
 mod a_colon_name_before_a_bracket_node_keeps_its_escape;
 #[path = "../a_combined_closer_carries_its_attribute_block.rs"]
 mod a_combined_closer_carries_its_attribute_block;
+#[path = "../a_combined_closer_does_not_reach_inside_an_opaque_region.rs"]
+mod a_combined_closer_does_not_reach_inside_an_opaque_region;
 #[path = "../a_comment_at_the_minimum_column_is_not_ownership_evidence.rs"]
 mod a_comment_at_the_minimum_column_is_not_ownership_evidence;
 #[path = "../a_comment_below_a_sub_list_in_a_tight_item_keeps_its_column.rs"]

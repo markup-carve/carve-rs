@@ -1518,6 +1518,19 @@ impl OpenKinds {
         OPEN_KINDS.with(|kinds| kinds.get() & Self::bit(delim) != 0)
     }
 
+    /// Set while the run is combined `/*` content, nested bare spans included:
+    /// there a `%%` comment stops before a `*/` (`biSpComment`).
+    pub(in crate::parse) const COMBINED: u8 = 128;
+
+    /// Whether the run is the content of an emphasis span.
+    pub(in crate::parse) fn any_open() -> bool {
+        OPEN_KINDS.with(|kinds| kinds.get() != 0)
+    }
+
+    pub(in crate::parse) fn in_combined() -> bool {
+        OPEN_KINDS.with(|kinds| kinds.get() & Self::COMBINED != 0)
+    }
+
     /// Hand the open kinds plus `added` to the next `parse_inline_context`.
     pub(in crate::parse) fn pass_on(added: u8) {
         let open = OPEN_KINDS.with(|kinds| kinds.get());
@@ -1558,8 +1571,13 @@ pub(in crate::parse) fn find_seq(bytes: &[u8], from: usize, marker: &[u8]) -> Op
 }
 
 /// Number of distinct single-char emphasis delimiters (`/ * _ ~ =`), plus one
-/// catch-all slot. Sizes the per-`parse_inline_context` no-close memo.
-pub(in crate::parse) const EMPHASIS_DELIM_SLOTS: usize = 6;
+/// catch-all slot and one for the combined token. Sizes the
+/// per-`parse_inline_context` no-close memo.
+pub(in crate::parse) const EMPHASIS_DELIM_SLOTS: usize = 7;
+
+/// The closer kind of the combined `/*` token: `*/`. No UTF-8 byte is 0xFF,
+/// so it never equals a byte the walk reads.
+pub(in crate::parse) const COMBINED_CLOSER: u8 = 0xFF;
 
 #[inline]
 pub(in crate::parse) fn emphasis_delim_index(delim: u8) -> usize {
@@ -1569,6 +1587,7 @@ pub(in crate::parse) fn emphasis_delim_index(delim: u8) -> usize {
         b'_' => 2,
         b'~' => 3,
         b'=' => 4,
+        COMBINED_CLOSER => 6,
         _ => 5,
     }
 }
@@ -1582,47 +1601,26 @@ pub(in crate::parse) struct EmphasisMemo {
     failed: [Option<Vec<bool>>; EMPHASIS_DELIM_SLOTS],
     last_brace: Option<Option<usize>>,
     last_comment_close: Option<Option<usize>>,
-    bold_italic: Option<HashMap<Option<usize>, Vec<usize>>>,
     pub(in crate::parse) atomic: Option<std::rc::Rc<[(usize, usize)]>>,
 }
 
+/// Whether the `*/` at `at` can close the combined token (`biCloser`).
+pub(in crate::parse) fn combined_closer_at(bytes: &[u8], at: usize) -> bool {
+    !followed_by_grapheme_extender(bytes, at + 2)
+        && !bytes.get(at + 2).is_some_and(u8::is_ascii_alphanumeric)
+}
+
+/// The `*/` closing the combined `/*` token whose content starts at `start`.
 pub(in crate::parse) fn bold_italic_close(
     bytes: &[u8],
     start: usize,
-    opener_run: Option<usize>,
     memo: &mut EmphasisMemo,
     bounds: &InlineBounds<'_>,
 ) -> Option<usize> {
-    let closers = memo.bold_italic.get_or_insert_with(|| {
-        let mut index: HashMap<Option<usize>, Vec<usize>> = HashMap::new();
-        let mut close = 0;
-        while close + 1 < bytes.len() {
-            if bytes[close] == b'`' {
-                if let Some((_, consumed)) = parse_inline_code(bytes, close) {
-                    close += consumed;
-                    continue;
-                }
-            }
-            if bytes[close] == b'*'
-                && bytes[close + 1] == b'/'
-                && close > 0
-                && !is_carve_ws(bytes[close - 1])
-                && !followed_by_grapheme_extender(bytes, close + 2)
-                && !bytes.get(close + 2).is_some_and(u8::is_ascii_alphanumeric)
-            {
-                index
-                    .entry(bounds.bracket_run_at(close))
-                    .or_default()
-                    .push(close);
-            }
-            close += 1;
-        }
-        index
-    });
-    let positions = closers.get(&opener_run)?;
-    positions
-        .get(positions.partition_point(|&close| close <= start))
-        .copied()
+    // The content is never empty, so a `*/` right at `start` is content. A
+    // `*` opens nothing the walk skips, so starting past it is safe.
+    let from = start + usize::from(bytes.get(start..start + 2) == Some(b"*/"));
+    cached_find_emphasis_close(bytes, from, COMBINED_CLOSER, memo, bounds)
 }
 
 /// `find_emphasis_close` behind the failure memo, which bounds `_a](`×n and
@@ -1651,7 +1649,7 @@ pub(in crate::parse) fn cached_find_emphasis_close(
     );
     if close.is_none() {
         let regions = memo.atomic.as_deref().unwrap_or(&[]);
-        let opener_run = emphasis_run_at(bounds, regions, from);
+        let opener_run = emphasis_run_at(bounds, regions, from - 1);
         let marks = failed.get_or_insert_with(|| vec![false; bytes.len() + 1]);
         for j in visited {
             if emphasis_run_at(bounds, regions, j) == opener_run {
@@ -1753,13 +1751,13 @@ pub(in crate::parse) fn find_emphasis_close(
     failed: Option<&[bool]>,
     visited: &mut Vec<usize>,
 ) -> Option<usize> {
-    // The run the OPENER sits in. `from` is just past the delimiter, and a `[`
-    // is never one, so the delimiter's own run is the run at `from`.
+    // The run the OPENER sits in, read at the byte before `from`: the
+    // delimiter, or a `*` of the combined token. `from` itself may be a `]`.
     let regions = memo
         .atomic
         .get_or_insert_with(|| atomic_link_regions(bytes, bounds).into())
         .clone();
-    let opener_run = emphasis_run_at(bounds, &regions, from);
+    let opener_run = emphasis_run_at(bounds, &regions, from - 1);
     let opener_end = opener_run.map(|open| bounds.matches[open]);
     let mut attached = HashMap::new();
     let mut j = from;
@@ -1772,7 +1770,10 @@ pub(in crate::parse) fn find_emphasis_close(
         }
         visited.push(j);
         let ch = bytes[j];
-        if matches!(ch, b'/' | b'*' | b'_' | b'~' | b'=') && ch != delim && !OpenKinds::is_open(ch)
+        if matches!(ch, b'/' | b'*' | b'_' | b'~' | b'=')
+            && ch != delim
+            && !(delim == COMBINED_CLOSER && matches!(ch, b'/' | b'*'))
+            && !OpenKinds::is_open(ch)
         {
             if let Some((close, end)) = bounds.braced_closers(bytes).bare_attributes(bytes, j) {
                 attached.insert(close + 1, end);
@@ -1872,7 +1873,28 @@ pub(in crate::parse) fn find_emphasis_close(
             && bytes.get(j + 1) == Some(&b'%')
             && (j == run.map_or(0, |open| open + 1) || matches!(bytes[j - 1], b' ' | b'\n'))
         {
-            j = trailing_comment_end(bytes, j + 2, run.map(|open| bounds.matches[open]))?;
+            let run_close = run.map(|open| bounds.matches[open]);
+            if (delim == COMBINED_CLOSER || OpenKinds::in_combined())
+                && j > 0
+                && bytes[j - 1] == b' '
+            {
+                // Bounded by the candidate, so a long line is not rescanned.
+                let close = find_seq(bytes, j + 2, b"*/").filter(|&close| {
+                    trailing_comment_end(&bytes[..close], j + 2, run_close)
+                        .map_or(true, |end| end >= close)
+                });
+                if let Some(close) = close {
+                    // Comment text is raw, so a bracket in it opens no run.
+                    if delim == COMBINED_CLOSER && combined_closer_at(bytes, close) {
+                        return Some(close);
+                    }
+                    // The comment's own space is not one before the `*/`.
+                    j = close + usize::from(delim == COMBINED_CLOSER);
+                    continue;
+                }
+            }
+            let end = trailing_comment_end(bytes, j + 2, run_close);
+            j = end?;
             continue;
         }
         // A raw inline's format block is not a braced highlight: the main
@@ -1892,6 +1914,20 @@ pub(in crate::parse) fn find_emphasis_close(
                     .braced_closers(bytes)
                     .after_attributes(bytes, end + 1);
                 continue;
+            }
+        }
+        if delim == COMBINED_CLOSER
+            && ch == b'*'
+            && bytes.get(j + 1) == Some(&b'/')
+            && emphasis_run_at(bounds, &regions, j) == opener_run
+        {
+            // A space or tab before a `*/` ends the token unclosed
+            // (`spaceChar ~("*/")`); a line break does not.
+            if matches!(bytes[j - 1], b' ' | b'\t') {
+                return None;
+            }
+            if combined_closer_at(bytes, j) {
+                return Some(j);
             }
         }
         if ch == delim {
@@ -1950,7 +1986,20 @@ pub(in crate::parse) fn opens_a_link(
     if bytes.get(open + 1) == Some(&b'^') {
         return false;
     }
-    open == 0 || bytes[open - 1] != b'^'
+    // The `^` of a `{^` opener belongs to that opener, not to a note `^[`.
+    open == 0 || bytes[open - 1] != b'^' || braced_superscript_marker(bytes, open - 1)
+}
+
+fn braced_superscript_marker(bytes: &[u8], caret: usize) -> bool {
+    let Some(brace) = caret.checked_sub(1).filter(|&brace| bytes[brace] == b'{') else {
+        return false;
+    };
+    let escapes = bytes[..brace]
+        .iter()
+        .rev()
+        .take_while(|&&byte| byte == b'\\')
+        .count();
+    escapes % 2 == 0
 }
 
 /// The `)` closing the destination that opens at `open`, or `None` when what
