@@ -1711,6 +1711,8 @@ mod section_wrapping;
 mod security_attributes;
 #[path = "../semantic_span_sugar.rs"]
 mod semantic_span_sugar;
+#[path = "../shifted_separator_owner.rs"]
+mod shifted_separator_owner;
 #[path = "../short_caption_ast.rs"]
 mod short_caption_ast;
 #[path = "../smart_punctuation_nodes.rs"]

@@ -1581,7 +1581,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         // A new term/definition marker ends the definition (the outer loop
         // picks it up). An EMPTY term marker opens nothing, whatever
         // whitespace trails it, so it folds like a bare `::`.
-        is_definition_list_start(strip_lazy(line))
+        (!line.starts_with(LAZY) && is_definition_list_start(strip_lazy(line)))
             || (!line.starts_with(LAZY) && strip_definition_marker(strip_lazy(line)).is_some())
     }
 
@@ -1642,7 +1642,15 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         // does not start an interrupting block folds into the open
         // paragraph (the same rule list items and block quotes use, matching
         // djot). A block opener ends the definition.
-        let owned = if indent > 0 {
+        // The plain lazy frame carries no authored residual indentation.
+        let lazy_trim = if line.starts_with(LAZY) && !line.starts_with(LAZY_INDENT) {
+            strip_lazy(line).len() - trim_ascii_start(strip_lazy(line)).len()
+        } else {
+            0
+        };
+        let owned = if line.starts_with(LAZY) && !line.starts_with(LAZY_INDENT) {
+            format!("{LAZY}{}", trim_ascii_start(strip_lazy(line)))
+        } else if indent > 0 {
             trim_ascii_start(line).to_string()
         } else {
             line.to_string()
@@ -1702,6 +1710,8 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         let kept_col = if opens_retained_fence {
             cur.source_col(cur.pos)
                 .map(|col| col + (line.len() - keep.len()) as isize)
+        } else if lazy_trim > 0 {
+            cur.source_col(cur.pos).map(|col| col + lazy_trim as isize)
         } else if keep.starts_with(LAZY) && indent > 0 {
             cur.source_col(cur.pos).map(|col| col + indent as isize)
         } else {

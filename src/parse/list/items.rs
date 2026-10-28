@@ -158,10 +158,23 @@ struct MarkerSublist<'l> {
     content: &'l str,
     innermost_content: &'l str,
     inner_lead: &'l str,
+    ladder_columns: Vec<usize>,
     nested_content_col: usize,
     nested_definition_ended_paragraph: bool,
     nested_lead_is_continuation: bool,
     before_block: usize,
+}
+
+fn marker_ladder_columns(mut content: &str, initial: usize) -> Vec<usize> {
+    let mut columns = vec![initial];
+    while let Some(marker) = detect_list_marker_full(content) {
+        let Some(width) = marker_content_col(content) else {
+            break;
+        };
+        columns.push(columns.last().unwrap() + width);
+        content = marker.content;
+    }
+    columns
 }
 
 /// What a marker-line block lead left open once its body was collected.
@@ -1620,6 +1633,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             content,
             innermost_content,
             inner_lead,
+            ladder_columns: marker_ladder_columns(content, content_col),
             nested_content_col: content_col + tail_col,
             nested_definition_ended_paragraph,
             nested_lead_is_continuation: is_plus_marker(innermost_content),
@@ -1645,10 +1659,13 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 .peek()
                 .is_some_and(|line| indent_columns(line) >= content_col))
             && !(is_definition_list_start(inner_lead)
-                && self
-                    .cur
-                    .peek()
-                    .is_some_and(|line| indent_columns(line) < lead.nested_content_col))
+                && self.cur.peek().is_some_and(|line| {
+                    let indent = indent_columns(line);
+                    indent < lead.nested_content_col
+                        && !(innermost_marker_column(lead.content)
+                            .is_some_and(|marker| indent == content_col + marker)
+                            && strip_description_prefix(trim_ascii_start(line)).is_some())
+                }))
         {
             stream.append(collect_indented_block_mapped(
                 self.cur,
@@ -1683,6 +1700,13 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         mut ended_on_blank: bool,
     ) {
         let content_col = self.content_col;
+        // Read the prefix once, then inspect only newly appended lines so a
+        // long run of lazy continuations keeps linear work.
+        let mut term_lead =
+            is_definition_list_start(lead.inner_lead)
+                && !stream.source.lines().skip(1).any(|line| {
+                    !line.starts_with(LAZY) && strip_description_prefix(line).is_some()
+                });
         loop {
             if self.cur.peek().is_some_and(|line| {
                 marked_quote_at_ancestor_column(line, content_col, lead.nested_content_col)
@@ -1702,14 +1726,21 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             if lead.nested_definition_ended_paragraph {
                 break;
             }
+            let before = stream.source.len();
             if let Some(blank) = self.marker_sublist_comment(stream, lead) {
+                term_lead &= !stream.source[before..].lines().any(|line| {
+                    !line.starts_with(LAZY) && strip_description_prefix(line).is_some()
+                });
                 ended_on_blank = blank;
                 continue;
             }
-            match self.marker_sublist_lazy(stream, lead) {
+            match self.marker_sublist_lazy(stream, lead, term_lead) {
                 Some(blank) => ended_on_blank = blank,
                 None => break,
             }
+            term_lead &= !stream.source[before..]
+                .lines()
+                .any(|line| !line.starts_with(LAZY) && strip_description_prefix(line).is_some());
         }
     }
 
@@ -1773,26 +1804,18 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         &mut self,
         stream: &mut MappedSource,
         lead: &MarkerSublist<'l>,
+        term_lead: bool,
     ) -> Option<bool> {
         let (base_indent, content_col, options) =
             (self.base_indent, self.content_col, self.options);
         let nested_content_col = lead.nested_content_col;
-        let mut ladder_columns = vec![content_col];
-        let mut marker_line = lead.content;
-        while let Some(marker) = detect_list_marker_full(marker_line) {
-            let Some(width) = marker_content_col(marker_line) else {
-                break;
-            };
-            ladder_columns.push(ladder_columns.last().unwrap() + width);
-            marker_line = marker.content;
-        }
+        let ladder_columns = &lead.ladder_columns;
         let nested_marker_col = ladder_columns
             .get(ladder_columns.len().saturating_sub(2))
             .copied();
         let first_nested_content_col = ladder_columns.get(1).copied();
         let bare_continuation = self.last_item_bare_continuation;
         let cur = &mut *self.cur;
-        let term_lead = is_definition_list_start(lead.inner_lead);
         let lazy_column = if term_lead {
             nested_content_col
         } else {
