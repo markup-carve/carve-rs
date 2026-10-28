@@ -1883,6 +1883,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         if bare_continuation {
             return None;
         }
+        if reached_wrapped_attribute_tail(stream) {
+            return None;
+        }
         if detect_fence_open(lead.inner_lead).is_some()
             && cur.pos > 0
             && innermost_marker_column(lead.content).is_some_and(|column| {
