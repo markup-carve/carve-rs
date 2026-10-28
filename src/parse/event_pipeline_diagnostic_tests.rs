@@ -1,6 +1,32 @@
 #![cfg(feature = "experimental-event-parser-options")]
 
 use super::*;
+use crate::{BlockMatch, CarveExtension, MatcherContext};
+
+#[test]
+fn depth_exhaustion_declines_before_extension_callbacks() {
+    use std::cell::Cell;
+
+    struct Probe(Cell<usize>);
+    impl CarveExtension for Probe {
+        fn name(&self) -> &'static str {
+            "depth-probe"
+        }
+
+        fn match_block(&self, _: &[&str], _: usize, _: &MatcherContext<'_>) -> Option<BlockMatch> {
+            self.0.set(self.0.get() + 1);
+            None
+        }
+    }
+
+    let probe = Probe(Cell::new(0));
+    let options = Options::default().with_extension(&probe);
+    let _depth = DepthScope::set(MAX_NESTING_DEPTH);
+    for source in [":: t\n: ```\ncode\n```\n", "[^n]: text\n\nsee[^n]\n"] {
+        assert!(parse_document_with_options(source, &options).is_none());
+    }
+    assert_eq!(probe.0.get(), 0);
+}
 
 #[test]
 fn admitted_corpus_preserves_parser_diagnostics() {
@@ -66,6 +92,48 @@ fn admitted_corpus_preserves_parser_diagnostics() {
         "::: note\n{.inner}\n:::\n- a\n\n  {.item}\n",
         "::: note\n```\nx\n:::\n\n- a\n\n  ```\n  y\n",
     ] {
+        let ((expected, expected_unattached), expected_events) = collecting_lint_events(|| {
+            collecting_unattached_block_attrs(|| parse_with_options(source, &options))
+        });
+        let (((actual, admitted), actual_unattached), actual_events) =
+            collecting_lint_events(|| {
+                collecting_unattached_block_attrs(|| {
+                    parse_document_with_options(source, &options).unwrap()
+                })
+            });
+        assert!(admitted, "{source:?}");
+        assert_eq!(actual, expected, "{source:?}");
+        assert_eq!(actual_unattached, expected_unattached, "{source:?}");
+        assert_eq!(actual_events, expected_events, "{source:?}");
+    }
+}
+
+#[test]
+fn extension_blocks_preserve_parser_diagnostics() {
+    struct Marker;
+    impl CarveExtension for Marker {
+        fn name(&self) -> &'static str {
+            "diagnostic-marker"
+        }
+
+        fn match_block(
+            &self,
+            lines: &[&str],
+            start: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<BlockMatch> {
+            (lines.get(start) == Some(&"@@@")).then(|| BlockMatch {
+                node: BlockNode::Paragraph(Paragraph::default()),
+                lines_consumed: 1,
+            })
+        }
+    }
+
+    let marker = Marker;
+    let options = Options::default()
+        .with_positions(true)
+        .with_extension(&marker);
+    for source in ["{.x}\n@@@\n", "{.x}\n@@@\n\n{.y}\n", "@@@\n\n{.x}\n"] {
         let ((expected, expected_unattached), expected_events) = collecting_lint_events(|| {
             collecting_unattached_block_attrs(|| parse_with_options(source, &options))
         });
