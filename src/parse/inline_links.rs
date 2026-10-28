@@ -1349,8 +1349,7 @@ pub(in crate::parse) fn match_emphasis(
         if bytes.get(start).is_some_and(|b| !is_carve_ws(*b))
             && !followed_by_grapheme_extender(bytes, start)
         {
-            let opener_run = bounds.bracket_run_at(i);
-            if let Some(close) = bold_italic_close(bytes, start, opener_run, no_close, bounds) {
+            if let Some(close) = bold_italic_close(bytes, start, no_close, bounds) {
                 if NESTING_DEPTH.with(|depth| depth.get() >= MAX_NESTING_DEPTH) {
                     return Some((
                         InlineNode::text(
@@ -1360,7 +1359,9 @@ pub(in crate::parse) fn match_emphasis(
                     ));
                 }
                 let inner = std::str::from_utf8(&bytes[start..close]).ok()?;
-                OpenKinds::pass_on(OpenKinds::bit(b'/') | OpenKinds::bit(b'*'));
+                OpenKinds::pass_on(
+                    OpenKinds::bit(b'/') | OpenKinds::bit(b'*') | OpenKinds::COMBINED,
+                );
                 return Some((
                     InlineNode::Emphasis(Emphasis {
                         attrs: None,

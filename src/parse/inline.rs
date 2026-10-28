@@ -956,12 +956,17 @@ impl InlineRun<'_, '_> {
     /// whitespace runs to the end of the line and is dropped
     /// (`text %% comment`). A bracket run open here is the host: the marker
     /// needs no separator at its start, and takes nothing past its closer.
+    /// An emphasis span's content is not a host: a `%%` opening it is text.
     fn trailing_comment(&mut self, i: usize) -> Option<usize> {
         let bytes = self.bytes;
         let comment_run = self.bounds.bracket_run_at(i);
         let run_start = comment_run.map_or(0, |open| open + 1);
         if bytes.get(i + 1) != Some(&b'%')
-            || !(i == run_start || bytes[i - 1] == b' ' || bytes[i - 1] == b'\n')
+            || !(if i == run_start {
+                comment_run.is_some() || !OpenKinds::any_open()
+            } else {
+                matches!(bytes[i - 1], b' ' | b'\n')
+            })
         {
             return None;
         }
@@ -973,12 +978,15 @@ impl InlineRun<'_, '_> {
         while self.sink.buf.ends_with(' ') {
             self.sink.buf.to_mut().pop();
         }
-        let end = trailing_comment_end(
+        let mut end = trailing_comment_end(
             bytes,
             i + 2,
             comment_run.map(|open| self.bounds.matches[open]),
         )
         .unwrap_or(bytes.len());
+        if OpenKinds::in_combined() && i > 0 && bytes[i - 1] == b' ' {
+            end = find_seq(&bytes[..end], i + 2, b"*/").unwrap_or(end);
+        }
         // The comment renders to nothing, but it is PUBLISHED: PART 12 has a
         // `comment` node and carve-js and carve-php both emit one here, so a
         // tree that records what the author wrote cannot drop it
