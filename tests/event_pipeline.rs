@@ -3255,3 +3255,14 @@ fn footnote_like_lines_after_extraction_keep_link_semantics() {
     assert!(admitted);
     assert_eq!(candidate, parse_standard(&bracket_heavy));
 }
+
+#[test]
+fn marker_line_descriptions_with_comment_fences_use_the_standard_reader() {
+    for source in [
+        "1. :: t\n   : para\n  %%%\n  %%%\ntail\n",
+        "1. :: t\n   : para\n  %%%\n  c\n  %%%\n```\nx\n",
+    ] {
+        assert!(!parse_experimental_event_blocks(source).1);
+        assert!(!parse_experimental_event_blocks_with_options(source, &Options::default()).1);
+    }
+}

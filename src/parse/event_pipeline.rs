@@ -3296,7 +3296,7 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         None
     };
     let source = normalized.as_deref().unwrap_or(source);
-    if has_deep_quote_chain(source) {
+    if has_deep_quote_chain(source) || has_marker_description_comment_risk(source) {
         return None;
     }
     let may_have_link_defs = source.contains("]:");
@@ -3620,8 +3620,18 @@ fn has_deep_quote_chain(source: &str) -> bool {
     })
 }
 
+fn has_marker_description_comment_risk(source: &str) -> bool {
+    if !source.contains("%%%") || !source.contains("::") {
+        return false;
+    }
+    source.lines().any(|line| {
+        detect_list_marker_full(trim_ascii_start(line))
+            .is_some_and(|marker| marker.content.starts_with(":: "))
+    })
+}
+
 #[cfg(feature = "experimental-event-parser-options")]
-fn parse_document_with_custom_options(
+pub(super) fn parse_document_with_custom_options(
     source: &str,
     options: &Options<'_>,
     mode: ParseMode,
@@ -3637,7 +3647,7 @@ fn parse_document_with_custom_options(
         None
     };
     let source = normalized.as_deref().unwrap_or(source);
-    if has_deep_quote_chain(source) {
+    if has_deep_quote_chain(source) || has_marker_description_comment_risk(source) {
         return None;
     }
     let may_have_link_defs = source.contains("]:") || !options.extensions.is_empty();
