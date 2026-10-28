@@ -163,6 +163,7 @@ fn deeper_quote_chains_decline_before_using_the_event_stack() {
 #[test]
 fn event_owned_modes_preserve_extension_callbacks() {
     use crate::{BlockMatch, CarveExtension, InlineMatch, MatcherContext};
+    event_pipeline::NESTED_EXTENSION_EVENT_PARSES.with(|count| count.set(0));
 
     #[derive(Default)]
     struct Hook {
@@ -252,6 +253,7 @@ fn event_owned_modes_preserve_extension_callbacks() {
             }
         }
     }
+    event_pipeline::NESTED_EXTENSION_EVENT_PARSES.with(|count| assert!(count.get() > 0));
 }
 
 #[cfg(feature = "experimental-event-parser-options")]

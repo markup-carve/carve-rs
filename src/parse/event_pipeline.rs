@@ -6,6 +6,11 @@ const MIXED_QUOTE_DEPTH_LIMIT: usize = 32;
 const NESTED_EVENT_DEPTH_LIMIT: usize = 8;
 
 #[cfg(test)]
+thread_local! {
+    pub(super) static NESTED_EXTENSION_EVENT_PARSES: Cell<usize> = const { Cell::new(0) };
+}
+
+#[cfg(test)]
 #[path = "event_pipeline_diagnostic_tests.rs"]
 mod event_diagnostic_parity_tests;
 
@@ -582,6 +587,10 @@ pub(super) fn parse_nested_mapped_blocks(
         record_extents.then_some(&mut observed),
         Some(&mut nested_pending),
     )?;
+    #[cfg(test)]
+    if !options.extensions.is_empty() {
+        NESTED_EXTENSION_EVENT_PARSES.with(|count| count.set(count.get() + 1));
+    }
     if let Some(extents) = extents {
         extents.extend(observed);
     }

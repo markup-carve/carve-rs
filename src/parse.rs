@@ -1511,8 +1511,7 @@ fn parse_unpositioned_mapped_source(
     let mut extents = extents;
     #[cfg(feature = "experimental-event-parser-options")]
     if !at_document_level
-        && options.extensions.is_empty()
-        && nested_event_allowed()
+        && nested_event_allowed_for_source(source, options)
         && !needs_positioned_mapped_body(source)
     {
         if let Some(blocks) = event_pipeline::parse_nested_mapped_blocks(
@@ -1620,6 +1619,13 @@ fn nested_event_allowed() -> bool {
     true
 }
 
+#[cfg(feature = "experimental-event-parser-options")]
+fn nested_event_allowed_for_source(source: &MappedSource, options: &Options<'_>) -> bool {
+    // Colon and definition bodies can invoke extension callbacks while their
+    // parent worklist is pending. Keep the established callback order there.
+    nested_event_allowed() && (options.extensions.is_empty() || !source.source.contains("::"))
+}
+
 #[cfg(all(test, feature = "experimental-event-parser-options"))]
 struct StandardNestedReaderGuard(bool);
 
@@ -1650,7 +1656,7 @@ fn parse_positioned_mapped_source(
     #[cfg(feature = "experimental-event-parser-options")]
     let mut extents = extents;
     #[cfg(feature = "experimental-event-parser-options")]
-    if !at_document_level && options.extensions.is_empty() && nested_event_allowed() {
+    if !at_document_level && nested_event_allowed_for_source(source, options) {
         let mut event_extents = Vec::new();
         if let Some(blocks) = event_pipeline::parse_nested_mapped_blocks(
             source,
