@@ -209,6 +209,10 @@ name = "lint_context_batch"
 path = "tests/lint_context_batch.rs"
 
 [[test]]
+name = "multiline_image_caption"
+path = "tests/multiline_image_caption.rs"
+
+[[test]]
 name = "parser_owner_batch"
 path = "tests/parser_owner_batch.rs"
 
