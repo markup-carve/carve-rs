@@ -124,7 +124,7 @@ fn simple_extension_route_preserves_hooks_and_single_invocation() {
             source,
             &Options::default().with_extension(&hooks),
         );
-        assert!(!admitted, "{source:?}");
+        assert!(admitted, "{source:?}");
         assert_eq!(hooks.blocks.get(), 1, "{source:?}");
         assert_eq!(hooks.after.get(), 1, "{source:?}");
         let standard = Hooks::default();
@@ -171,11 +171,13 @@ fn simple_extension_route_preserves_hooks_and_single_invocation() {
     }
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     let mut admitted = 0;
+    let mut total = 0;
     for entry in fs::read_dir(corpus).unwrap() {
         let path = entry.unwrap().path();
         if path.extension() != Some(std::ffi::OsStr::new("crv")) {
             continue;
         }
+        total += 1;
         let source = fs::read_to_string(&path).unwrap();
         let event_hooks = Hooks::default();
         let (candidate, used) = parse_experimental_event_blocks_with_options(
@@ -205,7 +207,229 @@ fn simple_extension_route_preserves_hooks_and_single_invocation() {
             path.display()
         );
     }
-    assert!(admitted > 0);
+    assert_eq!(admitted, total);
+}
+
+#[test]
+fn complex_extension_route_keeps_callback_order_and_one_parse() {
+    use carve::{
+        BlockMatch, BlockNode, CarveExtension, CodeBlock, Document, InlineMatch, InlineNode,
+        MatcherContext, Paragraph,
+    };
+    use std::cell::{Cell, RefCell};
+
+    #[derive(Default)]
+    struct HookLog {
+        blocks: RefCell<Vec<String>>,
+        inlines: RefCell<Vec<(usize, String)>>,
+        after: Cell<usize>,
+    }
+
+    impl CarveExtension for HookLog {
+        fn name(&self) -> &'static str {
+            "event-complex-hook-test"
+        }
+
+        fn match_block(
+            &self,
+            lines: &[&str],
+            start: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<BlockMatch> {
+            let line = *lines.get(start)?;
+            self.blocks.borrow_mut().push(line.to_string());
+            match line {
+                "@@@" => Some(BlockMatch {
+                    node: BlockNode::Paragraph(Paragraph {
+                        children: vec![InlineNode::text("custom".to_string())],
+                        ..Default::default()
+                    }),
+                    lines_consumed: 1,
+                }),
+                "CODE" | "@@@ +" => Some(BlockMatch {
+                    node: BlockNode::CodeBlock(CodeBlock {
+                        attrs: None,
+                        lang: None,
+                        title: Some("Title".to_string()),
+                        label: None,
+                        content: "body\n".to_string(),
+                        pos: None,
+                    }),
+                    lines_consumed: 1,
+                }),
+                "![a](b) tail" => Some(BlockMatch {
+                    node: BlockNode::Paragraph(Paragraph::default()),
+                    lines_consumed: 1,
+                }),
+                _ => None,
+            }
+        }
+
+        fn match_inline(
+            &self,
+            text: &str,
+            pos: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<InlineMatch> {
+            let prefix = text.get(pos..).unwrap_or("").chars().take(8).collect();
+            self.inlines.borrow_mut().push((pos, prefix));
+            None
+        }
+
+        fn after_parse(&self, doc: Document) -> Document {
+            self.after.set(self.after.get() + 1);
+            doc
+        }
+    }
+
+    for source in [
+        "@@@\n\n    +\n",
+        "@@@\n\n- a\n\n+\np\n",
+        "@@@\n\n::: note\ntext\n:::\n",
+        "@@@\n\n> q\n",
+        "@@@\n\n![alt](x)\n",
+        ":: t\n: ```\ncode\n```\n",
+        "---\nx: \"[^a]\"\n---\n\n:: t\n: ```\ncode\n```\n",
+        "@@@\n\n$$`x` +\n",
+        "@@@\n\n@@@ +\n",
+        "@@@\n\n  - a +\n",
+        "{.x}\n@@@\n",
+        "> q\n\n@@@\n",
+        "%% c\n\n@@@\n",
+        "::: note\n@@@\n:::\n",
+        "[^n]: @@@\n\nsee[^n]\n",
+        "@@@\r\n\r\ntext\r\n",
+        "@@@\n\nplain",
+        "text\u{feff}\n\n[^n]: note\n\nsee[^n]\n",
+        "CODE\n",
+        "@@@ +\n",
+        "{.x}\nCODE\n",
+        "{.x}\n@@@ +\n",
+        "![a](b) tail\n",
+    ] {
+        let event_hooks = HookLog::default();
+        let options = Options::default().with_extension(&event_hooks);
+        let (actual, admitted) = parse_experimental_event_blocks_with_options(source, &options);
+        assert!(admitted, "{source:?}");
+        let standard_hooks = HookLog::default();
+        let expected =
+            parse_with_options(source, &Options::default().with_extension(&standard_hooks));
+        assert_eq!(actual, expected, "{source:?}");
+        assert_eq!(
+            *event_hooks.blocks.borrow(),
+            *standard_hooks.blocks.borrow(),
+            "{source:?}"
+        );
+        assert_eq!(
+            *event_hooks.inlines.borrow(),
+            *standard_hooks.inlines.borrow(),
+            "{source:?}"
+        );
+        assert_eq!(
+            event_hooks.after.get(),
+            standard_hooks.after.get(),
+            "{source:?}"
+        );
+    }
+
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    for entry in fs::read_dir(corpus).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension() != Some(std::ffi::OsStr::new("crv")) {
+            continue;
+        }
+        let source = fs::read_to_string(&path).unwrap();
+        for positions in [false, true] {
+            for source_lines in [false, true] {
+                let event_hooks = HookLog::default();
+                let event_options = Options::default()
+                    .with_extension(&event_hooks)
+                    .with_positions(positions)
+                    .with_source_lines(source_lines);
+                let (actual, admitted) =
+                    parse_experimental_event_blocks_with_options(&source, &event_options);
+                assert!(admitted, "{} {positions} {source_lines}", path.display());
+                let standard_hooks = HookLog::default();
+                let standard_options = Options::default()
+                    .with_extension(&standard_hooks)
+                    .with_positions(positions)
+                    .with_source_lines(source_lines);
+                let expected = parse_with_options(&source, &standard_options);
+                assert_eq!(
+                    actual,
+                    expected,
+                    "{} {positions} {source_lines}",
+                    path.display()
+                );
+                assert_eq!(
+                    *event_hooks.blocks.borrow(),
+                    *standard_hooks.blocks.borrow(),
+                    "{} {positions} {source_lines}",
+                    path.display()
+                );
+                assert_eq!(
+                    *event_hooks.inlines.borrow(),
+                    *standard_hooks.inlines.borrow(),
+                    "{} {positions} {source_lines}",
+                    path.display()
+                );
+                assert_eq!(
+                    event_hooks.after.get(),
+                    standard_hooks.after.get(),
+                    "{} {positions} {source_lines}",
+                    path.display()
+                );
+            }
+        }
+    }
+
+    let pieces = [
+        "@@@\n",
+        "- a\n",
+        "+\n",
+        "::: note\nx\n:::\n",
+        "![x](a)\n",
+        "[^n]: x\n",
+        "\n",
+        "```x\n",
+        "$$`x` +\n",
+        "@@@ +\n",
+        "  - a +\n",
+    ];
+    for first in pieces {
+        for second in pieces {
+            for third in pieces {
+                let source = format!("{first}{second}{third}");
+                let event_hooks = HookLog::default();
+                let (actual, admitted) = parse_experimental_event_blocks_with_options(
+                    &source,
+                    &Options::default().with_extension(&event_hooks),
+                );
+                assert!(admitted, "{source:?}");
+                let standard_hooks = HookLog::default();
+                let expected = parse_with_options(
+                    &source,
+                    &Options::default().with_extension(&standard_hooks),
+                );
+                assert_eq!(actual, expected, "{source:?}");
+                assert_eq!(
+                    *event_hooks.blocks.borrow(),
+                    *standard_hooks.blocks.borrow(),
+                    "{source:?}"
+                );
+                assert_eq!(
+                    *event_hooks.inlines.borrow(),
+                    *standard_hooks.inlines.borrow(),
+                    "{source:?}"
+                );
+                assert_eq!(
+                    event_hooks.after.get(),
+                    standard_hooks.after.get(),
+                    "{source:?}"
+                );
+            }
+        }
+    }
 }
 
 #[cfg(feature = "experimental-event-parser-options")]

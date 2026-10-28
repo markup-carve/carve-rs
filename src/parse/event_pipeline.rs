@@ -578,7 +578,7 @@ fn direct_root_list_read(
     line_map: Option<&[Option<usize>]>,
     indented: bool,
 ) -> Option<UnifiedListRead> {
-    if options.source_lines || options.positions {
+    if options.source_lines || options.positions || !options.extensions.is_empty() {
         return None;
     }
     let blank_then_indented = lines.get(start + 1).is_some_and(|line| is_blank_line(line))
@@ -639,6 +639,20 @@ fn read_local_list_like_line(
     let node = *parse_block(cur, options, &mut item_bodies)
         .expect("a list-like line is not a consumed comment");
     (node, item_bodies)
+}
+
+fn is_late_list_like_line(
+    cur: &LineCursor<'_>,
+    line: &str,
+    invalid_brace_line: bool,
+    root_indented_text: bool,
+) -> bool {
+    !may_start_plain_paragraph(line)
+        && !invalid_brace_line
+        && !root_indented_text
+        && (is_list_marker(trim_ascii_start(line))
+            || trim_ascii(line) == "+" && !refused_root_plus_at(cur, line)
+            || line.ends_with(" +"))
 }
 
 fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
@@ -762,11 +776,12 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             continue;
         }
         if is_definition_list_start(line) {
-            let direct = if options.source_lines || options.positions {
-                None
-            } else {
-                parse_simple_definition_list_prefix(lines, cur.pos, options, false)
-            };
+            let direct =
+                if options.source_lines || options.positions || !options.extensions.is_empty() {
+                    None
+                } else {
+                    parse_simple_definition_list_prefix(lines, cur.pos, options, false)
+                };
             if let Some((list, end)) = direct {
                 cur.pos = end;
                 emit!(_block_source_line, BlockNode::DefinitionList(list));
@@ -776,7 +791,11 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             continue;
         }
         if strip_blockquote_prefix(line).is_some() {
-            let direct = if options.source_lines || options.positions || line.contains("![") {
+            let direct = if options.source_lines
+                || options.positions
+                || !options.extensions.is_empty()
+                || line.contains("![")
+            {
                 None
             } else {
                 parse_simple_quote(lines, cur.pos, options)
@@ -851,9 +870,32 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                 continue;
             }
         }
-        if let Some(block) = try_extension_block(&mut cur, options) {
-            emit!(_block_source_line, block);
-            continue;
+        if line.starts_with(":::") {
+            if detect_line_block_open(line).is_some() {
+                emit!(_block_source_line, parse_line_block(&mut cur, options));
+                continue;
+            }
+            if detect_hardbreaks_block_open(line).is_some() {
+                emit!(
+                    _block_source_line,
+                    parse_hardbreaks_block(&mut cur, options)
+                );
+                continue;
+            }
+            if detect_quote_block_open(line).is_some() {
+                emit!(_block_source_line, parse_quote_block(&mut cur, options));
+                continue;
+            }
+            if detect_container_open(line).is_some() {
+                let (node, body) = open_container(&mut cur, options);
+                let index = out.len();
+                emit!(_block_source_line, *node);
+                pending_bodies.push(PendingBody {
+                    index,
+                    body: Body::Colon(body),
+                });
+                continue;
+            }
         }
         let root_indented_text = if line.starts_with(' ') {
             let content = trim_ascii_start(line);
@@ -865,13 +907,39 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
         } else {
             false
         };
-        if trim_ascii_start(line).starts_with("![") && detect_block_image(line).is_some() {
-            let mut item_bodies = Vec::new();
-            let block = parse_block(&mut cur, options, &mut item_bodies)?;
-            if !item_bodies.is_empty() {
-                return None;
+        let late_list_like =
+            is_late_list_like_line(&cur, line, invalid_brace_line, root_indented_text);
+        let late_image_like =
+            trim_ascii_start(line).starts_with("![") && detect_block_image(line).is_some();
+        let has_leading_attrs = leading_attrs.last().is_some_and(|(start, _, _)| {
+            out[*start..]
+                .iter()
+                .all(|node| matches!(node, BlockNode::AbbreviationDef(_) | BlockNode::Comment(_)))
+        });
+        if !late_list_like && !late_image_like {
+            if let Some(mut block) = try_extension_block(&mut cur, options) {
+                if !has_leading_attrs {
+                    promote_delimited_code(&mut block, &cur, current_block_start.get(), options);
+                    resolve_code_title(&mut block);
+                }
+                emit!(_block_source_line, block);
+                continue;
             }
+        }
+        if late_image_like {
+            let mut item_bodies = Vec::new();
+            let mut block = parse_block(&mut cur, options, &mut item_bodies)
+                .expect("image-like line is not a consumed comment");
+            if !has_leading_attrs {
+                promote_delimited_code(&mut block, &cur, current_block_start.get(), options);
+                resolve_code_title(&mut block);
+            }
+            let index = out.len();
             emit!(_block_source_line, *block);
+            pending_bodies.extend(item_bodies.into_iter().map(|body| PendingBody {
+                index,
+                body: Body::Item(body),
+            }));
             continue;
         }
         if line.starts_with("![")
@@ -886,44 +954,18 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             continue;
         }
         if !may_start_plain_paragraph(line) && !invalid_brace_line && !root_indented_text {
-            if line.starts_with(":::") {
-                if detect_line_block_open(line).is_some() {
-                    emit!(_block_source_line, parse_line_block(&mut cur, options));
-                    continue;
-                }
-                if detect_hardbreaks_block_open(line).is_some() {
-                    emit!(
-                        _block_source_line,
-                        parse_hardbreaks_block(&mut cur, options)
-                    );
-                    continue;
-                }
-                if detect_quote_block_open(line).is_some() {
-                    emit!(_block_source_line, parse_quote_block(&mut cur, options));
-                    continue;
-                }
-                if detect_container_open(line).is_some() {
-                    let (node, body) = open_container(&mut cur, options);
-                    let index = out.len();
-                    emit!(_block_source_line, *node);
-                    pending_bodies.push(PendingBody {
-                        index,
-                        body: Body::Colon(body),
-                    });
-                    continue;
-                }
-            }
-            if trim_ascii_start(line).starts_with("$$`") {
+            if !late_list_like && trim_ascii_start(line).starts_with("$$`") {
                 if let Some(equation) = parse_equation_block(&mut cur, options) {
                     emit!(_block_source_line, equation);
                     continue;
                 }
             }
-            if is_list_marker(trim_ascii_start(line))
-                || trim_ascii(line) == "+" && !refused_root_plus_at(&cur, line)
-                || line.ends_with(" +")
-            {
-                let (node, item_bodies) = read_local_list_like_line(&mut cur, options);
+            if late_list_like {
+                let (mut node, item_bodies) = read_local_list_like_line(&mut cur, options);
+                if !has_leading_attrs {
+                    promote_delimited_code(&mut node, &cur, current_block_start.get(), options);
+                    resolve_code_title(&mut node);
+                }
                 let index = out.len();
                 emit!(_block_source_line, node);
                 pending_bodies.extend(item_bodies.into_iter().map(|body| PendingBody {
@@ -2252,8 +2294,8 @@ fn apply_event_leading_attrs(
     options: &Options<'_>,
 ) {
     apply_attrs_to_block(block, attrs);
-    resolve_code_title(block);
     promote_delimited_code(block, cur, start_line, options);
+    resolve_code_title(block);
 }
 
 fn parse_simple_quote(
@@ -3416,16 +3458,6 @@ pub(super) fn parse_document_with_options(
     source: &str,
     options: &Options<'_>,
 ) -> Option<(Document, bool)> {
-    if !options.extensions.is_empty() {
-        let normalized = normalize_source(source);
-        if normalized.contains("[^")
-            || normalized
-                .lines()
-                .any(|line| !supported_line(line) || trim_ascii_end(line).ends_with(" +"))
-        {
-            return None;
-        }
-    }
     parse_document_with_custom_options(source, options)
 }
 
@@ -3434,6 +3466,9 @@ fn parse_document_with_custom_options(
     source: &str,
     options: &Options<'_>,
 ) -> Option<(Document, bool)> {
+    if NESTING_DEPTH.with(|depth| depth.get() >= MAX_NESTING_DEPTH) {
+        return None;
+    }
     let original_source = source;
     let source_len = source.len();
     let normalized = if needs_event_normalization(source) {
@@ -3445,10 +3480,18 @@ fn parse_document_with_custom_options(
         None
     };
     let source = normalized.as_deref().unwrap_or(source);
-    let may_have_link_defs = source.contains("]:");
+    let may_have_link_defs = source.contains("]:") || !options.extensions.is_empty();
     let may_have_abbrevs = source.contains("*[");
     if source.contains("[^") {
-        return parse_document_with_footnotes_options(source, original_source, source_len, options);
+        let (_, _, body) = split_frontmatter(source, options.positions);
+        if body.contains("[^") {
+            return parse_document_with_footnotes_options(
+                source,
+                original_source,
+                source_len,
+                options,
+            );
+        }
     }
     if has_fence_candidate_without_final_newline(source) {
         return None;
@@ -3552,9 +3595,10 @@ fn parse_document_with_custom_options(
         } else {
             (
                 parse_blocks_mapped(&lines, options, root_line_map.as_deref()).or_else(|| {
-                    if lines
-                        .first()
-                        .is_some_and(|line| is_definition_list_start(line))
+                    if options.extensions.is_empty()
+                        && lines
+                            .first()
+                            .is_some_and(|line| is_definition_list_start(line))
                     {
                         if let Some((list, _)) = parse_simple_definition_list(&lines, 0, options) {
                             return Some(vec![BlockNode::DefinitionList(list)]);
@@ -3673,8 +3717,11 @@ fn parse_document_with_footnotes_options(
     source_len: usize,
     options: &Options<'_>,
 ) -> Option<(Document, bool)> {
+    if NESTING_DEPTH.with(|depth| depth.get() >= MAX_NESTING_DEPTH) {
+        return None;
+    }
     let may_have_abbrevs = source.contains("*[");
-    if needs_event_normalization(source) || has_fence_candidate_without_final_newline(source) {
+    if has_fence_candidate_without_final_newline(source) {
         return None;
     }
     let _placeholders = PlaceholderGuard::install(pick_definition_placeholders(source));
@@ -3733,6 +3780,23 @@ fn parse_document_with_footnotes_options(
     let (parsed, link_defs, needs_late_resolution) = with_active_link_defs(link_defs, || {
         let _depth = DepthGuard::enter()?;
         let lines: Vec<&str> = mapped.source.lines().collect();
+        let footnote_defs = footnote_sources
+            .into_iter()
+            .map(|(label, note)| {
+                let children = if note.source.trim_end_matches([' ', '\t', '\n']) == "{empty}" {
+                    Vec::new()
+                } else {
+                    let lines: Vec<&str> = note.source.lines().collect();
+                    if options.positions || options.source_lines {
+                        parse_mapped_source(&note, options)
+                    } else {
+                        parse_blocks(&lines, options)
+                            .unwrap_or_else(|| parse_mapped_source(&note, options))
+                    }
+                };
+                (label, children)
+            })
+            .collect();
         let children = if options.positions || options.source_lines {
             if may_have_abbrevs {
                 parse_mixed_blocks_mapped::<true, true>(
@@ -3768,23 +3832,6 @@ fn parse_document_with_footnotes_options(
                 }
             })?
         };
-        let footnote_defs = footnote_sources
-            .into_iter()
-            .map(|(label, note)| {
-                let children = if note.source.trim_end_matches([' ', '\t', '\n']) == "{empty}" {
-                    Vec::new()
-                } else {
-                    let lines: Vec<&str> = note.source.lines().collect();
-                    if options.positions || options.source_lines {
-                        parse_mapped_source(&note, options)
-                    } else {
-                        parse_blocks(&lines, options)
-                            .unwrap_or_else(|| parse_mapped_source(&note, options))
-                    }
-                };
-                (label, children)
-            })
-            .collect();
         Some((children, footnote_defs))
     });
     let (children, footnote_defs) = parsed?;
@@ -3840,8 +3887,11 @@ fn parse_document_with_footnotes_options(
             promote_block_images(blocks, false, true);
         }
     }
+    for ext in &options.extensions {
+        doc = ext.after_parse(doc);
+    }
     coalesce_text_runs(&mut doc);
-    if source.contains("</#") {
+    if !options.extensions.is_empty() || source.contains("</#") {
         fill_crossref_hrefs(&mut doc, options.heading_id_options());
     }
     Some((doc, true))
