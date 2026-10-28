@@ -564,6 +564,37 @@ fn refused_marker_fence_list_plus(decision: continuation_marker::Decision) -> bo
         && decision.sibling_interrupt
 }
 
+fn direct_root_list_read(
+    lines: &[&str],
+    start: usize,
+    options: &Options<'_>,
+    line_map: Option<&[Option<usize>]>,
+    indented: bool,
+) -> Option<UnifiedListRead> {
+    if options.source_lines || options.positions {
+        return None;
+    }
+    if indented {
+        return parse_unified_list_mapped_with_exit(lines, start, options, line_map);
+    }
+    let blank_then_indented = lines.get(start + 1).is_some_and(|line| is_blank_line(line))
+        && lines[start + 2..]
+            .iter()
+            .find(|line| !is_blank_line(line))
+            .is_some_and(|line| line.starts_with([' ', '\t']));
+    if blank_then_indented {
+        parse_unified_list_mapped_with_exit(lines, start, options, line_map)
+    } else {
+        parse_simple_list(lines, start, options)
+            .map(|(list, end)| UnifiedListRead {
+                list,
+                end,
+                marker_fence_exit: false,
+            })
+            .or_else(|| parse_unified_list_mapped_with_exit(lines, start, options, line_map))
+    }
+}
+
 fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
     lines: &[&str],
     options: &Options<'_>,
@@ -647,29 +678,15 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             );
             continue;
         }
+        if line.starts_with(' ') && is_list_marker(trim_ascii_start(line)) {
+            let read = direct_root_list_read(lines, cur.pos, options, line_map, true)?;
+            cur.pos = read.end;
+            marker_fence_exit_at = read.marker_fence_exit.then_some(read.end);
+            emit!(_block_source_line, BlockNode::List(read.list));
+            continue;
+        }
         if is_list_marker(line) && !line.starts_with([' ', '\t']) {
-            let blank_then_indented = lines
-                .get(cur.pos + 1)
-                .is_some_and(|line| is_blank_line(line))
-                && lines[cur.pos + 2..]
-                    .iter()
-                    .find(|line| !is_blank_line(line))
-                    .is_some_and(|line| line.starts_with([' ', '\t']));
-            let direct = if options.source_lines || options.positions {
-                None
-            } else if blank_then_indented {
-                parse_unified_list_mapped_with_exit(lines, cur.pos, options, line_map)
-            } else {
-                parse_simple_list(lines, cur.pos, options)
-                    .map(|(list, end)| UnifiedListRead {
-                        list,
-                        end,
-                        marker_fence_exit: false,
-                    })
-                    .or_else(|| {
-                        parse_unified_list_mapped_with_exit(lines, cur.pos, options, line_map)
-                    })
-            };
+            let direct = direct_root_list_read(lines, cur.pos, options, line_map, false);
             if let Some(read) = direct {
                 cur.pos = read.end;
                 marker_fence_exit_at = read.marker_fence_exit.then_some(read.end);
@@ -1516,7 +1533,7 @@ fn parse_unified_list_mapped_with_exit(
                 close_unified_list_frame(&mut frames)?;
             }
             if frames.is_empty() {
-                if indent != 0 || kind == SimpleListKind::Ordered && ordinal != 1 {
+                if indent > 4 || kind == SimpleListKind::Ordered && ordinal != 1 {
                     return None;
                 }
                 frames.push(UnifiedListFrame {

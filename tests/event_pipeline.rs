@@ -24,6 +24,46 @@ fn refused_plus_after_list_fence_matches_full_document() {
 }
 
 #[test]
+fn indented_root_list_frames_match_full_document() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    for name in [
+        "05-lists-14.crv",
+        "277-a-below-column-marker-after-a-comment-where-no-paragraph-is-open.crv",
+        "277-a-below-column-marker-after-a-comment-where-no-paragraph-is-open-2.crv",
+        "290-adjacent-sibling-lists-survive-the-round-trip.crv",
+        "507-a-list-marker-in-a-raised-colon-container-folds-into-its-open-paragraph-16.crv",
+        "556-a-closed-block-leaves-no-frame-for-the-line-below-7.crv",
+    ] {
+        let source = fs::read_to_string(corpus.join(name)).unwrap();
+        let (candidate, used) = parse_experimental_event_blocks(&source);
+        assert!(used, "{name}");
+        assert_eq!(candidate, parse_standard(&source), "{name}");
+    }
+
+    for prefix in ["", "intro\n\n", "%% comment\n"] {
+        for indent in 0..=5 {
+            for marker in ["- a", "* a", "1. a"] {
+                for following in [
+                    "",
+                    "  - b\n",
+                    "\nnext\n",
+                    "\n> quote\n",
+                    "  continuation\n",
+                    "\n  - sibling\n",
+                ] {
+                    let source = format!("{prefix}{}{marker}\n{following}", " ".repeat(indent));
+                    let (candidate, used) = parse_experimental_event_blocks(&source);
+                    if prefix.is_empty() && following.is_empty() && indent <= 4 {
+                        assert!(used, "{source:?}");
+                    }
+                    assert_eq!(candidate, parse_standard(&source), "{source:?}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn list_marker_fence_boundary_matrix_matches_full_document() {
     for opener in ["```", "```=html", "~~~"] {
         for payload in ["", "  x\n", "  x\n  y\n", "  \n", "\n", "\n  x\n"] {
