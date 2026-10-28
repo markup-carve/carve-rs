@@ -1577,6 +1577,8 @@ mod nested_lazy_continuation;
 mod nested_marker_line_lazy_resume;
 #[path = "../nested_marker_term_lazy.rs"]
 mod nested_marker_term_lazy;
+#[path = "../nested_marker_term_sibling_columns.rs"]
+mod nested_marker_term_sibling_columns;
 #[path = "../nesting_cap_flattening.rs"]
 mod nesting_cap_flattening;
 #[path = "../no_nested_links.rs"]

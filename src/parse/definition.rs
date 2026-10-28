@@ -134,7 +134,7 @@ pub(in crate::parse) fn fold_term(
             );
         if is_blank_line(next)
             || next.starts_with(ITEM_PARAGRAPH)
-            || is_definition_list_start(strip_lazy(next))
+            || (!next.starts_with(LAZY) && is_definition_list_start(next))
             || strip_lazy(next)
                 .strip_prefix(":: ")
                 .is_some_and(|rest| is_blank_line(rest) && rest.contains('\t'))
@@ -164,7 +164,10 @@ pub(in crate::parse) fn fold_term(
         // all-space `` `  ` `` term is untouched by a trim that only ever sees
         // the end of a line.
         let text = strip_lazy(&owned);
-        let text = if owned.starts_with(LAZY) && cur.carried_reach(cur.pos) != Some(true) {
+        let text = if owned.starts_with(LAZY)
+            && !owned.starts_with(LAZY_INDENT)
+            && cur.carried_reach(cur.pos) != Some(true)
+        {
             trim_ascii_start(text)
         } else {
             text

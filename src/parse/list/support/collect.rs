@@ -604,6 +604,17 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && comment_fence.is_none()
             && literal_colon.is_none()
             && is_definition_list_start(trim_ascii_start(line));
+        // A term that reaches this item below its open child's content column
+        // belongs to the item. Let the child chunk finish before parsing it.
+        if term
+            && !lines.is_empty()
+            && !surviving_definition_body_column.is_some_and(|column| indent >= column)
+            && nested_item_columns
+                .last()
+                .is_some_and(|&(_, child_column)| indent < child_column)
+        {
+            break;
+        }
         let below_definition_term = indent > parent_indent
             && indent < strip_cols
             && definition_list_column.is_some_and(|column| indent < column)

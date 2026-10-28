@@ -692,6 +692,8 @@ enum ParseMode {
 /// parsing leaves the inserted marker intact. It pins the line to column 0,
 /// and no block opener matches it.
 pub(crate) const LAZY: &str = "\u{0000}L\u{0000}";
+/// A lazy term line with indentation past its host column still has literal spaces.
+pub(crate) const LAZY_INDENT: &str = "\u{0000}L\u{0000}\u{0000}I\u{0000}";
 /// Marks a separator line that ends a definition list and starts item paragraph text.
 pub(crate) const ITEM_PARAGRAPH: &str = "\u{0000}P\u{0000}";
 
@@ -703,7 +705,8 @@ pub(crate) const ITEM_PARAGRAPH: &str = "\u{0000}P\u{0000}";
 /// as a visible sentinel. `tests/lazy_framing_never_leaks.rs` generates the
 /// shapes that tell the two apart rather than listing them.
 pub(crate) fn strip_lazy(line: &str) -> &str {
-    line.strip_prefix(LAZY)
+    line.strip_prefix(LAZY_INDENT)
+        .or_else(|| line.strip_prefix(LAZY))
         .or_else(|| line.strip_prefix(ITEM_PARAGRAPH))
         .unwrap_or(line)
 }

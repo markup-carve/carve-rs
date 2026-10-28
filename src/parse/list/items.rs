@@ -1777,24 +1777,43 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         let (base_indent, content_col, options) =
             (self.base_indent, self.content_col, self.options);
         let nested_content_col = lead.nested_content_col;
-        let nested_marker_col = innermost_marker_column(lead.content).map(|col| content_col + col);
+        let mut ladder_columns = vec![content_col];
+        let mut marker_line = lead.content;
+        while let Some(marker) = detect_list_marker_full(marker_line) {
+            let Some(width) = marker_content_col(marker_line) else {
+                break;
+            };
+            ladder_columns.push(ladder_columns.last().unwrap() + width);
+            marker_line = marker.content;
+        }
+        let nested_marker_col = ladder_columns
+            .get(ladder_columns.len().saturating_sub(2))
+            .copied();
+        let first_nested_content_col = ladder_columns.get(1).copied();
         let bare_continuation = self.last_item_bare_continuation;
         let cur = &mut *self.cur;
-        let lazy_column = if is_definition_list_start(lead.inner_lead) {
+        let term_lead = is_definition_list_start(lead.inner_lead);
+        let lazy_column = if term_lead {
             nested_content_col
         } else {
             content_col
         };
         let has_lazy = if let Some(line) = cur.peek() {
             let line = line.to_string();
-            let at_nested_marker = is_definition_list_start(lead.inner_lead)
-                && nested_marker_col.is_some_and(|column| indent_columns(&line) == column)
-                && (strip_definition_marker(trim_ascii_start(&line)).is_some()
-                    || is_definition_list_start(trim_ascii_start(&line)));
+            let indent = indent_columns(&line);
+            let at_nested_marker = term_lead
+                && ((indent >= content_col
+                    && indent <= nested_content_col
+                    && is_definition_list_start(trim_ascii_start(&line)))
+                    || (nested_marker_col == Some(indent)
+                        && strip_definition_marker(trim_ascii_start(&line)).is_some()));
             !is_blank_line(&line)
                 && !at_nested_marker
-                && indent_columns(&line) < lazy_column
-                && !is_list_marker(&line)
+                && (term_lead || indent < lazy_column)
+                && !(is_list_marker(&line)
+                    && (indent == 0
+                        || ladder_columns.contains(&indent)
+                        || indent > nested_content_col))
                 && !interrupts_paragraph(cur, &line)
         } else {
             false
@@ -1837,8 +1856,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // A term opened on a nested marker line keeps a below-column lazy
         // line. Frame it before the next parse so a colon-shaped line cannot
         // turn into a definition after the source columns have been rebased.
-        if is_definition_list_start(lead.inner_lead) {
+        if term_lead {
             let line = cur.peek().unwrap();
+            let indent = indent_columns(line);
             let content = trim_ascii_start(line);
             let source_col = cur
                 .source_col(cur.pos)
@@ -1846,6 +1866,11 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             stream.push_newline_at(
                 if content.starts_with(LAZY) {
                     content.to_string()
+                } else if indent > nested_content_col {
+                    format!(
+                        "{LAZY_INDENT}{}{content}",
+                        " ".repeat(indent - nested_content_col)
+                    )
                 } else {
                     format!("{LAZY}{content}")
                 },
@@ -1854,8 +1879,13 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             );
             cur.consume();
             if cur.peek().is_some_and(|line| {
-                nested_marker_col.is_some_and(|column| indent_columns(line) == column)
-                    && is_list_marker(line)
+                let indent = indent_columns(line);
+                let nested_list_sibling = is_list_marker(line)
+                    && (ladder_columns.contains(&indent) || indent > nested_content_col);
+                let nested_definition_sibling = first_nested_content_col
+                    .is_some_and(|first| indent >= first && indent <= nested_content_col)
+                    && is_definition_list_start(trim_ascii_start(line));
+                nested_list_sibling || nested_definition_sibling
             }) {
                 stream.append(collect_indented_block_mapped(
                     cur,
