@@ -129,7 +129,10 @@ impl NoteBody {
         {
             return false;
         }
-        if is_blank_line(line) || item_block_opener_with_invisible_arms(text, false) {
+        if is_blank_line(line)
+            || self.lines.last().is_some_and(|last| is_blank_line(last))
+            || item_block_opener_with_invisible_arms(text, false)
+        {
             return false;
         }
         *self
@@ -936,7 +939,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             return Flow::Next;
         }
         let owner_column = state.body_indent.saturating_sub(2);
-        if (column >= owner_column || note.lazy_claim)
+        if !self.nested
+            && (column >= owner_column || note.lazy_claim)
             && !below_owner_interrupts(line, owner_column)
             && note.can_fold_below(line, self.options)
         {
@@ -1472,7 +1476,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         if !walk.reaches_floor(&host, self.lines[resume_at])
             && !host.content(self.lines[resume_at]).is_some_and(|line| {
-                indent_columns(line) >= host.owner_column && note.can_fold_below(line, self.options)
+                !self.nested
+                    && indent_columns(line) >= host.owner_column
+                    && note.can_fold_below(line, self.options)
             })
         {
             return i;
@@ -1580,7 +1586,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         if !walk.reaches_floor(host, raw) {
             let column = indent_columns(line);
-            if (column < host.owner_column && !note.lazy_claim)
+            if self.nested
+                || (column < host.owner_column && !note.lazy_claim)
                 || below_owner_interrupts(line, host.owner_column)
                 || !note.can_fold_below(line, self.options)
             {

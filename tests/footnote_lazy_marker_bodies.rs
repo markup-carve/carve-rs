@@ -65,3 +65,18 @@ fn a_refused_first_block_plus_does_not_take_a_list() {
     assert!(note_body(source).contains("<p>+<a"), "{html}");
     assert!(html.contains("<ul>"), "{html}");
 }
+
+#[test]
+fn a_blank_releases_the_line_below_an_unclosed_note_body() {
+    let source = "[^f]: b\n\n  [^g]: c\n  ```\n   [^n]: note\n\nSee [^n] and [^f] and [^g].\n";
+    let html = to_html(source);
+    assert!(html.starts_with("<p>See [^n] and "), "{html}");
+}
+
+#[test]
+fn a_line_outside_the_quote_host_does_not_extend_its_note() {
+    let source = "see[^p]\n\n> para\n> [^p]: n\ntail\n";
+    let html = to_html(source);
+    assert!(html.contains("</blockquote>\n<p>tail</p>"), "{html}");
+    assert!(!note_body(source).contains("tail"), "{html}");
+}
