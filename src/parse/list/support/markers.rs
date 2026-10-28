@@ -1419,72 +1419,6 @@ pub(crate) fn label_without_trailing_comment<'a>(label: &'a str, options: &Optio
     label
 }
 
-/// Does a comment below this frame's content column leave the item open?
-///
-/// §24 C3's comment exception names both spellings in one breath - the `%%`
-/// line and the `%%%` fence, "whose body and closer travel with it" - and says
-/// a comment "does not close the ITEM either". §28 decides which of the two a
-/// `%%%` opener IS: with an exact-width closer AHEAD it opens a `fenced_comment`
-/// and is a comment BLOCK at the enclosing context's own opener column, which
-/// ends the item (corpus 214, 445-3); with no closer it opens nothing and IS one
-/// `comment_line`. That degradation is a CLASSIFICATION and it is TOTAL -
-/// ownership included - so the degraded opener leaves the frame open exactly as
-/// a `%%` line does (markup-carve/carve#1903, normative in carve#1919).
-///
-/// THE CLOSER IS LOOKED FOR AHEAD, not on the next line: `- x` / `%%%` / `y` /
-/// `%%%` / `z` opens a real block that hides `y` and ends the item.
-pub(crate) fn flush_comment_keeps_the_item_open(cur: &mut LineCursor<'_>, line: &str) -> bool {
-    if is_line_comment_any_column(line) && !is_definition_placeholder(line) {
-        return true;
-    }
-    detect_comment_fence_line_any_column(line)
-        .is_some_and(|open| !cur.has_comment_closer_after(cur.pos + 1, open.fence_len))
-}
-
-pub(crate) fn matched_fence_below_item(
-    cur: &mut LineCursor<'_>,
-    line: &str,
-    content_col: usize,
-) -> Option<usize> {
-    let column = indent_columns(line);
-    if column >= content_col
-        || (column == 0 && !cur.in_item_body && !cur.sublists_carry_authored_base)
-    {
-        return None;
-    }
-    let open = detect_comment_fence_line_any_column(line)?;
-    if !open.tail.is_empty() {
-        return None;
-    }
-    if cur
-        .lines
-        .line(cur.pos + 1)
-        .is_some_and(|next| is_comment_fence_close_any_column(next, open.fence_len))
-    {
-        return Some(open.fence_len);
-    }
-    if column == 0 || cur.pos == 0 || is_blank_line(cur.lines.at(cur.pos - 1)) {
-        return None;
-    }
-    let marker = cur
-        .lines
-        .range(0..cur.pos)
-        .rev()
-        .find_map(detect_list_marker_full)?;
-    if column <= marker.indent || marked_quote_before_comment(cur, cur.pos) {
-        return None;
-    }
-    for next in cur.lines.range(cur.pos + 1..cur.lines.len()) {
-        if is_blank_line(next) {
-            return None;
-        }
-        if is_comment_fence_close_any_column(next, open.fence_len) {
-            return Some(open.fence_len);
-        }
-    }
-    None
-}
-
 pub(crate) fn marked_quote_before_comment(cur: &LineCursor<'_>, comment_at: usize) -> bool {
     // CARVE-P0-013 keeps an unmatched fence after the span in the item.
     if let Some(open) = detect_comment_fence_line_any_column(cur.lines.at(comment_at)) {
@@ -1541,29 +1475,6 @@ pub(crate) fn matched_comment_before(cur: &LineCursor<'_>) -> Option<usize> {
             .is_some_and(|open| open.fence_len == close.fence_len)
     })?;
     Some(opener)
-}
-
-pub(crate) fn append_comment_span_through_closer(
-    cur: &mut LineCursor<'_>,
-    target: &mut MappedSource,
-    run: usize,
-    trim: bool,
-) {
-    debug_assert!(cur.has_comment_closer_after(cur.pos, run));
-    while let Some(line) = cur.peek() {
-        let closes = is_comment_fence_close_any_column(line, run);
-        let kept = if trim { trim_ascii_start(line) } else { line };
-        target.push_newline_at(
-            kept.to_string(),
-            cur.source_line(cur.pos),
-            cur.source_col(cur.pos)
-                .map(|col| col + (line.len() - kept.len()) as isize),
-        );
-        cur.consume();
-        if closes {
-            break;
-        }
-    }
 }
 
 /// The `%%` line form at ANY column.

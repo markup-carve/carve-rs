@@ -33,6 +33,9 @@ mod prepass;
 mod prepass_links;
 mod quote;
 mod rebase;
+mod own_lines;
+pub(crate) use own_lines::{own_lines, walk_moves_lines, EditsGuard};
+pub(in crate::parse) use own_lines::restore_authored_columns;
 mod table;
 #[cfg(test)]
 #[path = "parse/tests.rs"]
@@ -797,7 +800,11 @@ fn parse_with_options_mode_and_index(
     // parser sees, and PART 12 §4 positions index the ORIGINAL file.
     let original = source;
     let normalized = normalize_source(source);
-    let source = normalized.as_ref();
+    // Rule A: the readers only meet openers at a content column. The guard maps
+    // positions in the walked text back to the authored columns.
+    let owned = own_lines(normalized.as_ref());
+    let _owned_edits = EditsGuard::install(owned.as_ref());
+    let source = owned.as_ref().map_or(normalized.as_ref(), |o| o.source.as_str());
     let _continuation_markers = continuation_marker::Guard::install(source);
     let _source_ending = SourceEndingGuard::install(source);
     // PICK THE DEFINITION PLACEHOLDERS FOR THIS DOCUMENT before anything reads

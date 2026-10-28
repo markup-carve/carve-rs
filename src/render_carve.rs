@@ -5466,24 +5466,10 @@ fn protect_verbatim(session: &RenderSession, content: &str) -> String {
 
 /// Protect a paragraph line that would re-parse as a thematic break.
 ///
-/// Source indentation is not in the AST, so an indented `---` - a paragraph
-/// holding an em dash - is emitted at column 0, where it stops being a
-/// paragraph and becomes a thematic break.
-///
-/// Text nodes are already covered: the conservative form escapes the hyphens,
-/// so the round-trip check sees the difference and picks that form. A
-/// smart-punctuation run is not, because its source run is emitted verbatim in
-/// BOTH forms - that is the point of the node - so the check never has a
-/// difference to act on. Escaping the run in the conservative form does not
-/// work either: it would make that form change the document, after which the
-/// check could never prefer the minimal one.
-///
-/// It marks rather than escapes: escaping would split the run (a leading
-/// escaped hyphen plus an en dash) and change the document just as surely,
-/// while a leading space keeps the line a paragraph and keeps the em dash -
-/// which is what the source said. The marker is a sentinel because normalize()
-/// trims the document's leading whitespace, which would silently undo the guard
-/// whenever the paragraph is the first block.
+/// Indentation no longer escapes it under rule A (carve#3885). A line holding
+/// only an em dash is written as the literal `—`; any other dash-only line takes
+/// a backslash. The marker is a sentinel because normalize() trims the
+/// document's leading whitespace and `restore_verbatim` places the escape.
 fn guard_thematic_break_lines(session: &RenderSession, body: &str, in_line_block: bool) -> String {
     // Line-block bodies parse as inline content; padding would add a no-break space.
     if in_line_block || !body.contains('-') {
@@ -5492,7 +5478,9 @@ fn guard_thematic_break_lines(session: &RenderSession, body: &str, in_line_block
     body.split('\n')
         .map(|line| {
             let trimmed = line.trim_end_matches([' ', '\t']);
-            if trimmed.len() >= 3 && trimmed.chars().all(|c| c == '-') {
+            if trimmed == "---" {
+                "\u{2014}".to_string()
+            } else if trimmed.len() >= 3 && trimmed.chars().all(|c| c == '-') {
                 note_inserted(session, S_GUARD);
                 format!("{}{line}", thematic_guard(session))
             } else {
@@ -5555,7 +5543,7 @@ fn restore_verbatim(session: &RenderSession, text: &str) -> String {
             }
             let line = match line.split_once(guard.as_str()) {
                 Some((prefix, rest)) if prefix.chars().all(|ch| matches!(ch, ' ' | '\t' | '>')) => {
-                    format!("{prefix} {rest}")
+                    format!("{prefix}\\{rest}")
                 }
                 _ => line.to_string(),
             };

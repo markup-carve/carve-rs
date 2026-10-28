@@ -11,6 +11,10 @@ fn event_owned_pipeline_matches_public_modes() {
             continue;
         }
         let source = std::fs::read_to_string(&path).unwrap();
+        // Rule A: the event route declines a document the ownership walk rewrites.
+        if walk_moves_lines(&normalize_source(&source)) {
+            continue;
+        }
         for positions in [false, true] {
             for source_lines in [false, true] {
                 let options = Options::default()
@@ -212,6 +216,10 @@ fn event_owned_modes_preserve_extension_callbacks() {
             continue;
         }
         let source = std::fs::read_to_string(&path).unwrap();
+        // Rule A: the event route declines a document the ownership walk rewrites.
+        if walk_moves_lines(&normalize_source(&source)) {
+            continue;
+        }
         for mode in [ParseMode::Html, ParseMode::HtmlFacade, ParseMode::Carve] {
             for positions in [false, true] {
                 let baseline = Hook::default();
@@ -301,6 +309,10 @@ fn event_owned_facade_corpus_render_index_matches() {
             continue;
         }
         let source = std::fs::read_to_string(&path).unwrap();
+        // Rule A: the event route declines a document the ownership walk rewrites.
+        if walk_moves_lines(&normalize_source(&source)) {
+            continue;
+        }
         for positions in [false, true] {
             for source_lines in [false, true] {
                 let options = Options::default()
@@ -451,8 +463,9 @@ mod footnote_comment_fence_work {
             let html = crate::to_html(&source);
             assert_eq!(html.matches("<pre><code>").count(), count);
             let lookups = FOOTNOTE_FENCE_CLOSER_LOOKUPS.with(|work| work.get());
-            assert!(lookups >= count as u64, "{count}: {lookups} lookups");
-            assert!(lookups <= count as u64 * 2, "{count}: {lookups} lookups");
+            // Rule A (carve#3885): the comment closes the note, so no note
+            // retains the fence and none looks for its closer.
+            assert_eq!(lookups, 0, "{count}: {lookups} lookups");
         }
     }
 }
@@ -1687,10 +1700,9 @@ mod shared_colon_work_tests {
                             ..Options::default()
                         },
                     );
-                    assert_eq!(
-                        html.matches("<pre>").count(),
-                        if retained { count } else { 1 }
-                    );
+                    // Rule A (carve#3885): an indented fence after `after` opens at
+                    // the document level, so every repetition is a code block.
+                    assert_eq!(html.matches("<pre>").count(), count);
                     assert_eq!(html.matches("after").count(), count);
                     assert!(
                         source_map::MAPPED_SOURCE_SCAN_BYTES.with(Cell::get) <= source.len() * 64,

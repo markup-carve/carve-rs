@@ -3559,7 +3559,10 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         None
     };
     let source = normalized.as_deref().unwrap_or(source);
-    if has_deep_quote_chain(source) {
+    // Rule A moves past-column openers before the block readers see them; the
+    // event route reads lines in place, so it only takes documents the walk
+    // leaves alone.
+    if has_deep_quote_chain(source) || walk_moves_lines(source) {
         return None;
     }
     if has_marker_description_comment_risk(source) {
@@ -3917,7 +3920,7 @@ pub(super) fn parse_document_with_custom_options(
         None
     };
     let source = normalized.as_deref().unwrap_or(source);
-    if has_deep_quote_chain(source) {
+    if has_deep_quote_chain(source) || walk_moves_lines(source) {
         return None;
     }
     let may_have_link_defs = source.contains("]:") || !options.extensions.is_empty();
@@ -4463,51 +4466,23 @@ mod link_definition_tests {
 mod marker_description_comment_owner_tests {
     use super::*;
 
+    // Rule A (carve#3885) moves a comment written below the item's column, so
+    // the event route declines these and the full parser reads them.
     #[test]
-    fn event_root_keeps_comment_description_columns() {
-        for source in [
-            "1. :: t\n   : para\n  %%%\n  %%%\ntail\n",
-            "1. :: t\n   : para\n  %%%\n  c\n  %%%\n```\nx\n",
-        ] {
-            let (_, admitted) = parse_document(source).expect("event document");
-            assert!(admitted, "{source:?}");
-            for positions in [false, true] {
-                let options = Options::default().with_positions(positions);
-                let (candidate, _, admitted) =
-                    parse_document_with_custom_options(source, &options, ParseMode::Html)
-                        .expect("event document with options");
-                assert!(admitted, "positions={positions} source={source:?}");
-                let expected = {
-                    let _standard_root = StandardEventRootGuard::install();
-                    let _standard_nested = StandardNestedReaderGuard::install();
-                    parse_with_options(source, &options)
-                };
-                assert_eq!(
-                    candidate, expected,
-                    "positions={positions} source={source:?}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn event_root_keeps_comment_columns_with_definitions() {
+    fn event_root_declines_comments_the_walk_moves() {
         let body = "1. :: t\n   : para\n  %%%\n  %%%\ntail\n";
-        for prefix in ["[ref]: /target\n\n", "*[abbr]: expansion\n\n"] {
-            let source = format!("{prefix}{body}");
+        for source in [
+            body.to_owned(),
+            "1. :: t\n   : para\n  %%%\n  c\n  %%%\n```\nx\n".to_owned(),
+            format!("[ref]: /target\n\n{body}"),
+            format!("*[abbr]: expansion\n\n{body}"),
+        ] {
+            assert!(parse_document(&source).is_none(), "{source:?}");
             for positions in [false, true] {
                 let options = Options::default().with_positions(positions);
-                let (candidate, _, admitted) =
+                assert!(
                     parse_document_with_custom_options(&source, &options, ParseMode::Html)
-                        .expect("event document with definitions");
-                assert!(admitted, "positions={positions} source={source:?}");
-                let expected = {
-                    let _standard_root = StandardEventRootGuard::install();
-                    let _standard_nested = StandardNestedReaderGuard::install();
-                    parse_with_options(&source, &options)
-                };
-                assert_eq!(
-                    candidate, expected,
+                        .is_none(),
                     "positions={positions} source={source:?}"
                 );
             }

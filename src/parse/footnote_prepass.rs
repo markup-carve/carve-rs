@@ -149,6 +149,9 @@ struct IndentedNote<'a> {
     open_term: bool,
     retained_below_comment: bool,
     below_comment_span: Option<usize>,
+    lazy_open: bool,
+    /// The definition line starts at column 0, so no container hosts the note.
+    flush_def: bool,
 }
 
 /// The quote / list / description host a container-hosted note sits in.
@@ -733,6 +736,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 open_term: term_start_column(def.first).is_some(),
                 retained_below_comment: false,
                 below_comment_span: None,
+                lazy_open: false,
+                flush_def: indent_columns(raw_def_line) == 0,
             };
             i = self.collect_indented_body(&mut note, i, state);
         } else if !self.nested {
@@ -884,6 +889,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         i: &mut usize,
     ) -> Flow {
         let column = indent_columns(line);
+        let lazy_open = std::mem::take(&mut state.lazy_open);
         if let Some(flow) = self.retained_fence_line(state, note, line, column, i) {
             return flow;
         }
@@ -927,6 +933,28 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 Some(self.first_source_line + *i),
                 |kept| stripped_col(Some(0), line, kept),
             );
+            *i += 1;
+            return Flow::Next;
+        }
+        // Lazy continuation, the same rule as every container (ruling on
+        // carve#3885): a line that interrupts no paragraph joins an open one.
+        let rest = trim_ascii_start(line);
+        if !state.open_term
+            && !self.nested
+            && state.flush_def
+            && state.note_fence.is_none()
+            && !interrupts_paragraph_with_rest(line, &self.lines[*i + 1..])
+            && !is_colon_fence_opener_shape(line)
+            && exact_colon_fence_len(rest).is_none()
+            && parse_link_def_line(rest).is_none()
+            && !is_list_marker(rest)
+            && (lazy_open || body_ends_with_open_paragraph(&note.lines.join("\n"), self.options))
+        {
+            let kept = format!("{LAZY}{}", trim_ascii_start(line));
+            note.push_with(kept, Some(self.first_source_line + *i), |_| {
+                stripped_col(Some(0), line, trim_ascii_start(line))
+            });
+            state.lazy_open = true;
             *i += 1;
             return Flow::Next;
         }
@@ -977,6 +1005,18 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let below_comment = column < state.body_indent
             && trim_ascii_start(line).starts_with("%%")
             && !is_definition_placeholder(line);
+        // Rule A (carve#3885): a comment below the body's column closes the note.
+        if below_comment
+            && state.below_comment_span.is_none()
+            && state.note_fence.is_none()
+            && detect_comment_fence_line_any_column(line).is_none()
+            && !self.lines[*i + 1..]
+                .iter()
+                .find(|next| !is_blank_line(next) && !trim_ascii_start(next).starts_with("%%"))
+                .is_some_and(|next| indent_columns(next) >= state.body_indent)
+        {
+            return Some(Flow::Stop);
+        }
         if below_comment
             && column == 0
             && state.below_comment_span.is_none()
