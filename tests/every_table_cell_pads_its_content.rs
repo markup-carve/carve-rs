@@ -10,12 +10,7 @@
 //! `|=~x~|`, a CENTERED column holding `x~` (carve-rs#819). That used to be two
 //! guards enumerating the characters that merge; the space covers every cell.
 //!
-//! A source written with a SEPARATOR ROW keeps it: `table.separatorWidths`
-//! records the author's spelling, so the formatter no longer rewrites the row
-//! into the native `|=` head (PART 11 §6h, markup-carve/carve#2894). The row is
-//! spelled one cell per RECORDED width, which is why a ragged table's one-cell
-//! separator stays one cell. The padding claim each case makes is unchanged;
-//! only the header form it is measured on is the one the author wrote.
+//! `fmt` rewrites a separator row into native `|=` headers under PART 11 §6h.
 
 use carve::{to_carve, to_html};
 
@@ -25,17 +20,14 @@ fn fmt(src: &str) -> String {
 
 #[test]
 fn a_header_cell_pads_its_content() {
-    assert_eq!(
-        fmt("| Heading |\n|---|\n| a |\n"),
-        "| Heading |\n|---|\n| a |\n"
-    );
+    assert_eq!(fmt("| Heading |\n|---|\n| a |\n"), "|= Heading |\n| a |\n");
 }
 
 #[test]
 fn an_attributed_header_cell_pads_its_content_too() {
     assert_eq!(
         fmt("|{.total} Total | 99 |\n|---|---|\n| a | b |\n"),
-        "|{.total} Total | 99 |\n|---|---|\n| a | b |\n"
+        "|={.total} Total |= 99 |\n| a | b |\n"
     );
 }
 
@@ -50,8 +42,8 @@ fn an_alignment_marker_stays_in_the_prefix() {
 #[test]
 fn an_empty_cell_takes_a_single_space() {
     // Two would grow the column by one space per format run.
-    assert_eq!(fmt("| |x |\n|---|\n| y |\n"), "| | x |\n|---|\n| y |\n");
-    assert_eq!(fmt("| h |\n|---|\n| |x |\n"), "| h |\n|---|\n| | x |\n");
+    assert_eq!(fmt("| |x |\n|---|\n| y |\n"), "|= |= x |\n| y |\n");
+    assert_eq!(fmt("| h |\n|---|\n| |x |\n"), "|= h |\n| | x |\n");
 }
 
 #[test]
@@ -60,7 +52,7 @@ fn a_content_sigil_stays_content() {
     // would eat the `~` and center the column.
     let src = "| ~x~ |\n|---|\n| y |\n";
     let out = fmt(src);
-    assert_eq!(out, "| ~x~ |\n|---|\n| y |\n");
+    assert_eq!(out, "|= ~x~ |\n| y |\n");
     assert_eq!(to_html(&out), to_html(src));
 }
 

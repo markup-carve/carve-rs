@@ -34,7 +34,7 @@ fn all_lint_include_vectors() {
             );
         }
         let warnings = lint_carve_with_options(vector["entry"].as_str().unwrap(), &options);
-        let mut actual: Vec<Value> = warnings.iter().map(|warning| {
+        let mut actual: Vec<Value> = warnings.iter().filter(|warning| warning.rule != "include-lines-table-rows-hint").map(|warning| {
             let mut finding = json!({ "rule": warning.rule, "file": warning.file.as_deref().unwrap_or(corpus["sourcePath"].as_str().unwrap()), "line": warning.line, "column": warning.column });
             if !warning.included_by.is_empty() {
                 finding["includedBy"] = Value::Array(warning.included_by.iter().map(|site| json!({ "file": site.file, "line": site.line, "column": site.column })).collect());

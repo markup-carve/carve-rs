@@ -719,7 +719,7 @@ fn render_document_blocks(
 
 mod footnotes;
 use footnotes::*;
-pub(crate) use footnotes::{collect_footnotes, FootnoteEntry};
+pub(crate) use footnotes::{collect_footnotes, used_footnote_labels, FootnoteEntry};
 fn render_section(
     out: &mut String,
     nodes: &[BlockNode],
@@ -1226,6 +1226,19 @@ fn render_paragraph(
     options: &Options<'_>,
     state: &mut RenderState,
 ) {
+    if p.block_image {
+        if let Some(index) = crate::parse::lone_rendered_image(&p.children) {
+            if let InlineNode::Image(image) = &p.children[index] {
+                let mut image = image.clone();
+                if let Some(attrs) = &p.attrs {
+                    crate::parse::merge_leading_attrs(&mut image.attrs, attrs.clone());
+                }
+                indent(out, level);
+                render_image(out, &image, options, crate::render_loss::RawNodeType::Block);
+                return;
+            }
+        }
+    }
     indent(out, level);
     out.push_str("<p");
     write_attrs_for(out, &p.attrs, "p");
@@ -1785,10 +1798,26 @@ fn render_table(
                     .all(|(i, cell)| cell.header || resolved(i))
         })
         .count();
-    let header_count = t
-        .row_groups
-        .as_ref()
-        .map_or(derived_header_count, |groups| groups.head_rows);
+    let invalid_source_partition = t.row_groups.is_none()
+        && t.attrs.as_ref().is_some_and(|attrs| {
+            [
+                "header-rows",
+                "footer-rows",
+                "body-rows",
+                "body-header-rows",
+                "body-header-cols",
+            ]
+            .iter()
+            .any(|key| attrs.key_values.contains_key(*key))
+                && crate::table_source_metadata::row_groups(attrs, t.rows.len()).is_none()
+        });
+    let header_count = if invalid_source_partition {
+        0
+    } else {
+        t.row_groups
+            .as_ref()
+            .map_or(derived_header_count, |groups| groups.head_rows)
+    };
     let footer_count = t.row_groups.as_ref().map_or(0, |groups| groups.foot_rows);
     let footer_start = t.rows.len() - footer_count;
     let mut section_ends = vec![false; t.rows.len() + 1];
@@ -2070,8 +2099,8 @@ fn render_table_row(
         out.push('<');
         out.push_str(tag);
         out.push_str(&cell_scope_attr(cell, tag == "th", in_head));
-        out.push_str(&render_cell_author_attrs(&cell.attrs, &emitted));
         out.push_str(&extra);
+        out.push_str(&render_cell_author_attrs(&cell.attrs, &emitted));
         out.push_str(&style);
         out.push('>');
         if let Some(blocks) = &cell.blocks {
@@ -2134,7 +2163,6 @@ fn render_table_body_row(
             ctx.defaults,
         );
         if !style.is_empty() {
-            attrs.push_str(&style);
             emitted.push("style");
         }
         // A `|=` cell in a body row is a row header: <th> inside <tbody>.
@@ -2143,8 +2171,9 @@ fn render_table_body_row(
         out.push_str(tag);
         // Below the header run, so a header cell here heads its ROW.
         out.push_str(&cell_scope_attr(cell, is_header, false));
-        out.push_str(&render_cell_author_attrs(&cell.attrs, &emitted));
         out.push_str(&attrs);
+        out.push_str(&render_cell_author_attrs(&cell.attrs, &emitted));
+        out.push_str(&style);
         out.push('>');
         if let Some(blocks) = &cell.blocks {
             out.push_str(&render_blocks(blocks, 0, ctx.options, ctx.state));

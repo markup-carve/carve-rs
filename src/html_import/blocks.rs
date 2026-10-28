@@ -1,8 +1,9 @@
 use super::footnotes::{Lifted, FOOTNOTE_PLACEMENT_TAG};
 use super::ORDERED_TASK_ITEM_UNSPELLABLE;
 use super::{
-    is_admonition_title, is_div_label, is_layout_only, is_layout_space, share_figure_attrs,
-    task_marker_text, text_node, trim_edge_whitespace, Importer, ROUNDTRIP_UNWRAPPED_SECTIONING,
+    imported_block_image, is_admonition_title, is_div_label, is_layout_only, is_layout_space,
+    share_figure_attrs, task_marker_text, text_node, trim_edge_whitespace, Importer,
+    ROUNDTRIP_UNWRAPPED_SECTIONING,
 };
 use super::{HtmlImportDiagnosticCode, HtmlImportError, HtmlImportMode, HtmlImportSeverity};
 use crate::ast::*;
@@ -399,7 +400,7 @@ impl<'a> Importer<'a> {
                 if let Some(leading) = attrs {
                     crate::parse::merge_leading_attrs(&mut image.attrs, leading);
                 }
-                return Ok(vec![BlockNode::BlockImage(image)]);
+                return Ok(vec![imported_block_image(image)]);
             }
             unreachable!();
         }

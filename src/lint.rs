@@ -13,6 +13,7 @@ mod consumed_key;
 mod delimited_table;
 mod reference_rules;
 mod source_rules;
+mod suppression;
 
 use crate::ast::*;
 use crate::ast_json::emphasis_type;
@@ -87,7 +88,7 @@ fn lint_includes(
     root: &mut Vec<LintWarning>,
 ) -> Vec<LintWarning> {
     use crate::includes::AcceptedInclude;
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
     let parse_options = Options {
         positions: true,
         extensions: options.extensions.clone(),
@@ -110,6 +111,27 @@ fn lint_includes(
                     .is_some_and(|target| targets.contains(target))
         });
     }
+    let parent_sources: HashMap<_, _> = result
+        .included
+        .iter()
+        .filter_map(|entry| {
+            if let AcceptedInclude::Carve {
+                file,
+                included_by,
+                source,
+                first_line,
+                ..
+            } = entry
+            {
+                Some((
+                    (file.clone(), included_by.clone()),
+                    (source.clone(), *first_line),
+                ))
+            } else {
+                None
+            }
+        })
+        .collect();
     let mut findings = Vec::new();
     for entry in result.included {
         match entry {
@@ -148,6 +170,40 @@ fn lint_includes(
                 };
                 if !marked {
                     continue;
+                }
+                if let Some(site) = included_by.last() {
+                    let parent = if included_by.len() == 1 {
+                        Some((source, 0))
+                    } else {
+                        parent_sources
+                            .get(&(
+                                site.file.clone(),
+                                included_by[..included_by.len() - 1].to_vec(),
+                            ))
+                            .map(|(source, first_line)| (source.as_str(), *first_line))
+                    };
+                    if let Some((text, first_line)) = parent {
+                        let selected = site
+                            .line
+                            .checked_sub(first_line)
+                            .and_then(|line| line.checked_sub(1))
+                            .and_then(|index| text.lines().nth(index))
+                            .is_some_and(|line| {
+                                crate::includes::code_line_selector_at(line, site.column)
+                            });
+                        if selected {
+                            findings.push(LintWarning {
+                                file: (!site.file.is_empty()).then(|| site.file.clone()),
+                                included_by: included_by[..included_by.len() - 1].to_vec(),
+                                line: site.line,
+                                column: site.column,
+                                rule: "include-lines-table-rows-hint",
+                                message: "Use @rows to select complete CSV/TSV records.".into(),
+                                start: 0,
+                                end: 0,
+                            });
+                        }
+                    }
                 }
                 let separator = match block.as_ref() {
                     BlockNode::CodeBlock(code) => match code.lang.as_deref() {
@@ -217,6 +273,10 @@ fn literal_include_rule(rule: &str) -> Option<&'static str> {
         "include-depth" => "include-depth",
         "include-duplicate-option" => "include-duplicate-option",
         "include-lines-out-of-range" => "include-lines-out-of-range",
+        "include-rows-invalid" => "include-rows-invalid",
+        "include-rows-out-of-range" => "include-rows-out-of-range",
+        "include-cols-invalid" => "include-cols-invalid",
+        "include-cols-duplicate" => "include-cols-duplicate",
         "include-non-text" => "include-non-text",
         "include-region-invalid" => "include-region-invalid",
         "include-section" => "include-section",
@@ -341,7 +401,13 @@ pub(crate) fn lint_with_recovery(source: &str, options: &Options<'_>) -> (Vec<Li
         }
     }
     reference_rules::collect(source, &doc, options, &to_byte, &mut out);
-    let recovered_metadata = source_rules::collect(source, &doc, &to_byte, &mut out);
+    let recovered_metadata = source_rules::collect(
+        source,
+        &doc,
+        &to_byte,
+        options.lint_caption_looking_paragraph,
+        &mut out,
+    );
     collect_template_source_warning(source, &doc, &mut out);
     collect_unattached_block_attribute_warnings(source, &unattached, &to_byte, &mut out);
     collect_table_column_warnings(source, &mut out);
@@ -351,6 +417,7 @@ pub(crate) fn lint_with_recovery(source: &str, options: &Options<'_>) -> (Vec<Li
     for body in doc.footnote_defs.values() {
         collect_table_span_marker_warnings(source, body, &to_byte, &mut out);
     }
+    suppression::apply(source, &doc, &to_byte, &mut out);
     out.sort_by_key(|w| (w.start, w.end, w.rule));
     (out, recovered_metadata)
 }

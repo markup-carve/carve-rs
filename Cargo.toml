@@ -78,6 +78,22 @@ name = "suite"
 path = "tests/suite/main.rs"
 
 [[test]]
+name = "fx22_render_boundaries"
+path = "tests/fx22_render_boundaries.rs"
+
+[[test]]
+name = "fx22_html_image_import"
+path = "tests/fx22_html_image_import.rs"
+
+[[test]]
+name = "fx22_parser_boundaries"
+path = "tests/fx22_parser_boundaries.rs"
+
+[[test]]
+name = "authoring_lint_port"
+path = "tests/authoring_lint_port.rs"
+
+[[test]]
 name = "quoted_link_definition_in_footnote"
 path = "tests/quoted_link_definition_in_footnote.rs"
 
@@ -197,6 +213,34 @@ name = "table_alignment_options"
 path = "tests/table_alignment_options.rs"
 
 [[test]]
+name = "canonical_table_headers"
+path = "tests/canonical_table_headers.rs"
+
+[[test]]
+name = "lint_context_batch"
+path = "tests/lint_context_batch.rs"
+
+[[test]]
+name = "multiline_image_caption"
+path = "tests/multiline_image_caption.rs"
+
+[[test]]
+name = "image_ast_attrs"
+path = "tests/image_ast_attrs.rs"
+
+[[test]]
+name = "parser_owner_batch"
+path = "tests/parser_owner_batch.rs"
+
+[[test]]
+name = "parser_first_block_and_refused_plus"
+path = "tests/parser_first_block_and_refused_plus.rs"
+
+[[test]]
+name = "parser_invisible_transitions"
+path = "tests/parser_invisible_transitions.rs"
+
+[[test]]
 name = "empty_header_alignment_import"
 path = "tests/empty_header_alignment_import.rs"
 
@@ -213,5 +257,25 @@ name = "lint_include_conformance"
 path = "tests/lint_include_conformance.rs"
 
 [[test]]
+name = "table_include_selection"
+path = "tests/table_include_selection.rs"
+
+[[test]]
 name = "reserved_citation_reference_tail"
 path = "tests/reserved_citation_reference_tail.rs"
+
+[[test]]
+name = "tab_after_list_marker"
+path = "tests/tab_after_list_marker.rs"
+
+[[test]]
+name = "fx27_nested_term_ownership"
+path = "tests/fx27_nested_term_ownership.rs"
+
+[[test]]
+name = "fx27_marker_term_columns"
+path = "tests/fx27_marker_term_columns.rs"
+
+[[test]]
+name = "fx27_nested_sibling_after_lazy"
+path = "tests/fx27_nested_sibling_after_lazy.rs"
