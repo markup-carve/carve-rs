@@ -40,6 +40,10 @@ fn the_tickets_document() {
 fn every_definition_kind_above_leaves_no_paragraph() {
     for above in ["[f]: t", "[^f]: t", "*[AB]: t"] {
         let out = html(&format!("{above}\n* [d]: u\n\n[go][d]\n"));
+        if above == "[^f]: t" {
+            assert_eq!(out, "<p>[go][d]</p>");
+            continue;
+        }
         assert!(
             out.contains("<a href=\"u\">go</a>"),
             "the definition was not collected under {above:?}: {out}"

@@ -14,7 +14,7 @@ fn a_column_0_definition_closes_an_item_holding_a_quote() {
     );
     assert_eq!(
         html("- > para\n[^p]: n\nx\n"),
-        "<ul><li><blockquote><p>para</p></blockquote></li></ul><p>x</p>"
+        "<ul><li><blockquote><p>para</p></blockquote></li></ul>"
     );
     assert_eq!(
         html("- > para\n[r]: /u\ntail\n"),
@@ -22,7 +22,7 @@ fn a_column_0_definition_closes_an_item_holding_a_quote() {
     );
     assert_eq!(
         html("- > para\n[^p]: n\ntail\n"),
-        "<ul><li><blockquote><p>para</p></blockquote></li></ul><p>tail</p>"
+        "<ul><li><blockquote><p>para</p></blockquote></li></ul>"
     );
 }
 

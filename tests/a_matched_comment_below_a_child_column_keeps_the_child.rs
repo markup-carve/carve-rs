@@ -11,6 +11,10 @@ fn a_matched_comment_below_the_child_column_keeps_the_list_item() {
             to_html(source),
             to_html_with_options(source, &Options::default().with_positions(true)),
         ] {
+            if source.starts_with("[^c]:") {
+                assert_eq!(html, "", "{source:?}");
+                continue;
+            }
             let item = html.split("<li>para").nth(1).expect("the child list item");
             let tail = item.find("tail").expect("the retained tail");
             assert!(

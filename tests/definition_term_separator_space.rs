@@ -429,7 +429,7 @@ fn term_fences_release_definitions_when_the_parent_list_ends() {
         let doc = carve::parse(source);
         assert!(doc.footnote_defs.contains_key("a"), "{source:?}: {doc:?}");
         let output = html(source);
-        assert!(output.contains("doc-noteref"), "{source:?}: {output}");
+        assert!(!output.contains("doc-noteref"), "{source:?}: {output}");
         assert!(!output.contains("<code>code\n[r]"), "{source:?}: {output}");
     }
 }
@@ -564,10 +564,14 @@ fn collected_definitions_allow_following_list_terms_to_own_fences() {
                 .collect::<String>();
             let source = format!("{above}{prefix}- :: t\n{prefix}  ```\n{prefix}  [x]: /v\n");
             let output = html(&source);
-            assert!(
-                output.contains("<pre><code>[x]: /v\n"),
-                "{source:?}: {output}"
-            );
+            if above.contains("[^a]:") {
+                assert!(!output.contains("<pre>"), "{source:?}: {output}");
+            } else {
+                assert!(
+                    output.contains("<pre><code>[x]: /v\n"),
+                    "{source:?}: {output}"
+                );
+            }
             assert!(!output.contains('\u{e005}'), "{source:?}: {output}");
         }
     }

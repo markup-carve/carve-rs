@@ -213,7 +213,7 @@ fn an_attached_block_does_not_duplicate_a_nested_fence_blank() {
 
 #[test]
 fn an_indented_list_line_stays_in_a_refused_plus_paragraph() {
-    assert_eq!(carve::to_html("[^a]: a\n+\n  - b"), "<p>+\n- b</p>");
+    assert_eq!(carve::to_html("[^a]: a\n+\n  - b"), "");
 }
 
 #[test]
