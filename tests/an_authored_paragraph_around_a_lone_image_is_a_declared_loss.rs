@@ -52,7 +52,7 @@ fn it_reports_the_paragraph_it_cannot_spell() {
 #[test]
 fn it_declares_the_difference_the_two_exits_actually_have() {
     let html = r#"<p><img src="g.jpg" alt="G"></p>"#;
-    assert_eq!(kinds(&tree(html)), vec!["BlockImage".to_string()]);
+    assert_eq!(kinds(&tree(html)), vec!["Paragraph".to_string()]);
     assert_eq!(
         kinds(&parse(&carve(html))),
         vec!["BlockImage".to_string()],
@@ -317,7 +317,7 @@ fn an_unwrapped_paragraph_is_not_credited_with_an_identical_survivor() {
     assert_eq!(carve(html), "![a](a)\n^ c\n\n![a](a)\n");
     assert_eq!(
         kinds(&tree(html)),
-        vec!["Figure".to_string(), "BlockImage".to_string()]
+        vec!["Figure".to_string(), "Paragraph".to_string()]
     );
     let reported = html_to_carve(html, &HtmlImportOptions::default())
         .expect("import")

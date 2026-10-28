@@ -1226,6 +1226,19 @@ fn render_paragraph(
     options: &Options<'_>,
     state: &mut RenderState,
 ) {
+    if p.block_image {
+        if let Some(index) = crate::parse::lone_rendered_image(&p.children) {
+            if let InlineNode::Image(image) = &p.children[index] {
+                let mut image = image.clone();
+                if let Some(attrs) = &p.attrs {
+                    crate::parse::merge_leading_attrs(&mut image.attrs, attrs.clone());
+                }
+                indent(out, level);
+                render_image(out, &image, options, crate::render_loss::RawNodeType::Block);
+                return;
+            }
+        }
+    }
     indent(out, level);
     out.push_str("<p");
     write_attrs_for(out, &p.attrs, "p");

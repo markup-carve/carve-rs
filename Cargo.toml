@@ -80,6 +80,10 @@ name = "fx22_render_boundaries"
 path = "tests/fx22_render_boundaries.rs"
 
 [[test]]
+name = "fx22_html_image_import"
+path = "tests/fx22_html_image_import.rs"
+
+[[test]]
 name = "authoring_lint_port"
 path = "tests/authoring_lint_port.rs"
 
