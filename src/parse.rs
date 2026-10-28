@@ -785,6 +785,12 @@ fn parse_with_options_mode_and_index(
     options: &Options<'_>,
     mode: ParseMode,
 ) -> (Document, CrossrefIndex) {
+    #[cfg(feature = "experimental-event-parser-options")]
+    if let Some((document, index, _)) =
+        event_pipeline::parse_document_with_custom_options(source, options, mode)
+    {
+        return (document, index.unwrap_or_default());
+    }
     // Kept for the offset table below: normalization rewrites the text the
     // parser sees, and PART 12 §4 positions index the ORIGINAL file.
     let original = source;
