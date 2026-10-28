@@ -1786,7 +1786,12 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         };
         let has_lazy = if let Some(line) = cur.peek() {
             let line = line.to_string();
+            let at_nested_marker = is_definition_list_start(lead.inner_lead)
+                && strip_definition_marker(trim_ascii_start(&line)).is_some()
+                && innermost_marker_column(lead.content)
+                    .is_some_and(|column| indent_columns(&line) == content_col + column);
             !is_blank_line(&line)
+                && !at_nested_marker
                 && indent_columns(&line) < lazy_column
                 && !is_list_marker(&line)
                 && !interrupts_paragraph(cur, &line)
