@@ -779,6 +779,7 @@ struct DefinitionBodyCollector<'s, 'o> {
     marker_line_sibling_columns: Vec<usize>,
     item_content_columns: Vec<usize>,
     owner_item_opens_block: bool,
+    pending_first_block_column: Option<usize>,
     descendant_marker_fence: Option<(FenceOpen, usize)>,
     descendant_block_ended: bool,
     // A lazy fold leaves a paragraph open. Rechecking by parsing all collected
@@ -866,6 +867,9 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
                 Vec::new()
             },
             owner_item_opens_block: paragraph_owner_is_item,
+            pending_first_block_column: last
+                .filter(|line| is_plus_marker(innermost_marker_content(line)))
+                .and_then(|line| paragraph_owner_column(line, content_column)),
             descendant_marker_fence: None,
             descendant_block_ended: false,
             folded_a_lazy_line: false,
@@ -967,6 +971,15 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             }
         }
         let opens_descendant_here = self.track_paragraph_owner(cur, fence, line, column);
+        if !opens_descendant_here
+            && !blank
+            && !is_line_comment_any_column(line)
+            && self
+                .pending_first_block_column
+                .is_some_and(|owner| column >= owner)
+        {
+            self.pending_first_block_column = None;
+        }
         if column == 0 && self.opens_comment_span_outside_body(cur, line) {
             return BodyStep::Stop;
         }
@@ -1103,6 +1116,9 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             }
         }
         self.paragraph_marker_column = is_list_marker(local).then_some(column);
+        self.pending_first_block_column = is_plus_marker(innermost_marker_content(local))
+            .then_some(self.paragraph_column)
+            .flatten();
     }
 
     fn end_descendant_block(&mut self) {
@@ -1367,7 +1383,10 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
     /// column, fold into that descendant's paragraph as lazy text?
     fn folds_past_column_into_owner(&self, line: &str, indent: usize) -> bool {
         let local = trim_ascii_start(line);
-        !(self.nested_definition_column == Some(indent) && is_plus_marker(local))
+        !self
+            .pending_first_block_column
+            .is_some_and(|column| indent < column)
+            && !(self.nested_definition_column == Some(indent) && is_plus_marker(local))
             && !is_line_comment_any_column(line)
             && detect_comment_fence_line_any_column(line).is_none()
             && detect_fence_open(local).is_none()
