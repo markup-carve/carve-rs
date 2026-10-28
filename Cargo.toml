@@ -217,6 +217,10 @@ name = "canonical_table_headers"
 path = "tests/canonical_table_headers.rs"
 
 [[test]]
+name = "lint_context_batch"
+path = "tests/lint_context_batch.rs"
+
+[[test]]
 name = "empty_header_alignment_import"
 path = "tests/empty_header_alignment_import.rs"
 
