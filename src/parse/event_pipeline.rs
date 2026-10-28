@@ -3193,9 +3193,19 @@ fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Doc
         let lines: Vec<&str> = mapped.source.lines().collect();
         let children = parse_blocks(&lines, &options).or_else(|| {
             if may_have_abbrevs {
-                parse_mixed_blocks::<true, true>(&lines, &options, true)
+                parse_mixed_blocks_mapped::<true, true>(
+                    &lines,
+                    &options,
+                    Some(&mapped.line_map),
+                    true,
+                )
             } else {
-                parse_mixed_blocks::<true, false>(&lines, &options, true)
+                parse_mixed_blocks_mapped::<true, false>(
+                    &lines,
+                    &options,
+                    Some(&mapped.line_map),
+                    true,
+                )
             }
         })?;
         Some((children, footnote_defs))
@@ -3542,9 +3552,19 @@ fn parse_document_with_footnotes_options(
         } else {
             parse_blocks(&lines, options).or_else(|| {
                 if may_have_abbrevs {
-                    parse_mixed_blocks::<true, true>(&lines, options, true)
+                    parse_mixed_blocks_mapped::<true, true>(
+                        &lines,
+                        options,
+                        Some(&mapped.line_map),
+                        true,
+                    )
                 } else {
-                    parse_mixed_blocks::<true, false>(&lines, options, true)
+                    parse_mixed_blocks_mapped::<true, false>(
+                        &lines,
+                        options,
+                        Some(&mapped.line_map),
+                        true,
+                    )
                 }
             })?
         };

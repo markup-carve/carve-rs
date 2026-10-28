@@ -12,6 +12,28 @@ fn parse_standard(source: &str) -> carve::Document {
 }
 
 #[test]
+fn footnote_extraction_keeps_continuation_owner_lines() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    for name in [
+        "279-a-boundary-line-inside-an-open-fence-does-not-end-the-container-4.crv",
+        "629-a-dangling-plus-marker-adds-nothing-and-a-nested-quote-reads-it-like-an-unnested-one-8.crv",
+    ] {
+        let source = fs::read_to_string(corpus.join(name)).unwrap();
+        let (candidate, used) = parse_experimental_event_blocks(&source);
+        assert!(used, "{name}");
+        assert_eq!(candidate, parse_standard(&source), "{name}");
+    }
+    for source in [
+        "> [^a]: n\n> +\n\npara\n",
+        "> q\n+\n:::\na\n[^z]: zz\nb\n:::\n",
+        "> [^a]: n\n> +\n\n[^b]: m\n\npara[^b]\n",
+    ] {
+        let (candidate, _) = parse_experimental_event_blocks(source);
+        assert_eq!(candidate, parse_standard(source), "{source:?}");
+    }
+}
+
+#[test]
 fn refused_plus_after_list_fence_matches_full_document() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     for suffix in ["", "-2", "-3", "-4", "-5", "-6", "-7"] {
