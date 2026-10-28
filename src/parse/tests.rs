@@ -218,6 +218,7 @@ fn event_owned_modes_preserve_extension_callbacks() {
                     .with_positions(positions)
                     .with_extension(&baseline);
                 let expected = {
+                    let _standard_root = StandardEventRootGuard::install();
                     let _standard_nested = StandardNestedReaderGuard::install();
                     parse_with_options_mode_and_index(&source, &baseline_options, mode).0
                 };

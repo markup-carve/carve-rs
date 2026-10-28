@@ -780,10 +780,12 @@ fn parse_with_options_mode_and_index(
     mode: ParseMode,
 ) -> (Document, CrossrefIndex) {
     #[cfg(feature = "experimental-event-parser-options")]
-    if let Some((document, index, _)) =
-        event_pipeline::parse_document_with_custom_options(source, options, mode)
-    {
-        return (document, index.unwrap_or_default());
+    if event_root_allowed() {
+        if let Some((document, index, _)) =
+            event_pipeline::parse_document_with_custom_options(source, options, mode)
+        {
+            return (document, index.unwrap_or_default());
+        }
     }
     // Kept for the offset table below: normalization rewrites the text the
     // parser sees, and PART 12 §4 positions index the ORIGINAL file.
@@ -1570,6 +1572,36 @@ fn needs_positioned_mapped_body(source: &MappedSource) -> bool {
 #[cfg(all(test, feature = "experimental-event-parser-options"))]
 thread_local! {
     static DISABLE_NESTED_EVENT: Cell<bool> = const { Cell::new(false) };
+    static DISABLE_EVENT_ROOT: Cell<bool> = const { Cell::new(false) };
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+fn event_root_allowed() -> bool {
+    #[cfg(test)]
+    {
+        !DISABLE_EVENT_ROOT.with(Cell::get)
+    }
+    #[cfg(not(test))]
+    {
+        true
+    }
+}
+
+#[cfg(all(test, feature = "experimental-event-parser-options"))]
+struct StandardEventRootGuard(bool);
+
+#[cfg(all(test, feature = "experimental-event-parser-options"))]
+impl StandardEventRootGuard {
+    fn install() -> Self {
+        Self(DISABLE_EVENT_ROOT.with(|disabled| disabled.replace(true)))
+    }
+}
+
+#[cfg(all(test, feature = "experimental-event-parser-options"))]
+impl Drop for StandardEventRootGuard {
+    fn drop(&mut self) {
+        DISABLE_EVENT_ROOT.with(|disabled| disabled.set(self.0));
+    }
 }
 
 #[cfg(all(test, feature = "experimental-event-parser-options"))]
