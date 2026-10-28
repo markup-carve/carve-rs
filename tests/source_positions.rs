@@ -392,13 +392,17 @@ fn a_quoted_table_cell_is_measured_in_the_document() {
 
 #[test]
 fn a_block_image_carries_its_own_span() {
-    // An INLINE image gets its span from the inline parser. A lone image
-    // paragraph is promoted to a block image and never goes through it, so it
-    // had none at all.
+    // A source block image has its own span inside the published paragraph.
     let source = "![alt](/i.png)\n";
     let doc = parse_with_positions(source);
-    let BlockNode::BlockImage(image) = &doc.children[0] else {
-        panic!("expected a block image, got {:?}", doc.children[0]);
+    let BlockNode::Paragraph(paragraph) = &doc.children[0] else {
+        panic!(
+            "expected a block-image paragraph, got {:?}",
+            doc.children[0]
+        );
+    };
+    let carve::ast::InlineNode::Image(image) = &paragraph.children[0] else {
+        panic!("expected an image, got {:?}", paragraph.children[0]);
     };
 
     assert_eq!(

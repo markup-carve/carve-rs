@@ -23,29 +23,36 @@ pub(super) fn collect(
     blocks.reverse();
     let mut inlines = Vec::new();
     let mut headings = Vec::new();
+    let mut link_definitions = Vec::new();
     let mut inline_spans = Vec::new();
     let mut ignored = BTreeSet::new();
+    let mut used_link_definitions = BTreeSet::new();
     while let Some((block, depth)) = blocks.pop() {
         match block {
-            BlockNode::LinkReferenceDefinition(def) if def.href.is_empty() => report(
-                def.pos.clone(),
-                "empty-reference-definition",
-                format!(
-                    "Reference definition [{}] has an empty destination.",
-                    def.label
-                ),
-                to_byte,
-                out,
-            ),
+            BlockNode::LinkReferenceDefinition(def) => {
+                link_definitions.push(def);
+                if def.href.is_empty() {
+                    report(
+                        def.pos.clone(),
+                        "empty-reference-definition",
+                        format!(
+                            "Reference definition [{}] has an empty destination.",
+                            def.label
+                        ),
+                        to_byte,
+                        out,
+                    );
+                }
+            }
             BlockNode::Heading(heading) => headings.push(heading),
             BlockNode::CodeBlock(code) => ignore(code.pos.clone(), &mut ignored),
             BlockNode::RawBlock(raw) => ignore(raw.pos.clone(), &mut ignored),
             BlockNode::Comment(comment) => ignore(comment.pos.clone(), &mut ignored),
-            BlockNode::Figure(figure) => {
-                if matches!(&*figure.target, FigureTarget::CodeBlock(_)) {
-                    ignore(figure.pos.clone(), &mut ignored);
-                }
-            }
+            BlockNode::Figure(figure) => match &*figure.target {
+                FigureTarget::CodeBlock(_) => ignore(figure.pos.clone(), &mut ignored),
+                FigureTarget::Image(image) => mark_image_use(image, &mut used_link_definitions),
+                _ => {}
+            },
             _ => {}
         }
         let first_child = blocks.len();
@@ -94,6 +101,30 @@ pub(super) fn collect(
     while let Some((inline, depth)) = inlines.pop() {
         if let Some(pos) = inline.pos() {
             inline_spans.push((to_byte(pos.start_offset), to_byte(pos.end_offset)));
+        }
+        match inline {
+            InlineNode::Link(link) => {
+                if link.href.is_empty() && link.ref_label.is_none() && !link.from_crossref {
+                    report(
+                        link.pos.clone(),
+                        "empty-link-destination",
+                        "This inline link has an empty destination.".into(),
+                        to_byte,
+                        out,
+                    );
+                }
+                if let Some(label) = &link.ref_label {
+                    if !link.from_heading_reference
+                        && !crate::parse::is_unresolved_reference(link)
+                        && (!link.href.is_empty() || link.resolved_empty_reference)
+                        && !crate::escape::has_denied_url_scheme(&link.href)
+                    {
+                        used_link_definitions.insert(label_key(label));
+                    }
+                }
+            }
+            InlineNode::Image(image) => mark_image_use(image, &mut used_link_definitions),
+            _ => {}
         }
         match inline {
             InlineNode::CrossRef(reference) if reference.href.is_none() => {
@@ -177,6 +208,23 @@ pub(super) fn collect(
             _ => {}
         }
         push_inline_children(inline, depth, &mut inlines);
+    }
+    link_definitions.sort_by_key(|def| def.pos.as_ref().map_or(usize::MAX, |pos| pos.start_offset));
+    let mut winning = BTreeSet::new();
+    for def in link_definitions {
+        let key = label_key(&def.label);
+        if winning.insert(key.clone()) && !used_link_definitions.contains(&key) {
+            report(
+                definition_bracket_pos(source, def, to_byte),
+                "unused-link-reference-definition",
+                format!(
+                    "Reference definition [{}] is never used by a rendered link or image.",
+                    def.label
+                ),
+                to_byte,
+                out,
+            );
+        }
     }
     check_fragment_links(source, options, &fragment_links, to_byte, out);
     let mut sites = BTreeMap::<String, Pos>::new();
@@ -651,6 +699,38 @@ fn percent_decode(text: &str) -> Option<String> {
         }
     }
     String::from_utf8(decoded).ok()
+}
+
+/// A definition's span opens at its line, before any container prefix; the
+/// finding points at the definition's own `[` (PART 13 lint vectors).
+fn definition_bracket_pos(
+    source: &str,
+    def: &LinkReferenceDefinition,
+    to_byte: &dyn Fn(usize) -> usize,
+) -> Option<Pos> {
+    let mut pos = def.pos.clone()?;
+    let start = to_byte(pos.start_offset);
+    let line_end = source[start..]
+        .find(['\n', '\r'])
+        .map_or(source.len(), |at| start + at);
+    let Some(at) = source[start..line_end].find(&format!("[{}]:", def.label)) else {
+        return Some(pos);
+    };
+    let shift = source[start..start + at].chars().count();
+    pos.start_offset += shift;
+    pos.start_column += shift;
+    Some(pos)
+}
+
+fn mark_image_use(image: &Image, used: &mut BTreeSet<String>) {
+    if let Some(label) = &image.ref_label {
+        if !crate::parse::is_unresolved_image(image)
+            && (!image.src.is_empty() || image.resolved_empty_reference)
+            && !crate::escape::has_denied_url_scheme(&image.src)
+        {
+            used.insert(label_key(label));
+        }
+    }
 }
 
 fn label_key(label: &str) -> String {

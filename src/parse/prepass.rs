@@ -823,14 +823,29 @@ impl<'a, 'o> TermScan<'a, 'o> {
         }
         // A term may follow list markers on its line; its column is then the
         // item's content column.
-        if let Some(term_col) = term_start_column(view_line).filter(|&term_col| {
-            term_col == 0
-                || detect_list_marker_full(view_line).is_some()
-                || self.columns.reached_by_at(quotes, term_col) == term_col
-        }) {
-            self.term = Some((term_col, quotes));
-            self.term_start = Some(index);
-            self.term_quote_columns = term_quote_columns_for(line, &self.columns);
+        if let Some(authored_col) = term_start_column(view_line) {
+            let marker_line = detect_list_marker_full(view_line).is_some();
+            let host_col = self.columns.reached_by_at(quotes, authored_col);
+            let body_host = self
+                .columns
+                .frames
+                .get(quotes)
+                .is_some_and(|frame| frame.body_columns.contains(&host_col));
+            if authored_col == 0 || marker_line || host_col == authored_col || body_host {
+                // A term overindented inside a description still measures its
+                // following lines against the description's content column.
+                // The term marker's own column is not a content column (P2-028).
+                self.term = Some((
+                    if body_host && !marker_line {
+                        host_col
+                    } else {
+                        authored_col
+                    },
+                    quotes,
+                ));
+                self.term_start = Some(index);
+                self.term_quote_columns = term_quote_columns_for(line, &self.columns);
+            }
         }
         self.index += 1;
     }
