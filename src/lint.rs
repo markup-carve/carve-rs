@@ -13,6 +13,7 @@ mod consumed_key;
 mod delimited_table;
 mod reference_rules;
 mod source_rules;
+mod suppression;
 
 use crate::ast::*;
 use crate::ast_json::emphasis_type;
@@ -416,6 +417,7 @@ pub(crate) fn lint_with_recovery(source: &str, options: &Options<'_>) -> (Vec<Li
     for body in doc.footnote_defs.values() {
         collect_table_span_marker_warnings(source, body, &to_byte, &mut out);
     }
+    suppression::apply(source, &doc, &to_byte, &mut out);
     out.sort_by_key(|w| (w.start, w.end, w.rule));
     (out, recovered_metadata)
 }
