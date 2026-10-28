@@ -1,5 +1,22 @@
 use carve::lint_carve;
 
+#[test]
+fn quoted_definition_shaped_paragraphs_are_reported() {
+    for source in [
+        "> ::\tterm\n> : d\n",
+        "> > ::\tterm\n> > : d\n",
+        "> - ::\tterm\n>   : d\n",
+    ] {
+        let warnings: Vec<_> = lint_carve(source)
+            .into_iter()
+            .filter(|warning| warning.rule == "markdown-definition-paragraph")
+            .collect();
+        assert_eq!(warnings.len(), 1, "{source:?}: {warnings:?}");
+        assert_eq!(warnings[0].line, 2, "{source:?}");
+        assert_eq!(&source[warnings[0].start..warnings[0].end], ":");
+    }
+}
+
 fn findings(source: &str, rule: &str) -> Vec<(usize, usize)> {
     lint_carve(source)
         .into_iter()

@@ -662,6 +662,7 @@ fn promote_ingested_block_images(doc: &mut Document) {
                 if !p.block_image {
                     p.block_image = crate::parse::lone_rendered_image(&p.children).is_some();
                 }
+                crate::parse::publish_block_image_attrs(p);
             }
             match block {
                 BlockNode::BlockQuote(b) => worklist.push(b.children.as_mut_slice()),

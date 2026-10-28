@@ -2584,7 +2584,15 @@ fn item_chunk_tree_looseness(
                 && lines
                     .get(start)
                     .is_some_and(|line| trim_ascii_start(line).starts_with('+')));
-        let blank_before_invisible = (previous_start..start)
+        let search_start = if lines
+            .get(previous_end..start)
+            .is_some_and(|span| span.iter().any(|line| is_definition_placeholder(line)))
+        {
+            previous_start
+        } else {
+            previous_end
+        };
+        let blank_before_invisible = (search_start..start)
             .rev()
             .find(|&line| {
                 !lines.get(line).is_some_and(|text| {

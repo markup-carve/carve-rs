@@ -220,6 +220,26 @@ name = "lint_context_batch"
 path = "tests/lint_context_batch.rs"
 
 [[test]]
+name = "multiline_image_caption"
+path = "tests/multiline_image_caption.rs"
+
+[[test]]
+name = "image_ast_attrs"
+path = "tests/image_ast_attrs.rs"
+
+[[test]]
+name = "parser_owner_batch"
+path = "tests/parser_owner_batch.rs"
+
+[[test]]
+name = "parser_first_block_and_refused_plus"
+path = "tests/parser_first_block_and_refused_plus.rs"
+
+[[test]]
+name = "parser_invisible_transitions"
+path = "tests/parser_invisible_transitions.rs"
+
+[[test]]
 name = "empty_header_alignment_import"
 path = "tests/empty_header_alignment_import.rs"
 
