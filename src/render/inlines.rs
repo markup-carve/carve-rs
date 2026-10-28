@@ -353,7 +353,12 @@ pub(super) fn render_inline_after(
             // blank. Mirrors carve-js `render-html.ts` `case 'math'`.
             let body = match (options.is_static(), &options.renderers.math) {
                 (true, Some(build)) => build(&m.content, m.display),
-                _ => format!("{}{}{}", open, escape_text(&m.content), close),
+                _ => {
+                    let mut body = String::from(open);
+                    write_escaped_text_nbsp(&mut body, &m.content);
+                    body.push_str(close);
+                    body
+                }
             };
             out.push_str(&format!("<span{}{}>{}</span>", attrs, role, body,));
             // PART 9 §19: a directly numbered display equation renders its label
@@ -713,10 +718,12 @@ pub(super) fn render_inline_after(
                         );
                     }
                 }
-                out.push_str(&render_attrs_without_id_and_keys(
-                    &f.attrs,
-                    &[crate::roundtrip::FOOTNOTE_LABEL],
-                ));
+                let blocked = if options.html_carriers() {
+                    &[crate::roundtrip::FOOTNOTE_LABEL][..]
+                } else {
+                    &[][..]
+                };
+                out.push_str(&render_attrs_without_id_and_keys(&f.attrs, blocked));
                 write!(out, "><sup>{number}</sup></a>").unwrap();
             } else if let Some(id) = &f.id {
                 write_escaped_text(out, &format!("[^{id}]"));

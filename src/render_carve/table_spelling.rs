@@ -130,11 +130,8 @@ pub(super) fn render_table(
         .rows
         .first()
         .is_some_and(|row| !row.cells.is_empty() && row.cells.iter().all(|cell| cell.header));
-    // PART 12 §3: the author's own separator row, where the AST records one.
-    // Its PRESENCE is the choice, so it is written whatever the header shape -
-    // a native `|=` head is what ABSENCE spells. An EMPTY entry list names no
-    // separator cell and so has no separator row to spell; only a hand-built
-    // tree can hold one.
+    // PART 12 §3 records the author's separator spelling. The canonical writer
+    // ignores it when choosing between native headers and a delimiter row.
     let authored_widths = node
         .separator_widths
         .as_ref()
@@ -146,13 +143,12 @@ pub(super) fn render_table(
         );
         return String::new();
     }
-    let needs_delimiter = authored_widths.is_some()
-        || header_row
-            && node.rows[0].cells.iter().any(|cell| {
-                cell.children.is_empty()
-                    && cell.blocks.is_none()
-                    && cell.align == Some(TableAlign::Left)
-            })
+    let needs_delimiter = header_row
+        && node.rows[0].cells.iter().any(|cell| {
+            cell.children.is_empty()
+                && cell.blocks.is_none()
+                && cell.align == Some(TableAlign::Left)
+        })
         || header_row
             && node.rows.first().is_some_and(|row| {
                 let first_span = row.cells.iter().position(|cell| cell.span.is_some());
@@ -190,12 +186,9 @@ pub(super) fn render_table(
             // In the delimiter form the promoted row is written as ordinary
             // data cells - the row after it is what makes them headers.
             let mark_header = !(needs_delimiter && row_index == 0);
-            // A written separator row carries the column alignment, so the
-            // promoted row does not spell it a second time - for the columns
-            // that row reaches. A cell past the last entry has no separator
-            // cell to carry it and keeps its own marker.
-            let suppress_align =
-                row_index == 0 && authored_widths.is_some_and(|widths| cell_index < widths.len());
+            // A generated separator carries the column alignment, so the
+            // promoted row does not spell it a second time.
+            let suppress_align = row_index == 0 && needs_delimiter;
             let rendered = render_table_cell(
                 session,
                 cell,
@@ -239,22 +232,10 @@ pub(super) fn render_table(
     }
     let mut separator_index = None;
     if needs_delimiter {
-        let sep = match authored_widths {
-            // ONE SEPARATOR CELL PER ENTRY, not per row cell. Filling the row's
-            // width instead made the writer a non-fixed-point: the corpus's
-            // ragged `| |x |` over `|---|` came back with a second entry the
-            // author never wrote, so `fmt(fmt(x))` moved the tree.
-            Some(widths) => match render_table_separator(node, widths) {
-                Some(separator) => separator,
-                None => return String::new(),
-            },
-            None => {
-                let widths = vec![3; node.rows[0].cells.len()];
-                match render_table_separator(node, &widths) {
-                    Some(separator) => separator,
-                    None => return String::new(),
-                }
-            }
+        let widths = vec![3; node.rows[0].cells.len()];
+        let sep = match render_table_separator(node, &widths) {
+            Some(separator) => separator,
+            None => return String::new(),
         };
         let head_lines = node.rows[0].continuation_lines.unwrap_or(0);
         let index = 1 + head_lines;

@@ -38,7 +38,28 @@ use std::path::PathBuf;
 ///
 /// `tests/corpus.rs` has recorded the value for the render side since it was
 /// written, and for the same reason. This is that shape, on the writer side.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
+    (
+        "284-a-ragged-table-keeps-each-row-s-cell-count-2",
+        "CARVE-P11-066 makes native headers canonical",
+        "|= |= x |\n| y |\n",
+    ),
+    (
+        "284-a-ragged-table-keeps-each-row-s-cell-count-3",
+        "CARVE-P11-066 makes native headers canonical",
+        "|= h |\n| | x |\n",
+    ),
+    (
+        "285-adjacent-block-openers-in-an-attached-run-stay-separate-2",
+        "CARVE-P11-066 makes native headers canonical",
+        "- x\n+\n|= a |\n| b |\n+\n|= a |\n| b |\n",
+    ),
+    (
+        "99-table-cell-attributes",
+        "CARVE-P11-066 makes native headers canonical",
+        "|={.highlight} Total |= 99 |\n| a | b |\n",
+    ),
+];
 
 fn corpus_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus")
