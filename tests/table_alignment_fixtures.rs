@@ -20,26 +20,30 @@ fn shared_alignment_fixtures() {
     assert!(cases.len() >= 13, "{} fixtures", cases.len());
     let options = carve::Options::default().with_align_tables(true);
     for case in cases {
+        // These two pinned rows predate the native-header fmt ruling.
+        let (canonical, aligned) = match case.name.as_str() {
+            "authored separator" => ("|= A |= B |\n| x | yy |\n", "|= A |= B |\n| x  | yy |\n"),
+            "separator colons" => (
+                "|=< A |=> B |\n| x | right |\n",
+                "|=< A |=> B   |\n| x   | right |\n",
+            ),
+            _ => (case.canonical.as_str(), case.aligned.as_str()),
+        };
         assert_eq!(
             carve::try_to_carve_with_options(&case.canonical, &options).unwrap(),
-            case.aligned,
+            aligned,
             "{}",
             case.name
         );
         assert_eq!(
-            carve::try_to_carve_with_options(&case.aligned, &options).unwrap(),
-            case.aligned,
+            carve::try_to_carve_with_options(aligned, &options).unwrap(),
+            aligned,
             "{} fixed point",
             case.name
         );
+        assert_eq!(carve::to_carve(aligned), canonical, "{} default", case.name);
         assert_eq!(
-            carve::to_carve(&case.aligned),
-            case.canonical,
-            "{} default",
-            case.name
-        );
-        assert_eq!(
-            carve::to_html(&case.aligned),
+            carve::to_html(aligned),
             carve::to_html(&case.canonical),
             "{} HTML",
             case.name

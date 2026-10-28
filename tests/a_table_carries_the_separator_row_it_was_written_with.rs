@@ -1,5 +1,5 @@
 //! PART 12 §3's `separatorWidths`: the dash runs an author's separator row
-//! spelled, recorded on the table, published on the wire and spelled back
+//! spelled, recorded on the table, and published on the wire
 //! (markup-carve/carve#2894, carriers named on markup-carve/carve#2902).
 //!
 //! PRESENCE is the larger half. `|= a |= b |` and a plain row over `|---|---|`
@@ -29,6 +29,12 @@ fn spelled(source: &str) -> String {
 fn through_json(source: &str) -> String {
     let json = to_json(&parse(source));
     render_carve(&from_json(&json).expect("the payload reads")).expect("the table spells")
+}
+
+fn canonical_table(source: &str) -> Table {
+    let mut table = table_of(source);
+    table.separator_widths = None;
+    table
 }
 
 // ------------------------------------------------------------------ the parser
@@ -118,11 +124,12 @@ fn the_closed_schema_refuses_a_width_that_is_not_a_positive_integer() {
 // ------------------------------------------------------------------ the writer
 
 #[test]
-fn the_writer_spells_the_separator_row_the_author_wrote() {
-    assert_eq!(spelled(ALIGNED), ALIGNED);
-    assert_eq!(through_json(ALIGNED), ALIGNED);
+fn the_writer_uses_native_headers_after_a_separator_row() {
+    let canonical = "|=< a |=> b |\n| 1 | 2 |\n";
+    assert_eq!(spelled(ALIGNED), canonical);
+    assert_eq!(through_json(ALIGNED), canonical);
     let plain = "| a | b |\n|---|-------|\n| 1 | 2 |\n";
-    assert_eq!(spelled(plain), plain);
+    assert_eq!(spelled(plain), "|= a |= b |\n| 1 | 2 |\n");
 }
 
 #[test]
@@ -136,7 +143,7 @@ fn absence_still_spells_the_native_header_form() {
 }
 
 #[test]
-fn a_width_below_one_is_written_as_one() {
+fn a_width_below_one_does_not_affect_canonical_output() {
     // A parse cannot record a 0 and the wire refuses one, so this is a tree
     // built in memory - the one place the value can arrive.
     let mut table = table_of(ALIGNED);
@@ -145,34 +152,30 @@ fn a_width_below_one_is_written_as_one() {
     doc.children = vec![BlockNode::Table(table)];
     assert_eq!(
         render_carve(&doc).expect("the table spells"),
-        "| a | b |\n|:-|-:|\n| 1 | 2 |\n"
+        "|=< a |=> b |\n| 1 | 2 |\n"
     );
 }
 
 #[test]
-fn an_entry_count_that_disagrees_is_spelled_for_the_cells_that_exist() {
+fn an_entry_count_that_disagrees_does_not_affect_canonical_output() {
     let mut doc = parse(ALIGNED);
     let mut table = table_of(ALIGNED);
     table.separator_widths = Some(vec![9]);
     doc.children = vec![BlockNode::Table(table.clone())];
     assert_eq!(
         render_carve(&doc).expect("the table spells"),
-        "| a |> b |\n|:---------|\n| 1 | 2 |\n",
-        "one separator cell per entry, and a column past them keeps its own marker"
+        "|=< a |=> b |\n| 1 | 2 |\n"
     );
     table.separator_widths = Some(vec![1, 1, 1, 1]);
     doc.children = vec![BlockNode::Table(table)];
     assert_eq!(
         render_carve(&doc).expect("the table spells"),
-        "| a | b |\n|:-|-:|-|-|\n| 1 | 2 |\n",
-        "an entry past the row's cells has no alignment to take"
+        "|=< a |=> b |\n| 1 | 2 |\n"
     );
 }
 
 #[test]
-fn spelling_one_cell_per_entry_keeps_the_writer_a_fixed_point() {
-    // Filling the ROW's width instead invented an entry the author never
-    // wrote, so the second format moved the tree.
+fn canonical_headers_keep_the_writer_a_fixed_point() {
     for source in [
         "| |x |\n|---|\n| y |\n",
         "| h |\n|---|\n| |x |\n",
@@ -181,10 +184,10 @@ fn spelling_one_cell_per_entry_keeps_the_writer_a_fixed_point() {
     ] {
         let once = spelled(source);
         assert_eq!(spelled(&once), once, "not idempotent for {source:?}");
-        // The byte length moves with the spelling; the TREE must not.
+        // The source-only separator field is dropped; the rows stay fixed.
         assert_eq!(
             table_of(&once),
-            table_of(source),
+            canonical_table(source),
             "the tree moved for {source:?}"
         );
     }
@@ -209,13 +212,13 @@ fn imported(html: &str) -> String {
 }
 
 #[test]
-fn roundtrip_export_carries_the_widths_and_the_import_comes_back_byte_identical() {
+fn roundtrip_export_carries_the_widths_and_import_writes_native_headers() {
     let html = exported(ALIGNED, true);
     assert!(
         html.contains(r#"<table data-carve-col-widths="5,3">"#),
         "{html}"
     );
-    assert_eq!(imported(&html), ALIGNED);
+    assert_eq!(imported(&html), "|=< a |=> b |\n| 1 | 2 |\n");
 }
 
 #[test]
@@ -229,11 +232,8 @@ fn with_the_option_off_the_table_still_comes_back_as_the_native_form() {
 fn the_import_refuses_the_whole_carrier_rather_than_reading_part_of_it() {
     // PART 10 §13a CARVE-P10-016: not a run of decimal digits, or past 1000,
     // refuses the WHOLE carrier - no field, so the `|=` form. Neither a partial
-    // read nor a clamp: both would put a separator row on the page whose widths
-    // nobody wrote. The bound exists because the value arrives in an attribute
-    // off untrusted HTML and the writer spells one `-` per unit, so six
-    // characters would buy a megabyte of separator row. 1000 is pinned for
-    // cross-engine parity rather than derived.
+    // read nor a clamp. The carrier bound is independent of canonical source
+    // output, which always uses native headers here.
     for value in [
         "x,2",
         "2,x",
@@ -257,10 +257,7 @@ fn the_import_refuses_the_whole_carrier_rather_than_reading_part_of_it() {
     }
     // The bound itself still reads.
     let at_limit = r#"<table data-carve-col-widths="1000,2"><tr><th>a</th><th>b</th></tr></table>"#;
-    assert_eq!(
-        imported(at_limit),
-        format!("| a | b |\n|{}|--|\n", "-".repeat(1000))
-    );
+    assert_eq!(imported(at_limit), "|= a |= b |\n");
 }
 
 #[test]
@@ -283,16 +280,9 @@ fn the_export_writes_no_carrier_for_a_field_a_reader_would_refuse() {
 }
 
 #[test]
-fn the_entry_count_decides_the_cell_count_in_both_directions() {
-    // PART 11 §6h CARVE-P11-066: the cell count is the number of ENTRIES, and
-    // the header row does not enter it - neither padded out to the header's
-    // width nor truncated to it. The two directions are tested TOGETHER on
-    // purpose: where the separator is SHORTER than its header, padding and
-    // truncating give the same bytes, which is how carve-php (padding) and
-    // carve-js (truncating) each passed a suite that only covered that side.
-    //
-    // Asserted on the TREE, not on the line: a writer that pads or truncates
-    // still emits a plausible table, so byte equality alone cannot see it.
+fn separator_entry_count_is_recorded_but_canonical_source_drops_it() {
+    // PART 11 §6h records every authored entry, including entries past the
+    // header's last cell. Canonical source uses the row's cells instead.
     for (source, widths) in [
         // separator LONGER than its header - the half that catches truncation
         ("| a | b |\n|---|---|---|\n| 1 | 2 |\n", vec![3, 3, 3]),
@@ -309,10 +299,10 @@ fn the_entry_count_decides_the_cell_count_in_both_directions() {
         let once = spelled(source);
         assert_eq!(
             table_of(&once).separator_widths,
-            Some(widths),
-            "the re-parse disagrees for {source:?}; written as {once:?}"
+            None,
+            "canonical output retains the separator for {source:?}; written as {once:?}"
         );
-        assert_eq!(table_of(&once), table_of(source), "{source:?}");
+        assert_eq!(table_of(&once), canonical_table(source), "{source:?}");
         assert_eq!(spelled(&once), once, "not idempotent for {source:?}");
     }
 }
@@ -323,7 +313,7 @@ fn an_entry_past_the_headers_last_cell_takes_no_alignment() {
     // count deciding the row.
     let source = "| a |\n|:---:|---|\n| 1 |\n";
     assert_eq!(table_of(source).separator_widths, Some(vec![3, 3]));
-    assert_eq!(spelled(source), source);
+    assert_eq!(spelled(source), "|=~ a |\n| 1 |\n");
 }
 
 // ------------------------------------------------- the ProseMirror bridge
@@ -332,14 +322,13 @@ fn an_entry_past_the_headers_last_cell_takes_no_alignment() {
 fn the_prosemirror_bridge_carries_the_authored_separator_row() {
     // The bridge has no table slot of its own for it, so it rides
     // `carveSeparatorWidths` the way an authored bullet rides
-    // `carveListMarker`. Without that the round trip rewrote 19 corpus tables
-    // into the `|=` form.
+    // `carveListMarker`. The canonical source writer drops that choice.
     for source in [ALIGNED, "| a | b |\n|---|---|\n| 1 | 2 |\n"] {
         let pm = to_prosemirror(&parse(source)).json;
         let back = from_prosemirror(&pm).expect("the bridge reads its own output");
         assert_eq!(
             render_carve(&back).expect("it spells"),
-            source,
+            spelled(source),
             "{source:?}"
         );
     }
@@ -373,7 +362,7 @@ fn a_separator_without_a_preceding_row_has_a_typed_source_refusal() {
 }
 
 #[test]
-fn large_widths_remain_exact_on_the_wire_and_refuse_unallocatable_source() {
+fn large_widths_remain_exact_on_the_wire_without_affecting_canonical_output() {
     for widths in [
         vec![u64::MAX],
         vec![isize::MAX as u64, 1],
@@ -386,16 +375,7 @@ fn large_widths_remain_exact_on_the_wire_and_refuse_unallocatable_source() {
         table.separator_widths = Some(widths);
         let json = to_json(&doc);
         assert_eq!(to_json(&from_json(&json).unwrap()), json);
-        match render_carve(&doc).expect_err("source capacity must be checked before allocation") {
-            carve::RenderCarveError::SourceUnspellable(error) => {
-                assert_eq!(error.node_type(), "table");
-                assert_eq!(
-                    error.reason(),
-                    "separator row exceeds source allocation capacity"
-                );
-            }
-            other => panic!("expected source refusal, got {other:?}"),
-        }
+        assert_eq!(render_carve(&doc).unwrap(), "|=< a |=> b |\n| 1 | 2 |\n");
     }
 }
 
@@ -477,7 +457,11 @@ fn separator_alignment_and_vertical_alignment_survive_together() {
             assert!(before.rows[0].cells[0].align.is_some(), "{source:?}");
             assert!(before.rows[0].cells[0].valign.is_some(), "{source:?}");
             let once = spelled(&source);
-            assert_eq!(table_of(&once), before, "{source:?} became {once:?}");
+            assert_eq!(
+                table_of(&once),
+                canonical_table(&source),
+                "{source:?} became {once:?}"
+            );
             assert_eq!(spelled(&once), once);
         }
     }

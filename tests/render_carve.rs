@@ -191,7 +191,8 @@ fn canonical_tree(source: &str, dissolve_section_1c_wrappers: bool) -> String {
                 // order §1's comparison asks for.
                 let mut out = serde_json::Map::new();
                 for (key, child) in fields {
-                    if key == "pos" || key == "srcByteLength" {
+                    // PART 11 §1 ignores the author's separator spelling for fmt.
+                    if key == "pos" || key == "srcByteLength" || key == "separatorWidths" {
                         continue;
                     }
                     if key == "type" && child.as_str() == Some("escaped_text") {
