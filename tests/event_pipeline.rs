@@ -27,6 +27,8 @@ fn eof_fence_option_route_matches_public_parser() {
         "- ```\n  body",
         "::: note\n```\nbody",
         ":: t\n: ```\ncode",
+        "```\r\nbody",
+        "[^n]: note\r\n\r\n```\r\nbody",
     ] {
         for positions in [false, true] {
             for source_lines in [false, true] {
