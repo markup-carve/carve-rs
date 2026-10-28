@@ -39,6 +39,29 @@ fn marker_column_colon_line_stays_in_open_list_paragraph() {
 
 #[test]
 fn continuation_after_list_block_keeps_tightness_and_image_shape() {
+    for source in [
+        "- a\n  > q\n\n+\np\n\n+\nq\n",
+        "- a\n  > q\n+\np\n\n+\nq\n",
+        "- a\n+\np\n\n+\nq\n",
+    ] {
+        let (candidate, used) = parse_experimental_event_blocks(source);
+        assert!(used, "{source:?}");
+        assert_eq!(candidate, parse_standard(source), "{source:?}");
+    }
+    for before in ["- a\n", "- a\n  > q\n", "- ```\n  code\n  ```\n"] {
+        for first_blank in ["", "\n"] {
+            for second_blank in ["", "\n"] {
+                for first in ["p", "> q", "# h"] {
+                    for second in ["q", "> q", "![i](x.png)"] {
+                        let source =
+                            format!("{before}{first_blank}+\n{first}\n{second_blank}+\n{second}\n");
+                        let (candidate, _) = parse_experimental_event_blocks(&source);
+                        assert_eq!(candidate, parse_standard(&source), "{source:?}");
+                    }
+                }
+            }
+        }
+    }
     for before in ["- a\n  > q\n", "- a\n  b\n", "- ```\n  code\n  ```\n"] {
         for blank in ["", "\n"] {
             for marker in ["+", "+ ", " +"] {

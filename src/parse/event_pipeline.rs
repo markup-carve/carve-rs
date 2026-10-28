@@ -1469,13 +1469,11 @@ fn advance_unified_list_blank(
                 && !decision.first_block
         })
     {
-        if !frame.paragraph.is_empty()
-            || frame
-                .node
-                .items
-                .last()
-                .and_then(|item| item.blocks.last())
-                .is_some_and(|block| matches!(block, UnifiedListBlock::Paragraph(_)))
+        let blocks = &frame.node.items.last()?.blocks;
+        if (!frame.paragraph.is_empty() && blocks.is_empty())
+            || (frame.paragraph.is_empty()
+                && blocks.len() == 1
+                && matches!(blocks[0], UnifiedListBlock::Paragraph(_)))
         {
             frame.node.tight = false;
         }
