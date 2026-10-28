@@ -118,16 +118,7 @@ impl Reader {
                         string_json(attrs_obj(child_obj), "label", ""),
                     );
                     if let Some(pos) = position_value(attrs_obj(child_obj)) {
-                        match o.get_mut("children") {
-                            Some(Json::Array(children)) if !children.is_empty() => {
-                                if let Json::Object(first) = &mut children[0] {
-                                    first.insert("pos".into(), pos.clone());
-                                }
-                            }
-                            _ => {
-                                o.insert("pos".into(), pos.clone());
-                            }
-                        }
+                        o.insert("pos".into(), pos.clone());
                     }
                 }
                 children.push(n);
@@ -1298,6 +1289,12 @@ fn with_attrs(mut n: Json, a: &Object) -> Json {
             ("class", Json::String(s)) => {
                 classes = s.split_whitespace().map(str::to_owned).collect()
             }
+            ("carveAuthoredHref", Json::String(s)) => {
+                kv.insert("href".into(), Json::String(s.clone()));
+            }
+            ("carveAuthoredSrc", Json::String(s)) => {
+                kv.insert("src".into(), Json::String(s.clone()));
+            }
             (_, Json::String(s)) if !is_structural_attr(k) => {
                 kv.insert(k.clone(), Json::String(s.clone()));
             }
@@ -1462,6 +1459,8 @@ fn is_structural_attr(k: &str) -> bool {
     matches!(
         k,
         "alt"
+            | "carveAuthoredHref"
+            | "carveAuthoredSrc"
             | "alignment"
             | "verticalAlignment"
             | "carveAttrOrder"

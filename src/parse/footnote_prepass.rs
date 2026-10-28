@@ -141,6 +141,14 @@ impl NoteBody {
             .get_or_insert_with(|| body_ends_with_open_paragraph(&self.lines.join("\n"), options))
     }
 
+    fn can_fold_below_owner(&mut self, line: &str, options: &Options<'_>) -> bool {
+        !is_blank_line(line)
+            && !self.lines.last().is_some_and(|last| is_blank_line(last))
+            && *self.lazy_open.get_or_insert_with(|| {
+                body_ends_with_open_paragraph(&self.lines.join("\n"), options)
+            })
+    }
+
     fn push_lazy(&mut self, line: String, source_line: usize, column: Option<isize>) {
         self.push_with(line, Some(source_line), |_| column);
         self.lazy_open = Some(true);
@@ -721,6 +729,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             lazy_claim: false,
         };
         let body_indent = footnote_body_floor(raw_def_line);
+        let attached_first_block = !in_container && is_plus_marker(def.first);
         let container = IndentContainer {
             marker_column: indent_columns(def.first),
             content_column: body_indent,
@@ -771,10 +780,41 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             }
         }
         // First definition for a label wins (later duplicates are ignored).
+        let closed_attached = attached_first_block
+            && note
+                .line_map
+                .iter()
+                .rev()
+                .find_map(|line| *line)
+                .is_some_and(|line| line > def_start_line)
+            && {
+                let attached_base = note
+                    .lines
+                    .iter()
+                    .find(|line| !is_blank_line(line))
+                    .map(|line| indent_columns(line))
+                    .unwrap_or(0);
+                let attached_source = note
+                    .lines
+                    .iter()
+                    .map(|line| strip_leading_columns(line, attached_base))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                !body_ends_with_open_paragraph(&attached_source, self.options)
+            };
         if first_for_label {
             self.register_definition(normalized_label, &def, raw_def_line, note);
         }
         self.push_definition_replacement(raw_def_line, &def, stripped, def_start_line);
+        if closed_attached {
+            self.body.push(format!(
+                "{}{}",
+                " ".repeat(indent_columns(raw_def_line)),
+                document_definition_placeholder()
+            ));
+            self.body_line_map
+                .push(Some(self.first_source_line + i - 1));
+        }
         i
     }
 
@@ -832,18 +872,24 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         {
             return i;
         }
-        let end = attached_block_lines_classified(
+        let bound = attached_block_end(
             CursorLines::Slice(lines),
             i,
             &mut self.comment_closers,
             &mut self.closer_index,
-            self.options,
             &mut |line, _| {
                 is_blank_line(line)
                     || is_plus_marker(line)
                     || (indent_columns(line) == 0 && is_list_marker(line))
             },
         );
+        let attached_column = indent_columns(lines[i]);
+        let measured: Vec<String> = lines[i..bound]
+            .iter()
+            .map(|line| strip_leading_columns(line, attached_column))
+            .collect();
+        let measured: Vec<&str> = measured.iter().map(String::as_str).collect();
+        let end = i + attached_one_block_lines(CursorLines::Slice(&measured), self.options);
         if end > i {
             note.lines[0].clear();
             note.line_map[0] = None;
@@ -928,6 +974,24 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         if let Some(flow) = self.attached_plus_block(state, note, line, column, i) {
             return flow;
         }
+        let owner_column = state.body_indent.saturating_sub(2);
+        if owner_column > 0
+            && column >= owner_column
+            && column < state.body_indent
+            && detect_list_marker_full(trim_ascii_start(line)).is_some()
+        {
+            return Flow::Stop;
+        }
+        if owner_column > 0
+            && note.lazy_claim
+            && column >= owner_column
+            && column <= state.body_indent
+            && item_block_opener_with_invisible_arms(trim_ascii_start(line), false)
+            && !detect_fence_open(trim_ascii_start(line))
+                .is_some_and(|open| !self.closer_maxima.closes_after(*i, open))
+        {
+            return Flow::Stop;
+        }
         // COLUMNS, not a byte count. §16 asks for >= 2 columns and
         // §24 C1 gives a tab a column value, so a bare tab reaches
         // the body's column exactly as two spaces do. Counting
@@ -953,14 +1017,19 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             *i += 1;
             return Flow::Next;
         }
-        let owner_column = state.body_indent.saturating_sub(2);
         if !self.nested
-            && (column >= owner_column
-                || (note.lazy_claim && detect_list_marker_full(trim_ascii_start(line)).is_none()))
             && !below_owner_interrupts(line, owner_column)
-            && note.can_fold_below(line, self.options)
+            && if column < owner_column {
+                note.lazy_claim && note.can_fold_below_owner(line, self.options)
+            } else {
+                note.can_fold_below(line, self.options)
+            }
         {
-            let kept = strip_leading_columns(line, state.body_indent);
+            let kept = if column < owner_column {
+                format!("{LAZY}{}", trim_ascii_start(line))
+            } else {
+                strip_leading_columns(line, state.body_indent)
+            };
             note.push_lazy(
                 kept,
                 self.first_source_line + *i,
@@ -1501,7 +1570,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 .is_some_and(|line| {
                     !self.nested
                         && (indent_columns(line) >= host.owner_column || note.lazy_claim)
-                        && note.can_fold_below(line, self.options)
+                        && if indent_columns(line) < host.owner_column {
+                            note.lazy_claim && note.can_fold_below_owner(line, self.options)
+                        } else {
+                            note.can_fold_below(line, self.options)
+                        }
                 })
         {
             return i;
@@ -1662,18 +1735,39 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         if is_blank_line(line) {
             return self.hosted_blank_run(host, walk, note, i);
         }
+        let column = indent_columns(line);
+        if note.lazy_claim
+            && column >= host.owner_column
+            && column <= host.note_floor
+            && item_block_opener_with_invisible_arms(trim_ascii_start(line), false)
+            && !detect_fence_open(trim_ascii_start(line))
+                .is_some_and(|_| !self.closed_note_fence(host, *i))
+        {
+            return Flow::Stop;
+        }
         if !walk.reaches_floor(host, raw) {
-            let column = indent_columns(line);
             if self.nested
+                || (!host.marker_note
+                    && host.owner_column > 0
+                    && column >= host.owner_column
+                    && detect_list_marker_full(trim_ascii_start(line)).is_some())
                 || (column < host.owner_column && !note.lazy_claim)
                 || below_owner_interrupts(line, host.owner_column)
-                || !note.can_fold_below(line, self.options)
+                || !if column < host.owner_column {
+                    note.lazy_claim && note.can_fold_below_owner(line, self.options)
+                } else {
+                    note.can_fold_below(line, self.options)
+                }
             {
                 return Flow::Stop;
             }
             let column = raw.chars().count() - line.chars().count() + leading_ws(line);
             note.push_lazy(
-                strip_leading_columns(line, host.note_floor),
+                if indent_columns(line) < host.owner_column {
+                    format!("{LAZY}{}", trim_ascii_start(line))
+                } else {
+                    strip_leading_columns(line, host.note_floor)
+                },
                 self.first_source_line + *i,
                 self.positions.then_some(column as isize),
             );

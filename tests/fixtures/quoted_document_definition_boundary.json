@@ -168,13 +168,13 @@
   {
     "id": "lazy-quote1-note",
     "source": "> - a\n> [^a]: note\n> more\n",
-    "html": "<blockquote>\n  <ul>\n    <li>a</li>\n  </ul>\n  <p>more</p>\n</blockquote>",
+    "html": "<blockquote>\n  <ul>\n    <li>a</li>\n  </ul>\n</blockquote>",
     "basis": "native-2d473af"
   },
   {
     "id": "sibling-quote1-note",
     "source": "> - a\n> [^a]: note\n> - b\n",
-    "html": "<blockquote>\n  <ul>\n    <li>a</li>\n  </ul>\n  <ul>\n    <li>b</li>\n  </ul>\n</blockquote>",
+    "html": "<blockquote>\n  <ul>\n    <li>a</li>\n  </ul>\n</blockquote>",
     "basis": "native-2d473af"
   },
   {
@@ -204,13 +204,13 @@
   {
     "id": "lazy-quote2-note",
     "source": "> > - a\n> > [^a]: note\n> > more\n",
-    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a</li>\n    </ul>\n    <p>more</p>\n  </blockquote>\n</blockquote>",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a</li>\n    </ul>\n  </blockquote>\n</blockquote>",
     "basis": "native-2d473af"
   },
   {
     "id": "sibling-quote2-note",
     "source": "> > - a\n> > [^a]: note\n> > - b\n",
-    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a</li>\n    </ul>\n    <ul>\n      <li>b</li>\n    </ul>\n  </blockquote>\n</blockquote>",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a</li>\n    </ul>\n  </blockquote>\n</blockquote>",
     "basis": "native-2d473af"
   },
   {

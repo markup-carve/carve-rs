@@ -61,13 +61,11 @@ fn the_definition_is_not_also_written_at_document_level() {
 
 #[test]
 fn the_item_split_survives_the_round_trip() {
-    // The point of writing the line back: without it the two blocks rejoin into
-    // one paragraph, and a paragraph with a soft break renders differently from
-    // two tight blocks.
+    // The note keeps the lazy line under the current ownership ruling.
     let html = carve::to_html(&fmt("- a\n  [^f]: x\n  more\n\nsee[^f]\n"));
     assert!(
-        html.contains("<li>a\n    more\n  </li>"),
-        "the item's two blocks were rejoined:\n{html}"
+        html.contains("<p>x\nmore<a href=\"#fnref1\""),
+        "the note lost its lazy line:\n{html}"
     );
 }
 

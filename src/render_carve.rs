@@ -26,7 +26,7 @@ use std::rc::Rc;
 #[derive(Debug, Clone)]
 enum DefinitionAtLine {
     Link(Box<LinkReferenceDefinition>),
-    Footnote(String, Vec<BlockNode>),
+    Footnote(String, Vec<BlockNode>, Option<usize>),
 }
 
 struct CarveContext {
@@ -518,6 +518,44 @@ fn emptied_marker_lines_at(
         }
     }
 }
+
+/// A collected note immediately after an item's last visible block still
+/// belongs at that item's content column. Collection can shorten the item's
+/// span to the visible block, so the span alone cannot name this line.
+fn item_following_positions(blocks: &[BlockNode], into: &mut HashSet<(usize, usize)>) {
+    for block in blocks {
+        match block {
+            BlockNode::List(list) => {
+                for item in &list.items {
+                    if let Some((first, last)) = item
+                        .children
+                        .first()
+                        .and_then(block_pos)
+                        .zip(item.children.last().and_then(block_pos))
+                    {
+                        into.insert((last.end_line + 1, first.start_column));
+                    }
+                    item_following_positions(&item.children, into);
+                }
+            }
+            BlockNode::BlockQuote(quote) => item_following_positions(&quote.children, into),
+            BlockNode::DefinitionList(list) => {
+                for item in &list.items {
+                    for def in &item.definitions {
+                        item_following_positions(&def.children, into);
+                    }
+                }
+            }
+            BlockNode::Admonition(node) => item_following_positions(&node.children, into),
+            BlockNode::Directive(node) => item_following_positions(&node.children, into),
+            BlockNode::Div(node) => item_following_positions(&node.children, into),
+            BlockNode::Section(node) => item_following_positions(&node.children, into),
+            BlockNode::FigureGroup(node) => item_following_positions(&node.children, into),
+            BlockNode::ExtensionCarrier(node) => item_following_positions(&node.children, into),
+            _ => {}
+        }
+    }
+}
 /// Hoisted definitions that sit on one of those lines, keyed by the line.
 ///
 /// "Those lines" is both cases: an emptied description's own line, and a line
@@ -525,6 +563,13 @@ fn emptied_marker_lines_at(
 fn definitions_by_description_line(doc: &Document) -> HashMap<usize, DefinitionAtLine> {
     let mut lines = HashSet::new();
     emptied_marker_lines(&doc.children, &mut lines, last_region_marker_line(doc));
+    let mut following = HashSet::new();
+    item_following_positions(&doc.children, &mut following);
+    for pos in doc.footnote_def_pos.values() {
+        if following.contains(&(pos.start_line, pos.start_column)) {
+            lines.insert(pos.start_line);
+        }
+    }
     let mut out = HashMap::new();
     if lines.is_empty() {
         return out;
@@ -551,8 +596,13 @@ fn definitions_by_description_line(doc: &Document) -> HashMap<usize, DefinitionA
             continue;
         };
         if lines.contains(&line) {
-            out.entry(line)
-                .or_insert_with(|| DefinitionAtLine::Footnote(label.clone(), blocks.clone()));
+            out.entry(line).or_insert_with(|| {
+                DefinitionAtLine::Footnote(
+                    label.clone(),
+                    blocks.clone(),
+                    doc.footnote_def_pos.get(label).map(|pos| pos.start_column),
+                )
+            });
         }
     }
     out
@@ -1880,6 +1930,11 @@ fn definition_in_gap(
             .cloned()
             .map(|definition| (line, definition))
     })?;
+    if let DefinitionAtLine::Footnote(_, _, Some(column)) = &definition {
+        if block_pos(after).is_some_and(|pos| *column > pos.start_column + 1) {
+            return None;
+        }
+    }
     // MARKED AFTER RENDERING, not before. `render_block` returns an empty
     // string for a definition already marked written, so marking it first made
     // the gap render nothing and the document-level pass skip it too - the
@@ -1888,7 +1943,7 @@ fn definition_in_gap(
         DefinitionAtLine::Link(def) => {
             render_block(session, &BlockNode::LinkReferenceDefinition(*def), ctx)
         }
-        DefinitionAtLine::Footnote(label, blocks) => {
+        DefinitionAtLine::Footnote(label, blocks, _) => {
             render_footnote_def_source(session, &label, &blocks, ctx)
         }
     };
@@ -1918,7 +1973,7 @@ fn definition_at_line(
         DefinitionAtLine::Link(def) => {
             render_block(session, &BlockNode::LinkReferenceDefinition(*def), ctx)
         }
-        DefinitionAtLine::Footnote(label, blocks) => {
+        DefinitionAtLine::Footnote(label, blocks, _) => {
             render_footnote_def_source(session, &label, &blocks, ctx)
         }
     };

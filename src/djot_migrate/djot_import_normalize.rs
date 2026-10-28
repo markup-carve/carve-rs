@@ -1651,6 +1651,7 @@ impl NoteScanner<'_> {
                         .is_some_and(|current| *current <= column)
             });
         let head = self.note_header(&view, outside_main_item);
+        let had_note = !self.notes.is_empty();
         let (returned_note_attributes, returned_scope) = self.close_notes(&view, head.is_some());
         if let Some(scope) = returned_scope {
             self.place_returned_attributes(&view, scope, returned_note_attributes);
@@ -1661,6 +1662,14 @@ impl NoteScanner<'_> {
         }
         self.track_held_code(&view);
         if self.notes.is_empty() {
+            if had_note
+                && !text.is_empty()
+                && !self.re.block.is_match(text)
+                && !self.re.item.is_match(text)
+                && self.main.last().is_some_and(|line| !line.trim().is_empty())
+            {
+                self.main.push(view.physical_prefix.trim_end().to_owned());
+            }
             self.push_main_line(&view, outside_main_item);
         } else {
             self.push_note_line(note_line_index, &view);
@@ -1915,8 +1924,11 @@ impl NoteScanner<'_> {
         } else {
             0
         };
-        let body_paragraph =
-            !empty_task && !body.is_empty() && !block.is_match(body) && !code.is_match(body);
+        let body_paragraph = empty_djot_task_tail_end(body, true).is_none()
+            && !empty_task
+            && !body.is_empty()
+            && !block.is_match(body)
+            && !code.is_match(body);
         self.notes.push(NoteBuffer {
             depth,
             column: header_column,

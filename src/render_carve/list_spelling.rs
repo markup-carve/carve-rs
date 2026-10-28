@@ -364,6 +364,31 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
                 )
             })
         };
+        if let Some(line) = item
+            .children
+            .last()
+            .and_then(block_pos)
+            .map(|pos| pos.end_line + 1)
+        {
+            let paragraph_note = matches!(
+                ctx.definitions_by_line.get(&line),
+                Some(DefinitionAtLine::Footnote(_, blocks, _))
+                    if matches!(blocks.as_slice(), [BlockNode::Paragraph(_)])
+            );
+            if let Some(definition) = definition_at_line(session, line, ctx) {
+                content.push_str(if node.tight { "\n" } else { "\n\n" });
+                if paragraph_note {
+                    let mut lines = definition.lines();
+                    content.push_str(lines.next().unwrap_or_default());
+                    for line in lines {
+                        content.push('\n');
+                        content.push_str(line.strip_prefix("  ").unwrap_or(line));
+                    }
+                } else {
+                    content.push_str(&definition);
+                }
+            }
+        }
         // EMPTINESS is the only thing that earns `+`. A second, text-shaped test
         // (content starts with `[^` and holds a colon-space) stood for "the item
         // spelled a footnote definition that collection hoisted" - but collection

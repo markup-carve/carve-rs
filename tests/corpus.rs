@@ -13,6 +13,14 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    // Spec f809ad67 adds 34 pairs in these categories.
+    "invalid-table-metadata-keeps-the-table",
+    "lazy-quote-owners",
+    "lint-directives-are-invisible-in-rendered-content",
+    "model-inline-frames-and-html-attributes",
+    "model-syntax-boundaries-and-ownership",
+    "opaque-reference-and-inline-bounds",
+    "visible-footnote-headings",
     // Spec 14e66c05 adds 39 corpus pairs in these categories. Each new pair
     // was checked against its committed HTML before the spec pin moved.
     "a-contentless-description-marker-folds-under-a-quoted-term",

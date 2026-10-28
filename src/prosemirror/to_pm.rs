@@ -37,15 +37,10 @@ pub fn to_prosemirror(doc: &Document) -> ProseMirrorDoc {
     for (label, blocks) in &doc.footnote_defs {
         let mut attrs = Object::new();
         attrs.insert("label".into(), Json::String(label.clone()));
-        let pos = blocks
-            .first()
-            .and_then(crate::ast_json::block_pos)
-            .or_else(|| {
-                blocks
-                    .is_empty()
-                    .then(|| doc.footnote_def_pos.get(label))
-                    .flatten()
-            });
+        let pos = doc
+            .footnote_def_pos
+            .get(label)
+            .or_else(|| blocks.first().and_then(crate::ast_json::block_pos));
         if let Some(pos) = pos {
             attrs.insert("carvePos".into(), position(pos));
         }
@@ -762,6 +757,13 @@ impl Renderer {
             InlineNode::Link(n) => {
                 let before = out.len();
                 let mut a = attrs(n.attrs.as_ref());
+                if let Some(authored) = a.get("href").cloned().filter(|value| {
+                    value.as_str().is_some_and(|value| {
+                        crate::escape::sanitize_attr_value("href", value).as_ref() == value
+                    })
+                }) {
+                    a.insert("carveAuthoredHref".into(), authored);
+                }
                 a.insert("href".into(), Json::String(n.href.clone()));
                 if let Some(t) = &n.title {
                     set_link_title(&mut a, t);
@@ -790,6 +792,13 @@ impl Renderer {
             }
             InlineNode::AutoLink(n) => {
                 let mut a = attrs(n.attrs.as_ref());
+                if let Some(authored) = a.get("href").cloned().filter(|value| {
+                    value.as_str().is_some_and(|value| {
+                        crate::escape::sanitize_attr_value("href", value).as_ref() == value
+                    })
+                }) {
+                    a.insert("carveAuthoredHref".into(), authored);
+                }
                 a.insert("href".into(), Json::String(n.href.clone()));
                 a.insert("carveAutolink".into(), Json::Bool(true));
                 let mut next = marks.to_vec();
@@ -1172,6 +1181,13 @@ impl Renderer {
     }
     fn image(&mut self, n: &Image, marks: &[Json]) -> Option<Json> {
         let mut a = attrs(n.attrs.as_ref());
+        if let Some(authored) = a.get("src").cloned().filter(|value| {
+            value.as_str().is_some_and(|value| {
+                crate::escape::sanitize_attr_value("src", value).as_ref() == value
+            })
+        }) {
+            a.insert("carveAuthoredSrc".into(), authored);
+        }
         a.insert("src".into(), Json::String(n.src.clone()));
         a.insert("alt".into(), Json::String(n.alt.clone()));
         if let Some(t) = &n.title {
