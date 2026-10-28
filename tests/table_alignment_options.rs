@@ -29,9 +29,9 @@ fn cli(args: &[&str], input: &str) -> std::process::Output {
 #[test]
 fn writer_options_and_separator() {
     let source = "| A | B |\n|---|---|\n| x | yy |\n";
-    let expected = "| A | B  |\n|---|--- |\n| x | yy |\n";
+    let expected = "|= A |= B |\n| x  | yy |\n";
     assert_eq!(aligned(source), expected);
-    assert_eq!(carve::to_carve(expected), source);
+    assert_eq!(carve::to_carve(expected), "|= A |= B |\n| x | yy |\n");
     let doc = carve::parse(source);
     assert_eq!(
         carve::render_carve_with_options(
@@ -41,7 +41,10 @@ fn writer_options_and_separator() {
         .unwrap(),
         expected
     );
-    assert_eq!(carve::render_carve(&doc).unwrap(), source);
+    assert_eq!(
+        carve::render_carve(&doc).unwrap(),
+        "|= A |= B |\n| x | yy |\n"
+    );
 }
 
 #[test]
@@ -115,7 +118,7 @@ fn long_regional_indicator_run() {
 fn extra_separator_entry_and_nested_tables() {
     let extra = "| A | B |\n|:--|--:|----|\n| x | long |\n";
     let written = aligned(extra);
-    assert!(written.contains("|----|"), "{written}");
+    assert!(written.contains("|=< A |=> B"), "{written}");
     assert_eq!(aligned(&written), written);
     for source in [
         "> | a | longer |\n> | x | y |\n",

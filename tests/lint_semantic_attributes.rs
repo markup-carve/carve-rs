@@ -158,13 +158,21 @@ const OFF_SPAN_TARGETS: &[(&str, &str)] = &[
 fn every_off_span_target_is_reported_and_named_by_its_wire_type() {
     for (node_type, src) in OFF_SPAN_TARGETS {
         let warnings = lint_carve(src);
+        let expected = if *node_type == "underline" {
+            vec!["markdown-italic-underline", OUTSIDE_SPAN]
+        } else {
+            vec![OUTSIDE_SPAN]
+        };
         assert_eq!(
             warnings.iter().map(|w| w.rule).collect::<Vec<_>>(),
-            vec![OUTSIDE_SPAN],
+            expected,
             "{node_type}: {src:?}"
         );
         assert!(
-            warnings[0]
+            warnings
+                .iter()
+                .find(|warning| warning.rule == OUTSIDE_SPAN)
+                .unwrap()
                 .message
                 .contains(&format!("on {node_type} it stays")),
             "{node_type}: message was {:?}",

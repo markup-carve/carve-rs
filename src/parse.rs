@@ -709,6 +709,10 @@ enum ParseMode {
 /// parsing leaves the inserted marker intact. It pins the line to column 0,
 /// and no block opener matches it.
 pub(crate) const LAZY: &str = "\u{0000}L\u{0000}";
+/// A quote's lazy follower at its owner's column can still supply a first block.
+pub(crate) const LAZY_OWNER: &str = "\u{0000}L\u{0000}\u{0000}O\u{0000}";
+/// A lazy term line with indentation past its host column still has literal spaces.
+pub(crate) const LAZY_INDENT: &str = "\u{0000}L\u{0000}\u{0000}I\u{0000}";
 /// Marks a separator line that ends a definition list and starts item paragraph text.
 pub(crate) const ITEM_PARAGRAPH: &str = "\u{0000}P\u{0000}";
 
@@ -720,7 +724,9 @@ pub(crate) const ITEM_PARAGRAPH: &str = "\u{0000}P\u{0000}";
 /// as a visible sentinel. `tests/lazy_framing_never_leaks.rs` generates the
 /// shapes that tell the two apart rather than listing them.
 pub(crate) fn strip_lazy(line: &str) -> &str {
-    line.strip_prefix(LAZY)
+    line.strip_prefix(LAZY_OWNER)
+        .or_else(|| line.strip_prefix(LAZY_INDENT))
+        .or_else(|| line.strip_prefix(LAZY))
         .or_else(|| line.strip_prefix(ITEM_PARAGRAPH))
         .unwrap_or(line)
 }
@@ -966,6 +972,15 @@ fn parse_with_options_mode_and_index(
         if source.contains("*[") {
             apply_abbreviations(&mut doc);
         }
+        // Reference images and indented images can become figures only after
+        // inline resolution. Promote them before the caption numbering pass so
+        // every figure draws from the same sequence.
+        if source.contains("![") {
+            promote_block_images(&mut doc.children, false, true);
+            for blocks in doc.footnote_defs.values_mut() {
+                promote_block_images(blocks, false, true);
+            }
+        }
         let caption_titles = if source.contains('^') {
             number_crossref_captions(&mut doc)
         } else {
@@ -988,15 +1003,6 @@ fn parse_with_options_mode_and_index(
         stamp_generated_heading_ids(&mut doc, options.heading_id_options());
         if !matches!(mode, ParseMode::HtmlFacade) {
             let _ = crate::render::collect_footnotes(&mut doc, false);
-        }
-        // A resolved reference image lands in a paragraph because resolution
-        // follows block parsing. Mark that paragraph as a block image without
-        // discarding its inline children.
-        if source.contains("![") {
-            promote_block_images(&mut doc.children, false, true);
-            for blocks in doc.footnote_defs.values_mut() {
-                promote_block_images(blocks, false, true);
-            }
         }
     } else {
         // Carve/fmt mode: promote image+caption paragraphs to figures too, so a
@@ -2120,6 +2126,7 @@ fn delimited_payload_lines(
             text: text.to_string(),
             line,
             column: document_column(stripped, 0),
+            file_offset: None,
         });
         offset += text.len() + 1;
     }

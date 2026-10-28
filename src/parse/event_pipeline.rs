@@ -630,7 +630,13 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                         pos: span_of(&cur, image_at, cur.pos, options),
                     }));
                 } else {
-                    out.push(BlockNode::BlockImage(image));
+                    out.push(BlockNode::Paragraph(Paragraph {
+                        attrs: None,
+                        children: vec![InlineNode::Image(image)],
+                        at_content_column: true,
+                        block_image: true,
+                        pos: None,
+                    }));
                 }
                 continue;
             }
