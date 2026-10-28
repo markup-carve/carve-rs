@@ -320,6 +320,18 @@ fn continuation_after_list_block_keeps_tightness_and_image_shape() {
 }
 
 #[test]
+fn late_list_continuation_uses_one_event_owner() {
+    for source in [
+        "- a\n\n+\np\n+\nq\n",
+        "1. ordered\n\n+\n{.class}\n---\nA /italic/\nA {^note^}\n",
+    ] {
+        let (candidate, used) = parse_experimental_event_blocks(source);
+        assert!(used, "{source:?}");
+        assert_eq!(candidate, parse_standard(source), "{source:?}");
+    }
+}
+
+#[test]
 fn refused_continuation_markers_stay_literal_on_direct_route() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     for name in [
