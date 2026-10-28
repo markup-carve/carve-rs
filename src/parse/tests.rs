@@ -212,7 +212,7 @@ fn event_owned_modes_preserve_extension_callbacks() {
             continue;
         }
         let source = std::fs::read_to_string(&path).unwrap();
-        for mode in [ParseMode::HtmlFacade, ParseMode::Carve] {
+        for mode in [ParseMode::Html, ParseMode::HtmlFacade, ParseMode::Carve] {
             for positions in [false, true] {
                 let baseline = Hook::default();
                 let baseline_options = Options::default()
