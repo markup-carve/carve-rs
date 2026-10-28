@@ -1491,8 +1491,10 @@ fn parse_unpositioned_mapped_source(
     in_item_body: bool,
     in_quoted_body: bool,
     pending: &mut Vec<PendingBody>,
-    mut extents: Option<&mut Vec<(usize, usize)>>,
+    extents: Option<&mut Vec<(usize, usize)>>,
 ) -> Vec<BlockNode> {
+    #[cfg(feature = "experimental-event-parser-options")]
+    let mut extents = extents;
     #[cfg(feature = "experimental-event-parser-options")]
     if !at_document_level && options.extensions.is_empty() && nested_event_allowed() {
         if let Some(blocks) = event_pipeline::parse_nested_mapped_blocks(
@@ -1589,8 +1591,10 @@ fn parse_positioned_mapped_source(
     in_item_body: bool,
     in_quoted_body: bool,
     pending: &mut Vec<PendingBody>,
-    mut extents: Option<&mut Vec<(usize, usize)>>,
+    extents: Option<&mut Vec<(usize, usize)>>,
 ) -> Vec<BlockNode> {
+    #[cfg(feature = "experimental-event-parser-options")]
+    let mut extents = extents;
     #[cfg(feature = "experimental-event-parser-options")]
     if !at_document_level && options.extensions.is_empty() && nested_event_allowed() {
         let mut event_extents = Vec::new();
