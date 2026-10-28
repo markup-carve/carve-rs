@@ -131,7 +131,7 @@ thread_local! {
     static LINT_EVENTS: RefCell<Option<Vec<LintEvent>>> = const { RefCell::new(None) };
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum LintEvent {
     Fence {
         pos: Pos,
@@ -638,6 +638,20 @@ pub fn parse_experimental_event_blocks(source: &str) -> (Document, bool) {
         result
     } else {
         (parse_with_options(source, &Options::default()), false)
+    }
+}
+
+/// Try the opt-in line-event parser with parser options. Unsupported option
+/// combinations use the standard parser and return `false` for admission.
+#[cfg(feature = "experimental-event-parser-options")]
+pub fn parse_experimental_event_blocks_with_options(
+    source: &str,
+    options: &Options<'_>,
+) -> (Document, bool) {
+    if let Some(result) = event_pipeline::parse_document_with_options(source, options) {
+        result
+    } else {
+        (parse_with_options(source, options), false)
     }
 }
 

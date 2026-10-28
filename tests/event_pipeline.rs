@@ -1,9 +1,876 @@
 use carve::{parse_experimental_event_blocks, parse_with_options, render_html, to_json, Options};
+#[cfg(feature = "experimental-event-parser-options")]
+use carve::{
+    parse_experimental_event_blocks_with_options, render_html_with_options, AsciiHeadingIds,
+    IncludeOptions, Profile,
+};
 use std::fs;
 use std::path::Path;
 
 fn parse_standard(source: &str) -> carve::Document {
     parse_with_options(source, &Options::default())
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn simple_extension_route_preserves_hooks_and_single_invocation() {
+    use carve::{
+        BlockMatch, BlockNode, CarveExtension, Document, InlineMatch, InlineNode, MatcherContext,
+        Paragraph,
+    };
+    use std::cell::Cell;
+
+    #[derive(Default)]
+    struct Hooks {
+        blocks: Cell<usize>,
+        inlines: Cell<usize>,
+        after: Cell<usize>,
+    }
+    impl CarveExtension for Hooks {
+        fn name(&self) -> &'static str {
+            "event-hook-test"
+        }
+        fn match_block(
+            &self,
+            lines: &[&str],
+            start: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<BlockMatch> {
+            if *lines.get(start)? != "alpha" {
+                return None;
+            }
+            self.blocks.set(self.blocks.get() + 1);
+            Some(BlockMatch {
+                node: BlockNode::Paragraph(Paragraph {
+                    children: vec![InlineNode::text("block".to_string())],
+                    ..Default::default()
+                }),
+                lines_consumed: 1,
+            })
+        }
+        fn match_inline(
+            &self,
+            text: &str,
+            pos: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<InlineMatch> {
+            if !text.get(pos..)?.starts_with("beta") {
+                return None;
+            }
+            self.inlines.set(self.inlines.get() + 1);
+            Some(InlineMatch {
+                node: InlineNode::text("inline".to_string()),
+                end: pos + 4,
+            })
+        }
+        fn after_parse(&self, mut doc: Document) -> Document {
+            self.after.set(self.after.get() + 1);
+            doc.children.push(BlockNode::Paragraph(Paragraph {
+                children: vec![InlineNode::text("tail".to_string())],
+                ..Default::default()
+            }));
+            doc
+        }
+    }
+    for source in [
+        "alpha\n\nbeta\n",
+        "# beta\n\nalpha\n",
+        "alpha\r\n\r\nbeta\r\n",
+        "alpha\rbeta\n",
+    ] {
+        for positions in [false, true] {
+            for source_lines in [false, true] {
+                let event_hooks = Hooks::default();
+                let event_options = Options::default()
+                    .with_extension(&event_hooks)
+                    .with_positions(positions)
+                    .with_source_lines(source_lines);
+                let (candidate, admitted) =
+                    parse_experimental_event_blocks_with_options(source, &event_options);
+                assert!(admitted);
+                let standard_hooks = Hooks::default();
+                let standard_options = Options::default()
+                    .with_extension(&standard_hooks)
+                    .with_positions(positions)
+                    .with_source_lines(source_lines);
+                assert_eq!(candidate, parse_with_options(source, &standard_options));
+                assert_eq!(
+                    (
+                        event_hooks.blocks.get(),
+                        event_hooks.inlines.get(),
+                        event_hooks.after.get()
+                    ),
+                    (1, 1, 1)
+                );
+                assert_eq!(
+                    (
+                        standard_hooks.blocks.get(),
+                        standard_hooks.inlines.get(),
+                        standard_hooks.after.get()
+                    ),
+                    (1, 1, 1)
+                );
+            }
+        }
+    }
+    for source in [
+        "alpha\n\n    +\n",
+        "alpha\n\nbeta +\n",
+        "beta\r> alpha\n",
+        "alpha\r\r\t- beta\n",
+    ] {
+        let hooks = Hooks::default();
+        let (candidate, admitted) = parse_experimental_event_blocks_with_options(
+            source,
+            &Options::default().with_extension(&hooks),
+        );
+        assert!(!admitted, "{source:?}");
+        assert_eq!(hooks.blocks.get(), 1, "{source:?}");
+        assert_eq!(hooks.after.get(), 1, "{source:?}");
+        let standard = Hooks::default();
+        assert_eq!(
+            candidate,
+            parse_with_options(source, &Options::default().with_extension(&standard)),
+            "{source:?}"
+        );
+    }
+    for first in ["alpha\n", "beta\n", "# beta\n", "\n", "alpha beta\n"] {
+        for second in ["alpha\n", "beta\n", "# beta\n", "\n", "alpha beta\n"] {
+            for third in ["alpha\n", "beta\n", "# beta\n", "\n", "alpha beta\n"] {
+                let source = format!("{first}{second}{third}");
+                let event_hooks = Hooks::default();
+                let (candidate, admitted) = parse_experimental_event_blocks_with_options(
+                    &source,
+                    &Options::default().with_extension(&event_hooks),
+                );
+                assert!(admitted, "{source:?}");
+                let standard_hooks = Hooks::default();
+                assert_eq!(
+                    candidate,
+                    parse_with_options(
+                        &source,
+                        &Options::default().with_extension(&standard_hooks)
+                    ),
+                    "{source:?}"
+                );
+                assert_eq!(
+                    (
+                        event_hooks.blocks.get(),
+                        event_hooks.inlines.get(),
+                        event_hooks.after.get()
+                    ),
+                    (
+                        standard_hooks.blocks.get(),
+                        standard_hooks.inlines.get(),
+                        standard_hooks.after.get()
+                    ),
+                    "{source:?}"
+                );
+            }
+        }
+    }
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    let mut admitted = 0;
+    for entry in fs::read_dir(corpus).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension() != Some(std::ffi::OsStr::new("crv")) {
+            continue;
+        }
+        let source = fs::read_to_string(&path).unwrap();
+        let event_hooks = Hooks::default();
+        let (candidate, used) = parse_experimental_event_blocks_with_options(
+            &source,
+            &Options::default().with_extension(&event_hooks),
+        );
+        admitted += usize::from(used);
+        let standard_hooks = Hooks::default();
+        assert_eq!(
+            candidate,
+            parse_with_options(&source, &Options::default().with_extension(&standard_hooks)),
+            "{}",
+            path.display()
+        );
+        assert_eq!(
+            (
+                event_hooks.blocks.get(),
+                event_hooks.inlines.get(),
+                event_hooks.after.get()
+            ),
+            (
+                standard_hooks.blocks.get(),
+                standard_hooks.inlines.get(),
+                standard_hooks.after.get()
+            ),
+            "{}",
+            path.display()
+        );
+    }
+    assert!(admitted > 0);
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn abbreviation_definitions_keep_editor_positions_and_source_lines() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    for name in [
+        "223-an-abbreviation-term-is-one-ascii-alphanumeric-word.crv",
+        "432-an-abbreviation-definition-outside-document-level-is-not-an-invisible-line-2.crv",
+    ] {
+        let source = fs::read_to_string(corpus.join(name)).unwrap();
+        for positions in [false, true] {
+            for source_lines in [false, true] {
+                let options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines);
+                let (candidate, used) =
+                    parse_experimental_event_blocks_with_options(&source, &options);
+                assert!(
+                    used,
+                    "{name}; positions={positions}; source_lines={source_lines}"
+                );
+                assert_eq!(candidate, parse_with_options(&source, &options), "{name}");
+            }
+        }
+    }
+    for source in [
+        "*[A]: alpha\n\nA.\n",
+        "A first.\n\n*[A]: alpha\n",
+        "*[A1]: alpha one\n\n# A1\n\n- A1\n",
+        "[^n]: note\n  *[A]: alpha\n  more\n\nA[^n]\n",
+        "\u{feff}*[A]: alpha\r\n\r\nA.\r\n",
+    ] {
+        for positions in [false, true] {
+            for source_lines in [false, true] {
+                let options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines);
+                let (candidate, _) = parse_experimental_event_blocks_with_options(source, &options);
+                assert_eq!(
+                    candidate,
+                    parse_with_options(source, &options),
+                    "{source:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn marker_column_colon_line_stays_in_open_list_paragraph() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    let name = "161-below-content-column-div-body-in-a-list-item-stays-literal.crv";
+    let source = fs::read_to_string(corpus.join(name)).unwrap();
+    let (candidate, used) = parse_experimental_event_blocks(&source);
+    assert!(used, "{name}");
+    assert_eq!(candidate, parse_standard(&source));
+
+    for indent in 0..=4 {
+        for opener in ["- a", "- ::: note", "1. a"] {
+            for colon in [":::", "::: note", "::::", "::: {.c}"] {
+                for follower in ["", "next\n", "- sibling\n", "> q\n", "\nnext\n"] {
+                    let source = format!(
+                        "{}{opener}\n{}{colon}\n{follower}",
+                        " ".repeat(indent),
+                        " ".repeat(indent)
+                    );
+                    let (candidate, _) = parse_experimental_event_blocks(&source);
+                    assert_eq!(candidate, parse_standard(&source), "{source:?}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn continuation_after_list_block_keeps_tightness_and_image_shape() {
+    for source in [
+        "- a\n  > q\n\n+\np\n\n+\nq\n",
+        "- a\n  > q\n+\np\n\n+\nq\n",
+        "- a\n+\np\n\n+\nq\n",
+    ] {
+        let (candidate, used) = parse_experimental_event_blocks(source);
+        assert!(used, "{source:?}");
+        assert_eq!(candidate, parse_standard(source), "{source:?}");
+    }
+    for before in ["- a\n", "- a\n  > q\n", "- ```\n  code\n  ```\n"] {
+        for first_blank in ["", "\n"] {
+            for second_blank in ["", "\n"] {
+                for first in ["p", "> q", "# h"] {
+                    for second in ["q", "> q", "![i](x.png)"] {
+                        let source =
+                            format!("{before}{first_blank}+\n{first}\n{second_blank}+\n{second}\n");
+                        let (candidate, _) = parse_experimental_event_blocks(&source);
+                        assert_eq!(candidate, parse_standard(&source), "{source:?}");
+                    }
+                }
+            }
+        }
+    }
+    for before in ["- a\n  > q\n", "- a\n  b\n", "- ```\n  code\n  ```\n"] {
+        for blank in ["", "\n"] {
+            for marker in ["+", "+ ", " +"] {
+                for after in ["para\n", "> q\n", "![i](x.png)\n", "# heading\n"] {
+                    let source = format!("{before}{blank}{marker}\n{after}");
+                    let (candidate, _) = parse_experimental_event_blocks(&source);
+                    assert_eq!(candidate, parse_standard(&source), "{source:?}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn refused_continuation_markers_stay_literal_on_direct_route() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    for name in [
+        "435-the-continuation-marker-s-column-gate-reaches-every-container-2.crv",
+        "435-the-continuation-marker-s-column-gate-reaches-every-container-4.crv",
+        "435-the-continuation-marker-s-column-gate-reaches-every-container-11.crv",
+        "629-a-dangling-plus-marker-adds-nothing-and-a-nested-quote-reads-it-like-an-unnested-one-4.crv",
+        "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-37.crv",
+        "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-38.crv",
+        "634-a-refused-continuation-plus-remains-text-3.crv",
+        "634-a-refused-continuation-plus-remains-text-4.crv",
+    ] {
+        let source = fs::read_to_string(corpus.join(name)).unwrap();
+        let (candidate, used) = parse_experimental_event_blocks(&source);
+        assert!(used, "{name}");
+        assert_eq!(candidate, parse_standard(&source), "{name}");
+    }
+
+    for before in ["- a\n", "- a\n\n", "- ```\n", "> q\n", "[^a]: note\n"] {
+        for after in ["\npara\n", "- sibling\n", "\n# heading\n", "\n> q\n"] {
+            let source = format!("{before}+\n{after}");
+            let (candidate, _) = parse_experimental_event_blocks(&source);
+            assert_eq!(candidate, parse_standard(&source), "{source:?}");
+        }
+    }
+    for before in ["- a\n", " - a\n", "> q\n", "[^a]: note\n", "- ```\n"] {
+        for blank in ["", "\n", "\n\n"] {
+            for marker in ["+", " +", "  +", "\t+"] {
+                for after in ["", "para\n", "- sibling\n", "> q\n", "\npara\n"] {
+                    let source = format!("{before}{blank}{marker}\n{after}");
+                    let (candidate, _) = parse_experimental_event_blocks(&source);
+                    assert_eq!(candidate, parse_standard(&source), "{source:?}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn malformed_quote_prefix_stays_literal() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    let name = "646-a-quote-prefixed-plus-takes-one-space-after-each-quote-marker-and-attaches-a-quote-6.crv";
+    let source = fs::read_to_string(corpus.join(name)).unwrap();
+    let (candidate, used) = parse_experimental_event_blocks(&source);
+    assert!(used, "{name}");
+    assert_eq!(candidate, parse_standard(&source));
+
+    for prefix in [">x", ">> +", ">> x", ">>>", ">!", ">\tq"] {
+        for follower in ["", "q\n", "> q\n", "\nnext\n", "# heading\n"] {
+            let source = format!("{prefix}\n{follower}");
+            let (candidate, _) = parse_experimental_event_blocks(&source);
+            assert_eq!(candidate, parse_standard(&source), "{source:?}");
+        }
+    }
+}
+
+#[test]
+fn list_comment_and_lower_column_siblings_match_full_document() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    let name = "517-a-band-paragraph-after-an-invisible-line-leaves-the-item-loose-5.crv";
+    let source = fs::read_to_string(corpus.join(name)).unwrap();
+    let (candidate, used) = parse_experimental_event_blocks(&source);
+    assert!(used, "{name}");
+    assert_eq!(candidate, parse_standard(&source));
+
+    for source in [
+        "- a\n\n  %% note\n  # h\n- end\n",
+        "- a\n\n  %% one\n  %% two\n  text\n- end\n",
+        "- a\n\n  %% one\n  %% two\n- end\n",
+    ] {
+        let (candidate, used) = parse_experimental_event_blocks(source);
+        assert!(used, "{source:?}");
+        assert_eq!(candidate, parse_standard(source), "{source:?}");
+    }
+
+    for comments in ["  %% one\n", "  %% one\n  %% two\n"] {
+        for follower in ["  text", "  # h", "  > q", "  ```", "- end", " - next"] {
+            let source = format!("- a\n\n{comments}{follower}\n- last\n");
+            let (candidate, _) = parse_experimental_event_blocks(&source);
+            assert_eq!(candidate, parse_standard(&source), "{source:?}");
+        }
+    }
+
+    for first_indent in 0..=3 {
+        for comment in ["%% note", "%%", "%%%\n  body\n  %%%"] {
+            for follower in ["text", "- sibling", "> quote", "```\n  code\n  ```"] {
+                let source = format!(
+                    "{}- a\n\n{}{}\n{}{}\n- end\n",
+                    " ".repeat(first_indent),
+                    " ".repeat(first_indent + 2),
+                    comment,
+                    " ".repeat(first_indent + 1),
+                    follower,
+                );
+                let (candidate, _) = parse_experimental_event_blocks(&source);
+                assert_eq!(candidate, parse_standard(&source), "{source:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn footnote_extraction_keeps_continuation_owner_lines() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    for name in [
+        "279-a-boundary-line-inside-an-open-fence-does-not-end-the-container-4.crv",
+        "629-a-dangling-plus-marker-adds-nothing-and-a-nested-quote-reads-it-like-an-unnested-one-8.crv",
+    ] {
+        let source = fs::read_to_string(corpus.join(name)).unwrap();
+        let (candidate, used) = parse_experimental_event_blocks(&source);
+        assert!(used, "{name}");
+        assert_eq!(candidate, parse_standard(&source), "{name}");
+    }
+    for source in [
+        "> [^a]: n\n> +\n\npara\n",
+        "> q\n+\n:::\na\n[^z]: zz\nb\n:::\n",
+        "> [^a]: n\n> +\n\n[^b]: m\n\npara[^b]\n",
+    ] {
+        let (candidate, _) = parse_experimental_event_blocks(source);
+        assert_eq!(candidate, parse_standard(source), "{source:?}");
+    }
+}
+
+#[test]
+fn refused_plus_after_list_fence_matches_full_document() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    for suffix in ["", "-2", "-3", "-4", "-5", "-6", "-7"] {
+        let name = format!("627-a-refused-marker-leaves-an-open-fence-s-blank-payload{suffix}.crv");
+        let source = fs::read_to_string(corpus.join(name)).unwrap();
+        let (candidate, used) = parse_experimental_event_blocks(&source);
+        assert!(used, "{suffix}");
+        assert_eq!(candidate, parse_standard(&source));
+    }
+}
+
+#[test]
+fn indented_root_list_frames_match_full_document() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    for name in [
+        "05-lists-14.crv",
+        "151-indented-ordered-marker-content-column-includes-the-marker-indent.crv",
+        "277-a-below-column-marker-after-a-comment-where-no-paragraph-is-open.crv",
+        "277-a-below-column-marker-after-a-comment-where-no-paragraph-is-open-2.crv",
+        "290-adjacent-sibling-lists-survive-the-round-trip.crv",
+        "290-adjacent-sibling-lists-survive-the-round-trip-2.crv",
+        "507-a-list-marker-in-a-raised-colon-container-folds-into-its-open-paragraph-16.crv",
+        "556-a-closed-block-leaves-no-frame-for-the-line-below-7.crv",
+    ] {
+        let source = fs::read_to_string(corpus.join(name)).unwrap();
+        let (candidate, used) = parse_experimental_event_blocks(&source);
+        assert!(used, "{name}");
+        assert_eq!(candidate, parse_standard(&source), "{name}");
+    }
+
+    for prefix in ["", "intro\n\n", "%% comment\n"] {
+        for indent in 0..=5 {
+            for marker in ["- a", "* a", "1. a"] {
+                for following in [
+                    "",
+                    "  - b\n",
+                    "\nnext\n",
+                    "\n> quote\n",
+                    "  continuation\n",
+                    "\n  - sibling\n",
+                ] {
+                    let source = format!("{prefix}{}{marker}\n{following}", " ".repeat(indent));
+                    let (candidate, used) = parse_experimental_event_blocks(&source);
+                    if prefix.is_empty() && following.is_empty() && indent <= 4 {
+                        assert!(used, "{source:?}");
+                    }
+                    assert_eq!(candidate, parse_standard(&source), "{source:?}");
+                }
+            }
+        }
+    }
+
+    for marker_indent in 1..=4 {
+        for follower_indent in 0..marker_indent {
+            for marker in ["- a", "1. a"] {
+                for follower in [
+                    "text",
+                    "| x |",
+                    "|= h |",
+                    "| a |{.c}",
+                    "| a",
+                    "# heading",
+                    "- sibling",
+                    "> quote",
+                    "```",
+                    "![x](y.png)",
+                    "*[X]: y",
+                    ": foo",
+                ] {
+                    let source = format!(
+                        "{}{marker}\n{}{follower}\n",
+                        " ".repeat(marker_indent),
+                        " ".repeat(follower_indent)
+                    );
+                    let (candidate, used) = parse_experimental_event_blocks(&source);
+                    if follower == "text" || follower == "| x |" && follower_indent >= 2 {
+                        assert!(used, "{source:?}");
+                    }
+                    assert_eq!(candidate, parse_standard(&source), "{source:?}");
+                }
+            }
+        }
+    }
+
+    for first_indent in 0..=3 {
+        for second_indent in 0..=4 {
+            for first_marker in ["- a", "1. a"] {
+                for second_marker in ["- b", "* b", "1. b"] {
+                    let source = format!(
+                        "{}{first_marker}\n\n{}{second_marker}\n",
+                        " ".repeat(first_indent),
+                        " ".repeat(second_indent)
+                    );
+                    let (candidate, _) = parse_experimental_event_blocks(&source);
+                    assert_eq!(candidate, parse_standard(&source), "{source:?}");
+                }
+            }
+        }
+    }
+    for source in [
+        "- a\n\n \t- b\n",
+        "1. a\n\n \t1. b\n",
+        "  - a\n\n \t- b\n",
+        "  1. a\n\n \t1. b\n",
+    ] {
+        let (candidate, _) = parse_experimental_event_blocks(source);
+        assert_eq!(candidate, parse_standard(source), "{source:?}");
+    }
+}
+
+#[test]
+fn list_continuation_after_blank_stays_with_its_frame() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    let name = "251-a-continuation-marker-after-a-blank-line-in-a-loose-item.crv";
+    let source = fs::read_to_string(corpus.join(name)).unwrap();
+    let (candidate, used) = parse_experimental_event_blocks(&source);
+    assert!(used, "{name}");
+    assert_eq!(candidate, parse_standard(&source));
+
+    for indent in 0..=4 {
+        for marker in ["- a", "* a", "1. a"] {
+            for middle in ["", "  b\n", "\n  b\n"] {
+                for plus in ["+", " +", "  +", "\t+"] {
+                    for follower in [
+                        "b\n",
+                        "# heading\n",
+                        "> quote\n",
+                        "- sibling\n",
+                        "```\nx\n```\n",
+                    ] {
+                        let source = format!(
+                            "{}{marker}\n{middle}\n{plus}\n{follower}",
+                            " ".repeat(indent)
+                        );
+                        let (candidate, used) = parse_experimental_event_blocks(&source);
+                        if indent == 0
+                            && marker == "- a"
+                            && middle == "\n  b\n"
+                            && plus == "+"
+                            && follower == "b\n"
+                        {
+                            assert!(used, "{source:?}");
+                        }
+                        assert_eq!(candidate, parse_standard(&source), "{source:?}");
+                    }
+                }
+            }
+        }
+    }
+    for source in [
+        "- a\n  - b\n\n+\nc\n",
+        "- a\n- b\n\n+\nc\n",
+        "> - a\n>\n> +\n> c\n",
+        "> - a\n>\n+\nc\n",
+        "[^a]: - a\n\n+\nc\n\nsee[^a]\n",
+        "[^a]: - a\n\n  +\nc\n\nsee[^a]\n",
+    ] {
+        let (candidate, _) = parse_experimental_event_blocks(source);
+        assert_eq!(candidate, parse_standard(source), "{source:?}");
+    }
+}
+
+#[test]
+fn continuation_owned_quote_stays_inside_list_item() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    let name = "632-a-continuation-marker-uses-its-container-column-34.crv";
+    let source = fs::read_to_string(corpus.join(name)).unwrap();
+    let (candidate, used) = parse_experimental_event_blocks(&source);
+    assert!(used, "{name}");
+    assert_eq!(candidate, parse_standard(&source));
+
+    for marker in ["- a", "* a", "1. a"] {
+        for indent in 0..=4 {
+            for quote in ["> q\n", "> q\n> r\n", "> - b\n"] {
+                let source = format!(
+                    "{}{marker}\n{}+\n{}{quote}",
+                    " ".repeat(indent),
+                    " ".repeat(indent),
+                    " ".repeat(indent)
+                );
+                let (candidate, _) = parse_experimental_event_blocks(&source);
+                assert_eq!(candidate, parse_standard(&source), "{source:?}");
+            }
+        }
+    }
+    for source in [
+        "- a\n+\n> q\n\n  b\n",
+        "- a\n  - b\n  +\n  > q\n",
+        "- +\n> q\n",
+        "- a\n+\n> q\n- b\n",
+    ] {
+        let (candidate, _) = parse_experimental_event_blocks(source);
+        assert_eq!(candidate, parse_standard(source), "{source:?}");
+    }
+}
+
+#[test]
+fn list_marker_fence_boundary_matrix_matches_full_document() {
+    for opener in ["```", "```=html", "~~~"] {
+        for payload in ["", "  x\n", "  x\n  y\n", "  \n", "\n", "\n  x\n"] {
+            for following in [
+                "+\n  x\n",
+                "+\n\ntail\n",
+                "- sibling\n",
+                "> quote\n",
+                "tail\n",
+                "  ```\n+\n",
+            ] {
+                let source = format!("- {opener}\n{payload}{following}");
+                let (candidate, _) = parse_experimental_event_blocks(&source);
+                assert_eq!(candidate, parse_standard(&source), "{source:?}");
+            }
+        }
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn footnote_abbreviation_scopes_match_full_document() {
+    let sources = [
+        "[^a]: intro\n  *[A]: a\n  more\n\nsee[^a] A\n",
+        "see[^a] A\n\n[^a]: *[A]: a\n  A again\n",
+        "*[A]: root\n\n[^a]: *[A]: note\n  A again\n\nA[^a]\n",
+        "[^a]: *[A]: first\n  *[A]: second\n  A\n\nA[^a]\n",
+        "[^a]: intro\n  > *[A]: note\n  > A\n\nA[^a]\n",
+        "[^a]: intro\n  - *[A]: note\n    A\n\nA[^a]\n",
+        "[^a]: intro\n  ```\n  *[A]: literal\n  ```\n\nA[^a]\n",
+        "[^a]: intro\n  *[A]: a\n\n[^b]: A\n\nA[^a][^b]\n",
+    ];
+    for source in sources {
+        for (option_index, options) in [
+            Options::default(),
+            Options::default().with_source_lines(true),
+            Options::default().with_positions(true),
+            Options::default()
+                .with_positions(true)
+                .with_source_lines(true),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let (candidate, admitted) =
+                parse_experimental_event_blocks_with_options(source, &options);
+            if option_index == 0 {
+                assert!(admitted);
+            }
+            assert_eq!(
+                candidate,
+                parse_with_options(source, &options),
+                "{source:?}"
+            );
+        }
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn option_aware_event_entry_preserves_supported_and_fallback_output() {
+    for (source, options) in [
+        (
+            "# Étage\n\nSee </#Étage>.\n",
+            Options::default().with_lowercase_heading_ids(true),
+        ),
+        (
+            "# Étage\n\nSee </#Etage>.\n",
+            Options::default().with_ascii_heading_ids(AsciiHeadingIds::Strict),
+        ),
+        (
+            "See @alice and #topic.\n",
+            Options::default()
+                .with_mention_url("https://people.example/{name}")
+                .with_tag_url("https://tags.example/{name}"),
+        ),
+        (
+            "# Notes\n\nSee[^n].\n\n[^n]: Note.\n",
+            Options::default().with_lowercase_heading_ids(true),
+        ),
+    ] {
+        let (candidate, admitted) = parse_experimental_event_blocks_with_options(source, &options);
+        assert!(admitted, "{source:?}");
+        assert_eq!(
+            candidate,
+            parse_with_options(source, &options),
+            "{source:?}"
+        );
+        assert_eq!(
+            render_html_with_options(&candidate, &options).unwrap(),
+            render_html_with_options(&parse_with_options(source, &options), &options).unwrap(),
+            "{source:?}"
+        );
+    }
+    let source = "# Heading\n\nText.\n";
+    let options = Options::default().with_source_lines(true);
+    let (candidate, admitted) = parse_experimental_event_blocks_with_options(source, &options);
+    assert!(admitted);
+    assert_eq!(candidate, parse_with_options(source, &options));
+    for options in [
+        Options::default().with_profile(Profile::default()),
+        Options::default().with_lint_includes(IncludeOptions::new()),
+    ] {
+        let (candidate, admitted) = parse_experimental_event_blocks_with_options(source, &options);
+        assert!(admitted);
+        assert_eq!(candidate, parse_with_options(source, &options));
+    }
+    let options = Options::default().with_positions(true);
+    let (candidate, admitted) = parse_experimental_event_blocks_with_options(source, &options);
+    assert!(admitted);
+    assert_eq!(candidate, parse_with_options(source, &options));
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn supported_options_match_across_direct_block_families() {
+    for source in [
+        "# Heading\n\nParagraph.\n",
+        "- first\n- second\n",
+        "> quoted\n",
+        ":: term\n:  meaning\n",
+        "Text[^n]\n\n[^n]: Note.\n",
+        "```rust\ncode\n```\n",
+        "[ref]: /target\n\nSee [ref][].\n",
+    ] {
+        for options in [
+            Options::default(),
+            Options::default().with_lowercase_heading_ids(true),
+            Options::default().with_ascii_heading_ids(AsciiHeadingIds::Strict),
+            Options::default()
+                .with_mention_url("https://people.example/{name}")
+                .with_tag_url("https://tags.example/{name}"),
+        ] {
+            let (candidate, admitted) =
+                parse_experimental_event_blocks_with_options(source, &options);
+            assert!(admitted, "{source:?}");
+            let baseline = parse_with_options(source, &options);
+            assert_eq!(candidate, baseline, "{source:?}");
+            assert_eq!(
+                render_html_with_options(&candidate, &options).unwrap(),
+                render_html_with_options(&baseline, &options).unwrap(),
+                "{source:?}"
+            );
+        }
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn positioned_event_entry_matches_editor_spans() {
+    let sources = [
+        ("\u{feff}# Étage\r\n\r\nCafé /é/.\r\n", true),
+        ("# Heading\n\nOne\nTwo\n", true),
+        ("- one\n- two\n", true),
+        ("> quote\n> more\n", true),
+        ("```rust\ncode\n```\n", true),
+        (":: term\n:  meaning\n", true),
+        ("::: note\nbody\n:::\n", true),
+        ("![alt](/image)\n", true),
+        ("[ref]: /target\n\nSee [ref][].\n", true),
+        ("\u{feff}[ref]: /target\r\n\r\nSee [ref][].\r\n", true),
+        ("A literal ]: token.\n", true),
+        ("*[dl]: definition list\n\nA dl.\n", true),
+        ("[^note]: footnote\n\nSee [^note].\n", true),
+        ("[^note]: intro\n  > quote\n\nSee [^note].\n", true),
+        ("\u{feff}[^note]: footnote\r\n\r\nSee [^note].\r\n", true),
+        ("| A | B |\n| - | - |\n| 1 | 2 |\n", true),
+        ("{table header-rows=0}\n```tsv\nA\tB\n```\n", true),
+        ("{table}\n```csv\na,b\n```\n^ Cap\n", true),
+        ("> {table}\n> ```csv\n> a,b\n> ```\n> ^ Cap\n", true),
+        ("::: note\n{table}\n```csv\na,b\n```\n^ Cap\n:::\n", true),
+        ("{.a}\n---\n", true),
+        ("$$`x`\n", true),
+        ("{#eq-emc}\n$$`E = mc^2`\n^ Equation #: mass-energy\n", true),
+        ("```tsv\nA\tB\n```\n", true),
+    ];
+    for (source, expected_admission) in sources {
+        for source_lines in [false, true] {
+            let options = Options::default()
+                .with_positions(true)
+                .with_source_lines(source_lines);
+            let (candidate, admitted) =
+                parse_experimental_event_blocks_with_options(source, &options);
+            assert_eq!(
+                admitted, expected_admission,
+                "{source:?}; source_lines={source_lines}"
+            );
+            let baseline = parse_with_options(source, &options);
+            assert_eq!(
+                candidate, baseline,
+                "{source:?}; source_lines={source_lines}"
+            );
+            assert_eq!(
+                render_html_with_options(&candidate, &options).unwrap(),
+                render_html_with_options(&baseline, &options).unwrap(),
+                "{source:?}; source_lines={source_lines}"
+            );
+        }
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn source_line_footnotes_match_standard_document() {
+    for source in [
+        "[^note]: footnote\n\nSee [^note].\n",
+        "[^note]: intro\n  > quote\n\nSee [^note].\n",
+    ] {
+        let options = Options::default().with_source_lines(true);
+        let (candidate, admitted) = parse_experimental_event_blocks_with_options(source, &options);
+        assert!(admitted, "{source:?}");
+        assert_eq!(
+            candidate,
+            parse_with_options(source, &options),
+            "{source:?}"
+        );
+    }
+}
+
+#[test]
+fn unsupported_root_literals_preserve_block_ownership() {
+    for source in ["--\n", ": stray definition\n", "::: \tnote\n", "  {#id}\n"] {
+        let (candidate, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        assert_eq!(candidate, parse_standard(source), "{source:?}");
+    }
+    let nested = "  - :: term\n    : definition\n\n~~~\ncode\n~~~\n";
+    let (candidate, admitted) = parse_experimental_event_blocks(nested);
+    assert!(admitted);
+    assert_eq!(candidate, parse_standard(nested));
 }
 
 #[test]
@@ -235,6 +1102,58 @@ fn shared_crossref_index_preserves_heading_ids_and_hrefs() {
     }
 }
 
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn option_aware_event_corpus_matches_full_document() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    let options = [
+        Options::default().with_lowercase_heading_ids(true),
+        Options::default().with_ascii_heading_ids(AsciiHeadingIds::Strict),
+        Options::default()
+            .with_mention_url("https://people.example/{name}")
+            .with_tag_url("https://tags.example/{name}"),
+        Options::default().with_source_lines(true),
+        Options::default()
+            .with_source_lines(true)
+            .with_lowercase_heading_ids(true),
+        Options::default()
+            .with_source_lines(true)
+            .with_ascii_heading_ids(AsciiHeadingIds::Strict),
+        Options::default()
+            .with_source_lines(true)
+            .with_mention_url("https://people.example/{name}")
+            .with_tag_url("https://tags.example/{name}"),
+        Options::default().with_profile(Profile::default()),
+        Options::default().with_lint_includes(IncludeOptions::new()),
+        Options::default().with_positions(true),
+        Options::default()
+            .with_positions(true)
+            .with_source_lines(true),
+    ];
+    let mut admitted = [0usize; 11];
+    let mut total = 0usize;
+    for entry in fs::read_dir(corpus).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("crv") {
+            continue;
+        }
+        let source = fs::read_to_string(&path).unwrap();
+        total += 1;
+        for (index, options) in options.iter().enumerate() {
+            let (candidate, used) = parse_experimental_event_blocks_with_options(&source, options);
+            admitted[index] += usize::from(used);
+            assert_eq!(
+                candidate,
+                parse_with_options(&source, options),
+                "{}",
+                path.display()
+            );
+        }
+    }
+    assert!(total > 3000);
+    assert_eq!(admitted, [total; 11]);
+}
+
 #[test]
 fn direct_route_admits_prose_and_uses_existing_list_reader() {
     let prose = "# Heading\n\nA paragraph with *strong* text.\n";
@@ -315,14 +1234,47 @@ fn root_block_images_and_captions_use_event_route() {
                 let source = format!("{image}{gap}{caption}");
                 let (actual, _) = parse_experimental_event_blocks(&source);
                 let expected = parse_standard(&source);
+                assert_eq!(actual, expected, "{source:?}");
                 assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
                 assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
             }
         }
     }
-    for source in ["![alt][ref]\n^ cap\n", "![alt](/image.png)\n\n\n^ cap\n"] {
-        let (_, admitted) = parse_experimental_event_blocks(source);
-        assert!(!admitted, "{source:?}");
+    let (actual, admitted) = parse_experimental_event_blocks("![alt][ref]\n^ cap\n");
+    assert!(admitted);
+    assert_eq!(actual, parse_standard("![alt][ref]\n^ cap\n"));
+    let source = "![alt](/image.png)\n\n\n^ cap\n";
+    let (actual, admitted) = parse_experimental_event_blocks(source);
+    assert!(admitted);
+    assert_eq!(actual, parse_standard(source));
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn indented_image_with_flush_caption_keeps_figure() {
+    for source in [
+        "  ![a](b)\n^ cap\n",
+        "  ![a](b)\n\n^ cap\n",
+        "  ![a][r]\n^ cap\n\n[r]: /x\n",
+        "> x\n>\n>   ![a](b)\n> ^ cap\n",
+    ] {
+        for options in [
+            Options::default(),
+            Options::default().with_source_lines(true),
+            Options::default().with_positions(true),
+            Options::default()
+                .with_positions(true)
+                .with_source_lines(true),
+        ] {
+            let (candidate, admitted) =
+                parse_experimental_event_blocks_with_options(source, &options);
+            assert!(admitted, "{source:?}");
+            assert_eq!(
+                candidate,
+                parse_with_options(source, &options),
+                "{source:?}"
+            );
+        }
     }
 }
 
@@ -355,8 +1307,9 @@ fn root_comments_use_event_route() {
         assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
         assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
     }
-    let (_, admitted) = parse_experimental_event_blocks("Paragraph.\n%% comment\n");
-    assert!(!admitted);
+    let (actual, admitted) = parse_experimental_event_blocks("Paragraph.\n%% comment\n");
+    assert!(admitted);
+    assert_eq!(actual, parse_standard("Paragraph.\n%% comment\n"));
 }
 
 #[test]
@@ -1058,17 +2011,47 @@ fn root_attributes_before_a_footnote_keep_exact_output() {
 }
 
 #[test]
-fn nested_footnote_definitions_use_standard_parser() {
-    for source in [
-        "Text[^outer]\n\n[^outer]: Inside[^inner].\n[^inner]: Nested.\n",
-        "- a[^n]\n\n  [^n]: note\n- b\n",
-        "1. a[^n]\n\n   [^n]: note\n2. b\n",
+fn nested_footnote_definitions_keep_exact_output() {
+    for (source, expected_admission) in [
+        (
+            "Text[^outer]\n\n[^outer]: Inside[^inner].\n[^inner]: Nested.\n",
+            true,
+        ),
+        ("- a[^n]\n\n  [^n]: note\n- b\n", true),
+        ("1. a[^n]\n\n   [^n]: note\n2. b\n", true),
     ] {
         let (actual, admitted) = parse_experimental_event_blocks(source);
-        assert!(!admitted, "{source:?}");
+        assert_eq!(admitted, expected_admission, "{source:?}");
         let expected = parse_standard(source);
         assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
         assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn nested_footnote_definitions_keep_source_lines_and_positions() {
+    for source in [
+        "Text[^outer]\n\n[^outer]: Inside[^inner].\n[^inner]: Nested.\n",
+        "[^outer]: intro\n\n     [^inner]: note\n\n     see[^inner]\n\nsee[^outer]\n",
+    ] {
+        for options in [
+            Options::default(),
+            Options::default().with_source_lines(true),
+            Options::default().with_positions(true),
+            Options::default()
+                .with_positions(true)
+                .with_source_lines(true),
+        ] {
+            let (candidate, admitted) =
+                parse_experimental_event_blocks_with_options(source, &options);
+            assert!(admitted, "{source:?}");
+            assert_eq!(
+                candidate,
+                parse_with_options(source, &options),
+                "{source:?}"
+            );
+        }
     }
 }
 
@@ -1643,4 +2626,260 @@ fn root_continuation_owner_grid_matches_public_ast_and_html() {
         }
     }
     assert!(admitted > 0, "the grid must exercise the event route");
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn delegated_paragraph_owner_keeps_exact_document() {
+    let cases = [
+        "Prose\n```js title=\"x\"\ncode\n```\n",
+        "![a][ok]\n^ cap\n\n[ok]: /p.png\n",
+        "x\n  %% indented comment\ny\n",
+        "Prose\n- item\nnext\n",
+        "A paragraph\n:: term\n:  meaning\n",
+        "Text\n{.class}\n\nAfter.\n",
+    ];
+    for source in cases {
+        for options in [
+            Options::default(),
+            Options::default().with_source_lines(true),
+            Options::default().with_positions(true),
+            Options::default()
+                .with_positions(true)
+                .with_source_lines(true),
+        ] {
+            let (candidate, admitted) =
+                parse_experimental_event_blocks_with_options(source, &options);
+            assert!(admitted, "{source:?}");
+            assert_eq!(
+                candidate,
+                parse_with_options(source, &options),
+                "{source:?}"
+            );
+        }
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn generated_delegated_paragraph_boundaries_keep_exact_document() {
+    let fragments = [
+        "plain",
+        "  indented",
+        "- item",
+        ":: term\n:  meaning",
+        "```x\ny\n```",
+        "%% comment",
+        "{.a}",
+        "![a](b)",
+        "^ caption",
+        "> quoted",
+        "::: note\nhi\n:::",
+    ];
+    let mut state = 0x6283_f911_u32;
+    let mut admitted = 0;
+    for case in 0..4096 {
+        let mut source = String::new();
+        for _ in 0..4 {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            if !source.is_empty() && (state & 3) == 0 {
+                source.push('\n');
+            }
+            source.push_str(fragments[(state as usize) % fragments.len()]);
+            source.push('\n');
+        }
+        for options in [
+            Options::default(),
+            Options::default().with_source_lines(true),
+        ] {
+            let (candidate, used) = parse_experimental_event_blocks_with_options(&source, &options);
+            admitted += usize::from(used);
+            assert_eq!(
+                candidate,
+                parse_with_options(&source, &options),
+                "case {case}: {source:?}"
+            );
+        }
+    }
+    assert!(admitted > 5000, "only {admitted} cases admitted");
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn nested_footnote_markers_survive_link_definition_guard() {
+    let nested = [
+        "x[^c]\n\n:: t\n: [^c]: para\n    # H\n",
+        ":: t\n: - para\n    [^p]: n\nx\n",
+        "- > para\n  > [^f]: n\n  >   - sub\ntail[^f]\n",
+        "x[^c]\n\n:: t\n: [^c]: para\n     > q\ntail\n",
+    ];
+    for source in nested {
+        let (plain, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        assert_eq!(plain, parse_standard(source), "{source:?}");
+        for options in [
+            Options::default(),
+            Options::default().with_source_lines(true),
+            Options::default().with_positions(true),
+            Options::default()
+                .with_positions(true)
+                .with_source_lines(true),
+        ] {
+            let (candidate, admitted) =
+                parse_experimental_event_blocks_with_options(source, &options);
+            assert!(admitted, "{source:?}");
+            assert_eq!(
+                candidate,
+                parse_with_options(source, &options),
+                "{source:?}"
+            );
+        }
+    }
+    for source in [
+        "See [x][id] and [^n].\n\n[id]: /x\n\n[^n]: note\n",
+        "x[^n]\n\n[^n]: [x][id]\n  [id]: /x\n",
+    ] {
+        let (candidate, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        assert_eq!(candidate, parse_standard(source), "{source:?}");
+        for options in [
+            Options::default(),
+            Options::default().with_source_lines(true),
+            Options::default().with_positions(true),
+            Options::default()
+                .with_positions(true)
+                .with_source_lines(true),
+        ] {
+            let (candidate, admitted) =
+                parse_experimental_event_blocks_with_options(source, &options);
+            assert!(admitted, "{source:?}");
+            assert_eq!(
+                candidate,
+                parse_with_options(source, &options),
+                "{source:?}"
+            );
+        }
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn nested_note_and_link_definition_prefixes_keep_exact_document() {
+    let options = [
+        Options::default(),
+        Options::default().with_source_lines(true),
+        Options::default().with_positions(true),
+        Options::default()
+            .with_positions(true)
+            .with_source_lines(true),
+    ];
+    for prefix in ["", "  ", "> ", "- ", ": ", "- > "] {
+        for tail in [
+            "[^n]: note",
+            "[id]: /target",
+            "[^n]: [x][id]",
+            "[id]: /target\n[^n]: note",
+            "[^n]: note\n  [id]: /target",
+            "[^n]: [x][id]\n  [id]: /target",
+        ] {
+            let source = format!("See [^n] and [x][id].\n\n{prefix}{tail}\n");
+            for option in &options {
+                let (candidate, _) = parse_experimental_event_blocks_with_options(&source, option);
+                assert_eq!(candidate, parse_with_options(&source, option), "{source:?}");
+            }
+        }
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn generated_indented_footnote_placeholders_keep_full_document() {
+    let options = [
+        Options::default(),
+        Options::default().with_source_lines(true),
+        Options::default().with_positions(true),
+        Options::default()
+            .with_positions(true)
+            .with_source_lines(true),
+    ];
+    let mut admitted = 0;
+    for prefix in [
+        "  ",
+        "\t",
+        "- ",
+        "1. ",
+        "> ",
+        "  > ",
+        ": ",
+        ":: t\n: ",
+        "- > ",
+        "> - ",
+        "::: box\n  ",
+    ] {
+        for body in ["note", "", "para\n    # H", "x\n  y"] {
+            for lead in ["", "intro\n\n", "- a\n\n"] {
+                for tail in ["", "root\n", "# Tail\n", "  continuation\n", "%% note\n"] {
+                    let source = format!("{lead}{prefix}[^n]: {body}\n{tail}");
+                    for option in &options {
+                        let (candidate, used) =
+                            parse_experimental_event_blocks_with_options(&source, option);
+                        admitted += usize::from(used);
+                        assert_eq!(candidate, parse_with_options(&source, option), "{source:?}");
+                    }
+                }
+            }
+        }
+    }
+    assert!(admitted > 100, "only {admitted} generated cases admitted");
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn footnote_like_lines_after_extraction_keep_link_semantics() {
+    let options = [
+        Options::default(),
+        Options::default().with_source_lines(true),
+        Options::default().with_positions(true),
+        Options::default()
+            .with_positions(true)
+            .with_source_lines(true),
+    ];
+    for line in [
+        "[^a]:",
+        "[^a]:\tTabbed",
+        "[^]: /url",
+        " [^a]: literal",
+        "> [^a]: note",
+        "> - [^a]: note",
+        "[r]: /url",
+        "  [r]: /url",
+        "> [r]: /url",
+        "[r]: /url [^a]: note",
+        "> [r]: /url \"[^a]: x\"",
+        "- [r]: /url {title=\"[^a]: x\"}",
+        "1. [r]: /url '[^a]: x'",
+        "- [ ] [r]: /url \"[^a]: x\"",
+    ] {
+        for lead in ["", "see[^a]\n\n", "- item\n\n"] {
+            let source = format!("{lead}{line}\nroot\n");
+            for option in &options {
+                let (candidate, _) = parse_experimental_event_blocks_with_options(&source, option);
+                assert_eq!(candidate, parse_with_options(&source, option), "{source:?}");
+            }
+        }
+    }
+    let source = "[^]: /url\n\nsee [x][^].\n";
+    let (_, admitted) = parse_experimental_event_blocks(source);
+    assert!(admitted);
+    let source = "> [r]: /url \"[^a]: x\"\n\nroot [r][]\n";
+    let (_, admitted) = parse_experimental_event_blocks(source);
+    assert!(admitted);
+    let bracket_heavy = format!(
+        "see[^n]\n\n{}{}[^n]: note\n",
+        "[".repeat(33),
+        "x".repeat(1025)
+    );
+    let (candidate, admitted) = parse_experimental_event_blocks(&bracket_heavy);
+    assert!(admitted);
+    assert_eq!(candidate, parse_standard(&bracket_heavy));
 }
