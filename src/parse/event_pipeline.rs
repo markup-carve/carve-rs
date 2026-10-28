@@ -488,7 +488,10 @@ fn parse_positioned_simple_blocks(
     options: &Options<'_>,
     line_map: &[Option<usize>],
 ) -> Option<Vec<BlockNode>> {
-    if !options.positions || !lines.iter().copied().all(supported_line) {
+    if !options.positions
+        || !options.extensions.is_empty()
+        || !lines.iter().copied().all(supported_line)
+    {
         return None;
     }
     let col_map = vec![Some(0); lines.len()];
@@ -808,6 +811,10 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                 }
                 continue;
             }
+        }
+        if let Some(block) = try_extension_block(&mut cur, options) {
+            emit!(_block_source_line, block);
+            continue;
         }
         let root_indented_text = if line.starts_with(' ') {
             let content = trim_ascii_start(line);
@@ -2490,6 +2497,9 @@ fn may_continue_plain_paragraph(line: &str) -> bool {
 }
 
 fn parse_event_inlines(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
+    if !options.extensions.is_empty() {
+        return parse_inline_with_options(text, options);
+    }
     if let Some(inner) = text
         .strip_prefix("**")
         .and_then(|text| text.strip_suffix("**"))
@@ -3386,7 +3396,14 @@ pub(super) fn parse_document_with_options(
     options: &Options<'_>,
 ) -> Option<(Document, bool)> {
     if !options.extensions.is_empty() {
-        return None;
+        let normalized = normalize_source(source);
+        if normalized.contains("[^")
+            || normalized
+                .lines()
+                .any(|line| !supported_line(line) || trim_ascii_end(line).ends_with(" +"))
+        {
+            return None;
+        }
     }
     parse_document_with_custom_options(source, options)
 }
@@ -3616,8 +3633,13 @@ fn parse_document_with_custom_options(
     if source.contains("![") {
         promote_block_images(&mut doc.children, false, true);
     }
+    for ext in &options.extensions {
+        doc = ext.after_parse(doc);
+    }
     coalesce_text_runs(&mut doc);
-    if let Some(index) = crossref_index {
+    if !options.extensions.is_empty() {
+        fill_crossref_hrefs(&mut doc, options.heading_id_options());
+    } else if let Some(index) = crossref_index {
         fill_crossref_hrefs_from_index(&mut doc, index);
     }
     Some((doc, used_event_route))

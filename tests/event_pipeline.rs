@@ -13,6 +13,203 @@ fn parse_standard(source: &str) -> carve::Document {
 
 #[cfg(feature = "experimental-event-parser-options")]
 #[test]
+fn simple_extension_route_preserves_hooks_and_single_invocation() {
+    use carve::{
+        BlockMatch, BlockNode, CarveExtension, Document, InlineMatch, InlineNode, MatcherContext,
+        Paragraph,
+    };
+    use std::cell::Cell;
+
+    #[derive(Default)]
+    struct Hooks {
+        blocks: Cell<usize>,
+        inlines: Cell<usize>,
+        after: Cell<usize>,
+    }
+    impl CarveExtension for Hooks {
+        fn name(&self) -> &'static str {
+            "event-hook-test"
+        }
+        fn match_block(
+            &self,
+            lines: &[&str],
+            start: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<BlockMatch> {
+            if *lines.get(start)? != "alpha" {
+                return None;
+            }
+            self.blocks.set(self.blocks.get() + 1);
+            Some(BlockMatch {
+                node: BlockNode::Paragraph(Paragraph {
+                    children: vec![InlineNode::text("block".to_string())],
+                    ..Default::default()
+                }),
+                lines_consumed: 1,
+            })
+        }
+        fn match_inline(
+            &self,
+            text: &str,
+            pos: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<InlineMatch> {
+            if !text.get(pos..)?.starts_with("beta") {
+                return None;
+            }
+            self.inlines.set(self.inlines.get() + 1);
+            Some(InlineMatch {
+                node: InlineNode::text("inline".to_string()),
+                end: pos + 4,
+            })
+        }
+        fn after_parse(&self, mut doc: Document) -> Document {
+            self.after.set(self.after.get() + 1);
+            doc.children.push(BlockNode::Paragraph(Paragraph {
+                children: vec![InlineNode::text("tail".to_string())],
+                ..Default::default()
+            }));
+            doc
+        }
+    }
+    for source in [
+        "alpha\n\nbeta\n",
+        "# beta\n\nalpha\n",
+        "alpha\r\n\r\nbeta\r\n",
+        "alpha\rbeta\n",
+    ] {
+        for positions in [false, true] {
+            for source_lines in [false, true] {
+                let event_hooks = Hooks::default();
+                let event_options = Options::default()
+                    .with_extension(&event_hooks)
+                    .with_positions(positions)
+                    .with_source_lines(source_lines);
+                let (candidate, admitted) =
+                    parse_experimental_event_blocks_with_options(source, &event_options);
+                assert!(admitted);
+                let standard_hooks = Hooks::default();
+                let standard_options = Options::default()
+                    .with_extension(&standard_hooks)
+                    .with_positions(positions)
+                    .with_source_lines(source_lines);
+                assert_eq!(candidate, parse_with_options(source, &standard_options));
+                assert_eq!(
+                    (
+                        event_hooks.blocks.get(),
+                        event_hooks.inlines.get(),
+                        event_hooks.after.get()
+                    ),
+                    (1, 1, 1)
+                );
+                assert_eq!(
+                    (
+                        standard_hooks.blocks.get(),
+                        standard_hooks.inlines.get(),
+                        standard_hooks.after.get()
+                    ),
+                    (1, 1, 1)
+                );
+            }
+        }
+    }
+    for source in [
+        "alpha\n\n    +\n",
+        "alpha\n\nbeta +\n",
+        "beta\r> alpha\n",
+        "alpha\r\r\t- beta\n",
+    ] {
+        let hooks = Hooks::default();
+        let (candidate, admitted) = parse_experimental_event_blocks_with_options(
+            source,
+            &Options::default().with_extension(&hooks),
+        );
+        assert!(!admitted, "{source:?}");
+        assert_eq!(hooks.blocks.get(), 1, "{source:?}");
+        assert_eq!(hooks.after.get(), 1, "{source:?}");
+        let standard = Hooks::default();
+        assert_eq!(
+            candidate,
+            parse_with_options(source, &Options::default().with_extension(&standard)),
+            "{source:?}"
+        );
+    }
+    for first in ["alpha\n", "beta\n", "# beta\n", "\n", "alpha beta\n"] {
+        for second in ["alpha\n", "beta\n", "# beta\n", "\n", "alpha beta\n"] {
+            for third in ["alpha\n", "beta\n", "# beta\n", "\n", "alpha beta\n"] {
+                let source = format!("{first}{second}{third}");
+                let event_hooks = Hooks::default();
+                let (candidate, admitted) = parse_experimental_event_blocks_with_options(
+                    &source,
+                    &Options::default().with_extension(&event_hooks),
+                );
+                assert!(admitted, "{source:?}");
+                let standard_hooks = Hooks::default();
+                assert_eq!(
+                    candidate,
+                    parse_with_options(
+                        &source,
+                        &Options::default().with_extension(&standard_hooks)
+                    ),
+                    "{source:?}"
+                );
+                assert_eq!(
+                    (
+                        event_hooks.blocks.get(),
+                        event_hooks.inlines.get(),
+                        event_hooks.after.get()
+                    ),
+                    (
+                        standard_hooks.blocks.get(),
+                        standard_hooks.inlines.get(),
+                        standard_hooks.after.get()
+                    ),
+                    "{source:?}"
+                );
+            }
+        }
+    }
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    let mut admitted = 0;
+    for entry in fs::read_dir(corpus).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension() != Some(std::ffi::OsStr::new("crv")) {
+            continue;
+        }
+        let source = fs::read_to_string(&path).unwrap();
+        let event_hooks = Hooks::default();
+        let (candidate, used) = parse_experimental_event_blocks_with_options(
+            &source,
+            &Options::default().with_extension(&event_hooks),
+        );
+        admitted += usize::from(used);
+        let standard_hooks = Hooks::default();
+        assert_eq!(
+            candidate,
+            parse_with_options(&source, &Options::default().with_extension(&standard_hooks)),
+            "{}",
+            path.display()
+        );
+        assert_eq!(
+            (
+                event_hooks.blocks.get(),
+                event_hooks.inlines.get(),
+                event_hooks.after.get()
+            ),
+            (
+                standard_hooks.blocks.get(),
+                standard_hooks.inlines.get(),
+                standard_hooks.after.get()
+            ),
+            "{}",
+            path.display()
+        );
+    }
+    assert!(admitted > 0);
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
 fn abbreviation_definitions_keep_editor_positions_and_source_lines() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     for name in [
