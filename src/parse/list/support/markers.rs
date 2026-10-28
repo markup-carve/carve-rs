@@ -433,24 +433,44 @@ pub(crate) fn line_starts_paragraph(line: &str) -> bool {
 }
 
 pub(crate) fn sublist_source_trailing_invisible_separation(source: &str) -> bool {
-    let mut invisible = false;
-    let mut inner_content_col = None;
-    for line in source.lines().rev() {
-        if is_line_comment_any_column(line) || is_definition_placeholder(line) {
-            let Some(inner_content_col) = *inner_content_col
-                .get_or_insert_with(|| source.lines().find_map(marker_content_col))
-            else {
-                return false;
-            };
-            if indent_columns(line) >= inner_content_col {
-                return false;
-            }
-            invisible = true;
-        } else {
-            return invisible && is_blank_line(line);
+    let Some(inner_content_col) = source.lines().find_map(marker_content_col) else {
+        return false;
+    };
+    let lines: Vec<_> = source.lines().collect();
+    // Pair exact-width comment delimiters once. An unmatched opener is one
+    // line comment; its following lines are classified normally.
+    let mut next_fence = std::collections::HashMap::new();
+    let mut partner = vec![None; lines.len()];
+    for at in (0..lines.len()).rev() {
+        if let Some(fence) = detect_comment_fence_line_any_column(lines[at]) {
+            partner[at] = next_fence.insert(fence.fence_len, at);
         }
     }
-    false
+    let mut blank_since_visible = false;
+    let mut invisible_since_blank = false;
+    let mut at = 0;
+    while at < lines.len() {
+        let line = lines[at];
+        if is_blank_line(line) {
+            blank_since_visible = true;
+            at += 1;
+            continue;
+        }
+        let comment_end = partner[at];
+        let invisible = (is_line_comment_any_column(line)
+            || detect_comment_fence_line_any_column(line).is_some()
+            || is_definition_placeholder(line))
+            && indent_columns(line) < inner_content_col;
+        if invisible {
+            invisible_since_blank = blank_since_visible;
+            at = comment_end.map_or(at + 1, |end| end + 1);
+        } else {
+            invisible_since_blank = false;
+            blank_since_visible = false;
+            at += 1;
+        }
+    }
+    invisible_since_blank
 }
 
 pub(crate) fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
@@ -606,6 +626,23 @@ pub(crate) fn collected_body_takes_the_lazy_line(
         return body_ends_with_open_paragraph(&content, options);
     }
     nested_ends_with_open_paragraph(src, trailing_below_column, trailing_below_column, options)
+}
+
+/// A wrapped attribute that reached this collector's item column applies one
+/// attribute-line transition across its closer, even when it appeared below a
+/// deeper child's column. The re-parsed string has lost that reached-column
+/// fact, so the lazy probe must use the collector's parallel reach map.
+pub(crate) fn reached_wrapped_attribute_tail(src: &MappedSource) -> bool {
+    let lines: Vec<_> = src.source.lines().collect();
+    let Some(end) = lines.iter().rposition(|line| !is_blank_line(line)) else {
+        return false;
+    };
+    let trimmed: Vec<_> = lines.iter().map(|line| trim_ascii_start(line)).collect();
+    (0..=end).rev().any(|start| {
+        src.reached.get(start) == Some(&true)
+            && trimmed[start].starts_with('{')
+            && standalone_attrs_block_len(&trimmed[start..=end]) == Some(end - start + 1)
+    })
 }
 
 pub(crate) fn body_ends_in_definition_list(body: &str, options: &Options<'_>) -> bool {
@@ -1006,6 +1043,13 @@ pub(crate) fn nested_ends_with_open_paragraph(
     let blocks = probe_blocks(nested, options);
     let mut end = blocks.len();
     if trailing_below_column {
+        let postblank_line_comment = {
+            let mut lines = nested.lines().rev().skip_while(|line| is_blank_line(line));
+            lines.next().is_some_and(|line| {
+                is_line_comment_any_column(line)
+                    || detect_comment_fence_line_any_column(line).is_some()
+            }) && lines.next().is_some_and(is_blank_line)
+        };
         // §24 C3's COMMENT EXCEPTION, which the clause above says is unchanged.
         // A comment written BELOW the content column is not a block of this
         // container - it reaches the container only through S4's lazy fold - so
@@ -1014,7 +1058,24 @@ pub(crate) fn nested_ends_with_open_paragraph(
         // spelling). The dedented body cannot say which of the two it was, since
         // a line at column 1 under a content column of 2 and one at column 2
         // both arrive flush; the caller reads it off the collector's own map.
-        while end > 0 && matches!(blocks[end - 1], BlockNode::Comment(_)) {
+        while end > 0 {
+            let BlockNode::Comment(comment) = &blocks[end - 1] else {
+                break;
+            };
+            // The comment exception retains an item's paragraph only until a
+            // blank has cleared its claim. A comment after that blank cannot
+            // revive the older paragraph when the next line misses the item.
+            if postblank_line_comment
+                || comment.pos.as_ref().is_some_and(|pos| {
+                    pos.start_line > 1
+                        && nested
+                            .lines()
+                            .nth(pos.start_line - 2)
+                            .is_some_and(is_blank_line)
+                })
+            {
+                return false;
+            }
             end -= 1;
         }
         if end == 0 {

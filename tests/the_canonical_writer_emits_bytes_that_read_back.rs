@@ -98,10 +98,8 @@ fn a_header_cell_does_not_hand_its_first_character_to_the_alignment_reader() {
         "the premise: nothing here is aligned - {}",
         html(src)
     );
-    // The separator row the author wrote is kept (carve#2894), so the header
-    // cell has no `=` prefix here - and the padding claim is the same one: the
-    // content's `~` must not reach the reader's alignment slot.
-    assert_eq!(fmt(src), "| ~x~ |\n|---|\n| y |\n");
+    // The native header prefix must remain separate from the content's `~`.
+    assert_eq!(fmt(src), "|= ~x~ |\n| y |\n");
     assert!(round_trips(src), "{}", fmt(src));
 }
 
@@ -125,10 +123,9 @@ fn the_other_two_alignment_sigils_answer_the_same_way() {
 fn control_the_header_marker_stays_glued_to_the_pipe() {
     // The `=` is only a header marker while it is GLUED to the pipe, so the
     // padding goes AFTER the prefix and never before it (PART 11 §6e).
-    // A separator-row source keeps its row, so the glued `=` is measured on the
-    // native spelling, which is the one that carries the marker.
+    // A separator-row source writes the same native header form.
     assert_eq!(fmt("|= a |\n| y |\n"), "|= a |\n| y |\n");
-    assert_eq!(fmt("| a |\n|---|\n| y |\n"), "| a |\n|---|\n| y |\n");
+    assert_eq!(fmt("| a |\n|---|\n| y |\n"), "|= a |\n| y |\n");
     assert!(round_trips("| a |\n|---|\n| y |\n"));
     assert!(round_trips("|= a |\n| y |\n"));
 }
@@ -137,13 +134,12 @@ fn control_the_header_marker_stays_glued_to_the_pipe() {
 fn control_a_header_cell_that_already_carries_alignment_is_padded_too() {
     // The alignment marker is part of the PREFIX, so it stays glued to the `=`
     // and the padding follows the whole run.
-    // Written with the native markers, because a kept separator row carries the
-    // column alignment itself and leaves the header cell no prefix to pad.
+    // Native markers carry column alignment in either source spelling.
     let src = "|=~ a |\n| ~y~ |\n";
     assert_eq!(fmt(src), "|=~ a |\n| ~y~ |\n");
     assert!(round_trips(src));
     let separated = "| a |\n|:-:|\n| ~y~ |\n";
-    assert_eq!(fmt(separated), separated);
+    assert_eq!(fmt(separated), "|=~ a |\n| ~y~ |\n");
     assert!(round_trips(separated));
 }
 
@@ -167,6 +163,6 @@ fn control_a_body_cell_is_padded_and_needs_nothing() {
     // A cell with no prefix was always written with its padding spaces, which
     // already part the pipe from the content; §6e extends that to every cell.
     let src = "| a |\n|---|\n| ~y~ |\n";
-    assert_eq!(fmt(src), "| a |\n|---|\n| ~y~ |\n");
+    assert_eq!(fmt(src), "|= a |\n| ~y~ |\n");
     assert!(round_trips(src));
 }

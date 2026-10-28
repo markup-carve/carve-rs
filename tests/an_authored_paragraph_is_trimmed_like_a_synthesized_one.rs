@@ -204,8 +204,7 @@ fn the_padded_lone_image_paragraph_carries_one_row_and_no_more() {
     assert_eq!(carve(html), "![G](g.jpg)\n");
 }
 
-/// WITH carve-rs#1334. A padded BARE image is a block image with no paragraph
-/// anywhere, so the two exits agree and nothing is owed.
+/// A padded bare image uses the same block-image paragraph as an unpadded one.
 #[test]
 fn a_padded_bare_image_is_a_block_image_with_no_row() {
     let html = "<div>\n  <img src=\"g.jpg\" alt=\"G\">\n</div>";
@@ -213,7 +212,7 @@ fn a_padded_bare_image_is_a_block_image_with_no_row() {
         format!("{:?}", tree(html).children),
         format!("{:?}", tree(r#"<img src="g.jpg" alt="G">"#).children)
     );
-    assert!(!format!("{:?}", tree(html)).contains("Paragraph"));
+    assert!(format!("{:?}", tree(html)).contains("block_image: true"));
     assert_eq!(diagnostics(html), Vec::<String>::new());
 }
 

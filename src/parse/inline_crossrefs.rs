@@ -21,13 +21,16 @@ pub(crate) fn crossref_index_for_document(
     doc: &Document,
     id_opts: HeadingIdOptions,
 ) -> CrossrefIndex {
+    let used_notes = crate::render::used_footnote_labels(&doc.children, &doc.footnote_defs);
     let mut counts = BTreeMap::new();
     let mut titles = BTreeMap::new();
     let mut labels = BTreeMap::new();
     let mut explicit_ids = std::collections::BTreeSet::new();
     collect_explicit_ids(&doc.children, &mut explicit_ids);
-    for blocks in doc.footnote_defs.values() {
-        collect_explicit_ids(blocks, &mut explicit_ids);
+    for (label, blocks) in &doc.footnote_defs {
+        if used_notes.contains(label) {
+            collect_explicit_ids(blocks, &mut explicit_ids);
+        }
     }
     // This index serves `</#id>` crossrefs only, which DO resolve into a
     // blockquote, so the quoted set it fills is discarded.
@@ -51,7 +54,10 @@ pub(crate) fn crossref_index_for_document(
         &explicit_ids,
         false,
     );
-    for blocks in doc.footnote_defs.values() {
+    for (label, blocks) in &doc.footnote_defs {
+        if !used_notes.contains(label) {
+            continue;
+        }
         collect_heading_titles(
             blocks,
             &mut HeadingScan {
@@ -70,8 +76,10 @@ pub(crate) fn crossref_index_for_document(
         );
     }
     collect_caption_titles(&doc.children, &mut titles);
-    for blocks in doc.footnote_defs.values() {
-        collect_caption_titles(blocks, &mut titles);
+    for (label, blocks) in &doc.footnote_defs {
+        if used_notes.contains(label) {
+            collect_caption_titles(blocks, &mut titles);
+        }
     }
     crossref_index(titles, labels)
 }
@@ -118,10 +126,13 @@ pub(in crate::parse) fn heading_index(
     collect_crossrefs: bool,
     collect_heading_refs: bool,
 ) -> (CrossrefIndex, Vec<String>) {
+    let used_notes = crate::render::used_footnote_labels(children, footnote_defs);
     let mut explicit_ids = std::collections::BTreeSet::new();
     collect_explicit_ids(children, &mut explicit_ids);
-    for blocks in footnote_defs.values() {
-        collect_explicit_ids(blocks, &mut explicit_ids);
+    for (label, blocks) in footnote_defs {
+        if used_notes.contains(label) {
+            collect_explicit_ids(blocks, &mut explicit_ids);
+        }
     }
     heading_index_with_explicit_ids(
         children,
@@ -141,6 +152,7 @@ fn heading_index_with_explicit_ids(
     collect_heading_refs: bool,
     explicit_ids: &std::collections::BTreeSet<String>,
 ) -> (CrossrefIndex, Vec<String>) {
+    let used_notes = crate::render::used_footnote_labels(children, footnote_defs);
     let mut counts = BTreeMap::new();
     let mut titles = BTreeMap::new();
     let mut labels = BTreeMap::new();
@@ -163,7 +175,10 @@ fn heading_index_with_explicit_ids(
         explicit_ids,
         false,
     );
-    for blocks in footnote_defs.values() {
+    for (label, blocks) in footnote_defs {
+        if !used_notes.contains(label) {
+            continue;
+        }
         collect_heading_titles(
             blocks,
             &mut HeadingScan {
