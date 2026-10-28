@@ -35,6 +35,7 @@ mod quote;
 mod rebase;
 mod table;
 #[cfg(test)]
+#[path = "parse/tests.rs"]
 mod tests;
 mod verse;
 pub(crate) use attrs::*;

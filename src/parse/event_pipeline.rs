@@ -3497,14 +3497,25 @@ pub(super) fn parse_document_with_options(
     source: &str,
     options: &Options<'_>,
 ) -> Option<(Document, bool)> {
-    parse_document_with_custom_options(source, options)
+    parse_document_with_custom_options(source, options, ParseMode::Html)
+        .map(|(doc, _, used)| (doc, used))
+}
+
+#[cfg(all(feature = "experimental-event-parser-options", test))]
+pub(super) fn parse_document_with_mode(
+    source: &str,
+    options: &Options<'_>,
+    mode: ParseMode,
+) -> Option<(Document, Option<CrossrefIndex>, bool)> {
+    parse_document_with_custom_options(source, options, mode)
 }
 
 #[cfg(feature = "experimental-event-parser-options")]
 fn parse_document_with_custom_options(
     source: &str,
     options: &Options<'_>,
-) -> Option<(Document, bool)> {
+    mode: ParseMode,
+) -> Option<(Document, Option<CrossrefIndex>, bool)> {
     if NESTING_DEPTH.with(|depth| depth.get() >= MAX_NESTING_DEPTH) {
         return None;
     }
@@ -3529,6 +3540,7 @@ fn parse_document_with_custom_options(
                 original_source,
                 source_len,
                 options,
+                mode,
             );
         }
     }
@@ -3717,36 +3729,80 @@ fn parse_document_with_custom_options(
     let original_line_starts = options
         .positions
         .then(|| CodepointLineStarts::original(original_source));
-    append_link_reference_definitions(&mut doc, &link_defs, source, original_line_starts.as_ref());
-    if may_have_abbrevs {
-        apply_abbreviations(&mut doc);
+    if !matches!(mode, ParseMode::HtmlFacade) {
+        append_link_reference_definitions(
+            &mut doc,
+            &link_defs,
+            source,
+            original_line_starts.as_ref(),
+        );
     }
-    if source.contains('^') {
-        number_crossref_captions(&mut doc);
-    }
-    let crossref_index = if source.contains("</#") {
-        let (index, ids) =
-            crossref_index_and_heading_ids_for_document(&doc, options.heading_id_options());
-        stamp_generated_heading_ids_from(&mut doc, ids);
-        Some(index)
+    let mut crossref_index = if matches!(mode, ParseMode::Html | ParseMode::HtmlFacade) {
+        if may_have_abbrevs {
+            apply_abbreviations(&mut doc);
+        }
+        let caption_titles = if source.contains('^') {
+            number_crossref_captions(&mut doc)
+        } else {
+            BTreeMap::new()
+        };
+        let index = if matches!(mode, ParseMode::HtmlFacade) {
+            let (mut index, _) = heading_index(
+                &doc.children,
+                &doc.footnote_defs,
+                options.heading_id_options(),
+                source.contains("</#"),
+                false,
+            );
+            index.extend_titles(caption_titles);
+            stamp_generated_heading_ids(&mut doc, options.heading_id_options());
+            Some(index)
+        } else if source.contains("</#") {
+            let (index, ids) =
+                crossref_index_and_heading_ids_for_document(&doc, options.heading_id_options());
+            stamp_generated_heading_ids_from(&mut doc, ids);
+            Some(index)
+        } else {
+            stamp_generated_heading_ids(&mut doc, options.heading_id_options());
+            None
+        };
+        if matches!(mode, ParseMode::Html) {
+            let _ = crate::render::collect_footnotes(&mut doc, false);
+        }
+        if source.contains("![") {
+            promote_block_images(&mut doc.children, false, true);
+        }
+        index
     } else {
-        stamp_generated_heading_ids(&mut doc, options.heading_id_options());
+        if source.contains("![") {
+            promote_block_images(&mut doc.children, true, true);
+        }
         None
     };
-    let _ = crate::render::collect_footnotes(&mut doc, false);
-    if source.contains("![") {
-        promote_block_images(&mut doc.children, false, true);
-    }
     for ext in &options.extensions {
         doc = ext.after_parse(doc);
     }
-    coalesce_text_runs(&mut doc);
-    if !options.extensions.is_empty() {
-        fill_crossref_hrefs(&mut doc, options.heading_id_options());
-    } else if let Some(index) = crossref_index {
-        fill_crossref_hrefs_from_index(&mut doc, index);
+    if !matches!(mode, ParseMode::HtmlFacade) {
+        coalesce_text_runs(&mut doc);
     }
-    Some((doc, used_event_route))
+    if !matches!(mode, ParseMode::HtmlFacade) {
+        if !options.extensions.is_empty() {
+            fill_crossref_hrefs(&mut doc, options.heading_id_options());
+        } else {
+            if let Some(index) = crossref_index.take() {
+                fill_crossref_hrefs_from_index(&mut doc, index);
+            } else if matches!(mode, ParseMode::Carve) && source.contains("</#") {
+                fill_crossref_hrefs(&mut doc, options.heading_id_options());
+            }
+        }
+    }
+    if matches!(mode, ParseMode::HtmlFacade) && !options.extensions.is_empty() {
+        crossref_index = Some(crossref_index_for_document(
+            &doc,
+            options.heading_id_options(),
+        ));
+    }
+    Some((doc, crossref_index, used_event_route))
 }
 
 #[cfg(feature = "experimental-event-parser-options")]
@@ -3755,7 +3811,8 @@ fn parse_document_with_footnotes_options(
     original_source: &str,
     source_len: usize,
     options: &Options<'_>,
-) -> Option<(Document, bool)> {
+    mode: ParseMode,
+) -> Option<(Document, Option<CrossrefIndex>, bool)> {
     if NESTING_DEPTH.with(|depth| depth.get() >= MAX_NESTING_DEPTH) {
         return None;
     }
@@ -3908,29 +3965,70 @@ fn parse_document_with_footnotes_options(
     let original_line_starts = options
         .positions
         .then(|| CodepointLineStarts::original(original_source));
-    append_link_reference_definitions(&mut doc, &link_defs, source, original_line_starts.as_ref());
-    if may_have_abbrevs {
-        apply_abbreviations(&mut doc);
+    if !matches!(mode, ParseMode::HtmlFacade) {
+        append_link_reference_definitions(
+            &mut doc,
+            &link_defs,
+            source,
+            original_line_starts.as_ref(),
+        );
     }
-    if source.contains('^') {
-        number_crossref_captions(&mut doc);
+    let mut caption_titles = BTreeMap::new();
+    if matches!(mode, ParseMode::Html | ParseMode::HtmlFacade) {
+        if may_have_abbrevs {
+            apply_abbreviations(&mut doc);
+        }
+        caption_titles = if source.contains('^') {
+            number_crossref_captions(&mut doc)
+        } else {
+            BTreeMap::new()
+        };
     }
-    stamp_generated_heading_ids(&mut doc, options.heading_id_options());
-    let _ = crate::render::collect_footnotes(&mut doc, false);
+    let mut crossref_index = if matches!(mode, ParseMode::HtmlFacade) {
+        let (mut index, _) = heading_index(
+            &doc.children,
+            &doc.footnote_defs,
+            options.heading_id_options(),
+            source.contains("</#"),
+            false,
+        );
+        index.extend_titles(caption_titles);
+        stamp_generated_heading_ids(&mut doc, options.heading_id_options());
+        Some(index)
+    } else {
+        if matches!(mode, ParseMode::Html) {
+            stamp_generated_heading_ids(&mut doc, options.heading_id_options());
+        }
+        None
+    };
+    if matches!(mode, ParseMode::Html) {
+        let _ = crate::render::collect_footnotes(&mut doc, false);
+    }
     if source.contains("![") {
-        promote_block_images(&mut doc.children, false, true);
+        let figures_only = matches!(mode, ParseMode::Carve);
+        promote_block_images(&mut doc.children, figures_only, true);
         for blocks in doc.footnote_defs.values_mut() {
-            promote_block_images(blocks, false, true);
+            promote_block_images(blocks, figures_only, true);
         }
     }
     for ext in &options.extensions {
         doc = ext.after_parse(doc);
     }
-    coalesce_text_runs(&mut doc);
-    if !options.extensions.is_empty() || source.contains("</#") {
+    if !matches!(mode, ParseMode::HtmlFacade) {
+        coalesce_text_runs(&mut doc);
+    }
+    if !matches!(mode, ParseMode::HtmlFacade)
+        && (!options.extensions.is_empty() || source.contains("</#"))
+    {
         fill_crossref_hrefs(&mut doc, options.heading_id_options());
     }
-    Some((doc, true))
+    if matches!(mode, ParseMode::HtmlFacade) && !options.extensions.is_empty() {
+        crossref_index = Some(crossref_index_for_document(
+            &doc,
+            options.heading_id_options(),
+        ));
+    }
+    Some((doc, crossref_index, true))
 }
 
 #[cfg(test)]

@@ -153,7 +153,7 @@ required-features = ["experimental-event-parser"]
 [[example]]
 name = "event_route_cpu"
 path = "examples/event_route_cpu.rs"
-required-features = ["experimental-event-parser"]
+required-features = ["experimental-event-parser-options"]
 
 [[test]]
 name = "includes"
