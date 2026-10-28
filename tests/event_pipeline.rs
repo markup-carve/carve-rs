@@ -524,9 +524,6 @@ fn option_aware_event_corpus_matches_full_document() {
         total += 1;
         for (index, options) in options.iter().enumerate() {
             let (candidate, used) = parse_experimental_event_blocks_with_options(&source, options);
-            if index == 0 && !used {
-                eprintln!("EVENT DECLINE {}", path.display());
-            }
             admitted[index] += usize::from(used);
             assert_eq!(
                 candidate,
