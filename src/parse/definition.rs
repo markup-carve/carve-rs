@@ -118,13 +118,23 @@ pub(in crate::parse) fn fold_term(
             }
         }
         let Some(next) = cur.peek() else { break };
+        // A description marker left of the body column returns to the outer
+        // description. Nested body collection can retain its residual indent
+        // without a LAZY frame; that indent must not turn the marker into term
+        // text. A framed line belongs to the list-item lazy rule instead.
+        if !next.starts_with(LAZY)
+            && cur.carried_reach(cur.pos) == Some(false)
+            && strip_definition_marker(trim_ascii_start(next)).is_some()
+        {
+            break;
+        }
         let same_column_entry = !next.starts_with(LAZY)
             && definition_entry_at(strip_lazy(next), marker_hosted, entry_column).is_some_and(
                 |line| is_definition_list_start(line) || strip_definition_marker(line).is_some(),
             );
         if is_blank_line(next)
             || next.starts_with(ITEM_PARAGRAPH)
-            || is_definition_list_start(strip_lazy(next))
+            || (!next.starts_with(LAZY) && is_definition_list_start(next))
             || strip_lazy(next)
                 .strip_prefix(":: ")
                 .is_some_and(|rest| is_blank_line(rest) && rest.contains('\t'))
@@ -154,7 +164,10 @@ pub(in crate::parse) fn fold_term(
         // all-space `` `  ` `` term is untouched by a trim that only ever sees
         // the end of a line.
         let text = strip_lazy(&owned);
-        let text = if owned.starts_with(LAZY) {
+        let text = if owned.starts_with(LAZY)
+            && !owned.starts_with(LAZY_INDENT)
+            && cur.carried_reach(cur.pos) != Some(true)
+        {
             trim_ascii_start(text)
         } else {
             text
@@ -351,6 +364,13 @@ pub(in crate::parse) fn parse_definition_list(
             let Some(line) = cur.peek() else {
                 break;
             };
+            // The nested parser sees the marker after its containing body has
+            // normalized indentation. A marker that did not reach that body's
+            // column belongs to the surviving outer owner, even if rebasing
+            // placed it at this list's apparent marker column.
+            if !line.starts_with(LAZY) && cur.carried_reach(cur.pos) == Some(false) {
+                break;
+            }
             let Some((def, definition_column)) = (!line.starts_with(ITEM_PARAGRAPH))
                 .then(|| {
                     definition_entry_at(strip_lazy(line), marker_hosted, list_column)
@@ -759,6 +779,7 @@ struct DefinitionBodyCollector<'s, 'o> {
     marker_line_sibling_columns: Vec<usize>,
     item_content_columns: Vec<usize>,
     owner_item_opens_block: bool,
+    pending_first_block_column: Option<usize>,
     descendant_marker_fence: Option<(FenceOpen, usize)>,
     descendant_block_ended: bool,
     // A lazy fold leaves a paragraph open. Rechecking by parsing all collected
@@ -846,6 +867,9 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
                 Vec::new()
             },
             owner_item_opens_block: paragraph_owner_is_item,
+            pending_first_block_column: last
+                .filter(|line| is_plus_marker(innermost_marker_content(line)))
+                .and_then(|line| paragraph_owner_column(line, content_column)),
             descendant_marker_fence: None,
             descendant_block_ended: false,
             folded_a_lazy_line: false,
@@ -947,6 +971,15 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             }
         }
         let opens_descendant_here = self.track_paragraph_owner(cur, fence, line, column);
+        if !opens_descendant_here
+            && !blank
+            && !is_line_comment_any_column(line)
+            && self
+                .pending_first_block_column
+                .is_some_and(|owner| column >= owner)
+        {
+            self.pending_first_block_column = None;
+        }
         if column == 0 && self.opens_comment_span_outside_body(cur, line) {
             return BodyStep::Stop;
         }
@@ -1083,6 +1116,9 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             }
         }
         self.paragraph_marker_column = is_list_marker(local).then_some(column);
+        self.pending_first_block_column = is_plus_marker(innermost_marker_content(local))
+            .then_some(self.paragraph_column)
+            .flatten();
     }
 
     fn end_descendant_block(&mut self) {
@@ -1232,7 +1268,15 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         // The residual is written back as the spaces the tab bought past
         // the margin, which is what makes the two spellings agree.
         let mut sliced = slice_columns(line, self.content_column.min(indent), true);
-        if !opens_descendant_here
+        let term_past_column = self
+            .nested_definition_column
+            .is_some_and(|term| indent < term)
+            && indent > self.content_column
+            && !self.descendant_block_ended
+            && !is_list_marker(opener);
+        if term_past_column {
+            sliced.insert_str(0, LAZY);
+        } else if !opens_descendant_here
             && wrapped_attribute.is_none()
             && self.folds_past_column_into_owner(line, indent)
         {
@@ -1339,7 +1383,10 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
     /// column, fold into that descendant's paragraph as lazy text?
     fn folds_past_column_into_owner(&self, line: &str, indent: usize) -> bool {
         let local = trim_ascii_start(line);
-        !(self.nested_definition_column == Some(indent) && is_plus_marker(local))
+        !self
+            .pending_first_block_column
+            .is_some_and(|column| indent < column)
+            && !(self.nested_definition_column == Some(indent) && is_plus_marker(local))
             && !is_line_comment_any_column(line)
             && detect_comment_fence_line_any_column(line).is_none()
             && detect_fence_open(local).is_none()
@@ -1492,7 +1539,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         line: &str,
         indent: usize,
     ) -> BodyStep {
-        if self.ends_below_column(cur, line, indent) {
+        if self.ends_below_column(line) {
             return BodyStep::Stop;
         }
         // A COMMENT DELIMITER CLOSING A SPAN THIS BODY ALREADY HOLDS IS NOT
@@ -1521,8 +1568,20 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         if !self.body_takes_fold() {
             return BodyStep::Stop;
         }
+        // A sibling marker normally returns to the item that supplied this
+        // description. A still-open quote inside the body takes the marker's
+        // lazy line first, including at that item's content column (P0 X2).
+        if cur.carried_reach(cur.pos) == Some(true)
+            && is_list_marker(trim_ascii_start(line))
+            && !self.folded_into_quote
+        {
+            return BodyStep::Stop;
+        }
         // A surviving quote owns this line before the definition column (CARVE-P0-004).
-        if indent > 0 && self.folded_into_quote && !trim_ascii_start(line).starts_with("%%") {
+        if self.folded_into_quote
+            && (indent > 0 || is_list_marker(trim_ascii_start(line)))
+            && !trim_ascii_start(line).starts_with("%%")
+        {
             self.folded_a_lazy_line = true;
             let col = cur.source_col(cur.pos);
             self.push(line.to_string(), cur.source_line(cur.pos), col, false);
@@ -1533,23 +1592,15 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
     }
 
     /// Early exits for a line below the body's column, before any fold test.
-    fn ends_below_column(&self, cur: &LineCursor<'_>, line: &str, column: usize) -> bool {
+    fn ends_below_column(&self, line: &str) -> bool {
         // An unfinished nested marker fence owns no below-column line.
         if self.nested_lead_fence.is_some() {
-            return true;
-        }
-        // The line cannot belong to this description below its body column.
-        // Leave a list opener to the surviving outer container.
-        if column < self.content_column
-            && cur.reached.and_then(|r| r.get(cur.pos)).copied() == Some(true)
-            && is_list_marker(trim_ascii_start(line))
-        {
             return true;
         }
         // A new term/definition marker ends the definition (the outer loop
         // picks it up). An EMPTY term marker opens nothing, whatever
         // whitespace trails it, so it folds like a bare `::`.
-        is_definition_list_start(strip_lazy(line))
+        (!line.starts_with(LAZY) && is_definition_list_start(strip_lazy(line)))
             || (!line.starts_with(LAZY) && strip_definition_marker(strip_lazy(line)).is_some())
     }
 
@@ -1610,7 +1661,15 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         // does not start an interrupting block folds into the open
         // paragraph (the same rule list items and block quotes use, matching
         // djot). A block opener ends the definition.
-        let owned = if indent > 0 {
+        // The plain lazy frame carries no authored residual indentation.
+        let lazy_trim = if line.starts_with(LAZY) && !line.starts_with(LAZY_INDENT) {
+            strip_lazy(line).len() - trim_ascii_start(strip_lazy(line)).len()
+        } else {
+            0
+        };
+        let owned = if line.starts_with(LAZY) && !line.starts_with(LAZY_INDENT) {
+            format!("{LAZY}{}", trim_ascii_start(strip_lazy(line)))
+        } else if indent > 0 {
             trim_ascii_start(line).to_string()
         } else {
             line.to_string()
@@ -1670,6 +1729,8 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         let kept_col = if opens_retained_fence {
             cur.source_col(cur.pos)
                 .map(|col| col + (line.len() - keep.len()) as isize)
+        } else if lazy_trim > 0 {
+            cur.source_col(cur.pos).map(|col| col + lazy_trim as isize)
         } else if keep.starts_with(LAZY) && indent > 0 {
             cur.source_col(cur.pos).map(|col| col + indent as isize)
         } else {

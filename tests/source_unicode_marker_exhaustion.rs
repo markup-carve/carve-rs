@@ -3,6 +3,7 @@ fn semantic_tree(value: &mut serde_json::Value) {
         serde_json::Value::Object(fields) => {
             fields.remove("pos");
             fields.remove("srcByteLength");
+            fields.remove("separatorWidths");
             for child in fields.values_mut() {
                 semantic_tree(child);
             }

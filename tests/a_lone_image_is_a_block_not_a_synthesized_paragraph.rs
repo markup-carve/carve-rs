@@ -1,47 +1,20 @@
-//! markup-carve/carve-rs#1334. `html_to_ast` wrapped a bare `<img>` in a
-//! paragraph the document never contained, while `html_to_carve` wrote the bare
-//! image beside it - so the two exits disagreed about an import this engine
-//! built itself.
+//! The resolved AST represents a standalone image as a paragraph with
+//! `blockImage: true`, including images imported without an authored `<p>`.
 //!
 //! Measured on `main` at `6ae35bd6`:
 //!
 //! ```text
 //! html_to_carve -> "![G](g.jpg)\n"                      diagnostics = []
-//! parse(that)   -> [BlockImage]
-//! html_to_ast   -> [Paragraph { children: [Image] }]    diagnostics = []
+//! parse(that)   -> [Paragraph { block_image: true }]
+//! html_to_ast   -> [Paragraph { block_image: true }]    diagnostics = []
 //! ```
 //!
 //! `docs/html-import.md` makes `parse(html_to_carve(h)) == html_to_ast(h)` the
 //! invariant and `structure-unspellable` its ONE carve-out. No row was emitted
 //! here, so this was not the carve-out - it was the invariant failing.
 //!
-//! ## Why the wrapper goes, rather than the difference being declared
-//!
-//! `caption_host` already takes this wrapper off a `<figure>` body and says why:
-//! HTML has no block/inline slot distinction, so `blocks_at` puts a stray inline
-//! into a paragraph to have somewhere to put it, and the wrapper is OURS rather
-//! than the author's. That reasoning never depended on a `<figure>` being
-//! present - `caption_host` was simply the only place it was reached from.
-//! `resources/examples/edge-cases.md` rules the shape the same way: "a paragraph
-//! whose whole content is one image is still the standalone image shape, not a
-//! wrapped one".
-//!
-//! AN ADDITION IS NOT A LOSS. A declared loss is a ceiling an import may sit
-//! inside; a synthesized paragraph is the document coming back saying something
-//! it never said. Only the second changes what the document MEANS, so it takes
-//! no diagnostic row - it gets removed.
-//!
-//! ## The opposite call on the same two nodes
-//!
-//! carve-rs#1331 declares a LOSS for `<p><img></p>`: there the paragraph is the
-//! AUTHOR's, the tree is faithful, and the WRITER is the exit that changes the
-//! document. Here nothing authored a paragraph. The deciding question is only
-//! ever whether the document contained a `<p>` - which is why an authored one
-//! arrives through `block` and never through the inline buffer this touches.
-//! Both directions are asserted below, in the same file, so a change that
-//! collapses them fails here.
-//!
-//! Ported from markup-carve/carve-js#1411, fixed there in carve-js#1414.
+//! PART 12 section 23 makes the block-image flag a paragraph field. The
+//! importer's synthesized and authored image runs use that same wire shape.
 
 use carve::{html_to_ast, html_to_carve, parse, render_html, HtmlImportOptions};
 
@@ -82,11 +55,11 @@ fn rows(html: &str) -> usize {
 }
 
 #[test]
-fn a_bare_image_is_a_block_image_on_both_exits() {
+fn a_bare_image_is_a_block_image_paragraph_on_both_exits() {
     let html = r#"<img src="g.jpg" alt="G">"#;
-    assert_eq!(kinds(&tree(html)), vec!["BlockImage".to_string()]);
+    assert_eq!(kinds(&tree(html)), vec!["Paragraph".to_string()]);
     assert_eq!(carve(html), "![G](g.jpg)\n");
-    assert_eq!(kinds(&parse(&carve(html))), vec!["BlockImage".to_string()]);
+    assert_eq!(kinds(&parse(&carve(html))), vec!["Paragraph".to_string()]);
 }
 
 /// The shape the spec fixture `detached-caption-caret` records, which is what
@@ -96,9 +69,12 @@ fn the_detached_caption_caret_shape_agrees_on_both_exits() {
     let html = "<img src=\"g.jpg\" alt=\"G\">\n<p>^ c</p>";
     assert_eq!(
         kinds(&tree(html)),
-        vec!["BlockImage".to_string(), "Paragraph".to_string()]
+        vec!["Paragraph".to_string(), "Paragraph".to_string()]
     );
-    assert_eq!(kinds(&parse(&carve(html))), kinds(&tree(html)));
+    assert_eq!(
+        render_html(&parse(&carve(html))).unwrap(),
+        render_html(&tree(html)).unwrap()
+    );
 }
 
 /// IT IS NOT A TOP-LEVEL RULE. The wrapper is synthesized wherever a stray
@@ -129,20 +105,18 @@ fn it_reaches_a_bare_image_inside_a_container() {
     for (html, written) in cases {
         assert_eq!(carve(html), written, "{html}");
         assert_eq!(
-            kinds(&parse(&carve(html))),
-            kinds(&tree(html)),
-            "{html}: the two exits must agree"
+            render_html(&parse(&carve(html))).unwrap(),
+            render_html(&tree(html)).unwrap(),
+            "{html}: the two exits must render alike"
         );
         assert!(
-            !format!("{:?}", tree(html)).contains("Paragraph"),
-            "{html}: a synthesized wrapper is still in the tree"
+            format!("{:?}", tree(html)).contains("block_image: true"),
+            "{html}: the image paragraph needs its block-image flag"
         );
     }
 }
 
-/// AN ADDITION IS REMOVED, NOT DECLARED. None of these owes a row: nothing was
-/// lost, and a `structure-unspellable` row is read as licence to stop comparing
-/// the two exits.
+/// The paragraph shape carries no import loss.
 #[test]
 fn removing_the_addition_reports_nothing() {
     for html in [
@@ -216,10 +190,10 @@ fn a_run_holding_anything_else_stays_a_paragraph() {
 #[test]
 fn an_authored_paragraph_around_the_same_image_is_promoted() {
     let html = r#"<p><img src="g.jpg" alt="G"></p>"#;
-    assert_eq!(kinds(&tree(html)), vec!["BlockImage".to_string()]);
+    assert_eq!(kinds(&tree(html)), vec!["Paragraph".to_string()]);
     assert_eq!(rows(html), 0);
     let bare = r#"<img src="g.jpg" alt="G">"#;
-    assert_eq!(kinds(&tree(bare)), vec!["BlockImage".to_string()]);
+    assert_eq!(kinds(&tree(bare)), vec!["Paragraph".to_string()]);
     assert_eq!(rows(bare), 0);
     assert_eq!(carve(html), carve(bare));
 }

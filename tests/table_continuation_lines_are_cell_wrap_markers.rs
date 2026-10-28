@@ -131,7 +131,11 @@ fn a_colspan_marker_keeps_both_fragments() {
 
 #[test]
 fn a_header_continuation_stays_before_its_separator() {
-    writes_back("| a | b |\n+ x | y |\n|---|---|\n| e | f |\n");
+    let source = "| a | b |\n+ x | y |\n|---|---|\n| e | f |\n";
+    assert_eq!(
+        carve::to_carve(source),
+        "|= a |= b |\n+ x | y |\n| e | f |\n"
+    );
 }
 
 #[test]

@@ -3818,12 +3818,21 @@ fn coalesce(nodes: Vec<InlineNode>) -> Vec<InlineNode> {
     out
 }
 
-/// The block a SYNTHESIZED wrapper becomes: the image itself when that is all
-/// the run holds, and a paragraph otherwise (PART 9 section 4b,
-/// markup-carve/carve-rs#1334).
+/// A lone imported image uses the resolved tree's paragraph shape.
+fn imported_block_image(image: Image) -> BlockNode {
+    BlockNode::Paragraph(Paragraph {
+        attrs: None,
+        children: vec![InlineNode::Image(image)],
+        at_content_column: true,
+        block_image: true,
+        pos: None,
+    })
+}
+
+/// The block a synthesized inline run becomes.
 fn synthesized_wrapper(children: Vec<InlineNode>) -> BlockNode {
     match <[InlineNode; 1]>::try_from(children) {
-        Ok([InlineNode::Image(image)]) => BlockNode::BlockImage(image),
+        Ok([InlineNode::Image(image)]) => imported_block_image(image),
         Ok([only]) => BlockNode::Paragraph(Paragraph {
             attrs: None,
             children: vec![only],

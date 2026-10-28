@@ -29,7 +29,32 @@ use std::path::{Path, PathBuf};
 /// branch, so a slug whose fixture had caught up was never reached and its line
 /// survived forever - which is the same green above, read the other way round.
 /// The check below is made outside that branch for exactly that reason.
-const AHEAD_OF_PIN: &[(&str, &str, &str, &str)] = &[];
+const AHEAD_OF_PIN: &[(&str, &str, &str, &str)] = &[
+    (
+        "284-a-ragged-table-keeps-each-row-s-cell-count-2",
+        "fmt",
+        "CARVE-P11-066 native headers",
+        "|= |= x |\n| y |\n",
+    ),
+    (
+        "284-a-ragged-table-keeps-each-row-s-cell-count-3",
+        "fmt",
+        "CARVE-P11-066 native headers",
+        "|= h |\n| | x |\n",
+    ),
+    (
+        "285-adjacent-block-openers-in-an-attached-run-stay-separate-2",
+        "fmt",
+        "CARVE-P11-066 native headers",
+        "- x\n+\n|= a |\n| b |\n+\n|= a |\n| b |\n",
+    ),
+    (
+        "99-table-cell-attributes",
+        "fmt",
+        "CARVE-P11-066 native headers",
+        "|={.highlight} Total |= 99 |\n| a | b |\n",
+    ),
+];
 
 fn corpus_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus")
