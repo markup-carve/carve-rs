@@ -14,6 +14,22 @@ pub(crate) fn lone_rendered_image(children: &[InlineNode]) -> Option<usize> {
     image
 }
 
+/// Publish leading block attributes on the resolved image that owns a block
+/// image paragraph. The paragraph remains the wire node for `blockImage`.
+pub(crate) fn publish_block_image_attrs(paragraph: &mut Paragraph) {
+    if !paragraph.block_image {
+        return;
+    }
+    let Some(index) = lone_rendered_image(&paragraph.children) else {
+        return;
+    };
+    if let Some(attrs) = paragraph.attrs.take() {
+        if let InlineNode::Image(image) = &mut paragraph.children[index] {
+            merge_leading_attrs(&mut image.attrs, attrs);
+        }
+    }
+}
+
 /// Collapse lone-image paragraphs for HTML regardless of source column.
 /// Parsing retains an indented lone image as a paragraph; HTML rendering
 /// promotes it on purpose (markup-carve/carve#1660).
@@ -121,6 +137,7 @@ pub(in crate::parse) fn promote_block_images(
             // The field records render semantics, so it is not column-gated.
             if let BlockNode::Paragraph(p) = block {
                 p.block_image = lone_rendered_image(&p.children).is_some();
+                publish_block_image_attrs(p);
             }
             match block {
                 BlockNode::BlockQuote(b) => worklist.push(b.children.as_mut_slice()),

@@ -213,6 +213,10 @@ name = "multiline_image_caption"
 path = "tests/multiline_image_caption.rs"
 
 [[test]]
+name = "image_ast_attrs"
+path = "tests/image_ast_attrs.rs"
+
+[[test]]
 name = "parser_owner_batch"
 path = "tests/parser_owner_batch.rs"
 
