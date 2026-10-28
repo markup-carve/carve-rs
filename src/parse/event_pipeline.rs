@@ -3732,10 +3732,23 @@ fn parse_document_with_custom_options(
         if may_have_abbrevs {
             apply_abbreviations(&mut doc);
         }
-        if source.contains('^') {
-            number_crossref_captions(&mut doc);
-        }
-        let index = if source.contains("</#") || matches!(mode, ParseMode::HtmlFacade) {
+        let caption_titles = if source.contains('^') {
+            number_crossref_captions(&mut doc)
+        } else {
+            BTreeMap::new()
+        };
+        let index = if matches!(mode, ParseMode::HtmlFacade) {
+            let (mut index, _) = heading_index(
+                &doc.children,
+                &doc.footnote_defs,
+                options.heading_id_options(),
+                source.contains("</#"),
+                false,
+            );
+            index.extend_titles(caption_titles);
+            stamp_generated_heading_ids(&mut doc, options.heading_id_options());
+            Some(index)
+        } else if source.contains("</#") {
             let (index, ids) =
                 crossref_index_and_heading_ids_for_document(&doc, options.heading_id_options());
             stamp_generated_heading_ids_from(&mut doc, ids);
@@ -3951,18 +3964,27 @@ fn parse_document_with_footnotes_options(
             original_line_starts.as_ref(),
         );
     }
+    let mut caption_titles = BTreeMap::new();
     if matches!(mode, ParseMode::Html | ParseMode::HtmlFacade) {
         if may_have_abbrevs {
             apply_abbreviations(&mut doc);
         }
-        if source.contains('^') {
-            number_crossref_captions(&mut doc);
-        }
+        caption_titles = if source.contains('^') {
+            number_crossref_captions(&mut doc)
+        } else {
+            BTreeMap::new()
+        };
     }
     let mut crossref_index = if matches!(mode, ParseMode::HtmlFacade) {
-        let (index, ids) =
-            crossref_index_and_heading_ids_for_document(&doc, options.heading_id_options());
-        stamp_generated_heading_ids_from(&mut doc, ids);
+        let (mut index, _) = heading_index(
+            &doc.children,
+            &doc.footnote_defs,
+            options.heading_id_options(),
+            source.contains("</#"),
+            false,
+        );
+        index.extend_titles(caption_titles);
+        stamp_generated_heading_ids(&mut doc, options.heading_id_options());
         Some(index)
     } else {
         if matches!(mode, ParseMode::Html) {

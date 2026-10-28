@@ -218,6 +218,8 @@ fn inline_explicit_id_and_heading_slug_keep_mode_parity() {
     for source in [
         "# One\n\n`x`{#one}\n\nSee </#one>.\n",
         "# One\n\n[x](y){#one}\n\nSee </#one>.\n",
+        "# one\n\n`x`{#one}\n\nSee </#one>.\n",
+        "# one\n\n[x](y){#one}\n\nSee </#one>.\n",
         "# One\n\n{#one}\nplain\n\nSee </#one>.\n",
         "# One\n\n::: note\n# Two\n:::\n\n# Two\n\nSee </#two-1>.\n",
         "# One\n\n> # Two\n\n# Two\n\nSee </#two-1>.\n",
