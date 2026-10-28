@@ -955,7 +955,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         let owner_column = state.body_indent.saturating_sub(2);
         if !self.nested
-            && column >= owner_column
+            && (column >= owner_column
+                || (note.lazy_claim && detect_list_marker_full(trim_ascii_start(line)).is_none()))
             && !below_owner_interrupts(line, owner_column)
             && note.can_fold_below(line, self.options)
         {

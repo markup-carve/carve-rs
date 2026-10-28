@@ -123,3 +123,27 @@ fn a_line_outside_the_quote_host_does_not_extend_its_note() {
     assert!(html.contains("</blockquote>\n<p>tail</p>"), "{html}");
     assert!(!note_body(source).contains("tail"), "{html}");
 }
+
+#[test]
+fn a_lazy_note_line_carries_plain_text_past_its_owner_column() {
+    let source = "- a\n  [^f]: t\n  more\ntail\n";
+    let html = to_html(source);
+    assert_eq!(html, "<ul>\n  <li>a</li>\n</ul>");
+}
+
+#[test]
+fn a_lazy_note_line_releases_an_ancestor_list_marker() {
+    let source = "- a\n   :: term\n  :  detail\n    :: term\n    :  detail\n      [^n]: note\n       q\n1. ordered\n";
+    let html = to_html(source);
+    assert!(html.contains("<ol>\n  <li>ordered</li>\n</ol>"), "{html}");
+}
+
+#[test]
+fn a_root_note_after_a_list_takes_its_indented_body() {
+    let source = "- > - para\n\n[^f]: n\n  tail\n";
+    let html = to_html(source);
+    assert_eq!(
+        html,
+        "<ul>\n  <li>\n    <blockquote>\n      <ul>\n        <li>para</li>\n      </ul>\n    </blockquote>\n  </li>\n</ul>"
+    );
+}
