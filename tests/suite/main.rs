@@ -1197,6 +1197,8 @@ mod quote_note_first_block;
 mod a_markdown_assessor_completes_autolink_shapes;
 #[path = "../a_markdown_destination_keeps_what_carve_reads_literally.rs"]
 mod a_markdown_destination_keeps_what_carve_reads_literally;
+#[path = "../cell_structural_attribute_order.rs"]
+mod cell_structural_attribute_order;
 #[path = "../destination_parens.rs"]
 mod destination_parens;
 #[path = "../destination_unicode_whitespace.rs"]
@@ -1257,6 +1259,8 @@ mod fenced_code_columns;
 mod fenced_code_info;
 #[path = "../fenced_definition_body_below_the_column.rs"]
 mod fenced_definition_body_below_the_column;
+#[path = "../first_block_second_plus.rs"]
+mod first_block_second_plus;
 #[path = "../floating_attrs_below_list_content_column.rs"]
 mod floating_attrs_below_list_content_column;
 #[path = "../flush_left_line_after_a_div_in_a_container.rs"]
@@ -1391,6 +1395,8 @@ mod incremental_parse;
 mod indented_comment_fence_hides_its_body;
 #[path = "../indented_fence_marker_payload.rs"]
 mod indented_fence_marker_payload;
+#[path = "../indented_image_caption_number.rs"]
+mod indented_image_caption_number;
 #[path = "../index_terms.rs"]
 mod index_terms;
 #[path = "../ingest_bounds_are_measured.rs"]
@@ -1569,6 +1575,8 @@ mod nbsp_placeholder_codepoint;
 mod nested_lazy_continuation;
 #[path = "../nested_marker_line_lazy_resume.rs"]
 mod nested_marker_line_lazy_resume;
+#[path = "../nested_marker_term_lazy.rs"]
+mod nested_marker_term_lazy;
 #[path = "../nesting_cap_flattening.rs"]
 mod nesting_cap_flattening;
 #[path = "../no_nested_links.rs"]

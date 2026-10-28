@@ -1639,11 +1639,16 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 content_col,
                 options,
             ));
-        } else if !nested_definition_ended_paragraph
+        } else if (!nested_definition_ended_paragraph
             || self
                 .cur
                 .peek()
-                .is_some_and(|line| indent_columns(line) >= content_col)
+                .is_some_and(|line| indent_columns(line) >= content_col))
+            && !(is_definition_list_start(inner_lead)
+                && self
+                    .cur
+                    .peek()
+                    .is_some_and(|line| indent_columns(line) < lead.nested_content_col))
         {
             stream.append(collect_indented_block_mapped(
                 self.cur,
@@ -1774,10 +1779,15 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         let nested_content_col = lead.nested_content_col;
         let bare_continuation = self.last_item_bare_continuation;
         let cur = &mut *self.cur;
+        let lazy_column = if is_definition_list_start(lead.inner_lead) {
+            nested_content_col
+        } else {
+            content_col
+        };
         let has_lazy = if let Some(line) = cur.peek() {
             let line = line.to_string();
             !is_blank_line(&line)
-                && indent_columns(&line) < content_col
+                && indent_columns(&line) < lazy_column
                 && !is_list_marker(&line)
                 && !interrupts_paragraph(cur, &line)
         } else {
@@ -1817,6 +1827,27 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             .is_some_and(|line| caption_content(trim_ascii_start(line)).is_some())
         {
             return None;
+        }
+        // A term opened on a nested marker line keeps a below-column lazy
+        // line. Frame it before the next parse so a colon-shaped line cannot
+        // turn into a definition after the source columns have been rebased.
+        if is_definition_list_start(lead.inner_lead) {
+            let line = cur.peek().unwrap();
+            let content = trim_ascii_start(line);
+            let source_col = cur
+                .source_col(cur.pos)
+                .map(|column| column + leading_ws(line) as isize);
+            stream.push_newline_at(
+                if content.starts_with(LAZY) {
+                    content.to_string()
+                } else {
+                    format!("{LAZY}{content}")
+                },
+                cur.source_line(cur.pos),
+                source_col,
+            );
+            cur.consume();
+            return Some(false);
         }
         let before = cur.pos;
         collect_marker_sublist_lazy_through(

@@ -1846,15 +1846,26 @@ impl<'a> QuoteBody<'a> {
             let column = stripped_col(cur.source_col(quoted.at), quoted.line, kept);
             self.push_carried(cur, quoted.at, kept.to_string(), quoted.source_line, column);
         }
+        // A second marker can attach the first block when it has its own follower.
+        // With no follower it remains literal content of this quote.
+        if levels == 0
+            && cur.peek().is_some_and(is_plus_marker)
+            && cur
+                .lines
+                .line(cur.pos + 1)
+                .is_some_and(|line| !is_blank_line(line))
+        {
+            cur.pos += 1;
+        }
+        let attached_start = cur.pos;
         let end = attached_block_lines_classified(
             cur.lines,
             cur.pos,
             &mut cur.comment_closer_last_index,
             &mut cur.code_closer_last_index,
             options,
-            &mut |next, _| is_blank_line(next) || is_plus_marker(next),
+            &mut |next, at| is_blank_line(next) || (at > attached_start && is_plus_marker(next)),
         );
-        let attached_start = cur.pos;
         while cur.pos < end {
             let next = cur.lines.at(cur.pos);
             let kept = if strip_follower_marker {

@@ -949,6 +949,15 @@ fn parse_with_options_mode_and_index(
         if source.contains("*[") {
             apply_abbreviations(&mut doc);
         }
+        // Reference images and indented images can become figures only after
+        // inline resolution. Promote them before the caption numbering pass so
+        // every figure draws from the same sequence.
+        if source.contains("![") {
+            promote_block_images(&mut doc.children, false, true);
+            for blocks in doc.footnote_defs.values_mut() {
+                promote_block_images(blocks, false, true);
+            }
+        }
         let caption_titles = if source.contains('^') {
             number_crossref_captions(&mut doc)
         } else {
@@ -971,15 +980,6 @@ fn parse_with_options_mode_and_index(
         stamp_generated_heading_ids(&mut doc, options.heading_id_options());
         if !matches!(mode, ParseMode::HtmlFacade) {
             let _ = crate::render::collect_footnotes(&mut doc, false);
-        }
-        // A resolved reference image lands in a paragraph because resolution
-        // follows block parsing. Mark that paragraph as a block image without
-        // discarding its inline children.
-        if source.contains("![") {
-            promote_block_images(&mut doc.children, false, true);
-            for blocks in doc.footnote_defs.values_mut() {
-                promote_block_images(blocks, false, true);
-            }
         }
     } else {
         // Carve/fmt mode: promote image+caption paragraphs to figures too, so a

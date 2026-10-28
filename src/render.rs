@@ -2070,8 +2070,8 @@ fn render_table_row(
         out.push('<');
         out.push_str(tag);
         out.push_str(&cell_scope_attr(cell, tag == "th", in_head));
-        out.push_str(&render_cell_author_attrs(&cell.attrs, &emitted));
         out.push_str(&extra);
+        out.push_str(&render_cell_author_attrs(&cell.attrs, &emitted));
         out.push_str(&style);
         out.push('>');
         if let Some(blocks) = &cell.blocks {
@@ -2134,7 +2134,6 @@ fn render_table_body_row(
             ctx.defaults,
         );
         if !style.is_empty() {
-            attrs.push_str(&style);
             emitted.push("style");
         }
         // A `|=` cell in a body row is a row header: <th> inside <tbody>.
@@ -2143,8 +2142,9 @@ fn render_table_body_row(
         out.push_str(tag);
         // Below the header run, so a header cell here heads its ROW.
         out.push_str(&cell_scope_attr(cell, is_header, false));
-        out.push_str(&render_cell_author_attrs(&cell.attrs, &emitted));
         out.push_str(&attrs);
+        out.push_str(&render_cell_author_attrs(&cell.attrs, &emitted));
+        out.push_str(&style);
         out.push('>');
         if let Some(blocks) = &cell.blocks {
             out.push_str(&render_blocks(blocks, 0, ctx.options, ctx.state));

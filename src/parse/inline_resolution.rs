@@ -102,6 +102,7 @@ pub(in crate::parse) fn promote_block_images(
                         }
                     }
                 }
+                mark_promoted_caption_number(&mut children);
                 *block = BlockNode::Figure(Figure {
                     attrs,
                     target: Box::new(FigureTarget::Image(img)),
@@ -144,6 +145,69 @@ pub(in crate::parse) fn promote_block_images(
                 _ => {}
             }
         }
+    }
+}
+
+/// A caption promoted from a paragraph was first parsed as ordinary inline
+/// text. Give its first bare top-level `#` the same meaning as a directly
+/// parsed caption without reparsing the other inline nodes.
+fn mark_promoted_caption_number(caption: &mut Vec<InlineNode>) {
+    for index in 0..caption.len() {
+        let InlineNode::Text(text) = &caption[index] else {
+            continue;
+        };
+        if text
+            .pos
+            .as_ref()
+            .is_some_and(|pos| pos.end_offset - pos.start_offset != text.value.chars().count())
+        {
+            continue;
+        }
+        let Some((byte, _)) = text.value.char_indices().find(|(at, ch)| {
+            *ch == '#'
+                && !text
+                    .value
+                    .as_bytes()
+                    .get(at + 1)
+                    .is_some_and(|next| is_attr_ident_part(*next))
+        }) else {
+            continue;
+        };
+        let before = text.value[..byte].to_string();
+        let after = text.value[byte + 1..].to_string();
+        let original = text.pos.clone();
+        let number_pos = original.as_ref().map(|pos| {
+            let mut at = pos.clone();
+            at.start_offset += before.chars().count();
+            at.start_column += before.chars().count();
+            at.end_offset = at.start_offset + 1;
+            at.end_column = at.start_column + 1;
+            at
+        });
+        let mut replacement = Vec::with_capacity(3);
+        if !before.is_empty() {
+            let pos = original.as_ref().map(|pos| {
+                let mut span = pos.clone();
+                span.end_offset = number_pos.as_ref().unwrap().start_offset;
+                span.end_column = number_pos.as_ref().unwrap().start_column;
+                span
+            });
+            replacement.push(InlineNode::Text(Text { value: before, pos }));
+        }
+        replacement.push(InlineNode::CaptionNumber(CaptionNumber {
+            number: None,
+            pos: number_pos.clone(),
+        }));
+        if !after.is_empty() {
+            let pos = original.map(|mut span| {
+                span.start_offset = number_pos.as_ref().unwrap().end_offset;
+                span.start_column = number_pos.as_ref().unwrap().end_column;
+                span
+            });
+            replacement.push(InlineNode::Text(Text { value: after, pos }));
+        }
+        caption.splice(index..=index, replacement);
+        return;
     }
 }
 

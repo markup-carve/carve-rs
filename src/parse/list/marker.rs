@@ -691,13 +691,20 @@ pub(crate) fn parse_continuation_block(
     }
     let lines = cur.lines;
     let start = cur.pos;
+    let following_plus_attaches = cur.lines.line(start + 1).is_some_and(|line| {
+        !is_blank_line(line)
+            && !detect_list_marker_full(line).is_some_and(|marker| marker.indent <= base_indent)
+    });
     let end = attached_block_end(
         lines,
         start,
         &mut cur.comment_closer_last_index,
         &mut cur.code_closer_last_index,
         &mut |line, end| {
-            if trim_ascii(line) == "+" && indent_columns(line) == base_indent {
+            if (end > start || following_plus_attaches)
+                && trim_ascii(line) == "+"
+                && indent_columns(line) == base_indent
+            {
                 return true;
             }
             // A sibling item ends the attachment before lazy continuation can claim it.
