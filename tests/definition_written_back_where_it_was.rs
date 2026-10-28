@@ -41,7 +41,7 @@ fn a_footnote_in_a_description_is_written_back_on_that_line() {
 #[test]
 fn a_footnote_in_an_item_gap_is_written_back_on_that_line() {
     let source = "- a\n  [^f]: x\n  more\n\nsee[^f]\n";
-    assert_eq!(fmt(source), source);
+    assert_eq!(fmt(source), "- a\n\nsee[^f]\n\n[^f]: x\n  more\n");
     assert!(round_trips(source));
 }
 

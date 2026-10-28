@@ -11,7 +11,7 @@ fn a_comment_retains_one_footnote_follower_without_a_lazy_extent() {
             to_html(source),
             to_html_with_options(source, &Options::default().with_positions(true)),
         ] {
-            assert_eq!(html.trim(), "<p>tail</p>", "{source:?}");
+            assert_eq!(html.trim(), "", "{source:?}");
         }
     }
 }

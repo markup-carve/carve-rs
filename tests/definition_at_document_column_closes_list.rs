@@ -14,7 +14,7 @@ fn a_column_zero_link_definition_closes_an_ordered_item() {
 #[test]
 fn a_column_zero_footnote_definition_closes_an_unordered_item() {
     let source = "- a\n[^f]: note\nafter[^f]\n";
-    let expected = "- a\n\nafter[^f]\n\n[^f]: note\n";
+    let expected = "- a\n\n[^f]: note\n  after[^f]\n";
 
     assert_eq!(fmt(source), expected);
     assert_eq!(carve::to_html(source), carve::to_html(expected));

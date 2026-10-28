@@ -48,14 +48,15 @@ fn a_definition_on_the_marker_line_closes_the_below_content_column_path() {
 }
 
 #[test]
-fn item_prose_reopens_at_its_column_and_one_short_of_a_footnote_body() {
+fn link_prose_reopens_but_an_open_footnote_keeps_its_lazy_line() {
     for (head, content_column) in HEADS {
-        for definition in ["[^f]: t", "[r]: /u"] {
-            let html = carve::to_html(&source(head, content_column, definition, content_column));
-            assert!(tail_is_inside(&html), "{head:?} {definition:?}: {html}");
+        for column in [content_column, content_column + 1] {
+            let html = carve::to_html(&source(head, content_column, "[^f]: t", column));
+            assert!(!html.contains("tail"), "{head:?} column {column}: {html}");
+
+            let html = carve::to_html(&source(head, content_column, "[r]: /u", column));
+            assert!(tail_is_inside(&html), "{head:?} column {column}: {html}");
         }
-        let html = carve::to_html(&source(head, content_column, "[^f]: t", content_column + 1));
-        assert!(tail_is_inside(&html), "{head:?}: {html}");
     }
 }
 

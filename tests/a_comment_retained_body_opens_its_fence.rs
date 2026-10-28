@@ -119,16 +119,9 @@ fn an_unclosed_retained_fence_under_an_item_keeps_a_marker_as_code() {
 }
 
 #[test]
-fn a_column_zero_comment_after_a_footnote_term_keeps_its_lazy_paragraph() {
+fn a_column_zero_comment_after_a_footnote_term_keeps_the_note_open() {
     let rendered = html("[^c]: :: t\n%% c\nNext para\nsee [^c]\n");
-    assert!(
-        rendered.starts_with("<p>see <a id=\"fnref1\""),
-        "{rendered}"
-    );
-    assert!(
-        rendered.contains("<dl><dt>t</dt></dl><p>Next para"),
-        "{rendered}"
-    );
+    assert!(rendered.is_empty(), "{rendered}");
 }
 
 #[test]

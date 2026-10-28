@@ -95,6 +95,10 @@ struct NoteBody {
     line_map: Vec<Option<usize>>,
     col_map: Vec<Option<isize>>,
     positions: bool,
+    // Cached paragraph state. A new ordinary block invalidates it.
+    lazy_open: Option<bool>,
+    // A below-column fold can carry the note through a missed host prefix.
+    lazy_claim: bool,
 }
 
 impl NoteBody {
@@ -104,6 +108,8 @@ impl NoteBody {
         source_line: Option<usize>,
         col: impl FnOnce(&str) -> Option<isize>,
     ) {
+        self.lazy_open = None;
+        self.lazy_claim = false;
         if self.positions {
             self.col_map.push(col(&line));
         }
@@ -114,6 +120,35 @@ impl NoteBody {
     fn push_blank(&mut self) {
         self.push_with(String::new(), None, |_| None);
     }
+
+    fn can_fold_below(&mut self, line: &str, options: &Options<'_>) -> bool {
+        let text = trim_ascii_start(line);
+        if self.lines.len() == 1
+            && is_plus_marker(&self.lines[0])
+            && detect_list_marker_full(text).is_some()
+        {
+            return false;
+        }
+        if is_blank_line(line) || item_block_opener_with_invisible_arms(text, false) {
+            return false;
+        }
+        *self
+            .lazy_open
+            .get_or_insert_with(|| body_ends_with_open_paragraph(&self.lines.join("\n"), options))
+    }
+
+    fn push_lazy(&mut self, line: String, source_line: usize, column: Option<isize>) {
+        self.push_with(line, Some(source_line), |_| column);
+        self.lazy_open = Some(true);
+        self.lazy_claim = true;
+    }
+}
+
+fn below_owner_interrupts(line: &str, owner_column: usize) -> bool {
+    let column = indent_columns(line);
+    let text = trim_ascii_start(line);
+    (owner_column > 0 || column == 0)
+        && (parse_link_def_line(text).is_some() || parse_standalone_attrs(text).is_some())
 }
 
 /// What one document line looks like once its container prefix is stripped.
@@ -154,6 +189,8 @@ struct NoteHost {
     quote_indents: Vec<usize>,
     quote_depth: usize,
     prefix_cols: usize,
+    // The enclosing marker body's content column, if there is one.
+    owner_column: usize,
     note_floor: usize,
     marker_note: bool,
 }
@@ -676,6 +713,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 Vec::new()
             },
             positions: self.positions,
+            lazy_open: None,
+            lazy_claim: false,
         };
         let body_indent = footnote_body_floor(raw_def_line);
         let container = IndentContainer {
@@ -892,6 +931,20 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 kept_comment_delimiter(line),
                 Some(self.first_source_line + *i),
                 |kept| stripped_col(Some(0), line, kept),
+            );
+            *i += 1;
+            return Flow::Next;
+        }
+        let owner_column = state.body_indent.saturating_sub(2);
+        if (column >= owner_column || note.lazy_claim)
+            && !below_owner_interrupts(line, owner_column)
+            && note.can_fold_below(line, self.options)
+        {
+            let kept = strip_leading_columns(line, state.body_indent);
+            note.push_lazy(
+                kept,
+                self.first_source_line + *i,
+                self.positions.then_some(column as isize),
             );
             *i += 1;
             return Flow::Next;
@@ -1303,11 +1356,17 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             } else {
                 trimmed
             };
+        let plain = state.note_fence.is_none()
+            && state.below_comment_span.is_none()
+            && line_starts_paragraph(trimmed);
         note.push_with(
             trimmed.to_string(),
             Some(self.first_source_line + *i),
             |_| stripped_col(Some(0), line, trimmed),
         );
+        if plain {
+            note.lazy_open = Some(true);
+        }
         *i += 1;
         Flow::Next
     }
@@ -1380,6 +1439,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             quote_depth: quote_indents.len(),
             quote_indents,
             prefix_cols,
+            owner_column: marker_content_col(inside)
+                .or_else(|| definition_body_content_col(inside))
+                .unwrap_or_else(|| indent_columns(inside)),
             note_floor: prefix_cols + footnote_body_floor(def.def_line),
             marker_note: detect_list_marker_full(inside)
                 .is_some_and(|marker| parse_footnote_def_line(marker.content).is_some()),
@@ -1405,7 +1467,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             walk.opacity.comment = None;
         }
         let resume_at = self.next_hosted_non_blank(&host, i);
-        if resume_at >= self.lines.len() || !walk.reaches_floor(&host, self.lines[resume_at]) {
+        if resume_at >= self.lines.len() {
+            return i;
+        }
+        if !walk.reaches_floor(&host, self.lines[resume_at])
+            && !host.content(self.lines[resume_at]).is_some_and(|line| {
+                indent_columns(line) >= host.owner_column && note.can_fold_below(line, self.options)
+            })
+        {
             return i;
         }
         while i < self.lines.len() {
@@ -1510,7 +1579,21 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             return self.hosted_blank_run(host, walk, note, i);
         }
         if !walk.reaches_floor(host, raw) {
-            return Flow::Stop;
+            let column = indent_columns(line);
+            if (column < host.owner_column && !note.lazy_claim)
+                || below_owner_interrupts(line, host.owner_column)
+                || !note.can_fold_below(line, self.options)
+            {
+                return Flow::Stop;
+            }
+            let column = raw.chars().count() - line.chars().count() + leading_ws(line);
+            note.push_lazy(
+                strip_leading_columns(line, host.note_floor),
+                self.first_source_line + *i,
+                self.positions.then_some(column as isize),
+            );
+            *i += 1;
+            return Flow::Next;
         }
         if host.marker_note && parse_footnote_def_line(trim_ascii_start(line)).is_some() {
             return Flow::Stop;
@@ -1561,7 +1644,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         {
             walk.opacity.comment = None;
         }
+        let plain = walk.admitted_fence.is_none()
+            && walk.opacity.comment.is_none()
+            && walk.opacity.code.is_none()
+            && line_starts_paragraph(&dedented);
         note.push_with(dedented, Some(self.first_source_line + *i), |_| col);
+        if plain {
+            note.lazy_open = Some(true);
+        }
         *i += 1;
         Flow::Next
     }

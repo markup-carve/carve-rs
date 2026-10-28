@@ -29,11 +29,10 @@ fn a_link_definition_after_an_indented_closer_registers() {
 
 #[test]
 fn a_footnote_definition_after_an_indented_closer_registers() {
-    let out = html("%%%\nhidden\n  %%%\n[^f]: note\nsee[^f]\n");
-    assert!(
-        out.contains("doc-noteref"),
-        "reference did not resolve: {out}"
-    );
+    let source = "%%%\nhidden\n  %%%\n[^f]: note\nsee[^f]\n";
+    assert!(carve::parse(source).footnote_defs.contains_key("f"));
+    let out = html(source);
+    assert!(out.is_empty(), "the lazy reference escaped the note: {out}");
     assert!(
         !out.contains("[^f]: note"),
         "the definition line leaked as text"

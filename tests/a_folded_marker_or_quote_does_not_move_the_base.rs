@@ -29,9 +29,9 @@ fn an_attribute_line_past_the_description_column_ends_the_paragraph() {
 #[test]
 fn a_heading_past_the_footnote_column_opens_after_a_folded_marker() {
     let got = html("[^n]: d\n  - para\n    # H\nx\n\n[^n]\n");
-    assert!(got.starts_with("<p>x</p>"), "{got}");
+    assert!(got.starts_with("<p><a id=\"fnref1\""), "{got}");
     assert!(
-        got.contains("<li id=\"fn1\"><p>d - para</p><h1 id=\"H\">H</h1><p><a href=\"#fnref1\""),
+        got.contains("<li id=\"fn1\"><p>d - para</p><h1 id=\"H\">H</h1><p>x<a href=\"#fnref1\""),
         "{got}"
     );
 }

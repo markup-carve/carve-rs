@@ -37,13 +37,13 @@ fn a_continuation_two_columns_past_the_definition_still_counts() {
 }
 
 #[test]
-fn a_line_at_the_definitions_own_column_does_not() {
-    // carve-js and carve-php both stop here: relative, not absolute.
+fn a_line_below_the_note_column_is_lazy_text() {
+    // The shared marker-body rule keeps an open note paragraph here.
     let body = note_body("- a\n  [^f]: x\n  more\n\nsee[^f]\n");
 
     assert!(
-        !body.contains("more"),
-        "line wrongly folded into the note: {body}"
+        body.contains("more"),
+        "line did not fold into the note: {body}"
     );
 }
 
