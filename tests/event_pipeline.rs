@@ -123,6 +123,58 @@ fn indented_root_list_frames_match_full_document() {
 }
 
 #[test]
+fn list_continuation_after_blank_stays_with_its_frame() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    let name = "251-a-continuation-marker-after-a-blank-line-in-a-loose-item.crv";
+    let source = fs::read_to_string(corpus.join(name)).unwrap();
+    let (candidate, used) = parse_experimental_event_blocks(&source);
+    assert!(used, "{name}");
+    assert_eq!(candidate, parse_standard(&source));
+
+    for indent in 0..=4 {
+        for marker in ["- a", "* a", "1. a"] {
+            for middle in ["", "  b\n", "\n  b\n"] {
+                for plus in ["+", " +", "  +", "\t+"] {
+                    for follower in [
+                        "b\n",
+                        "# heading\n",
+                        "> quote\n",
+                        "- sibling\n",
+                        "```\nx\n```\n",
+                    ] {
+                        let source = format!(
+                            "{}{marker}\n{middle}\n{plus}\n{follower}",
+                            " ".repeat(indent)
+                        );
+                        let (candidate, used) = parse_experimental_event_blocks(&source);
+                        if indent == 0
+                            && marker == "- a"
+                            && middle == "\n  b\n"
+                            && plus == "+"
+                            && follower == "b\n"
+                        {
+                            assert!(used, "{source:?}");
+                        }
+                        assert_eq!(candidate, parse_standard(&source), "{source:?}");
+                    }
+                }
+            }
+        }
+    }
+    for source in [
+        "- a\n  - b\n\n+\nc\n",
+        "- a\n- b\n\n+\nc\n",
+        "> - a\n>\n> +\n> c\n",
+        "> - a\n>\n+\nc\n",
+        "[^a]: - a\n\n+\nc\n\nsee[^a]\n",
+        "[^a]: - a\n\n  +\nc\n\nsee[^a]\n",
+    ] {
+        let (candidate, _) = parse_experimental_event_blocks(source);
+        assert_eq!(candidate, parse_standard(source), "{source:?}");
+    }
+}
+
+#[test]
 fn list_marker_fence_boundary_matrix_matches_full_document() {
     for opener in ["```", "```=html", "~~~"] {
         for payload in ["", "  x\n", "  x\n  y\n", "  \n", "\n", "\n  x\n"] {

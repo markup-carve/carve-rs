@@ -1401,6 +1401,7 @@ fn advance_unified_list_blank(
     lines: &[&str],
     pos: usize,
     frames: &mut Vec<UnifiedListFrame<'_>>,
+    line_map: Option<&[Option<usize>]>,
 ) -> Option<BlankListStep> {
     let mut after = pos;
     while lines.get(after).is_some_and(|line| is_blank_line(line)) {
@@ -1416,6 +1417,9 @@ fn advance_unified_list_blank(
             }
             return Some(BlankListStep::Break);
         }
+        return None;
+    }
+    if frames.len() > 1 && is_plus_marker(next) {
         return None;
     }
     if frames.len() > 1 {
@@ -1436,6 +1440,17 @@ fn advance_unified_list_blank(
         return Some(BlankListStep::Continue(after));
     }
     let next_indent = next.bytes().take_while(|byte| *byte == b' ').count();
+    if next_indent == frame.indent
+        && is_plus_marker(&next[next_indent..])
+        && list_continuation_decision(line_map, after).is_some_and(|decision| {
+            decision.owner == Some(continuation_marker::Kind::List)
+                && decision.refusal.is_none()
+                && !decision.first_block
+        })
+    {
+        frame.node.tight = false;
+        return Some(BlankListStep::Continue(after));
+    }
     if next_indent == frame.content_indent && unified_list_marker(&next[next_indent..]).is_some() {
         return Some(BlankListStep::Continue(after));
     }
@@ -1520,7 +1535,7 @@ fn parse_unified_list_mapped_with_exit(
             continue;
         }
         if is_blank_line(line) {
-            match advance_unified_list_blank(lines, pos, &mut frames)? {
+            match advance_unified_list_blank(lines, pos, &mut frames, line_map)? {
                 BlankListStep::Continue(after) => {
                     pos = after;
                     continue;
