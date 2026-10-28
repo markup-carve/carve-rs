@@ -2056,6 +2056,14 @@ fn parse_colon_view(
         cursor.colon_view = Some(&view);
         return parse_blocks(&mut cursor, options, pending);
     }
+    #[cfg(feature = "experimental-event-parser-options")]
+    if nested_event_allowed() {
+        if let Some(blocks) =
+            event_pipeline::parse_colon_body(&view, lines, source, options, pending)
+        {
+            return blocks;
+        }
+    }
     // A colon body read without source lines cannot ask a `+` for its decision,
     // so the plain path is only taken when there is none to ask.
     if !options.source_lines

@@ -9,6 +9,7 @@ pub(super) const NESTED_EVENT_DEPTH_LIMIT: usize = 8;
 thread_local! {
     pub(super) static NESTED_EXTENSION_EVENT_PARSES: Cell<usize> = const { Cell::new(0) };
     pub(super) static LADDER_TAIL_EVENT_PARSES: Cell<usize> = const { Cell::new(0) };
+    pub(super) static COLON_BODY_EVENT_PARSES: Cell<usize> = const { Cell::new(0) };
 }
 
 #[cfg(test)]
@@ -651,6 +652,62 @@ pub(super) fn parse_drained_fragment(
     Some(blocks)
 }
 
+/// Can the event cursor own this colon body? Decided before the cursor reads
+/// a line, so a refusal cannot repeat an extension callback.
+#[cfg(feature = "experimental-event-parser-options")]
+fn colon_body_admitted(source: &[SourceLine]) -> bool {
+    // `+` decisions inside a colon body stay with the standard reader.
+    NESTING_DEPTH.with(Cell::get) < NESTED_EVENT_DEPTH_LIMIT
+        && !source.iter().any(|line| {
+            let line = trim_ascii(&line.text);
+            line == "+" || line.ends_with(" +")
+        })
+}
+
+/// The event counterpart of `parse_blocks` for a colon container body. Reads
+/// the shared view in place, with the cursor `parse_colon_view` would build,
+/// and leaves nested bodies on the caller's worklist.
+#[cfg(feature = "experimental-event-parser-options")]
+#[inline(never)]
+pub(super) fn parse_colon_body<'a>(
+    view: &'a ColonView,
+    lines: CursorLines<'a>,
+    source: &'a [SourceLine],
+    options: &Options<'_>,
+    pending: &mut Vec<PendingBody>,
+) -> Option<Vec<BlockNode>> {
+    if !colon_body_admitted(source) {
+        return None;
+    }
+    let _depth = DepthGuard::enter()?;
+    let mut cur = if options.source_lines
+        || options.positions
+        || needs_source_ending_map()
+        || continuation_marker::active()
+    {
+        let mut cur =
+            LineCursor::from_lines(lines, Some(&[]), options.positions.then_some([].as_slice()));
+        cur.colon_geometry = Some(source);
+        cur
+    } else {
+        LineCursor::from_lines(lines, None, None)
+    };
+    cur.colon_view = Some(view);
+    let blocks = parse_mixed_blocks_cursor::<true, false>(
+        &[],
+        options,
+        None,
+        false,
+        cur,
+        None,
+        Some(pending),
+    )
+    .expect("a deferring event cursor never declines");
+    #[cfg(test)]
+    COLON_BODY_EVENT_PARSES.with(|count| count.set(count.get() + 1));
+    Some(blocks)
+}
+
 fn event_paragraph_needs_reader(
     next: &str,
     has_lines: bool,
@@ -894,6 +951,9 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
 ) -> Option<Vec<BlockNode>> {
     let defer_pending = pending_out.is_some();
     let direct_owner = !defer_pending && extents.is_none();
+    // Only the direct owner reads `lines`; everything else reads the cursor,
+    // so a deferring caller may pass an empty slice instead of materializing.
+    debug_assert!(!direct_owner || lines.len() == cur.lines.len());
     let mut out = Vec::new();
     let mut block_start_indices = Vec::new();
     let mut pending_bodies = Vec::new();
@@ -1003,6 +1063,17 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                     body: Body::Item(body),
                 }));
             }
+            continue;
+        }
+        // A marker-hosted colon body opens a quote or a definition entry below
+        // its own column too, ahead of every arm that would claim the line.
+        let marker_hosted = cur.colon_view.is_some_and(|view| view.marker_hosted);
+        if marker_hosted && is_definition_list_start(trim_ascii_start(line)) {
+            emit!(_block_source_line, parse_definition_list(&mut cur, options));
+            continue;
+        }
+        if marker_hosted && strip_blockquote_prefix(trim_ascii_start(line)).is_some() {
+            emit!(_block_source_line, *parse_blockquote(&mut cur, options));
             continue;
         }
         if is_definition_list_start(line) {
@@ -1176,11 +1247,10 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             continue;
         }
         if line.starts_with("![")
-            && lines
-                .get(cur.pos + 1)
-                .is_some_and(|next| is_blank_line(next))
-            && lines
-                .get(cur.pos + 2)
+            && cur.lines.line(cur.pos + 1).is_some_and(is_blank_line)
+            && cur
+                .lines
+                .line(cur.pos + 2)
                 .is_some_and(|next| caption_content(next).is_some())
         {
             emit!(_block_source_line, parse_paragraph(&mut cur, options));
@@ -1236,8 +1306,9 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             }
             if !paragraph_lines.is_empty() {
                 if let Some(open) = detect_fence_open(next) {
-                    if lines[cur.pos + 1..]
-                        .iter()
+                    if cur
+                        .lines
+                        .range(cur.pos + 1..cur.lines.len())
                         .any(|line| is_fence_close(line, open))
                     {
                         break;

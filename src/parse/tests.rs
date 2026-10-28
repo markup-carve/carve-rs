@@ -270,7 +270,7 @@ mod event_ladder_tail {
     /// Logs every callback and claims `@@@`, so a tail that reaches the
     /// extension at a different point shows up as a different log.
     #[derive(Default)]
-    struct LadderHook {
+    pub(super) struct LadderHook {
         blocks: RefCell<Vec<String>>,
         inlines: RefCell<Vec<(usize, String)>>,
         after: Cell<usize>,
@@ -315,7 +315,7 @@ mod event_ladder_tail {
         }
     }
 
-    fn assert_same_callbacks(actual: &LadderHook, expected: &LadderHook, what: &str) {
+    pub(super) fn assert_same_callbacks(actual: &LadderHook, expected: &LadderHook, what: &str) {
         assert_eq!(*actual.blocks.borrow(), *expected.blocks.borrow(), "{what}");
         assert_eq!(
             *actual.inlines.borrow(),
@@ -325,7 +325,7 @@ mod event_ladder_tail {
         assert_eq!(actual.after.get(), expected.after.get(), "{what}");
     }
 
-    fn hooked(hook: &LadderHook, positions: bool, source_lines: bool) -> Options<'_> {
+    pub(super) fn hooked(hook: &LadderHook, positions: bool, source_lines: bool) -> Options<'_> {
         Options::default()
             .with_positions(positions)
             .with_source_lines(source_lines)
@@ -513,6 +513,212 @@ mod event_ladder_tail {
                 }
             }
         }
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+mod event_colon_body {
+    use super::event_ladder_tail::{assert_same_callbacks, hooked, LadderHook};
+    use super::*;
+
+    fn colon_body_event_parses() -> usize {
+        event_pipeline::COLON_BODY_EVENT_PARSES.with(Cell::get)
+    }
+
+    type Observed = ((Document, Vec<Pos>), Vec<LintEvent>);
+
+    fn observe(
+        source: &str,
+        mode: ParseMode,
+        positions: bool,
+        source_lines: bool,
+        hook: &LadderHook,
+    ) -> Observed {
+        let options = hooked(hook, positions, source_lines);
+        collecting_lint_events(|| {
+            collecting_unattached_block_attrs(|| {
+                parse_with_options_mode_and_index(source, &options, mode).0
+            })
+        })
+    }
+
+    /// Compare one source against the fully standard reader in every public
+    /// mode, with the root on the event reader and on the standard one.
+    /// `owned` says whether some colon body must reach the event cursor.
+    fn assert_colon_parity(source: &str, owned: bool) {
+        for (label, mode) in [
+            ("html", ParseMode::Html),
+            ("facade", ParseMode::HtmlFacade),
+            ("carve", ParseMode::Carve),
+        ] {
+            for positions in [false, true] {
+                for source_lines in [false, true] {
+                    let baseline = LadderHook::default();
+                    let expected = {
+                        let _standard_root = StandardEventRootGuard::install();
+                        let _standard_nested = StandardNestedReaderGuard::install();
+                        let before = colon_body_event_parses();
+                        let observed = observe(source, mode, positions, source_lines, &baseline);
+                        assert_eq!(colon_body_event_parses(), before, "{source:?} baseline");
+                        observed
+                    };
+                    for standard_root in [true, false] {
+                        let what = format!(
+                            "{source:?} {label} {positions} {source_lines} {standard_root}"
+                        );
+                        let candidate = LadderHook::default();
+                        let before = colon_body_event_parses();
+                        let actual = {
+                            let _standard_root =
+                                standard_root.then(StandardEventRootGuard::install);
+                            observe(source, mode, positions, source_lines, &candidate)
+                        };
+                        assert_eq!(colon_body_event_parses() > before, owned, "{what} owner");
+                        assert_eq!(actual.0 .0, expected.0 .0, "{what} ast");
+                        assert_eq!(actual.0 .1, expected.0 .1, "{what} unattached attrs");
+                        assert_eq!(actual.1, expected.1, "{what} lint events");
+                        assert_same_callbacks(&candidate, &baseline, &what);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn closed_colon_bodies_are_event_owned_in_every_mode() {
+        for source in [
+            "::: note\npara\n:::\n",
+            "::: note\n# H\n\n***\n\ntext\n:::\n",
+            "::: note\n{.c #i}\npara\n\n{k=v}\n# H\n:::\nafter\n",
+            "::: note\n{.a}\n%% c\n{.b}\npara\n:::\n",
+            "::: note\npara\n\n{.dangling}\n:::\n",
+            "::: note\n%%%\nhidden\n%%%\ntext\n:::\n",
+            "::: note\n```rust \"Title\"\nfn main() {}\n```\n^ cap\n:::\n",
+            "::: note\n{table}\n``` csv\na,b\n1,2\n```\n:::\n",
+            "::: note\n| a | b |\n| 1 | 2 |\n:::\n",
+            "::: note\n:: term\n: def\n\n:: other\n: more\n:::\n",
+            "::: note\n> q\n> more\n\nafter\n:::\n",
+            "::: note\n![a](a.png)\n^ caption\n\n![b](b.png)\n\ntext\n:::\n",
+            "::: note\n$$`x^2`\n^ eq\n:::\n",
+            "::: note\n::: |\nline one\n  line two\n:::\n::: \\\nhard\nbreaks\n:::\n::: >\nquoted\n:::\n:::\n",
+            "::: warning Title *here*\nbody\n:::\n",
+        ] {
+            assert_colon_parity(source, true);
+        }
+    }
+
+    #[test]
+    fn nested_colon_and_list_bodies_keep_the_standard_ast() {
+        for source in [
+            "::: note\n::: box\ninner\n:::\nouter\n:::\n",
+            "::: a\n::: b\n::: c\ndeep *text*\n:::\n:::\n:::\n",
+            "::: note\n- a\n- b\n\n  c\n- d\n:::\n",
+            "::: note\n- a\n  - b\n    - c\n\n      para\n1. one\n2. two\n:::\n",
+            "::: note\n- [ ] task\n- [x] done\n:::\n",
+            "::: note\n- a\n\n  ::: box\n  inner\n  :::\n- b\n:::\n",
+            "- item\n\n  ::: note\n  - x\n  - y\n  :::\n",
+            "- item\n\n  ::: note\n  > quoted\n  :: term\n  : def\n  :::\n",
+            "- item\n\n  ::: note\n  text\n    > q\n    : def\n  :::\n",
+            "- ::: note\n  text\n  :::\n- tail\n",
+            "- ::: note\n    > q\n  :::\n- tail\n",
+            "> ::: note\n> quoted body\n> :::\n",
+            "::: figure\n![a](a.png)\n^ one\n\n![b](b.png)\n^ two\n:::\n^ group\n",
+            "::: figure\n::: figure\n![a](a.png)\n:::\n:::\n",
+            "[^n]: note\n\n    ::: box\n    body\n    :::\n\ntext[^n]\n",
+            "::: note\n{.outer}\n::: box\n{.inner}\npara\n:::\n:::\n",
+        ] {
+            assert_colon_parity(source, true);
+        }
+    }
+
+    /// `@@@` is claimed by the hook, so a body that offers a line in a
+    /// different order, twice, or not at all shows up in the log.
+    #[test]
+    fn extension_callbacks_keep_order_through_event_colon_bodies() {
+        for source in [
+            "::: note\n@@@\ntext with *em*\n:::\n",
+            "::: note\n{.c}\n@@@\n:::\n",
+            "::: note\n@@@\n::: box\n@@@\nx\n:::\n@@@\n:::\n",
+            "::: note\n- a\n- @@@\n\n  @@@\n:::\n",
+            "- a\n\n  ::: note\n  @@@\n  > @@@\n  :::\n",
+            "::: note\n> @@@\n\n:: @@@\n: @@@\n:::\n",
+            "::: note\n@@@\n:::\n\n@@@\n\n::: box\n@@@\n:::\n",
+        ] {
+            assert_colon_parity(source, true);
+        }
+    }
+
+    /// These shapes stay on the standard reader. The gate runs before any
+    /// line is read, so their callbacks still match the standard log.
+    #[test]
+    fn refused_colon_bodies_fall_back_before_any_callback() {
+        for source in [
+            "::: note\n- a\n+\n  @@@\n:::\n",
+            "::: note\n@@@ +\nmore\n:::\n",
+        ] {
+            assert_colon_parity(source, false);
+        }
+    }
+
+    /// Bodies past the event depth cap and past the global nesting cap read
+    /// through the standard reader and its over-cap degrade.
+    #[test]
+    fn colon_depth_caps_match_the_standard_reader() {
+        let nest = |levels: usize| -> String {
+            let mut out = String::new();
+            for level in 0..levels {
+                out.push_str(&format!("::: n{level}\n"));
+            }
+            out.push_str("@@@\ndeep\n");
+            for _ in 0..levels {
+                out.push_str(":::\n");
+            }
+            out
+        };
+        for levels in [
+            event_pipeline::NESTED_EVENT_DEPTH_LIMIT + 2,
+            MAX_NESTING_DEPTH + 5,
+        ] {
+            let source = nest(levels);
+            std::thread::Builder::new()
+                .stack_size(2 * 1024 * 1024)
+                .spawn(move || assert_colon_parity(&source, true))
+                .unwrap()
+                .join()
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn colon_bodies_at_the_event_depth_limit_decline() {
+        let _depth = DepthScope::set(event_pipeline::NESTED_EVENT_DEPTH_LIMIT);
+        let baseline = LadderHook::default();
+        let expected = {
+            let _standard_root = StandardEventRootGuard::install();
+            let _standard_nested = StandardNestedReaderGuard::install();
+            observe(
+                "::: note\n@@@\n:::\n",
+                ParseMode::Html,
+                false,
+                false,
+                &baseline,
+            )
+        };
+        let candidate = LadderHook::default();
+        let before = colon_body_event_parses();
+        let actual = {
+            let _standard_root = StandardEventRootGuard::install();
+            observe(
+                "::: note\n@@@\n:::\n",
+                ParseMode::Html,
+                false,
+                false,
+                &candidate,
+            )
+        };
+        assert_eq!(colon_body_event_parses(), before);
+        assert_eq!(actual.0 .0, expected.0 .0);
+        assert_same_callbacks(&candidate, &baseline, "depth limit");
     }
 }
 
