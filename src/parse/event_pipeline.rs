@@ -553,14 +553,6 @@ fn event_paragraph_needs_reader(
             && !(!has_lines && root_indented_text))
 }
 
-fn refused_marker_fence_plus_at(cur: &LineCursor<'_>, line: &str) -> bool {
-    trim_ascii(line) == "+"
-        && cur
-            .source_line(cur.pos)
-            .and_then(continuation_marker::decision)
-            .is_some_and(refused_marker_fence_list_plus)
-}
-
 fn refused_root_plus_at(cur: &LineCursor<'_>, line: &str) -> bool {
     trim_ascii(line) == "+"
         && cur
@@ -589,15 +581,12 @@ fn direct_root_list_read(
     if options.source_lines || options.positions {
         return None;
     }
-    if indented {
-        return parse_unified_list_mapped_with_exit(lines, start, options, line_map);
-    }
     let blank_then_indented = lines.get(start + 1).is_some_and(|line| is_blank_line(line))
         && lines[start + 2..]
             .iter()
             .find(|line| !is_blank_line(line))
             .is_some_and(|line| line.starts_with([' ', '\t']));
-    if blank_then_indented {
+    let read = if indented || blank_then_indented {
         parse_unified_list_mapped_with_exit(lines, start, options, line_map)
     } else {
         parse_simple_list(lines, start, options)
@@ -607,7 +596,49 @@ fn direct_root_list_read(
                 marker_fence_exit: false,
             })
             .or_else(|| parse_unified_list_mapped_with_exit(lines, start, options, line_map))
+    };
+    read.filter(|read| {
+        read.marker_fence_exit
+            || !lines[read.end..]
+                .iter()
+                .find(|line| !is_blank_line(line))
+                .is_some_and(|line| trim_ascii(line) == "+")
+    })
+}
+
+#[cfg(test)]
+mod direct_list_boundary_tests {
+    use super::*;
+
+    #[test]
+    fn later_fenced_plus_does_not_disable_a_direct_list() {
+        let unrelated = ["- a", "", "```diff", "+", "```"];
+        assert!(direct_root_list_read(&unrelated, 0, &Options::default(), None, false).is_some());
+
+        let continuation = ["- a", "", "+", "p"];
+        assert!(
+            direct_root_list_read(&continuation, 0, &Options::default(), None, false).is_none()
+        );
+
+        let marker_fence = "- ```\n+\n  x\n";
+        let _markers = continuation_marker::Guard::install(marker_fence);
+        let lines: Vec<&str> = marker_fence.lines().collect();
+        let line_map: Vec<Option<usize>> = (1..=lines.len()).map(Some).collect();
+        assert!(
+            direct_root_list_read(&lines, 0, &Options::default(), Some(&line_map), false)
+                .is_some_and(|read| read.marker_fence_exit && read.end == 1)
+        );
     }
+}
+
+fn read_local_list_like_line(
+    cur: &mut LineCursor<'_>,
+    options: &Options<'_>,
+) -> (BlockNode, Vec<ItemBody>) {
+    let mut item_bodies = Vec::new();
+    let node = *parse_block(cur, options, &mut item_bodies)
+        .expect("a list-like line is not a consumed comment");
+    (node, item_bodies)
 }
 
 fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
@@ -647,7 +678,6 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
         }};
     }
     let mut leading_attrs: Vec<(usize, Attrs, Option<Pos>)> = Vec::new();
-    let mut marker_fence_exit_at = None;
     'blocks: while cur.peek().is_some() {
         if options.positions {
             current_block_start.set(cur.pos);
@@ -701,7 +731,6 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
         if line.starts_with(' ') && is_list_marker(trim_ascii_start(line)) {
             if let Some(read) = direct_root_list_read(lines, cur.pos, options, line_map, true) {
                 cur.pos = read.end;
-                marker_fence_exit_at = read.marker_fence_exit.then_some(read.end);
                 emit!(_block_source_line, BlockNode::List(read.list));
             } else {
                 let mut item_bodies = Vec::new();
@@ -719,7 +748,6 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             let direct = direct_root_list_read(lines, cur.pos, options, line_map, false);
             if let Some(read) = direct {
                 cur.pos = read.end;
-                marker_fence_exit_at = read.marker_fence_exit.then_some(read.end);
                 emit!(_block_source_line, BlockNode::List(read.list));
             } else {
                 let mut item_bodies = Vec::new();
@@ -901,13 +929,17 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                 }
             }
             if is_list_marker(trim_ascii_start(line))
-                || trim_ascii(line) == "+"
-                    && !refused_root_plus_at(&cur, line)
-                    && !(marker_fence_exit_at == Some(cur.pos)
-                        && refused_marker_fence_plus_at(&cur, line))
+                || trim_ascii(line) == "+" && !refused_root_plus_at(&cur, line)
                 || line.ends_with(" +")
             {
-                return None;
+                let (node, item_bodies) = read_local_list_like_line(&mut cur, options);
+                let index = out.len();
+                emit!(_block_source_line, node);
+                pending_bodies.extend(item_bodies.into_iter().map(|body| PendingBody {
+                    index,
+                    body: Body::Item(body),
+                }));
+                continue;
             }
             emit!(_block_source_line, parse_paragraph(&mut cur, options));
             continue;
