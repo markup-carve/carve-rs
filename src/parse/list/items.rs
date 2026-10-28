@@ -1641,9 +1641,14 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             nested_lead_is_continuation: is_plus_marker(innermost_content),
             before_block: self.cur.pos,
         };
+        let collection_content_col = if detect_fence_open(inner_lead).is_some() {
+            content_col
+        } else {
+            marker_line_child_col
+        };
         let collection_floor =
             if nested_definition_ended_paragraph || detect_fence_open(inner_lead).is_some() {
-                marker_line_child_col.saturating_sub(1)
+                collection_content_col.saturating_sub(1)
             } else {
                 base_indent
             };
@@ -1652,7 +1657,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             stream.append(collect_indented_block_mapped_after_continuation(
                 self.cur,
                 collection_floor,
-                marker_line_child_col,
+                collection_content_col,
                 options,
             ));
         } else if (!nested_definition_ended_paragraph
@@ -1672,7 +1677,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             stream.append(collect_indented_block_mapped(
                 self.cur,
                 collection_floor,
-                marker_line_child_col,
+                collection_content_col,
                 options,
             ));
         }

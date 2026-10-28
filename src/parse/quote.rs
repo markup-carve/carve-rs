@@ -1789,8 +1789,13 @@ impl<'a> QuoteBody<'a> {
                     && decision.refusal.is_none()
             });
         // A line already owned by the deepest open paragraph cannot be the
-        // first block attached to this `+` (carve#3832).
-        if !first_block || cur.peek().is_some_and(|line| line.starts_with(LAZY)) {
+        // first block attached to this `+` (carve#3832). A lazy line at the
+        // owner's column can still be that first block under L4.
+        if !first_block
+            || cur
+                .peek()
+                .is_some_and(|line| line.starts_with(LAZY) && !line.starts_with(LAZY_OWNER))
+        {
             return false;
         }
         let (deepest, levels) = strip_all_quotes(quoted.stripped);
@@ -2665,7 +2670,12 @@ impl<'a> QuoteBody<'a> {
         } else if line.starts_with(LAZY) {
             (line.to_string(), 0)
         } else {
-            (format!("{LAZY}{}", trimmed), leading_ws(line))
+            let frame = if indent_columns(line) == 0 {
+                LAZY_OWNER
+            } else {
+                LAZY
+            };
+            (format!("{frame}{trimmed}"), leading_ws(line))
         };
         self.opaque_tail = false;
         cur.consume();

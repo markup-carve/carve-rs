@@ -1700,8 +1700,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             sliced.insert_str(0, LAZY);
         }
         if separator_in_own_item {
-            if let Some(rest) = sliced.strip_prefix(LAZY) {
-                sliced = rest.to_string();
+            if sliced.starts_with(LAZY) {
+                sliced = strip_lazy(&sliced).to_string();
             }
             sliced.insert_str(0, ITEM_PARAGRAPH);
         }
