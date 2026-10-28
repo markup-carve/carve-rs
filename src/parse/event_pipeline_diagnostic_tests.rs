@@ -149,3 +149,49 @@ fn extension_blocks_preserve_parser_diagnostics() {
         assert_eq!(actual_events, expected_events, "{source:?}");
     }
 }
+
+#[test]
+fn eof_fences_preserve_parser_diagnostics() {
+    let options = Options::default().with_positions(true);
+    for source in [
+        "```\nbody",
+        "[^n]: note\n\n```\nbody",
+        "> - outer\n>   - head\n>\n>     ```\n>     a\n>   ```\n>\n>   tail",
+    ] {
+        let ((expected, expected_unattached), expected_events) = collecting_lint_events(|| {
+            collecting_unattached_block_attrs(|| parse_with_options(source, &options))
+        });
+        let (((actual, admitted), actual_unattached), actual_events) =
+            collecting_lint_events(|| {
+                collecting_unattached_block_attrs(|| {
+                    parse_document_with_options(source, &options).unwrap()
+                })
+            });
+        assert!(admitted, "{source:?}");
+        assert_eq!(actual, expected, "{source:?}");
+        assert_eq!(actual_unattached, expected_unattached, "{source:?}");
+        assert_eq!(actual_events, expected_events, "{source:?}");
+    }
+    let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    for entry in std::fs::read_dir(corpus).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension() != Some(std::ffi::OsStr::new("crv")) {
+            continue;
+        }
+        let authored = std::fs::read_to_string(&path).unwrap();
+        let source = authored.strip_suffix('\n').unwrap_or(&authored);
+        let ((expected, expected_unattached), expected_events) = collecting_lint_events(|| {
+            collecting_unattached_block_attrs(|| parse_with_options(source, &options))
+        });
+        let (((actual, admitted), actual_unattached), actual_events) =
+            collecting_lint_events(|| {
+                collecting_unattached_block_attrs(|| {
+                    parse_document_with_options(source, &options).unwrap()
+                })
+            });
+        assert!(admitted, "{}", path.display());
+        assert_eq!(actual, expected, "{}", path.display());
+        assert_eq!(actual_unattached, expected_unattached, "{}", path.display());
+        assert_eq!(actual_events, expected_events, "{}", path.display());
+    }
+}
