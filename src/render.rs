@@ -1809,6 +1809,7 @@ fn render_table(
             ]
             .iter()
             .any(|key| attrs.key_values.contains_key(*key))
+                && crate::table_source_metadata::row_groups(attrs, t.rows.len()).is_none()
         });
     let header_count = if invalid_source_partition {
         0
