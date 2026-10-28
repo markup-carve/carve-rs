@@ -3493,6 +3493,9 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     if may_have_abbrevs {
         apply_abbreviations(&mut doc);
     }
+    if source.contains("![") {
+        promote_block_images(&mut doc.children, false, true);
+    }
     if source.contains('^') {
         number_crossref_captions(&mut doc);
     }
@@ -3506,9 +3509,6 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         None
     };
     let _ = crate::render::collect_footnotes(&mut doc, false);
-    if source.contains("![") {
-        promote_block_images(&mut doc.children, false, true);
-    }
     coalesce_text_runs(&mut doc);
     if let Some(index) = crossref_index {
         fill_crossref_hrefs_from_index(&mut doc, index);
@@ -3618,17 +3618,17 @@ fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Doc
     if may_have_abbrevs {
         apply_abbreviations(&mut doc);
     }
-    if source.contains('^') {
-        number_crossref_captions(&mut doc);
-    }
-    stamp_generated_heading_ids(&mut doc, options.heading_id_options());
-    let _ = crate::render::collect_footnotes(&mut doc, false);
     if source.contains("![") {
         promote_block_images(&mut doc.children, false, true);
         for blocks in doc.footnote_defs.values_mut() {
             promote_block_images(blocks, false, true);
         }
     }
+    if source.contains('^') {
+        number_crossref_captions(&mut doc);
+    }
+    stamp_generated_heading_ids(&mut doc, options.heading_id_options());
+    let _ = crate::render::collect_footnotes(&mut doc, false);
     coalesce_text_runs(&mut doc);
     if source.contains("</#") {
         fill_crossref_hrefs(&mut doc, options.heading_id_options());
@@ -3915,6 +3915,9 @@ pub(super) fn parse_document_with_custom_options(
         if may_have_abbrevs {
             apply_abbreviations(&mut doc);
         }
+        if source.contains("![") {
+            promote_block_images(&mut doc.children, false, true);
+        }
         let caption_titles = if source.contains('^') {
             number_crossref_captions(&mut doc)
         } else {
@@ -3942,9 +3945,6 @@ pub(super) fn parse_document_with_custom_options(
         };
         if matches!(mode, ParseMode::Html) {
             let _ = crate::render::collect_footnotes(&mut doc, false);
-        }
-        if source.contains("![") {
-            promote_block_images(&mut doc.children, false, true);
         }
         index
     } else {
@@ -4152,6 +4152,12 @@ fn parse_document_with_footnotes_options(
         if may_have_abbrevs {
             apply_abbreviations(&mut doc);
         }
+        if source.contains("![") {
+            promote_block_images(&mut doc.children, false, true);
+            for blocks in doc.footnote_defs.values_mut() {
+                promote_block_images(blocks, false, true);
+            }
+        }
         caption_titles = if source.contains('^') {
             number_crossref_captions(&mut doc)
         } else {
@@ -4178,11 +4184,10 @@ fn parse_document_with_footnotes_options(
     if matches!(mode, ParseMode::Html) {
         let _ = crate::render::collect_footnotes(&mut doc, false);
     }
-    if source.contains("![") {
-        let figures_only = matches!(mode, ParseMode::Carve);
-        promote_block_images(&mut doc.children, figures_only, true);
+    if matches!(mode, ParseMode::Carve) && source.contains("![") {
+        promote_block_images(&mut doc.children, true, true);
         for blocks in doc.footnote_defs.values_mut() {
-            promote_block_images(blocks, figures_only, true);
+            promote_block_images(blocks, true, true);
         }
     }
     for ext in &options.extensions {
