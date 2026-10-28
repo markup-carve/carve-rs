@@ -12,6 +12,47 @@ fn parse_standard(source: &str) -> carve::Document {
 }
 
 #[test]
+fn marker_column_colon_line_stays_in_open_list_paragraph() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    let name = "161-below-content-column-div-body-in-a-list-item-stays-literal.crv";
+    let source = fs::read_to_string(corpus.join(name)).unwrap();
+    let (candidate, used) = parse_experimental_event_blocks(&source);
+    assert!(used, "{name}");
+    assert_eq!(candidate, parse_standard(&source));
+
+    for indent in 0..=4 {
+        for opener in ["- a", "- ::: note", "1. a"] {
+            for colon in [":::", "::: note", "::::", "::: {.c}"] {
+                for follower in ["", "next\n", "- sibling\n", "> q\n", "\nnext\n"] {
+                    let source = format!(
+                        "{}{opener}\n{}{colon}\n{follower}",
+                        " ".repeat(indent),
+                        " ".repeat(indent)
+                    );
+                    let (candidate, _) = parse_experimental_event_blocks(&source);
+                    assert_eq!(candidate, parse_standard(&source), "{source:?}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn continuation_after_list_block_keeps_tightness_and_image_shape() {
+    for before in ["- a\n  > q\n", "- a\n  b\n", "- ```\n  code\n  ```\n"] {
+        for blank in ["", "\n"] {
+            for marker in ["+", "+ ", " +"] {
+                for after in ["para\n", "> q\n", "![i](x.png)\n", "# heading\n"] {
+                    let source = format!("{before}{blank}{marker}\n{after}");
+                    let (candidate, _) = parse_experimental_event_blocks(&source);
+                    assert_eq!(candidate, parse_standard(&source), "{source:?}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn refused_continuation_markers_stay_literal_on_direct_route() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     for name in [
@@ -561,7 +602,7 @@ fn unsupported_root_literals_preserve_block_ownership() {
     }
     let nested = "  - :: term\n    : definition\n\n~~~\ncode\n~~~\n";
     let (candidate, admitted) = parse_experimental_event_blocks(nested);
-    assert!(!admitted);
+    assert!(admitted);
     assert_eq!(candidate, parse_standard(nested));
 }
 

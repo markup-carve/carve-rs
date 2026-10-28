@@ -687,10 +687,18 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             continue;
         }
         if line.starts_with(' ') && is_list_marker(trim_ascii_start(line)) {
-            let read = direct_root_list_read(lines, cur.pos, options, line_map, true)?;
-            cur.pos = read.end;
-            marker_fence_exit_at = read.marker_fence_exit.then_some(read.end);
-            emit!(_block_source_line, BlockNode::List(read.list));
+            if let Some(read) = direct_root_list_read(lines, cur.pos, options, line_map, true) {
+                cur.pos = read.end;
+                marker_fence_exit_at = read.marker_fence_exit.then_some(read.end);
+                emit!(_block_source_line, BlockNode::List(read.list));
+            } else {
+                let mut item_bodies = Vec::new();
+                let list = parse_list(&mut cur, options, &mut item_bodies);
+                emit!(
+                    _block_source_line,
+                    *drained_list_bodies(list, item_bodies, options)
+                );
+            }
             continue;
         }
         if is_list_marker(line) && !line.starts_with([' ', '\t']) {
@@ -1161,6 +1169,7 @@ fn consume_pending_list_continuation<'a>(
     {
         return None;
     }
+    direct_list_image_line_is_supported(content)?;
     let frame = frames.last_mut()?;
     frame.continuation_indent = None;
     frame.paragraph.push(content);
@@ -1460,7 +1469,16 @@ fn advance_unified_list_blank(
                 && !decision.first_block
         })
     {
-        frame.node.tight = false;
+        if !frame.paragraph.is_empty()
+            || frame
+                .node
+                .items
+                .last()
+                .and_then(|item| item.blocks.last())
+                .is_some_and(|block| matches!(block, UnifiedListBlock::Paragraph(_)))
+        {
+            frame.node.tight = false;
+        }
         return Some(BlankListStep::Continue(after));
     }
     if next_indent == frame.content_indent && unified_list_marker(&next[next_indent..]).is_some() {
@@ -1594,6 +1612,18 @@ fn lower_sibling_after_comment(
         && trim_ascii_start(lines[pos - 1]).starts_with("%% ")
 }
 
+fn marker_column_colon_continuation(
+    line: &str,
+    indent: usize,
+    frames: &[UnifiedListFrame<'_>],
+) -> bool {
+    frames.len() == 1
+        && frames[0].indent > 0
+        && indent == frames[0].indent
+        && !frames[0].paragraph.is_empty()
+        && trim_ascii_end(&line[indent..]).starts_with(":::")
+}
+
 fn parse_unified_list_mapped_with_exit(
     lines: &[&str],
     start: usize,
@@ -1674,6 +1704,11 @@ fn parse_unified_list_mapped_with_exit(
             }
             direct_list_image_line_is_supported(content)?;
             frames[0].paragraph.push(content);
+            pos += 1;
+            continue;
+        }
+        if marker_column_colon_continuation(line, indent, &frames) {
+            frames[0].paragraph.push(trim_ascii_end(&line[indent..]));
             pos += 1;
             continue;
         }
