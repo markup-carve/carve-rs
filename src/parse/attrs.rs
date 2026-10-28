@@ -609,6 +609,8 @@ pub(in crate::parse) fn apply_attrs_to_block(node: &mut BlockNode, attrs: Attrs)
         BlockNode::BlockQuote(n) => n.attrs = Some(attrs),
         BlockNode::Table(n) => {
             n.columns = table_columns_from_attrs(&attrs);
+            n.columns
+                .truncate(n.rows.iter().map(|row| row.cells.len()).max().unwrap_or(0));
             n.row_groups =
                 crate::table_source_metadata::row_groups(&attrs, n.rows.len()).map(Box::new);
             n.attrs = Some(attrs);

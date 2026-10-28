@@ -71,14 +71,9 @@ const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
         r#""<p>{{ child @lines:3-1 }}</p>""#,
     ),
     (
-        "i01-inverted-line-range",
-        "warnings",
-        r#"[{"rule":"include-lines-invalid"}]"#,
-    ),
-    (
-        "i01-inverted-line-range",
-        "dependencies",
-        r#"[{"id":"child","resolved":true}]"#,
+        "i02-directive-in-a-table-cell",
+        "fmt",
+        r#""|= A |= {{ c.crv }} |\n| 1 | 2 |\n""#,
     ),
 ];
 

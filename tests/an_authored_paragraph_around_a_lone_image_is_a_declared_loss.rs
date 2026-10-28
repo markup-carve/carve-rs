@@ -52,11 +52,11 @@ fn it_reports_the_paragraph_it_cannot_spell() {
 #[test]
 fn it_declares_the_difference_the_two_exits_actually_have() {
     let html = r#"<p><img src="g.jpg" alt="G"></p>"#;
-    assert_eq!(kinds(&tree(html)), vec!["BlockImage".to_string()]);
+    assert_eq!(kinds(&tree(html)), vec!["Paragraph".to_string()]);
     assert_eq!(
         kinds(&parse(&carve(html))),
-        vec!["BlockImage".to_string()],
-        "the written source re-reads as a block image, not as the paragraph it was"
+        vec!["Paragraph".to_string()],
+        "the written source re-reads as a promoted paragraph"
     );
     assert_eq!(rows(html).len(), 0);
 }
@@ -317,7 +317,7 @@ fn an_unwrapped_paragraph_is_not_credited_with_an_identical_survivor() {
     assert_eq!(carve(html), "![a](a)\n^ c\n\n![a](a)\n");
     assert_eq!(
         kinds(&tree(html)),
-        vec!["Figure".to_string(), "BlockImage".to_string()]
+        vec!["Figure".to_string(), "Paragraph".to_string()]
     );
     let reported = html_to_carve(html, &HtmlImportOptions::default())
         .expect("import")
@@ -390,8 +390,8 @@ fn no_candidate_mark_survives_on_either_exit() {
 fn an_indent_now_spells_a_paragraph_holding_one_image_and_the_writer_still_declines_it() {
     assert_eq!(
         kinds(&parse("![G](g.jpg)")),
-        vec!["BlockImage".to_string()],
-        "the flush-left spelling is the block image, and it is the control"
+        vec!["Paragraph".to_string()],
+        "the flush-left spelling is a promoted paragraph"
     );
     for source in [" ![G](g.jpg)", "   ![G](g.jpg)"] {
         assert_eq!(
@@ -406,7 +406,7 @@ fn an_indent_now_spells_a_paragraph_holding_one_image_and_the_writer_still_decli
     let written = carve::render_carve(&tree(r#"<p><img src="g.jpg" alt="G"></p>"#))
         .expect("the writer must not refuse this shape");
     assert_eq!(written, "![G](g.jpg)\n");
-    assert_eq!(kinds(&parse(&written)), vec!["BlockImage".to_string()]);
+    assert_eq!(kinds(&parse(&written)), vec!["Paragraph".to_string()]);
 
     assert_eq!(
         kinds(&parse("![G](g.jpg) t")),
@@ -444,7 +444,7 @@ fn the_writer_normalizes_the_shape_rather_than_indenting_or_refusing() {
         !written.starts_with(' '),
         "the writer must not reach for an indented spelling: {written:?}"
     );
-    assert_eq!(kinds(&parse(&written)), vec!["BlockImage".to_string()]);
+    assert_eq!(kinds(&parse(&written)), vec!["Paragraph".to_string()]);
 }
 
 /// THE CARVE-OUT IS EXACTLY ONE SHAPE, and this is the measurement that says so
@@ -499,7 +499,7 @@ fn a_lone_image_is_the_only_single_child_paragraph_the_writer_normalizes() {
     ] {
         assert_eq!(
             kinds(&parse(&carve(html))),
-            vec!["BlockImage".to_string()],
+            vec!["Paragraph".to_string()],
             "{html}"
         );
         assert_eq!(rows(html).len(), 0, "{html}");

@@ -53,6 +53,28 @@ pub(crate) fn collect_footnotes(doc: &mut Document, assign_ref_ids: bool) -> Vec
     order
 }
 
+pub(crate) fn used_footnote_labels(
+    children: &[BlockNode],
+    definitions: &BTreeMap<String, Vec<BlockNode>>,
+) -> std::collections::BTreeSet<String> {
+    if definitions.is_empty() {
+        return std::collections::BTreeSet::new();
+    }
+    let mut probe = Document {
+        frontmatter: BTreeMap::new(),
+        frontmatter_raw: None,
+        footnote_defs: definitions.clone(),
+        footnote_def_pos: BTreeMap::new(),
+        children: children.to_vec(),
+        source_len: 0,
+        ingest_payload_len: 0,
+    };
+    collect_footnotes(&mut probe, false)
+        .into_iter()
+        .filter_map(|entry| entry.label)
+        .collect()
+}
+
 pub(super) fn collect_footnotes_block(
     assign_ref_ids: bool,
     block: &mut BlockNode,

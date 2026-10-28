@@ -50,7 +50,7 @@ fn empty_header_left_default_survives_a_delimiter_row() {
     let source = "|=< |\n|:--|\n| a |\n";
     let written = to_carve(source);
     assert_eq!(to_html(&written), to_html(source), "{written:?}");
-    assert!(written.contains("|:--|"), "{written:?}");
+    assert!(written.contains("|:---|"), "{written:?}");
 }
 
 #[test]

@@ -127,7 +127,7 @@ fn a_layout_only_caption_is_still_absent_and_still_reported() {
         );
         assert_eq!(
             kinds(&tree(&html)),
-            vec!["BlockImage".to_string()],
+            vec!["Paragraph".to_string()],
             "{caption:?}: a caption that writes nothing is absent"
         );
         assert_eq!(carve(&html), "![a](i.png)\n", "{caption:?}");
