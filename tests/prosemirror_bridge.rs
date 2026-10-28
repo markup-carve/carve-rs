@@ -1743,7 +1743,9 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // rows. Of the 39 new documents, 35 round trip strictly.
     // Spec 9fa661f adds 42 documents in categories 736 through 745. Twenty-five
     // round trip strictly. The changed source for row 699 stays in its old bucket.
-    const STRICT: usize = 2372;
+    // Corpus 352 base moves to reported soft-break loss when a multiline
+    // reference label becomes literal text (carve-rs#3422).
+    const STRICT: usize = 2371;
     // Spec 894ff32e adds 616-25, whose marked quote soft break reports a loss.
     // The eight parsed CSV/TSV tables lose their source fence in ProseMirror;
     // the bridge reports that loss instead of claiming a strict round trip.
@@ -1761,7 +1763,7 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // Seventeen of the new documents report existing editor losses. Rows 737
     // and 737-2 also lose authored destination overrides in canonical source;
     // SOURCE_LOSSY names both above.
-    const LOSSY: usize = 837;
+    const LOSSY: usize = 838;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in
