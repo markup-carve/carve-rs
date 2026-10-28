@@ -225,6 +225,10 @@ name = "parser_first_block_and_refused_plus"
 path = "tests/parser_first_block_and_refused_plus.rs"
 
 [[test]]
+name = "parser_invisible_transitions"
+path = "tests/parser_invisible_transitions.rs"
+
+[[test]]
 name = "empty_header_alignment_import"
 path = "tests/empty_header_alignment_import.rs"
 
