@@ -1745,6 +1745,8 @@ mod strict_column0_attr_caption;
 mod sublist_after_continuation_paragraph;
 #[path = "../sublist_blank_sibling_looseness.rs"]
 mod sublist_blank_sibling_looseness;
+#[path = "../surviving_item_after_term_separator.rs"]
+mod surviving_item_after_term_separator;
 #[path = "../svg_sanitize.rs"]
 mod svg_sanitize;
 #[path = "../svg_sanitize_payloads.rs"]

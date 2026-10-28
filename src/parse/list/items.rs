@@ -1833,6 +1833,14 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             !is_blank_line(&line)
                 && !at_nested_marker
                 && (term_lead || indent < lazy_column)
+                // A block opener that reaches the surviving item's column
+                // has left the inner term. Test its content on that owner's
+                // base before the lazy frame hides the authored column.
+                && !(term_lead
+                    && indent >= content_col
+                    && indent <= nested_content_col
+                    && !is_list_marker(trim_ascii_start(&line))
+                    && interrupts_paragraph(cur, trim_ascii_start(&line)))
                 && !(is_list_marker(&line)
                     && (indent == 0
                         || ladder_columns.contains(&indent)
