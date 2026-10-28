@@ -229,7 +229,24 @@ struct AheadOfPin {
 // `]` where the fixture escapes the `[`. Both spellings conform, so the entry
 // died to a canonical-form decision rather than to a fix: the fixture is the
 // cross-engine contract for importer output, and this engine now writes it.
-const AHEAD_OF_PIN: &[AheadOfPin] = &[];
+const AHEAD_OF_PIN: &[AheadOfPin] = &[
+    AheadOfPin {
+        fixture: "destination-less-link",
+        reason: "standalone image still publishes as a bare node (carve-rs#3380)",
+        carve: None,
+        ast: Some(
+            r#"{"children":[{"children":[{"children":[{"type":"text","value":"click here"}],"href":"","type":"link"},{"type":"text","value":" and "},{"attrs":{"id":"k"},"children":[{"type":"text","value":"a named one"}],"type":"span"}],"type":"paragraph"},{"alt":"logo","src":"","type":"image"}],"type":"document"}"#,
+        ),
+    },
+    AheadOfPin {
+        fixture: "detached-caption-caret",
+        reason: "standalone image still publishes as a bare node (carve-rs#3380)",
+        carve: None,
+        ast: Some(
+            r#"{"children":[{"alt":"G","src":"g.jpg","type":"image"},{"children":[{"type":"text","value":"^ c"}],"type":"paragraph"}],"type":"document"}"#,
+        ),
+    },
+];
 
 /// The two fields that record WHERE a node was written rather than what it is.
 ///
