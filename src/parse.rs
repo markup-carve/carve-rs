@@ -1522,12 +1522,15 @@ fn parse_unpositioned_mapped_source(
 ) -> Vec<BlockNode> {
     #[cfg(feature = "experimental-event-parser-options")]
     let mut extents = extents;
-    // The ladder parses its tail eagerly, before the parent's pending bodies,
-    // and extension callbacks observe that order. Take it ahead of the event
-    // reader, which would defer the tail onto the worklist.
+    // The ladder never offers its opener lines to extensions and parses its
+    // tail eagerly, before the parent's pending bodies; callbacks observe both.
+    // Take it ahead of the event reader, which would ask about every opener,
+    // and let the event cursor own the tail at the same eager point.
     #[cfg(feature = "experimental-event-parser-options")]
     if !at_document_level && !options.extensions.is_empty() {
-        if let Some(blocks) = parse_eof_closed_colon_ladder(source, options) {
+        if let Some(blocks) =
+            parse_eof_closed_colon_ladder_with(source, options, parse_ladder_tail_with_events)
+        {
             if let Some(extents) = extents {
                 extents.extend(blocks.iter().map(|_| (0, source.source.lines().count())));
             }
@@ -1741,10 +1744,32 @@ fn parse_positioned_mapped_source_standard(
     blocks
 }
 
-#[inline(never)]
+/// Parse an EOF-closed ladder tail through the event cursor, draining its
+/// bodies before returning exactly as `parse_blocks_with_options` would.
+#[cfg(feature = "experimental-event-parser-options")]
+fn parse_ladder_tail_with_events(source: &str, options: &Options<'_>) -> Vec<BlockNode> {
+    let _recording = definition_regions::RecordingPause::enter();
+    let _source_ending = SourceEndingGuard::fragment();
+    if nested_event_allowed() {
+        if let Some(blocks) = event_pipeline::parse_drained_fragment(source, options) {
+            return blocks;
+        }
+    }
+    parse_blocks_with_options_at_level(source, options, false)
+}
+
 fn parse_eof_closed_colon_ladder(
     source: &MappedSource,
     options: &Options<'_>,
+) -> Option<Vec<BlockNode>> {
+    parse_eof_closed_colon_ladder_with(source, options, parse_blocks_with_options)
+}
+
+#[inline(never)]
+fn parse_eof_closed_colon_ladder_with(
+    source: &MappedSource,
+    options: &Options<'_>,
+    parse_tail: fn(&str, &Options<'_>) -> Vec<BlockNode>,
 ) -> Option<Vec<BlockNode>> {
     // This fast path can only match when the document starts with a flush-left
     // colon-container opener. Avoid allocating a line index and scanning every
@@ -1806,7 +1831,7 @@ fn parse_eof_closed_colon_ladder(
             flattened_paragraphs(tail, None, options)
         } else {
             let tail_source = joined_source(tail);
-            parse_blocks_with_options(&tail_source, options)
+            parse_tail(&tail_source, options)
         }
     };
 

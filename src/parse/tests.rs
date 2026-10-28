@@ -263,6 +263,260 @@ fn event_owned_modes_preserve_extension_callbacks() {
 }
 
 #[cfg(feature = "experimental-event-parser-options")]
+mod event_ladder_tail {
+    use super::*;
+    use crate::{BlockMatch, CarveExtension, InlineMatch, MatcherContext};
+
+    /// Logs every callback and claims `@@@`, so a tail that reaches the
+    /// extension at a different point shows up as a different log.
+    #[derive(Default)]
+    struct LadderHook {
+        blocks: RefCell<Vec<String>>,
+        inlines: RefCell<Vec<(usize, String)>>,
+        after: Cell<usize>,
+    }
+
+    impl CarveExtension for LadderHook {
+        fn name(&self) -> &'static str {
+            "event-ladder-tail"
+        }
+
+        fn match_block(
+            &self,
+            lines: &[&str],
+            start: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<BlockMatch> {
+            let line = *lines.get(start)?;
+            self.blocks.borrow_mut().push(line.to_string());
+            (line == "@@@").then(|| BlockMatch {
+                node: BlockNode::Paragraph(Paragraph {
+                    children: vec![InlineNode::text("custom".to_string())],
+                    ..Default::default()
+                }),
+                lines_consumed: 1,
+            })
+        }
+
+        fn match_inline(
+            &self,
+            text: &str,
+            pos: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<InlineMatch> {
+            let prefix = text.get(pos..).unwrap_or("").chars().take(8).collect();
+            self.inlines.borrow_mut().push((pos, prefix));
+            None
+        }
+
+        fn after_parse(&self, doc: Document) -> Document {
+            self.after.set(self.after.get() + 1);
+            doc
+        }
+    }
+
+    fn assert_same_callbacks(actual: &LadderHook, expected: &LadderHook, what: &str) {
+        assert_eq!(*actual.blocks.borrow(), *expected.blocks.borrow(), "{what}");
+        assert_eq!(
+            *actual.inlines.borrow(),
+            *expected.inlines.borrow(),
+            "{what}"
+        );
+        assert_eq!(actual.after.get(), expected.after.get(), "{what}");
+    }
+
+    fn hooked(hook: &LadderHook, positions: bool, source_lines: bool) -> Options<'_> {
+        Options::default()
+            .with_positions(positions)
+            .with_source_lines(source_lines)
+            .with_extension(hook)
+    }
+
+    fn ladder_tail_event_parses() -> usize {
+        event_pipeline::LADDER_TAIL_EVENT_PARSES.with(Cell::get)
+    }
+
+    fn unpositioned_body(body: &str) -> MappedSource {
+        let lines = body.lines().count();
+        MappedSource {
+            source: body.to_string(),
+            line_map: (1..=lines).map(Some).collect(),
+            col_map: Vec::new(),
+            reached: vec![true; lines],
+            opaque_blank_lines: Vec::new(),
+            discarded_outer_blank: false,
+            outer_plus_after_blank: false,
+            authored_base_at_start: false,
+            item_marker_at_start: false,
+            marker_colon_rebased: false,
+            marker_tail: None,
+            in_quoted_body: false,
+            sublists_carry_authored_base: false,
+        }
+    }
+
+    /// A nested EOF-closed ladder never offers its opener lines to an
+    /// extension and resolves its whole tail before the caller resumes. The
+    /// event cursor owns the tail now, and must keep both properties.
+    #[test]
+    fn nested_ladder_tail_is_event_owned_with_standard_callback_order() {
+        for body in [
+            "::: note\n::: box\ntext",
+            "::: note\n@@@\ntext",
+            "::: note\n{.c}\n@@@\npara",
+            "::: note\n:: term\n: def",
+            "::: box\n:: sub",
+            "::: note\n::: box\n- a\n- ::: inner\n  ::: deeper\n  @@@\n  tail\n- b",
+            "::: note\n# H\n> q\n```\ncode\n```\ntext",
+            "::: note\n::: box\n- a\n\n  - b\n\n    c\nafter",
+            "::: figure\n::: note\n![a](b)\n^ caption",
+            "::: note\n\n\n",
+        ] {
+            let mapped = unpositioned_body(body);
+            let baseline = LadderHook::default();
+            let expected = {
+                let _standard_nested = StandardNestedReaderGuard::install();
+                let before = ladder_tail_event_parses();
+                let blocks =
+                    parse_mapped_source(&mapped, &Options::default().with_extension(&baseline));
+                assert_eq!(ladder_tail_event_parses(), before, "{body:?}");
+                blocks
+            };
+            let candidate = LadderHook::default();
+            let before = ladder_tail_event_parses();
+            let actual =
+                parse_mapped_source(&mapped, &Options::default().with_extension(&candidate));
+            let openers: Vec<&str> = body
+                .lines()
+                .take_while(|line| detect_container_open(line).is_some())
+                .collect();
+            if body
+                .lines()
+                .skip(openers.len())
+                .any(|line| !is_blank_line(line))
+            {
+                assert!(
+                    ladder_tail_event_parses() > before,
+                    "{body:?} tail not event-owned"
+                );
+            }
+            assert_eq!(actual, expected, "{body:?}");
+            assert_same_callbacks(&candidate, &baseline, body);
+            assert!(
+                candidate
+                    .blocks
+                    .borrow()
+                    .iter()
+                    .all(|line| !openers.contains(&line.as_str())),
+                "{body:?}: a ladder opener reached the extension"
+            );
+        }
+    }
+
+    /// A tail at the event depth cap uses the standard reader before any
+    /// extension callback fires; the admitted tail keeps the same AST.
+    #[test]
+    fn ladder_tail_respects_depth_gate() {
+        for (body, depth, event_owned) in [
+            ("::: note\n@@@\ntext\n{.dangling}", 0, true),
+            (
+                "::: note\n{.c}\n@@@\ntext\n{.dangling}",
+                event_pipeline::NESTED_EVENT_DEPTH_LIMIT,
+                false,
+            ),
+        ] {
+            let _depth = DepthScope::set(depth);
+            let mapped = unpositioned_body(body);
+            let baseline = LadderHook::default();
+            let expected = {
+                let _standard_nested = StandardNestedReaderGuard::install();
+                let options = Options::default().with_extension(&baseline);
+                parse_mapped_source(&mapped, &options)
+            };
+            let candidate = LadderHook::default();
+            let options = Options::default().with_extension(&candidate);
+            let before = ladder_tail_event_parses();
+            let actual = parse_mapped_source(&mapped, &options);
+            assert_eq!(ladder_tail_event_parses() > before, event_owned, "{body:?}");
+            assert_eq!(actual, expected, "{body:?}");
+            assert_same_callbacks(&candidate, &baseline, body);
+        }
+    }
+
+    /// Each ladder tail opens a list whose item body is another ladder, so the
+    /// eager tail parse recurses once per level.
+    #[test]
+    fn alternating_list_ladders_fit_a_two_megabyte_stack() {
+        let source: String = (0..60)
+            .map(|level| format!("{}- ::: n{level}\n", "  ".repeat(level)))
+            .chain(std::iter::once(format!("{}@@@\n", "  ".repeat(60))))
+            .collect();
+        std::thread::Builder::new()
+            .stack_size(2 * 1024 * 1024)
+            .spawn(move || {
+                let baseline = LadderHook::default();
+                let expected = {
+                    let _standard_root = StandardEventRootGuard::install();
+                    let _standard_nested = StandardNestedReaderGuard::install();
+                    let options = hooked(&baseline, false, false);
+                    parse_with_options_mode_and_index(&source, &options, ParseMode::Html).0
+                };
+                let candidate = LadderHook::default();
+                let options = hooked(&candidate, false, false);
+                let before = ladder_tail_event_parses();
+                let actual =
+                    parse_with_options_mode_and_index(&source, &options, ParseMode::Html).0;
+                assert!(ladder_tail_event_parses() > before, "tails not event-owned");
+                assert_eq!(actual, expected);
+                assert_same_callbacks(&candidate, &baseline, "alternating ladders");
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// Corpus 620 and 692 regressed when the event reader took ladder bodies
+    /// ahead of the ladder; every public mode must keep the standard order.
+    #[test]
+    fn ladder_documents_keep_callback_order_in_every_mode() {
+        for source in [
+            "- a\n  ::: box\n  :: sub\n: def\n",
+            ">  ::: |\n :::\n",
+            "- - ::: |\n  :::\n  para\ntail\n",
+            "- ::: note\n  ::: box\n  @@@\n  text\n- tail\n",
+            "> ::: note\n> @@@\n> text\n",
+            "- ::: note\n  - ::: box\n    @@@\n  tail\n",
+            "1. ::: note\n   :: t\n   : d\n\nafter\n",
+            "- ::: note\n  ::: box\n  text",
+        ] {
+            for (label, mode) in [
+                ("html", ParseMode::Html),
+                ("facade", ParseMode::HtmlFacade),
+                ("carve", ParseMode::Carve),
+            ] {
+                for positions in [false, true] {
+                    for source_lines in [false, true] {
+                        let what = format!("{source:?} {label} {positions} {source_lines}");
+                        let baseline = LadderHook::default();
+                        let expected = {
+                            let _standard_root = StandardEventRootGuard::install();
+                            let _standard_nested = StandardNestedReaderGuard::install();
+                            let options = hooked(&baseline, positions, source_lines);
+                            parse_with_options_mode_and_index(source, &options, mode).0
+                        };
+                        let candidate = LadderHook::default();
+                        let options = hooked(&candidate, positions, source_lines);
+                        let actual = parse_with_options_mode_and_index(source, &options, mode).0;
+                        assert_eq!(actual, expected, "{what}");
+                        assert_same_callbacks(&candidate, &baseline, &what);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
 #[test]
 fn event_owned_facade_renders_with_a_derived_index() {
     for source in [

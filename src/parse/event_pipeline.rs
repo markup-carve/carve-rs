@@ -3,11 +3,12 @@ use super::*;
 const MIXED_QUOTE_DEPTH_LIMIT: usize = 32;
 // The mapped event frame is larger than the standard block frame on the stack.
 #[cfg(feature = "experimental-event-parser-options")]
-const NESTED_EVENT_DEPTH_LIMIT: usize = 8;
+pub(super) const NESTED_EVENT_DEPTH_LIMIT: usize = 8;
 
 #[cfg(test)]
 thread_local! {
     pub(super) static NESTED_EXTENSION_EVENT_PARSES: Cell<usize> = const { Cell::new(0) };
+    pub(super) static LADDER_TAIL_EVENT_PARSES: Cell<usize> = const { Cell::new(0) };
 }
 
 #[cfg(test)]
@@ -595,6 +596,58 @@ pub(super) fn parse_nested_mapped_blocks(
         extents.extend(observed);
     }
     pending.extend(nested_pending);
+    Some(blocks)
+}
+
+/// The event counterpart of `parse_blocks_with_options` for a nested fragment
+/// whose bodies must resolve before the caller resumes. Declines only before
+/// the cursor reads a line, so no extension callback can run twice.
+#[cfg(feature = "experimental-event-parser-options")]
+#[inline(never)]
+pub(super) fn parse_drained_fragment(
+    source: &str,
+    options: &Options<'_>,
+) -> Option<Vec<BlockNode>> {
+    if options.positions
+        || options.source_lines
+        || NESTING_DEPTH.with(Cell::get) >= NESTED_EVENT_DEPTH_LIMIT
+    {
+        return None;
+    }
+    let lines: Vec<&str> = source.lines().collect();
+    if lines.iter().copied().any(|line| {
+        let line = trim_ascii(line);
+        line == "+" || line.ends_with(" +")
+    }) {
+        return None;
+    }
+    let want_lines = needs_source_ending_map() || needs_quote_marker_line_map(source);
+    let line_map: Vec<Option<usize>> = if want_lines {
+        (1..=lines.len()).map(Some).collect()
+    } else {
+        Vec::new()
+    };
+    let line_map = want_lines.then_some(line_map.as_slice());
+    let mut pending = Vec::new();
+    // The standard reader drains after its depth guard drops; each body
+    // restores the depth it recorded when it was collected.
+    let mut blocks = {
+        let _depth = DepthGuard::enter()?;
+        let mut cur = LineCursor::new_with_cols(&lines, line_map, None);
+        cur.reached = Some(&[]);
+        parse_mixed_blocks_cursor::<true, false>(
+            &lines,
+            options,
+            line_map,
+            false,
+            cur,
+            None,
+            Some(&mut pending),
+        )?
+    };
+    #[cfg(test)]
+    LADDER_TAIL_EVENT_PARSES.with(|count| count.set(count.get() + 1));
+    resolve_pending_bodies(&mut blocks, pending, options);
     Some(blocks)
 }
 
@@ -1197,9 +1250,11 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                 invalid_brace_line,
                 root_indented_text,
             ) {
-                if !at_document_level {
+                if !at_document_level && !defer_pending {
                     return None;
                 }
+                // Deferred fragments may already have called extensions. Parse
+                // this paragraph here so a fallback cannot call them twice.
                 cur.pos = paragraph_start;
                 emit!(_block_source_line, parse_paragraph(&mut cur, options));
                 continue 'blocks;
