@@ -1491,8 +1491,22 @@ fn parse_unpositioned_mapped_source(
     in_item_body: bool,
     in_quoted_body: bool,
     pending: &mut Vec<PendingBody>,
-    extents: Option<&mut Vec<(usize, usize)>>,
+    mut extents: Option<&mut Vec<(usize, usize)>>,
 ) -> Vec<BlockNode> {
+    #[cfg(feature = "experimental-event-parser-options")]
+    if !at_document_level && options.extensions.is_empty() && nested_event_allowed() {
+        if let Some(blocks) = event_pipeline::parse_nested_mapped_blocks(
+            source,
+            options,
+            at_document_level,
+            in_item_body,
+            in_quoted_body,
+            extents.as_deref_mut(),
+            pending,
+        ) {
+            return blocks;
+        }
+    }
     // The ladder builds its own containers inside-out and hands back finished
     // nodes, so it contributes nothing to `pending` - and must not, because it
     // WRAPS the blocks it parsed, which would move any index recorded in them.
@@ -1535,8 +1549,79 @@ fn parse_unpositioned_mapped_source(
     .0
 }
 
+#[cfg(all(test, feature = "experimental-event-parser-options"))]
+thread_local! {
+    static DISABLE_NESTED_EVENT: Cell<bool> = const { Cell::new(false) };
+}
+
+#[cfg(all(test, feature = "experimental-event-parser-options"))]
+fn nested_event_allowed() -> bool {
+    !DISABLE_NESTED_EVENT.with(Cell::get)
+}
+
+#[cfg(all(not(test), feature = "experimental-event-parser-options"))]
+fn nested_event_allowed() -> bool {
+    true
+}
+
+#[cfg(all(test, feature = "experimental-event-parser-options"))]
+struct StandardNestedReaderGuard(bool);
+
+#[cfg(all(test, feature = "experimental-event-parser-options"))]
+impl StandardNestedReaderGuard {
+    fn install() -> Self {
+        Self(DISABLE_NESTED_EVENT.with(|disabled| disabled.replace(true)))
+    }
+}
+
+#[cfg(all(test, feature = "experimental-event-parser-options"))]
+impl Drop for StandardNestedReaderGuard {
+    fn drop(&mut self) {
+        DISABLE_NESTED_EVENT.with(|disabled| disabled.set(self.0));
+    }
+}
+
 #[inline(never)]
 fn parse_positioned_mapped_source(
+    source: &MappedSource,
+    options: &Options<'_>,
+    at_document_level: bool,
+    in_item_body: bool,
+    in_quoted_body: bool,
+    pending: &mut Vec<PendingBody>,
+    mut extents: Option<&mut Vec<(usize, usize)>>,
+) -> Vec<BlockNode> {
+    #[cfg(feature = "experimental-event-parser-options")]
+    if !at_document_level && options.extensions.is_empty() && nested_event_allowed() {
+        let mut event_extents = Vec::new();
+        if let Some(blocks) = event_pipeline::parse_nested_mapped_blocks(
+            source,
+            options,
+            at_document_level,
+            in_item_body,
+            in_quoted_body,
+            extents.is_some().then_some(&mut event_extents),
+            pending,
+        ) {
+            if let Some(extents) = extents.as_deref_mut() {
+                extents.extend(event_extents);
+            }
+            return blocks;
+        }
+    }
+    parse_positioned_mapped_source_standard(
+        source,
+        options,
+        at_document_level,
+        in_item_body,
+        in_quoted_body,
+        pending,
+        extents,
+    )
+}
+
+#[inline(never)]
+fn parse_positioned_mapped_source_standard(
     source: &MappedSource,
     options: &Options<'_>,
     at_document_level: bool,

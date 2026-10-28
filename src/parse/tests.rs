@@ -17,7 +17,10 @@ fn event_owned_pipeline_matches_public_modes() {
                     .with_positions(positions)
                     .with_source_lines(source_lines);
                 for mode in [ParseMode::Html, ParseMode::HtmlFacade, ParseMode::Carve] {
-                    let expected = parse_with_options_mode_and_index(&source, &options, mode).0;
+                    let expected = {
+                        let _standard_nested = StandardNestedReaderGuard::install();
+                        parse_with_options_mode_and_index(&source, &options, mode).0
+                    };
                     let (actual, _, used) =
                         event_pipeline::parse_document_with_mode(&source, &options, mode)
                             .unwrap_or_else(|| panic!("{} declined", path.display()));
@@ -38,6 +41,37 @@ fn event_owned_pipeline_matches_public_modes() {
         }
     }
     eprintln!("mode-aware event pipeline admitted {admitted}");
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn nested_event_cursor_keeps_mapped_eof_and_crlf_parity() {
+    for source in [
+        "- head\n  - child",
+        "> quote\n> - item",
+        "::: note\n- item\n:::",
+        "[^note]: first\n    - child\n\nUse [^note].",
+        "- head\r\n  ```\r\n  body\r\n  ```",
+        "> first\r\n> second",
+    ] {
+        for positions in [false, true] {
+            for source_lines in [false, true] {
+                let options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines);
+                for mode in [ParseMode::Html, ParseMode::HtmlFacade, ParseMode::Carve] {
+                    let expected = {
+                        let _standard_nested = StandardNestedReaderGuard::install();
+                        parse_with_options_mode_and_index(source, &options, mode).0
+                    };
+                    let (actual, _, used) =
+                        event_pipeline::parse_document_with_mode(source, &options, mode).unwrap();
+                    assert!(used, "{source:?}");
+                    assert_eq!(actual, expected, "{source:?}; {positions}; {source_lines}");
+                }
+            }
+        }
+    }
 }
 
 #[cfg(feature = "experimental-event-parser-options")]
@@ -98,8 +132,10 @@ fn event_owned_modes_preserve_extension_callbacks() {
                 let baseline_options = Options::default()
                     .with_positions(positions)
                     .with_extension(&baseline);
-                let expected =
-                    parse_with_options_mode_and_index(&source, &baseline_options, mode).0;
+                let expected = {
+                    let _standard_nested = StandardNestedReaderGuard::install();
+                    parse_with_options_mode_and_index(&source, &baseline_options, mode).0
+                };
                 let candidate = Hook::default();
                 let candidate_options = Options::default()
                     .with_positions(positions)

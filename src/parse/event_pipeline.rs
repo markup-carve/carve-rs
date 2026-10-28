@@ -537,6 +537,52 @@ fn parse_mixed_blocks<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
     parse_mixed_blocks_mapped::<DEFINITIONS, ABBREVIATIONS>(lines, options, None, at_document_level)
 }
 
+#[cfg(feature = "experimental-event-parser-options")]
+pub(super) fn parse_nested_mapped_blocks(
+    source: &MappedSource,
+    options: &Options<'_>,
+    at_document_level: bool,
+    in_item_body: bool,
+    in_quoted_body: bool,
+    extents: Option<&mut Vec<(usize, usize)>>,
+    pending: &mut Vec<PendingBody>,
+) -> Option<Vec<BlockNode>> {
+    let _depth = DepthGuard::enter()?;
+    let lines: Vec<&str> = source.source.lines().collect();
+    let mut cur = LineCursor::new_with_cols(
+        &lines,
+        Some(&source.line_map),
+        source
+            .col_map
+            .iter()
+            .any(Option::is_some)
+            .then_some(source.col_map.as_slice()),
+    );
+    cur.at_document_level = at_document_level;
+    cur.in_item_body = in_item_body;
+    cur.in_quoted_body = in_quoted_body || source.in_quoted_body;
+    cur.reached = Some(source.reached.as_slice());
+    cur.sublists_carry_authored_base = source.sublists_carry_authored_base;
+    cur.marker_tail = source.marker_tail;
+    let mut observed = Vec::new();
+    let record_extents = extents.is_some();
+    let mut nested_pending = Vec::new();
+    let blocks = parse_mixed_blocks_cursor::<true, false>(
+        &lines,
+        options,
+        Some(&source.line_map),
+        at_document_level,
+        cur,
+        record_extents.then_some(&mut observed),
+        Some(&mut nested_pending),
+    )?;
+    if let Some(extents) = extents {
+        extents.extend(observed);
+    }
+    pending.extend(nested_pending);
+    Some(blocks)
+}
+
 fn event_paragraph_needs_reader(
     next: &str,
     has_lines: bool,
@@ -551,6 +597,27 @@ fn event_paragraph_needs_reader(
             && !is_list_marker(next)
             && !(!has_lines && invalid_brace_line)
             && !(!has_lines && root_indented_text))
+}
+
+fn direct_definition_allowed(direct_owner: bool, options: &Options<'_>) -> bool {
+    direct_owner && !options.source_lines && !options.positions && options.extensions.is_empty()
+}
+
+fn direct_quote_allowed(direct_owner: bool, options: &Options<'_>, line: &str) -> bool {
+    direct_owner
+        && !options.source_lines
+        && !options.positions
+        && options.extensions.is_empty()
+        && !needs_source_ending_map()
+        && !line.contains("![")
+}
+
+fn use_standard_event_paragraph(
+    options: &Options<'_>,
+    recording_extents: bool,
+    defer_pending: bool,
+) -> bool {
+    options.positions || recording_extents || defer_pending
 }
 
 fn refused_root_plus_at(cur: &LineCursor<'_>, line: &str) -> bool {
@@ -701,6 +768,28 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
     let col_map = options.positions.then(|| vec![Some(0); lines.len()]);
     let mut cur = LineCursor::new_with_cols(lines, line_map, col_map.as_deref());
     cur.at_document_level = at_document_level;
+    parse_mixed_blocks_cursor::<DEFINITIONS, ABBREVIATIONS>(
+        lines,
+        options,
+        line_map,
+        at_document_level,
+        cur,
+        None,
+        None,
+    )
+}
+
+fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
+    lines: &[&str],
+    options: &Options<'_>,
+    line_map: Option<&[Option<usize>]>,
+    at_document_level: bool,
+    mut cur: LineCursor<'_>,
+    mut extents: Option<&mut Vec<(usize, usize)>>,
+    pending_out: Option<&mut Vec<PendingBody>>,
+) -> Option<Vec<BlockNode>> {
+    let defer_pending = pending_out.is_some();
+    let direct_owner = !defer_pending && extents.is_none();
     let mut out = Vec::new();
     let mut block_start_indices = Vec::new();
     let mut pending_bodies = Vec::new();
@@ -709,6 +798,10 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
     let mut source_lines = Vec::new();
     macro_rules! emit {
         ($line:expr, $node:expr) => {{
+            let node = $node;
+            if let Some(extents) = extents.as_deref_mut() {
+                extents.push((current_block_start.get(), cur.pos));
+            }
             if options.positions {
                 block_start_indices.push(current_block_start.get());
             }
@@ -716,12 +809,12 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             if options.source_lines {
                 source_lines.push($line);
             }
-            out.push($node);
+            out.push(node);
         }};
     }
     let mut leading_attrs: Vec<(usize, Attrs, Option<Pos>)> = Vec::new();
     'blocks: while cur.peek().is_some() {
-        if options.positions {
+        if options.positions || extents.is_some() {
             current_block_start.set(cur.pos);
         }
         let _block_source_line = cur.source_line(cur.pos);
@@ -771,7 +864,10 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             continue;
         }
         if line.starts_with(' ') && is_list_marker(trim_ascii_start(line)) {
-            if let Some(read) = direct_root_list_read(lines, cur.pos, options, line_map, true) {
+            if let Some(read) = direct_owner
+                .then(|| direct_root_list_read(lines, cur.pos, options, line_map, true))
+                .flatten()
+            {
                 cur.pos = read.end;
                 emit!(_block_source_line, BlockNode::List(read.list));
             } else {
@@ -787,7 +883,9 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             continue;
         }
         if is_list_marker(line) && !line.starts_with([' ', '\t']) {
-            let direct = direct_root_list_read(lines, cur.pos, options, line_map, false);
+            let direct = direct_owner
+                .then(|| direct_root_list_read(lines, cur.pos, options, line_map, false))
+                .flatten();
             if let Some(read) = direct {
                 cur.pos = read.end;
                 emit!(_block_source_line, BlockNode::List(read.list));
@@ -804,12 +902,11 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             continue;
         }
         if is_definition_list_start(line) {
-            let direct =
-                if options.source_lines || options.positions || !options.extensions.is_empty() {
-                    None
-                } else {
-                    parse_simple_definition_list_prefix(lines, cur.pos, options, false)
-                };
+            let direct = if direct_definition_allowed(direct_owner, options) {
+                parse_simple_definition_list_prefix(lines, cur.pos, options, false)
+            } else {
+                None
+            };
             if let Some((list, end)) = direct {
                 cur.pos = end;
                 emit!(_block_source_line, BlockNode::DefinitionList(list));
@@ -819,17 +916,12 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             continue;
         }
         if strip_blockquote_prefix(line).is_some() {
-            let direct = if options.source_lines
-                || options.positions
-                || !options.extensions.is_empty()
-                || needs_source_ending_map()
-                || line.contains("![")
-            {
-                None
-            } else {
+            let direct = if direct_quote_allowed(direct_owner, options, line) {
                 parse_simple_quote(lines, cur.pos, options)
                     .or_else(|| parse_marked_quote(lines, cur.pos, options))
                     .or_else(|| parse_simple_lazy_quote(lines, cur.pos, options))
+            } else {
+                None
             };
             if let Some((quote, end)) = direct {
                 cur.pos = end;
@@ -840,8 +932,9 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             continue;
         }
         if let Some(fence) = detect_fence_open(line) {
-            let mut block = if let Some((block, end)) =
-                parse_direct_root_code_fence(lines, cur.pos, fence, options)
+            let mut block = if let Some((block, end)) = direct_owner
+                .then(|| parse_direct_root_code_fence(lines, cur.pos, fence, options))
+                .flatten()
             {
                 cur.pos = end;
                 block
@@ -1007,7 +1100,7 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             emit!(_block_source_line, parse_paragraph(&mut cur, options));
             continue;
         }
-        if options.positions {
+        if use_standard_event_paragraph(options, extents.is_some(), defer_pending) {
             emit!(_block_source_line, parse_paragraph(&mut cur, options));
             continue;
         }
@@ -1111,7 +1204,11 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
         }
         note_unattached_block_attrs(dangling_pos);
     }
-    resolve_pending_bodies(&mut out, pending_bodies, options);
+    if let Some(pending_out) = pending_out {
+        pending_out.extend(pending_bodies);
+    } else {
+        resolve_pending_bodies(&mut out, pending_bodies, options);
+    }
     #[cfg(feature = "experimental-event-parser-options")]
     if options.source_lines {
         for (node, line) in out.iter_mut().zip(source_lines) {
