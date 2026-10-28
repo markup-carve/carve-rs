@@ -232,6 +232,13 @@ pub use stream::{try_render_html_streaming, StreamOutcome};
 /// (see [`RenderDepthError`], which the tree-taking renderers return).
 pub fn to_html(source: &str) -> String {
     let options = Options::default();
+    let walked;
+    let source = if std::env::var_os("CARVE_RULE_A_OFF").is_none() {
+        walked = parse::own_lines(&parse::normalize_source(source));
+        walked.as_str()
+    } else {
+        source
+    };
     if let Some(html) = parse::try_layout_html(source, &options) {
         return html;
     }

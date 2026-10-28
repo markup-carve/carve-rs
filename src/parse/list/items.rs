@@ -769,6 +769,10 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     // which asks whether a paragraph is left at all: a verbatim body holds
     // none, and a line below the column reaches neither.
     fn flush_comment_exception(&mut self, line: &str, indent: usize) -> ControlFlow<()> {
+        // Rule A (carve#3885): a comment below the content column closes the item.
+        if std::env::var_os("CARVE_KEEP_P9_053").is_none() {
+            return END;
+        }
         let (base_indent, content_col) = (self.base_indent, self.content_col);
         let fence_body_is_verbatim_here = self.item_open_fence.is_some() && indent < content_col;
         let below_fence = matched_fence_below_item(self.cur, line, content_col);

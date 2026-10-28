@@ -985,6 +985,15 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         }
         let below_comment =
             column < self.content_column && trim_ascii_start(line).starts_with("%%");
+        // Rule A (carve#3885): a comment below the body's column closes the body.
+        if below_comment
+            && self.below_comment_span.is_none()
+            && detect_comment_fence_line_any_column(line).is_none()
+            && std::env::var_os("CARVE_KEEP_P9_053").is_none()
+            && !follower_reaches(cur, self.content_column)
+        {
+            return BodyStep::Stop;
+        }
         if self.below_comment_span.is_some() || below_comment {
             return self.take_below_column_comment(cur, line, column);
         }
@@ -2040,4 +2049,18 @@ mod definition_past_fence_work {
         assert!(small.1 <= small.0 * 8 && large.1 <= large.0 * 8);
         assert!(large.1 <= small.1 * 6, "{small:?}, {large:?}");
     }
+}
+
+/// Whether the next visible line after a comment reaches `column`: a comment is
+/// transparent for ownership, so its follower decides (carve#3885).
+pub(in crate::parse) fn follower_reaches(cur: &LineCursor<'_>, column: usize) -> bool {
+    let mut at = cur.pos + 1;
+    while let Some(next) = cur.lines.line(at) {
+        if is_blank_line(next) || trim_ascii_start(next).starts_with("%%") {
+            at += 1;
+            continue;
+        }
+        return indent_columns(next) >= column;
+    }
+    false
 }

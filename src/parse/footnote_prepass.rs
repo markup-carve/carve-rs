@@ -943,6 +943,19 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let below_comment = column < state.body_indent
             && trim_ascii_start(line).starts_with("%%")
             && !is_definition_placeholder(line);
+        // Rule A (carve#3885): a comment below the body's column closes the note.
+        if below_comment
+            && state.below_comment_span.is_none()
+            && state.note_fence.is_none()
+            && detect_comment_fence_line_any_column(line).is_none()
+            && std::env::var_os("CARVE_KEEP_P9_053").is_none()
+            && !self.lines[*i + 1..]
+                .iter()
+                .find(|next| !is_blank_line(next) && !trim_ascii_start(next).starts_with("%%"))
+                .is_some_and(|next| indent_columns(next) >= state.body_indent)
+        {
+            return Some(Flow::Stop);
+        }
         if below_comment
             && column == 0
             && state.below_comment_span.is_none()

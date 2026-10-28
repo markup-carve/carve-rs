@@ -33,6 +33,8 @@ mod prepass;
 mod prepass_links;
 mod quote;
 mod rebase;
+mod own_lines;
+pub(crate) use own_lines::own_lines;
 mod table;
 #[cfg(test)]
 mod tests;
