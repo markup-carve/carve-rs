@@ -2,6 +2,7 @@ use super::*;
 
 const MIXED_QUOTE_DEPTH_LIMIT: usize = 32;
 // The mapped event frame is larger than the standard block frame on the stack.
+#[cfg(feature = "experimental-event-parser-options")]
 const NESTED_EVENT_DEPTH_LIMIT: usize = 8;
 
 #[cfg(test)]
