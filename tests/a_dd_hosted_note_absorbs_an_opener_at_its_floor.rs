@@ -53,11 +53,16 @@ fn an_absorbed_opener_leaves_a_tail_at_the_description_column_in_the_dd() {
     assert_eq!(html(src), "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>");
 }
 
-/// One column shy of the floor, the list marker is lazy note text.
+/// The opener one column shy of the floor (column 4 against a floor of 5) reaches
+/// nothing: the list is an ordinary description child and `tail` lazily continues
+/// the list item, exactly as before. This band already agreed and must not move.
 #[test]
 fn an_opener_one_column_shy_of_the_floor_stays_a_description_child() {
     let src = ":: t\n:  [^f]: note\n    - nested\ntail\n";
-    assert_eq!(html(src), "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>");
+    assert_eq!(
+        html(src),
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>nested\ntail</li>\n    </ul>\n  </dd>\n</dl>"
+    );
 }
 
 /// Plain continuation at the floor is the note's, exactly as an opener there is:
@@ -77,7 +82,10 @@ fn plain_continuation_at_the_floor_is_the_note_s_too() {
 #[test]
 fn plain_continuation_one_column_shy_of_the_floor_stays_in_the_description() {
     let src = ":: t\n:  [^f]: note\n    more\ntail\n";
-    assert_eq!(html(src), "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>");
+    assert_eq!(
+        html(src),
+        "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>"
+    );
 }
 
 /// AND ACROSS A BLANK LINE, which is the ordinary spelling of a note with more

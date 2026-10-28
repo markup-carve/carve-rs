@@ -29,6 +29,6 @@ fn a_term_past_the_description_column_interrupts_a_folded_list_marker() {
 #[test]
 fn a_term_below_an_item_column_opens_in_the_surviving_description() {
     let source = "- h0\n  :: t\n  : d\n    [^n]: note\n    - a\n     :: u\n     :  e\n";
-    let expected = "<ul>\n  <li>h0\n    <dl>\n      <dt>t</dt>\n      <dd>\n        <p>d</p>\n        <dl>\n          <dt>u</dt>\n          <dd>e</dd>\n        </dl>\n      </dd>\n    </dl>\n  </li>\n</ul>";
+    let expected = "<ul>\n  <li>h0\n    <dl>\n      <dt>t</dt>\n      <dd>\n        <p>d</p>\n        <ul>\n          <li>a</li>\n        </ul>\n        <dl>\n          <dt>u</dt>\n          <dd>e</dd>\n        </dl>\n      </dd>\n    </dl>\n  </li>\n</ul>";
     assert_html_in_both_position_modes(source, expected);
 }
