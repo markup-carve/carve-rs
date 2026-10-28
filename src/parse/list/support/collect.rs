@@ -96,6 +96,15 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     options: &Options<'_>,
 ) -> MappedSource {
     let authored_base_at_start = cur.peek().is_some_and(is_blank_line);
+    // A plain paragraph begun after a blank can be interrupted by a later opener.
+    let after_blank_paragraph = cur.pos > 0
+        && is_blank_line(cur.lines.at(cur.pos - 1))
+        && cur.peek().is_some_and(|line| {
+            let content = trim_ascii_start(line);
+            line_starts_paragraph(content)
+                && !is_list_marker(content)
+                && !item_block_opener(content)
+        });
     let container = IndentContainer {
         marker_column: parent_indent,
         content_column: strip_cols,
@@ -588,7 +597,21 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         let indent = indent_columns(line);
         if released_child_paragraph
             && indent >= strip_cols
-            && (is_definition_list_start(trim_ascii_start(line)) || is_list_marker(line))
+            && (is_definition_list_start(trim_ascii_start(line))
+                || is_list_marker(line)
+                || item_block_opener(trim_ascii_start(line)))
+            && fence.is_none()
+            && comment_fence.is_none()
+            && colon_open.is_empty()
+        {
+            break;
+        }
+        if after_blank_paragraph
+            && !lines.is_empty()
+            && indent > strip_cols
+            && item_block_opener(trim_ascii_start(line))
+            && definition_list_column.is_none()
+            && surviving_definition_body_column.is_none()
             && fence.is_none()
             && comment_fence.is_none()
             && colon_open.is_empty()
