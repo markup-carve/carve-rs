@@ -82,10 +82,7 @@ fn plain_continuation_at_the_floor_is_the_note_s_too() {
 #[test]
 fn plain_continuation_one_column_shy_of_the_floor_stays_in_the_description() {
     let src = ":: t\n:  [^f]: note\n    more\ntail\n";
-    assert_eq!(
-        html(src),
-        "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>"
-    );
+    assert_eq!(html(src), "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>");
 }
 
 /// AND ACROSS A BLANK LINE, which is the ordinary spelling of a note with more
