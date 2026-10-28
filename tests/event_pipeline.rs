@@ -12,6 +12,45 @@ fn parse_standard(source: &str) -> carve::Document {
 }
 
 #[test]
+fn refused_continuation_markers_stay_literal_on_direct_route() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    for name in [
+        "435-the-continuation-marker-s-column-gate-reaches-every-container-2.crv",
+        "435-the-continuation-marker-s-column-gate-reaches-every-container-4.crv",
+        "435-the-continuation-marker-s-column-gate-reaches-every-container-11.crv",
+        "629-a-dangling-plus-marker-adds-nothing-and-a-nested-quote-reads-it-like-an-unnested-one-4.crv",
+        "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-37.crv",
+        "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-38.crv",
+        "634-a-refused-continuation-plus-remains-text-3.crv",
+        "634-a-refused-continuation-plus-remains-text-4.crv",
+    ] {
+        let source = fs::read_to_string(corpus.join(name)).unwrap();
+        let (candidate, used) = parse_experimental_event_blocks(&source);
+        assert!(used, "{name}");
+        assert_eq!(candidate, parse_standard(&source), "{name}");
+    }
+
+    for before in ["- a\n", "- a\n\n", "- ```\n", "> q\n", "[^a]: note\n"] {
+        for after in ["\npara\n", "- sibling\n", "\n# heading\n", "\n> q\n"] {
+            let source = format!("{before}+\n{after}");
+            let (candidate, _) = parse_experimental_event_blocks(&source);
+            assert_eq!(candidate, parse_standard(&source), "{source:?}");
+        }
+    }
+    for before in ["- a\n", " - a\n", "> q\n", "[^a]: note\n", "- ```\n"] {
+        for blank in ["", "\n", "\n\n"] {
+            for marker in ["+", " +", "  +", "\t+"] {
+                for after in ["", "para\n", "- sibling\n", "> q\n", "\npara\n"] {
+                    let source = format!("{before}{blank}{marker}\n{after}");
+                    let (candidate, _) = parse_experimental_event_blocks(&source);
+                    assert_eq!(candidate, parse_standard(&source), "{source:?}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn malformed_quote_prefix_stays_literal() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     let name = "646-a-quote-prefixed-plus-takes-one-space-after-each-quote-marker-and-attaches-a-quote-6.crv";
