@@ -1989,6 +1989,7 @@ fn normalization_probe_keeps_sentinel_and_benign_unicode_boundaries() {
             to_json(&parse_standard(source)),
             "{source:?}"
         );
+        #[cfg(feature = "experimental-event-parser-options")]
         for options in [
             Options::default(),
             Options::default().with_positions(true),
