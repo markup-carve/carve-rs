@@ -1,5 +1,383 @@
 use super::*;
 
+const MIXED_QUOTE_DEPTH_LIMIT: usize = 32;
+
+#[cfg(test)]
+mod mixed_definition_owner_tests {
+    use super::*;
+
+    #[test]
+    fn keeps_following_root_blocks_and_declines_continuations() {
+        for (source, start) in [
+            ("# heading\n\n:: term\n:  definition\n\n# tail\n", 2),
+            (":: a\n:  alpha\n:: b\n:  beta\n\nroot\n", 0),
+        ] {
+            let lines: Vec<&str> = source.lines().collect();
+            assert!(
+                parse_simple_definition_list_prefix(&lines, start, &Options::default(), false)
+                    .is_some(),
+                "{source:?}"
+            );
+            let (candidate, used) = parse_document(source).expect("event document");
+            assert!(used, "{source:?}");
+            assert_eq!(candidate, parse_with_options(source, &Options::default()));
+        }
+        for source in [
+            ":: term\n:  definition\n a\n",
+            ":: t\n:  head\n\n     %%%\n     a\n",
+            ":: term\n:  definition\nroot\n",
+            ":: a\n:  x\n\n:: b\n:  y\n",
+        ] {
+            let lines: Vec<&str> = source.lines().collect();
+            assert!(
+                parse_simple_definition_list_prefix(&lines, 0, &Options::default(), false)
+                    .is_none(),
+                "{source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn repeated_mixed_definitions_match_full_document() {
+        let source = (0..300)
+            .map(|index| format!(":: term{index}\n:  definition{index}\n\nroot{index}\n\n"))
+            .collect::<String>();
+        let lines: Vec<&str> = source.lines().collect();
+        let direct = lines
+            .iter()
+            .enumerate()
+            .filter(|(_, line)| line.starts_with(":: "))
+            .filter(|(at, _)| {
+                parse_simple_definition_list_prefix(&lines, *at, &Options::default(), false)
+                    .is_some()
+            })
+            .count();
+        assert_eq!(direct, 300);
+        let (candidate, used) = parse_document(&source).expect("event document");
+        assert!(used);
+        assert_eq!(candidate, parse_with_options(&source, &Options::default()));
+    }
+}
+
+#[cfg(test)]
+mod root_fence_owner_tests {
+    use super::*;
+
+    #[test]
+    fn closed_root_code_fences_match_full_document() {
+        for source in [
+            "```\ncode\n```\n",
+            "```rust\ncode\n```\n",
+            "~~~~\n\n~~~~\n",
+            "```\n```\n",
+            "```\ncode\n```\n\n# next\n",
+        ] {
+            let lines: Vec<&str> = source.lines().collect();
+            let open = detect_fence_open(lines[0]).unwrap();
+            let (block, end) = parse_direct_root_code_fence(&lines, 0, open, &Options::default())
+                .unwrap_or_else(|| panic!("{source:?}"));
+            assert!(matches!(block, BlockNode::CodeBlock(_)));
+            assert!(end >= 2);
+            let (candidate, used) = parse_document(source).unwrap();
+            assert!(used);
+            assert_eq!(candidate, parse_with_options(source, &Options::default()));
+        }
+    }
+
+    #[test]
+    fn raw_caption_and_unclosed_fences_decline_direct_owner() {
+        for source in [
+            "```=html\n<b>x</b>\n```\n",
+            "```\nx\n```\n^ caption\n",
+            "```\nx\n```\n\n^ caption\n",
+            "```\nx\n",
+        ] {
+            let lines: Vec<&str> = source.lines().collect();
+            let open = detect_fence_open(lines[0]).unwrap();
+            assert!(
+                parse_direct_root_code_fence(&lines, 0, open, &Options::default()).is_none(),
+                "{source:?}"
+            );
+            if let Some((candidate, _)) = parse_document(source) {
+                assert_eq!(candidate, parse_with_options(source, &Options::default()));
+            }
+        }
+    }
+
+    #[test]
+    fn root_fence_matrix_matches_full_document() {
+        let mut direct = 0;
+        for marker in ['`', '~'] {
+            for count in [3, 4] {
+                let fence = marker.to_string().repeat(count);
+                for info in ["", " rust", " \"title\""] {
+                    for payload in ["", "x\n", "x\n\n", "```\ninner\n"] {
+                        for tail in ["", "\n", "# after\n", "^ caption\n"] {
+                            let source = format!("{fence}{info}\n{payload}{fence}\n{tail}");
+                            let lines: Vec<&str> = source.lines().collect();
+                            let Some(open) = detect_fence_open(lines[0]) else {
+                                continue;
+                            };
+                            direct += usize::from(
+                                parse_direct_root_code_fence(&lines, 0, open, &Options::default())
+                                    .is_some(),
+                            );
+                            if let Some((candidate, _)) = parse_document(&source) {
+                                assert_eq!(
+                                    candidate,
+                                    parse_with_options(&source, &Options::default()),
+                                    "{source:?}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(direct > 0);
+    }
+
+    #[test]
+    fn repeated_root_code_fences_match_full_document() {
+        let source = (0..300)
+            .map(|index| format!("```rust\nlet item_{index} = {index};\n```\n\n"))
+            .collect::<String>();
+        let (candidate, used) = parse_document(&source).unwrap();
+        assert!(used);
+        assert_eq!(candidate, parse_with_options(&source, &Options::default()));
+    }
+
+    #[test]
+    fn fenced_code_inside_quotes_and_containers_matches_full_document() {
+        for source in [
+            "> ```rust\n> code\n> ```\n",
+            "::: note\n```rust\ncode\n```\n:::\n",
+            "- ```rust\n  code\n  ```\n",
+        ] {
+            if let Some((candidate, _)) = parse_document(source) {
+                assert_eq!(candidate, parse_with_options(source, &Options::default()));
+            }
+        }
+    }
+
+    #[test]
+    fn direct_fence_waits_for_position_and_source_line_support() {
+        let lines = ["```", "code", "```"];
+        let open = detect_fence_open(lines[0]).unwrap();
+        let positioned = Options {
+            positions: true,
+            ..Options::default()
+        };
+        assert!(parse_direct_root_code_fence(&lines, 0, open, &positioned).is_none());
+        let source_lines = Options {
+            source_lines: true,
+            ..Options::default()
+        };
+        assert!(parse_direct_root_code_fence(&lines, 0, open, &source_lines).is_none());
+    }
+}
+
+#[cfg(test)]
+mod continuation_owner_tests {
+    use super::*;
+
+    #[test]
+    fn non_marker_plus_keeps_direct_document_parity() {
+        for source in [
+            "plain a+b\n",
+            "plain a + b\n",
+            "code `+` inline\n",
+            "- item + detail\n",
+        ] {
+            let _guard = continuation_marker::Guard::install(source);
+            assert!(!continuation_marker::active(), "{source:?}");
+            let (candidate, used) = parse_document(source).unwrap();
+            assert!(used, "{source:?}");
+            assert_eq!(candidate, parse_with_options(source, &Options::default()));
+        }
+    }
+
+    #[test]
+    fn owned_list_continuations_match_full_ast() {
+        for source in ["- +\nx\n", "- a\n+\nb\n", "1. - +\npara\n"] {
+            let _guard = continuation_marker::Guard::install(source);
+            let lines: Vec<&str> = source.lines().collect();
+            let line_map: Vec<Option<usize>> = (1..=lines.len()).map(Some).collect();
+            let (_, consumed) =
+                parse_unified_list_mapped(&lines, 0, &Options::default(), Some(&line_map))
+                    .unwrap_or_else(|| panic!("{source:?}"));
+            assert_eq!(consumed, lines.len(), "{source:?}");
+            let (candidate, used) = parse_document(source).unwrap();
+            assert!(used, "{source:?}");
+            assert_eq!(
+                candidate,
+                parse_with_options(source, &Options::default()),
+                "{source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn refused_list_continuations_keep_the_standard_ast() {
+        for source in [
+            "- +\n  x\n",
+            "- a\n  +\n  b\n",
+            "- a\n  +\nb\n",
+            "- a\n  > q\n  +\n  para\n",
+            "- +\n\n",
+        ] {
+            if let Some((candidate, _)) = parse_document(source) {
+                assert_eq!(
+                    candidate,
+                    parse_with_options(source, &Options::default()),
+                    "{source:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn list_continuation_owner_matrix_matches_full_document() {
+        let mut direct = 0;
+        let mut checked = 0;
+        for marker in ["-", "1."] {
+            for nested in ["", "- ", "1. "] {
+                for suffix in ["", " ", "\t"] {
+                    for follower in ["x", "# h", "> q", "- x", "```\ncode\n```", "***", "___"] {
+                        for indent in 0..=4 {
+                            let prefix = " ".repeat(indent);
+                            let follower = follower
+                                .lines()
+                                .map(|line| format!("{prefix}{line}\n"))
+                                .collect::<String>();
+                            let source = format!("{marker} {nested}+{suffix}\n{follower}");
+                            let _guard = continuation_marker::Guard::install(&source);
+                            let lines: Vec<&str> = source.lines().collect();
+                            let line_map: Vec<Option<usize>> =
+                                (1..=lines.len()).map(Some).collect();
+                            direct += usize::from(
+                                parse_unified_list_mapped(
+                                    &lines,
+                                    0,
+                                    &Options::default(),
+                                    Some(&line_map),
+                                )
+                                .is_some(),
+                            );
+                            if let Some((candidate, _)) = parse_document(&source) {
+                                assert_eq!(
+                                    candidate,
+                                    parse_with_options(&source, &Options::default()),
+                                    "{source:?}"
+                                );
+                            }
+                            checked += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(checked, 630);
+        assert!(direct > 0);
+    }
+
+    #[test]
+    fn standalone_list_continuation_matrix_matches_full_document() {
+        for marker in ["-", "1."] {
+            for plus_indent in 0..=4 {
+                for follower_indent in 0..=4 {
+                    for follower in ["x", "# h", "> q", "- x", "```\ncode\n```", "***", "___"] {
+                        let prefix = " ".repeat(follower_indent);
+                        let follower = follower
+                            .lines()
+                            .map(|line| format!("{prefix}{line}\n"))
+                            .collect::<String>();
+                        let source =
+                            format!("{marker} a\n{}+\n{follower}", " ".repeat(plus_indent));
+                        if let Some((candidate, _)) = parse_document(&source) {
+                            assert_eq!(
+                                candidate,
+                                parse_with_options(&source, &Options::default()),
+                                "{source:?}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn repeated_owned_list_continuations_match_full_document() {
+        let source = (0..300)
+            .map(|index| format!("- item {index}\n+\ncontinuation {index}\n\n"))
+            .collect::<String>();
+        let _guard = continuation_marker::Guard::install(&source);
+        let lines: Vec<&str> = source.lines().collect();
+        let line_map: Vec<Option<usize>> = (1..=lines.len()).map(Some).collect();
+        let (_, consumed) =
+            parse_unified_list_mapped(&lines, 0, &Options::default(), Some(&line_map))
+                .expect("shared owner accepts the repeated list");
+        assert!(lines[consumed..].iter().all(|line| is_blank_line(line)));
+        let (candidate, used) = parse_document(&source).unwrap();
+        assert!(used);
+        assert_eq!(candidate, parse_with_options(&source, &Options::default()));
+    }
+
+    #[test]
+    fn owned_list_continuation_marker_events_match_standard() {
+        for source in ["- +\nx\n", "- a\n+\nb\n", "1. - +\npara\n"] {
+            let (_, standard_events) =
+                collecting_lint_events(|| parse_with_options(source, &Options::default()));
+            let (_, event_events) = collecting_lint_events(|| parse_document(source));
+            let markers = |events: Vec<LintEvent>| {
+                events
+                    .into_iter()
+                    .filter_map(|event| match event {
+                        LintEvent::Marker {
+                            line,
+                            column,
+                            host,
+                            reason,
+                            first_block,
+                        } => Some((line, column, host, reason, first_block)),
+                        LintEvent::Fence { .. } => None,
+                    })
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(
+                markers(event_events),
+                markers(standard_events),
+                "{source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn continuation_followed_by_indented_content_declines_direct_owner() {
+        for source in [
+            "- +\nx\n  - c\n",
+            "- +\nx\n  > q\n",
+            "- +\nx\n  # h\n",
+            "- +\nx\n  ```\n  ```\n",
+            "- - +\nx\n\n    x\n",
+            "- a\n+\nb\n  - c\n",
+        ] {
+            let _guard = continuation_marker::Guard::install(source);
+            let lines: Vec<&str> = source.lines().collect();
+            let line_map: Vec<Option<usize>> = (1..=lines.len()).map(Some).collect();
+            assert!(
+                parse_unified_list_mapped(&lines, 0, &Options::default(), Some(&line_map))
+                    .is_none(),
+                "{source:?}"
+            );
+            if let Some((candidate, _)) = parse_document(source) {
+                assert_eq!(candidate, parse_with_options(source, &Options::default()));
+            }
+        }
+    }
+}
+
 enum Event<'a> {
     Heading(u8, &'a str),
     Paragraph(&'a [&'a str]),
@@ -85,16 +463,22 @@ pub(super) fn parse_blocks(lines: &[&str], options: &Options<'_>) -> Option<Vec<
 /// Stream simple top-level blocks as events while handing list and definition
 /// bodies to the existing readers. A construct outside this subset declines the
 /// whole route before it can publish a partial AST.
-fn parse_mixed_blocks(lines: &[&str], options: &Options<'_>) -> Option<Vec<BlockNode>> {
-    parse_mixed_blocks_mapped(lines, options, None)
+fn parse_mixed_blocks<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
+    lines: &[&str],
+    options: &Options<'_>,
+    at_document_level: bool,
+) -> Option<Vec<BlockNode>> {
+    parse_mixed_blocks_mapped::<DEFINITIONS, ABBREVIATIONS>(lines, options, None, at_document_level)
 }
 
-fn parse_mixed_blocks_mapped(
+fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
     lines: &[&str],
     options: &Options<'_>,
     line_map: Option<&[Option<usize>]>,
+    at_document_level: bool,
 ) -> Option<Vec<BlockNode>> {
     if line_map.is_none()
+        && (!at_document_level || continuation_marker::active())
         && lines.iter().copied().any(|line| {
             let line = trim_ascii(line);
             line == "+" || line.ends_with(" +")
@@ -103,12 +487,18 @@ fn parse_mixed_blocks_mapped(
         return None;
     }
     let mut cur = LineCursor::new_with_cols(lines, line_map, None);
-    cur.at_document_level = true;
+    cur.at_document_level = at_document_level;
     let mut out = Vec::new();
+    let mut leading_attrs: Vec<(usize, Attrs)> = Vec::new();
     while cur.peek().is_some() {
+        if DEFINITIONS && cur.peek().is_some_and(is_definition_placeholder) {
+            cur.consume();
+            continue;
+        }
         let invalid_brace_line = if cur.peek().is_some_and(|line| line.starts_with('{')) {
-            if parse_standalone_attrs_block(&mut cur).is_some() {
-                return None;
+            if let Some(attrs) = parse_standalone_attrs_block(&mut cur) {
+                leading_attrs.push((out.len(), attrs));
+                continue;
             }
             true
         } else {
@@ -119,18 +509,41 @@ fn parse_mixed_blocks_mapped(
             cur.consume();
             continue;
         }
+        match take_comment_block(&mut cur, options) {
+            CommentBlock::NotAComment => {}
+            CommentBlock::Consumed(None) => continue,
+            CommentBlock::Consumed(Some(node)) => {
+                out.push(*node);
+                continue;
+            }
+        }
+        let line = cur.peek().unwrap();
+        if ABBREVIATIONS {
+            if let Some(definition) = detect_abbreviation_def(line) {
+                cur.consume();
+                out.push(BlockNode::AbbreviationDef(definition));
+                continue;
+            }
+        }
         if let Some((level, text)) = detect_heading(line) {
             out.push(*parse_heading_block(&mut cur, level, text, options));
             continue;
         }
         if is_list_marker(line) && !line.starts_with([' ', '\t']) {
-            if let Some((list, end)) = parse_simple_list(lines, cur.pos, options) {
-                cur.pos = end;
-                out.push(BlockNode::List(list));
-            } else if let Some((list, end)) = parse_two_level_simple_list(lines, cur.pos, options) {
-                cur.pos = end;
-                out.push(BlockNode::List(list));
-            } else if let Some((list, end)) = parse_deep_simple_list(lines, cur.pos, options) {
+            let blank_then_indented = lines
+                .get(cur.pos + 1)
+                .is_some_and(|line| is_blank_line(line))
+                && lines[cur.pos + 2..]
+                    .iter()
+                    .find(|line| !is_blank_line(line))
+                    .is_some_and(|line| line.starts_with([' ', '\t']));
+            let direct = if blank_then_indented {
+                parse_unified_list_mapped(lines, cur.pos, options, line_map)
+            } else {
+                parse_simple_list(lines, cur.pos, options)
+                    .or_else(|| parse_unified_list_mapped(lines, cur.pos, options, line_map))
+            };
+            if let Some((list, end)) = direct {
                 cur.pos = end;
                 out.push(BlockNode::List(list));
             } else {
@@ -141,7 +554,14 @@ fn parse_mixed_blocks_mapped(
             continue;
         }
         if is_definition_list_start(line) {
-            out.push(parse_definition_list(&mut cur, options));
+            if let Some((list, end)) =
+                parse_simple_definition_list_prefix(lines, cur.pos, options, false)
+            {
+                cur.pos = end;
+                out.push(BlockNode::DefinitionList(list));
+            } else {
+                out.push(parse_definition_list(&mut cur, options));
+            }
             continue;
         }
         if strip_blockquote_prefix(line).is_some() {
@@ -164,8 +584,22 @@ fn parse_mixed_blocks_mapped(
             continue;
         }
         if let Some(fence) = detect_fence_open(line) {
-            let mut block = *parse_fenced_block(&mut cur, fence, options);
-            resolve_code_title(&mut block);
+            let mut block = if let Some((block, end)) =
+                parse_direct_root_code_fence(lines, cur.pos, fence, options)
+            {
+                cur.pos = end;
+                block
+            } else {
+                *parse_fenced_block(&mut cur, fence, options)
+            };
+            let has_leading_attrs = leading_attrs.last().is_some_and(|(start, _)| {
+                out[*start..].iter().all(|node| {
+                    matches!(node, BlockNode::AbbreviationDef(_) | BlockNode::Comment(_))
+                })
+            });
+            if !has_leading_attrs {
+                resolve_code_title(&mut block);
+            }
             out.push(block);
             continue;
         }
@@ -181,6 +615,42 @@ fn parse_mixed_blocks_mapped(
             out.push(parse_table(&mut cur, options));
             continue;
         }
+        if let Some(mut image) = detect_block_image(line) {
+            if image_is_block(&mut cur) {
+                let image_at = cur.pos;
+                cur.consume();
+                image.pos = span_of(&cur, image_at, image_at + 1, options);
+                if let Some(caption) = consume_caption(&mut cur, options) {
+                    out.push(BlockNode::Figure(Figure {
+                        attrs: None,
+                        target: Box::new(FigureTarget::Image(image)),
+                        rendered_target: None,
+                        caption,
+                        short_caption: None,
+                        pos: span_of(&cur, image_at, cur.pos, options),
+                    }));
+                } else {
+                    out.push(BlockNode::Paragraph(Paragraph {
+                        attrs: None,
+                        children: vec![InlineNode::Image(image)],
+                        at_content_column: true,
+                        block_image: true,
+                        pos: None,
+                    }));
+                }
+                continue;
+            }
+        }
+        let root_indented_text = if line.starts_with(' ') {
+            let content = trim_ascii_start(line);
+            content
+                .as_bytes()
+                .first()
+                .is_some_and(|byte| *byte == b'>' || byte.is_ascii_alphabetic())
+                && !is_list_marker(content)
+        } else {
+            false
+        };
         if trim_ascii_start(line).starts_with("![") && detect_block_image(line).is_some() {
             let mut item_bodies = Vec::new();
             let block = parse_block(&mut cur, options, &mut item_bodies)?;
@@ -190,7 +660,7 @@ fn parse_mixed_blocks_mapped(
             out.push(*block);
             continue;
         }
-        if !may_start_plain_paragraph(line) && !invalid_brace_line {
+        if !may_start_plain_paragraph(line) && !invalid_brace_line && !root_indented_text {
             if line.starts_with(":::") {
                 if detect_line_block_open(line).is_some() {
                     out.push(parse_line_block(&mut cur, options));
@@ -213,6 +683,15 @@ fn parse_mixed_blocks_mapped(
         }
         let mut paragraph_lines = Vec::new();
         while let Some(next) = cur.peek() {
+            if DEFINITIONS && is_definition_placeholder(next) {
+                break;
+            }
+            if ABBREVIATIONS
+                && !paragraph_lines.is_empty()
+                && detect_abbreviation_def(next).is_some()
+            {
+                break;
+            }
             if is_blank_line(next) || detect_heading(next).is_some() {
                 break;
             }
@@ -236,6 +715,7 @@ fn parse_mixed_blocks_mapped(
             if !may_continue_plain_paragraph(next)
                 && !is_list_marker(next)
                 && !(paragraph_lines.is_empty() && invalid_brace_line)
+                && !(paragraph_lines.is_empty() && root_indented_text)
             {
                 return None;
             }
@@ -246,12 +726,924 @@ fn parse_mixed_blocks_mapped(
         out.push(BlockNode::Paragraph(Paragraph {
             attrs: None,
             children: parse_event_inlines(&joined, options),
-            at_content_column: true,
+            at_content_column: !line.starts_with([' ', '\t']),
             block_image: false,
             pos: None,
         }));
     }
+    if !leading_attrs.is_empty() {
+        let mut next_visible = vec![None; out.len() + 1];
+        for index in (0..out.len()).rev() {
+            next_visible[index] = if matches!(
+                out[index],
+                BlockNode::AbbreviationDef(_) | BlockNode::Comment(_)
+            ) {
+                next_visible[index + 1]
+            } else {
+                Some(index)
+            };
+        }
+        let mut target = None;
+        let mut pending = None;
+        let mut slots = None;
+        for (start, attrs) in leading_attrs {
+            let Some(next_target) = next_visible[start] else {
+                continue;
+            };
+            if target != Some(next_target) {
+                if let (Some(index), Some(attrs)) = (target, pending.take()) {
+                    apply_event_leading_attrs(&mut out[index], attrs);
+                }
+                target = Some(next_target);
+                slots = None;
+            }
+            merge_attrs_indexed(&mut pending, attrs, &mut slots);
+        }
+        if let (Some(index), Some(attrs)) = (target, pending) {
+            apply_event_leading_attrs(&mut out[index], attrs);
+        }
+    }
     Some(out)
+}
+
+#[cold]
+#[inline(never)]
+fn parse_direct_root_code_fence(
+    lines: &[&str],
+    start: usize,
+    open: FenceOpen,
+    options: &Options<'_>,
+) -> Option<(BlockNode, usize)> {
+    if options.positions || options.source_lines || !options.extensions.is_empty() {
+        return None;
+    }
+    let first = *lines.get(start)?;
+    if first[open.lang_start..].trim().starts_with('=') {
+        return None;
+    }
+    let close = (start + 1..lines.len()).find(|&at| {
+        is_fence_close(lines[at], open)
+            || lines[at].starts_with(LAZY) && is_fence_close(strip_lazy(lines[at]), open)
+    })?;
+    if lines[close].starts_with(LAZY) {
+        return None;
+    }
+    if lines[start + 1..close]
+        .iter()
+        .any(|line| line.starts_with(LAZY) || is_definition_placeholder(line))
+    {
+        return None;
+    }
+    let next = close + 1;
+    if lines
+        .get(next)
+        .and_then(|line| caption_content(line))
+        .is_some()
+        || lines.get(next).is_some_and(|line| is_blank_line(line))
+            && lines
+                .get(next + 1)
+                .and_then(|line| caption_content(line))
+                .is_some()
+    {
+        return None;
+    }
+    let mut content = lines[start + 1..close].join("\n");
+    if close > start + 1 {
+        content.push('\n');
+    }
+    let lang = (open.lang_start < open.lang_end)
+        .then(|| first[open.lang_start..open.lang_end].to_string());
+    let title = open
+        .title_start
+        .zip(open.title_end)
+        .map(|(begin, end)| first[begin..end].to_string());
+    let label = open
+        .label_start
+        .zip(open.label_end)
+        .map(|(begin, end)| first[begin..end].to_string());
+    Some((
+        BlockNode::CodeBlock(CodeBlock {
+            attrs: None,
+            lang,
+            title,
+            label,
+            content,
+            pos: None,
+        }),
+        next,
+    ))
+}
+
+enum UnifiedListBlock<'a> {
+    Paragraph(Vec<&'a str>),
+    List(UnifiedListNode<'a>),
+    Block(Box<BlockNode>),
+}
+
+struct UnifiedListItem<'a> {
+    blocks: Vec<UnifiedListBlock<'a>>,
+}
+
+struct UnifiedListNode<'a> {
+    kind: SimpleListKind,
+    tight: bool,
+    items: Vec<UnifiedListItem<'a>>,
+}
+
+struct UnifiedListFrame<'a> {
+    node: UnifiedListNode<'a>,
+    kind: SimpleListKind,
+    indent: usize,
+    content_indent: usize,
+    paragraph: Vec<&'a str>,
+    continuation_indent: Option<usize>,
+}
+
+fn flush_unified_list_paragraph<'a>(frame: &mut UnifiedListFrame<'a>) -> Option<()> {
+    if frame.paragraph.is_empty() {
+        return Some(());
+    }
+    frame
+        .node
+        .items
+        .last_mut()?
+        .blocks
+        .push(UnifiedListBlock::Paragraph(std::mem::take(
+            &mut frame.paragraph,
+        )));
+    Some(())
+}
+
+fn close_unified_list_frame(frames: &mut Vec<UnifiedListFrame<'_>>) -> Option<()> {
+    let mut child = frames.pop()?;
+    flush_unified_list_paragraph(&mut child)?;
+    frames
+        .last_mut()?
+        .node
+        .items
+        .last_mut()?
+        .blocks
+        .push(UnifiedListBlock::List(child.node));
+    Some(())
+}
+
+fn resume_nested_list_after_blank(frames: &mut [UnifiedListFrame<'_>], next: &str) -> Option<()> {
+    let next_indent = next.bytes().take_while(|byte| *byte == b' ').count();
+    let frame = frames.last_mut()?;
+    if next_indent == frame.content_indent {
+        let content = &next[next_indent..];
+        if strip_blockquote_prefix(content).is_some()
+            || detect_fence_open(content).is_some()
+            || detect_heading(content).is_some()
+        {
+            flush_unified_list_paragraph(frame)?;
+            return Some(());
+        }
+        if !is_list_marker(content) && may_start_plain_paragraph(content) {
+            flush_unified_list_paragraph(frame)?;
+            frame.node.tight = false;
+            return Some(());
+        }
+    }
+    if next_indent == frame.indent
+        && unified_list_marker(&next[next_indent..]).is_some_and(|(kind, _, _)| kind == frame.kind)
+    {
+        frame.node.tight = false;
+        return Some(());
+    }
+    None
+}
+
+fn consume_pending_list_continuation<'a>(
+    frames: &mut [UnifiedListFrame<'a>],
+    line: &'a str,
+    following: &[&str],
+) -> Option<bool> {
+    let Some(required_indent) = frames.last().and_then(|frame| frame.continuation_indent) else {
+        return Some(false);
+    };
+    let indent = line.bytes().take_while(|byte| *byte == b' ').count();
+    if indent != required_indent {
+        return None;
+    }
+    if following
+        .iter()
+        .find(|next| !is_blank_line(next))
+        .is_some_and(|next| next.starts_with([' ', '\t']))
+    {
+        return None;
+    }
+    let content = trim_ascii_end(&line[indent..]);
+    if !may_start_plain_paragraph(content)
+        || is_list_marker(content)
+        || detect_fence_open(content).is_some()
+        || detect_heading(content).is_some()
+        || thematic_break_marker(content).is_some()
+    {
+        return None;
+    }
+    let frame = frames.last_mut()?;
+    frame.continuation_indent = None;
+    frame.paragraph.push(content);
+    Some(true)
+}
+
+fn start_standalone_list_continuation(
+    frames: &mut [UnifiedListFrame<'_>],
+    indent: usize,
+    decision: Option<continuation_marker::Decision>,
+) -> Option<()> {
+    let frame = frames.last_mut()?;
+    if indent != frame.indent
+        || !decision.is_some_and(|decision| {
+            decision.owner == Some(continuation_marker::Kind::List)
+                && decision.refusal.is_none()
+                && !decision.first_block
+        })
+    {
+        return None;
+    }
+    flush_unified_list_paragraph(frame)?;
+    frame.continuation_indent = Some(indent);
+    Some(())
+}
+
+fn start_marker_line_list_continuation(
+    frames: &mut [UnifiedListFrame<'_>],
+    decision: Option<continuation_marker::Decision>,
+) -> Option<()> {
+    owned_list_first_block(decision).then_some(())?;
+    let follow_indent = frames.first()?.indent;
+    frames.last_mut()?.continuation_indent = Some(follow_indent);
+    Some(())
+}
+
+fn build_unified_list(node: UnifiedListNode<'_>, options: &Options<'_>) -> List {
+    let mut list = deep_list_node(node.kind);
+    list.tight = node.tight;
+    list.items = node
+        .items
+        .into_iter()
+        .map(|item| ListItem {
+            attrs: None,
+            checked: None,
+            task_state: None,
+            children: item
+                .blocks
+                .into_iter()
+                .map(|block| match block {
+                    UnifiedListBlock::Paragraph(lines) => {
+                        let inlines = if lines.len() == 1 {
+                            parse_event_inlines(lines[0], options)
+                        } else {
+                            parse_event_inlines(&lines.join("\n"), options)
+                        };
+                        BlockNode::Paragraph(Paragraph {
+                            attrs: None,
+                            children: inlines,
+                            at_content_column: true,
+                            block_image: false,
+                            pos: None,
+                        })
+                    }
+                    UnifiedListBlock::List(child) => {
+                        BlockNode::List(build_unified_list(child, options))
+                    }
+                    UnifiedListBlock::Block(block) => *block,
+                })
+                .collect(),
+            pos: None,
+        })
+        .collect();
+    list
+}
+
+#[cold]
+#[inline(never)]
+fn parse_unified_list_quote(
+    lines: &[&str],
+    start: usize,
+    content_indent: usize,
+    base_depth: usize,
+    frame_depth: usize,
+    options: &Options<'_>,
+) -> Option<(BlockQuote, usize)> {
+    let mut quote_lines = Vec::new();
+    let mut end = start;
+    while let Some(&candidate) = lines.get(end) {
+        let candidate_indent = candidate.bytes().take_while(|byte| *byte == b' ').count();
+        if candidate_indent != content_indent {
+            break;
+        }
+        let candidate = &candidate[candidate_indent..];
+        if strip_blockquote_prefix(trim_ascii_end(candidate)).is_none() {
+            break;
+        }
+        quote_lines.push(candidate);
+        end += 1;
+    }
+    if lines.get(end).is_some_and(|next| {
+        !is_blank_line(next)
+            && next.bytes().take_while(|byte| *byte == b' ').count() >= content_indent
+    }) {
+        return None;
+    }
+    let quote_depth = base_depth.saturating_add(frame_depth.saturating_mul(2));
+    if quote_depth >= MAX_NESTING_DEPTH
+        || quote_lines.iter().any(|line| {
+            let mut rest = *line;
+            let mut marker_depth = 0usize;
+            while let Some(next) = strip_blockquote_prefix(rest) {
+                marker_depth += 1;
+                rest = next;
+            }
+            // Reserve the quote's inner block, list, and item scopes.
+            quote_depth.saturating_add(marker_depth).saturating_add(3) >= MAX_NESTING_DEPTH
+        })
+    {
+        return None;
+    }
+    let (quote, consumed) = {
+        let _depth = DepthScope::set(quote_depth);
+        parse_marked_quote(&quote_lines, 0, options)?
+    };
+    (consumed == quote_lines.len()).then_some((quote, end))
+}
+
+#[cold]
+#[inline(never)]
+fn parse_unified_list_fence(
+    lines: &[&str],
+    start: usize,
+    content_indent: usize,
+    options: &Options<'_>,
+) -> Option<(BlockNode, usize)> {
+    let prefix = " ".repeat(content_indent);
+    let first = lines.get(start)?.strip_prefix(prefix.as_str())?;
+    let open = detect_fence_open(first)?;
+    let mut collected = vec![first];
+    let mut end = start + 1;
+    while let Some(&line) = lines.get(end) {
+        let content = if is_blank_line(line) {
+            if line.len() > content_indent || !line.bytes().all(|byte| byte == b' ') {
+                return None;
+            }
+            ""
+        } else {
+            line.strip_prefix(prefix.as_str())?
+        };
+        collected.push(content);
+        end += 1;
+        if is_fence_close(content, open) {
+            let mut cur = LineCursor::new_with_cols(&collected, None, None);
+            let mut block = *parse_fenced_block(&mut cur, open, options);
+            if cur.pos != collected.len() {
+                return None;
+            }
+            resolve_code_title(&mut block);
+            return Some((block, end));
+        }
+    }
+    None
+}
+
+#[inline(never)]
+#[cfg(test)]
+fn parse_unified_list(
+    lines: &[&str],
+    start: usize,
+    options: &Options<'_>,
+) -> Option<(List, usize)> {
+    parse_unified_list_mapped(lines, start, options, None)
+}
+
+fn direct_list_image_line_is_supported(content: &str) -> Option<()> {
+    detect_block_image(content).is_none().then_some(())
+}
+
+fn unified_list_paragraph_accepts(content: &str, has_paragraph: bool) -> bool {
+    (if has_paragraph {
+        may_continue_plain_paragraph(content)
+    } else {
+        may_start_plain_paragraph(content)
+    }) && !is_list_marker(content)
+        && detect_fence_open(content).is_none()
+        && thematic_break_marker(content).is_none()
+}
+
+fn parse_unified_list_mapped(
+    lines: &[&str],
+    start: usize,
+    options: &Options<'_>,
+    line_map: Option<&[Option<usize>]>,
+) -> Option<(List, usize)> {
+    let base_depth = NESTING_DEPTH.with(|depth| depth.get());
+    // Leave room for the standard parser's list item and paragraph scopes.
+    if base_depth.saturating_add(2) >= MAX_NESTING_DEPTH {
+        return None;
+    }
+    let mut frames: Vec<UnifiedListFrame<'_>> = Vec::new();
+    let mut pos = start;
+    while let Some(&line) = lines.get(pos) {
+        if consume_pending_list_continuation(&mut frames, line, &lines[pos + 1..])? {
+            pos += 1;
+            continue;
+        }
+        if is_blank_line(line) {
+            let mut after = pos;
+            while lines.get(after).is_some_and(|line| is_blank_line(line)) {
+                after += 1;
+            }
+            let Some(&next) = lines.get(after) else { break };
+            if after - pos != 1 {
+                if !next.starts_with([' ', '\t']) && !is_list_marker(next) {
+                    while frames.len() > 1 {
+                        close_unified_list_frame(&mut frames)?;
+                    }
+                    break;
+                }
+                return None;
+            }
+            if frames.len() > 1 {
+                if next.starts_with([' ', '\t']) {
+                    resume_nested_list_after_blank(&mut frames, next)?;
+                    pos = after;
+                    continue;
+                }
+                while frames.len() > 1 {
+                    close_unified_list_frame(&mut frames)?;
+                }
+            }
+            let frame = frames.last_mut()?;
+            if let Some((kind, _, _)) = unified_list_marker(next) {
+                if kind != frame.kind {
+                    break;
+                }
+                frame.node.tight = false;
+                pos = after;
+                continue;
+            }
+            let next_indent = next.bytes().take_while(|byte| *byte == b' ').count();
+            if next_indent == frame.content_indent
+                && unified_list_marker(&next[next_indent..]).is_some()
+            {
+                pos = after;
+                continue;
+            }
+            if is_list_marker(next) {
+                return None;
+            }
+            if next_indent == frame.content_indent {
+                flush_unified_list_paragraph(frame)?;
+                if strip_blockquote_prefix(&next[next_indent..]).is_none()
+                    && detect_fence_open(&next[next_indent..]).is_none()
+                    && detect_heading(&next[next_indent..]).is_none()
+                {
+                    frame.node.tight = false;
+                }
+                pos = after;
+                continue;
+            }
+            if next.starts_with([' ', '\t']) {
+                if next.as_bytes().get(next_indent) != Some(&b'\t')
+                    && next_indent < frames[0].content_indent
+                {
+                    while frames.len() > 1 {
+                        close_unified_list_frame(&mut frames)?;
+                    }
+                    break;
+                }
+                return None;
+            }
+            break;
+        }
+        let indent = line.bytes().take_while(|byte| *byte == b' ').count();
+        let decision = trim_ascii_end(line)
+            .ends_with('+')
+            .then(|| list_continuation_decision(line_map, pos))
+            .flatten();
+        if is_plus_marker(&line[indent..]) {
+            start_standalone_list_continuation(&mut frames, indent, decision)?;
+            pos += 1;
+            continue;
+        }
+        let marker = unified_list_marker(&line[indent..])
+            .or_else(|| plus_first_block_marker(&line[indent..], decision));
+        if let Some((kind, ordinal, content)) = marker {
+            while frames.len() > 1 && indent < frames.last()?.indent {
+                close_unified_list_frame(&mut frames)?;
+            }
+            if frames.is_empty() {
+                if indent != 0 || kind == SimpleListKind::Ordered && ordinal != 1 {
+                    return None;
+                }
+                frames.push(UnifiedListFrame {
+                    node: UnifiedListNode {
+                        kind,
+                        tight: true,
+                        items: Vec::new(),
+                    },
+                    kind,
+                    indent,
+                    content_indent: indent
+                        + if kind == SimpleListKind::Ordered {
+                            3
+                        } else {
+                            2
+                        },
+                    paragraph: Vec::new(),
+                    continuation_indent: None,
+                });
+            } else if indent == frames.last()?.content_indent {
+                if base_depth.saturating_add(frames.len() + 2) >= MAX_NESTING_DEPTH {
+                    return None;
+                }
+                flush_unified_list_paragraph(frames.last_mut()?)?;
+                if kind == SimpleListKind::Ordered && ordinal != 1 {
+                    return None;
+                }
+                frames.push(UnifiedListFrame {
+                    node: UnifiedListNode {
+                        kind,
+                        tight: true,
+                        items: Vec::new(),
+                    },
+                    kind,
+                    indent,
+                    content_indent: indent
+                        + if kind == SimpleListKind::Ordered {
+                            3
+                        } else {
+                            2
+                        },
+                    paragraph: Vec::new(),
+                    continuation_indent: None,
+                });
+            } else if indent != frames.last()?.indent {
+                return None;
+            }
+            let frame = frames.last_mut()?;
+            if frame.kind != kind {
+                if frames.len() == 1 && indent == 0 {
+                    break;
+                }
+                return None;
+            }
+            if kind == SimpleListKind::Ordered && ordinal != frame.node.items.len() + 1 {
+                return None;
+            }
+            flush_unified_list_paragraph(frame)?;
+            frame
+                .node
+                .items
+                .push(UnifiedListItem { blocks: Vec::new() });
+            let mut content = content;
+            while let Some((nested_kind, nested_ordinal, nested_content)) =
+                strict_list_marker(content)
+            {
+                if nested_kind == SimpleListKind::Ordered && nested_ordinal != 1 {
+                    return None;
+                }
+                if base_depth.saturating_add(frames.len() + 2) >= MAX_NESTING_DEPTH {
+                    return None;
+                }
+                let nested_indent = frames.last()?.content_indent;
+                frames.push(UnifiedListFrame {
+                    node: UnifiedListNode {
+                        kind: nested_kind,
+                        tight: true,
+                        items: vec![UnifiedListItem { blocks: Vec::new() }],
+                    },
+                    kind: nested_kind,
+                    indent: nested_indent,
+                    content_indent: nested_indent
+                        + if nested_kind == SimpleListKind::Ordered {
+                            3
+                        } else {
+                            2
+                        },
+                    paragraph: Vec::new(),
+                    continuation_indent: None,
+                });
+                content = nested_content;
+            }
+            if is_plus_marker(content) {
+                start_marker_line_list_continuation(&mut frames, decision)?;
+            } else {
+                direct_list_image_line_is_supported(content)?;
+                frames.last_mut()?.paragraph.push(content);
+            }
+            pos += 1;
+            continue;
+        }
+        if indent == 0 && frames.len() == 1 {
+            return None;
+        }
+        let active_frame_depth = frames.len();
+        let frame = frames.last_mut()?;
+        if indent != frame.content_indent {
+            return None;
+        }
+        let content = trim_ascii_end(&line[indent..]);
+        direct_list_image_line_is_supported(content)?;
+        if detect_fence_open(content).is_some() {
+            let (block, end) = parse_unified_list_fence(lines, pos, frame.content_indent, options)?;
+            flush_unified_list_paragraph(frame)?;
+            frame
+                .node
+                .items
+                .last_mut()?
+                .blocks
+                .push(UnifiedListBlock::Block(Box::new(block)));
+            pos = end;
+            continue;
+        }
+        if content.starts_with('>') {
+            let (quote, end) = parse_unified_list_quote(
+                lines,
+                pos,
+                frame.content_indent,
+                base_depth,
+                active_frame_depth,
+                options,
+            )?;
+            flush_unified_list_paragraph(frame)?;
+            frame
+                .node
+                .items
+                .last_mut()?
+                .blocks
+                .push(UnifiedListBlock::Block(Box::new(BlockNode::BlockQuote(
+                    quote,
+                ))));
+            pos = end;
+            continue;
+        }
+        if let Some((level, text)) = detect_heading(content) {
+            flush_unified_list_paragraph(frame)?;
+            frame
+                .node
+                .items
+                .last_mut()?
+                .blocks
+                .push(UnifiedListBlock::Block(Box::new(BlockNode::Heading(
+                    Heading {
+                        attrs: None,
+                        level,
+                        children: parse_event_inlines(trim_ascii_end(text), options),
+                        pos: None,
+                    },
+                ))));
+            pos += 1;
+            continue;
+        }
+        if !unified_list_paragraph_accepts(content, !frame.paragraph.is_empty()) {
+            return None;
+        }
+        frame.paragraph.push(content);
+        pos += 1;
+    }
+    if frames
+        .iter()
+        .any(|frame| frame.continuation_indent.is_some())
+    {
+        return None;
+    }
+    while frames.len() > 1 {
+        close_unified_list_frame(&mut frames)?;
+    }
+    let mut root = frames.pop()?;
+    flush_unified_list_paragraph(&mut root)?;
+    Some((build_unified_list(root.node, options), pos))
+}
+
+#[cfg(test)]
+mod unified_list_tests {
+    use super::*;
+
+    #[test]
+    fn shared_owner_builds_item_headings() {
+        for source in ["- a\n  # H\n", "- a\n\n  # H\n"] {
+            let lines: Vec<&str> = source.lines().collect();
+            let (list, consumed) = parse_unified_list(&lines, 0, &Options::default()).unwrap();
+            assert_eq!(consumed, lines.len());
+            assert!(list.tight);
+            assert!(matches!(list.items[0].children[1], BlockNode::Heading(_)));
+        }
+    }
+
+    #[test]
+    fn shared_owner_builds_marked_quote() {
+        for source in ["- one\n  > q\n", "- one\n\n  > q\n"] {
+            let lines: Vec<&str> = source.lines().collect();
+            let (list, consumed) = parse_unified_list(&lines, 0, &Options::default()).unwrap();
+            assert_eq!(consumed, lines.len());
+            assert!(list.tight);
+            assert!(matches!(
+                list.items[0].children[1],
+                BlockNode::BlockQuote(_)
+            ));
+        }
+        let lazy = "- one\n  > q\n  lazy continuation\n";
+        let lines: Vec<&str> = lazy.lines().collect();
+        assert!(parse_unified_list(&lines, 0, &Options::default()).is_none());
+
+        let trailing_tab = "- one\n\n  >\t\n";
+        let lines: Vec<&str> = trailing_tab.lines().collect();
+        assert!(parse_unified_list(&lines, 0, &Options::default()).is_none());
+    }
+
+    #[test]
+    fn post_blank_tab_does_not_close_list_at_space_count() {
+        let source = "- one\n\n \t> q\n";
+        let lines: Vec<&str> = source.lines().collect();
+        assert!(parse_unified_list(&lines, 0, &Options::default()).is_none());
+    }
+
+    #[test]
+    fn shared_owner_builds_closed_fences() {
+        for source in [
+            "- a\n  ```rs\n  let x = 1;\n  ```\n",
+            "- a\n\n  ```rs\n  let x = 1;\n  ```\n",
+            "- a\n\n  ```rs\n  let x = 1;\n  ```\n\n- b\n",
+            "- a\n  ```rs\n  let x = 1;\n  ```\n\n  following\n",
+            "- a\n  ```=latex\n  \\x\n  ```\n",
+            "- a\n  ```rs\n  let x = 1;\n  ```\n- b\n",
+        ] {
+            let lines: Vec<&str> = source.lines().collect();
+            let (list, consumed) = parse_unified_list(&lines, 0, &Options::default()).unwrap();
+            assert_eq!(consumed, lines.len());
+            let actual = BlockNode::List(list);
+            let expected = parse_with_options(source, &Options::default());
+            assert_eq!(actual, expected.children[0], "{source:?}");
+        }
+        let mut checked = 0;
+        for marker in ["```", "~~~~", "````"] {
+            for before in ["", "\n"] {
+                for after in ["", "\n", "\n- b\n"] {
+                    for body in ["code", "", "code\n  more"] {
+                        let source =
+                            format!("- a\n{before}  {marker}rs\n  {body}\n  {marker}\n{after}");
+                        let lines: Vec<&str> = source.lines().collect();
+                        let Some((list, consumed)) =
+                            parse_unified_list(&lines, 0, &Options::default())
+                        else {
+                            continue;
+                        };
+                        if consumed != lines.len() {
+                            continue;
+                        }
+                        let expected = parse_with_options(&source, &Options::default());
+                        assert_eq!(BlockNode::List(list), expected.children[0], "{source:?}");
+                        checked += 1;
+                    }
+                }
+            }
+        }
+        for source in [
+            "- a\n  ```rs\n  code\n  ```",
+            "- a\n  ```=latex\n  \\x\n  ```\n- b\n",
+            "- a\n  ```csv\n  x,y\n  1,2\n  ```\n",
+            "- a\n  ```\n\n  code\n  ```\n",
+        ] {
+            let lines: Vec<&str> = source.lines().collect();
+            let (list, consumed) = parse_unified_list(&lines, 0, &Options::default())
+                .unwrap_or_else(|| panic!("{source:?}"));
+            assert_eq!(consumed, lines.len(), "{source:?}");
+            let expected = parse_with_options(source, &Options::default());
+            assert_eq!(BlockNode::List(list), expected.children[0], "{source:?}");
+            checked += 1;
+        }
+        assert!(checked >= 20);
+        for blank in ["   ", "      ", "\t", "\x0c"] {
+            let source = format!("- a\n  ```\n  x\n{blank}\n  y\n  ```\n");
+            let lines: Vec<&str> = source.lines().collect();
+            assert!(
+                parse_unified_list(&lines, 0, &Options::default()).is_none(),
+                "{source:?}"
+            );
+            let (actual, _) = parse_document(&source).unwrap();
+            let expected = parse_with_options(&source, &Options::default());
+            assert_eq!(
+                crate::ast_json::to_json(&actual),
+                crate::ast_json::to_json(&expected)
+            );
+        }
+    }
+
+    #[test]
+    fn shared_owner_accepts_loose_siblings_and_declines_lazy_lines() {
+        let options = Options::default();
+        for source in [
+            "- a\n\n  second\n",
+            "- a\n  - nested\n\n- b\n",
+            "1. a\n   - nested\n\n2. b\n",
+            "- a\n\n\n",
+            "- a\n  - nested\n\n\nPara\n",
+            "- root\n  * middle\n    - leaf\n",
+            "- a\n  more\n  - child\n",
+            "* a\n  more\n  - child\n",
+            "1. a\n   more\n   - child\n",
+        ] {
+            let lines: Vec<&str> = source.lines().collect();
+            assert!(
+                parse_unified_list(&lines, 0, &options).is_some(),
+                "{source:?}"
+            );
+        }
+        for source in [
+            "- a\nlazy line\n",
+            "- a\n\n   wrong indent\n",
+            "- a\n\n\n- b\n",
+            "- a\n  - n\n\n\n  x\n",
+        ] {
+            let lines: Vec<&str> = source.lines().collect();
+            assert!(
+                parse_unified_list(&lines, 0, &options).is_none(),
+                "{source:?}"
+            );
+        }
+        let source = "- a\n  - b\n    - c\n";
+        let lines: Vec<&str> = source.lines().collect();
+        let _depth = DepthScope::set(MAX_NESTING_DEPTH - 5);
+        assert!(parse_unified_list(&lines, 0, &options).is_some());
+        drop(_depth);
+        let _depth = DepthScope::set(MAX_NESTING_DEPTH - 4);
+        assert!(parse_unified_list(&lines, 0, &options).is_none());
+    }
+
+    #[test]
+    fn shared_owner_keeps_blank_separated_nested_item_content() {
+        let options = Options::default();
+        for source in [
+            "- - A\n\n    second\n  - B\n",
+            "- - A\n\n  - B\n",
+            "- - A\n\n    second\n\n  - B\n",
+        ] {
+            let lines: Vec<&str> = source.lines().collect();
+            let (list, consumed) =
+                parse_unified_list(&lines, 0, &options).unwrap_or_else(|| panic!("{source:?}"));
+            assert_eq!(consumed, lines.len(), "{source:?}");
+            assert_eq!(
+                BlockNode::List(list),
+                parse_with_options(source, &options).children[0]
+            );
+        }
+    }
+
+    #[test]
+    fn raw_fence_does_not_loosen_nested_list() {
+        let source = "- a\n\n  - b\n\n    ```=latex\n    \\x\n    ```\n";
+        let lines: Vec<&str> = source.lines().collect();
+        let direct = parse_unified_list(&lines, 0, &Options::default());
+        assert!(direct.is_some());
+        let (candidate, _) = parse_document(source).unwrap();
+        let standard = parse_with_options(source, &Options::default());
+        assert_eq!(candidate, standard);
+    }
+
+    #[test]
+    fn marker_line_nested_owner_matrix_matches_full_ast() {
+        let options = Options::default();
+        let mut checked = 0;
+        for outer in ["-", "1."] {
+            for inner in ["-", "1."] {
+                let content_indent = outer.len() + inner.len() + 2;
+                let sibling = if inner == "1." { "2." } else { "-" };
+                for blank in ["", "\n"] {
+                    for continuation in ["more", "# heading", "> quote", "```\ncode\n```"] {
+                        for has_sibling in [false, true] {
+                            let prefix = " ".repeat(content_indent);
+                            let continuation = continuation
+                                .lines()
+                                .map(|line| format!("{prefix}{line}\n"))
+                                .collect::<String>();
+                            let mut source = format!("{outer} {inner} a\n{blank}{continuation}");
+                            if has_sibling {
+                                source.push_str(&format!(
+                                    "{}{} b\n",
+                                    " ".repeat(outer.len() + 1),
+                                    sibling
+                                ));
+                            }
+                            let lines: Vec<&str> = source.lines().collect();
+                            if let Some((_, consumed)) = parse_unified_list(&lines, 0, &options) {
+                                if consumed == lines.len() {
+                                    checked += 1;
+                                    let expected = parse_with_options(&source, &options);
+                                    assert_eq!(expected.children.len(), 1, "{source:?}");
+                                    let (candidate, used) = parse_document(&source).unwrap();
+                                    assert!(used, "{source:?}");
+                                    assert_eq!(candidate, expected, "{source:?}");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(checked >= 20, "only {checked} generated cases were owned");
+    }
 }
 
 fn parse_event_container(cur: &mut LineCursor<'_>, options: &Options<'_>) -> Box<BlockNode> {
@@ -262,8 +1654,8 @@ fn parse_event_container(cur: &mut LineCursor<'_>, options: &Options<'_>) -> Box
             let lines: Vec<&str> = source.iter().map(|line| line.text.as_str()).collect();
             let _depth = DepthScope::set(body.depth);
             if let Some(_inner_depth) = DepthGuard::enter() {
-                if let Some(children) =
-                    parse_blocks(&lines, options).or_else(|| parse_mixed_blocks(&lines, options))
+                if let Some(children) = parse_blocks(&lines, options)
+                    .or_else(|| parse_mixed_blocks::<false, false>(&lines, options, false))
                 {
                     fill_container_children(&mut node, children);
                     return node;
@@ -281,6 +1673,33 @@ fn parse_event_container(cur: &mut LineCursor<'_>, options: &Options<'_>) -> Box
         options,
     );
     Box::new(out.pop().expect("container body filled"))
+}
+
+fn apply_event_leading_attrs(block: &mut BlockNode, attrs: Attrs) {
+    apply_attrs_to_block(block, attrs);
+    resolve_code_title(block);
+    if let BlockNode::CodeBlock(code) = block {
+        if let Some(table) = delimited_table::from_code(code, &[]) {
+            *block = BlockNode::Table(table);
+        }
+    }
+    if let BlockNode::Figure(figure) = block {
+        if let FigureTarget::CodeBlock(code) = &*figure.target {
+            let mut code = code.clone();
+            if let Some(attrs) = &figure.attrs {
+                let mut target = BlockNode::CodeBlock(code.clone());
+                apply_attrs_to_block(&mut target, attrs.clone());
+                if let BlockNode::CodeBlock(with_attrs) = target {
+                    code = with_attrs;
+                }
+            }
+            if let Some(mut table) = delimited_table::from_code(&code, &[]) {
+                table.caption = Some(figure.caption.clone());
+                table.pos = figure.pos.clone();
+                *block = BlockNode::Table(table);
+            }
+        }
+    }
 }
 
 fn parse_simple_quote(
@@ -354,6 +1773,22 @@ fn parse_marked_quote(
     if parts.is_empty() {
         return None;
     }
+    // A final blank quote marker can become a synthetic payload newline.
+    if parts.last().is_some_and(|line| is_blank_line(line)) {
+        let mut open = None;
+        for line in &parts {
+            if let Some(fence) = open {
+                if is_fence_close(line, fence) {
+                    open = None;
+                }
+            } else {
+                open = detect_fence_open(line);
+            }
+        }
+        if open.is_some() {
+            return None;
+        }
+    }
     let mut after = end;
     while lines.get(after).is_some_and(|line| is_blank_line(line)) {
         after += 1;
@@ -363,10 +1798,18 @@ fn parse_marked_quote(
     {
         return None;
     }
-    let children = parse_blocks(&parts, options).or_else(|| {
-        let _depth = DepthGuard::enter()?;
-        parse_mixed_blocks(&parts, options)
-    })?;
+    let children = parse_blocks(&parts, options)
+        .or_else(|| {
+            let (list, consumed) = parse_simple_list(&parts, 0, options)?;
+            (consumed == parts.len()).then(|| vec![BlockNode::List(list)])
+        })
+        .or_else(|| {
+            if NESTING_DEPTH.with(|depth| depth.get() >= MIXED_QUOTE_DEPTH_LIMIT) {
+                return None;
+            }
+            let _depth = DepthGuard::enter()?;
+            parse_mixed_blocks::<false, false>(&parts, options, false)
+        })?;
     Some((
         BlockQuote {
             attrs: None,
@@ -393,6 +1836,7 @@ fn parse_simple_lazy_quote(
             || detect_heading(text).is_some()
             || is_list_marker(text)
             || is_definition_list_start(text)
+            || (content.is_none() && detect_abbreviation_def(text).is_some())
             || detect_fence_open(text).is_some()
             || thematic_break_marker(text).is_some()
         {
@@ -476,13 +1920,22 @@ mod simple_quote_tests {
     }
 
     #[test]
-    fn fenced_quote_content_matches_the_existing_reader() {
-        let source = "> ```=html\n>\n";
-        let lines: Vec<&str> = source.lines().collect();
-        let (quote, end) = parse_marked_quote(&lines, 0, &Options::default()).unwrap();
-        assert_eq!(end, 2);
-        let expected = parse_with_options(source, &Options::default());
-        assert_eq!(BlockNode::BlockQuote(quote), expected.children[0]);
+    fn fenced_quote_content_uses_the_recursive_quote_path() {
+        let options = Options::default();
+        for source in ["> ```\n> code\n> ```\n", "> ```=html\n> x\n> ```\n"] {
+            let lines: Vec<&str> = source.lines().collect();
+            let (quote, end) = parse_marked_quote(&lines, 0, &options).unwrap();
+            assert_eq!(end, lines.len(), "{source:?}");
+            let expected = parse_with_options(source, &options);
+            assert_eq!(
+                BlockNode::BlockQuote(quote),
+                expected.children[0],
+                "{source:?}"
+            );
+        }
+        let unclosed = "> ```=html\n>\n";
+        let lines: Vec<&str> = unclosed.lines().collect();
+        assert!(parse_marked_quote(&lines, 0, &options).is_none());
     }
 }
 
@@ -510,8 +1963,20 @@ fn may_continue_plain_paragraph(line: &str) -> bool {
 }
 
 fn parse_event_inlines(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
+    if let Some(inner) = text
+        .strip_prefix("**")
+        .and_then(|text| text.strip_suffix("**"))
+    {
+        if !inner.is_empty()
+            && inner
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b' ')
+        {
+            return vec![InlineNode::text(text.to_string())];
+        }
+    }
     let bytes = text.as_bytes();
-    let plain = if text.len() < 128 {
+    let plain = (if text.len() < 128 {
         !text.is_empty()
             && !text.contains("..")
             && !text.contains("(c)")
@@ -526,7 +1991,7 @@ fn parse_event_inlines(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
             })
     } else {
         long_literal_inline(text)
-    };
+    }) || leading_double_star_literal_inline(text);
     if !plain {
         return parse_inline_with_options(text, options);
     }
@@ -542,6 +2007,57 @@ fn parse_event_inlines(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
     out
 }
 
+/// A leading double-star label and later balanced double-star pairs are
+/// literal when the rest of the run contains only literal inline bytes.
+fn leading_double_star_literal_inline(text: &str) -> bool {
+    if !text.starts_with("**") || text.starts_with("***") {
+        return false;
+    }
+    let bytes = text.as_bytes();
+    let mut index = 0;
+    let mut pairs = 0;
+    while let Some(&byte) = bytes.get(index) {
+        if byte.is_ascii_alphanumeric()
+            || !byte.is_ascii()
+            || matches!(
+                byte,
+                b' ' | b'\n' | b'.' | b',' | b';' | b'!' | b'?' | b'(' | b')'
+            )
+        {
+            index += 1;
+            continue;
+        }
+        if byte == b'*'
+            && bytes.get(index + 1) == Some(&b'*')
+            && bytes.get(index + 2) != Some(&b'*')
+            && (index == 0 || bytes[index - 1] != b'*')
+        {
+            pairs += 1;
+            index += 2;
+            continue;
+        }
+        if byte == b':'
+            && index > 0
+            && bytes[index - 1] == b'\n'
+            && bytes.get(index + 1) == Some(&b' ')
+        {
+            index += 1;
+            continue;
+        }
+        if byte == b'-' && bytes.get(index + 1) != Some(&b'-') {
+            index += 1;
+            continue;
+        }
+        return false;
+    }
+    pairs > 0
+        && pairs % 2 == 0
+        && !text.contains("..")
+        && !text.contains("(c)")
+        && !text.contains("(r)")
+        && !text.contains("(tm)")
+}
+
 /// The long route accepts only bytes that the current inline dispatch treats
 /// as literal. Review this gate when inline constructs or symbol boundaries change.
 fn long_literal_inline(text: &str) -> bool {
@@ -550,17 +2066,19 @@ fn long_literal_inline(text: &str) -> bool {
     }
     let bytes = text.as_bytes();
     for (index, &byte) in bytes.iter().enumerate() {
-        let previous = index.checked_sub(1).and_then(|at| bytes.get(at)).copied();
+        if byte.is_ascii_alphanumeric() || !byte.is_ascii() {
+            continue;
+        }
         let literal = match byte {
             b'\n' | b' ' | b'.' | b',' | b';' | b'?' | b'&' | b'(' | b')' => true,
             b'!' => bytes.get(index + 1) != Some(&b'='),
             b'-' => bytes.get(index + 1) != Some(&b'-'),
             b':' | b'#' | b'@' => {
-                previous.is_some_and(|prev| prev.is_ascii_alphanumeric() || prev == b'_')
+                index > 0 && (bytes[index - 1].is_ascii_alphanumeric() || bytes[index - 1] == b'_')
             }
             b'\\' | b'%' | b'`' | b'$' | b'{' | b'}' | b'[' | b']' | b'<' | b'>' | b'/' | b'*'
             | b'_' | b'~' | b'=' | b'^' | b'+' | b'\'' | b'"' => false,
-            _ => byte.is_ascii_alphanumeric() || !byte.is_ascii(),
+            _ => false,
         };
         if !literal {
             return false;
@@ -574,13 +2092,82 @@ fn long_literal_inline(text: &str) -> bool {
 
 #[cfg(test)]
 mod inline_lexer_tests {
-    use super::long_literal_inline;
+    use super::{leading_double_star_literal_inline, long_literal_inline, parse_event_inlines};
+    use crate::parse::parse_inline_with_options;
+    use crate::Options;
+
+    #[test]
+    fn leading_double_star_gate_matches_general_scanner() {
+        let options = Options::default();
+        for first in [
+            "**a**",
+            "**a b**",
+            "**éclair**",
+            "**a*b**",
+            "**a***",
+            "***a***",
+        ] {
+            for tail in [
+                "",
+                " and more.",
+                " and **other**.",
+                "\n: A definition follows.",
+                "\nMore text.",
+                " (c)",
+                " ...",
+                " `code`",
+                " [link](url)",
+                " -- dash",
+            ] {
+                let text = format!("{first}{tail}");
+                if leading_double_star_literal_inline(&text) {
+                    assert_eq!(
+                        parse_event_inlines(&text, &options),
+                        parse_inline_with_options(&text, &options),
+                        "{text:?}"
+                    );
+                }
+            }
+        }
+        assert!(leading_double_star_literal_inline(
+            "**Core syntax**\n: The specification defines it."
+        ));
+        assert!(leading_double_star_literal_inline(
+            "**Tier 2** and **Tier 3**."
+        ));
+        assert!(!leading_double_star_literal_inline("***strong***"));
+        assert!(!leading_double_star_literal_inline("**label** `code`"));
+        for left in [
+            "", "a", " ", ".", "-", "!", "?", "(", ")", ": ", "\n: ", "**b**", "é",
+        ] {
+            for right in [
+                "", "a", " ", ".", "-", "!", "?", "(", ")", ": ", "\n: ", "**b**", "é",
+            ] {
+                let text = format!("**a**{left}{right}");
+                if leading_double_star_literal_inline(&text) {
+                    assert_eq!(
+                        parse_event_inlines(&text, &options),
+                        parse_inline_with_options(&text, &options),
+                        "{text:?}"
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn long_literal_gate_admits_only_safe_text() {
         assert!(!long_literal_inline(&"a".repeat(127)));
         assert!(long_literal_inline(&"a".repeat(128)));
-        for safe in ["café, 日本語", "carve#529", "foo:bar", "a@b", "a & b", "-x"] {
+        for safe in [
+            "café, 日本語",
+            "carve#529",
+            "foo:bar",
+            "a@b",
+            "a & b",
+            "-x",
+            "x!",
+        ] {
             assert!(
                 long_literal_inline(&format!("{} {safe}", "a".repeat(128))),
                 "{safe}"
@@ -595,11 +2182,21 @@ mod inline_lexer_tests {
             "...",
             "(c)",
             "*strong*",
+            "\t",
+            "\r",
+            "|",
+            "é:x",
         ] {
             assert!(
                 !long_literal_inline(&format!("{} {syntax}", "a".repeat(128))),
                 "{syntax}"
             );
+        }
+        for marker in ["#tag", ":symbol:", "@mention"] {
+            assert!(!long_literal_inline(&format!(
+                "{marker} {}",
+                "a".repeat(128)
+            )));
         }
     }
 }
@@ -610,7 +2207,107 @@ enum SimpleListKind {
     Ordered,
 }
 
+#[cold]
+#[inline(never)]
+fn parse_simple_definition_list(
+    lines: &[&str],
+    start: usize,
+    options: &Options<'_>,
+) -> Option<(DefinitionList, usize)> {
+    if start != 0 {
+        return None;
+    }
+    parse_simple_definition_list_prefix(lines, start, options, true)
+}
+
+#[cold]
+#[inline(never)]
+fn parse_simple_definition_list_prefix(
+    lines: &[&str],
+    start: usize,
+    options: &Options<'_>,
+    require_end: bool,
+) -> Option<(DefinitionList, usize)> {
+    if options.positions || options.source_lines || !options.extensions.is_empty() {
+        return None;
+    }
+    let mut pos = start;
+    let mut entries = Vec::new();
+    while let Some(line) = lines.get(pos) {
+        let term = trim_ascii_end(trim_ascii_start(line.strip_prefix(":: ")?));
+        if !term.as_bytes().first().is_some_and(u8::is_ascii_alphabetic) {
+            return None;
+        }
+        pos += 1;
+        let def = trim_ascii_end(trim_ascii_start(lines.get(pos)?.strip_prefix(":  ")?));
+        if !def.as_bytes().first().is_some_and(u8::is_ascii_alphabetic) || is_list_marker(def) {
+            return None;
+        }
+        pos += 1;
+        entries.push((term, def));
+        if !lines.get(pos).is_some_and(|line| line.starts_with(":: ")) {
+            break;
+        }
+    }
+    if entries.is_empty()
+        || (require_end && lines[pos..].iter().any(|line| !is_blank_line(line)))
+        || (!require_end && lines.get(pos).is_some_and(|line| !is_blank_line(line)))
+        || (!require_end
+            && lines[pos..]
+                .iter()
+                .find(|line| !is_blank_line(line))
+                .is_some_and(|line| line.starts_with([' ', '\t', ':'])))
+    {
+        return None;
+    }
+    let items = entries
+        .into_iter()
+        .map(|(term, def)| DefinitionItem {
+            terms: vec![DefinitionTerm {
+                attrs: None,
+                children: parse_event_inlines(term, options),
+                pos: None,
+            }],
+            definitions: vec![DefinitionDef {
+                attrs: None,
+                children: vec![BlockNode::Paragraph(Paragraph {
+                    attrs: None,
+                    children: parse_event_inlines(def, options),
+                    at_content_column: true,
+                    block_image: false,
+                    pos: None,
+                })],
+                pos: None,
+            }],
+            pos: None,
+        })
+        .collect();
+    Some((
+        DefinitionList {
+            attrs: None,
+            items,
+            loose: false,
+            pos: None,
+        },
+        pos,
+    ))
+}
+
 fn simple_list_marker(line: &str) -> Option<(SimpleListKind, usize, &str)> {
+    let (kind, ordinal, content) = strict_list_marker(line)?;
+    simple_list_content(content).then_some((kind, ordinal, content))
+}
+
+fn simple_list_content(content: &str) -> bool {
+    !(content.starts_with('[')
+        || is_list_marker(content)
+        || detect_heading(content).is_some()
+        || detect_fence_open(content).is_some()
+        || thematic_break_marker(content).is_some()
+        || !may_start_plain_paragraph(content))
+}
+
+fn strict_list_marker(line: &str) -> Option<(SimpleListKind, usize, &str)> {
     let bytes = line.as_bytes();
     let (kind, ordinal, marker_width) = match bytes {
         [b'-' | b'*', b' ', b' ', ..] => return None,
@@ -625,17 +2322,66 @@ fn simple_list_marker(line: &str) -> Option<(SimpleListKind, usize, &str)> {
         _ => return None,
     };
     let content = trim_ascii_end(&line[marker_width..]);
-    if content.is_empty()
-        || content.starts_with('[')
-        || is_list_marker(content)
-        || detect_heading(content).is_some()
-        || detect_fence_open(content).is_some()
-        || thematic_break_marker(content).is_some()
-        || !may_start_plain_paragraph(content)
-    {
+    if content.is_empty() {
         return None;
     }
     Some((kind, ordinal, content))
+}
+
+fn unified_list_marker(line: &str) -> Option<(SimpleListKind, usize, &str)> {
+    let marker = strict_list_marker(line)?;
+    if simple_list_content(marker.2) {
+        return Some(marker);
+    }
+    let mut content = marker.2;
+    let mut nested = false;
+    while let Some((kind, ordinal, inner)) = strict_list_marker(content) {
+        if kind == SimpleListKind::Ordered && ordinal != 1 {
+            return None;
+        }
+        nested = true;
+        content = inner;
+    }
+    (nested && simple_list_content(content)).then_some(marker)
+}
+
+fn list_continuation_decision(
+    line_map: Option<&[Option<usize>]>,
+    pos: usize,
+) -> Option<continuation_marker::Decision> {
+    line_map
+        .and_then(|map| map.get(pos).copied().flatten())
+        .and_then(continuation_marker::decision)
+}
+
+fn plus_first_block_marker(
+    line: &str,
+    decision: Option<continuation_marker::Decision>,
+) -> Option<(SimpleListKind, usize, &str)> {
+    let decision = decision?;
+    if decision.owner != Some(continuation_marker::Kind::List)
+        || decision.refusal.is_some()
+        || !decision.first_block
+    {
+        return None;
+    }
+    let first = strict_list_marker(line)?;
+    let mut content = first.2;
+    while let Some((kind, ordinal, inner)) = strict_list_marker(content) {
+        if kind == SimpleListKind::Ordered && ordinal != 1 {
+            return None;
+        }
+        content = inner;
+    }
+    is_plus_marker(content).then_some(first)
+}
+
+fn owned_list_first_block(decision: Option<continuation_marker::Decision>) -> bool {
+    decision.is_some_and(|decision| {
+        decision.owner == Some(continuation_marker::Kind::List)
+            && decision.refusal.is_none()
+            && decision.first_block
+    })
 }
 
 fn parse_simple_list(lines: &[&str], start: usize, options: &Options<'_>) -> Option<(List, usize)> {
@@ -648,7 +2394,7 @@ fn parse_simple_list(lines: &[&str], start: usize, options: &Options<'_>) -> Opt
     } else {
         2
     };
-    let mut items = Vec::new();
+    let mut pending_items = Vec::new();
     let mut pos = start;
     while let Some((item_kind, ordinal, content)) =
         lines.get(pos).and_then(|line| simple_list_marker(line))
@@ -656,7 +2402,7 @@ fn parse_simple_list(lines: &[&str], start: usize, options: &Options<'_>) -> Opt
         if item_kind != kind {
             break;
         }
-        if kind == SimpleListKind::Ordered && ordinal != items.len() + 1 {
+        if kind == SimpleListKind::Ordered && ordinal != pending_items.len() + 1 {
             return None;
         }
         let mut item_lines = vec![content];
@@ -682,26 +2428,16 @@ fn parse_simple_list(lines: &[&str], start: usize, options: &Options<'_>) -> Opt
                 return None;
             }
         }
-        let joined = item_lines.join("\n");
-        items.push(ListItem {
-            attrs: None,
-            checked: None,
-            task_state: None,
-            children: vec![BlockNode::Paragraph(Paragraph {
-                attrs: None,
-                children: parse_event_inlines(&joined, options),
-                at_content_column: true,
-                block_image: false,
-                pos: None,
-            })],
-            pos: None,
-        });
+        pending_items.push(item_lines);
         if lines.get(pos).is_some_and(|line| is_blank_line(line)) {
             let mut next = pos;
             while lines.get(next).is_some_and(|line| is_blank_line(line)) {
                 next += 1;
             }
-            if lines.get(next).is_some_and(|line| is_list_marker(line)) {
+            if lines
+                .get(next)
+                .is_some_and(|line| is_list_marker(line) || line.starts_with([' ', '\t']))
+            {
                 return None;
             }
             break;
@@ -714,6 +2450,29 @@ fn parse_simple_list(lines: &[&str], start: usize, options: &Options<'_>) -> Opt
             break;
         }
     }
+    let items = pending_items
+        .into_iter()
+        .map(|item_lines: Vec<&str>| {
+            let inlines = if item_lines.len() == 1 {
+                parse_event_inlines(item_lines[0], options)
+            } else {
+                parse_event_inlines(&item_lines.join("\n"), options)
+            };
+            ListItem {
+                attrs: None,
+                checked: None,
+                task_state: None,
+                children: vec![BlockNode::Paragraph(Paragraph {
+                    attrs: None,
+                    children: inlines,
+                    at_content_column: true,
+                    block_image: false,
+                    pos: None,
+                })],
+                pos: None,
+            }
+        })
+        .collect();
     Some((
         List {
             attrs: None,
@@ -734,208 +2493,6 @@ fn parse_simple_list(lines: &[&str], start: usize, options: &Options<'_>) -> Opt
     ))
 }
 
-/// Build the common tight parent-and-child shape without collecting item bodies
-/// for the general list reader. Accept up to two plain parent continuation
-/// lines; a blank or a more complex continuation stays with that reader.
-#[inline(never)]
-fn parse_two_level_simple_list(
-    lines: &[&str],
-    start: usize,
-    options: &Options<'_>,
-) -> Option<(List, usize)> {
-    let (parent_kind, first_number, _) = simple_list_marker(lines.get(start)?)?;
-    if parent_kind == SimpleListKind::Ordered && first_number != 1 {
-        return None;
-    }
-    let child_prefix = if parent_kind == SimpleListKind::Ordered {
-        "   "
-    } else {
-        "  "
-    };
-    let mut probe = start + 1;
-    let mut preface_lines = 0;
-    loop {
-        let rest = lines.get(probe)?.strip_prefix(child_prefix)?;
-        if simple_list_marker(rest).is_some() {
-            break;
-        }
-        if preface_lines == 2 {
-            return None;
-        }
-        let content = trim_ascii_end(trim_ascii_start(rest));
-        if !may_continue_plain_paragraph(content)
-            || is_list_marker(content)
-            || detect_fence_open(content).is_some()
-            || thematic_break_marker(content).is_some()
-            || detect_heading(content).is_some()
-        {
-            return None;
-        }
-        probe += 1;
-        preface_lines += 1;
-    }
-    let mut parent_items = Vec::new();
-    let mut pos = start;
-    let mut has_child = false;
-    while let Some((kind, ordinal, first_content)) =
-        lines.get(pos).and_then(|line| simple_list_marker(line))
-    {
-        if kind != parent_kind {
-            return None;
-        }
-        if parent_kind == SimpleListKind::Ordered && ordinal != parent_items.len() + 1 {
-            return None;
-        }
-        pos += 1;
-        let has_continuation = lines
-            .get(pos)
-            .and_then(|line| line.strip_prefix(child_prefix))
-            .is_some_and(|rest| simple_list_marker(rest).is_none());
-        let inlines = if has_continuation {
-            let mut item_lines = vec![first_content];
-            while let Some(rest) = lines
-                .get(pos)
-                .and_then(|line| line.strip_prefix(child_prefix))
-            {
-                if simple_list_marker(rest).is_some() {
-                    break;
-                }
-                if item_lines.len() == 3 {
-                    return None;
-                }
-                let content = trim_ascii_end(trim_ascii_start(rest));
-                if !may_continue_plain_paragraph(content)
-                    || is_list_marker(content)
-                    || detect_fence_open(content).is_some()
-                    || thematic_break_marker(content).is_some()
-                    || detect_heading(content).is_some()
-                {
-                    return None;
-                }
-                item_lines.push(content);
-                pos += 1;
-            }
-            parse_event_inlines(&item_lines.join("\n"), options)
-        } else {
-            parse_event_inlines(first_content, options)
-        };
-        let mut children = vec![BlockNode::Paragraph(Paragraph {
-            attrs: None,
-            children: inlines,
-            at_content_column: true,
-            block_image: false,
-            pos: None,
-        })];
-        if let Some(line) = lines.get(pos) {
-            if let Some(rest) = line.strip_prefix(child_prefix) {
-                if let Some((child_kind, first_child_number, _)) = simple_list_marker(rest) {
-                    if child_kind == SimpleListKind::Ordered && first_child_number != 1 {
-                        return None;
-                    }
-                    let mut child_items = Vec::new();
-                    while let Some(rest) = lines
-                        .get(pos)
-                        .and_then(|line| line.strip_prefix(child_prefix))
-                    {
-                        let Some((kind, ordinal, content)) = simple_list_marker(rest) else {
-                            break;
-                        };
-                        if kind != child_kind
-                            || child_kind == SimpleListKind::Ordered
-                                && ordinal != child_items.len() + 1
-                        {
-                            return None;
-                        }
-                        child_items.push(ListItem {
-                            attrs: None,
-                            checked: None,
-                            task_state: None,
-                            children: vec![BlockNode::Paragraph(Paragraph {
-                                attrs: None,
-                                children: parse_event_inlines(content, options),
-                                at_content_column: true,
-                                block_image: false,
-                                pos: None,
-                            })],
-                            pos: None,
-                        });
-                        pos += 1;
-                    }
-                    children.push(BlockNode::List(List {
-                        attrs: None,
-                        ordered: child_kind == SimpleListKind::Ordered,
-                        start: None,
-                        ol_type: None,
-                        bare_marker: false,
-                        delim: None,
-                        bullet_char: match child_kind {
-                            SimpleListKind::Bullet(b'*') => Some('*'),
-                            _ => None,
-                        },
-                        tight: true,
-                        items: child_items,
-                        pos: None,
-                    }));
-                    has_child = true;
-                }
-            }
-        }
-        parent_items.push(ListItem {
-            attrs: None,
-            checked: None,
-            task_state: None,
-            children,
-            pos: None,
-        });
-        match lines.get(pos) {
-            None => break,
-            Some(line) if is_blank_line(line) => break,
-            Some(line) if simple_list_marker(line).is_some() => continue,
-            _ => return None,
-        }
-    }
-    if !has_child {
-        return None;
-    }
-    if lines.get(pos).is_some_and(|line| is_blank_line(line)) {
-        let mut after = pos;
-        while lines.get(after).is_some_and(|line| is_blank_line(line)) {
-            after += 1;
-        }
-        if lines
-            .get(after)
-            .is_some_and(|line| line.starts_with([' ', '\t']))
-        {
-            return None;
-        }
-    }
-    Some((
-        List {
-            attrs: None,
-            ordered: parent_kind == SimpleListKind::Ordered,
-            start: None,
-            ol_type: None,
-            bare_marker: false,
-            delim: None,
-            bullet_char: match parent_kind {
-                SimpleListKind::Bullet(b'*') => Some('*'),
-                _ => None,
-            },
-            tight: true,
-            items: parent_items,
-            pos: None,
-        },
-        pos,
-    ))
-}
-
-struct DeepListFrame {
-    list: List,
-    kind: SimpleListKind,
-    indent: usize,
-    content_indent: usize,
-}
-
 fn deep_list_node(kind: SimpleListKind) -> List {
     List {
         attrs: None,
@@ -954,120 +2511,55 @@ fn deep_list_node(kind: SimpleListKind) -> List {
     }
 }
 
-/// Own plain marker lines with a stack. More complex item bodies still use the
-/// general list reader until the common owner loop can handle them.
-#[inline(never)]
-fn parse_deep_simple_list(
-    lines: &[&str],
-    start: usize,
-    options: &Options<'_>,
-) -> Option<(List, usize)> {
-    let mut frames: Vec<DeepListFrame> = Vec::new();
-    let mut pos = start;
-    let mut deepest = 0;
-    while let Some(&line) = lines.get(pos) {
-        if is_blank_line(line) {
-            let mut after = pos;
-            while lines.get(after).is_some_and(|line| is_blank_line(line)) {
-                after += 1;
-            }
-            if lines.get(after).is_some_and(|line| is_list_marker(line)) {
-                return None;
-            }
-            break;
-        }
-        let indent = line.bytes().take_while(|byte| *byte == b' ').count();
-        let body = &line[indent..];
-        let (kind, ordinal, content) = simple_list_marker(body)?;
-        while frames.len() > 1 && indent < frames.last()?.indent {
-            let child = frames.pop()?.list;
-            frames
-                .last_mut()?
-                .list
-                .items
-                .last_mut()?
-                .children
-                .push(BlockNode::List(child));
-        }
-        if frames.is_empty() {
-            if indent != 0 || kind == SimpleListKind::Ordered && ordinal != 1 {
-                return None;
-            }
-            frames.push(DeepListFrame {
-                list: deep_list_node(kind),
-                kind,
-                indent,
-                content_indent: if kind == SimpleListKind::Ordered {
-                    3
-                } else {
-                    2
-                },
-            });
-        } else if indent == frames.last()?.content_indent {
-            if kind == SimpleListKind::Ordered && ordinal != 1 {
-                return None;
-            }
-            frames.push(DeepListFrame {
-                list: deep_list_node(kind),
-                kind,
-                indent,
-                content_indent: indent
-                    + if kind == SimpleListKind::Ordered {
-                        3
-                    } else {
-                        2
-                    },
-            });
-        } else if indent != frames.last()?.indent {
-            return None;
-        }
-        deepest = deepest.max(frames.len());
-        if frames.len() >= MAX_NESTING_DEPTH {
-            return None;
-        }
-        let frame = frames.last_mut()?;
-        if frame.kind != kind
-            || kind == SimpleListKind::Ordered && ordinal != frame.list.items.len() + 1
+/// Match only the characters normalized by the event route.
+fn needs_event_normalization(source: &str) -> bool {
+    let bytes = source.as_bytes();
+    if memchr::memchr2(b'\r', b'\0', bytes).is_some() {
+        return true;
+    }
+    let mut start = 0;
+    while let Some(offset) = memchr::memchr2(0xee, 0xef, &bytes[start..]) {
+        let at = start + offset;
+        if bytes[at..].starts_with(b"\xef\xbb\xbf")
+            || bytes[at..].starts_with(b"\xee\x80\x85")
+            || bytes[at..].starts_with(b"\xee\x80\x86")
         {
-            return None;
+            return true;
         }
-        frame.list.items.push(ListItem {
-            attrs: None,
-            checked: None,
-            task_state: None,
-            children: vec![BlockNode::Paragraph(Paragraph {
-                attrs: None,
-                children: parse_event_inlines(content, options),
-                at_content_column: true,
-                block_image: false,
-                pos: None,
-            })],
-            pos: None,
-        });
-        pos += 1;
+        start = at + 1;
     }
-    if deepest < 3 {
-        return None;
-    }
-    while frames.len() > 1 {
-        let child = frames.pop()?.list;
-        frames
-            .last_mut()?
-            .list
-            .items
-            .last_mut()?
-            .children
-            .push(BlockNode::List(child));
-    }
-    Some((frames.pop()?.list, pos))
+    false
 }
 
-/// The admission gate excludes syntax that needs definition lifting, positions,
-/// or an unsupported container. Normalize line endings, BOM and NUL only when
-/// the existing special-character gate finds one of them.
+fn has_fence_candidate_without_final_newline(source: &str) -> bool {
+    if source.ends_with('\n') || !source.contains(['`', '~']) {
+        return false;
+    }
+    if source.contains("[^") && (source.contains("```") || source.contains("~~~")) {
+        return true;
+    }
+    source.lines().any(|line| {
+        let mut content = trim_ascii_start(line);
+        loop {
+            if detect_fence_open(content).is_some() {
+                return true;
+            }
+            if let Some(body) = strip_blockquote_prefix(content) {
+                content = trim_ascii_start(body);
+            } else if let Some(marker) = detect_list_marker_full(content) {
+                content = trim_ascii_start(marker.content);
+            } else {
+                return false;
+            }
+        }
+    })
+}
+
+/// The experimental route keeps unsupported source and option shapes on the
+/// standard parser until their direct construction matches its public output.
 pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     let source_len = source.len();
-    let normalized = if source.contains(['\r', '\0', '\u{feff}', '\u{e005}', '\u{e006}']) {
+    let normalized = if needs_event_normalization(source) {
         if source.contains(['\u{e005}', '\u{e006}']) {
             return None;
         }
@@ -1076,71 +2568,101 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         None
     };
     let source = normalized.as_deref().unwrap_or(source);
-    if source.contains("[^")
-        || source.contains("*[")
-        || (!source.ends_with('\n')
-            && source.lines().any(|line| {
-                detect_fence_open(line).is_some()
-                    || strip_blockquote_prefix(line)
-                        .is_some_and(|body| detect_fence_open(body).is_some())
-            }))
-    {
+    let may_have_link_defs = source.contains("]:");
+    let may_have_abbrevs = source.contains("*[");
+    if source.contains("[^") {
+        return parse_document_with_footnotes(source, source_len);
+    }
+    if has_fence_candidate_without_final_newline(source) {
         return None;
     }
     let options = Options::default();
+    let _placeholders = PlaceholderGuard::install(pick_definition_placeholders(source));
     let _continuation_markers = continuation_marker::Guard::install(source);
-    let _source_ending = SourceEndingGuard::install(source);
+    let _source_ending = if !options.positions && source.ends_with('\n') {
+        SourceEndingGuard::fragment()
+    } else {
+        SourceEndingGuard::install(source)
+    };
     let (frontmatter, frontmatter_raw, body) = split_frontmatter(source, false);
-    let mut lines: Vec<&str> = body.lines().collect();
+    let (stripped_body, link_defs) = if may_have_link_defs {
+        let mut budget = probe_budget_for(body.len());
+        extract_link_defs_guarded(body, &options, &mut budget)
+    } else {
+        (String::new(), BTreeMap::new())
+    };
+    let has_link_defs = !link_defs.is_empty();
+    let body_source = if has_link_defs {
+        stripped_body.as_str()
+    } else {
+        body
+    };
     let body_start_line = source[..body.as_ptr() as usize - source.as_ptr() as usize]
         .bytes()
         .filter(|byte| *byte == b'\n')
         .count()
         + 1;
-    let root_line_map: Option<Vec<Option<usize>>> = body.contains('+').then(|| {
-        (body_start_line..body_start_line + lines.len())
+    let root_line_map: Option<Vec<Option<usize>>> = continuation_marker::active().then(|| {
+        (body_start_line..body_start_line + body_source.lines().count())
             .map(Some)
             .collect()
     });
-    let mut link_defs = BTreeMap::new();
-    if body.contains("]:") {
-        let (defs, definition_lines) = super::layout::layout_link_defs(&lines)?;
-        if lines.iter().enumerate().any(|(index, line)| {
-            line.contains("]:") && definition_lines.binary_search(&index).is_err()
-        }) {
-            return None;
-        }
-        let body_start_line = source[..body.as_ptr() as usize - source.as_ptr() as usize]
-            .bytes()
-            .filter(|byte| *byte == b'\n')
-            .count();
-        link_defs = defs;
-        for index in definition_lines {
-            if let Some((label, _, _)) = parse_link_def_line_with_value(lines[index]) {
-                if let Some(def) = link_defs.get_mut(&label_key(label)) {
-                    def.line = Some(body_start_line + index);
-                }
-            }
-            lines[index] = "";
-        }
-    }
-    let direct = {
+    let (direct, link_defs, needs_late_resolution) = {
         let _depth = DepthGuard::enter()?;
-        if link_defs.is_empty() {
-            parse_blocks(&lines, &options)
-                .or_else(|| parse_mixed_blocks_mapped(&lines, &options, root_line_map.as_deref()))
+        let lines: Vec<&str> = body_source.lines().collect();
+        if has_link_defs {
+            with_active_link_defs(link_defs, || {
+                parse_blocks(&lines, &options).or_else(|| {
+                    if may_have_abbrevs {
+                        parse_mixed_blocks_mapped::<true, true>(
+                            &lines,
+                            &options,
+                            root_line_map.as_deref(),
+                            true,
+                        )
+                    } else {
+                        parse_mixed_blocks_mapped::<true, false>(
+                            &lines,
+                            &options,
+                            root_line_map.as_deref(),
+                            true,
+                        )
+                    }
+                })
+            })
         } else {
-            let (blocks, resolved_defs, _) =
-                with_active_link_defs(std::mem::take(&mut link_defs), || {
-                    parse_blocks(&lines, &options).or_else(|| {
-                        parse_mixed_blocks_mapped(&lines, &options, root_line_map.as_deref())
-                    })
-                });
-            link_defs = resolved_defs;
-            blocks
+            (
+                parse_blocks(&lines, &options).or_else(|| {
+                    if lines
+                        .first()
+                        .is_some_and(|line| is_definition_list_start(line))
+                    {
+                        if let Some((list, _)) = parse_simple_definition_list(&lines, 0, &options) {
+                            return Some(vec![BlockNode::DefinitionList(list)]);
+                        }
+                    }
+                    if may_have_abbrevs {
+                        parse_mixed_blocks_mapped::<false, true>(
+                            &lines,
+                            &options,
+                            root_line_map.as_deref(),
+                            true,
+                        )
+                    } else {
+                        parse_mixed_blocks_mapped::<false, false>(
+                            &lines,
+                            &options,
+                            root_line_map.as_deref(),
+                            true,
+                        )
+                    }
+                }),
+                link_defs,
+                false,
+            )
         }
     };
-    if !link_defs.is_empty() && direct.is_none() {
+    if has_link_defs && direct.is_none() {
         return None;
     }
     let used_event_route = direct.is_some();
@@ -1180,12 +2702,119 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         source_len,
         ingest_payload_len: 0,
     };
-    if !link_defs.is_empty() || source.contains("][") {
+    if needs_late_resolution || source.contains("][") {
         let headings = heading_reference_index_for_document(&doc, options.heading_id_options());
         resolve_reference_links(&mut doc, &link_defs, &headings);
     }
-    if !link_defs.is_empty() {
-        append_link_reference_definitions(&mut doc, &link_defs, source, None);
+    append_link_reference_definitions(&mut doc, &link_defs, source, None);
+    if may_have_abbrevs {
+        apply_abbreviations(&mut doc);
+    }
+    if source.contains('^') {
+        number_crossref_captions(&mut doc);
+    }
+    let crossref_index = if source.contains("</#") {
+        let (index, ids) =
+            crossref_index_and_heading_ids_for_document(&doc, options.heading_id_options());
+        stamp_generated_heading_ids_from(&mut doc, ids);
+        Some(index)
+    } else {
+        stamp_generated_heading_ids(&mut doc, options.heading_id_options());
+        None
+    };
+    let _ = crate::render::collect_footnotes(&mut doc, false);
+    if source.contains("![") {
+        promote_block_images(&mut doc.children, false, true);
+    }
+    coalesce_text_runs(&mut doc);
+    if let Some(index) = crossref_index {
+        fill_crossref_hrefs_from_index(&mut doc, index);
+    }
+    Some((doc, used_event_route))
+}
+
+fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Document, bool)> {
+    let may_have_abbrevs = source.contains("*[");
+    if needs_event_normalization(source) || has_fence_candidate_without_final_newline(source) {
+        return None;
+    }
+    if source.lines().any(|line| {
+        line.contains("]:")
+            && !trim_ascii_start(line).starts_with("[^")
+            && detect_abbreviation_def(line).is_none()
+    }) {
+        return None;
+    }
+    let options = Options::default();
+    let _placeholders = PlaceholderGuard::install(pick_definition_placeholders(source));
+    let _continuation_markers = continuation_marker::Guard::install(source);
+    let _source_ending = if !options.positions && source.ends_with('\n') {
+        SourceEndingGuard::fragment()
+    } else {
+        SourceEndingGuard::install(source)
+    };
+    let (frontmatter, frontmatter_raw, body) = split_frontmatter(source, false);
+    let body_start_line = source[..body.as_ptr() as usize - source.as_ptr() as usize]
+        .bytes()
+        .filter(|byte| *byte == b'\n')
+        .count()
+        + 1;
+    let (mapped, footnote_sources, footnote_def_pos, note_links) =
+        extract_footnote_defs(body, body_start_line, false, false, None, &options);
+    if mapped
+        .source
+        .lines()
+        .any(|line| line.starts_with([' ', '\t']) && is_definition_placeholder(line))
+        || mapped
+            .source
+            .lines()
+            .any(|line| line.contains("]:") && detect_abbreviation_def(line).is_none())
+        || !note_links.is_empty()
+        || footnote_sources
+            .values()
+            .any(|note| note.source.contains("[^") || note.source.contains("*["))
+    {
+        return None;
+    }
+    let children = {
+        let _depth = DepthGuard::enter()?;
+        let lines: Vec<&str> = mapped.source.lines().collect();
+        parse_blocks(&lines, &options).or_else(|| {
+            if may_have_abbrevs {
+                parse_mixed_blocks::<true, true>(&lines, &options, true)
+            } else {
+                parse_mixed_blocks::<true, false>(&lines, &options, true)
+            }
+        })?
+    };
+    let footnote_defs = footnote_sources
+        .into_iter()
+        .map(|(label, note)| {
+            let children = if note.source.trim_end_matches([' ', '\t', '\n']) == "{empty}" {
+                Vec::new()
+            } else {
+                let lines: Vec<&str> = note.source.lines().collect();
+                parse_blocks(&lines, &options)
+                    .unwrap_or_else(|| parse_mapped_source(&note, &options))
+            };
+            (label, children)
+        })
+        .collect();
+    let mut doc = Document {
+        frontmatter,
+        frontmatter_raw,
+        footnote_defs,
+        footnote_def_pos,
+        children,
+        source_len,
+        ingest_payload_len: 0,
+    };
+    if source.contains("][") {
+        let headings = heading_reference_index_for_document(&doc, options.heading_id_options());
+        resolve_reference_links(&mut doc, &BTreeMap::new(), &headings);
+    }
+    if may_have_abbrevs {
+        apply_abbreviations(&mut doc);
     }
     if source.contains('^') {
         number_crossref_captions(&mut doc);
@@ -1194,10 +2823,44 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     let _ = crate::render::collect_footnotes(&mut doc, false);
     if source.contains("![") {
         promote_block_images(&mut doc.children, false, true);
+        for blocks in doc.footnote_defs.values_mut() {
+            promote_block_images(blocks, false, true);
+        }
     }
     coalesce_text_runs(&mut doc);
     if source.contains("</#") {
         fill_crossref_hrefs(&mut doc, options.heading_id_options());
     }
-    Some((doc, used_event_route))
+    Some((doc, true))
+}
+
+#[cfg(test)]
+mod link_definition_tests {
+    use super::*;
+
+    #[test]
+    fn nested_parse_installs_its_own_definition_placeholders() {
+        let _outer = PlaceholderGuard::install(['\u{e007}', '\u{e008}']);
+        let source = "```\n%%\u{e007}\n```\n\n[ref]: /target\n\nSee [ref][]\n";
+        let (actual, admitted) = parse_document(source).unwrap();
+        assert!(admitted);
+        let expected = parse_with_options(source, &Options::default());
+        assert_eq!(
+            crate::ast_json::to_json(&actual),
+            crate::ast_json::to_json(&expected)
+        );
+    }
+
+    #[test]
+    fn nested_parse_without_definitions_resets_placeholder_pair() {
+        let _outer = PlaceholderGuard::install(['\u{e007}', '\u{e008}']);
+        let source = "A paragraph\n\n%%\u{e007}\n";
+        let (actual, admitted) = parse_document(source).unwrap();
+        assert!(admitted);
+        let expected = parse_with_options(source, &Options::default());
+        assert_eq!(
+            crate::ast_json::to_json(&actual),
+            crate::ast_json::to_json(&expected)
+        );
+    }
 }

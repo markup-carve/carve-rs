@@ -127,7 +127,7 @@ pub(super) struct Guard(Option<Classifier>);
 
 impl Guard {
     pub(super) fn install(source: &str) -> Self {
-        if !source.contains('+') {
+        if !source.contains('+') || !may_have_standalone_plus(source) {
             return Self(CLASSIFIER.with(|slot| slot.replace(None)));
         }
         let lines: Vec<_> = source.lines().map(str::to_owned).collect();
@@ -173,6 +173,36 @@ impl Guard {
         };
         Self(CLASSIFIER.with(|slot| slot.replace(Some(classifier))))
     }
+}
+
+/// A marker's `+` is the last non-whitespace byte of its physical line.
+/// Container prefixes leave it after punctuation or whitespace, never a word byte.
+fn may_have_standalone_plus(source: &str) -> bool {
+    let bytes = source.as_bytes();
+    let mut line_start = 0;
+    while let Some(offset) = memchr::memchr(b'+', &bytes[line_start..]) {
+        let plus = line_start + offset;
+        let line_end =
+            memchr::memchr(b'\n', &bytes[plus..]).map_or(bytes.len(), |offset| plus + offset);
+        let mut end = line_end;
+        if end > line_start && bytes[end - 1] == b'\r' && line_end < bytes.len() {
+            end -= 1;
+        }
+        while end > line_start && matches!(bytes[end - 1], b' ' | b'\t') {
+            end -= 1;
+        }
+        if end > line_start && bytes[end - 1] == b'+' {
+            let at = end - 1;
+            if at == line_start || !bytes[at - 1].is_ascii_alphanumeric() {
+                return true;
+            }
+        }
+        if line_end == bytes.len() {
+            break;
+        }
+        line_start = line_end + 1;
+    }
+    false
 }
 
 impl Drop for Guard {
@@ -1253,6 +1283,82 @@ mod tests {
     use super::*;
 
     #[test]
+    fn standalone_plus_probe_matches_line_iterator() {
+        fn reference(source: &str) -> bool {
+            source.lines().any(|line| {
+                let trimmed = line.trim_end_matches([' ', '\t']);
+                trimmed.strip_suffix('+').is_some_and(|prefix| {
+                    prefix
+                        .as_bytes()
+                        .last()
+                        .map_or(true, |byte| !byte.is_ascii_alphanumeric())
+                })
+            })
+        }
+        let fragments = [
+            "", "+", "a+", "a +", "> +", "é+", "é +", "a+b+", "x\r+", "+x",
+        ];
+        let endings = ["", "\n", "\r\n", " \n", " \t\r\n", "\r"];
+        for fragment in fragments {
+            for ending in endings {
+                for prefix in ["", "plain line\n", "plain+text\r\n"] {
+                    let source = format!("{prefix}{fragment}{ending}");
+                    assert_eq!(
+                        may_have_standalone_plus(&source),
+                        reference(&source),
+                        "{source:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn prose_plus_signs_do_not_allocate_a_classifier() {
+        for source in [
+            "Block+\nNext line\n",
+            "C++ and A+B\n",
+            "A + B\n",
+            "> quoted+\n",
+        ] {
+            let _guard = Guard::install(source);
+            assert!(
+                CLASSIFIER.with(|slot| slot.borrow().is_none()),
+                "{source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn standalone_marker_gate_keeps_container_prefixes() {
+        for source in [
+            "+\n",
+            "  + \t\n",
+            "- +\n",
+            "> +\n",
+            "> > +\n",
+            "[^n]: +\n",
+            "[^n]:+\n",
+            ": +\n",
+        ] {
+            assert!(may_have_standalone_plus(source), "{source:?}");
+            let _guard = Guard::install(source);
+            assert!(
+                CLASSIFIER.with(|slot| slot.borrow().is_some()),
+                "{source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn prose_plus_before_a_refused_marker_keeps_its_decision() {
+        assert!(may_have_standalone_plus("+x +\n"));
+        assert!(!may_have_standalone_plus("a+ \t\n"));
+        let _guard = Guard::install("C++\n> - a\n>   > q\n>   +\n>   para\n");
+        assert_eq!(decision(4).unwrap().refusal, Some(Refusal::WrongColumn));
+    }
+
+    #[test]
     fn owners_and_refusals_use_physical_columns() {
         for (source, marker_line, owner, refusal) in [
             ("- a\n  - b\n  +\n  > q", 3, Kind::List, None),
@@ -1383,7 +1489,7 @@ mod tests {
 
     #[test]
     fn repeated_tight_quote_markers_have_linear_classification_work() {
-        let pattern = ["> - a", ">+", "> tail", "> > - b", "> >+", "> > end"];
+        let pattern = ["> - a", ">+", "> +", "> tail", "> > - b", "> >+", "> > end"];
         let mut previous = None;
         for count in [2_000, 8_000, 32_000] {
             let source = pattern

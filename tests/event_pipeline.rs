@@ -7,6 +7,152 @@ fn parse_standard(source: &str) -> carve::Document {
 }
 
 #[test]
+fn post_blank_list_line_returns_to_root_at_authored_column() {
+    for source in [
+        "- one\n\n > q\n",
+        "- one\n\n  > q\n",
+        "- one\n\n   # h\n",
+        "- one\n > q\n",
+    ] {
+        let (candidate, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let baseline = parse_standard(source);
+        assert_eq!(candidate, baseline, "{source:?}");
+        assert_eq!(to_json(&candidate), to_json(&baseline), "{source:?}");
+        assert_eq!(
+            render_html(&candidate),
+            render_html(&baseline),
+            "{source:?}"
+        );
+    }
+    let mut admitted_generated = 0;
+    for marker in ["-", "*", "1."] {
+        for blank in ["", "\n", "\n\n"] {
+            for indent in 0..=4 {
+                for tail in ["> q", "# h", "plain", "```"] {
+                    let source = format!("{marker} one\n{blank}{}{tail}\n", " ".repeat(indent));
+                    let (candidate, admitted) = parse_experimental_event_blocks(&source);
+                    if admitted {
+                        admitted_generated += 1;
+                        let baseline = parse_standard(&source);
+                        assert_eq!(candidate, baseline, "{source:?}");
+                        assert_eq!(to_json(&candidate), to_json(&baseline), "{source:?}");
+                        assert_eq!(
+                            render_html(&candidate),
+                            render_html(&baseline),
+                            "{source:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+    assert!(admitted_generated >= 150);
+    let tab_after_space = "- one\n\n \t> q\n";
+    let (candidate, _) = parse_experimental_event_blocks(tab_after_space);
+    let baseline = parse_standard(tab_after_space);
+    assert_eq!(candidate, baseline);
+    assert_eq!(to_json(&candidate), to_json(&baseline));
+    assert_eq!(render_html(&candidate), render_html(&baseline));
+    let repeated = (0..40)
+        .map(|index| format!("- item {index}\n\n > quote {index}\n\n"))
+        .collect::<String>();
+    let (candidate, admitted) = parse_experimental_event_blocks(&repeated);
+    assert!(admitted);
+    let baseline = parse_standard(&repeated);
+    assert_eq!(candidate, baseline);
+    assert_eq!(to_json(&candidate), to_json(&baseline));
+    assert_eq!(render_html(&candidate), render_html(&baseline));
+}
+
+#[test]
+fn indented_root_text_preserves_the_full_ast() {
+    for source in [
+        " y\n",
+        "  word\n",
+        "- one\n\n y\n",
+        ":: t\n:  definition\n\n  after\n",
+    ] {
+        let (candidate, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        assert_eq!(candidate, parse_standard(source), "{source:?}");
+    }
+    for source in [" x. x\n", " I. x\n", " iv) x\n"] {
+        let (candidate, _) = parse_experimental_event_blocks(source);
+        assert_eq!(candidate, parse_standard(source), "{source:?}");
+    }
+}
+
+#[test]
+fn nested_list_abbreviation_line_stays_in_list_item() {
+    for source in [
+        "> - a\n>\n>   a\n> *[X]: y\n>\n>   more\n",
+        "::: note\n- a\n\n  a\n*[X]: y\n\n  more\n:::\n",
+    ] {
+        let (candidate, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        assert_eq!(candidate, parse_standard(source), "{source:?}");
+    }
+}
+
+#[test]
+fn repeated_marker_line_nested_lists_match_full_ast() {
+    let source = (0..300)
+        .map(|index| {
+            format!("- - item {index}\n\n    continuation {index}\n  - sibling {index}\n\n")
+        })
+        .collect::<String>();
+    let (candidate, admitted) = parse_experimental_event_blocks(&source);
+    assert!(admitted);
+    assert_eq!(candidate, parse_standard(&source));
+}
+
+#[test]
+fn indented_root_owner_matrix_matches_full_document() {
+    let leads = [
+        "",
+        "- item\n",
+        "- item\n\n",
+        "1. item\n\n",
+        "> quote\n",
+        "> quote\n\n",
+        ":: term\n:  definition\n",
+        "%% c\n",
+        "%% c\n\n",
+        "```\nx\n```\n",
+        "::: note\npara\n:::\n",
+    ];
+    let tails = [
+        "a",
+        "y",
+        "a b",
+        "a :symbol:",
+        "a `code`",
+        "a\ncontinued",
+        "a\n  b",
+        "a. x",
+        "iv) x",
+        "P. S.",
+    ];
+    let mut admitted = 0;
+    for lead in leads {
+        for indent in 1..=5 {
+            for tail in tails {
+                for trailing in ["\n", "\n\nnext\n"] {
+                    let source = format!("{lead}{}{tail}{trailing}", " ".repeat(indent));
+                    let (candidate, used) = parse_experimental_event_blocks(&source);
+                    if used {
+                        admitted += 1;
+                        assert_eq!(candidate, parse_standard(&source), "{source:?}");
+                    }
+                }
+            }
+        }
+    }
+    assert!(admitted >= 700);
+}
+
+#[test]
 fn exact_corpus_ast_and_html() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     let mut admitted = 0usize;
@@ -21,6 +167,9 @@ fn exact_corpus_ast_and_html() {
         let (candidate, used) = parse_experimental_event_blocks(&source);
         admitted += usize::from(used);
         total += 1;
+        if used {
+            assert_eq!(candidate, baseline, "{}", path.display());
+        }
         assert_eq!(
             to_json(&candidate),
             to_json(&baseline),
@@ -37,6 +186,53 @@ fn exact_corpus_ast_and_html() {
     eprintln!("event parser admitted {admitted}/{total} corpus files");
     assert!(total > 3000, "the spec corpus must be available");
     assert!(admitted > 100, "the event route must exercise corpus files");
+}
+
+#[test]
+fn shared_crossref_index_preserves_heading_ids_and_hrefs() {
+    for source in [
+        "# Heading\n\nSee </#heading>.\n",
+        "# Heading\n\n# Heading\n\nSee </#heading> and </#heading-2>.\n",
+        "# Heading {#chosen}\n\nSee </#chosen>.\n",
+        "# Heading\n\n[x]{#heading}\n\n# Heading\n\nSee </#heading-2>.\n",
+        "[x]{#heading}\n\n# Heading\n\nSee </#heading-2>.\n",
+        "[x]{#intro}\n\n# intro\n\nSee </#intro>.\n",
+        "{#intro}\n> q\n\n# intro\n\nSee </#intro>.\n",
+        "{#intro}\n```\ncode\n```\n\n# intro\n\nSee </#intro>.\n",
+        "{#intro}\n- item\n\n# intro\n\nSee </#intro>.\n",
+        "{#intro}\n***\n\n# intro\n\nSee </#intro>.\n",
+        "{#intro}\n![Alt](image.png)\n\n# intro\n\nSee </#intro>.\n",
+        "> # Quoted\n\nSee </#quoted>.\n",
+        "{#fig-sun}\n![A sunset](sun.jpg)\n^ Figure #: A *bold* -- sunset\n\nSee </#fig-sun>.\n",
+    ] {
+        let (candidate, used) = parse_experimental_event_blocks(source);
+        assert!(used, "{source:?}");
+        let baseline = parse_standard(source);
+        assert_eq!(candidate, baseline, "{source:?}");
+        assert_eq!(
+            render_html(&candidate),
+            render_html(&baseline),
+            "{source:?}"
+        );
+    }
+    for title in [
+        "A *bold* label",
+        "A `code` label",
+        "A [link](https://example.org) label",
+        "A \\*literal\\* label",
+        "A -- dash label",
+    ] {
+        let source = format!("# {title} {{#target}}\n\nSee </#target>.\n");
+        let (candidate, used) = parse_experimental_event_blocks(&source);
+        assert!(used, "{source:?}");
+        let baseline = parse_standard(&source);
+        assert_eq!(candidate, baseline, "{source:?}");
+        assert_eq!(
+            render_html(&candidate),
+            render_html(&baseline),
+            "{source:?}"
+        );
+    }
 }
 
 #[test]
@@ -62,11 +258,351 @@ fn hash_prose_does_not_turn_a_list_heading_into_a_paragraph() {
     for heading_in_item in [
         "- # In an item\n\nSee [In an item][].\n",
         "- ## In an item\n\nSee [In an item][].\n",
+        "> - a\n>\n>   ### b ###\n",
     ] {
-        let (actual, _) = parse_experimental_event_blocks(heading_in_item);
+        let (actual, admitted) = parse_experimental_event_blocks(heading_in_item);
+        assert!(admitted, "{heading_in_item:?}");
         let expected = parse_standard(heading_in_item);
         assert_eq!(to_json(&actual), to_json(&expected));
         assert_eq!(render_html(&actual), render_html(&expected));
+    }
+}
+
+#[test]
+fn headings_inside_list_frames_match_public_output() {
+    let source = (0..120)
+        .map(|index| format!("- item {index}\n  # Heading {index}\n"))
+        .collect::<String>();
+    let (actual, admitted) = parse_experimental_event_blocks(&source);
+    assert!(admitted);
+    let expected = parse_standard(&source);
+    assert_eq!(to_json(&actual), to_json(&expected));
+    assert_eq!(render_html(&actual), render_html(&expected));
+}
+
+#[test]
+fn root_block_images_and_captions_use_event_route() {
+    for source in [
+        "![Apollo 11](apollo.jpg)\n",
+        "![Apollo 11](apollo.jpg)",
+        "![Apollo 11](apollo.jpg)\n^ Figure 1: First moon landing\n",
+        "![Apollo 11](apollo.jpg)\n^ Figure 1: First moon landing",
+        "![Apollo 11](apollo.jpg){.hero}\n^ Figure 1: First moon landing\n",
+        "{.gallery}\n![Apollo 11](apollo.jpg)\n^ Figure 1: First moon landing\n",
+        "![Apollo 11](apollo.jpg)\n\n^ Figure 1: First moon landing\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+
+    for image in [
+        "![alt](/image.png)",
+        "![alt](/image.png){.hero}",
+        "![alt][ref]",
+        "![alt](/image.png) trailing",
+    ] {
+        for gap in ["\n", "\n\n", "\n\n\n"] {
+            for caption in [
+                "^ cap\n",
+                "^ Figure #: cap\n",
+                "^ cap\ncontinued\n",
+                "^ cap\n- list\n",
+                "^ cap\n> quote\n",
+            ] {
+                let source = format!("{image}{gap}{caption}");
+                let (actual, _) = parse_experimental_event_blocks(&source);
+                let expected = parse_standard(&source);
+                assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+                assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+            }
+        }
+    }
+    for source in ["![alt][ref]\n^ cap\n", "![alt](/image.png)\n\n\n^ cap\n"] {
+        let (_, admitted) = parse_experimental_event_blocks(source);
+        assert!(!admitted, "{source:?}");
+    }
+}
+
+#[test]
+fn root_comments_use_event_route() {
+    for source in [
+        "%% line comment\n",
+        "%% line comment",
+        "%%%\nfenced comment\n%%%\n",
+        "%%%\nfenced comment\n%%%",
+        "%%% opening text\nbody\n%%%\n",
+        "%% comment\n\nAfterward.\n",
+        "{.lead}\n%% comment\n\nAfterward.\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+    for source in [
+        "%%%\nno closer\n",
+        "Paragraph.\n%% comment\n",
+        "%% comment\n- item\n",
+        "  %% indented\n",
+        "%% comment\n![alt](image.png)\n",
+    ] {
+        let (actual, _) = parse_experimental_event_blocks(source);
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+    let (_, admitted) = parse_experimental_event_blocks("Paragraph.\n%% comment\n");
+    assert!(!admitted);
+}
+
+#[test]
+fn long_fenced_list_matches_public_ast_and_html() {
+    let mut source = String::new();
+    for index in 0..300 {
+        source.push_str(&format!(
+            "- item {index}\n  ```rs\n  let x = {index};\n  ```\n"
+        ));
+    }
+    let (actual, admitted) = parse_experimental_event_blocks(&source);
+    assert!(admitted);
+    let expected = parse_standard(&source);
+    assert_eq!(to_json(&actual), to_json(&expected));
+    assert_eq!(render_html(&actual), render_html(&expected));
+}
+
+#[test]
+fn unified_list_owner_keeps_loose_and_nested_boundaries() {
+    for source in [
+        "- first\n\n  second paragraph\n",
+        "- first\n\n  second paragraph\n\n- next\n",
+        "1. first\n\n   second paragraph\n\n2. next\n",
+        "- first\n\n  - nested\n- next\n",
+        "- first\n\n  second paragraph\n\nRoot paragraph\n",
+        "- a\n  - nested\n\n- b\n",
+        "1. a\n   - nested\n\n2. b\n",
+        "- a\n  - nested\n\nRoot paragraph\n",
+        "- a\n  - nested\n\n\nRoot paragraph\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
+fn unified_list_owner_builds_fully_marked_quotes() {
+    for source in [
+        "- one\n  > q\n",
+        "- one\n\n  > q\n",
+        "- one\n\n  >\t\n",
+        "- one\n  > q\n  > r\n- next\n",
+        "- one\n  > ```\n  > code\n  > ```\n",
+        "- one\n  > ```\n  > code  \n  > ```\n",
+        "- one\n  > - nested\n",
+        "1. one\n   > q\n2. next\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
+fn list_quotes_keep_the_standard_nesting_cutoff() {
+    std::thread::Builder::new()
+        .stack_size(64 * 1024 * 1024)
+        .spawn(|| {
+            let mut failures = Vec::new();
+            for depth in [180, 185, 190, 194, 195, 196, 197, 198, 199, 200, 205, 210] {
+                for last in ["q", "- a"] {
+                    let source = format!("- one\n  {}{last}\n", "> ".repeat(depth));
+                    let (actual, used) = parse_experimental_event_blocks(&source);
+                    let expected = parse_standard(&source);
+                    if to_json(&actual) != to_json(&expected)
+                        || render_html(&actual) != render_html(&expected)
+                    {
+                        failures.push((depth, last, used));
+                    }
+                }
+            }
+            for depth in [180, 198, 205] {
+                for source in [
+                    format!("- outer\n  - inner\n    {}q\n", "> ".repeat(depth)),
+                    format!("> - one\n>   {}q\n", "> ".repeat(depth)),
+                ] {
+                    let (actual, used) = parse_experimental_event_blocks(&source);
+                    let expected = parse_standard(&source);
+                    if to_json(&actual) != to_json(&expected)
+                        || render_html(&actual) != render_html(&expected)
+                    {
+                        failures.push((depth, "nested", used));
+                    }
+                }
+            }
+            assert!(failures.is_empty(), "{failures:?}");
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+#[test]
+fn marked_quotes_with_fences_keep_exact_output() {
+    for source in [
+        "> ```\n> code\n> ```\n",
+        "> ```=html\n> <b>x</b>\n> ```\n",
+        "> before\n>\n> ```rust\n> let x = 1;\n> ```\n",
+        "> ```\n> unclosed\n",
+        "> > ````\n> > code\n> > ````\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+    for (source, admitted) in [("> ```=html\n>", false), ("> ```=html\n> ", false)] {
+        let (actual, used) = parse_experimental_event_blocks(source);
+        assert_eq!(used, admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+    for opener in ["```", "```=html", "~~~rust"] {
+        for payload in [">", "> ", ">   ", "> text"] {
+            for closer in ["", "> ```\n"] {
+                for ending in ["", "\n"] {
+                    let source = format!("> {opener}\n{payload}\n{closer}{ending}");
+                    let (actual, _) = parse_experimental_event_blocks(&source);
+                    let expected = parse_standard(&source);
+                    assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+                    assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn generated_unified_list_owners_keep_exact_output() {
+    let fragments = ["plain", "*strong*", "`code`", "a & b"];
+    let mut state = 0x4a77_6d21_u32;
+    let mut admitted = 0;
+    for case in 0..512 {
+        let ordered = case % 2 == 0;
+        let marker = if ordered { "1. " } else { "- " };
+        let prefix = if ordered { "   " } else { "  " };
+        let mut source = format!("{marker}first\n\n");
+        state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        source.push_str(prefix);
+        source.push_str(fragments[(state as usize) % fragments.len()]);
+        source.push('\n');
+        if case % 3 == 0 {
+            source.push('\n');
+            source.push_str(prefix);
+            source.push_str("another paragraph\n");
+        }
+        if case % 5 == 0 {
+            source.push('\n');
+            source.push_str(prefix);
+            source.push_str("- nested\n");
+        }
+        if case % 2 == 1 {
+            source.push('\n');
+            source.push_str("- next\n");
+        }
+        if case % 7 == 0 {
+            source.push_str("\nAfter.\n");
+        }
+        let (actual, used) = parse_experimental_event_blocks(&source);
+        admitted += usize::from(used);
+        let expected = parse_standard(&source);
+        assert_eq!(
+            to_json(&actual),
+            to_json(&expected),
+            "case {case}: {source:?}"
+        );
+        assert_eq!(
+            render_html(&actual),
+            render_html(&expected),
+            "case {case}: {source:?}"
+        );
+    }
+    assert!(
+        admitted > 200,
+        "only {admitted} cases used the direct route"
+    );
+}
+
+#[test]
+fn unified_list_boundaries_keep_exact_output() {
+    for source in [
+        "- a\n\n   three-space paragraph\n",
+        "1. a\n\n  two-space paragraph\n",
+        "- a\n\n\ttab paragraph\n",
+        "- a\n\n  : definition\n",
+        "- a\n\n* b\n",
+        "- a\n\n- - -\n",
+        "1. one\n2. two\n3. three\n4. four\n5. five\n6. six\n7. seven\n8. eight\n9. nine\n10. ten\n",
+        "- a\nlazy continuation\n",
+        "- a\n\n  second paragraph\nlazy continuation\n",
+    ] {
+        let (actual, _) = parse_experimental_event_blocks(source);
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
+fn deep_list_at_parser_cap_keeps_exact_output() {
+    std::thread::Builder::new()
+        .stack_size(16 * 1024 * 1024)
+        .spawn(|| {
+            for depth in [197, 198] {
+                let mut source = String::new();
+                for level in 0..depth {
+                    source.push_str(&"  ".repeat(level));
+                    source.push_str("- item\n");
+                }
+                let (actual, _) = parse_experimental_event_blocks(&source);
+                let expected = parse_standard(&source);
+                assert_eq!(to_json(&actual), to_json(&expected), "depth {depth}");
+                assert_eq!(
+                    render_html(&actual),
+                    render_html(&expected),
+                    "depth {depth}"
+                );
+            }
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+#[test]
+fn literal_double_star_labels_keep_exact_ast_and_html() {
+    for source in [
+        "**Core syntax**\n",
+        "**Tier 2**\n\nAfter.\n",
+        "**bold**\n",
+        "**a*b**\n",
+        "**with (c)**\n",
+        "**\u{e9}clair**\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
     }
 }
 
@@ -118,6 +654,34 @@ fn normalized_source_keeps_direct_ast_html_and_original_byte_length() {
 }
 
 #[test]
+fn normalization_probe_keeps_sentinel_and_benign_unicode_boundaries() {
+    for benign in [
+        "# Heading\n\nCafé.\n",
+        "# Heading\n\nWide，punctuation.\n",
+        "# Heading\n\nX\u{e007}Y\n",
+        "# Heading\n\nX\u{e000}Y\n",
+        "# Heading\n\nX\u{fefe}Y\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(benign);
+        assert!(admitted, "{benign:?}");
+        assert_eq!(to_json(&actual), to_json(&parse_standard(benign)));
+    }
+    for source in [
+        "# Heading\n\nX\u{e005}Y\n",
+        "# Heading\n\nX\u{e006}Y\n",
+        "Text[^n]\n\n[^n]: Note\u{e005}.\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(!admitted, "{source:?}");
+        assert_eq!(
+            to_json(&actual),
+            to_json(&parse_standard(source)),
+            "{source:?}"
+        );
+    }
+}
+
+#[test]
 fn mixed_route_handles_root_quote_without_changing_output() {
     let source = "# Heading\n\n> quoted *text*\n> second line\n\nAfter.\n";
     let (actual, admitted) = parse_experimental_event_blocks(source);
@@ -128,6 +692,102 @@ fn mixed_route_handles_root_quote_without_changing_output() {
 }
 
 #[test]
+fn fully_marked_quote_lists_keep_exact_output() {
+    for source in [
+        "> - item\n",
+        "> - alpha\n> - beta\n",
+        "> * alpha\n> * beta\n",
+        "> 1. alpha\n> 2. beta\n",
+        "> - alpha\n>   beta\n> - gamma\n",
+        "> 1. alpha\n>    beta\n",
+        "> - alpha\n>   : beta\n",
+        "> - *strong* and `code`\n",
+        "> - a[^1]\n\n[^1]: note\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
+fn marked_quote_bodies_share_the_block_route() {
+    for source in [
+        "> > inner\n",
+        "> > inner\n> > more\n",
+        "> lead\n>\n> > inner\n",
+        "> # Heading\n>\n> - item\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+
+    let deep = format!("{}text\n", "> ".repeat(48));
+    let expected = parse_standard(&deep);
+    let (actual, _) = parse_experimental_event_blocks(&deep);
+    assert_eq!(to_json(&actual), to_json(&expected));
+    assert_eq!(render_html(&actual), render_html(&expected));
+}
+
+#[test]
+fn generated_marked_quote_bodies_keep_exact_output() {
+    let lines = [
+        "plain",
+        "",
+        "# Heading",
+        "- item",
+        "  wrapped",
+        "1. ordered",
+        "> nested",
+        "---",
+        ":: term",
+        ":  definition",
+        "{.class}",
+        "```",
+        "code",
+        "::: note",
+        "[ref]: /url",
+        "a [ref][x]",
+        "![alt](x)",
+        "%% comment",
+    ];
+    let mut state = 0x6c13_4f29_u32;
+    let mut admitted = 0;
+    for case in 0..4_096 {
+        let mut source = String::new();
+        for _ in 0..1 + case % 7 {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            source.push('>');
+            let line = lines[(state as usize) % lines.len()];
+            if !line.is_empty() {
+                source.push(' ');
+                source.push_str(line);
+            }
+            source.push('\n');
+        }
+        let (actual, used) = parse_experimental_event_blocks(&source);
+        admitted += usize::from(used);
+        let expected = parse_standard(&source);
+        assert_eq!(
+            to_json(&actual),
+            to_json(&expected),
+            "case {case}: {source:?}"
+        );
+        assert_eq!(
+            render_html(&actual),
+            render_html(&expected),
+            "case {case}: {source:?}"
+        );
+    }
+    assert!(admitted > 30, "quote bodies must exercise the event route");
+}
+
+#[test]
 fn mixed_route_admits_root_table_without_changing_output() {
     let source = "# Heading\n\n|= Fruit |= Price |\n| Apple | $1 |\n^ Fruit prices\n\nAfter.\n";
     let (actual, admitted) = parse_experimental_event_blocks(source);
@@ -135,6 +795,80 @@ fn mixed_route_admits_root_table_without_changing_output() {
     let expected = parse_standard(source);
     assert_eq!(to_json(&actual), to_json(&expected));
     assert_eq!(render_html(&actual), render_html(&expected));
+}
+
+#[test]
+fn plain_definition_entries_build_directly() {
+    for source in [
+        ":: alpha\n:  beta\n",
+        ":: alpha\n:  beta\n:: gamma\n:  delta\n",
+        ":: alpha *bold*\n:  beta `code`\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+    for source in [
+        ":: alpha\n:  a. beta\n",
+        ":: alpha\n:  i. beta\n",
+        ":: alpha\n:  a) beta\n",
+        ":: alpha\n:  iv. beta\n",
+    ] {
+        let (actual, _) = parse_experimental_event_blocks(source);
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
+fn generated_plain_definition_entries_keep_exact_output() {
+    let terms = [
+        "term",
+        "term *strong*",
+        "term `code`",
+        "term [link](url)",
+        "term (c)",
+        "term {#id}",
+    ];
+    let defs = [
+        "definition",
+        "definition /italic/",
+        "definition `code`",
+        "definition [link](url)",
+        "definition (tm)",
+        "definition **strong**",
+    ];
+    let mut state = 0x93a6_718b_u32;
+    for case in 0..4_096 {
+        let mut source = String::new();
+        for _ in 0..1 + case % 5 {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            source.push_str(":: ");
+            source.push_str(terms[(state as usize) % terms.len()]);
+            source.push_str("\n:  ");
+            source.push_str(defs[((state >> 8) as usize) % defs.len()]);
+            source.push('\n');
+        }
+        if case % 2 == 0 {
+            source.pop();
+        }
+        let (actual, admitted) = parse_experimental_event_blocks(&source);
+        assert!(admitted, "case {case}: {source:?}");
+        let expected = parse_standard(&source);
+        assert_eq!(
+            to_json(&actual),
+            to_json(&expected),
+            "case {case}: {source:?}"
+        );
+        assert_eq!(
+            render_html(&actual),
+            render_html(&expected),
+            "case {case}: {source:?}"
+        );
+    }
 }
 
 #[test]
@@ -227,14 +961,128 @@ fn event_route_resolves_collapsed_heading_references() {
 }
 
 #[test]
+fn event_route_lifts_root_link_definitions() {
+    for source in [
+        "[site][ref]\n\n[ref]: https://example.com\n",
+        "[ref]: https://example.com \"title\"\n\n[site][ref]\n",
+        "[ref]: https://first.example\n[ref]: https://second.example\n\n[ref][]\n",
+        "# Heading\n\n[Heading][]\n\n[ref]: https://example.com\n",
+        "[ref]: https://example.com\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
+fn event_route_lifts_simple_footnotes() {
+    for source in [
+        "Text[^n]\n\n[^n]: Note.\n",
+        "# Notes\n\nSee[^one] and[^two].\n\n[^one]: First.\n[^two]: Second.\n",
+        "Text[^n]\n\n[^n]: *emphasized* note.\n",
+        "Text[^n]\n\n[^n]: First line.\n    Second line.\n",
+        "Text[^n]\n\n[^n]: # Heading in a note\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
+fn normalized_footnotes_preserve_authored_source_length() {
+    for source in [
+        "Text[^n]\r\n\r\n[^n]: Note.\r\n",
+        "\u{feff}Text[^n]\n\n[^n]: Note.\n",
+        "Text[^n]\0\n\n[^n]: Note.\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(actual.source_len, source.len(), "{source:?}");
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+        assert!(carve::authored_provenance(&actual, source, None).is_ok());
+    }
+}
+
+#[test]
+fn event_route_lifts_root_abbreviations() {
+    for source in [
+        "The HTML spec is long.\n*[HTML]: HyperText Markup Language\n",
+        "*[API]: Application Programming Interface\n\nAn API call.\n",
+        "# HTML\n\n*[HTML]: HyperText Markup Language\n\nHTML again.\n",
+        "Text[^n] uses HTML.\n\n[^n]: Note.\n\n*[HTML]: HyperText Markup Language\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
+fn event_route_attaches_root_attributes() {
+    for source in [
+        "{#install .featured}\n## Setup\n",
+        "{.fancy}\n```php\ncode\n```\n",
+        "{#x}\n\nParagraph.\n",
+        "{#x}\n{.y}\nText.\n",
+        "{#x}\n*[HTML]: HyperText\n\nHTML text.\n",
+        "{table header-rows=0}\n```tsv\nA\tB\n```\n",
+        "{.fancy}\n``` rust \"Example\"\ncode\n```\n",
+        "{title=\"A\"}\n``` rust \"B\"\ncode\n```\n^ Cap\n",
+        "{#x .a}\n*[HTML]: HyperText\n{.b}\nHTML text.\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
+fn root_attributes_before_a_footnote_keep_exact_output() {
+    let source = "{.a}\n[^1]: note\n\nText[^1].\n";
+    let (actual, _) = parse_experimental_event_blocks(source);
+    let expected = parse_standard(source);
+    assert_eq!(to_json(&actual), to_json(&expected));
+    assert_eq!(render_html(&actual), render_html(&expected));
+}
+
+#[test]
+fn nested_footnote_definitions_use_standard_parser() {
+    for source in [
+        "Text[^outer]\n\n[^outer]: Inside[^inner].\n[^inner]: Nested.\n",
+        "- a[^n]\n\n  [^n]: note\n- b\n",
+        "1. a[^n]\n\n   [^n]: note\n2. b\n",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(!admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+}
+
+#[test]
 fn quote_marker_and_raw_fence_boundaries_keep_exact_output() {
     for source in [
         "> - a\n>+\n> tail\n",
         "> ```=html\n> ",
         "> ```=html\n> \n",
         "> a\n\n^ caption\n",
-        "> > inner\n",
-        "> - item\n",
+        "> quote\n*[HTML]: HyperText\n\nHTML\n",
+        "> quote HTML\n*[HTML]: HyperText\n",
+        "> a\n> b\n*[HTML]: HyperText\n\nHTML\n",
+        "> a\nlazy\n*[HTML]: HyperText\n\nHTML\n",
     ] {
         let (actual, admitted) = parse_experimental_event_blocks(source);
         assert_eq!(admitted, source != "> ```=html\n> ", "{source:?}");
@@ -377,7 +1225,7 @@ fn invalid_brace_lines_remain_paragraphs_in_the_event_route() {
 
     let valid_attrs = "{.class}\n# Heading\n";
     let (actual, admitted) = parse_experimental_event_blocks(valid_attrs);
-    assert!(!admitted);
+    assert!(admitted);
     assert_eq!(to_json(&actual), to_json(&parse_standard(valid_attrs)));
 }
 
@@ -688,6 +1536,31 @@ fn marked_quote_fence_grid_matches_public_ast_and_html() {
         }
     }
     assert!(admitted > 0, "the grid must exercise the event route");
+}
+
+#[test]
+fn quoted_fences_without_a_final_newline_use_the_standard_route() {
+    for source in [
+        "> ```\n> code",
+        "- > ```\n  > code",
+        "1. > ```\n   > code",
+        "- > ```=html\n  > ",
+        "a[^1]\n\n> ```\n> code",
+        "[^1]: ```\n    code",
+    ] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(!admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
+    for source in ["> ```\n> code\n", "- > ```\n  > code\n"] {
+        let (actual, admitted) = parse_experimental_event_blocks(source);
+        assert!(admitted, "{source:?}");
+        let expected = parse_standard(source);
+        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
+        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
+    }
 }
 
 #[test]
