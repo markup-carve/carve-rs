@@ -348,6 +348,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             }
         }
         if let Some(block) = attached {
+            self.item_paragraph_open =
+                ParagraphOpen::Known(block_ends_with_open_paragraph(Some(&block), 0, false));
             // Hoisted definitions leave no paragraph node behind (carve#801).
             let is_empty_paragraph = matches!(
                 &block,
@@ -420,6 +422,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // is the item's true column (`- `=2, `1. `=3, `10. `=4), NOT a
         // fixed base+2 -- an ordered item's body sits deeper.
         if self.pending_blank && indent < content_col {
+            return Some(END);
+        }
+        if indent < content_col && !self.item_paragraph_open.get() {
             return Some(END);
         }
         // The item holds an OPEN fenced body and this line is below its
@@ -1646,12 +1651,14 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         } else {
             marker_line_child_col
         };
-        let collection_floor =
-            if nested_definition_ended_paragraph || detect_fence_open(inner_lead).is_some() {
-                collection_content_col.saturating_sub(1)
-            } else {
-                base_indent
-            };
+        let collection_floor = if nested_definition_ended_paragraph
+            || detect_fence_open(inner_lead).is_some()
+            || !body_ends_with_open_paragraph(content, options)
+        {
+            collection_content_col.saturating_sub(1)
+        } else {
+            base_indent
+        };
         let before_collection = stream.source.len();
         if lead.nested_lead_is_continuation {
             stream.append(collect_indented_block_mapped_after_continuation(
@@ -1689,7 +1696,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // blank, so `nested_ends_with_open_paragraph` below still reports the
         // paragraph as open and the lazy loop swallowed `- - a` / blank / `b`
         // into the inner item, where carve-js and carve-php end the list.
-        let ended_on_blank = self.cur.pos > lead.before_block && self.previous_line_blank();
+        let ended_on_blank = (self.cur.pos > lead.before_block && self.previous_line_blank())
+            || sublist_source_trailing_invisible_separation(&stream.source);
         self.fold_marker_sublist(&mut stream, &lead, ended_on_blank);
         self.finish_marker_sublist(item, stream, &lead)
     }
@@ -2008,10 +2016,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 stream.reached.truncate(1);
             }
         }
-        if detect_container_open(inner_lead).is_some() || detect_fence_open(inner_lead).is_some() {
-            self.item_paragraph_open =
-                ParagraphOpen::Known(body_ends_with_open_paragraph(&stream.source, options));
-        }
+        let probed = stream.source.clone();
+        self.item_paragraph_open =
+            ParagraphOpen::deferred(move || body_ends_with_open_paragraph(&probed, options));
         let children = item_body_with_layout_suppression(
             self.deferred,
             self.items.len(),

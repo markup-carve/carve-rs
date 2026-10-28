@@ -2689,3 +2689,6 @@ mod paired_heading_quotes;
 
 #[path = "../nested_quote_task_owner.rs"]
 mod nested_quote_task_owner;
+
+#[path = "../parser_owner_transitions.rs"]
+mod parser_owner_transitions;
