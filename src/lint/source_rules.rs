@@ -179,6 +179,11 @@ fn quote_prefix(text: &str) -> (usize, usize) {
     (at, depth)
 }
 
+fn authored_first_nonspace(text: &str) -> usize {
+    let at = quote_prefix(text).0;
+    at + text[at..].len() - text[at..].trim_start_matches([' ', '\t']).len()
+}
+
 fn separator_candidate(text: &str) -> Option<(usize, usize, usize)> {
     let (prefix, depth) = quote_prefix(text);
     let rest = &text[prefix..];
@@ -247,11 +252,13 @@ pub(super) fn collect(
     source: &str,
     doc: &Document,
     to_byte: &dyn Fn(usize) -> usize,
+    caption_looking: bool,
     out: &mut Vec<LintWarning>,
 ) -> bool {
     let rows = lines(source);
     collect_ordered_splits(doc, &rows, out);
-    let mut scan = BlockScan::new(doc, &rows, to_byte, out);
+    let mut scan = BlockScan::new(source, doc, &rows, to_byte, out);
+    collect_authoring(&rows, doc, &scan, caption_looking, out);
     collect_description_separators(
         &rows,
         &scan.definition_hosts,
@@ -275,6 +282,262 @@ pub(super) fn collect(
     let recovered_metadata = collect_container_fences(&rows, &mut scan.fences, out);
     collect_version(source, doc, &rows, out);
     recovered_metadata
+}
+
+fn collect_authoring(
+    rows: &[Line<'_>],
+    doc: &Document,
+    scan: &BlockScan<'_>,
+    caption_looking: bool,
+    out: &mut Vec<LintWarning>,
+) {
+    let mut paragraphs = BTreeMap::new();
+    let mut headings = Vec::new();
+    let mut table_rows = BTreeMap::new();
+    let mut blocks: Vec<_> = doc.children.iter().map(|b| (b, 0)).collect();
+    let mut inlines = Vec::new();
+    while let Some((block, depth)) = blocks.pop() {
+        match block {
+            BlockNode::Paragraph(p) => {
+                if let Some(pos) = &p.pos {
+                    for line in pos.start_line..=pos.end_line {
+                        paragraphs.insert(line, pos.end_line);
+                    }
+                }
+            }
+            BlockNode::Heading(h) => {
+                if let Some(pos) = &h.pos {
+                    headings.push((pos.start_line, h.level));
+                }
+            }
+            BlockNode::Table(t) if t.source_format.is_none() => {
+                let width = t.rows.first().map_or(0, |r| r.cells.len());
+                for (index, row) in t.rows.iter().enumerate() {
+                    if let Some(pos) = &row.pos {
+                        table_rows.insert(pos.start_line, (index, width, row.cells.len(), row));
+                    }
+                }
+            }
+            _ => {}
+        }
+        push_block_children(block, depth, &mut blocks, &mut inlines);
+    }
+    headings.sort_unstable();
+    let mut last_level = 0;
+    for &(line, level) in &headings {
+        if last_level > 0 && level > last_level + 1 {
+            if let Some(row) = rows.get(line - 1) {
+                let at = row.text.find('#').unwrap_or(0);
+                emit(out, rows, line, at, level as usize, "heading-level-skip", &format!("This heading skips from level {last_level} to {level}; use the next heading level for a continuous outline."));
+            }
+        }
+        last_level = level;
+    }
+    let heading_lines: BTreeSet<_> = headings.into_iter().map(|(line, _)| line).collect();
+    let mut list_item_lines = BTreeSet::new();
+    for item in &scan.items {
+        list_item_lines.insert(item.first);
+    }
+    for (&line, &(index, width, count, _)) in &table_rows {
+        if index > 0 && count != width {
+            let at = rows[line - 1].text.find('|').unwrap_or(0);
+            emit(out, rows, line, at, 1, "table-row-cell-count", &format!("This table row has {count} cells; the header has {width}. Add or remove a cell to match the table."));
+        }
+    }
+    let gap = regex::Regex::new(r"\[[^\]]+\][ \t]+\([ \t]*[^)\s][^)]*\)").unwrap();
+    let underline =
+        regex::Regex::new(r"(^|[^[:alnum:]])_([[:alpha:]][[:alnum:]_ -]*?)_($|[^[:alnum:]])")
+            .unwrap();
+    let tag = regex::Regex::new(r"</?[A-Za-z][\w:-]*(?:\s+[^<>]*)?/?>").unwrap();
+    let alert = regex::Regex::new(r"\[!(?:NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]").unwrap();
+    let list = regex::Regex::new(r"^(?:[ \t]*> ?)*[ \t]*(?:[-*]|[0-9]+[.)])[ \t]+\S").unwrap();
+    let definition = regex::Regex::new(r"^[ \t]*:[ \t]+\S").unwrap();
+    let caption = regex::Regex::new(r"(?i)^(?:\*?[ \t]*(?:Caption|Table|Tabelle|Figure|Image)(?:[ \t]+[0-9]+)?[ \t]*:|:[ \t]+\S)").unwrap();
+    let opener = regex::Regex::new(r"(^|[\s(\[{])([*/])\w").unwrap();
+    for (index, row) in rows.iter().enumerate() {
+        let line = index + 1;
+        if scan.ignored.contains(&line) {
+            continue;
+        }
+        let view = container_view(row.text);
+        let prefix = row.text.len() - view.len();
+        let trimmed = view.trim_start_matches([' ', '\t']);
+        let at = row.text.len() - trimmed.len();
+        let is_paragraph = paragraphs.contains_key(&line);
+        let is_table = table_rows.contains_key(&line);
+        if is_paragraph {
+            if trimmed.starts_with('|') && !trimmed.trim_end_matches([' ', '\t']).ends_with('|') {
+                let previous_table_shaped = index > 0
+                    && paragraphs.contains_key(&(line - 1))
+                    && container_view(rows[index - 1].text)
+                        .trim_start()
+                        .starts_with('|')
+                    && !container_view(rows[index - 1].text)
+                        .trim_end_matches([' ', '\t'])
+                        .ends_with('|');
+                if !previous_table_shaped || table_rows.contains_key(&(line - 1)) {
+                    emit(out, rows, line, at, 1, "table-shaped-paragraph", "This table-shaped line lacks a closing pipe and renders as paragraph text; close the table row.");
+                }
+            }
+            if index > 0
+                && list.is_match(row.text)
+                && !list_item_lines.contains(&line)
+                && !scan.ignored.contains(&line)
+                && paragraphs.contains_key(&(line - 1))
+                && paragraphs[&line] == paragraphs[&(line - 1)]
+                && !list.is_match(rows[index - 1].text)
+                && !rows[index - 1].text.trim().is_empty()
+            {
+                emit(out, rows, line, authored_first_nonspace(row.text), 1, "list-marker-without-blank-line", "This list marker is part of the preceding paragraph; add a blank line before the list.");
+            }
+            if index > 0
+                && definition.is_match(&row.text[quote_prefix(row.text).0..])
+                && paragraphs.contains_key(&(line - 1))
+                && !rows[index - 1].text.trim_start().starts_with(":: ")
+            {
+                emit(out, rows, line, authored_first_nonspace(row.text), 1, "markdown-definition-paragraph", "This markdown definition remains paragraph text; use a :: term line before the definition.");
+            }
+            if caption_looking
+                && caption.is_match(row.text[quote_prefix(row.text).0..].trim_start())
+                && ((line.saturating_sub(2)..=line.saturating_sub(1)).chain((line + 1)..=line + 2))
+                    .any(|near| {
+                        table_rows.contains_key(&near)
+                            || rows
+                                .get(near.saturating_sub(1))
+                                .is_some_and(|r| r.text.contains("!["))
+                    })
+            {
+                emit(out, rows, line, authored_first_nonspace(row.text), 1, "caption-looking-paragraph", "This caption-looking paragraph sits next to a table or image; use a ^ caption line.");
+            }
+        }
+        if !is_paragraph && !is_table && !heading_lines.contains(&line) {
+            continue;
+        }
+        for m in gap.find_iter(view) {
+            let start = prefix + m.start();
+            if source_visible(row, start, m.end() - m.start(), scan) {
+                emit(
+                    out,
+                    rows,
+                    line,
+                    start,
+                    m.len(),
+                    "link-gap-before-destination",
+                    "The gap after this link label keeps the link as text; write ]( with no space.",
+                );
+            }
+        }
+        for caps in underline.captures_iter(view) {
+            let m = caps.get(2).unwrap();
+            let start = prefix + m.start() - 1;
+            if source_visible(row, start, m.len() + 2, scan) {
+                emit(
+                    out,
+                    rows,
+                    line,
+                    start,
+                    m.len() + 2,
+                    "markdown-italic-underline",
+                    "This markdown italic spelling renders as underline; use /word/ for italic.",
+                );
+            }
+        }
+        if let Some(m) = tag.find(view) {
+            let start = prefix + m.start();
+            if source_visible(row, start, m.len(), scan) {
+                emit(out, rows, line, start, m.len(), "bare-html-tag", "This bare HTML tag is escaped as text; use a raw HTML block if markup is intended.");
+            }
+        }
+        if row.text.trim_start().starts_with('>') {
+            if let Some(m) = alert.find(view) {
+                let start = prefix + m.start();
+                if source_visible(row, start, m.len(), scan) {
+                    emit(out, rows, line, start, m.len(), "github-alert-marker", "This github alert marker stays literal in a Carve quote; use an admonition fence.");
+                }
+            }
+        }
+        if is_paragraph {
+            for caps in opener.captures_iter(view) {
+                let marker = caps.get(2).unwrap();
+                let start = prefix + marker.start();
+                let delimiter = marker.as_str();
+                if !source_visible(row, start, 1, scan) {
+                    continue;
+                }
+                let end_line = paragraphs[&line];
+                let closed = has_visible(row, prefix + marker.end(), delimiter, scan)
+                    || ((line + 1)..=end_line).any(|next| {
+                        rows.get(next - 1).is_some_and(|next_row| {
+                            let from = next_row.text.len() - container_view(next_row.text).len();
+                            has_visible(next_row, from, delimiter, scan)
+                        })
+                    });
+                if !closed {
+                    emit(
+                        out,
+                        rows,
+                        line,
+                        start,
+                        1,
+                        "unclosed-inline-emphasis",
+                        &format!(
+                            "This {} opener is unclosed in its paragraph; add a closer.",
+                            if delimiter == "*" {
+                                "strong"
+                            } else {
+                                "emphasis"
+                            }
+                        ),
+                    );
+                }
+            }
+        }
+        if is_paragraph || is_table {
+            let dashed = trimmed.starts_with('|')
+                && trimmed.contains("--")
+                && trimmed
+                    .bytes()
+                    .all(|b| matches!(b, b'|' | b' ' | b'\t' | b':' | b'-' | b'x'));
+            let valid = trimmed.split('|').skip(1).all(|cell| {
+                let cell = cell.trim_matches(' ');
+                cell.is_empty()
+                    || (cell.len() >= 3 && cell.trim_matches(':').bytes().all(|b| b == b'-'))
+            });
+            let dash_cell = is_table
+                && trimmed
+                    .split('|')
+                    .any(|cell| cell.len() >= 3 && cell.bytes().all(|b| b == b'-'));
+            if (dashed && !valid) || dash_cell {
+                emit(out, rows, line, at, 1, "table-separator-near-miss", "This table separator spelling renders as table content; correct the dash cells.");
+            }
+        }
+    }
+}
+
+fn has_visible(row: &Line<'_>, from: usize, delimiter: &str, scan: &BlockScan<'_>) -> bool {
+    row.text[from..]
+        .match_indices(delimiter)
+        .any(|(at, _)| source_visible(row, from + at, delimiter.len(), scan))
+}
+
+fn source_visible(row: &Line<'_>, start: usize, len: usize, scan: &BlockScan<'_>) -> bool {
+    let absolute = row.start + start;
+    let end = absolute + len;
+    if overlaps(&scan.opaque_runs, absolute, end) {
+        return false;
+    }
+    if start > 0
+        && row.text[..start]
+            .bytes()
+            .rev()
+            .take_while(|b| *b == b'\\')
+            .count()
+            % 2
+            == 1
+    {
+        return false;
+    }
+    true
 }
 
 #[derive(Default)]
@@ -307,6 +570,7 @@ struct BlockWalker<'d, 'r> {
 
 impl<'d> BlockScan<'d> {
     fn new(
+        source: &str,
         doc: &'d Document,
         rows: &[Line<'_>],
         to_byte: &dyn Fn(usize) -> usize,
@@ -339,13 +603,14 @@ impl<'d> BlockScan<'d> {
             push_block_children(block, depth, &mut blocks, &mut inlines);
         }
         let mut scan = walker.scan;
-        scan.scan_inlines(inlines, to_byte);
+        scan.scan_inlines(inlines, source, to_byte);
         scan
     }
 
     fn scan_inlines(
         &mut self,
         mut inlines: Vec<(&InlineNode, usize)>,
+        source: &str,
         to_byte: &dyn Fn(usize) -> usize,
     ) {
         let mut text_spans = Vec::new();
@@ -359,11 +624,31 @@ impl<'d> BlockScan<'d> {
                     | InlineNode::RawInline(_)
                     | InlineNode::LiteralInline(_)
                     | InlineNode::Comment(_)
+                    | InlineNode::CrossRef(_)
+                    | InlineNode::AutoLink(_)
+                    | InlineNode::Image(_)
             );
             if opaque {
                 if let Some(pos) = node.pos() {
                     self.payload.extend((pos.start_line + 1)..=pos.end_line);
                     opaque_spans.push((to_byte(pos.start_offset), to_byte(pos.end_offset)));
+                }
+            }
+            if let InlineNode::Link(link) = node {
+                if let Some(pos) = &link.pos {
+                    let end = to_byte(pos.end_offset);
+                    let after_label = link
+                        .children
+                        .iter()
+                        .filter_map(InlineNode::pos)
+                        .map(|child| to_byte(child.end_offset))
+                        .max()
+                        .unwrap_or_else(|| to_byte(pos.start_offset));
+                    if let Some(tail) = source.get(after_label..end) {
+                        if let Some(offset) = tail.find("](") {
+                            opaque_spans.push((after_label + offset + 2, end));
+                        }
+                    }
                 }
             }
             if let InlineNode::Emphasis(emphasis) = node {
@@ -649,7 +934,7 @@ fn collect_habits(
         (
             "markdown-strong-double-star",
             regex::Regex::new(r"\*\*([^*\s](?:[^*]*[^*\s])?)\*\*").unwrap(),
-            "Use single asterisks for Carve strong text.",
+            "Djot/Markdown `**strong**` is not Carve bold — Carve bold is a single `*`, so this renders with literal asterisks.",
         ),
         (
             "markdown-strikethrough-double-tilde",

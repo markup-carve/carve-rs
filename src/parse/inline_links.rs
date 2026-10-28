@@ -439,7 +439,12 @@ pub(in crate::parse) fn reference_label_close(bytes: &[u8], start: usize) -> Opt
             b'{' if skip_editorial_comment(bytes, i).is_some() => {
                 i = skip_editorial_comment(bytes, i)?;
             }
-            b']' => return Some(i),
+            b']' => {
+                return (!bytes[start + 1..i]
+                    .iter()
+                    .any(|byte| matches!(byte, b'\n' | b'\r')))
+                .then_some(i);
+            }
             _ => i += 1,
         }
     }

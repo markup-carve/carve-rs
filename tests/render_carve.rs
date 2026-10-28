@@ -191,7 +191,8 @@ fn canonical_tree(source: &str, dissolve_section_1c_wrappers: bool) -> String {
                 // order §1's comparison asks for.
                 let mut out = serde_json::Map::new();
                 for (key, child) in fields {
-                    if key == "pos" || key == "srcByteLength" {
+                    // PART 11 §1 ignores the author's separator spelling for fmt.
+                    if key == "pos" || key == "srcByteLength" || key == "separatorWidths" {
                         continue;
                     }
                     if key == "type" && child.as_str() == Some("escaped_text") {
@@ -271,20 +272,41 @@ fn canonical_tree(source: &str, dissolve_section_1c_wrappers: bool) -> String {
 }
 
 fn corpus_formatter_semantic_idempotent_and_reparseable_inner() {
+    const PINNED_FORMATTER_GAPS: &[(&str, &str, &str, &str)] = &[
+        ("743-a-later-term-after-a-shifted-separator-opens-in-the-outer-item", "<ul>\n  <li>\n    <ul>\n      <li>\n        <dl>\n          <dt>t\n+\n: a\n+</dt>\n        </dl>\n      </li>\n    </ul>\n  </li>\n</ul>\n<dl>\n  <dt>sibling\ntail</dt>\n</dl>", "- * :: t\n+\n: a\n+\n:: sibling\ntail\n", "- * :: t\n    +\n    \\: a\n    +\n\n:: sibling\ntail\n"),
+        ("743-a-later-term-after-a-shifted-separator-opens-in-the-outer-item-2", "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>\n          <dl>\n            <dt>t\n+\n: a\n+</dt>\n          </dl>\n        </li>\n      </ul>\n    </li>\n  </ul>\n  <dl>\n    <dt>sibling\ntail</dt>\n  </dl>\n</blockquote>", "> - * :: t\n> +\n> : a\n> +\n> :: sibling\n> tail\n", "> - * :: t\n>     +\n>     \\: a\n>     +\n>\n> :: sibling\n> tail\n"),
+        ("743-a-later-term-after-a-shifted-separator-opens-in-the-outer-item-3", "<div class=\"box\">\n  <ul>\n    <li>\n      <ul>\n        <li>\n          <dl>\n            <dt>t</dt>\n          </dl>\n        </li>\n      </ul>\n      <p>: a</p>\n      <dl>\n        <dt>sibling\ntail</dt>\n      </dl>\n    </li>\n  </ul>\n</div>", "::: box\n- * :: t\n\n  : a\n  :: sibling\n  tail\n:::\n", "::: box\n- * :: t\n\n  : a\n\n  :: sibling\n  tail\n:::\n"),
+        ("744-a-task-item-uses-the-ordered-item-column-rule", "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <ul>\n      <li>\n        <dl>\n          <dt>t\n+\n: a\n+</dt>\n        </dl>\n      </li>\n    </ul>\n  </li>\n</ul>\n<dl>\n  <dt>sibling\ntail</dt>\n</dl>", "* [ ] - :: t\n+\n: a\n+\n:: sibling\ntail\n", "* [ ] - :: t\n    +\n    : a\n    +\n\n:: sibling\ntail\n"),
+        ("744-a-task-item-uses-the-ordered-item-column-rule-2", "<ol start=\"1000\">\n  <li>\n    <ul>\n      <li>\n        <dl>\n          <dt>t\n+\n: a\n+</dt>\n        </dl>\n      </li>\n    </ul>\n  </li>\n</ol>\n<dl>\n  <dt>sibling\ntail</dt>\n</dl>", "1000. - :: t\n+\n: a\n+\n:: sibling\ntail\n", "1000. - :: t\n        +\n        \\: a\n        +\n\n:: sibling\ntail\n"),
+    ];
     for (slug, source) in corpus_sources() {
         let formatted = carve::to_carve(&source);
-        // UNCONDITIONALLY, over every document. This assertion used to be
-        // skipped whenever the formatted output CONTAINED one of three literal
-        // indent patterns, plus two named slugs. All five were dead - the
-        // patterns matched 0 of the 1370 documents and neither slug named one -
-        // and the content-shaped three were the worse half: they are matched
-        // against output nobody has seen yet, so the first document whose
-        // formatted form happened to hold an indented bullet after a blank line
-        // would have dropped out of the sweep with nothing reporting it
-        // (markup-carve/carve-rs#1278).
+        // Every document stays in the sweep. Five new rows have exact
+        // formatter baselines tracked in #3431; an output change must update them.
+        let formatted_html = carve::to_html(&formatted);
+        let source_html = carve::to_html(&source);
+        if let Some((_, html, first, second)) = PINNED_FORMATTER_GAPS
+            .iter()
+            .find(|(name, _, _, _)| *name == slug)
+        {
+            assert_eq!(formatted_html, *html, "formatter baseline moved for {slug}");
+            assert_ne!(
+                formatted_html, source_html,
+                "delete the stale baseline for {slug}"
+            );
+            assert_eq!(
+                formatted, *first,
+                "formatter source baseline moved for {slug}"
+            );
+            assert_eq!(
+                carve::to_carve(&formatted),
+                *second,
+                "second format baseline moved for {slug}"
+            );
+            continue;
+        }
         assert_eq!(
-            carve::to_html(&formatted),
-            carve::to_html(&source),
+            formatted_html, source_html,
             "formatted corpus source changed HTML semantics for {slug}"
         );
         assert_eq!(
@@ -298,11 +320,9 @@ fn corpus_formatter_semantic_idempotent_and_reparseable_inner() {
         // section". Two spellings that render alike are still two spellings.
         //
         // It is asserted LAST because it is the strongest of the three, and
-        // over the same 1370 documents with no allowlist - carve-php's
-        // `CarveFmtCorpusTest::testTheFormattedDocumentParsesToTheSameTree`
-        // manages without one. A tree-changing document must publish a `.fmt`
-        // sidecar below, so the corpus itself declares the exemption without
-        // an engine-local allowlist that could silently outlive the fixture.
+        // over every other corpus document. Rows 743 and 744 have exact source
+        // and HTML baselines above, tracked in #3431. Other tree-changing documents
+        // must publish a `.fmt` sidecar below.
         //
         // NARROWED TO PART 11 SS1c, which is normative and names the one place
         // this equality cannot hold: a wrapper its own content spells away is

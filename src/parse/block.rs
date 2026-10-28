@@ -703,7 +703,13 @@ pub(in crate::parse) fn parse_block(
                     pos: span_of(cur, image_at, cur.pos, options),
                 })));
             }
-            return Some(Box::new(BlockNode::BlockImage(img)));
+            return Some(Box::new(BlockNode::Paragraph(Paragraph {
+                attrs: None,
+                children: vec![InlineNode::Image(img)],
+                at_content_column: !line.starts_with([' ', '\t']),
+                block_image: true,
+                pos: span_of(cur, image_at, cur.pos, options),
+            })));
         }
         // Not standalone: the image folds into a paragraph with the following
         // content (parse_paragraph below); a sole-image paragraph is still
