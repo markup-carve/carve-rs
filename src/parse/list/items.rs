@@ -561,12 +561,19 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     fn continuation_chunk_floor(&self, line: &str, indent: usize) -> usize {
         let content_col = self.content_col;
         let lead_at_column = slice_columns(line, content_col.min(indent), false);
+        // Probe a shifted opener at its authored base.
+        let lead_for_open =
+            if indent > content_col && item_block_opener(trim_ascii_start(&lead_at_column)) {
+                trim_ascii_start(&lead_at_column)
+            } else {
+                &lead_at_column
+            };
         let lead_is_a_comment = detect_comment_fence_line_any_column(&lead_at_column).is_some()
             || is_line_comment_any_column(&lead_at_column);
         if indent >= content_col
             && !lead_is_a_comment
             && a_band_line_ends_the_chunk(self.cur, self.base_indent, content_col)
-            && !chunk_run_leaves_content_open(self.cur, content_col, &lead_at_column, self.options)
+            && !chunk_run_leaves_content_open(self.cur, content_col, lead_for_open, self.options)
         {
             content_col.saturating_sub(1)
         } else {
