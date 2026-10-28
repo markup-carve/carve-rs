@@ -163,6 +163,7 @@ fn deeper_quote_chains_decline_before_using_the_event_stack() {
 #[test]
 fn event_owned_modes_preserve_extension_callbacks() {
     use crate::{BlockMatch, CarveExtension, InlineMatch, MatcherContext};
+    event_pipeline::NESTED_EXTENSION_EVENT_PARSES.with(|count| count.set(0));
 
     #[derive(Default)]
     struct Hook {
@@ -211,13 +212,14 @@ fn event_owned_modes_preserve_extension_callbacks() {
             continue;
         }
         let source = std::fs::read_to_string(&path).unwrap();
-        for mode in [ParseMode::HtmlFacade, ParseMode::Carve] {
+        for mode in [ParseMode::Html, ParseMode::HtmlFacade, ParseMode::Carve] {
             for positions in [false, true] {
                 let baseline = Hook::default();
                 let baseline_options = Options::default()
                     .with_positions(positions)
                     .with_extension(&baseline);
                 let expected = {
+                    let _standard_root = StandardEventRootGuard::install();
                     let _standard_nested = StandardNestedReaderGuard::install();
                     parse_with_options_mode_and_index(&source, &baseline_options, mode).0
                 };
@@ -251,6 +253,7 @@ fn event_owned_modes_preserve_extension_callbacks() {
             }
         }
     }
+    event_pipeline::NESTED_EXTENSION_EVENT_PARSES.with(|count| assert!(count.get() > 0));
 }
 
 #[cfg(feature = "experimental-event-parser-options")]

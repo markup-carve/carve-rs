@@ -6,6 +6,11 @@ const MIXED_QUOTE_DEPTH_LIMIT: usize = 32;
 const NESTED_EVENT_DEPTH_LIMIT: usize = 8;
 
 #[cfg(test)]
+thread_local! {
+    pub(super) static NESTED_EXTENSION_EVENT_PARSES: Cell<usize> = const { Cell::new(0) };
+}
+
+#[cfg(test)]
 #[path = "event_pipeline_diagnostic_tests.rs"]
 mod event_diagnostic_parity_tests;
 
@@ -582,6 +587,10 @@ pub(super) fn parse_nested_mapped_blocks(
         record_extents.then_some(&mut observed),
         Some(&mut nested_pending),
     )?;
+    #[cfg(test)]
+    if !options.extensions.is_empty() {
+        NESTED_EXTENSION_EVENT_PARSES.with(|count| count.set(count.get() + 1));
+    }
     if let Some(extents) = extents {
         extents.extend(observed);
     }
@@ -783,6 +792,42 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
         None,
         None,
     )
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+fn parse_mixed_blocks_with_root_columns<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
+    lines: &[&str],
+    options: &Options<'_>,
+    line_map: &[Option<usize>],
+) -> Option<Vec<BlockNode>> {
+    let col_map = vec![Some(0); lines.len()];
+    let mut cur = LineCursor::new_with_cols(lines, Some(line_map), Some(&col_map));
+    cur.at_document_level = true;
+    parse_mixed_blocks_cursor::<DEFINITIONS, ABBREVIATIONS>(
+        lines,
+        options,
+        Some(line_map),
+        true,
+        cur,
+        None,
+        None,
+    )
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+fn parse_custom_mixed_blocks<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
+    lines: &[&str],
+    options: &Options<'_>,
+    line_map: Option<&[Option<usize>]>,
+    root_columns: bool,
+) -> Option<Vec<BlockNode>> {
+    if root_columns {
+        parse_mixed_blocks_with_root_columns::<DEFINITIONS, ABBREVIATIONS>(
+            lines, options, line_map?,
+        )
+    } else {
+        parse_mixed_blocks_mapped::<DEFINITIONS, ABBREVIATIONS>(lines, options, line_map, true)
+    }
 }
 
 fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
@@ -3305,7 +3350,14 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         None
     };
     let source = normalized.as_deref().unwrap_or(source);
-    if has_deep_quote_chain(source) || has_marker_description_comment_risk(source) {
+    if has_deep_quote_chain(source) {
+        return None;
+    }
+    if has_marker_description_comment_risk(source) {
+        #[cfg(feature = "experimental-event-parser-options")]
+        return parse_document_with_custom_options(source, &Options::default(), ParseMode::Html)
+            .map(|(document, _, admitted)| (document, admitted));
+        #[cfg(not(feature = "experimental-event-parser-options"))]
         return None;
     }
     let may_have_link_defs = source.contains("]:");
@@ -3656,7 +3708,7 @@ pub(super) fn parse_document_with_custom_options(
         None
     };
     let source = normalized.as_deref().unwrap_or(source);
-    if has_deep_quote_chain(source) || has_marker_description_comment_risk(source) {
+    if has_deep_quote_chain(source) {
         return None;
     }
     let may_have_link_defs = source.contains("]:") || !options.extensions.is_empty();
@@ -3703,7 +3755,9 @@ pub(super) fn parse_document_with_custom_options(
             def.line = def.line.map(|line| line + body_start_line - 1);
         }
     }
-    let root_line_map: Option<Vec<Option<usize>>> = (continuation_marker::active()
+    let marker_description_comment = has_marker_description_comment_risk(source);
+    let root_line_map: Option<Vec<Option<usize>>> = (marker_description_comment
+        || continuation_marker::active()
         || options.source_lines
         || options.positions
         || !source.ends_with('\n'))
@@ -3719,35 +3773,35 @@ pub(super) fn parse_document_with_custom_options(
             with_active_link_defs(link_defs, || {
                 if has_link_defs {
                     if may_have_abbrevs {
-                        parse_mixed_blocks_mapped::<true, true>(
+                        parse_custom_mixed_blocks::<true, true>(
                             &lines,
                             options,
                             root_line_map.as_deref(),
-                            true,
+                            marker_description_comment,
                         )
                     } else {
-                        parse_mixed_blocks_mapped::<true, false>(
+                        parse_custom_mixed_blocks::<true, false>(
                             &lines,
                             options,
                             root_line_map.as_deref(),
-                            true,
+                            marker_description_comment,
                         )
                     }
                 } else if may_have_abbrevs {
-                    parse_mixed_blocks_mapped::<false, true>(
+                    parse_custom_mixed_blocks::<false, true>(
                         &lines,
                         options,
                         root_line_map.as_deref(),
-                        true,
+                        marker_description_comment,
                     )
                 } else {
                     parse_positioned_simple_blocks(&lines, options, root_line_map.as_deref()?)
                         .or_else(|| {
-                            parse_mixed_blocks_mapped::<false, false>(
+                            parse_custom_mixed_blocks::<false, false>(
                                 &lines,
                                 options,
                                 root_line_map.as_deref(),
-                                true,
+                                marker_description_comment,
                             )
                         })
                 }
@@ -3756,18 +3810,18 @@ pub(super) fn parse_document_with_custom_options(
             with_active_link_defs(link_defs, || {
                 parse_blocks_mapped(&lines, options, root_line_map.as_deref()).or_else(|| {
                     if may_have_abbrevs {
-                        parse_mixed_blocks_mapped::<true, true>(
+                        parse_custom_mixed_blocks::<true, true>(
                             &lines,
                             options,
                             root_line_map.as_deref(),
-                            true,
+                            marker_description_comment,
                         )
                     } else {
-                        parse_mixed_blocks_mapped::<true, false>(
+                        parse_custom_mixed_blocks::<true, false>(
                             &lines,
                             options,
                             root_line_map.as_deref(),
-                            true,
+                            marker_description_comment,
                         )
                     }
                 })
@@ -3785,18 +3839,18 @@ pub(super) fn parse_document_with_custom_options(
                         }
                     }
                     if may_have_abbrevs {
-                        parse_mixed_blocks_mapped::<false, true>(
+                        parse_custom_mixed_blocks::<false, true>(
                             &lines,
                             options,
                             root_line_map.as_deref(),
-                            true,
+                            marker_description_comment,
                         )
                     } else {
-                        parse_mixed_blocks_mapped::<false, false>(
+                        parse_custom_mixed_blocks::<false, false>(
                             &lines,
                             options,
                             root_line_map.as_deref(),
-                            true,
+                            marker_description_comment,
                         )
                     }
                 }),
@@ -4193,5 +4247,104 @@ mod link_definition_tests {
             crate::ast_json::to_json(&actual),
             crate::ast_json::to_json(&expected)
         );
+    }
+}
+
+#[cfg(all(test, feature = "experimental-event-parser-options"))]
+mod marker_description_comment_owner_tests {
+    use super::*;
+
+    #[test]
+    fn event_root_keeps_comment_description_columns() {
+        for source in [
+            "1. :: t\n   : para\n  %%%\n  %%%\ntail\n",
+            "1. :: t\n   : para\n  %%%\n  c\n  %%%\n```\nx\n",
+        ] {
+            let (_, admitted) = parse_document(source).expect("event document");
+            assert!(admitted, "{source:?}");
+            for positions in [false, true] {
+                let options = Options::default().with_positions(positions);
+                let (candidate, _, admitted) =
+                    parse_document_with_custom_options(source, &options, ParseMode::Html)
+                        .expect("event document with options");
+                assert!(admitted, "positions={positions} source={source:?}");
+                let expected = {
+                    let _standard_root = StandardEventRootGuard::install();
+                    let _standard_nested = StandardNestedReaderGuard::install();
+                    parse_with_options(source, &options)
+                };
+                assert_eq!(
+                    candidate, expected,
+                    "positions={positions} source={source:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn event_root_keeps_comment_columns_with_definitions() {
+        let body = "1. :: t\n   : para\n  %%%\n  %%%\ntail\n";
+        for prefix in ["[ref]: /target\n\n", "*[abbr]: expansion\n\n"] {
+            let source = format!("{prefix}{body}");
+            for positions in [false, true] {
+                let options = Options::default().with_positions(positions);
+                let (candidate, _, admitted) =
+                    parse_document_with_custom_options(&source, &options, ParseMode::Html)
+                        .expect("event document with definitions");
+                assert!(admitted, "positions={positions} source={source:?}");
+                let expected = {
+                    let _standard_root = StandardEventRootGuard::install();
+                    let _standard_nested = StandardNestedReaderGuard::install();
+                    parse_with_options(&source, &options)
+                };
+                assert_eq!(
+                    candidate, expected,
+                    "positions={positions} source={source:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn comment_description_owner_matrix_matches_standard_reader() {
+        for marker in ["1. ", "- "] {
+            for comment in ["  %%%\n  %%%\n", "  %%%\n  note\n  %%%\n"] {
+                for tail in ["tail\n", "```\nx\n", "2. next\n"] {
+                    for prefix in ["", "[ref]: /target\n\n", "*[abbr]: expansion\n\n"] {
+                        let source = format!("{prefix}{marker}:: t\n   : para\n{comment}{tail}");
+                        for (mode_index, mode) in
+                            [ParseMode::Html, ParseMode::HtmlFacade, ParseMode::Carve]
+                                .into_iter()
+                                .enumerate()
+                        {
+                            for positions in [false, true] {
+                                for source_lines in [false, true] {
+                                    let options = Options::default()
+                                        .with_positions(positions)
+                                        .with_source_lines(source_lines);
+                                    let Some((candidate, _, admitted)) =
+                                        parse_document_with_custom_options(&source, &options, mode)
+                                    else {
+                                        continue;
+                                    };
+                                    if !admitted {
+                                        continue;
+                                    }
+                                    let expected = {
+                                        let _standard_root = StandardEventRootGuard::install();
+                                        let _standard_nested = StandardNestedReaderGuard::install();
+                                        parse_with_options_mode_and_index(&source, &options, mode).0
+                                    };
+                                    assert_eq!(
+                                        candidate, expected,
+                                        "mode={mode_index} positions={positions} source_lines={source_lines} source={source:?}"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

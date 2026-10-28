@@ -786,10 +786,12 @@ fn parse_with_options_mode_and_index(
     mode: ParseMode,
 ) -> (Document, CrossrefIndex) {
     #[cfg(feature = "experimental-event-parser-options")]
-    if let Some((document, index, _)) =
-        event_pipeline::parse_document_with_custom_options(source, options, mode)
-    {
-        return (document, index.unwrap_or_default());
+    if event_root_allowed() {
+        if let Some((document, index, _)) =
+            event_pipeline::parse_document_with_custom_options(source, options, mode)
+        {
+            return (document, index.unwrap_or_default());
+        }
     }
     // Kept for the offset table below: normalization rewrites the text the
     // parser sees, and PART 12 §4 positions index the ORIGINAL file.
@@ -1507,12 +1509,20 @@ fn parse_unpositioned_mapped_source(
 ) -> Vec<BlockNode> {
     #[cfg(feature = "experimental-event-parser-options")]
     let mut extents = extents;
+    // The ladder parses its tail eagerly, before the parent's pending bodies,
+    // and extension callbacks observe that order. Take it ahead of the event
+    // reader, which would defer the tail onto the worklist.
     #[cfg(feature = "experimental-event-parser-options")]
-    if !at_document_level
-        && options.extensions.is_empty()
-        && nested_event_allowed()
-        && !needs_positioned_mapped_body(source)
-    {
+    if !at_document_level && !options.extensions.is_empty() {
+        if let Some(blocks) = parse_eof_closed_colon_ladder(source, options) {
+            if let Some(extents) = extents {
+                extents.extend(blocks.iter().map(|_| (0, source.source.lines().count())));
+            }
+            return blocks;
+        }
+    }
+    #[cfg(feature = "experimental-event-parser-options")]
+    if !at_document_level && nested_event_allowed() && !needs_positioned_mapped_body(source) {
         if let Some(blocks) = event_pipeline::parse_nested_mapped_blocks(
             source,
             options,
@@ -1576,6 +1586,36 @@ fn needs_positioned_mapped_body(source: &MappedSource) -> bool {
 #[cfg(all(test, feature = "experimental-event-parser-options"))]
 thread_local! {
     static DISABLE_NESTED_EVENT: Cell<bool> = const { Cell::new(false) };
+    static DISABLE_EVENT_ROOT: Cell<bool> = const { Cell::new(false) };
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+fn event_root_allowed() -> bool {
+    #[cfg(test)]
+    {
+        !DISABLE_EVENT_ROOT.with(Cell::get)
+    }
+    #[cfg(not(test))]
+    {
+        true
+    }
+}
+
+#[cfg(all(test, feature = "experimental-event-parser-options"))]
+struct StandardEventRootGuard(bool);
+
+#[cfg(all(test, feature = "experimental-event-parser-options"))]
+impl StandardEventRootGuard {
+    fn install() -> Self {
+        Self(DISABLE_EVENT_ROOT.with(|disabled| disabled.replace(true)))
+    }
+}
+
+#[cfg(all(test, feature = "experimental-event-parser-options"))]
+impl Drop for StandardEventRootGuard {
+    fn drop(&mut self) {
+        DISABLE_EVENT_ROOT.with(|disabled| disabled.set(self.0));
+    }
 }
 
 #[cfg(all(test, feature = "experimental-event-parser-options"))]
@@ -1618,7 +1658,7 @@ fn parse_positioned_mapped_source(
     #[cfg(feature = "experimental-event-parser-options")]
     let mut extents = extents;
     #[cfg(feature = "experimental-event-parser-options")]
-    if !at_document_level && options.extensions.is_empty() && nested_event_allowed() {
+    if !at_document_level && nested_event_allowed() {
         let mut event_extents = Vec::new();
         if let Some(blocks) = event_pipeline::parse_nested_mapped_blocks(
             source,
