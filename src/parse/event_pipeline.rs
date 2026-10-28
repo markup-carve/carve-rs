@@ -1,6 +1,8 @@
 use super::*;
 
 const MIXED_QUOTE_DEPTH_LIMIT: usize = 32;
+// The mapped event frame is larger than the standard block frame on the stack.
+const NESTED_EVENT_DEPTH_LIMIT: usize = 8;
 
 #[cfg(test)]
 #[path = "event_pipeline_diagnostic_tests.rs"]
@@ -538,15 +540,18 @@ fn parse_mixed_blocks<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
 }
 
 #[cfg(feature = "experimental-event-parser-options")]
+#[inline(never)]
 pub(super) fn parse_nested_mapped_blocks(
     source: &MappedSource,
     options: &Options<'_>,
-    at_document_level: bool,
-    in_item_body: bool,
-    in_quoted_body: bool,
+    scope: ParseScope,
     extents: Option<&mut Vec<(usize, usize)>>,
     pending: &mut Vec<PendingBody>,
+    positioned: bool,
 ) -> Option<Vec<BlockNode>> {
+    if NESTING_DEPTH.with(Cell::get) >= NESTED_EVENT_DEPTH_LIMIT {
+        return None;
+    }
     let _depth = DepthGuard::enter()?;
     let lines: Vec<&str> = source.source.lines().collect();
     let mut cur = LineCursor::new_with_cols(
@@ -558,11 +563,11 @@ pub(super) fn parse_nested_mapped_blocks(
             .any(Option::is_some)
             .then_some(source.col_map.as_slice()),
     );
-    cur.at_document_level = at_document_level;
-    cur.in_item_body = in_item_body;
-    cur.in_quoted_body = in_quoted_body || source.in_quoted_body;
+    cur.at_document_level = scope.at_document_level;
+    cur.in_item_body = scope.in_item_body;
+    cur.in_quoted_body = scope.in_quoted_body || source.in_quoted_body;
     cur.reached = Some(source.reached.as_slice());
-    cur.sublists_carry_authored_base = source.sublists_carry_authored_base;
+    cur.sublists_carry_authored_base = positioned && source.sublists_carry_authored_base;
     cur.marker_tail = source.marker_tail;
     let mut observed = Vec::new();
     let record_extents = extents.is_some();
@@ -571,7 +576,7 @@ pub(super) fn parse_nested_mapped_blocks(
         &lines,
         options,
         Some(&source.line_map),
-        at_document_level,
+        scope.at_document_level,
         cur,
         record_extents.then_some(&mut observed),
         Some(&mut nested_pending),
@@ -3293,6 +3298,9 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         None
     };
     let source = normalized.as_deref().unwrap_or(source);
+    if has_deep_quote_chain(source) {
+        return None;
+    }
     let may_have_link_defs = source.contains("]:");
     let may_have_abbrevs = source.contains("*[");
     if source.contains("[^") {
@@ -3598,6 +3606,22 @@ pub(super) fn parse_document_with_mode(
     parse_document_with_custom_options(source, options, mode)
 }
 
+fn has_deep_quote_chain(source: &str) -> bool {
+    if !source.contains("> ") && !source.contains(">>") && !source.contains(">\t") {
+        return false;
+    }
+    source.lines().any(|line| {
+        let mut rest = line;
+        for _ in 0..64 {
+            let Some(next) = strip_blockquote_prefix(trim_ascii_start(rest)) else {
+                return false;
+            };
+            rest = next;
+        }
+        true
+    })
+}
+
 #[cfg(feature = "experimental-event-parser-options")]
 fn parse_document_with_custom_options(
     source: &str,
@@ -3618,6 +3642,9 @@ fn parse_document_with_custom_options(
         None
     };
     let source = normalized.as_deref().unwrap_or(source);
+    if has_deep_quote_chain(source) {
+        return None;
+    }
     let may_have_link_defs = source.contains("]:") || !options.extensions.is_empty();
     let may_have_abbrevs = source.contains("*[");
     if source.contains("[^") {

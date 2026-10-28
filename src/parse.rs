@@ -1496,15 +1496,22 @@ fn parse_unpositioned_mapped_source(
     #[cfg(feature = "experimental-event-parser-options")]
     let mut extents = extents;
     #[cfg(feature = "experimental-event-parser-options")]
-    if !at_document_level && options.extensions.is_empty() && nested_event_allowed() {
+    if !at_document_level
+        && options.extensions.is_empty()
+        && nested_event_allowed()
+        && !needs_positioned_mapped_body(source)
+    {
         if let Some(blocks) = event_pipeline::parse_nested_mapped_blocks(
             source,
             options,
-            at_document_level,
-            in_item_body,
-            in_quoted_body,
+            ParseScope {
+                at_document_level,
+                in_item_body,
+                in_quoted_body,
+            },
             extents.as_deref_mut(),
             pending,
+            false,
         ) {
             return blocks;
         }
@@ -1518,13 +1525,7 @@ fn parse_unpositioned_mapped_source(
         }
         return blocks;
     }
-    if source.sublists_carry_authored_base
-        && source.source.contains(":::")
-        && source.source.lines().any(|line| {
-            line.starts_with([' ', '\t'])
-                && strip_blockquote_prefix(trim_ascii_start(line)).is_some()
-        })
-    {
+    if needs_positioned_mapped_body(source) {
         return parse_positioned_mapped_source(
             source,
             options,
@@ -1549,6 +1550,15 @@ fn parse_unpositioned_mapped_source(
         extents,
     )
     .0
+}
+
+fn needs_positioned_mapped_body(source: &MappedSource) -> bool {
+    source.sublists_carry_authored_base
+        && source.source.contains(":::")
+        && source.source.lines().any(|line| {
+            line.starts_with([' ', '\t'])
+                && strip_blockquote_prefix(trim_ascii_start(line)).is_some()
+        })
 }
 
 #[cfg(all(test, feature = "experimental-event-parser-options"))]
@@ -1601,11 +1611,14 @@ fn parse_positioned_mapped_source(
         if let Some(blocks) = event_pipeline::parse_nested_mapped_blocks(
             source,
             options,
-            at_document_level,
-            in_item_body,
-            in_quoted_body,
+            ParseScope {
+                at_document_level,
+                in_item_body,
+                in_quoted_body,
+            },
             extents.is_some().then_some(&mut event_extents),
             pending,
+            true,
         ) {
             if let Some(extents) = extents.as_deref_mut() {
                 extents.extend(event_extents);

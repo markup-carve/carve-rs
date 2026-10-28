@@ -76,6 +76,91 @@ fn nested_event_cursor_keeps_mapped_eof_and_crlf_parity() {
 
 #[cfg(feature = "experimental-event-parser-options")]
 #[test]
+fn nested_event_cursor_keeps_unpositioned_authored_base_parity() {
+    for body in [
+        "::: note\n  : term\n:::",
+        "::: note\n  > quoted\n:::",
+        "- item\n%%%\ntext\n%%%",
+    ] {
+        let lines = body.lines().count();
+        let mapped = MappedSource {
+            source: body.to_string(),
+            line_map: (1..=lines).map(Some).collect(),
+            col_map: Vec::new(),
+            reached: vec![true; lines],
+            opaque_blank_lines: Vec::new(),
+            discarded_outer_blank: false,
+            outer_plus_after_blank: false,
+            authored_base_at_start: false,
+            item_marker_at_start: false,
+            marker_colon_rebased: false,
+            marker_tail: None,
+            in_quoted_body: false,
+            sublists_carry_authored_base: true,
+        };
+        let expected = {
+            let _standard_nested = StandardNestedReaderGuard::install();
+            parse_mapped_source(&mapped, &Options::default())
+        };
+        let actual = parse_mapped_source(&mapped, &Options::default());
+        assert_eq!(actual, expected, "{body:?}");
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn nested_event_cursor_fits_a_two_megabyte_stack_for_sixty_quotes() {
+    let source = format!("{}text\n", "> ".repeat(60));
+    std::thread::Builder::new()
+        .stack_size(2 * 1024 * 1024)
+        .spawn(move || {
+            let expected = {
+                let _standard_nested = StandardNestedReaderGuard::install();
+                parse_with_options(&source, &Options::default())
+            };
+            let (actual, _, used) = event_pipeline::parse_document_with_mode(
+                &source,
+                &Options::default(),
+                ParseMode::Html,
+            )
+            .unwrap();
+            assert!(used);
+            assert_eq!(actual, expected);
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn deeper_quote_chains_decline_before_using_the_event_stack() {
+    let chain = format!("{}text\n", "> ".repeat(120));
+    for source in [
+        chain.clone(),
+        format!("\u{feff}{chain}"),
+        format!("prefix\r{chain}"),
+    ] {
+        std::thread::Builder::new()
+            .stack_size(2 * 1024 * 1024)
+            .spawn(move || {
+                let expected = parse_with_options(&source, &Options::default());
+                let (actual, used) =
+                    parse_experimental_event_blocks_with_options(&source, &Options::default());
+                assert!(!used);
+                assert_eq!(actual, expected);
+                let (base_actual, base_used) = parse_experimental_event_blocks(&source);
+                assert!(!base_used);
+                assert_eq!(base_actual, expected);
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
 fn event_owned_modes_preserve_extension_callbacks() {
     use crate::{BlockMatch, CarveExtension, InlineMatch, MatcherContext};
 
