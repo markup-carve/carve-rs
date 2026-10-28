@@ -641,6 +641,30 @@ fn read_local_list_like_line(
     (node, item_bodies)
 }
 
+fn has_pending_leading_attrs(
+    leading_attrs: &[(usize, Attrs, Option<Pos>)],
+    out: &[BlockNode],
+) -> bool {
+    leading_attrs.last().is_some_and(|(start, _, _)| {
+        out[*start..]
+            .iter()
+            .all(|node| matches!(node, BlockNode::AbbreviationDef(_) | BlockNode::Comment(_)))
+    })
+}
+
+fn finish_unattributed_block(
+    block: &mut BlockNode,
+    cur: &LineCursor<'_>,
+    start_line: usize,
+    options: &Options<'_>,
+    has_leading_attrs: bool,
+) {
+    if !has_leading_attrs {
+        promote_delimited_code(block, cur, start_line, options);
+        resolve_code_title(block);
+    }
+}
+
 fn is_late_list_like_line(
     cur: &LineCursor<'_>,
     line: &str,
@@ -819,11 +843,7 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             } else {
                 *parse_fenced_block(&mut cur, fence, options)
             };
-            let has_leading_attrs = leading_attrs.last().is_some_and(|(start, _, _)| {
-                out[*start..].iter().all(|node| {
-                    matches!(node, BlockNode::AbbreviationDef(_) | BlockNode::Comment(_))
-                })
-            });
+            let has_leading_attrs = has_pending_leading_attrs(&leading_attrs, &out);
             if !has_leading_attrs {
                 resolve_code_title(&mut block);
             }
@@ -911,17 +931,16 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             is_late_list_like_line(&cur, line, invalid_brace_line, root_indented_text);
         let late_image_like =
             trim_ascii_start(line).starts_with("![") && detect_block_image(line).is_some();
-        let has_leading_attrs = leading_attrs.last().is_some_and(|(start, _, _)| {
-            out[*start..]
-                .iter()
-                .all(|node| matches!(node, BlockNode::AbbreviationDef(_) | BlockNode::Comment(_)))
-        });
+        let has_leading_attrs = has_pending_leading_attrs(&leading_attrs, &out);
         if !late_list_like && !late_image_like {
             if let Some(mut block) = try_extension_block(&mut cur, options) {
-                if !has_leading_attrs {
-                    promote_delimited_code(&mut block, &cur, current_block_start.get(), options);
-                    resolve_code_title(&mut block);
-                }
+                finish_unattributed_block(
+                    &mut block,
+                    &cur,
+                    current_block_start.get(),
+                    options,
+                    has_leading_attrs,
+                );
                 emit!(_block_source_line, block);
                 continue;
             }
@@ -930,10 +949,13 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             let mut item_bodies = Vec::new();
             let mut block = parse_block(&mut cur, options, &mut item_bodies)
                 .expect("image-like line is not a consumed comment");
-            if !has_leading_attrs {
-                promote_delimited_code(&mut block, &cur, current_block_start.get(), options);
-                resolve_code_title(&mut block);
-            }
+            finish_unattributed_block(
+                &mut block,
+                &cur,
+                current_block_start.get(),
+                options,
+                has_leading_attrs,
+            );
             let index = out.len();
             emit!(_block_source_line, *block);
             pending_bodies.extend(item_bodies.into_iter().map(|body| PendingBody {
@@ -962,10 +984,13 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             }
             if late_list_like {
                 let (mut node, item_bodies) = read_local_list_like_line(&mut cur, options);
-                if !has_leading_attrs {
-                    promote_delimited_code(&mut node, &cur, current_block_start.get(), options);
-                    resolve_code_title(&mut node);
-                }
+                finish_unattributed_block(
+                    &mut node,
+                    &cur,
+                    current_block_start.get(),
+                    options,
+                    has_leading_attrs,
+                );
                 let index = out.len();
                 emit!(_block_source_line, node);
                 pending_bodies.extend(item_bodies.into_iter().map(|body| PendingBody {
