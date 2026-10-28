@@ -87,7 +87,7 @@ fn lint_includes(
     root: &mut Vec<LintWarning>,
 ) -> Vec<LintWarning> {
     use crate::includes::AcceptedInclude;
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
     let parse_options = Options {
         positions: true,
         extensions: options.extensions.clone(),
@@ -110,6 +110,27 @@ fn lint_includes(
                     .is_some_and(|target| targets.contains(target))
         });
     }
+    let parent_sources: HashMap<_, _> = result
+        .included
+        .iter()
+        .filter_map(|entry| {
+            if let AcceptedInclude::Carve {
+                file,
+                included_by,
+                source,
+                first_line,
+                ..
+            } = entry
+            {
+                Some((
+                    (file.clone(), included_by.clone()),
+                    (source.clone(), *first_line),
+                ))
+            } else {
+                None
+            }
+        })
+        .collect();
     let mut findings = Vec::new();
     for entry in result.included {
         match entry {
@@ -137,22 +158,7 @@ fn lint_includes(
                 included_by,
                 block,
                 payload,
-                line_selection,
             } => {
-                if line_selection {
-                    if let Some(site) = included_by.last() {
-                        findings.push(LintWarning {
-                            file: (!site.file.is_empty()).then(|| site.file.clone()),
-                            included_by: included_by[..included_by.len() - 1].to_vec(),
-                            line: site.line,
-                            column: site.column,
-                            rule: "include-lines-table-rows-hint",
-                            message: "Use @rows to select complete CSV/TSV records.".into(),
-                            start: 0,
-                            end: 0,
-                        });
-                    }
-                }
                 let marked = match block.as_ref() {
                     BlockNode::CodeBlock(code) => code
                         .attrs
@@ -163,6 +169,40 @@ fn lint_includes(
                 };
                 if !marked {
                     continue;
+                }
+                if let Some(site) = included_by.last() {
+                    let parent = if included_by.len() == 1 {
+                        Some((source, 0))
+                    } else {
+                        parent_sources
+                            .get(&(
+                                site.file.clone(),
+                                included_by[..included_by.len() - 1].to_vec(),
+                            ))
+                            .map(|(source, first_line)| (source.as_str(), *first_line))
+                    };
+                    if let Some((text, first_line)) = parent {
+                        let selected = site
+                            .line
+                            .checked_sub(first_line)
+                            .and_then(|line| line.checked_sub(1))
+                            .and_then(|index| text.lines().nth(index))
+                            .is_some_and(|line| {
+                                crate::includes::code_line_selector_at(line, site.column)
+                            });
+                        if selected {
+                            findings.push(LintWarning {
+                                file: (!site.file.is_empty()).then(|| site.file.clone()),
+                                included_by: included_by[..included_by.len() - 1].to_vec(),
+                                line: site.line,
+                                column: site.column,
+                                rule: "include-lines-table-rows-hint",
+                                message: "Use @rows to select complete CSV/TSV records.".into(),
+                                start: 0,
+                                end: 0,
+                            });
+                        }
+                    }
                 }
                 let separator = match block.as_ref() {
                     BlockNode::CodeBlock(code) => match code.lang.as_deref() {

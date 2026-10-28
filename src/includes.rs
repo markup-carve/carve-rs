@@ -133,8 +133,6 @@ pub enum AcceptedInclude {
         block: Box<BlockNode>,
         /// Code payload before insertion.
         payload: String,
-        /// Whether a physical line selector was used on a marked table include.
-        line_selection: bool,
     },
 }
 
@@ -936,6 +934,16 @@ fn parse_full_directive(text: &str) -> ParsedDirective {
         Some((end, raw)) if end == text.len() => parse_options(raw),
         _ => ParsedDirective::NotADirective,
     }
+}
+
+pub(crate) fn code_line_selector_at(line: &str, column: usize) -> bool {
+    let Some((start, _)) = line.char_indices().nth(column.saturating_sub(1)) else {
+        return false;
+    };
+    let Some((_, raw)) = match_directive_at(line, start) else {
+        return false;
+    };
+    matches!(parse_options(raw), ParsedDirective::Ok(d) if d.code.is_some() && d.lines.is_some())
 }
 
 /// Invalid line selectors remain one literal inline run in the core parser.
@@ -2959,10 +2967,6 @@ fn expand_child(d: &Directive, state: &mut State<'_>, inline: bool) -> Option<Ex
                 included_by: reach.clone(),
                 block: Box::new(children.first()?.clone()),
                 payload,
-                line_selection: d.lines.is_some()
-                    && d.table_attrs.as_ref().is_some_and(|attrs| {
-                        attrs.key_values.get("table").is_some_and(String::is_empty)
-                    }),
             })
         } else {
             let selected_lines = d.section.as_ref().and_then(|_| {

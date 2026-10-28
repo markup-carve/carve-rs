@@ -36,6 +36,34 @@ fn physical_lines_on_marked_tables_suggest_record_selection() {
 }
 
 #[test]
+fn nested_table_line_hint_uses_the_directive_file() {
+    let resolver =
+        |path: &str, _: &carve::IncludeContext<'_>| -> Result<IncludeResolved, IncludeDenial> {
+            match path {
+                "child.crv" => Ok(IncludeResolved::from(
+                    "{table}\n{{ data.csv @code:csv @lines:2-3 }}",
+                )),
+                "data.csv" => Ok(IncludeResolved::from("Name,Price\nA,1\nB,2\n")),
+                _ => Err(IncludeDenial::NotFound),
+            }
+        };
+    let options = Options::default().with_lint_includes(
+        IncludeOptions::new()
+            .with_resolver(&resolver)
+            .with_source_path("root.crv"),
+    );
+    let findings = lint_carve_with_options("{{ child.crv }}", &options);
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.rule == "include-lines-table-rows-hint"
+                && f.file.as_deref() == Some("child.crv")
+                && f.line == 2),
+        "{findings:?}"
+    );
+}
+
+#[test]
 fn physical_line_slices_inside_quoted_records_fall_back_to_code() {
     let file = "A,B\n\"first\nmiddle\nlast\",x\nZ,y\n";
     for line in [2, 3, 4] {
