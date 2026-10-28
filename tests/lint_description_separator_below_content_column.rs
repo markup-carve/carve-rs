@@ -35,7 +35,14 @@ fn shared_vectors() {
                         .all(|phrase| warning.message.contains(phrase.as_str().unwrap()))
             });
         assert!(matches, "{name}: actual {actual:?}, expected {expected:?}");
-        if name != "within-description" && name != "correct-document" {
+        if name == "open-description" {
+            let additional: Vec<_> = warnings
+                .iter()
+                .filter(|warning| warning.rule != RULE)
+                .map(|warning| warning.rule)
+                .collect();
+            assert_eq!(additional, ["markdown-definition-paragraph"]);
+        } else if name != "within-description" && name != "correct-document" {
             assert_eq!(
                 warnings.len(),
                 actual.len(),

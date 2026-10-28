@@ -158,10 +158,23 @@ struct MarkerSublist<'l> {
     content: &'l str,
     innermost_content: &'l str,
     inner_lead: &'l str,
+    ladder_columns: Vec<usize>,
     nested_content_col: usize,
     nested_definition_ended_paragraph: bool,
     nested_lead_is_continuation: bool,
     before_block: usize,
+}
+
+fn marker_ladder_columns(mut content: &str, initial: usize) -> Vec<usize> {
+    let mut columns = vec![initial];
+    while let Some(marker) = detect_list_marker_full(content) {
+        let Some(width) = marker_content_col(content) else {
+            break;
+        };
+        columns.push(columns.last().unwrap() + width);
+        content = marker.content;
+    }
+    columns
 }
 
 /// What a marker-line block lead left open once its body was collected.
@@ -335,6 +348,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             }
         }
         if let Some(block) = attached {
+            self.item_paragraph_open =
+                ParagraphOpen::Known(block_ends_with_open_paragraph(Some(&block), 0, false));
             // Hoisted definitions leave no paragraph node behind (carve#801).
             let is_empty_paragraph = matches!(
                 &block,
@@ -367,6 +382,13 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 .cur
                 .peek()
                 .is_some_and(|line| below_item_definition(line, base_indent, content_col))
+        {
+            return END;
+        }
+        if self.cur.peek().is_some_and(|line| {
+            let indent = indent_columns(line);
+            indent > base_indent && indent < content_col
+        }) && !self.item_paragraph_open.get()
         {
             return END;
         }
@@ -1069,6 +1091,12 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             at,
             source_line,
         };
+        // A tab after the marker's space is content. Structural readers that
+        // skip leading whitespace must not see a second opener behind it.
+        if content.starts_with('\t') {
+            self.paragraph_lead_item(item);
+            return NEXT;
+        }
         // First-block form `- +` (grammar §17): a lone `+` as the marker
         // content means the item's first block is the following flush-left
         // block (no inline paragraph).
@@ -1395,7 +1423,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // innermost quote, which owns the `+` (`- > > +` / `> q` nests three
         // deep, carve#3421): it takes the `+` line's place behind its prefix.
         let quote_prefix = &content[..content.len() - innermost.len()];
-        let quote_column = quote_lead_column(cur, content, item_at, content_col);
+        let quote_column = marker_line_child_column(cur, content, item_at, content_col);
         let follower_indent = cur.lines.line(start).map_or(0, indent_columns);
         // The innermost `>` owns the `+`, so a block at its column opens in that quote.
         let innermost_marker_column = quote_prefix
@@ -1579,6 +1607,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             (self.base_indent, self.content_col, self.options);
         let content = item.marker.content;
         let item_at = item.at;
+        let marker_line_child_col =
+            marker_line_child_column(self.cur, content, item_at, content_col);
         // The marker line can open more than one item (`* * u`). Once a
         // flush lazy line folds into the innermost paragraph, S4 closes
         // nothing, so collection must resume against THAT item's content
@@ -1614,35 +1644,51 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             content,
             innermost_content,
             inner_lead,
-            nested_content_col: content_col + tail_col,
+            ladder_columns: marker_ladder_columns(content, marker_line_child_col),
+            nested_content_col: marker_line_child_col + tail_col,
             nested_definition_ended_paragraph,
             nested_lead_is_continuation: is_plus_marker(innermost_content),
             before_block: self.cur.pos,
         };
-        let collection_floor =
-            if nested_definition_ended_paragraph || detect_fence_open(inner_lead).is_some() {
-                content_col.saturating_sub(1)
-            } else {
-                base_indent
-            };
+        let collection_content_col = if detect_fence_open(inner_lead).is_some() {
+            content_col
+        } else {
+            marker_line_child_col
+        };
+        let collection_floor = if nested_definition_ended_paragraph
+            || detect_fence_open(inner_lead).is_some()
+            || !body_ends_with_open_paragraph(content, options)
+        {
+            collection_content_col.saturating_sub(1)
+        } else {
+            base_indent
+        };
         let before_collection = stream.source.len();
         if lead.nested_lead_is_continuation {
             stream.append(collect_indented_block_mapped_after_continuation(
                 self.cur,
                 collection_floor,
-                content_col,
+                collection_content_col,
                 options,
             ));
-        } else if !nested_definition_ended_paragraph
+        } else if (!nested_definition_ended_paragraph
             || self
                 .cur
                 .peek()
-                .is_some_and(|line| indent_columns(line) >= content_col)
+                .is_some_and(|line| indent_columns(line) >= marker_line_child_col))
+            && !(is_definition_list_start(inner_lead)
+                && self.cur.peek().is_some_and(|line| {
+                    let indent = indent_columns(line);
+                    indent < lead.nested_content_col
+                        && !(innermost_marker_column(lead.content)
+                            .is_some_and(|marker| indent == marker_line_child_col + marker)
+                            && strip_description_prefix(trim_ascii_start(line)).is_some())
+                }))
         {
             stream.append(collect_indented_block_mapped(
                 self.cur,
                 collection_floor,
-                content_col,
+                collection_content_col,
                 options,
             ));
         }
@@ -1654,7 +1700,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // blank, so `nested_ends_with_open_paragraph` below still reports the
         // paragraph as open and the lazy loop swallowed `- - a` / blank / `b`
         // into the inner item, where carve-js and carve-php end the list.
-        let ended_on_blank = self.cur.pos > lead.before_block && self.previous_line_blank();
+        let ended_on_blank = (self.cur.pos > lead.before_block && self.previous_line_blank())
+            || sublist_source_trailing_invisible_separation(&stream.source);
         self.fold_marker_sublist(&mut stream, &lead, ended_on_blank);
         self.finish_marker_sublist(item, stream, &lead)
     }
@@ -1672,6 +1719,13 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         mut ended_on_blank: bool,
     ) {
         let content_col = self.content_col;
+        // Read the prefix once, then inspect only newly appended lines so a
+        // long run of lazy continuations keeps linear work.
+        let mut term_lead =
+            is_definition_list_start(lead.inner_lead)
+                && !stream.source.lines().skip(1).any(|line| {
+                    !line.starts_with(LAZY) && strip_description_prefix(line).is_some()
+                });
         loop {
             if self.cur.peek().is_some_and(|line| {
                 marked_quote_at_ancestor_column(line, content_col, lead.nested_content_col)
@@ -1691,14 +1745,21 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             if lead.nested_definition_ended_paragraph {
                 break;
             }
+            let before = stream.source.len();
             if let Some(blank) = self.marker_sublist_comment(stream, lead) {
+                term_lead &= !stream.source[before..].lines().any(|line| {
+                    !line.starts_with(LAZY) && strip_description_prefix(line).is_some()
+                });
                 ended_on_blank = blank;
                 continue;
             }
-            match self.marker_sublist_lazy(stream, lead) {
+            match self.marker_sublist_lazy(stream, lead, term_lead) {
                 Some(blank) => ended_on_blank = blank,
                 None => break,
             }
+            term_lead &= !stream.source[before..]
+                .lines()
+                .any(|line| !line.starts_with(LAZY) && strip_description_prefix(line).is_some());
         }
     }
 
@@ -1762,17 +1823,48 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         &mut self,
         stream: &mut MappedSource,
         lead: &MarkerSublist<'l>,
+        term_lead: bool,
     ) -> Option<bool> {
         let (base_indent, content_col, options) =
             (self.base_indent, self.content_col, self.options);
         let nested_content_col = lead.nested_content_col;
+        let ladder_columns = &lead.ladder_columns;
+        let child_col = ladder_columns[0];
+        let nested_marker_col = ladder_columns
+            .get(ladder_columns.len().saturating_sub(2))
+            .copied();
+        let first_nested_content_col = ladder_columns.get(1).copied();
         let bare_continuation = self.last_item_bare_continuation;
         let cur = &mut *self.cur;
+        let lazy_column = if term_lead {
+            nested_content_col
+        } else {
+            content_col
+        };
         let has_lazy = if let Some(line) = cur.peek() {
             let line = line.to_string();
+            let indent = indent_columns(&line);
+            let at_nested_marker = term_lead
+                && ((indent >= child_col
+                    && indent <= nested_content_col
+                    && is_definition_list_start(trim_ascii_start(&line)))
+                    || (nested_marker_col == Some(indent)
+                        && strip_definition_marker(trim_ascii_start(&line)).is_some()));
             !is_blank_line(&line)
-                && indent_columns(&line) < content_col
-                && !is_list_marker(&line)
+                && !at_nested_marker
+                && (term_lead || indent < lazy_column)
+                // A block opener that reaches the surviving item's column
+                // has left the inner term. Test its content on that owner's
+                // base before the lazy frame hides the authored column.
+                && !(term_lead
+                    && indent >= child_col
+                    && indent <= nested_content_col
+                    && !is_list_marker(trim_ascii_start(&line))
+                    && interrupts_paragraph(cur, trim_ascii_start(&line)))
+                && !(is_list_marker(&line)
+                    && (indent == 0
+                        || ladder_columns.contains(&indent)
+                        || indent > nested_content_col))
                 && !interrupts_paragraph(cur, &line)
         } else {
             false
@@ -1811,6 +1903,49 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             .is_some_and(|line| caption_content(trim_ascii_start(line)).is_some())
         {
             return None;
+        }
+        // A term opened on a nested marker line keeps a below-column lazy
+        // line. Frame it before the next parse so a colon-shaped line cannot
+        // turn into a definition after the source columns have been rebased.
+        if term_lead {
+            let line = cur.peek().unwrap();
+            let indent = indent_columns(line);
+            let content = trim_ascii_start(line);
+            let source_col = cur
+                .source_col(cur.pos)
+                .map(|column| column + leading_ws(line) as isize);
+            stream.push_newline_at(
+                if content.starts_with(LAZY) {
+                    content.to_string()
+                } else if indent > nested_content_col {
+                    format!(
+                        "{LAZY_INDENT}{}{content}",
+                        " ".repeat(indent - nested_content_col)
+                    )
+                } else {
+                    format!("{LAZY}{content}")
+                },
+                cur.source_line(cur.pos),
+                source_col,
+            );
+            cur.consume();
+            if cur.peek().is_some_and(|line| {
+                let indent = indent_columns(line);
+                let nested_list_sibling = is_list_marker(line)
+                    && (ladder_columns.contains(&indent) || indent > nested_content_col);
+                let nested_definition_sibling = first_nested_content_col
+                    .is_some_and(|first| indent >= first && indent <= nested_content_col)
+                    && is_definition_list_start(trim_ascii_start(line));
+                nested_list_sibling || nested_definition_sibling
+            }) {
+                stream.append(collect_indented_block_mapped(
+                    cur,
+                    content_col.saturating_sub(1),
+                    content_col,
+                    options,
+                ));
+            }
+            return Some(false);
         }
         let before = cur.pos;
         collect_marker_sublist_lazy_through(
@@ -1885,9 +2020,18 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 stream.reached.truncate(1);
             }
         }
-        if detect_container_open(inner_lead).is_some() || detect_fence_open(inner_lead).is_some() {
+        let retained_band_marker = chunk_ends_in_closed_comment_span(&stream)
+            && self
+                .cur
+                .peek()
+                .and_then(detect_list_marker_full)
+                .is_some_and(|marker| {
+                    marker.indent > self.base_indent && marker.indent < content_col
+                });
+        if !retained_band_marker {
+            let probed = stream.source.clone();
             self.item_paragraph_open =
-                ParagraphOpen::Known(body_ends_with_open_paragraph(&stream.source, options));
+                ParagraphOpen::deferred(move || body_ends_with_open_paragraph(&probed, options));
         }
         let children = item_body_with_layout_suppression(
             self.deferred,
@@ -2438,9 +2582,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     }
 }
 
-/// The column the marker line's quote opens at: past a task's checkbox, and
-/// never before the item's content column.
-fn quote_lead_column(
+/// The authored column where a marker-line child begins, past a task's
+/// checkbox and never before the item's content column.
+fn marker_line_child_column(
     cur: &LineCursor<'_>,
     content: &str,
     item_at: usize,
