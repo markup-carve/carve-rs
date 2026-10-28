@@ -391,7 +391,7 @@ fn collect_authoring(
                 emit(out, rows, line, authored_first_nonspace(row.text), 1, "list-marker-without-blank-line", "This list marker is part of the preceding paragraph; add a blank line before the list.");
             }
             if index > 0
-                && definition.is_match(row.text)
+                && definition.is_match(&row.text[quote_prefix(row.text).0..])
                 && paragraphs.contains_key(&(line - 1))
                 && !rows[index - 1].text.trim_start().starts_with(":: ")
             {
