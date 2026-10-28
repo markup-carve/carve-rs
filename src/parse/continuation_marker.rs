@@ -53,6 +53,7 @@ fn host(kind: Option<Kind>, quote_depth: usize) -> &'static str {
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Decision {
     pub owner: Option<Kind>,
+    pub owner_column: Option<usize>,
     pub refusal: Option<Refusal>,
     pub first_block: bool,
     pub quote_depth: usize,
@@ -747,6 +748,7 @@ impl Walk {
         }
         self.decisions[index] = Some(Decision {
             owner: owner.map(|e| e.kind),
+            owner_column: owner.map(|e| e.column),
             refusal,
             first_block: first_block_quote,
             quote_depth: depth,
@@ -1117,6 +1119,7 @@ impl Walk {
         }
         self.decisions[index] = Some(Decision {
             owner: Some(owner.kind),
+            owner_column: Some(owner.column),
             refusal,
             first_block: true,
             quote_depth: depth,

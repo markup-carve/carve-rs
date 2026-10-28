@@ -717,6 +717,18 @@ pub(crate) fn collect_indented_block_mapped_after_continuation(
     strip_cols: usize,
     options: &Options<'_>,
 ) -> MappedSource {
+    // A continuation assigned to an ancestor belongs to that ancestor's
+    // collector. The nested source cannot claim it merely because it is flush.
+    if cur.peek().is_some_and(is_plus_marker)
+        && cur.continuation_decision(cur.pos).is_some_and(|decision| {
+            decision.refusal.is_none()
+                && decision
+                    .owner_column
+                    .is_some_and(|column| column < strip_cols)
+        })
+    {
+        return LineBuffer::default().into_source();
+    }
     if !cur.in_item_body
         && cur.peek().is_some_and(|line| {
             indent_columns(line) == 0 && detect_list_marker_full(line).is_none()

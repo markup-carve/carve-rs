@@ -1846,6 +1846,48 @@ impl<'a> QuoteBody<'a> {
             let column = stripped_col(cur.source_col(quoted.at), quoted.line, kept);
             self.push_carried(cur, quoted.at, kept.to_string(), quoted.source_line, column);
         }
+        if levels > 0
+            && cur.peek().is_some_and(is_plus_marker)
+            && cur
+                .continuation_decision(cur.pos)
+                .is_some_and(|decision| decision.refusal.is_some())
+        {
+            self.inner.push_at(
+                "+".to_string(),
+                cur.source_line(cur.pos),
+                cur.source_col(cur.pos),
+            );
+            cur.consume();
+            self.inner.push_synthetic_blank();
+            if cur.peek().is_some_and(|line| !is_blank_line(line)) {
+                let start = cur.pos;
+                let first_is_paragraph = line_starts_paragraph(cur.lines.at(start));
+                let end = attached_block_lines_classified(
+                    cur.lines,
+                    start,
+                    &mut cur.comment_closer_last_index,
+                    &mut cur.code_closer_last_index,
+                    options,
+                    &mut |next, at| {
+                        is_blank_line(next)
+                            || (at > start
+                                && (is_plus_marker(next)
+                                    || (first_is_paragraph
+                                        && detect_list_marker_full(next).is_some())))
+                    },
+                );
+                while cur.pos < end {
+                    self.inner.push_at(
+                        cur.lines.at(cur.pos).to_string(),
+                        cur.source_line(cur.pos),
+                        cur.source_col(cur.pos),
+                    );
+                    cur.consume();
+                }
+            }
+            self.para_open = ParaOpen::Closed;
+            return;
+        }
         // A second marker can attach the first block when it has its own follower.
         // With no follower it remains literal content of this quote.
         if levels == 0
@@ -2276,6 +2318,13 @@ impl<'a> QuoteBody<'a> {
         let mut attached = LineBuffer::default();
         let cursor_lines = cur.lines;
         let attached_start = cur.pos;
+        let attached_paragraph_after_nested_list = attached_start >= 2
+            && line_starts_paragraph(cursor_lines.at(attached_start))
+            && cursor_lines.line(attached_start - 2).is_some_and(|prior| {
+                strip_blockquote_prefix(prior)
+                    .and_then(detect_list_marker_full)
+                    .is_some_and(|marker| is_plus_marker(marker.content))
+            });
         let refused_first_plus = cursor_lines
             .line(attached_start + 1)
             .map_or(true, is_blank_line)
@@ -2291,6 +2340,9 @@ impl<'a> QuoteBody<'a> {
             options,
             &mut |next, at| {
                 is_blank_line(next)
+                    || (attached_paragraph_after_nested_list
+                        && at > attached_start
+                        && detect_list_marker_full(next).is_some())
                     || (trim_ascii(next) == "+"
                         && indent_columns(next) == 0
                         && !(at == attached_start && refused_first_plus))

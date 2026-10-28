@@ -719,7 +719,7 @@ fn render_document_blocks(
 
 mod footnotes;
 use footnotes::*;
-pub(crate) use footnotes::{collect_footnotes, FootnoteEntry};
+pub(crate) use footnotes::{collect_footnotes, used_footnote_labels, FootnoteEntry};
 fn render_section(
     out: &mut String,
     nodes: &[BlockNode],

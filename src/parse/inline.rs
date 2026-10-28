@@ -367,6 +367,7 @@ pub(in crate::parse) fn parse_inline_context(
 
 thread_local! {
     static INLINE_FRAMES: Cell<usize> = const { Cell::new(0) };
+    static INLINE_SOURCE: RefCell<Option<(String, usize)>> = const { RefCell::new(None) };
 }
 
 struct InlineFrame {
@@ -374,9 +375,12 @@ struct InlineFrame {
 }
 
 impl InlineFrame {
-    fn enter(has_bracket_construct: bool) -> (Self, bool) {
+    fn enter(has_bracket_construct: bool, text: &str, base: usize) -> (Self, bool) {
         INLINE_FRAMES.with(|frames| {
             let nested = frames.get() > 0;
+            if !nested && (text.contains('"') || text.contains('\'')) {
+                INLINE_SOURCE.with(|source| *source.borrow_mut() = Some((text.to_owned(), base)));
+            }
             frames.set(frames.get() + 1);
             let waived_block_root = !nested
                 && has_bracket_construct
@@ -395,7 +399,13 @@ impl InlineFrame {
 
 impl Drop for InlineFrame {
     fn drop(&mut self) {
-        INLINE_FRAMES.with(|frames| frames.set(frames.get() - 1));
+        INLINE_FRAMES.with(|frames| {
+            let remaining = frames.get() - 1;
+            frames.set(remaining);
+            if remaining == 0 {
+                INLINE_SOURCE.with(|source| *source.borrow_mut() = None);
+            }
+        });
         if self.waived_block_root {
             NESTING_DEPTH.with(|depth| depth.set(depth.get() + 1));
         }
@@ -422,7 +432,7 @@ pub(in crate::parse) fn parse_inline_context_with_pairs(
         return plain;
     }
     let has_link_trigger = text.contains("](") || text.contains("][") || text.contains("]{");
-    let (inline_frame, nested) = InlineFrame::enter(has_link_trigger);
+    let (inline_frame, nested) = InlineFrame::enter(has_link_trigger, text, base);
     let _inline_frame = inline_frame;
     // A bracketed inline tree spends its depth budget on its constructs, not
     // on the enclosing block and initial scan. Its descendants still share
@@ -1234,8 +1244,14 @@ impl InlineRun<'_, '_> {
     /// Smart typography (§8): parsed into AST nodes so renderers can choose
     /// glyph output or source-preserving Carve output without rescanning.
     fn smart_punctuation(&mut self, i: usize) -> Option<usize> {
-        let (nodes, consumed) =
-            parse_smart_punctuation_at(self.text, i, &self.sink.buf, &self.sink.out, self.options)?;
+        let (nodes, consumed) = parse_smart_punctuation_at(
+            self.text,
+            i,
+            self.sink.base,
+            &self.sink.buf,
+            &self.sink.out,
+            self.options,
+        )?;
         self.sink.flush();
         let mut local = 0usize;
         for mut node in nodes {
@@ -1848,9 +1864,23 @@ pub(in crate::parse) fn flag_shaped_hyphen_run(text: &str, i: usize) -> Option<u
     }
 }
 
+fn next_source_char(text: &str, base: usize, after: usize) -> Option<char> {
+    INLINE_SOURCE.with(|source| {
+        let source = source.borrow();
+        let (root, root_base) = source.as_ref()?;
+        let start = base.checked_sub(*root_base)?;
+        let end = start.checked_add(text.len())?;
+        if root.get(start..end)? != text {
+            return None;
+        }
+        root.get(start.checked_add(after)?..)?.chars().next()
+    })
+}
+
 pub(in crate::parse) fn parse_smart_punctuation_at(
     text: &str,
     i: usize,
+    base: usize,
     buf: &str,
     out: &[InlineNode],
     options: &Options<'_>,
@@ -1938,8 +1968,11 @@ pub(in crate::parse) fn parse_smart_punctuation_at(
 
     let c = text[i..].chars().next()?;
     if c == '"' {
-        let open =
-            quote_open_context(prev) && !closes_after_dash(prev, text[i + 1..].chars().next());
+        let next = text[i + 1..]
+            .chars()
+            .next()
+            .or_else(|| next_source_char(text, base, i + 1));
+        let open = quote_open_context(prev) && !closes_after_dash(prev, next);
         let glyph = if open { "“" } else { "”" };
         let kind = if open {
             "left_double_quote"
@@ -1957,7 +1990,10 @@ pub(in crate::parse) fn parse_smart_punctuation_at(
         ));
     }
     if c == '\'' {
-        let next = text[i + 1..].chars().next();
+        let next = text[i + 1..]
+            .chars()
+            .next()
+            .or_else(|| next_source_char(text, base, i + 1));
         let open = quote_open_context(prev) && !closes_after_dash(prev, next);
         let apostrophe = quote_state::single(
             text,
