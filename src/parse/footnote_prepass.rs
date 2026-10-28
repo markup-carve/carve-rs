@@ -125,6 +125,7 @@ impl NoteBody {
         let text = trim_ascii_start(line);
         if self.lines.len() == 1
             && is_plus_marker(&self.lines[0])
+            && indent_columns(line) == 0
             && detect_list_marker_full(text).is_some()
         {
             return false;
@@ -849,12 +850,26 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             if self.positions {
                 note.col_map[0] = None;
             }
+            let mut opacity = BodyCommentState::new();
             while i < end {
-                note.push_with(
-                    lines[i].to_string(),
-                    Some(self.first_source_line + i),
-                    |_| Some(0),
-                );
+                let line = lines[i];
+                let definition = indent_columns(line) >= container.content_column
+                    && opacity.code.is_none()
+                    && opacity.comment.is_none()
+                    && self.hoist_note_link_def(trim_ascii_start(line), i);
+                if definition {
+                    note.push_with(
+                        definition_placeholder().to_string(),
+                        Some(self.first_source_line + i),
+                        |_| Some(0),
+                    );
+                    opacity.observe("");
+                } else {
+                    note.push_with(line.to_string(), Some(self.first_source_line + i), |_| {
+                        Some(0)
+                    });
+                    opacity.observe(line);
+                }
                 i += 1;
             }
             note.push_blank();
@@ -1450,6 +1465,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             marker_note: detect_list_marker_full(inside)
                 .is_some_and(|marker| parse_footnote_def_line(marker.content).is_some()),
         };
+        let i = self.quoted_plus_first_block(&host, note, i, def.first);
         let mut i = self.attach_quoted_plus_block(&host, note, i, raw_def_line);
         let source = self.source;
         let track = *self
@@ -1475,11 +1491,17 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             return i;
         }
         if !walk.reaches_floor(&host, self.lines[resume_at])
-            && !host.content(self.lines[resume_at]).is_some_and(|line| {
-                !self.nested
-                    && indent_columns(line) >= host.owner_column
-                    && note.can_fold_below(line, self.options)
-            })
+            && !host
+                .content(self.lines[resume_at])
+                .or_else(|| {
+                    (!self.nested && host.quote_depth > 0 && note.lazy_claim)
+                        .then_some(self.lines[resume_at])
+                })
+                .is_some_and(|line| {
+                    !self.nested
+                        && (indent_columns(line) >= host.owner_column || note.lazy_claim)
+                        && note.can_fold_below(line, self.options)
+                })
         {
             return i;
         }
@@ -1489,6 +1511,58 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             }
         }
         i
+    }
+
+    fn quoted_plus_first_block(
+        &mut self,
+        host: &NoteHost,
+        note: &mut NoteBody,
+        i: usize,
+        first: &str,
+    ) -> usize {
+        if host.quote_depth == 0
+            || !is_plus_marker(first)
+            || !self
+                .decision_at(self.first_source_line + i - 1)
+                .is_some_and(|decision| {
+                    decision.owner == Some(continuation_marker::Kind::Footnote)
+                        && decision.refusal.is_none()
+                })
+        {
+            return i;
+        }
+        let attached: Vec<&str> = self.lines[i..]
+            .iter()
+            .map_while(|raw| host.content(raw).filter(|line| !is_blank_line(line)))
+            .collect();
+        if attached.is_empty() {
+            return i;
+        }
+        if detect_list_marker_full(attached[0]).is_some() {
+            return i;
+        }
+        let count = attached_one_block_lines(CursorLines::Slice(&attached), self.options);
+        if count == 0 {
+            return i;
+        }
+        note.lines[0].clear();
+        note.line_map[0] = None;
+        if self.positions {
+            note.col_map[0] = None;
+        }
+        for (offset, line) in attached.into_iter().take(count).enumerate() {
+            let raw = self.lines[i + offset];
+            note.push_with(
+                line.to_string(),
+                Some(self.first_source_line + i + offset),
+                |_| Some((raw.chars().count() - line.chars().count()) as isize),
+            );
+        }
+        if body_ends_with_open_paragraph(&note.lines.join("\n"), self.options) {
+            note.lazy_open = Some(true);
+            note.lazy_claim = true;
+        }
+        i + count
     }
 
     fn attach_quoted_plus_block(
@@ -1578,7 +1652,10 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         i: &mut usize,
     ) -> Flow {
         let raw = self.lines[*i];
-        let Some(line) = host.content(raw) else {
+        let Some(line) = host
+            .content(raw)
+            .or_else(|| (!self.nested && host.quote_depth > 0 && note.lazy_claim).then_some(raw))
+        else {
             return Flow::Stop;
         };
         if is_blank_line(line) {
