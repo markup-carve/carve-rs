@@ -137,7 +137,22 @@ fn lint_includes(
                 included_by,
                 block,
                 payload,
+                line_selection,
             } => {
+                if line_selection {
+                    if let Some(site) = included_by.last() {
+                        findings.push(LintWarning {
+                            file: (!site.file.is_empty()).then(|| site.file.clone()),
+                            included_by: included_by[..included_by.len() - 1].to_vec(),
+                            line: site.line,
+                            column: site.column,
+                            rule: "include-lines-table-rows-hint",
+                            message: "Use @rows to select complete CSV/TSV records.".into(),
+                            start: 0,
+                            end: 0,
+                        });
+                    }
+                }
                 let marked = match block.as_ref() {
                     BlockNode::CodeBlock(code) => code
                         .attrs
@@ -217,6 +232,10 @@ fn literal_include_rule(rule: &str) -> Option<&'static str> {
         "include-depth" => "include-depth",
         "include-duplicate-option" => "include-duplicate-option",
         "include-lines-out-of-range" => "include-lines-out-of-range",
+        "include-rows-invalid" => "include-rows-invalid",
+        "include-rows-out-of-range" => "include-rows-out-of-range",
+        "include-cols-invalid" => "include-cols-invalid",
+        "include-cols-duplicate" => "include-cols-duplicate",
         "include-non-text" => "include-non-text",
         "include-region-invalid" => "include-region-invalid",
         "include-section" => "include-section",

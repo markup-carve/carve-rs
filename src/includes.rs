@@ -133,6 +133,8 @@ pub enum AcceptedInclude {
         block: Box<BlockNode>,
         /// Code payload before insertion.
         payload: String,
+        /// Whether a physical line selector was used on a marked table include.
+        line_selection: bool,
     },
 }
 
@@ -410,9 +412,25 @@ struct Directive {
     path: String,
     section: Option<String>,
     lines: Option<(usize, usize)>,
+    rows: Option<(usize, usize)>,
+    cols: Option<IncludeColumns>,
+    table_attrs: Option<Attrs>,
     region: Option<String>,
     code: Option<Option<String>>,
     shift: Shift,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum IncludeColumns {
+    Names(Vec<String>),
+    Range(usize, usize),
+}
+
+fn selected_table_include(d: &Directive) -> bool {
+    d.table_attrs
+        .as_ref()
+        .is_some_and(|attrs| attrs.key_values.get("table").is_some_and(String::is_empty))
+        && (d.rows.is_some() || d.cols.is_some() || d.lines.is_some() || d.region.is_some())
 }
 
 fn is_ident_start(c: char) -> bool {
@@ -640,6 +658,7 @@ enum ParsedDirective {
     /// A recognized line selector with a malformed range. Keep its path so
     /// the rejected directive can still record a resolved dependency.
     InvalidLines(String),
+    InvalidTable(String, &'static str),
     /// An `@…`-shaped option that is unknown or malformed; carries the offending token.
     BadOption(String),
     /// Not directive-shaped at all; no warning, stays literal silently.
@@ -649,6 +668,35 @@ enum ParsedDirective {
     DuplicateSection(String),
     /// An option key given a second time (I1). Carries the offending token.
     DuplicateOption(String),
+    RepeatedTableOption(String, String),
+}
+
+fn include_range(value: &str) -> Option<(usize, usize)> {
+    let (start, end) = value.split_once('-')?;
+    let positive =
+        |s: &str| !s.is_empty() && !s.starts_with('0') && s.bytes().all(|b| b.is_ascii_digit());
+    if !positive(start) || !positive(end) {
+        return None;
+    }
+    let (start, end) = (start.parse::<usize>().ok()?, end.parse::<usize>().ok()?);
+    (start <= end).then_some((start, end))
+}
+
+fn include_column_names(value: &str) -> Option<Vec<String>> {
+    let inner = value.strip_prefix('"')?.strip_suffix('"')?;
+    let mut names = Vec::new();
+    let mut current = String::new();
+    let mut chars = inner.chars();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\\' => current.push(chars.next()?),
+            '"' => return None,
+            ',' => names.push(std::mem::take(&mut current)),
+            _ => current.push(ch),
+        }
+    }
+    names.push(current);
+    names.iter().all(|name| !name.is_empty()).then_some(names)
 }
 
 /// A `#name` the section slot would have taken, had it not already been full.
@@ -705,6 +753,8 @@ fn option_parts(tail: &str) -> Vec<&str> {
 
 fn parse_options(raw: RawDirective) -> ParsedDirective {
     let mut lines = None;
+    let mut rows = None;
+    let mut cols = None;
     let mut region = None;
     let mut code = None;
     let mut shift = Shift::By(0);
@@ -734,6 +784,16 @@ fn parse_options(raw: RawDirective) -> ParsedDirective {
             continue;
         }
         let Some((key, value)) = body.split_once(':') else {
+            if body == "rows" || body == "cols" {
+                return ParsedDirective::InvalidTable(
+                    raw.path,
+                    if body == "rows" {
+                        "include-rows-invalid"
+                    } else {
+                        "include-cols-invalid"
+                    },
+                );
+            }
             return bad();
         };
         let key_ok = {
@@ -741,11 +801,22 @@ fn parse_options(raw: RawDirective) -> ParsedDirective {
             it.next().is_some_and(is_ident_start) && it.all(is_ident_rest)
         };
         let value_ok = !value.is_empty()
-            && value
-                .chars()
-                .all(|c| !matches!(c, '@' | '}') && !c.is_whitespace());
+            && (key == "cols" && value.starts_with('"')
+                || value
+                    .chars()
+                    .all(|c| !matches!(c, '@' | '}') && !c.is_whitespace()));
         if key == "lines" && !value_ok {
             return ParsedDirective::InvalidLines(raw.path);
+        }
+        if (key == "rows" || key == "cols") && !value_ok {
+            return ParsedDirective::InvalidTable(
+                raw.path,
+                if key == "rows" {
+                    "include-rows-invalid"
+                } else {
+                    "include-cols-invalid"
+                },
+            );
         }
         if !key_ok || !value_ok {
             return bad();
@@ -754,6 +825,27 @@ fn parse_options(raw: RawDirective) -> ParsedDirective {
         // after the value, so a malformed repeat still reports as malformed.
         let repeated = || ParsedDirective::DuplicateOption(part.to_string());
         match key {
+            "rows" => {
+                if !seen.insert("rows") {
+                    return ParsedDirective::RepeatedTableOption(raw.path, part.to_string());
+                }
+                rows = match include_range(value) {
+                    Some(range) => Some(range),
+                    None => return ParsedDirective::InvalidTable(raw.path, "include-rows-invalid"),
+                };
+            }
+            "cols" => {
+                if !seen.insert("cols") {
+                    return ParsedDirective::RepeatedTableOption(raw.path, part.to_string());
+                }
+                cols = match include_range(value)
+                    .map(|(a, b)| IncludeColumns::Range(a, b))
+                    .or_else(|| include_column_names(value).map(IncludeColumns::Names))
+                {
+                    Some(columns) => Some(columns),
+                    None => return ParsedDirective::InvalidTable(raw.path, "include-cols-invalid"),
+                };
+            }
             "code" => {
                 if !value.chars().all(|c| {
                     c.is_ascii_alphanumeric() || matches!(c, '_' | '+' | '#' | '.' | '/' | '-')
@@ -829,6 +921,9 @@ fn parse_options(raw: RawDirective) -> ParsedDirective {
         path: raw.path,
         section: raw.section,
         lines,
+        rows,
+        cols,
+        table_attrs: None,
         region,
         code,
         shift,
@@ -1231,11 +1326,12 @@ struct ResolvedChild {
 fn resolve_child(d: &Directive, state: &mut State<'_>) -> Option<ResolvedChild> {
     let resolver = state.opts.resolver?;
     // I1: a directive selects by at most one mechanism.
-    if usize::from(d.section.is_some())
-        + usize::from(d.lines.is_some())
-        + usize::from(d.region.is_some())
-        > 1
-        || (d.code.is_some() && d.section.is_some())
+    if d.rows.is_none()
+        && (usize::from(d.section.is_some())
+            + usize::from(d.lines.is_some())
+            + usize::from(d.region.is_some())
+            > 1
+            || (d.code.is_some() && d.section.is_some()))
     {
         state.warn(
             "include-selection-conflict",
@@ -1317,6 +1413,33 @@ fn resolve_child(d: &Directive, state: &mut State<'_>) -> Option<ResolvedChild> 
         return None;
     }
     state.note(&id, true);
+    if d.rows.is_some() && (d.section.is_some() || d.lines.is_some() || d.region.is_some()) {
+        state.warn(
+            "include-selection-conflict",
+            format!("Include \"{}\" cannot combine selectors.", d.path),
+        );
+        return None;
+    }
+    if (d.rows.is_some() || d.cols.is_some())
+        && (!d
+            .table_attrs
+            .as_ref()
+            .is_some_and(|a| a.key_values.get("table").is_some_and(String::is_empty))
+            || !matches!(
+                d.code.as_ref().and_then(|c| c.as_deref()),
+                Some("csv" | "tsv")
+            ))
+    {
+        state.warn(
+            if d.rows.is_some() {
+                "include-rows-invalid"
+            } else {
+                "include-cols-invalid"
+            },
+            "Include table options require a marked CSV or TSV block.".into(),
+        );
+        return None;
+    }
     // The cycle guard compares canonical ids AFTER resolution, so a resolver
     // that supplies ids catches "b.crv" vs "./b.crv" spellings of one file.
     if state.stack.iter().any(|e| e == &id) {
@@ -1391,6 +1514,9 @@ fn reject_invalid_lines(path: &str, state: &mut State<'_>) {
         path: path.to_string(),
         section: None,
         lines: None,
+        rows: None,
+        cols: None,
+        table_attrs: None,
         region: None,
         code: None,
         shift: Shift::By(0),
@@ -1399,6 +1525,25 @@ fn reject_invalid_lines(path: &str, state: &mut State<'_>) {
     state.warn(
         "include-lines-invalid",
         format!("Include line range for \"{path}\" is invalid."),
+    );
+}
+
+fn reject_invalid_table(path: &str, rule: &str, state: &mut State<'_>) {
+    let directive = Directive {
+        path: path.to_string(),
+        section: None,
+        lines: None,
+        rows: None,
+        cols: None,
+        table_attrs: None,
+        region: None,
+        code: None,
+        shift: Shift::By(0),
+    };
+    let _ = resolve_child(&directive, state);
+    state.warn(
+        rule,
+        format!("Include table option for \"{path}\" is invalid."),
     );
 }
 
@@ -2300,8 +2445,10 @@ fn with_child<T>(
         if let (Some(AcceptedInclude::Code { block, .. }), Some(attrs)) = (&mut report, attrs) {
             if let BlockNode::CodeBlock(code) = block.as_mut() {
                 code.attrs = Some(attrs.clone());
-                if let Some(table) = crate::parse::delimited_table::from_code(code, &[]) {
-                    **block = BlockNode::Table(table);
+                if !selected_table_include(d) {
+                    if let Some(table) = crate::parse::delimited_table::from_code(code, &[]) {
+                        **block = BlockNode::Table(table);
+                    }
                 }
             }
         }
@@ -2584,6 +2731,184 @@ fn expand_child(d: &Directive, state: &mut State<'_>, inline: bool) -> Option<Ex
         crate::parse_with_options(&source, &child_options)
     };
     let mut children = std::mem::take(&mut child.children);
+    let mut promoted_table = None;
+    if let (Some(attrs), Some(Some(lang)), [BlockNode::CodeBlock(code)]) = (
+        d.table_attrs.as_ref(),
+        d.code.as_ref(),
+        children.as_mut_slice(),
+    ) {
+        if attrs.key_values.get("table").is_some_and(String::is_empty)
+            && matches!(lang.as_str(), "csv" | "tsv")
+            && (d.rows.is_some() || d.cols.is_some() || selected_range.is_some())
+        {
+            let whole = position_base
+                .as_ref()
+                .map_or(source.as_str(), |(s, _)| s.as_str());
+            let mut full = String::new();
+            let mut payload = Vec::new();
+            let offsets = line_start_offsets(whole);
+            let lines = if whole == "\u{feff}" {
+                Vec::new()
+            } else {
+                source_lines(whole)
+            };
+            for (index, line) in lines.iter().enumerate() {
+                let text = if index == 0 {
+                    line.strip_prefix('\u{feff}').unwrap_or(line)
+                } else {
+                    line
+                };
+                payload.push(crate::parse::delimited_table::PayloadLine {
+                    start: full.len(),
+                    text: text.to_string(),
+                    line: index + 1,
+                    column: 1 + usize::from(index == 0 && whole.starts_with('\u{feff}')),
+                    file_offset: Some(
+                        offsets[index] + usize::from(index == 0 && whole.starts_with('\u{feff}')),
+                    ),
+                });
+                full.push_str(text);
+                full.push('\n');
+            }
+            let full_code = crate::ast::CodeBlock {
+                attrs: Some(attrs.clone()),
+                content: full.clone(),
+                pos: state.track_positions.then(|| crate::Pos {
+                    start_line: 1,
+                    end_line: lines.len().max(1),
+                    start_column: 1 + usize::from(whole.starts_with('\u{feff}')),
+                    end_column: lines.last().map_or(1, |line| 1 + line.chars().count()),
+                    start_offset: usize::from(whole.starts_with('\u{feff}')),
+                    end_offset: whole.chars().count(),
+                    file: Some(crate::ast::SourceFile::new(&id)),
+                }),
+                ..code.clone()
+            };
+            let sliced_valid = selected_range.is_none()
+                || crate::parse::delimited_table::from_code(
+                    &crate::ast::CodeBlock {
+                        attrs: Some(attrs.clone()),
+                        ..code.clone()
+                    },
+                    &[],
+                )
+                .is_some();
+            if let Some(mut table) = crate::parse::delimited_table::from_code(&full_code, &payload)
+                .filter(|table| {
+                    sliced_valid
+                        && selected_range.map_or(true, |(first, last)| {
+                            table.rows.iter().all(|row| {
+                                row.pos.as_ref().map_or(true, |pos| {
+                                    !(pos.start_line < first && pos.end_line >= first
+                                        || pos.start_line <= last && pos.end_line > last)
+                                })
+                            })
+                        })
+                })
+            {
+                let headers = table
+                    .rows
+                    .iter()
+                    .take_while(|row| row.cells.first().is_some_and(|cell| cell.header))
+                    .count();
+                if d.rows.is_some_and(|(first, _)| first > table.rows.len()) {
+                    state.warn(
+                        "include-rows-out-of-range",
+                        format!(
+                            "Include record range for \"{}\" starts past end of file.",
+                            d.path
+                        ),
+                    );
+                    return None;
+                }
+                let mut selected = Vec::new();
+                for (index, mut row) in table.rows.drain(..).enumerate() {
+                    let record = index + 1;
+                    let keep = index < headers
+                        || if let Some((first, last)) = d.rows {
+                            record >= first && record <= last
+                        } else if let Some((first, last)) = selected_range {
+                            row.pos.as_ref().is_some_and(|pos| {
+                                pos.start_line >= first && pos.start_line <= last
+                            })
+                        } else {
+                            true
+                        };
+                    if keep {
+                        if index >= headers {
+                            for cell in &mut row.cells {
+                                cell.header = false;
+                            }
+                        }
+                        selected.push(row);
+                    }
+                }
+                table.rows = selected;
+                if let Some(cols) = &d.cols {
+                    let indices = match cols {
+                        IncludeColumns::Names(names) => {
+                            if headers == 0 {
+                                state.warn(
+                                    "include-cols-invalid",
+                                    "Named include columns require a header row.".into(),
+                                );
+                                return None;
+                            }
+                            let labels: Vec<String> = table.rows[0]
+                                .cells
+                                .iter()
+                                .map(|cell| plain_inlines(&cell.children))
+                                .collect();
+                            let mut indices = Vec::new();
+                            for name in names {
+                                let matching: Vec<usize> = labels
+                                    .iter()
+                                    .enumerate()
+                                    .filter_map(|(i, label)| (label == name).then_some(i))
+                                    .collect();
+                                if matching.len() != 1 {
+                                    state.warn("include-cols-invalid", format!("Include column \"{name}\" is missing, empty, or ambiguous."));
+                                    return None;
+                                }
+                                if indices.contains(&matching[0]) {
+                                    state.warn(
+                                        "include-cols-duplicate",
+                                        format!("Include column \"{name}\" is duplicated."),
+                                    );
+                                    return None;
+                                }
+                                indices.push(matching[0]);
+                            }
+                            indices
+                        }
+                        IncludeColumns::Range(first, last) => {
+                            if attrs.key_values.get("header-rows").map(String::as_str) != Some("0")
+                                || *last > table.rows.first().map_or(0, |row| row.cells.len())
+                            {
+                                state.warn("include-cols-invalid", "Numeric include columns require header-rows=0 and an in-bounds range.".into());
+                                return None;
+                            }
+                            (*first - 1..*last).collect()
+                        }
+                    };
+                    for row in &mut table.rows {
+                        row.cells = indices
+                            .iter()
+                            .filter_map(|&i| row.cells.get(i).cloned())
+                            .collect();
+                    }
+                }
+                table.row_groups = None;
+                promoted_table = Some(table);
+            } else if d.rows.is_some() || d.cols.is_some() {
+                code.content = full;
+                code.pos = full_code.pos;
+            }
+        }
+    }
+    if let Some(table) = promoted_table {
+        children[0] = BlockNode::Table(table);
+    }
     let mut footnotes = std::mem::take(&mut child.footnote_defs);
     if let Some((complete_source, line_base)) = position_base.as_ref().filter(|_| d.code.is_none())
     {
@@ -2634,6 +2959,10 @@ fn expand_child(d: &Directive, state: &mut State<'_>, inline: bool) -> Option<Ex
                 included_by: reach.clone(),
                 block: Box::new(children.first()?.clone()),
                 payload,
+                line_selection: d.lines.is_some()
+                    && d.table_attrs.as_ref().is_some_and(|attrs| {
+                        attrs.key_values.get("table").is_some_and(String::is_empty)
+                    }),
             })
         } else {
             let selected_lines = d.section.as_ref().and_then(|_| {
@@ -2928,6 +3257,10 @@ fn expand_run(run: &[InlineNode], state: &mut State<'_>) -> Vec<InlineNode> {
                     reject_invalid_lines(&path, state);
                     return None;
                 }
+                ParsedDirective::InvalidTable(path, rule) => {
+                    reject_invalid_table(&path, rule, state);
+                    return None;
+                }
                 ParsedDirective::BadOption(part) => {
                     state.warn(
                         "include-unknown-option",
@@ -2943,6 +3276,25 @@ fn expand_run(run: &[InlineNode], state: &mut State<'_>) -> Vec<InlineNode> {
                     return None;
                 }
                 ParsedDirective::DuplicateOption(part) => {
+                    state.warn(
+                        "include-duplicate-option",
+                        format!("Include option \"{part}\" repeats an option given earlier."),
+                    );
+                    return None;
+                }
+                ParsedDirective::RepeatedTableOption(path, part) => {
+                    let directive = Directive {
+                        path,
+                        section: None,
+                        lines: None,
+                        rows: None,
+                        cols: None,
+                        table_attrs: None,
+                        region: None,
+                        code: None,
+                        shift: Shift::By(0),
+                    };
+                    let _ = resolve_child(&directive, state);
                     state.warn(
                         "include-duplicate-option",
                         format!("Include option \"{part}\" repeats an option given earlier."),
@@ -3140,11 +3492,68 @@ fn directive_source(nodes: &[InlineNode]) -> Option<String> {
 }
 
 fn expand_paragraph(block: &mut Paragraph, state: &mut State<'_>) -> Option<Vec<BlockNode>> {
+    if block
+        .attrs
+        .as_ref()
+        .is_some_and(|attrs| attrs.key_values.get("table").is_some_and(String::is_empty))
+    {
+        if let Some(split) = block
+            .children
+            .iter()
+            .position(|node| matches!(node, InlineNode::SoftBreak(_)))
+        {
+            if let Some(source) = directive_source(&block.children[..split]) {
+                if matches!(parse_full_directive(&source), ParsedDirective::Ok(ref d) if d.code.is_some())
+                {
+                    let mut lead = block.clone();
+                    lead.children.truncate(split);
+                    if let Some(mut replacement) = expand_paragraph(&mut lead, state) {
+                        if split + 1 < block.children.len() {
+                            let mut tail = block.clone();
+                            tail.attrs = None;
+                            tail.children = block.children[split + 1..].to_vec();
+                            let caption =
+                                if let Some(InlineNode::Text(text)) = tail.children.first_mut() {
+                                    text.value.strip_prefix("^ ").map(str::to_string)
+                                } else {
+                                    None
+                                };
+                            if let Some(first) = caption {
+                                if let Some(InlineNode::Text(text)) = tail.children.first_mut() {
+                                    text.value = first;
+                                }
+                                if let [BlockNode::Table(table)] = replacement.as_mut_slice() {
+                                    table.caption = Some(tail.children);
+                                } else if let [BlockNode::CodeBlock(code)] =
+                                    replacement.as_mut_slice()
+                                {
+                                    replacement = vec![BlockNode::Figure(crate::ast::Figure {
+                                        attrs: None,
+                                        target: Box::new(FigureTarget::CodeBlock(code.clone())),
+                                        rendered_target: None,
+                                        caption: tail.children,
+                                        short_caption: None,
+                                        pos: code.pos.clone(),
+                                    })];
+                                } else {
+                                    replacement.push(BlockNode::Paragraph(tail));
+                                }
+                            } else {
+                                replacement.push(BlockNode::Paragraph(tail));
+                            }
+                        }
+                        return Some(replacement);
+                    }
+                }
+            }
+        }
+    }
     if let Some(source) = directive_source(&block.children) {
         let parsed = parse_full_directive(&source);
         let position = RunSlicer::new(&block.children).position(0);
         match parsed {
-            ParsedDirective::Ok(d) => {
+            ParsedDirective::Ok(mut d) => {
+                d.table_attrs = block.attrs.clone();
                 return state.at(position, |state| {
                     // I7: on any rejection this yields None and the original inline
                     // nodes stay, rendering exactly as the core does with no
@@ -3168,7 +3577,11 @@ fn expand_paragraph(block: &mut Paragraph, state: &mut State<'_>) -> Option<Vec<
                                     if let [BlockNode::CodeBlock(code)] = children.as_mut_slice() {
                                         code.attrs.clone_from(&block.attrs);
                                         // `{table}` converts a csv/tsv code include as it does an authored fence (I1c).
-                                        crate::parse::delimited_table::from_code(code, &[])
+                                        if selected_table_include(&d) {
+                                            None
+                                        } else {
+                                            crate::parse::delimited_table::from_code(code, &[])
+                                        }
                                     } else {
                                         None
                                     };
@@ -3198,6 +3611,12 @@ fn expand_paragraph(block: &mut Paragraph, state: &mut State<'_>) -> Option<Vec<
                     None
                 });
             }
+            ParsedDirective::InvalidTable(path, rule) => {
+                return state.at(position, |state| {
+                    reject_invalid_table(&path, rule, state);
+                    None
+                });
+            }
             ParsedDirective::BadOption(part) => {
                 return state.at(position, |state| {
                     state.warn(
@@ -3218,6 +3637,27 @@ fn expand_paragraph(block: &mut Paragraph, state: &mut State<'_>) -> Option<Vec<
             }
             ParsedDirective::DuplicateOption(part) => {
                 return state.at(position, |state| {
+                    state.warn(
+                        "include-duplicate-option",
+                        format!("Include option \"{part}\" repeats an option given earlier."),
+                    );
+                    None
+                });
+            }
+            ParsedDirective::RepeatedTableOption(path, part) => {
+                return state.at(position, |state| {
+                    let directive = Directive {
+                        path,
+                        section: None,
+                        lines: None,
+                        rows: None,
+                        cols: None,
+                        table_attrs: None,
+                        region: None,
+                        code: None,
+                        shift: Shift::By(0),
+                    };
+                    let _ = resolve_child(&directive, state);
                     state.warn(
                         "include-duplicate-option",
                         format!("Include option \"{part}\" repeats an option given earlier."),

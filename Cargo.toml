@@ -217,6 +217,10 @@ name = "lint_include_conformance"
 path = "tests/lint_include_conformance.rs"
 
 [[test]]
+name = "table_include_selection"
+path = "tests/table_include_selection.rs"
+
+[[test]]
 name = "reserved_citation_reference_tail"
 path = "tests/reserved_citation_reference_tail.rs"
 

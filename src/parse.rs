@@ -2106,6 +2106,7 @@ fn delimited_payload_lines(
             text: text.to_string(),
             line,
             column: document_column(stripped, 0),
+            file_offset: None,
         });
         offset += text.len() + 1;
     }

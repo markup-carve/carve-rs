@@ -71,11 +71,20 @@ const NOT_IN_CORPUS: &[(&str, &str)] = &[
 // Comparing against the SOURCE instead would report 749 documents whose `.crv`
 // is simply not in canonical form; `tests/corpus_canonical_form.rs` is where
 // that belongs.
-const SOURCE_LOSSY: &[(&str, &[&str])] = &[(
-    "the sanitized-away `href` attribute is not carried, so \
+const SOURCE_LOSSY: &[(&str, &[&str])] = &[
+    (
+        "the sanitized-away `href` attribute is not carried, so \
          `[safe](https://example.com){href=javascript:steal}` comes back without it",
-    &["108-security-hardening-11.crv"],
-)];
+        &["108-security-hardening-11.crv"],
+    ),
+    (
+        "authored link and image destination overrides are not carried by the editor bridge",
+        &[
+            "737-model-inline-frames-and-html-attributes.crv",
+            "737-model-inline-frames-and-html-attributes-2.crv",
+        ],
+    ),
+];
 
 /// Every declared source-lossy document, sorted.
 fn source_lossy_names() -> Vec<String> {
@@ -1732,7 +1741,9 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // They cover 209-2/3, 325-5/8, and 674-714 (including variant rows).
     // Spec 14e66c05 adds corpus 715 through 735, including their variant
     // rows. Of the 39 new documents, 35 round trip strictly.
-    const STRICT: usize = 2347;
+    // Spec 9fa661f adds 42 documents in categories 736 through 745. Twenty-five
+    // round trip strictly. The changed source for row 699 stays in its old bucket.
+    const STRICT: usize = 2372;
     // Spec 894ff32e adds 616-25, whose marked quote soft break reports a loss.
     // The eight parsed CSV/TSV tables lose their source fence in ProseMirror;
     // the bridge reports that loss instead of claiming a strict round trip.
@@ -1747,7 +1758,10 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // The same pin adds five reported losses: 668, 669, both 671 rows,
     // and 673-3. The bridge already reports these source differences.
     // Four of the new corpus 715 through 735 documents report source loss.
-    const LOSSY: usize = 820;
+    // Seventeen of the new documents report existing editor losses. Rows 737
+    // and 737-2 also lose authored destination overrides in canonical source;
+    // SOURCE_LOSSY names both above.
+    const LOSSY: usize = 837;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in
