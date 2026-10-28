@@ -131,7 +131,7 @@ thread_local! {
     static LINT_EVENTS: RefCell<Option<Vec<LintEvent>>> = const { RefCell::new(None) };
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum LintEvent {
     Fence {
         pos: Pos,

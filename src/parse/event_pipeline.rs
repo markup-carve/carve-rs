@@ -2,6 +2,94 @@ use super::*;
 
 const MIXED_QUOTE_DEPTH_LIMIT: usize = 32;
 
+#[cfg(all(test, feature = "experimental-event-parser-options"))]
+mod event_diagnostic_parity_tests {
+    use super::*;
+
+    #[test]
+    fn admitted_corpus_preserves_parser_diagnostics() {
+        let corpus =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+        let options = Options::default().with_positions(true);
+        for entry in std::fs::read_dir(corpus).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension() != Some(std::ffi::OsStr::new("crv")) {
+                continue;
+            }
+            let source = std::fs::read_to_string(&path).unwrap();
+            let ((expected, expected_unattached), expected_events) = collecting_lint_events(|| {
+                collecting_unattached_block_attrs(|| parse_with_options(&source, &options))
+            });
+            let (((actual, admitted), actual_unattached), actual_events) =
+                collecting_lint_events(|| {
+                    collecting_unattached_block_attrs(|| {
+                        parse_document_with_options(&source, &options).unwrap()
+                    })
+                });
+            assert!(admitted, "{}", path.display());
+            assert_eq!(actual, expected, "{}", path.display());
+            assert_eq!(actual_unattached, expected_unattached, "{}", path.display());
+            assert_eq!(actual_events, expected_events, "{}", path.display());
+        }
+        let pieces = [
+            "- a\n",
+            "  - b\n",
+            "```\nx\n```\n",
+            "{.x}\n",
+            "+\n",
+            "> q\n",
+            "::: note\nx\n:::\n",
+            "\n",
+        ];
+        let mut admitted = 0;
+        for first in pieces {
+            for second in pieces {
+                for third in pieces {
+                    let source = format!("{first}{second}{third}");
+                    let ((expected, expected_unattached), expected_events) =
+                        collecting_lint_events(|| {
+                            collecting_unattached_block_attrs(|| {
+                                parse_with_options(&source, &options)
+                            })
+                        });
+                    let (candidate, actual_events) = collecting_lint_events(|| {
+                        collecting_unattached_block_attrs(|| {
+                            parse_document_with_options(&source, &options)
+                        })
+                    });
+                    let (Some((actual, _)), actual_unattached) = candidate else {
+                        continue;
+                    };
+                    admitted += 1;
+                    assert_eq!(actual, expected, "{source:?}");
+                    assert_eq!(actual_unattached, expected_unattached, "{source:?}");
+                    assert_eq!(actual_events, expected_events, "{source:?}");
+                }
+            }
+        }
+        assert_eq!(admitted, pieces.len().pow(3));
+        for source in [
+            "::: note\n{.inner}\n:::\n\n{.outer}\n",
+            "::: note\n{.inner}\n:::\n- a\n\n  {.item}\n",
+            "::: note\n```\nx\n:::\n\n- a\n\n  ```\n  y\n",
+        ] {
+            let ((expected, expected_unattached), expected_events) = collecting_lint_events(|| {
+                collecting_unattached_block_attrs(|| parse_with_options(source, &options))
+            });
+            let (((actual, admitted), actual_unattached), actual_events) =
+                collecting_lint_events(|| {
+                    collecting_unattached_block_attrs(|| {
+                        parse_document_with_options(source, &options).unwrap()
+                    })
+                });
+            assert!(admitted, "{source:?}");
+            assert_eq!(actual, expected, "{source:?}");
+            assert_eq!(actual_unattached, expected_unattached, "{source:?}");
+            assert_eq!(actual_events, expected_events, "{source:?}");
+        }
+    }
+}
+
 #[cfg(test)]
 mod mixed_definition_owner_tests {
     use super::*;
@@ -626,6 +714,7 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
     cur.at_document_level = at_document_level;
     let mut out = Vec::new();
     let mut block_start_indices = Vec::new();
+    let mut pending_bodies = Vec::new();
     let current_block_start = std::cell::Cell::new(0usize);
     #[cfg(feature = "experimental-event-parser-options")]
     let mut source_lines = Vec::new();
@@ -641,7 +730,7 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             out.push($node);
         }};
     }
-    let mut leading_attrs: Vec<(usize, Attrs)> = Vec::new();
+    let mut leading_attrs: Vec<(usize, Attrs, Option<Pos>)> = Vec::new();
     let mut marker_fence_exit_at = None;
     'blocks: while cur.peek().is_some() {
         if options.positions {
@@ -653,8 +742,10 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             continue;
         }
         let invalid_brace_line = if cur.peek().is_some_and(|line| line.starts_with('{')) {
+            let at = cur.pos;
             if let Some(attrs) = parse_standalone_attrs_block(&mut cur) {
-                leading_attrs.push((out.len(), attrs));
+                let pos = span_of(&cur, at, cur.pos, options);
+                leading_attrs.push((out.len(), attrs, pos));
                 continue;
             }
             true
@@ -699,10 +790,12 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             } else {
                 let mut item_bodies = Vec::new();
                 let list = parse_list(&mut cur, options, &mut item_bodies);
-                emit!(
-                    _block_source_line,
-                    *drained_list_bodies(list, item_bodies, options)
-                );
+                let index = out.len();
+                emit!(_block_source_line, *list);
+                pending_bodies.extend(item_bodies.into_iter().map(|body| PendingBody {
+                    index,
+                    body: Body::Item(body),
+                }));
             }
             continue;
         }
@@ -715,10 +808,12 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             } else {
                 let mut item_bodies = Vec::new();
                 let list = parse_list(&mut cur, options, &mut item_bodies);
-                emit!(
-                    _block_source_line,
-                    *drained_list_bodies(list, item_bodies, options)
-                );
+                let index = out.len();
+                emit!(_block_source_line, *list);
+                pending_bodies.extend(item_bodies.into_iter().map(|body| PendingBody {
+                    index,
+                    body: Body::Item(body),
+                }));
             }
             continue;
         }
@@ -761,7 +856,7 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             } else {
                 *parse_fenced_block(&mut cur, fence, options)
             };
-            let has_leading_attrs = leading_attrs.last().is_some_and(|(start, _)| {
+            let has_leading_attrs = leading_attrs.last().is_some_and(|(start, _, _)| {
                 out[*start..].iter().all(|node| {
                     matches!(node, BlockNode::AbbreviationDef(_) | BlockNode::Comment(_))
                 })
@@ -864,10 +959,13 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                     continue;
                 }
                 if detect_container_open(line).is_some() {
-                    emit!(
-                        _block_source_line,
-                        *parse_event_container(&mut cur, options)
-                    );
+                    let (node, body) = open_container(&mut cur, options);
+                    let index = out.len();
+                    emit!(_block_source_line, *node);
+                    pending_bodies.push(PendingBody {
+                        index,
+                        body: Body::Colon(body),
+                    });
                     continue;
                 }
             }
@@ -961,8 +1059,10 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
         let mut target = None;
         let mut pending = None;
         let mut slots = None;
-        for (start, attrs) in leading_attrs {
+        let mut dangling_pos = None;
+        for (start, attrs, pos) in leading_attrs {
             let Some(next_target) = next_visible[start] else {
+                dangling_pos = dangling_pos.or(pos);
                 continue;
             };
             if target != Some(next_target) {
@@ -989,7 +1089,9 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                 options,
             );
         }
+        note_unattached_block_attrs(dangling_pos);
     }
+    resolve_pending_bodies(&mut out, pending_bodies, options);
     #[cfg(feature = "experimental-event-parser-options")]
     if options.source_lines {
         for (node, line) in out.iter_mut().zip(source_lines) {
@@ -2192,35 +2294,6 @@ mod unified_list_tests {
         }
         assert!(checked >= 20, "only {checked} generated cases were owned");
     }
-}
-
-fn parse_event_container(cur: &mut LineCursor<'_>, options: &Options<'_>) -> Box<BlockNode> {
-    let (mut node, body) = open_container(cur, options);
-    if !options.positions && !options.source_lines && !body.in_group && !body.inner.marker_hosted {
-        let source = &body.inner.source.inner.lines[body.inner.start..body.inner.end];
-        if !source.iter().any(|line| line.text.contains(":::")) {
-            let lines: Vec<&str> = source.iter().map(|line| line.text.as_str()).collect();
-            let _depth = DepthScope::set(body.depth);
-            if let Some(_inner_depth) = DepthGuard::enter() {
-                if let Some(children) = parse_blocks(&lines, options)
-                    .or_else(|| parse_mixed_blocks::<false, false>(&lines, options, false))
-                {
-                    fill_container_children(&mut node, children);
-                    return node;
-                }
-            }
-        }
-    }
-    let mut out = vec![*node];
-    resolve_pending_bodies(
-        &mut out,
-        vec![PendingBody {
-            index: 0,
-            body: Body::Colon(body),
-        }],
-        options,
-    );
-    Box::new(out.pop().expect("container body filled"))
 }
 
 fn apply_event_leading_attrs(
