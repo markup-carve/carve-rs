@@ -31,6 +31,8 @@ mod an_opener_in_a_description_in_an_item_is_not_overindented;
 mod an_unclosed_attached_fence_ends_with_its_block_before_a_blank;
 #[path = "../an_unclosed_fence_below_a_marker_line_quote_is_lazy_text.rs"]
 mod an_unclosed_fence_below_a_marker_line_quote_is_lazy_text;
+#[path = "../ast_table_followups.rs"]
+mod ast_table_followups;
 #[path = "../folded_fence_closer_shapes.rs"]
 mod folded_fence_closer_shapes;
 #[path = "../lint_first_block_actual_attachment.rs"]
@@ -1197,6 +1199,8 @@ mod quote_note_first_block;
 mod a_markdown_assessor_completes_autolink_shapes;
 #[path = "../a_markdown_destination_keeps_what_carve_reads_literally.rs"]
 mod a_markdown_destination_keeps_what_carve_reads_literally;
+#[path = "../cell_structural_attribute_order.rs"]
+mod cell_structural_attribute_order;
 #[path = "../destination_parens.rs"]
 mod destination_parens;
 #[path = "../destination_unicode_whitespace.rs"]
@@ -1257,6 +1261,8 @@ mod fenced_code_columns;
 mod fenced_code_info;
 #[path = "../fenced_definition_body_below_the_column.rs"]
 mod fenced_definition_body_below_the_column;
+#[path = "../first_block_second_plus.rs"]
+mod first_block_second_plus;
 #[path = "../floating_attrs_below_list_content_column.rs"]
 mod floating_attrs_below_list_content_column;
 #[path = "../flush_left_line_after_a_div_in_a_container.rs"]
@@ -1391,6 +1397,8 @@ mod incremental_parse;
 mod indented_comment_fence_hides_its_body;
 #[path = "../indented_fence_marker_payload.rs"]
 mod indented_fence_marker_payload;
+#[path = "../indented_image_caption_number.rs"]
+mod indented_image_caption_number;
 #[path = "../index_terms.rs"]
 mod index_terms;
 #[path = "../ingest_bounds_are_measured.rs"]
@@ -1569,6 +1577,10 @@ mod nbsp_placeholder_codepoint;
 mod nested_lazy_continuation;
 #[path = "../nested_marker_line_lazy_resume.rs"]
 mod nested_marker_line_lazy_resume;
+#[path = "../nested_marker_term_lazy.rs"]
+mod nested_marker_term_lazy;
+#[path = "../nested_marker_term_sibling_columns.rs"]
+mod nested_marker_term_sibling_columns;
 #[path = "../nesting_cap_flattening.rs"]
 mod nesting_cap_flattening;
 #[path = "../no_nested_links.rs"]
@@ -1701,6 +1713,8 @@ mod section_wrapping;
 mod security_attributes;
 #[path = "../semantic_span_sugar.rs"]
 mod semantic_span_sugar;
+#[path = "../shifted_separator_owner.rs"]
+mod shifted_separator_owner;
 #[path = "../short_caption_ast.rs"]
 mod short_caption_ast;
 #[path = "../smart_punctuation_nodes.rs"]
@@ -1733,6 +1747,8 @@ mod strict_column0_attr_caption;
 mod sublist_after_continuation_paragraph;
 #[path = "../sublist_blank_sibling_looseness.rs"]
 mod sublist_blank_sibling_looseness;
+#[path = "../surviving_item_after_term_separator.rs"]
+mod surviving_item_after_term_separator;
 #[path = "../svg_sanitize.rs"]
 mod svg_sanitize;
 #[path = "../svg_sanitize_payloads.rs"]
@@ -2670,3 +2686,9 @@ mod wrapped_marker_attr_owner;
 
 #[path = "../paired_heading_quotes.rs"]
 mod paired_heading_quotes;
+
+#[path = "../nested_quote_task_owner.rs"]
+mod nested_quote_task_owner;
+
+#[path = "../parser_owner_transitions.rs"]
+mod parser_owner_transitions;

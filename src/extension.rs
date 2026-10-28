@@ -348,6 +348,8 @@ pub type SocialLinkResolver<'a> =
 pub struct Options<'a> {
     /// Include settings used by include-aware linting.
     pub lint_includes: Option<crate::includes::IncludeOptions<'a>>,
+    /// Report caption-like paragraphs beside images or tables during linting.
+    pub lint_caption_looking_paragraph: bool,
     /// Extensions applied in registration order.
     pub extensions: Vec<&'a dyn CarveExtension>,
     /// URL template used when a mention has no resolver.
@@ -476,6 +478,7 @@ impl Default for Options<'_> {
         Self {
             extensions: Vec::new(),
             lint_includes: None,
+            lint_caption_looking_paragraph: false,
             mention_url: None,
             tag_url: None,
             mention_resolver: None,

@@ -5,6 +5,7 @@ pub(crate) struct PayloadLine {
     pub text: String,
     pub line: usize,
     pub column: usize,
+    pub file_offset: Option<usize>,
 }
 
 struct FieldRange {
@@ -21,22 +22,30 @@ struct RowRange {
 }
 
 fn position(lines: &[PayloadLine], start: usize, end: usize) -> Option<Pos> {
-    fn point(lines: &[PayloadLine], index: usize) -> Option<(usize, usize)> {
-        lines.iter().find_map(|line| {
-            let local = index.checked_sub(line.start)?;
-            let prefix = line.text.get(..local)?;
-            Some((line.line, line.column + prefix.chars().count()))
-        })
+    fn point(lines: &[PayloadLine], index: usize) -> Option<(usize, usize, usize)> {
+        let line = lines.get(
+            lines
+                .partition_point(|line| line.start <= index)
+                .checked_sub(1)?,
+        )?;
+        let local = index.checked_sub(line.start)?;
+        let prefix = line.text.get(..local)?;
+        let width = prefix.chars().count();
+        Some((
+            line.line,
+            line.column + width,
+            line.file_offset.map_or(0, |offset| offset + width),
+        ))
     }
-    let (start_line, start_column) = point(lines, start)?;
-    let (end_line, end_column) = point(lines, end)?;
+    let (start_line, start_column, start_offset) = point(lines, start)?;
+    let (end_line, end_column, end_offset) = point(lines, end)?;
     Some(Pos {
         start_line,
         end_line,
         start_column,
         end_column,
-        start_offset: 0,
-        end_offset: 0,
+        start_offset,
+        end_offset,
         file: None,
     })
 }
@@ -108,10 +117,11 @@ pub(crate) fn from_code(code: &CodeBlock, payload: &[PayloadLine]) -> Option<Tab
             }
         })
         .collect();
-    let columns = attrs
+    let mut columns = attrs
         .as_ref()
         .map(super::table_columns_from_attrs)
         .unwrap_or_default();
+    columns.truncate(rows.iter().map(|row| row.cells.len()).max().unwrap_or(0));
     let row_groups = attrs.as_ref().and_then(|attrs| {
         if ![
             "header-rows",

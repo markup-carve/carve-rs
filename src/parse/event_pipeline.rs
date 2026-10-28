@@ -818,7 +818,16 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                         })
                     );
                 } else {
-                    emit!(_block_source_line, BlockNode::BlockImage(image));
+                    emit!(
+                        _block_source_line,
+                        BlockNode::Paragraph(Paragraph {
+                            attrs: None,
+                            children: vec![InlineNode::Image(image)],
+                            at_content_column: true,
+                            block_image: true,
+                            pos: span_of(&cur, image_at, image_at + 1, options),
+                        })
+                    );
                 }
                 continue;
             }

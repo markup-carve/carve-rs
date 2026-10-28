@@ -40,6 +40,8 @@ pub(super) struct ContentColumns {
 #[derive(Default)]
 pub(super) struct ColumnFrame {
     pub(super) cols: Vec<usize>,
+    /// Content columns opened by definition descriptions among `cols`.
+    pub(super) body_columns: Vec<usize>,
     pub(super) list_columns: Vec<(usize, usize)>,
     pub(super) first_list_col: Option<(usize, usize)>,
     pub(super) first_list_start: Option<usize>,
@@ -51,6 +53,9 @@ impl ColumnFrame {
     pub(super) fn pop_column(&mut self) {
         let popped = self.cols.pop();
         if let Some(column) = popped {
+            if self.body_columns.last() == Some(&column) {
+                self.body_columns.pop();
+            }
             if self
                 .list_columns
                 .last()
@@ -267,6 +272,7 @@ impl ContentColumns {
                 frame.pop_column();
             }
             frame.cols.push(body_indent + marker_width);
+            frame.body_columns.push(body_indent + marker_width);
         } else if let Some((marker_indent, marker_width)) = detect_prepass_list_marker(line) {
             let frame = &mut self.frames[level];
             while frame.cols.last().is_some_and(|col| *col > marker_indent) {
