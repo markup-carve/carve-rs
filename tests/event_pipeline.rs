@@ -12,6 +12,51 @@ fn parse_standard(source: &str) -> carve::Document {
 }
 
 #[test]
+fn list_comment_and_lower_column_siblings_match_full_document() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    let name = "517-a-band-paragraph-after-an-invisible-line-leaves-the-item-loose-5.crv";
+    let source = fs::read_to_string(corpus.join(name)).unwrap();
+    let (candidate, used) = parse_experimental_event_blocks(&source);
+    assert!(used, "{name}");
+    assert_eq!(candidate, parse_standard(&source));
+
+    for source in [
+        "- a\n\n  %% note\n  # h\n- end\n",
+        "- a\n\n  %% one\n  %% two\n  text\n- end\n",
+        "- a\n\n  %% one\n  %% two\n- end\n",
+    ] {
+        let (candidate, used) = parse_experimental_event_blocks(source);
+        assert!(used, "{source:?}");
+        assert_eq!(candidate, parse_standard(source), "{source:?}");
+    }
+
+    for comments in ["  %% one\n", "  %% one\n  %% two\n"] {
+        for follower in ["  text", "  # h", "  > q", "  ```", "- end", " - next"] {
+            let source = format!("- a\n\n{comments}{follower}\n- last\n");
+            let (candidate, _) = parse_experimental_event_blocks(&source);
+            assert_eq!(candidate, parse_standard(&source), "{source:?}");
+        }
+    }
+
+    for first_indent in 0..=3 {
+        for comment in ["%% note", "%%", "%%%\n  body\n  %%%"] {
+            for follower in ["text", "- sibling", "> quote", "```\n  code\n  ```"] {
+                let source = format!(
+                    "{}- a\n\n{}{}\n{}{}\n- end\n",
+                    " ".repeat(first_indent),
+                    " ".repeat(first_indent + 2),
+                    comment,
+                    " ".repeat(first_indent + 1),
+                    follower,
+                );
+                let (candidate, _) = parse_experimental_event_blocks(&source);
+                assert_eq!(candidate, parse_standard(&source), "{source:?}");
+            }
+        }
+    }
+}
+
+#[test]
 fn footnote_extraction_keeps_continuation_owner_lines() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     for name in [

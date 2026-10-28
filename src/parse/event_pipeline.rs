@@ -1433,6 +1433,9 @@ fn advance_unified_list_blank(
     }
     let frame = frames.last_mut()?;
     if let Some((kind, _, _)) = unified_list_marker(next) {
+        if next.bytes().take_while(|byte| *byte == b' ').count() < frame.indent {
+            return Some(BlankListStep::Break);
+        }
         if kind != frame.kind {
             return Some(BlankListStep::Break);
         }
@@ -1478,6 +1481,7 @@ fn advance_unified_list_blank(
         if strip_blockquote_prefix(&next[next_indent..]).is_none()
             && detect_fence_open(&next[next_indent..]).is_none()
             && detect_heading(&next[next_indent..]).is_none()
+            && !trim_ascii_start(&next[next_indent..]).starts_with("%% ")
         {
             frame.node.tight = false;
         }
@@ -1506,6 +1510,79 @@ fn parse_unified_list_mapped(
 ) -> Option<(List, usize)> {
     let read = parse_unified_list_mapped_with_exit(lines, start, options, line_map)?;
     Some((read.list, read.end))
+}
+
+fn consume_unified_list_comment<'a>(
+    lines: &[&'a str],
+    pos: usize,
+    frames: &mut Vec<UnifiedListFrame<'a>>,
+    line_map: Option<&[Option<usize>]>,
+    options: &Options<'_>,
+) -> Option<usize> {
+    let mut cursor = LineCursor::new_with_cols(lines, line_map, None);
+    cursor.pos = pos;
+    let CommentBlock::Consumed(node) = take_comment_block(&mut cursor, options) else {
+        return None;
+    };
+    let frame = frames.last_mut()?;
+    flush_unified_list_paragraph(frame)?;
+    if pos > 0 && is_blank_line(lines[pos - 1]) {
+        let mut after_comments = cursor.pos;
+        while lines.get(after_comments).is_some_and(|next| {
+            let indent = next.bytes().take_while(|byte| *byte == b' ').count();
+            indent == frame.content_indent && trim_ascii_start(&next[indent..]).starts_with("%% ")
+        }) {
+            after_comments += 1;
+        }
+        if lines.get(after_comments).is_some_and(|next| {
+            let indent = next.bytes().take_while(|byte| *byte == b' ').count();
+            let content = trim_ascii_end(&next[indent..]);
+            (indent == frame.content_indent
+                && unified_list_paragraph_accepts(content, false)
+                && detect_heading(content).is_none()
+                && strip_blockquote_prefix(content).is_none())
+                || (indent == frame.indent && unified_list_marker(content).is_some())
+        }) {
+            frame.node.tight = false;
+        }
+    }
+    if let Some(node) = node {
+        frame
+            .node
+            .items
+            .last_mut()?
+            .blocks
+            .push(UnifiedListBlock::Block(node));
+    }
+    Some(cursor.pos)
+}
+
+fn unified_list_comment_at_content(
+    line: &str,
+    indent: usize,
+    frames: &[UnifiedListFrame<'_>],
+) -> bool {
+    frames
+        .last()
+        .is_some_and(|frame| indent == frame.content_indent)
+        && trim_ascii_start(&line[indent..]).starts_with("%% ")
+}
+
+fn lower_sibling_marker(line: &str, indent: usize, frames: &[UnifiedListFrame<'_>]) -> bool {
+    frames.len() == 1 && indent < frames[0].indent && unified_list_marker(&line[indent..]).is_some()
+}
+
+fn lower_sibling_after_comment(
+    lines: &[&str],
+    pos: usize,
+    indent: usize,
+    frames: &[UnifiedListFrame<'_>],
+) -> bool {
+    frames.len() == 1
+        && indent > frames[0].indent
+        && indent < frames[0].content_indent
+        && pos > 0
+        && trim_ascii_start(lines[pos - 1]).starts_with("%% ")
 }
 
 fn parse_unified_list_mapped_with_exit(
@@ -1571,6 +1648,13 @@ fn parse_unified_list_mapped_with_exit(
             }
         }
         let indent = line.bytes().take_while(|byte| *byte == b' ').count();
+        if unified_list_comment_at_content(line, indent, &frames) {
+            pos = consume_unified_list_comment(lines, pos, &mut frames, line_map, options)?;
+            continue;
+        }
+        if lower_sibling_marker(line, indent, &frames) {
+            break;
+        }
         if frames.len() == 1 && indent < frames[0].indent {
             let content = trim_ascii_end(trim_ascii_start(line));
             if frames[0].paragraph.is_empty()
@@ -1600,6 +1684,9 @@ fn parse_unified_list_mapped_with_exit(
             })
             .or_else(|| plus_first_block_marker(&line[indent..], decision));
         if let Some((kind, ordinal, content)) = marker {
+            if lower_sibling_after_comment(lines, pos, indent, &frames) {
+                break;
+            }
             while frames.len() > 1 && indent < frames.last()?.indent {
                 close_unified_list_frame(&mut frames)?;
             }
