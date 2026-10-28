@@ -2705,6 +2705,11 @@ fn parse_event_inlines(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
     if !options.extensions.is_empty() {
         return parse_inline_with_options(text, options);
     }
+    if !options.positions && !options.source_lines {
+        if let Some(inlines) = parse_plain_strong_term_prefix(text, options) {
+            return inlines;
+        }
+    }
     if let Some(inner) = text
         .strip_prefix("**")
         .and_then(|text| text.strip_suffix("**"))
@@ -2738,6 +2743,11 @@ fn parse_event_inlines(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
         return parse_inline_with_options(text, options);
     }
     let mut out = Vec::new();
+    push_literal_lines(&mut out, text);
+    out
+}
+
+fn push_literal_lines(out: &mut Vec<InlineNode>, text: &str) {
     for (index, line) in text.split('\n').enumerate() {
         if index > 0 {
             out.push(InlineNode::SoftBreak(Break { pos: None }));
@@ -2746,7 +2756,62 @@ fn parse_event_inlines(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
             out.push(InlineNode::text(line.to_string()));
         }
     }
-    out
+}
+
+fn parse_plain_strong_term_prefix(text: &str, options: &Options<'_>) -> Option<Vec<InlineNode>> {
+    let rest = text.strip_prefix('*')?;
+    let (term, tail) = rest.split_once("*\n")?;
+    if !tail.starts_with(": ")
+        || term.is_empty()
+        || !term
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b' ' | b'(' | b')'))
+        || !term.as_bytes().first()?.is_ascii_alphanumeric()
+        || !term.as_bytes().last()?.is_ascii_alphanumeric()
+        || term.contains("(c)")
+        || term.contains("(r)")
+        || term.contains("(tm)")
+    {
+        return None;
+    }
+    let mut inlines = Vec::with_capacity(3);
+    inlines.push(InlineNode::Emphasis(Emphasis {
+        attrs: None,
+        kind: EmphasisKind::Strong,
+        children: vec![InlineNode::text(term.to_string())],
+        pos: None,
+    }));
+    inlines.push(InlineNode::SoftBreak(Break { pos: None }));
+    if literal_term_tail(tail) {
+        push_literal_lines(&mut inlines, tail);
+    } else {
+        inlines.extend(parse_inline_with_options(tail, options));
+    }
+    Some(inlines)
+}
+
+/// Definition text after a strong term that inline parsing would keep literal:
+/// `: ` markers at line starts plus a conservative subset of plain bytes.
+/// Anything outside the subset falls back to the general inline parser.
+fn literal_term_tail(tail: &str) -> bool {
+    let bytes = tail.as_bytes();
+    for (index, &byte) in bytes.iter().enumerate() {
+        if byte.is_ascii_alphanumeric() || !byte.is_ascii() {
+            continue;
+        }
+        let literal = match byte {
+            b'\n' | b' ' | b'.' | b',' | b';' | b'?' | b'(' | b')' => true,
+            b'!' => bytes.get(index + 1) != Some(&b'='),
+            b'-' => bytes.get(index + 1) != Some(&b'-'),
+            b':' if index == 0 || bytes[index - 1] == b'\n' => bytes.get(index + 1) == Some(&b' '),
+            b':' => bytes[index - 1].is_ascii_alphanumeric(),
+            _ => false,
+        };
+        if !literal {
+            return false;
+        }
+    }
+    !tail.contains("..") && !tail.contains("(c)") && !tail.contains("(r)") && !tail.contains("(tm)")
 }
 
 /// A leading double-star label and later balanced double-star pairs are
@@ -2834,9 +2899,153 @@ fn long_literal_inline(text: &str) -> bool {
 
 #[cfg(test)]
 mod inline_lexer_tests {
-    use super::{leading_double_star_literal_inline, long_literal_inline, parse_event_inlines};
+    use super::{
+        leading_double_star_literal_inline, literal_term_tail, long_literal_inline,
+        parse_event_inlines, parse_plain_strong_term_prefix,
+    };
     use crate::parse::parse_inline_with_options;
     use crate::Options;
+
+    #[test]
+    fn literal_term_tail_matches_general_scanner() {
+        let options = Options::default();
+        for tail in [
+            ": A definition follows.",
+            ": Note: the spec, e.g. this (one); really?",
+            ": Two lines\nof text!",
+            ": First\n: Second",
+            ": café, 日本語",
+            ": well-formed",
+            ": a -- b",
+            ": a != b",
+            ": wait...",
+            ": (c) holder",
+            ": foo:smile:",
+            ": a :b",
+            ":x",
+            ": `code`",
+            ": it's",
+            ": *strong* word",
+            ": _emphasis_ word",
+            ": see [link](url)",
+            ": {attr} text",
+            ": back\\slash",
+            ": \"quoted\" text",
+            ": 50% off",
+        ] {
+            let text = format!("*Term*\n{tail}");
+            assert_eq!(
+                parse_event_inlines(&text, &options),
+                parse_inline_with_options(&text, &options),
+                "{text:?} literal={}",
+                literal_term_tail(tail)
+            );
+        }
+        assert!(literal_term_tail(": Note: the spec, e.g. this."));
+        assert!(!literal_term_tail(": a -- b"));
+        assert!(!literal_term_tail(": a :b"));
+        assert!(!literal_term_tail(": `code`"));
+    }
+
+    #[test]
+    fn strong_term_prefix_matches_general_scanner_for_term_shapes() {
+        let options = Options::default();
+        for term in [
+            "Term",
+            "Term 2",
+            "Version 1 (beta)",
+            "f(x) 42",
+            "A (b) c",
+            "Brand (c)",
+            "Mark (r) here",
+            "Name(tm)",
+            "x (c) y",
+            "(c) start",
+            "Brand (C)",
+        ] {
+            let text = format!("*{term}*\n: A definition follows.");
+            if ["(c)", "(r)", "(tm)"]
+                .iter()
+                .any(|symbol| term.contains(symbol))
+            {
+                assert!(
+                    parse_plain_strong_term_prefix(&text, &options).is_none(),
+                    "{text:?} admitted a symbol term"
+                );
+            }
+            assert_eq!(
+                parse_event_inlines(&text, &options),
+                parse_inline_with_options(&text, &options),
+                "{text:?}"
+            );
+        }
+        assert!(parse_plain_strong_term_prefix("*f(x) 42*\n: Def.", &options).is_some());
+    }
+
+    #[test]
+    fn literal_term_tail_differential_over_small_alphabet() {
+        const ALPHABET: [&str; 15] = [
+            " ", "\n", ":", "-", "!", ".", "(", ")", "a", "c", "m", "r", "t", "Z", "é",
+        ];
+        // Multi-byte shapes the exhaustive pass is too short to combine.
+        const CHUNKS: [&str; 10] = [
+            "(c)", "(r)", "(tm)", "(C)", "...", "--", "\n: ", "a:b", ":smile:", " \n",
+        ];
+        let options = Options::default();
+        let (mut accepted, mut rejected) = (0usize, 0usize);
+        let mut check = |body: &str| {
+            let tail = format!(": {body}");
+            let text = format!("*Term*\n{tail}");
+            assert!(
+                parse_plain_strong_term_prefix(&text, &options).is_some(),
+                "{text:?} missed the term prefix"
+            );
+            let literal = literal_term_tail(&tail);
+            if literal {
+                accepted += 1;
+            } else {
+                rejected += 1;
+            }
+            assert_eq!(
+                parse_event_inlines(&text, &options),
+                parse_inline_with_options(&text, &options),
+                "{text:?} literal={literal}"
+            );
+        };
+        check("");
+        for a in ALPHABET {
+            check(a);
+            for b in ALPHABET {
+                check(&format!("{a}{b}"));
+                for c in ALPHABET {
+                    check(&format!("{a}{b}{c}"));
+                }
+            }
+        }
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut next = |bound: usize| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state % bound as u64) as usize
+        };
+        for _ in 0..2000 {
+            let mut body = String::new();
+            for _ in 0..2 + next(7) {
+                let pick = next(ALPHABET.len() + CHUNKS.len());
+                body.push_str(if pick < ALPHABET.len() {
+                    ALPHABET[pick]
+                } else {
+                    CHUNKS[pick - ALPHABET.len()]
+                });
+            }
+            check(&body);
+        }
+        assert!(
+            accepted > 200 && rejected > 200,
+            "{accepted} accepted, {rejected} rejected"
+        );
+    }
 
     #[test]
     fn leading_double_star_gate_matches_general_scanner() {
