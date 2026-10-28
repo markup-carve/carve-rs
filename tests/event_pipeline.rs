@@ -18,9 +18,7 @@ fn refused_plus_after_list_fence_matches_full_document() {
         let name = format!("627-a-refused-marker-leaves-an-open-fence-s-blank-payload{suffix}.crv");
         let source = fs::read_to_string(corpus.join(name)).unwrap();
         let (candidate, used) = parse_experimental_event_blocks(&source);
-        if matches!(suffix, "" | "-3" | "-5") {
-            assert!(used, "{suffix}");
-        }
+        assert!(used, "{suffix}");
         assert_eq!(candidate, parse_standard(&source));
     }
 }
@@ -526,6 +524,9 @@ fn option_aware_event_corpus_matches_full_document() {
         total += 1;
         for (index, options) in options.iter().enumerate() {
             let (candidate, used) = parse_experimental_event_blocks_with_options(&source, options);
+            if index == 0 && !used {
+                eprintln!("EVENT DECLINE {}", path.display());
+            }
             admitted[index] += usize::from(used);
             assert_eq!(
                 candidate,

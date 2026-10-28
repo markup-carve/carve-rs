@@ -546,17 +546,21 @@ fn event_paragraph_needs_reader(
             && !(!has_lines && root_indented_text))
 }
 
-fn refused_right_plus_at(cur: &LineCursor<'_>, line: &str) -> bool {
+fn refused_marker_fence_plus_at(cur: &LineCursor<'_>, line: &str) -> bool {
     trim_ascii(line) == "+"
         && cur
             .source_line(cur.pos)
             .and_then(continuation_marker::decision)
-            .is_some_and(refused_right_list_plus)
+            .is_some_and(refused_marker_fence_list_plus)
 }
 
-fn refused_right_list_plus(decision: continuation_marker::Decision) -> bool {
+fn refused_marker_fence_list_plus(decision: continuation_marker::Decision) -> bool {
+    // The marker belongs outside the list after this fence, even if its next line is blank.
     decision.owner == Some(continuation_marker::Kind::List)
-        && decision.refusal == Some(continuation_marker::Refusal::Right)
+        && matches!(
+            decision.refusal,
+            Some(continuation_marker::Refusal::Right | continuation_marker::Refusal::Blank)
+        )
         && decision.sibling_interrupt
 }
 
@@ -833,7 +837,8 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             }
             if is_list_marker(trim_ascii_start(line))
                 || trim_ascii(line) == "+"
-                    && !(marker_fence_exit_at == Some(cur.pos) && refused_right_plus_at(&cur, line))
+                    && !(marker_fence_exit_at == Some(cur.pos)
+                        && refused_marker_fence_plus_at(&cur, line))
                 || line.ends_with(" +")
             {
                 return None;
@@ -1284,7 +1289,7 @@ fn marker_fence_boundary(
         return None;
     }
     let decision = list_continuation_decision(line_map, pos);
-    Some(trim_ascii(line) == "+" && decision.is_some_and(refused_right_list_plus))
+    Some(trim_ascii(line) == "+" && decision.is_some_and(refused_marker_fence_list_plus))
 }
 
 struct ListFenceRead {
