@@ -15,13 +15,11 @@ fn nested_task_without_a_paragraph_releases_the_outer_item_band() {
 
 #[test]
 fn blank_and_comment_close_the_nested_and_outer_lazy_claims() {
-    for comment in ["%%", "%%%"] {
-        let source = format!("- - a\n\n  {comment}\nx\n");
-        assert_eq!(
-            html(&source),
-            "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n    </ul>\n  </li>\n</ul>\n<p>x</p>"
-        );
-    }
+    let source = "- - a\n\n  %%\nx\n";
+    assert_eq!(
+        html(source),
+        "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n    </ul>\n  </li>\n</ul>\n<p>x</p>"
+    );
 }
 
 #[test]

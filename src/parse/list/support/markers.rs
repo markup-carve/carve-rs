@@ -436,10 +436,7 @@ pub(crate) fn sublist_source_trailing_invisible_separation(source: &str) -> bool
     let mut invisible = false;
     let mut inner_content_col = None;
     for line in source.lines().rev() {
-        if is_line_comment_any_column(line)
-            || detect_comment_fence_line_any_column(line).is_some()
-            || is_definition_placeholder(line)
-        {
+        if is_line_comment_any_column(line) || is_definition_placeholder(line) {
             let Some(inner_content_col) = *inner_content_col
                 .get_or_insert_with(|| source.lines().find_map(marker_content_col))
             else {

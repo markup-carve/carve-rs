@@ -385,6 +385,13 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         {
             return END;
         }
+        if self.cur.peek().is_some_and(|line| {
+            let indent = indent_columns(line);
+            indent > base_indent && indent < content_col
+        }) && !self.item_paragraph_open.get()
+        {
+            return END;
+        }
         NEXT
     }
 
@@ -422,9 +429,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // is the item's true column (`- `=2, `1. `=3, `10. `=4), NOT a
         // fixed base+2 -- an ordered item's body sits deeper.
         if self.pending_blank && indent < content_col {
-            return Some(END);
-        }
-        if indent < content_col && !self.item_paragraph_open.get() {
             return Some(END);
         }
         // The item holds an OPEN fenced body and this line is below its
@@ -2016,9 +2020,19 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 stream.reached.truncate(1);
             }
         }
-        let probed = stream.source.clone();
-        self.item_paragraph_open =
-            ParagraphOpen::deferred(move || body_ends_with_open_paragraph(&probed, options));
+        let retained_band_marker = chunk_ends_in_closed_comment_span(&stream)
+            && self
+                .cur
+                .peek()
+                .and_then(detect_list_marker_full)
+                .is_some_and(|marker| {
+                    marker.indent > self.base_indent && marker.indent < content_col
+                });
+        if !retained_band_marker {
+            let probed = stream.source.clone();
+            self.item_paragraph_open =
+                ParagraphOpen::deferred(move || body_ends_with_open_paragraph(&probed, options));
+        }
         let children = item_body_with_layout_suppression(
             self.deferred,
             self.items.len(),
