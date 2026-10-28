@@ -1976,14 +1976,33 @@ fn normalization_probe_keeps_sentinel_and_benign_unicode_boundaries() {
         "# Heading\n\nX\u{e005}Y\n",
         "# Heading\n\nX\u{e006}Y\n",
         "Text[^n]\n\n[^n]: Note\u{e005}.\n",
+        "\u{feff}Text\u{e006}\r\n",
+        "Text\0\u{e005}\r\n",
+        "```\r\n\u{e006}\r\n```",
     ] {
         let (actual, admitted) = parse_experimental_event_blocks(source);
-        assert!(!admitted, "{source:?}");
+        if source.ends_with('\n') && !source.contains("[^n]") {
+            assert!(admitted, "{source:?}");
+        }
         assert_eq!(
             to_json(&actual),
             to_json(&parse_standard(source)),
             "{source:?}"
         );
+        #[cfg(feature = "experimental-event-parser-options")]
+        for options in [
+            Options::default(),
+            Options::default().with_positions(true),
+            Options::default().with_source_lines(true),
+            Options::default()
+                .with_positions(true)
+                .with_source_lines(true),
+        ] {
+            let expected = parse_with_options(source, &options);
+            let (actual, admitted) = parse_experimental_event_blocks_with_options(source, &options);
+            assert!(admitted, "{source:?}");
+            assert_eq!(actual, expected, "{source:?}");
+        }
     }
 }
 

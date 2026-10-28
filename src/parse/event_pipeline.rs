@@ -3300,9 +3300,6 @@ fn has_fence_candidate_without_final_newline(source: &str) -> bool {
 pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     let source_len = source.len();
     let normalized = if needs_event_normalization(source) {
-        if source.contains(['\u{e005}', '\u{e006}']) {
-            return None;
-        }
         Some(normalize_source(source))
     } else {
         None
@@ -3644,9 +3641,6 @@ fn parse_document_with_custom_options(
     let original_source = source;
     let source_len = source.len();
     let normalized = if needs_event_normalization(source) {
-        if source.contains(['\u{e005}', '\u{e006}']) {
-            return None;
-        }
         Some(normalize_source(source))
     } else {
         None
