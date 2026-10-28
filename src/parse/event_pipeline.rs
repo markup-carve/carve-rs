@@ -546,6 +546,20 @@ fn event_paragraph_needs_reader(
             && !(!has_lines && root_indented_text))
 }
 
+fn refused_right_plus_at(cur: &LineCursor<'_>, line: &str) -> bool {
+    trim_ascii(line) == "+"
+        && cur
+            .source_line(cur.pos)
+            .and_then(continuation_marker::decision)
+            .is_some_and(refused_right_list_plus)
+}
+
+fn refused_right_list_plus(decision: continuation_marker::Decision) -> bool {
+    decision.owner == Some(continuation_marker::Kind::List)
+        && decision.refusal == Some(continuation_marker::Refusal::Right)
+        && decision.sibling_interrupt
+}
+
 fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
     lines: &[&str],
     options: &Options<'_>,
@@ -582,6 +596,7 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
         }};
     }
     let mut leading_attrs: Vec<(usize, Attrs)> = Vec::new();
+    let mut marker_fence_exit_at = None;
     'blocks: while cur.peek().is_some() {
         if options.positions {
             current_block_start.set(cur.pos);
@@ -639,14 +654,22 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             let direct = if options.source_lines || options.positions {
                 None
             } else if blank_then_indented {
-                parse_unified_list_mapped(lines, cur.pos, options, line_map)
+                parse_unified_list_mapped_with_exit(lines, cur.pos, options, line_map)
             } else {
                 parse_simple_list(lines, cur.pos, options)
-                    .or_else(|| parse_unified_list_mapped(lines, cur.pos, options, line_map))
+                    .map(|(list, end)| UnifiedListRead {
+                        list,
+                        end,
+                        marker_fence_exit: false,
+                    })
+                    .or_else(|| {
+                        parse_unified_list_mapped_with_exit(lines, cur.pos, options, line_map)
+                    })
             };
-            if let Some((list, end)) = direct {
-                cur.pos = end;
-                emit!(_block_source_line, BlockNode::List(list));
+            if let Some(read) = direct {
+                cur.pos = read.end;
+                marker_fence_exit_at = read.marker_fence_exit.then_some(read.end);
+                emit!(_block_source_line, BlockNode::List(read.list));
             } else {
                 let mut item_bodies = Vec::new();
                 let list = parse_list(&mut cur, options, &mut item_bodies);
@@ -810,6 +833,7 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             }
             if is_list_marker(trim_ascii_start(line))
                 || trim_ascii(line) == "+"
+                    && !(marker_fence_exit_at == Some(cur.pos) && refused_right_plus_at(&cur, line))
                 || line.ends_with(" +")
             {
                 return None;
@@ -1020,6 +1044,7 @@ struct UnifiedListFrame<'a> {
     content_indent: usize,
     paragraph: Vec<&'a str>,
     continuation_indent: Option<usize>,
+    marker_fence_end: Option<usize>,
 }
 
 fn flush_unified_list_paragraph<'a>(frame: &mut UnifiedListFrame<'a>) -> Option<()> {
@@ -1241,11 +1266,47 @@ fn parse_unified_list_fence(
     content_indent: usize,
     options: &Options<'_>,
 ) -> Option<(BlockNode, usize)> {
+    let read = read_unified_list_fence(lines, start, content_indent, None, options)?;
+    Some((read.block, read.end))
+}
+
+fn marker_fence_boundary(
+    frames: &[UnifiedListFrame<'_>],
+    line: &str,
+    line_map: Option<&[Option<usize>]>,
+    pos: usize,
+) -> Option<bool> {
+    if frames.len() != 1 || frames[0].marker_fence_end != Some(pos) {
+        return None;
+    }
+    let frame = &frames[0];
+    if line.bytes().take_while(|byte| *byte == b' ').count() >= frame.content_indent {
+        return None;
+    }
+    let decision = list_continuation_decision(line_map, pos);
+    Some(trim_ascii(line) == "+" && decision.is_some_and(refused_right_list_plus))
+}
+
+struct ListFenceRead {
+    block: BlockNode,
+    end: usize,
+}
+
+#[cold]
+#[inline(never)]
+fn read_unified_list_fence(
+    lines: &[&str],
+    start: usize,
+    content_indent: usize,
+    marker_content: Option<&str>,
+    options: &Options<'_>,
+) -> Option<ListFenceRead> {
     let prefix = " ".repeat(content_indent);
-    let first = lines.get(start)?.strip_prefix(prefix.as_str())?;
+    let first = marker_content.or_else(|| lines.get(start)?.strip_prefix(prefix.as_str()))?;
     let open = detect_fence_open(first)?;
     let mut collected = vec![first];
     let mut end = start + 1;
+    let mut closed = false;
     while let Some(&line) = lines.get(end) {
         let content = if is_blank_line(line) {
             if line.len() > content_indent || !line.bytes().all(|byte| byte == b' ') {
@@ -1253,21 +1314,30 @@ fn parse_unified_list_fence(
             }
             ""
         } else {
-            line.strip_prefix(prefix.as_str())?
+            match line.strip_prefix(prefix.as_str()) {
+                Some(content) => content,
+                None => break,
+            }
         };
         collected.push(content);
         end += 1;
         if is_fence_close(content, open) {
-            let mut cur = LineCursor::new_with_cols(&collected, None, None);
-            let mut block = *parse_fenced_block(&mut cur, open, options);
-            if cur.pos != collected.len() {
-                return None;
-            }
-            resolve_code_title(&mut block);
-            return Some((block, end));
+            closed = true;
+            break;
         }
     }
-    None
+    if marker_content.is_some() && (closed || end == lines.len())
+        || marker_content.is_none() && !closed
+    {
+        return None;
+    }
+    let mut cur = LineCursor::new_with_cols(&collected, None, None);
+    let mut block = *parse_fenced_block(&mut cur, open, options);
+    if cur.pos != collected.len() {
+        return None;
+    }
+    resolve_code_title(&mut block);
+    Some(ListFenceRead { block, end })
 }
 
 #[inline(never)]
@@ -1284,6 +1354,12 @@ fn direct_list_image_line_is_supported(content: &str) -> Option<()> {
     detect_block_image(content).is_none().then_some(())
 }
 
+struct UnifiedListRead {
+    list: List,
+    end: usize,
+    marker_fence_exit: bool,
+}
+
 fn unified_list_paragraph_accepts(content: &str, has_paragraph: bool) -> bool {
     (if has_paragraph {
         may_continue_plain_paragraph(content)
@@ -1294,12 +1370,97 @@ fn unified_list_paragraph_accepts(content: &str, has_paragraph: bool) -> bool {
         && thematic_break_marker(content).is_none()
 }
 
+enum BlankListStep {
+    Continue(usize),
+    Break,
+}
+
+fn advance_unified_list_blank(
+    lines: &[&str],
+    pos: usize,
+    frames: &mut Vec<UnifiedListFrame<'_>>,
+) -> Option<BlankListStep> {
+    let mut after = pos;
+    while lines.get(after).is_some_and(|line| is_blank_line(line)) {
+        after += 1;
+    }
+    let Some(&next) = lines.get(after) else {
+        return Some(BlankListStep::Break);
+    };
+    if after - pos != 1 {
+        if !next.starts_with([' ', '\t']) && !is_list_marker(next) {
+            while frames.len() > 1 {
+                close_unified_list_frame(frames)?;
+            }
+            return Some(BlankListStep::Break);
+        }
+        return None;
+    }
+    if frames.len() > 1 {
+        if next.starts_with([' ', '\t']) {
+            resume_nested_list_after_blank(frames, next)?;
+            return Some(BlankListStep::Continue(after));
+        }
+        while frames.len() > 1 {
+            close_unified_list_frame(frames)?;
+        }
+    }
+    let frame = frames.last_mut()?;
+    if let Some((kind, _, _)) = unified_list_marker(next) {
+        if kind != frame.kind {
+            return Some(BlankListStep::Break);
+        }
+        frame.node.tight = false;
+        return Some(BlankListStep::Continue(after));
+    }
+    let next_indent = next.bytes().take_while(|byte| *byte == b' ').count();
+    if next_indent == frame.content_indent && unified_list_marker(&next[next_indent..]).is_some() {
+        return Some(BlankListStep::Continue(after));
+    }
+    if is_list_marker(next) {
+        return None;
+    }
+    if next_indent == frame.content_indent {
+        flush_unified_list_paragraph(frame)?;
+        if strip_blockquote_prefix(&next[next_indent..]).is_none()
+            && detect_fence_open(&next[next_indent..]).is_none()
+            && detect_heading(&next[next_indent..]).is_none()
+        {
+            frame.node.tight = false;
+        }
+        return Some(BlankListStep::Continue(after));
+    }
+    if next.starts_with([' ', '\t']) {
+        if next.as_bytes().get(next_indent) != Some(&b'\t')
+            && next_indent < frames[0].content_indent
+        {
+            while frames.len() > 1 {
+                close_unified_list_frame(frames)?;
+            }
+            return Some(BlankListStep::Break);
+        }
+        return None;
+    }
+    Some(BlankListStep::Break)
+}
+
+#[cfg(test)]
 fn parse_unified_list_mapped(
     lines: &[&str],
     start: usize,
     options: &Options<'_>,
     line_map: Option<&[Option<usize>]>,
 ) -> Option<(List, usize)> {
+    let read = parse_unified_list_mapped_with_exit(lines, start, options, line_map)?;
+    Some((read.list, read.end))
+}
+
+fn parse_unified_list_mapped_with_exit(
+    lines: &[&str],
+    start: usize,
+    options: &Options<'_>,
+    line_map: Option<&[Option<usize>]>,
+) -> Option<UnifiedListRead> {
     let base_depth = NESTING_DEPTH.with(|depth| depth.get());
     // Leave room for the standard parser's list item and paragraph scopes.
     if base_depth.saturating_add(2) >= MAX_NESTING_DEPTH {
@@ -1307,78 +1468,27 @@ fn parse_unified_list_mapped(
     }
     let mut frames: Vec<UnifiedListFrame<'_>> = Vec::new();
     let mut pos = start;
+    let mut marker_fence_exit = false;
     while let Some(&line) = lines.get(pos) {
+        if let Some(should_close) = marker_fence_boundary(&frames, line, line_map, pos) {
+            if should_close {
+                marker_fence_exit = true;
+                break;
+            }
+            return None;
+        }
         if consume_pending_list_continuation(&mut frames, line, &lines[pos + 1..])? {
             pos += 1;
             continue;
         }
         if is_blank_line(line) {
-            let mut after = pos;
-            while lines.get(after).is_some_and(|line| is_blank_line(line)) {
-                after += 1;
-            }
-            let Some(&next) = lines.get(after) else { break };
-            if after - pos != 1 {
-                if !next.starts_with([' ', '\t']) && !is_list_marker(next) {
-                    while frames.len() > 1 {
-                        close_unified_list_frame(&mut frames)?;
-                    }
-                    break;
-                }
-                return None;
-            }
-            if frames.len() > 1 {
-                if next.starts_with([' ', '\t']) {
-                    resume_nested_list_after_blank(&mut frames, next)?;
+            match advance_unified_list_blank(lines, pos, &mut frames)? {
+                BlankListStep::Continue(after) => {
                     pos = after;
                     continue;
                 }
-                while frames.len() > 1 {
-                    close_unified_list_frame(&mut frames)?;
-                }
+                BlankListStep::Break => break,
             }
-            let frame = frames.last_mut()?;
-            if let Some((kind, _, _)) = unified_list_marker(next) {
-                if kind != frame.kind {
-                    break;
-                }
-                frame.node.tight = false;
-                pos = after;
-                continue;
-            }
-            let next_indent = next.bytes().take_while(|byte| *byte == b' ').count();
-            if next_indent == frame.content_indent
-                && unified_list_marker(&next[next_indent..]).is_some()
-            {
-                pos = after;
-                continue;
-            }
-            if is_list_marker(next) {
-                return None;
-            }
-            if next_indent == frame.content_indent {
-                flush_unified_list_paragraph(frame)?;
-                if strip_blockquote_prefix(&next[next_indent..]).is_none()
-                    && detect_fence_open(&next[next_indent..]).is_none()
-                    && detect_heading(&next[next_indent..]).is_none()
-                {
-                    frame.node.tight = false;
-                }
-                pos = after;
-                continue;
-            }
-            if next.starts_with([' ', '\t']) {
-                if next.as_bytes().get(next_indent) != Some(&b'\t')
-                    && next_indent < frames[0].content_indent
-                {
-                    while frames.len() > 1 {
-                        close_unified_list_frame(&mut frames)?;
-                    }
-                    break;
-                }
-                return None;
-            }
-            break;
         }
         let indent = line.bytes().take_while(|byte| *byte == b' ').count();
         let decision = trim_ascii_end(line)
@@ -1391,6 +1501,10 @@ fn parse_unified_list_mapped(
             continue;
         }
         let marker = unified_list_marker(&line[indent..])
+            .or_else(|| {
+                let marker = strict_list_marker(&line[indent..])?;
+                detect_fence_open(marker.2).map(|_| marker)
+            })
             .or_else(|| plus_first_block_marker(&line[indent..], decision));
         if let Some((kind, ordinal, content)) = marker {
             while frames.len() > 1 && indent < frames.last()?.indent {
@@ -1416,6 +1530,7 @@ fn parse_unified_list_mapped(
                         },
                     paragraph: Vec::new(),
                     continuation_indent: None,
+                    marker_fence_end: None,
                 });
             } else if indent == frames.last()?.content_indent {
                 if base_depth.saturating_add(frames.len() + 2) >= MAX_NESTING_DEPTH {
@@ -1441,6 +1556,7 @@ fn parse_unified_list_mapped(
                         },
                     paragraph: Vec::new(),
                     continuation_indent: None,
+                    marker_fence_end: None,
                 });
             } else if indent != frames.last()?.indent {
                 return None;
@@ -1487,11 +1603,33 @@ fn parse_unified_list_mapped(
                         },
                     paragraph: Vec::new(),
                     continuation_indent: None,
+                    marker_fence_end: None,
                 });
                 content = nested_content;
             }
             if is_plus_marker(content) {
                 start_marker_line_list_continuation(&mut frames, decision)?;
+            } else if detect_fence_open(content).is_some() {
+                if frames.len() != 1 {
+                    return None;
+                }
+                let frame = frames.last_mut()?;
+                let read = read_unified_list_fence(
+                    lines,
+                    pos,
+                    frame.content_indent,
+                    Some(content),
+                    options,
+                )?;
+                frame
+                    .node
+                    .items
+                    .last_mut()?
+                    .blocks
+                    .push(UnifiedListBlock::Block(Box::new(read.block)));
+                frame.marker_fence_end = Some(read.end);
+                pos = read.end;
+                continue;
             } else {
                 direct_list_image_line_is_supported(content)?;
                 frames.last_mut()?.paragraph.push(content);
@@ -1577,12 +1715,28 @@ fn parse_unified_list_mapped(
     }
     let mut root = frames.pop()?;
     flush_unified_list_paragraph(&mut root)?;
-    Some((build_unified_list(root.node, options), pos))
+    Some(UnifiedListRead {
+        list: build_unified_list(root.node, options),
+        end: pos,
+        marker_fence_exit,
+    })
 }
 
 #[cfg(test)]
 mod unified_list_tests {
     use super::*;
+
+    #[test]
+    fn marker_fence_frame_stops_at_refused_plus() {
+        let source = "- ```\n+\n  x\n";
+        let _markers = continuation_marker::Guard::install(source);
+        let lines: Vec<&str> = source.lines().collect();
+        let line_map: Vec<Option<usize>> = (1..=lines.len()).map(Some).collect();
+        let (list, end) =
+            parse_unified_list_mapped(&lines, 0, &Options::default(), Some(&line_map)).unwrap();
+        assert_eq!(end, 1);
+        assert!(matches!(list.items[0].children[0], BlockNode::CodeBlock(_)));
+    }
 
     #[test]
     fn shared_owner_builds_item_headings() {

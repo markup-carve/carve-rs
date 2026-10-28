@@ -11,6 +11,40 @@ fn parse_standard(source: &str) -> carve::Document {
     parse_with_options(source, &Options::default())
 }
 
+#[test]
+fn refused_plus_after_list_fence_matches_full_document() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    for suffix in ["", "-2", "-3", "-4", "-5", "-6", "-7"] {
+        let name = format!("627-a-refused-marker-leaves-an-open-fence-s-blank-payload{suffix}.crv");
+        let source = fs::read_to_string(corpus.join(name)).unwrap();
+        let (candidate, used) = parse_experimental_event_blocks(&source);
+        if matches!(suffix, "" | "-3" | "-5") {
+            assert!(used, "{suffix}");
+        }
+        assert_eq!(candidate, parse_standard(&source));
+    }
+}
+
+#[test]
+fn list_marker_fence_boundary_matrix_matches_full_document() {
+    for opener in ["```", "```=html", "~~~"] {
+        for payload in ["", "  x\n", "  x\n  y\n", "  \n", "\n", "\n  x\n"] {
+            for following in [
+                "+\n  x\n",
+                "+\n\ntail\n",
+                "- sibling\n",
+                "> quote\n",
+                "tail\n",
+                "  ```\n+\n",
+            ] {
+                let source = format!("- {opener}\n{payload}{following}");
+                let (candidate, _) = parse_experimental_event_blocks(&source);
+                assert_eq!(candidate, parse_standard(&source), "{source:?}");
+            }
+        }
+    }
+}
+
 #[cfg(feature = "experimental-event-parser-options")]
 #[test]
 fn footnote_abbreviation_scopes_match_full_document() {
