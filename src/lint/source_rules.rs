@@ -257,7 +257,7 @@ pub(super) fn collect(
 ) -> bool {
     let rows = lines(source);
     collect_ordered_splits(doc, &rows, out);
-    let mut scan = BlockScan::new(doc, &rows, to_byte, out);
+    let mut scan = BlockScan::new(source, doc, &rows, to_byte, out);
     collect_authoring(&rows, doc, &scan, caption_looking, out);
     collect_description_separators(
         &rows,
@@ -366,14 +366,15 @@ fn collect_authoring(
         let is_paragraph = paragraphs.contains_key(&line);
         let is_table = table_rows.contains_key(&line);
         if is_paragraph {
-            if trimmed.starts_with('|')
-                && !trimmed.trim_end().ends_with('|')
-                && trimmed[1..].contains('|')
-            {
+            if trimmed.starts_with('|') && !trimmed.trim_end_matches([' ', '\t']).ends_with('|') {
                 let previous_table_shaped = index > 0
+                    && paragraphs.contains_key(&(line - 1))
                     && container_view(rows[index - 1].text)
                         .trim_start()
-                        .starts_with('|');
+                        .starts_with('|')
+                    && !container_view(rows[index - 1].text)
+                        .trim_end_matches([' ', '\t'])
+                        .ends_with('|');
                 if !previous_table_shaped || table_rows.contains_key(&(line - 1)) {
                     emit(out, rows, line, at, 1, "table-shaped-paragraph", "This table-shaped line lacks a closing pipe and renders as paragraph text; close the table row.");
                 }
@@ -383,6 +384,7 @@ fn collect_authoring(
                 && !list_item_lines.contains(&line)
                 && !scan.ignored.contains(&line)
                 && paragraphs.contains_key(&(line - 1))
+                && paragraphs[&line] == paragraphs[&(line - 1)]
                 && !list.is_match(rows[index - 1].text)
                 && !rows[index - 1].text.trim().is_empty()
             {
@@ -496,7 +498,7 @@ fn collect_authoring(
                     .bytes()
                     .all(|b| matches!(b, b'|' | b' ' | b'\t' | b':' | b'-' | b'x'));
             let valid = trimmed.split('|').skip(1).all(|cell| {
-                let cell = cell.trim();
+                let cell = cell.trim_matches(' ');
                 cell.is_empty()
                     || (cell.len() >= 3 && cell.trim_matches(':').bytes().all(|b| b == b'-'))
             });
@@ -561,6 +563,7 @@ struct BlockWalker<'d, 'r> {
 
 impl<'d> BlockScan<'d> {
     fn new(
+        source: &str,
         doc: &'d Document,
         rows: &[Line<'_>],
         to_byte: &dyn Fn(usize) -> usize,
@@ -593,13 +596,14 @@ impl<'d> BlockScan<'d> {
             push_block_children(block, depth, &mut blocks, &mut inlines);
         }
         let mut scan = walker.scan;
-        scan.scan_inlines(inlines, to_byte);
+        scan.scan_inlines(inlines, source, to_byte);
         scan
     }
 
     fn scan_inlines(
         &mut self,
         mut inlines: Vec<(&InlineNode, usize)>,
+        source: &str,
         to_byte: &dyn Fn(usize) -> usize,
     ) {
         let mut text_spans = Vec::new();
@@ -618,6 +622,23 @@ impl<'d> BlockScan<'d> {
                 if let Some(pos) = node.pos() {
                     self.payload.extend((pos.start_line + 1)..=pos.end_line);
                     opaque_spans.push((to_byte(pos.start_offset), to_byte(pos.end_offset)));
+                }
+            }
+            if let InlineNode::Link(link) = node {
+                if let Some(pos) = &link.pos {
+                    let end = to_byte(pos.end_offset);
+                    let after_label = link
+                        .children
+                        .iter()
+                        .filter_map(InlineNode::pos)
+                        .map(|child| to_byte(child.end_offset))
+                        .max()
+                        .unwrap_or_else(|| to_byte(pos.start_offset));
+                    if let Some(tail) = source.get(after_label..end) {
+                        if let Some(offset) = tail.find("](") {
+                            opaque_spans.push((after_label + offset + 2, end));
+                        }
+                    }
                 }
             }
             if let InlineNode::Emphasis(emphasis) = node {
