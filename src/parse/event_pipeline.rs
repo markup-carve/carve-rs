@@ -2426,6 +2426,7 @@ fn may_start_plain_paragraph(line: &str) -> bool {
         first.is_ascii_alphanumeric()
             || matches!(first, b'*' | b'`' | b'"' | b'\'' | b'(')
             || may_start_extended_plain_paragraph(*first)
+            || *first == b'>' && strip_blockquote_prefix(line).is_none()
     })
 }
 

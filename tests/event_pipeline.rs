@@ -12,6 +12,24 @@ fn parse_standard(source: &str) -> carve::Document {
 }
 
 #[test]
+fn malformed_quote_prefix_stays_literal() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    let name = "646-a-quote-prefixed-plus-takes-one-space-after-each-quote-marker-and-attaches-a-quote-6.crv";
+    let source = fs::read_to_string(corpus.join(name)).unwrap();
+    let (candidate, used) = parse_experimental_event_blocks(&source);
+    assert!(used, "{name}");
+    assert_eq!(candidate, parse_standard(&source));
+
+    for prefix in [">x", ">> +", ">> x", ">>>", ">!", ">\tq"] {
+        for follower in ["", "q\n", "> q\n", "\nnext\n", "# heading\n"] {
+            let source = format!("{prefix}\n{follower}");
+            let (candidate, _) = parse_experimental_event_blocks(&source);
+            assert_eq!(candidate, parse_standard(&source), "{source:?}");
+        }
+    }
+}
+
+#[test]
 fn list_comment_and_lower_column_siblings_match_full_document() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     let name = "517-a-band-paragraph-after-an-invisible-line-leaves-the-item-loose-5.crv";
