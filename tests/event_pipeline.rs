@@ -175,6 +175,40 @@ fn list_continuation_after_blank_stays_with_its_frame() {
 }
 
 #[test]
+fn continuation_owned_quote_stays_inside_list_item() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    let name = "632-a-continuation-marker-uses-its-container-column-34.crv";
+    let source = fs::read_to_string(corpus.join(name)).unwrap();
+    let (candidate, used) = parse_experimental_event_blocks(&source);
+    assert!(used, "{name}");
+    assert_eq!(candidate, parse_standard(&source));
+
+    for marker in ["- a", "* a", "1. a"] {
+        for indent in 0..=4 {
+            for quote in ["> q\n", "> q\n> r\n", "> - b\n"] {
+                let source = format!(
+                    "{}{marker}\n{}+\n{}{quote}",
+                    " ".repeat(indent),
+                    " ".repeat(indent),
+                    " ".repeat(indent)
+                );
+                let (candidate, _) = parse_experimental_event_blocks(&source);
+                assert_eq!(candidate, parse_standard(&source), "{source:?}");
+            }
+        }
+    }
+    for source in [
+        "- a\n+\n> q\n\n  b\n",
+        "- a\n  - b\n  +\n  > q\n",
+        "- +\n> q\n",
+        "- a\n+\n> q\n- b\n",
+    ] {
+        let (candidate, _) = parse_experimental_event_blocks(source);
+        assert_eq!(candidate, parse_standard(source), "{source:?}");
+    }
+}
+
+#[test]
 fn list_marker_fence_boundary_matrix_matches_full_document() {
     for opener in ["```", "```=html", "~~~"] {
         for payload in ["", "  x\n", "  x\n  y\n", "  \n", "\n", "\n  x\n"] {

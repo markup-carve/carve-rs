@@ -1530,6 +1530,33 @@ fn parse_unified_list_mapped_with_exit(
             }
             return None;
         }
+        if let Some(required_indent) = frames.last().and_then(|frame| frame.continuation_indent) {
+            let indent = line.bytes().take_while(|byte| *byte == b' ').count();
+            if indent == required_indent
+                && strip_blockquote_prefix(trim_ascii_end(&line[indent..])).is_some()
+            {
+                let (quote, end) = parse_unified_list_quote(
+                    lines,
+                    pos,
+                    indent,
+                    base_depth,
+                    frames.len(),
+                    options,
+                )?;
+                let frame = frames.last_mut()?;
+                frame.continuation_indent = None;
+                frame
+                    .node
+                    .items
+                    .last_mut()?
+                    .blocks
+                    .push(UnifiedListBlock::Block(Box::new(BlockNode::BlockQuote(
+                        quote,
+                    ))));
+                pos = end;
+                continue;
+            }
+        }
         if consume_pending_list_continuation(&mut frames, line, &lines[pos + 1..])? {
             pos += 1;
             continue;
