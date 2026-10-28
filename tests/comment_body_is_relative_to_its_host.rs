@@ -24,14 +24,14 @@ fn a_document_body_keeps_its_indentation() {
 }
 
 #[test]
-fn a_body_line_below_the_host_ends_the_item_and_degrades_the_opener() {
+fn a_matched_comment_body_keeps_its_complete_extent() {
     assert_eq!(
         to_carve("- a\n  %%%\n x\n  %%%\n"),
-        "- a\n  %% %\n\nx\n\n%% %\n"
+        "- a\n  %%%\n  x\n  %%%\n"
     );
     assert_eq!(
         to_html(&to_carve("- a\n  %%%\n x\n  %%%\n")),
-        "<ul>\n  <li>a</li>\n</ul>\n<p>x</p>"
+        "<ul>\n  <li>a</li>\n</ul>"
     );
 }
 

@@ -13,6 +13,29 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    // Spec 14e66c05 adds 39 corpus pairs in these categories. Each new pair
+    // was checked against its committed HTML before the spec pin moved.
+    "a-contentless-description-marker-folds-under-a-quoted-term",
+    "a-first-block-item-takes-the-next-owned-block",
+    "a-lone-brace-stays-inside-forced-emphasis",
+    "a-nested-first-block-item-releases-the-next-root-block",
+    "a-quoted-include-with-no-resolver-parses-inline-content",
+    "a-second-plus-starts-its-own-paragraph-after-attachment",
+    "an-enclosing-closer-ends-a-tag-name",
+    "an-overindented-colon-opener-keeps-the-quote-paragraph-open",
+    "an-unclosed-nested-fence-keeps-blanks-before-outer-text",
+    "citation-shaped-lines-remain-core-text",
+    "combined-emphasis-finds-a-later-nonempty-closer",
+    "compact-single-paragraph-quote",
+    "consecutive-continuation-markers-in-a-div-hosted-quote",
+    "invalid-include-line-ranges-remain-literal-in-core",
+    "invalid-line-range-includes-within-paragraphs-stay-literal",
+    "loose-list-starts-directly-on-its-first-paragraph",
+    "multiple-footnote-backlinks-follow-inline-content",
+    "paired-german-quotes-leave-no-quote-in-a-heading-id",
+    "raw-inline-image-bytes-stay-inside-a-paragraph",
+    "unresolved-footnote-literal-escapes-html-text",
+    "url-sinks-reject-schemes-after-emitted-value-normalization",
     "a-fence-with-no-host-prefix-leaves-an-inline-run",
     "a-line-at-the-marker-column-leaves-a-closed-nested-body",
     "bidi-controls-in-math-content",
@@ -973,6 +996,16 @@ const IMPLEMENTED: &[&str] = &[
     "quotes-open-after-an-unresolved-symbol",
     "raw-inline-content-in-heading-ids",
     "unicode-whitespace-ends-a-link-destination",
+    "a-later-term-after-a-shifted-separator-opens-in-the-outer-item",
+    "a-task-item-uses-the-ordered-item-column-rule",
+    "invalid-table-metadata-keeps-the-table",
+    "lazy-quote-owners",
+    "lint-directives-are-invisible-in-rendered-content",
+    "model-inline-frames-and-html-attributes",
+    "model-syntax-boundaries-and-ownership",
+    "opaque-reference-and-inline-bounds",
+    "the-deepest-quoted-paragraph-takes-a-lazy-line-across-missed-prefixes",
+    "visible-footnote-headings",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
@@ -1030,7 +1063,11 @@ fn expected_corpus_size() -> usize {
 /// Empty is the normal end state: the pin catching up is what retires an entry,
 /// and the `assert_ne!` in `check_pair` is what forces the deletion rather than
 /// leaving a declaration that no longer declares anything.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[(
+    "620-generated-container-documents-5",
+    "PART 0 O1 keeps a matched comment span opaque across authored indentation",
+    "<ul>\n  <li>x</li>\n</ul>",
+)];
 
 /// Pairs this engine renders differently from the pinned corpus because it has
 /// not reached the rule yet - the mirror of [`AHEAD_OF_PIN`].
@@ -1049,7 +1086,24 @@ const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 /// that fixes the rule rather than left behind as a declaration that no longer
 /// declares anything.
 ///
-const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[];
+const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
+    ("212-a-flush-left-line-after-a-footnote-definition-belongs-to-the-document", "preexisting parser gap at the new spec pin", "<p>a</p>\n<p>b</p>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>note<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
+    ("219-a-definition-below-a-footnote-body-s-column-is-the-document-s-own-text", "preexisting parser gap at the new spec pin", "<p>[r]: /u</p>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a> and [t][r]</p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>note<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
+    ("228-a-line-at-a-footnote-definition-s-own-column-followed-by-non-blank-text-forms-its-own-tight-block", "preexisting parser gap at the new spec pin", "<ul>\n  <li>a\n    more\n  </li>\n</ul>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>x<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
+    ("279-a-boundary-line-inside-an-open-fence-does-not-end-the-container-4", "preexisting parser gap at the new spec pin", "<blockquote>\n  <p>q</p>\n  <div>\n    <p>a</p>\n    <p>b</p>\n  </div>\n</blockquote>"),
+    ("287-a-column-zero-definition-ends-an-open-list-item-2", "preexisting parser gap at the new spec pin", "<ul>\n  <li>a</li>\n</ul>\n<p>after<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>note<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
+    ("358-what-a-content-column-block-does-not-reach-2", "preexisting parser gap at the new spec pin", "<ul>\n  <li>a\n    b\n  </li>\n</ul>\n<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>t\nmore<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
+    ("374-a-collected-definition-closes-the-item-paragraph-3", "preexisting parser gap at the new spec pin", "<ol>\n  <li>a\n    more\ntail\n  </li>\n</ol>"),
+    ("435-the-continuation-marker-s-column-gate-reaches-every-container-2", "preexisting parser gap at the new spec pin", "<p>+\nmore</p>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>intro<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
+    ("435-the-continuation-marker-s-column-gate-reaches-every-container-4", "preexisting parser gap at the new spec pin", "<p>+\nmore</p>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>intro<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
+    ("437-a-leading-continuation-marker-in-a-footnote-body-or-a-quote-is-text-2", "preexisting parser gap at the new spec pin", "<p>flush</p>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>+<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
+    ("454-a-block-opener-past-a-nested-footnote-definition-opens-in-the-item-3", "preexisting parser gap at the new spec pin", "<ul>\n  <li><p>body</p>\n    <p>prose</p>\n  </li>\n</ul>\n<p>after</p>"),
+    ("461-a-column-0-line-after-a-description-hosted-note-is-a-document-sibling-3", "preexisting parser gap at the new spec pin", "<dl>\n  <dt>t</dt>\n  <dd>tail</dd>\n</dl>"),
+    ("461-a-column-0-line-after-a-description-hosted-note-is-a-document-sibling-4", "preexisting parser gap at the new spec pin", "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>nested\ntail</li>\n    </ul>\n  </dd>\n</dl>"),
+    ("620-generated-container-documents-16", "preexisting parser gap at the new spec pin", "<ul>\n  <li>\n    <ul>\n      <li>body</li>\n    </ul>\n    <p>prose</p>\n  </li>\n</ul>"),
+    ("629-a-dangling-plus-marker-adds-nothing-and-a-nested-quote-reads-it-like-an-unnested-one-4", "preexisting parser gap at the new spec pin", "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<p>+</p>\n<p>para</p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>note<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
+    ("629-a-dangling-plus-marker-adds-nothing-and-a-nested-quote-reads-it-like-an-unnested-one-8", "preexisting parser gap at the new spec pin", "<blockquote><p>+</p></blockquote>\n<p>para</p>"),
+];
 
 fn check_pair(slug: &str) {
     let slug = &resolve_slug(slug);

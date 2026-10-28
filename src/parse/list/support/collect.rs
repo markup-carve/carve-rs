@@ -96,6 +96,15 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     options: &Options<'_>,
 ) -> MappedSource {
     let authored_base_at_start = cur.peek().is_some_and(is_blank_line);
+    // A plain paragraph begun after a blank can be interrupted by a later opener.
+    let after_blank_paragraph = cur.pos > 0
+        && is_blank_line(cur.lines.at(cur.pos - 1))
+        && cur.peek().is_some_and(|line| {
+            let content = trim_ascii_start(line);
+            line_starts_paragraph(content)
+                && !is_list_marker(content)
+                && !item_block_opener(content)
+        });
     let container = IndentContainer {
         marker_column: parent_indent,
         content_column: strip_cols,
@@ -135,6 +144,10 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         .as_ref()
         .map_or(parent_indent, |marker| marker.indent);
     let marker_ordered = marker_lead.as_ref().is_some_and(|marker| marker.ordered);
+    let attribute_column = marker_lead
+        .as_ref()
+        .filter(|marker| marker.checked.is_some())
+        .map_or(strip_cols, |marker| marker.indent + 2);
     let marker_content = marker_lead.map(|marker| marker.content);
     let mut table_seen = marker_content.is_some_and(is_table_start);
     let mut table_caption_open = false;
@@ -179,6 +192,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let mut marker_term_paragraph_open = marker_is_definition_term;
     // Track term ownership separately from paragraph retention across deeper comments.
     let mut marker_term_open = marker_is_definition_term;
+    // A separator at this item's column can replace a marker-line child term
+    // with an item paragraph. Its later openers need this item's column.
+    let mut released_child_paragraph = false;
     let marker_comment = marker_content
         .and_then(detect_comment_fence_line)
         .filter(|open| cur.has_comment_closer_after(cur.pos, open.fence_len));
@@ -414,16 +430,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         {
             break;
         }
-        if comment_fence.is_some_and(|(width, opener_column)| {
-            opener_column >= strip_cols
-                && !is_blank_line(line)
-                && !line.starts_with(LAZY)
-                && indent_columns(line) < strip_cols
-                && indent_columns(line) < opener_column
-                && !is_comment_fence_close_any_column(line, width)
-        }) {
-            break;
-        }
+        // A matched comment is one opaque source extent across authored
+        // indentation (PART 0 O1). Its payload cannot end the item merely
+        // because it sits below the opener's column.
         if is_definition_placeholder(line) && indent_columns(line) < strip_cols {
             break;
         }
@@ -583,6 +592,29 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             continue;
         }
         let indent = indent_columns(line);
+        if released_child_paragraph
+            && indent >= strip_cols
+            && (is_definition_list_start(trim_ascii_start(line))
+                || is_list_marker(line)
+                || item_block_opener(trim_ascii_start(line)))
+            && fence.is_none()
+            && comment_fence.is_none()
+            && colon_open.is_empty()
+        {
+            break;
+        }
+        if after_blank_paragraph
+            && !lines.is_empty()
+            && indent > strip_cols
+            && item_block_opener(trim_ascii_start(line))
+            && definition_list_column.is_none()
+            && surviving_definition_body_column.is_none()
+            && fence.is_none()
+            && comment_fence.is_none()
+            && colon_open.is_empty()
+        {
+            break;
+        }
         let plain_nested_lazy = fence.is_none()
             && comment_fence.is_none()
             && colon_open.is_empty()
@@ -604,6 +636,20 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && comment_fence.is_none()
             && literal_colon.is_none()
             && is_definition_list_start(trim_ascii_start(line));
+        // A term that reaches this item below its open child's content column
+        // belongs to the item. Let the child chunk finish before parsing it.
+        if term
+            && !lines.is_empty()
+            && !surviving_definition_body_column.is_some_and(|column| indent >= column)
+            && (nested_item_columns
+                .last()
+                .is_some_and(|&(_, child_column)| indent < child_column)
+                || marker_line_columns
+                    .first()
+                    .is_some_and(|&column| indent < column))
+        {
+            break;
+        }
         let below_definition_term = indent > parent_indent
             && indent < strip_cols
             && definition_list_column.is_some_and(|column| indent < column)
@@ -615,6 +661,15 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && fence.is_none()
             && comment_fence.is_none()
             && literal_colon.is_none();
+        // The marker line's innermost term began before this collector ran.
+        if description
+            && indent == strip_cols
+            && definition_list_column.is_none()
+            && marker_content
+                .is_some_and(|content| is_definition_list_start(innermost_marker_content(content)))
+        {
+            definition_list_column = marker_line_columns.last().copied();
+        }
         if after_definition_blank
             && !term
             && !(description && definition_list_column == Some(indent))
@@ -682,12 +737,13 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         let separator_for_nested_item = below_definition_separator
             && !separator_at_nested_marker
             && nested_owner_content.is_some_and(|content| indent >= content);
-        if separator_in_own_item {
+        if separator_in_own_item || separator_at_nested_marker {
             definition_list_column = None;
             surviving_definition_body_column = None;
             open_definition_body_column = None;
             marker_term_open = false;
             marker_term_paragraph_open = false;
+            released_child_paragraph = separator_at_nested_marker;
         }
         if indent == strip_cols
             && (item_block_opener(trim_ascii_start(line))
@@ -1664,8 +1720,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             sliced.insert_str(0, LAZY);
         }
         if separator_in_own_item {
-            if let Some(rest) = sliced.strip_prefix(LAZY) {
-                sliced = rest.to_string();
+            if sliced.starts_with(LAZY) {
+                sliced = strip_lazy(&sliced).to_string();
             }
             sliced.insert_str(0, ITEM_PARAGRAPH);
         }
@@ -1959,10 +2015,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         cur.consume();
         // A wrapped attribute opened at the content column is one construct: its
         // later lines belong to it at any column (carve#3421).
-        let wrapped_attribute = ((indent == strip_cols
-            || nested_item_columns
-                .iter()
-                .any(|&(_, column)| column == indent))
+        let wrapped_attribute = (indent > parent_indent
             && !opaque_here
             && fence.is_none()
             && trim_ascii_start(line).starts_with('{')
@@ -1974,25 +2027,57 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             )
         })
         .flatten();
-        if wrapped_attribute.is_some_and(|count| count > 1) {
+        if wrapped_attribute.is_some() && indent >= attribute_column {
+            if let Some(reached_opener) = reached.last_mut() {
+                *reached_opener = true;
+            }
+        }
+        if indent < attribute_column && wrapped_attribute.is_some() {
+            if let Some(opened) = lines.last_mut() {
+                *opened = format!("{LAZY}{}", trim_ascii_start(opened));
+            }
+        } else if indent < strip_cols && wrapped_attribute.is_some() {
+            if let Some(opened) = lines.last_mut() {
+                *opened = format!(
+                    "{}{}",
+                    " ".repeat(indent - attribute_column),
+                    trim_ascii_start(opened)
+                );
+            }
+        }
+        if indent >= attribute_column && wrapped_attribute.is_some_and(|count| count > 1) {
             closed_code_leaf = true;
         }
         for _ in 1..wrapped_attribute.unwrap_or(1) {
             let next = cur.lines.at(cur.pos);
             // Kept at the opener's column, so a reparse reads them inside its container.
-            lines.push(format!(
-                "{}{}",
-                " ".repeat(indent - strip_cols),
-                trim_ascii_start(next)
-            ));
-            reached.push(true);
+            lines.push(if indent >= attribute_column {
+                format!(
+                    "{}{}",
+                    " ".repeat(
+                        indent
+                            - if indent >= strip_cols {
+                                strip_cols
+                            } else {
+                                attribute_column
+                            }
+                    ),
+                    trim_ascii_start(next)
+                )
+            } else {
+                trim_ascii_start(next).to_string()
+            });
+            reached.push(indent >= attribute_column);
             if building_maps {
                 line_map.push(cur.source_line(cur.pos));
-                col_map.push(
-                    cur.source_col(cur.pos).map(|col| {
-                        col + leading_ws(next) as isize - (indent - strip_cols) as isize
-                    }),
-                );
+                col_map.push(cur.source_col(cur.pos).map(|col| {
+                    col + leading_ws(next) as isize
+                        - indent.saturating_sub(if indent >= strip_cols {
+                            strip_cols
+                        } else {
+                            attribute_column
+                        }) as isize
+                }));
             }
             cur.consume();
         }

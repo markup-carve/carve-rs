@@ -1772,12 +1772,14 @@ fn run_lint(args: &[String]) -> ExitCode {
     let mut enable_citations = false;
     let mut include_root: Option<String> = None;
     let mut json = false;
+    let mut caption_hints = false;
     let mut budgets = IncludeBudgets::default();
     let mut index = 0;
     while index < args.len() {
         let arg = &args[index];
         match arg.as_str() {
             "--json" => json = true,
+            "--caption-hints" => caption_hints = true,
             "--max-depth" | "--max-bytes" | "--max-resolver-calls" | "--max-warnings" => {
                 index += 1;
                 let value = match parse_budget(args.get(index), arg) {
@@ -1834,11 +1836,12 @@ fn run_lint(args: &[String]) -> ExitCode {
                 println!(
                     "carve lint - report constructs that parse but do not reach the page\n\n\
                      Usage:\n  \
-                     carve lint [--json] [--extensions] [--extension citations] [--include-root DIR] [files]\n\n\
+                     carve lint [--json] [--caption-hints] [--extensions] [--extension citations] [--include-root DIR] [files]\n\n\
                      Reads stdin when no file is given, or when the file is `-`.\n\n\
                      Options:\n  \
                      --extensions           enable the bundled extensions\n  \
                      --json                 print one JSON warning per line\n  \
+                     --caption-hints       check caption-looking paragraphs\n  \
                      --extension citations  enable citation placement lint\n  \
                      --include-root DIR     expand and lint includes within DIR;\n                         \
                      without it no include target is read\n  \
@@ -1879,6 +1882,7 @@ fn run_lint(args: &[String]) -> ExitCode {
         enable_citations,
         include_root.as_deref(),
         json,
+        caption_hints,
         budgets,
     )
 }
@@ -1889,6 +1893,7 @@ fn run_lint_paths(
     enable_citations: bool,
     include_root: Option<&str>,
     json: bool,
+    caption_hints: bool,
     budgets: IncludeBudgets,
 ) -> ExitCode {
     // Only `options.extensions` is read by the linter - `lint_carve_with_options`
@@ -1963,6 +1968,7 @@ fn run_lint_paths(
     let mut lint_source = |source: &str, label: &str| {
         let mut lint_options = carve::Options::new();
         lint_options.extensions = options.extensions.clone();
+        lint_options.lint_caption_looking_paragraph = caption_hints;
         if let Some(resolver) = resolver.as_ref() {
             lint_options.lint_includes = Some(
                 budgets
