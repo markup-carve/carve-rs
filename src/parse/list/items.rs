@@ -1414,7 +1414,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // innermost quote, which owns the `+` (`- > > +` / `> q` nests three
         // deep, carve#3421): it takes the `+` line's place behind its prefix.
         let quote_prefix = &content[..content.len() - innermost.len()];
-        let quote_column = quote_lead_column(cur, content, item_at, content_col);
+        let quote_column = marker_line_child_column(cur, content, item_at, content_col);
         let follower_indent = cur.lines.line(start).map_or(0, indent_columns);
         // The innermost `>` owns the `+`, so a block at its column opens in that quote.
         let innermost_marker_column = quote_prefix
@@ -1598,6 +1598,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             (self.base_indent, self.content_col, self.options);
         let content = item.marker.content;
         let item_at = item.at;
+        let marker_line_child_col =
+            marker_line_child_column(self.cur, content, item_at, content_col);
         // The marker line can open more than one item (`* * u`). Once a
         // flush lazy line folds into the innermost paragraph, S4 closes
         // nothing, so collection must resume against THAT item's content
@@ -1633,15 +1635,15 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             content,
             innermost_content,
             inner_lead,
-            ladder_columns: marker_ladder_columns(content, content_col),
-            nested_content_col: content_col + tail_col,
+            ladder_columns: marker_ladder_columns(content, marker_line_child_col),
+            nested_content_col: marker_line_child_col + tail_col,
             nested_definition_ended_paragraph,
             nested_lead_is_continuation: is_plus_marker(innermost_content),
             before_block: self.cur.pos,
         };
         let collection_floor =
             if nested_definition_ended_paragraph || detect_fence_open(inner_lead).is_some() {
-                content_col.saturating_sub(1)
+                marker_line_child_col.saturating_sub(1)
             } else {
                 base_indent
             };
@@ -1650,27 +1652,27 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             stream.append(collect_indented_block_mapped_after_continuation(
                 self.cur,
                 collection_floor,
-                content_col,
+                marker_line_child_col,
                 options,
             ));
         } else if (!nested_definition_ended_paragraph
             || self
                 .cur
                 .peek()
-                .is_some_and(|line| indent_columns(line) >= content_col))
+                .is_some_and(|line| indent_columns(line) >= marker_line_child_col))
             && !(is_definition_list_start(inner_lead)
                 && self.cur.peek().is_some_and(|line| {
                     let indent = indent_columns(line);
                     indent < lead.nested_content_col
                         && !(innermost_marker_column(lead.content)
-                            .is_some_and(|marker| indent == content_col + marker)
+                            .is_some_and(|marker| indent == marker_line_child_col + marker)
                             && strip_description_prefix(trim_ascii_start(line)).is_some())
                 }))
         {
             stream.append(collect_indented_block_mapped(
                 self.cur,
                 collection_floor,
-                content_col,
+                marker_line_child_col,
                 options,
             ));
         }
@@ -1810,6 +1812,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             (self.base_indent, self.content_col, self.options);
         let nested_content_col = lead.nested_content_col;
         let ladder_columns = &lead.ladder_columns;
+        let child_col = ladder_columns[0];
         let nested_marker_col = ladder_columns
             .get(ladder_columns.len().saturating_sub(2))
             .copied();
@@ -1825,7 +1828,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             let line = line.to_string();
             let indent = indent_columns(&line);
             let at_nested_marker = term_lead
-                && ((indent >= content_col
+                && ((indent >= child_col
                     && indent <= nested_content_col
                     && is_definition_list_start(trim_ascii_start(&line)))
                     || (nested_marker_col == Some(indent)
@@ -1837,7 +1840,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 // has left the inner term. Test its content on that owner's
                 // base before the lazy frame hides the authored column.
                 && !(term_lead
-                    && indent >= content_col
+                    && indent >= child_col
                     && indent <= nested_content_col
                     && !is_list_marker(trim_ascii_start(&line))
                     && interrupts_paragraph(cur, trim_ascii_start(&line)))
@@ -2553,9 +2556,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     }
 }
 
-/// The column the marker line's quote opens at: past a task's checkbox, and
-/// never before the item's content column.
-fn quote_lead_column(
+/// The authored column where a marker-line child begins, past a task's
+/// checkbox and never before the item's content column.
+fn marker_line_child_column(
     cur: &LineCursor<'_>,
     content: &str,
     item_at: usize,

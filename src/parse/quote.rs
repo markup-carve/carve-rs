@@ -1788,7 +1788,9 @@ impl<'a> QuoteBody<'a> {
                 decision.owner == Some(continuation_marker::Kind::Quote)
                     && decision.refusal.is_none()
             });
-        if !first_block {
+        // A line already owned by the deepest open paragraph cannot be the
+        // first block attached to this `+` (carve#3832).
+        if !first_block || cur.peek().is_some_and(|line| line.starts_with(LAZY)) {
             return false;
         }
         let (deepest, levels) = strip_all_quotes(quoted.stripped);

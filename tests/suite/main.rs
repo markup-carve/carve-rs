@@ -2684,3 +2684,6 @@ mod wrapped_marker_attr_owner;
 
 #[path = "../paired_heading_quotes.rs"]
 mod paired_heading_quotes;
+
+#[path = "../nested_quote_task_owner.rs"]
+mod nested_quote_task_owner;
