@@ -41,3 +41,9 @@ fn ingested_block_images_publish_merged_attrs_on_the_image() {
     );
     assert_eq!(image(&republished)["attrs"]["keyValues"]["k"], "two");
 }
+
+#[test]
+fn source_writer_keeps_a_leading_attribute_line() {
+    let source = "{#f}\n![a][r]\n\n[r]: /u";
+    assert_eq!(carve::to_carve(source).trim(), source);
+}

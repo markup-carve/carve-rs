@@ -137,7 +137,12 @@ pub(in crate::parse) fn promote_block_images(
             // The field records render semantics, so it is not column-gated.
             if let BlockNode::Paragraph(p) = block {
                 p.block_image = lone_rendered_image(&p.children).is_some();
-                publish_block_image_attrs(p);
+                // The source writer still needs the authored leading attribute
+                // line on its paragraph. Published ASTs put those attributes
+                // on the resolved image instead.
+                if !figures_only {
+                    publish_block_image_attrs(p);
+                }
             }
             match block {
                 BlockNode::BlockQuote(b) => worklist.push(b.children.as_mut_slice()),
