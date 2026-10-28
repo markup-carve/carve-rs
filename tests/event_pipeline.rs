@@ -13,6 +13,76 @@ fn parse_standard(source: &str) -> carve::Document {
 
 #[cfg(feature = "experimental-event-parser-options")]
 #[test]
+fn eof_fence_option_route_matches_public_parser() {
+    for source in [
+        "```x",
+        "```\nbody",
+        "```\nbody\n```",
+        "~~~\nbody\n~~~",
+        "text\n\n```\nbody",
+        "[^n]: note\n\n```\nbody",
+        "[^n]: ```\nbody",
+        "- a\n\n```\nbody",
+        "> ```\n> body",
+        "- ```\n  body",
+        "::: note\n```\nbody",
+        ":: t\n: ```\ncode",
+    ] {
+        for positions in [false, true] {
+            for source_lines in [false, true] {
+                let options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines);
+                let (candidate, admitted) =
+                    parse_experimental_event_blocks_with_options(source, &options);
+                assert!(
+                    admitted,
+                    "{source:?}; positions={positions}; source_lines={source_lines}"
+                );
+                assert_eq!(
+                    candidate,
+                    parse_with_options(source, &options),
+                    "{source:?}"
+                );
+            }
+        }
+    }
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    let mut files = 0;
+    for entry in fs::read_dir(corpus).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension() != Some(std::ffi::OsStr::new("crv")) {
+            continue;
+        }
+        files += 1;
+        let authored = fs::read_to_string(&path).unwrap();
+        let source = authored.strip_suffix('\n').unwrap_or(&authored);
+        for positions in [false, true] {
+            for source_lines in [false, true] {
+                let options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines);
+                let (candidate, admitted) =
+                    parse_experimental_event_blocks_with_options(source, &options);
+                assert!(
+                    admitted,
+                    "{}; positions={positions}; source_lines={source_lines}",
+                    path.display()
+                );
+                assert_eq!(
+                    candidate,
+                    parse_with_options(source, &options),
+                    "{}",
+                    path.display()
+                );
+            }
+        }
+    }
+    assert!(files > 0);
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
 fn simple_extension_route_preserves_hooks_and_single_invocation() {
     use carve::{
         BlockMatch, BlockNode, CarveExtension, Document, InlineMatch, InlineNode, MatcherContext,
@@ -301,6 +371,8 @@ fn complex_extension_route_keeps_callback_order_and_one_parse() {
         "[^n]: @@@\n\nsee[^n]\n",
         "@@@\r\n\r\ntext\r\n",
         "@@@\n\nplain",
+        "@@@\n\n```\nbody",
+        "@@@\n\n[^n]: note\n\n```\nbody",
         "text\u{feff}\n\n[^n]: note\n\nsee[^n]\n",
         "CODE\n",
         "@@@ +\n",
@@ -331,6 +403,48 @@ fn complex_extension_route_keeps_callback_order_and_one_parse() {
             standard_hooks.after.get(),
             "{source:?}"
         );
+    }
+
+    for source in ["@@@\n\n```\nbody", "@@@\n\n[^n]: note\n\n```\nbody"] {
+        for positions in [false, true] {
+            for source_lines in [false, true] {
+                let event_hooks = HookLog::default();
+                let options = Options::default()
+                    .with_extension(&event_hooks)
+                    .with_positions(positions)
+                    .with_source_lines(source_lines);
+                let (actual, admitted) =
+                    parse_experimental_event_blocks_with_options(source, &options);
+                assert!(
+                    admitted,
+                    "{source:?}; positions={positions}; source_lines={source_lines}"
+                );
+                let standard_hooks = HookLog::default();
+                let expected = parse_with_options(
+                    source,
+                    &Options::default()
+                        .with_extension(&standard_hooks)
+                        .with_positions(positions)
+                        .with_source_lines(source_lines),
+                );
+                assert_eq!(actual, expected, "{source:?}");
+                assert_eq!(
+                    *event_hooks.blocks.borrow(),
+                    *standard_hooks.blocks.borrow(),
+                    "{source:?}"
+                );
+                assert_eq!(
+                    *event_hooks.inlines.borrow(),
+                    *standard_hooks.inlines.borrow(),
+                    "{source:?}"
+                );
+                assert_eq!(
+                    event_hooks.after.get(),
+                    standard_hooks.after.get(),
+                    "{source:?}"
+                );
+            }
+        }
     }
 
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");

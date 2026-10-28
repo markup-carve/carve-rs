@@ -578,7 +578,11 @@ fn direct_root_list_read(
     line_map: Option<&[Option<usize>]>,
     indented: bool,
 ) -> Option<UnifiedListRead> {
-    if options.source_lines || options.positions || !options.extensions.is_empty() {
+    if options.source_lines
+        || options.positions
+        || !options.extensions.is_empty()
+        || needs_source_ending_map()
+    {
         return None;
     }
     let blank_then_indented = lines.get(start + 1).is_some_and(|line| is_blank_line(line))
@@ -818,6 +822,7 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             let direct = if options.source_lines
                 || options.positions
                 || !options.extensions.is_empty()
+                || needs_source_ending_map()
                 || line.contains("![")
             {
                 None
@@ -3518,9 +3523,6 @@ fn parse_document_with_custom_options(
             );
         }
     }
-    if has_fence_candidate_without_final_newline(source) {
-        return None;
-    }
     let _placeholders = PlaceholderGuard::install(pick_definition_placeholders(source));
     let _continuation_markers = continuation_marker::Guard::install(source);
     let _source_ending = if !options.positions && source.ends_with('\n') {
@@ -3551,12 +3553,15 @@ fn parse_document_with_custom_options(
             def.line = def.line.map(|line| line + body_start_line - 1);
         }
     }
-    let root_line_map: Option<Vec<Option<usize>>> =
-        (continuation_marker::active() || options.source_lines || options.positions).then(|| {
-            (body_start_line..body_start_line + body_source.lines().count())
-                .map(Some)
-                .collect()
-        });
+    let root_line_map: Option<Vec<Option<usize>>> = (continuation_marker::active()
+        || options.source_lines
+        || options.positions
+        || !source.ends_with('\n'))
+    .then(|| {
+        (body_start_line..body_start_line + body_source.lines().count())
+            .map(Some)
+            .collect()
+    });
     let (direct, link_defs, needs_late_resolution) = {
         let _depth = DepthGuard::enter()?;
         let lines: Vec<&str> = body_source.lines().collect();
@@ -3746,9 +3751,6 @@ fn parse_document_with_footnotes_options(
         return None;
     }
     let may_have_abbrevs = source.contains("*[");
-    if has_fence_candidate_without_final_newline(source) {
-        return None;
-    }
     let _placeholders = PlaceholderGuard::install(pick_definition_placeholders(source));
     let _continuation_markers = continuation_marker::Guard::install(source);
     let _source_ending = if !options.positions && source.ends_with('\n') {
