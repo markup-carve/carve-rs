@@ -26,7 +26,7 @@ fn thread_cpu_ns() -> i128 {
 #[cfg(all(target_os = "linux", target_pointer_width = "64"))]
 fn run(source: &str, route: &str, candidate: bool) -> (usize, bool) {
     let (doc, used) = if candidate {
-        carve::parse_experimental_event_blocks(source)
+        carve::parse_experimental_event_blocks_with_options(source, &carve::Options::default())
     } else {
         (
             carve::parse_with_options(source, &carve::Options::default()),

@@ -1,5 +1,313 @@
 use super::*;
 
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn event_owned_pipeline_matches_public_modes() {
+    let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    let mut admitted = 0;
+    for entry in std::fs::read_dir(corpus).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension() != Some(std::ffi::OsStr::new("crv")) {
+            continue;
+        }
+        let source = std::fs::read_to_string(&path).unwrap();
+        for positions in [false, true] {
+            for source_lines in [false, true] {
+                let options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines);
+                for mode in [ParseMode::Html, ParseMode::HtmlFacade, ParseMode::Carve] {
+                    let expected = parse_with_options_mode_and_index(&source, &options, mode).0;
+                    let (actual, _, used) =
+                        event_pipeline::parse_document_with_mode(&source, &options, mode)
+                            .unwrap_or_else(|| panic!("{} declined", path.display()));
+                    assert!(
+                        used,
+                        "{}; positions={positions}; source_lines={source_lines}",
+                        path.display()
+                    );
+                    assert_eq!(
+                        actual,
+                        expected,
+                        "{}; positions={positions}; source_lines={source_lines}",
+                        path.display()
+                    );
+                    admitted += 1;
+                }
+            }
+        }
+    }
+    eprintln!("mode-aware event pipeline admitted {admitted}");
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn event_owned_modes_preserve_extension_callbacks() {
+    use crate::{BlockMatch, CarveExtension, InlineMatch, MatcherContext};
+
+    #[derive(Default)]
+    struct Hook {
+        blocks: RefCell<Vec<String>>,
+        inlines: RefCell<Vec<(usize, String)>>,
+        after: Cell<usize>,
+    }
+
+    impl CarveExtension for Hook {
+        fn name(&self) -> &'static str {
+            "event-mode-parity"
+        }
+
+        fn match_block(
+            &self,
+            lines: &[&str],
+            start: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<BlockMatch> {
+            let line = *lines.get(start)?;
+            self.blocks.borrow_mut().push(line.to_string());
+            None
+        }
+
+        fn match_inline(
+            &self,
+            text: &str,
+            pos: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<InlineMatch> {
+            let prefix = text.get(pos..).unwrap_or("").chars().take(8).collect();
+            self.inlines.borrow_mut().push((pos, prefix));
+            None
+        }
+
+        fn after_parse(&self, doc: Document) -> Document {
+            self.after.set(self.after.get() + 1);
+            doc
+        }
+    }
+
+    let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    for entry in std::fs::read_dir(corpus).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension() != Some(std::ffi::OsStr::new("crv")) {
+            continue;
+        }
+        let source = std::fs::read_to_string(&path).unwrap();
+        for mode in [ParseMode::HtmlFacade, ParseMode::Carve] {
+            for positions in [false, true] {
+                let baseline = Hook::default();
+                let baseline_options = Options::default()
+                    .with_positions(positions)
+                    .with_extension(&baseline);
+                let expected =
+                    parse_with_options_mode_and_index(&source, &baseline_options, mode).0;
+                let candidate = Hook::default();
+                let candidate_options = Options::default()
+                    .with_positions(positions)
+                    .with_extension(&candidate);
+                let (actual, _, used) =
+                    event_pipeline::parse_document_with_mode(&source, &candidate_options, mode)
+                        .unwrap_or_else(|| panic!("{} declined", path.display()));
+                assert!(used, "{}", path.display());
+                assert_eq!(actual, expected, "{}", path.display());
+                assert_eq!(
+                    *candidate.blocks.borrow(),
+                    *baseline.blocks.borrow(),
+                    "{}",
+                    path.display()
+                );
+                assert_eq!(
+                    *candidate.inlines.borrow(),
+                    *baseline.inlines.borrow(),
+                    "{}",
+                    path.display()
+                );
+                assert_eq!(
+                    candidate.after.get(),
+                    baseline.after.get(),
+                    "{}",
+                    path.display()
+                );
+            }
+        }
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn event_owned_facade_renders_with_a_derived_index() {
+    for source in [
+        "# One\n\nSee </#one>.\n",
+        "# One\n\n# One\n\nSee </#one-2>.\n",
+        "[^n]: note\n\n# Notes\n\nSee </#notes> and note[^n].\n",
+        "```\nbody",
+    ] {
+        let options = Options::default();
+        let (baseline_doc, baseline_index) =
+            parse_with_options_mode_and_index(source, &options, ParseMode::HtmlFacade);
+        let (event_doc, event_index, _) =
+            event_pipeline::parse_document_with_mode(source, &options, ParseMode::HtmlFacade)
+                .unwrap();
+        assert_eq!(event_doc, baseline_doc, "{source:?}");
+        let event_index = event_index.expect("facade index");
+        let baseline = crate::render::render_html_owned_with_index(
+            baseline_doc,
+            &options,
+            baseline_index,
+            source.contains("[@") || source.contains(":::"),
+            source.contains("[^") || source.contains("^["),
+        );
+        let event = crate::render::render_html_owned_with_index(
+            event_doc,
+            &options,
+            event_index,
+            source.contains("[@") || source.contains(":::"),
+            source.contains("[^") || source.contains("^["),
+        );
+        assert_eq!(event, baseline, "{source:?}");
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn event_owned_facade_corpus_render_index_matches() {
+    let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    for entry in std::fs::read_dir(corpus).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension() != Some(std::ffi::OsStr::new("crv")) {
+            continue;
+        }
+        let source = std::fs::read_to_string(&path).unwrap();
+        for positions in [false, true] {
+            for source_lines in [false, true] {
+                let options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines);
+                let (baseline_doc, baseline_index) =
+                    parse_with_options_mode_and_index(&source, &options, ParseMode::HtmlFacade);
+                let (event_doc, event_index, _) = event_pipeline::parse_document_with_mode(
+                    &source,
+                    &options,
+                    ParseMode::HtmlFacade,
+                )
+                .unwrap();
+                assert_eq!(event_doc, baseline_doc, "{}", path.display());
+                let baseline = crate::render::render_html_owned_with_index(
+                    baseline_doc,
+                    &options,
+                    baseline_index,
+                    source.contains("[@") || source.contains(":::"),
+                    source.contains("[^") || source.contains("^["),
+                );
+                let event = crate::render::render_html_owned_with_index(
+                    event_doc,
+                    &options,
+                    event_index.expect("facade index"),
+                    source.contains("[@") || source.contains(":::"),
+                    source.contains("[^") || source.contains("^["),
+                );
+                assert_eq!(event, baseline, "{}", path.display());
+            }
+        }
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn inline_explicit_id_and_heading_slug_keep_mode_parity() {
+    let options = Options::default();
+    for source in [
+        "# One\n\n`x`{#one}\n\nSee </#one>.\n",
+        "# One\n\n[x](y){#one}\n\nSee </#one>.\n",
+        "# One\n\n{#one}\nplain\n\nSee </#one>.\n",
+        "# One\n\n::: note\n# Two\n:::\n\n# Two\n\nSee </#two-1>.\n",
+        "# One\n\n> # Two\n\n# Two\n\nSee </#two-1>.\n",
+        "# One\n\n- # Two\n\n# Two\n\nSee </#two-1>.\n",
+        "# One\n\n| a |\n|---|\n| # Two |\n\n# Two\n\nSee </#two-1>.\n",
+    ] {
+        for mode in [ParseMode::Html, ParseMode::HtmlFacade, ParseMode::Carve] {
+            let (expected, baseline_index) =
+                parse_with_options_mode_and_index(source, &options, mode);
+            let (actual, event_index, used) =
+                event_pipeline::parse_document_with_mode(source, &options, mode).unwrap();
+            assert!(used);
+            assert_eq!(actual, expected);
+            if matches!(mode, ParseMode::HtmlFacade) {
+                let baseline = crate::render::render_html_owned_with_index(
+                    expected,
+                    &options,
+                    baseline_index,
+                    false,
+                    false,
+                );
+                let event = crate::render::render_html_owned_with_index(
+                    actual,
+                    &options,
+                    event_index.unwrap(),
+                    false,
+                    false,
+                );
+                assert_eq!(event, baseline);
+            }
+        }
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn event_owned_facade_extension_index_matches() {
+    use crate::CarveExtension;
+
+    struct AddHeading;
+    impl CarveExtension for AddHeading {
+        fn name(&self) -> &'static str {
+            "add-heading-index-test"
+        }
+
+        fn after_parse(&self, mut doc: Document) -> Document {
+            doc.children.push(BlockNode::Heading(Heading {
+                attrs: None,
+                level: 1,
+                children: vec![InlineNode::text("Added".to_string())],
+                pos: None,
+            }));
+            doc
+        }
+    }
+
+    let source = "See </#added>.\n";
+    let extension = AddHeading;
+    for positions in [false, true] {
+        for source_lines in [false, true] {
+            let options = Options::default()
+                .with_extension(&extension)
+                .with_positions(positions)
+                .with_source_lines(source_lines);
+            let (baseline_doc, baseline_index) =
+                parse_with_options_mode_and_index(source, &options, ParseMode::HtmlFacade);
+            let (event_doc, event_index, used) =
+                event_pipeline::parse_document_with_mode(source, &options, ParseMode::HtmlFacade)
+                    .unwrap();
+            assert!(used);
+            assert_eq!(event_doc, baseline_doc);
+            let baseline = crate::render::render_html_owned_with_index(
+                baseline_doc,
+                &options,
+                baseline_index,
+                false,
+                false,
+            );
+            let event = crate::render::render_html_owned_with_index(
+                event_doc,
+                &options,
+                event_index.expect("facade index"),
+                false,
+                false,
+            );
+            assert_eq!(event, baseline);
+        }
+    }
+}
+
 #[cfg(test)]
 mod footnote_comment_fence_work {
     use super::FOOTNOTE_FENCE_CLOSER_LOOKUPS;
