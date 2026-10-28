@@ -1777,6 +1777,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         let (base_indent, content_col, options) =
             (self.base_indent, self.content_col, self.options);
         let nested_content_col = lead.nested_content_col;
+        let nested_marker_col = innermost_marker_column(lead.content).map(|col| content_col + col);
         let bare_continuation = self.last_item_bare_continuation;
         let cur = &mut *self.cur;
         let lazy_column = if is_definition_list_start(lead.inner_lead) {
@@ -1787,9 +1788,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         let has_lazy = if let Some(line) = cur.peek() {
             let line = line.to_string();
             let at_nested_marker = is_definition_list_start(lead.inner_lead)
-                && strip_definition_marker(trim_ascii_start(&line)).is_some()
-                && innermost_marker_column(lead.content)
-                    .is_some_and(|column| indent_columns(&line) == content_col + column);
+                && nested_marker_col.is_some_and(|column| indent_columns(&line) == column)
+                && (strip_definition_marker(trim_ascii_start(&line)).is_some()
+                    || is_definition_list_start(trim_ascii_start(&line)));
             !is_blank_line(&line)
                 && !at_nested_marker
                 && indent_columns(&line) < lazy_column
@@ -1852,6 +1853,17 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 source_col,
             );
             cur.consume();
+            if cur.peek().is_some_and(|line| {
+                nested_marker_col.is_some_and(|column| indent_columns(line) == column)
+                    && is_list_marker(line)
+            }) {
+                stream.append(collect_indented_block_mapped(
+                    cur,
+                    content_col.saturating_sub(1),
+                    content_col,
+                    options,
+                ));
+            }
             return Some(false);
         }
         let before = cur.pos;

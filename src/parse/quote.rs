@@ -2517,6 +2517,11 @@ impl<'a> QuoteBody<'a> {
             return true;
         }
         let term_open = if self.may_have_term
+            && self
+                .inner
+                .lines
+                .last()
+                .is_some_and(|last| !is_blank_line(&last.text))
             && !is_blank_line(line)
             && !is_definition_list_start(trim_ascii_start(line))
             && strip_description_prefix(trim_ascii_start(line)).is_none()

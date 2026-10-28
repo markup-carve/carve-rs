@@ -231,3 +231,7 @@ path = "tests/fx27_nested_term_ownership.rs"
 [[test]]
 name = "fx27_marker_term_columns"
 path = "tests/fx27_marker_term_columns.rs"
+
+[[test]]
+name = "fx27_nested_sibling_after_lazy"
+path = "tests/fx27_nested_sibling_after_lazy.rs"
