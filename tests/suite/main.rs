@@ -2692,3 +2692,6 @@ mod nested_quote_task_owner;
 
 #[path = "../parser_owner_transitions.rs"]
 mod parser_owner_transitions;
+
+#[path = "../lint_cross_engine_parity.rs"]
+mod lint_cross_engine_parity;

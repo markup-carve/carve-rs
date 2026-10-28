@@ -26,6 +26,7 @@ pub(super) fn collect(
     let mut link_definitions = Vec::new();
     let mut inline_spans = Vec::new();
     let mut ignored = BTreeSet::new();
+    let mut used_link_definitions = BTreeSet::new();
     while let Some((block, depth)) = blocks.pop() {
         match block {
             BlockNode::LinkReferenceDefinition(def) => {
@@ -47,11 +48,11 @@ pub(super) fn collect(
             BlockNode::CodeBlock(code) => ignore(code.pos.clone(), &mut ignored),
             BlockNode::RawBlock(raw) => ignore(raw.pos.clone(), &mut ignored),
             BlockNode::Comment(comment) => ignore(comment.pos.clone(), &mut ignored),
-            BlockNode::Figure(figure) => {
-                if matches!(&*figure.target, FigureTarget::CodeBlock(_)) {
-                    ignore(figure.pos.clone(), &mut ignored);
-                }
-            }
+            BlockNode::Figure(figure) => match &*figure.target {
+                FigureTarget::CodeBlock(_) => ignore(figure.pos.clone(), &mut ignored),
+                FigureTarget::Image(image) => mark_image_use(image, &mut used_link_definitions),
+                _ => {}
+            },
             _ => {}
         }
         let first_child = blocks.len();
@@ -94,7 +95,6 @@ pub(super) fn collect(
         .map(|label| (label_key(label), label))
         .collect();
     let mut referenced = BTreeSet::new();
-    let mut used_link_definitions = BTreeSet::new();
     let id_kinds = explicit_id_kinds(doc);
     let targets = CaseTargets::new(doc, options);
     let mut fragment_links = Vec::new();
@@ -116,23 +116,14 @@ pub(super) fn collect(
                 if let Some(label) = &link.ref_label {
                     if !link.from_heading_reference
                         && !crate::parse::is_unresolved_reference(link)
-                        && !link.href.is_empty()
+                        && (!link.href.is_empty() || link.resolved_empty_reference)
                         && !crate::escape::has_denied_url_scheme(&link.href)
                     {
                         used_link_definitions.insert(label_key(label));
                     }
                 }
             }
-            InlineNode::Image(image) => {
-                if let Some(label) = &image.ref_label {
-                    if !crate::parse::is_unresolved_image(image)
-                        && !image.src.is_empty()
-                        && !crate::escape::has_denied_url_scheme(&image.src)
-                    {
-                        used_link_definitions.insert(label_key(label));
-                    }
-                }
-            }
+            InlineNode::Image(image) => mark_image_use(image, &mut used_link_definitions),
             _ => {}
         }
         match inline {
@@ -224,7 +215,7 @@ pub(super) fn collect(
         let key = label_key(&def.label);
         if winning.insert(key.clone()) && !used_link_definitions.contains(&key) {
             report(
-                def.pos.clone(),
+                definition_bracket_pos(source, def, to_byte),
                 "unused-link-reference-definition",
                 format!(
                     "Reference definition [{}] is never used by a rendered link or image.",
@@ -708,6 +699,38 @@ fn percent_decode(text: &str) -> Option<String> {
         }
     }
     String::from_utf8(decoded).ok()
+}
+
+/// A definition's span opens at its line, before any container prefix; the
+/// finding points at the definition's own `[` (PART 13 lint vectors).
+fn definition_bracket_pos(
+    source: &str,
+    def: &LinkReferenceDefinition,
+    to_byte: &dyn Fn(usize) -> usize,
+) -> Option<Pos> {
+    let mut pos = def.pos.clone()?;
+    let start = to_byte(pos.start_offset);
+    let line_end = source[start..]
+        .find(['\n', '\r'])
+        .map_or(source.len(), |at| start + at);
+    let Some(at) = source[start..line_end].find(&format!("[{}]:", def.label)) else {
+        return Some(pos);
+    };
+    let shift = source[start..start + at].chars().count();
+    pos.start_offset += shift;
+    pos.start_column += shift;
+    Some(pos)
+}
+
+fn mark_image_use(image: &Image, used: &mut BTreeSet<String>) {
+    if let Some(label) = &image.ref_label {
+        if !crate::parse::is_unresolved_image(image)
+            && (!image.src.is_empty() || image.resolved_empty_reference)
+            && !crate::escape::has_denied_url_scheme(&image.src)
+        {
+            used.insert(label_key(label));
+        }
+    }
 }
 
 fn label_key(label: &str) -> String {
