@@ -720,6 +720,93 @@ mod positioned_simple_paragraph_tests {
     }
 }
 
+#[cfg(all(test, feature = "experimental-event-parser-options"))]
+mod event_level_resume_tests {
+    use super::*;
+    use crate::{BlockMatch, CarveExtension, MatcherContext};
+
+    struct Observer(RefCell<Vec<(usize, String)>>);
+
+    impl CarveExtension for Observer {
+        fn name(&self) -> &'static str {
+            "resume-observer"
+        }
+
+        fn match_block(
+            &self,
+            lines: &[&str],
+            start: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<BlockMatch> {
+            self.0.borrow_mut().push((start, lines[start].to_owned()));
+            None
+        }
+    }
+
+    #[test]
+    fn resumed_level_matches_uninterrupted_blocks_and_callbacks() {
+        let source = "{#first}\n# Heading\n\n::: note\nbody\n:::\n\n{.tail}\n## Tail\nparagraph\n";
+        let lines: Vec<&str> = source.lines().collect();
+        let line_map: Vec<Option<usize>> = (1..=lines.len()).map(Some).collect();
+        let cols = vec![Some(0); lines.len()];
+        let boundary = 7;
+
+        for positions in [false, true] {
+            for source_lines in [false, true] {
+                let run = |split| {
+                    let observer = Observer(RefCell::new(Vec::new()));
+                    let options = Options::default()
+                        .with_positions(positions)
+                        .with_source_lines(source_lines)
+                        .with_extension(&observer);
+                    let mut cur = LineCursor::new_with_cols(&lines, Some(&line_map), Some(&cols));
+                    cur.at_document_level = true;
+                    let mut state = EventLevelState::new(&cur, false, true);
+                    let (blocks, events) = collecting_lint_events(|| {
+                        if split {
+                            assert!(matches!(
+                                run_event_level::<true, false>(
+                                    &lines,
+                                    &options,
+                                    Some(&line_map),
+                                    &mut cur,
+                                    &mut state,
+                                    None,
+                                    None,
+                                    true,
+                                    Some(boundary),
+                                ),
+                                Some(EventLevelRun::Yield)
+                            ));
+                            assert_eq!(cur.pos, boundary);
+                        }
+                        match run_event_level::<true, false>(
+                            &lines,
+                            &options,
+                            Some(&line_map),
+                            &mut cur,
+                            &mut state,
+                            None,
+                            None,
+                            true,
+                            None,
+                        ) {
+                            Some(EventLevelRun::Done(blocks)) => blocks,
+                            _ => panic!("event level did not finish"),
+                        }
+                    });
+                    (blocks, events, observer.0.into_inner())
+                };
+                assert_eq!(
+                    run(true),
+                    run(false),
+                    "positions={positions} source_lines={source_lines}"
+                );
+            }
+        }
+    }
+}
+
 /// Stream simple top-level blocks as events while handing list and definition
 /// bodies to the existing readers. A construct outside this subset declines the
 /// whole route before it can publish a partial AST.
@@ -1317,7 +1404,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
     options: &Options<'_>,
     line_map: Option<&[Option<usize>]>,
     mut cur: LineCursor<'_>,
-    mut extents: Option<&mut Vec<(usize, usize)>>,
+    extents: Option<&mut Vec<(usize, usize)>>,
     pending_out: Option<&mut Vec<PendingBody>>,
     // The caller fills hollow quotes before reading their children. An
     // unobserved colon body may defer quotes even when this argument is false.
@@ -1330,6 +1417,39 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
     debug_assert!(!direct_owner || lines.len() == cur.lines.len());
     // Snapshot the cursor flag: nested paragraph probes may change it.
     let mut state = EventLevelState::new(&cur, defer_pending, direct_owner);
+    match run_event_level::<DEFINITIONS, ABBREVIATIONS>(
+        lines,
+        options,
+        line_map,
+        &mut cur,
+        &mut state,
+        extents,
+        pending_out,
+        defer_quotes,
+        None,
+    )? {
+        EventLevelRun::Done(out) => Some(out),
+        EventLevelRun::Yield => unreachable!("the wrapper does not request a boundary"),
+    }
+}
+
+enum EventLevelRun {
+    Done(Vec<BlockNode>),
+    Yield,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_event_level<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
+    lines: &[&str],
+    options: &Options<'_>,
+    line_map: Option<&[Option<usize>]>,
+    cur: &mut LineCursor<'_>,
+    state: &mut EventLevelState,
+    mut extents: Option<&mut Vec<(usize, usize)>>,
+    pending_out: Option<&mut Vec<PendingBody>>,
+    defer_quotes: bool,
+    stop_at: Option<usize>,
+) -> Option<EventLevelRun> {
     macro_rules! emit {
         ($line:expr, $node:expr) => {{
             let node = $node;
@@ -1349,6 +1469,9 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
         }};
     }
     'blocks: while cur.peek().is_some() {
+        if stop_at.is_some_and(|at| cur.pos >= at) {
+            return Some(EventLevelRun::Yield);
+        }
         if options.positions || extents.is_some() {
             state.current_block_start.set(cur.pos);
         }
@@ -1359,8 +1482,8 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
         }
         let invalid_brace_line = if cur.peek().is_some_and(|line| line.starts_with('{')) {
             let at = cur.pos;
-            if let Some(attrs) = parse_standalone_attrs_block(&mut cur) {
-                let pos = span_of(&cur, at, cur.pos, options);
+            if let Some(attrs) = parse_standalone_attrs_block(cur) {
+                let pos = span_of(cur, at, cur.pos, options);
                 state.leading_attrs.push((state.out.len(), attrs, pos));
                 continue;
             }
@@ -1373,7 +1496,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             cur.consume();
             continue;
         }
-        match take_comment_block(&mut cur, options) {
+        match take_comment_block(cur, options) {
             CommentBlock::NotAComment => {}
             CommentBlock::Consumed(None) => continue,
             CommentBlock::Consumed(Some(node)) => {
@@ -1386,7 +1509,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             if let Some(mut definition) = detect_abbreviation_def(line) {
                 let at = cur.pos;
                 cur.consume();
-                definition.pos = span_of(&cur, at, cur.pos, options);
+                definition.pos = span_of(cur, at, cur.pos, options);
                 emit!(_block_source_line, BlockNode::AbbreviationDef(definition));
                 continue;
             }
@@ -1394,7 +1517,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
         if let Some((level, text)) = detect_heading(line) {
             emit!(
                 _block_source_line,
-                *parse_heading_block(&mut cur, level, text, options)
+                *parse_heading_block(cur, level, text, options)
             );
             continue;
         }
@@ -1408,7 +1531,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                 emit!(_block_source_line, BlockNode::List(read.list));
             } else {
                 let mut item_bodies = Vec::new();
-                let list = parse_list(&mut cur, options, &mut item_bodies);
+                let list = parse_list(cur, options, &mut item_bodies);
                 let index = state.out.len();
                 emit!(_block_source_line, *list);
                 state
@@ -1430,7 +1553,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                 emit!(_block_source_line, BlockNode::List(read.list));
             } else {
                 let mut item_bodies = Vec::new();
-                let list = parse_list(&mut cur, options, &mut item_bodies);
+                let list = parse_list(cur, options, &mut item_bodies);
                 let index = state.out.len();
                 emit!(_block_source_line, *list);
                 state
@@ -1443,7 +1566,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             continue;
         }
         if let Some(node) = parse_marker_hosted_opener(
-            &mut cur,
+            cur,
             options,
             line,
             state.out.len(),
@@ -1466,7 +1589,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                 emit!(
                     _block_source_line,
                     parse_definition_list_deferring(
-                        &mut cur,
+                        cur,
                         options,
                         state.out.len(),
                         &mut state.pending_bodies,
@@ -1491,17 +1614,17 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                 emit!(_block_source_line, BlockNode::BlockQuote(quote));
                 continue;
             }
-            let (span_start, parts, _) = collect_blockquote_body(&mut cur, options);
-            if quote_deferred_in_level(&cur, options, &parts, defer_quotes) {
+            let (span_start, parts, _) = collect_blockquote_body(cur, options);
+            if quote_deferred_in_level(cur, options, &parts, defer_quotes) {
                 #[cfg(test)]
-                count_colon_quote_deferral(&cur);
+                count_colon_quote_deferral(cur);
                 let body = QuoteBodyPending {
-                    plus_anchor: nested_plus_quote_anchor(&cur, options, span_start),
+                    plus_anchor: nested_plus_quote_anchor(cur, options, span_start),
                     parts,
                     depth: NESTING_DEPTH.with(Cell::get),
                     in_group: IN_FIGURE_GROUP.with(Cell::get),
                 };
-                let node = finish_blockquote_shell(&mut cur, options, span_start, Vec::new(), true);
+                let node = finish_blockquote_shell(cur, options, span_start, Vec::new(), true);
                 let index = state.out.len();
                 emit!(_block_source_line, *node);
                 state.pending_bodies.push(PendingBody {
@@ -1511,7 +1634,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             } else {
                 emit!(
                     _block_source_line,
-                    *parse_collected_blockquote(&mut cur, options, span_start, parts)
+                    *parse_collected_blockquote(cur, options, span_start, parts)
                 );
             }
             continue;
@@ -1525,7 +1648,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                 cur.pos = end;
                 block
             } else {
-                *parse_fenced_block(&mut cur, fence, options)
+                *parse_fenced_block(cur, fence, options)
             };
             let has_leading_attrs = has_pending_leading_attrs(&state.leading_attrs, &state.out);
             if !has_leading_attrs {
@@ -1541,22 +1664,22 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                 _block_source_line,
                 BlockNode::ThematicBreak(ThematicBreak {
                     marker: (marker != '-').then_some(marker),
-                    pos: span_of(&cur, at, cur.pos, options),
+                    pos: span_of(cur, at, cur.pos, options),
                     ..Default::default()
                 })
             );
             continue;
         }
         if !line.starts_with([' ', '\t']) && is_table_start(line) {
-            emit!(_block_source_line, parse_table(&mut cur, options));
+            emit!(_block_source_line, parse_table(cur, options));
             continue;
         }
         if let Some(mut image) = detect_block_image(line) {
-            if image_is_block(&mut cur) {
+            if image_is_block(cur) {
                 let image_at = cur.pos;
                 cur.consume();
-                image.pos = span_of(&cur, image_at, image_at + 1, options);
-                if let Some(caption) = consume_caption(&mut cur, options) {
+                image.pos = span_of(cur, image_at, image_at + 1, options);
+                if let Some(caption) = consume_caption(cur, options) {
                     emit!(
                         _block_source_line,
                         BlockNode::Figure(Figure {
@@ -1565,7 +1688,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                             rendered_target: None,
                             caption,
                             short_caption: None,
-                            pos: span_of(&cur, image_at, cur.pos, options),
+                            pos: span_of(cur, image_at, cur.pos, options),
                         })
                     );
                 } else {
@@ -1576,7 +1699,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                             children: vec![InlineNode::Image(image)],
                             at_content_column: true,
                             block_image: true,
-                            pos: span_of(&cur, image_at, image_at + 1, options),
+                            pos: span_of(cur, image_at, image_at + 1, options),
                         })
                     );
                 }
@@ -1585,22 +1708,19 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
         }
         if line.starts_with(":::") {
             if detect_line_block_open(line).is_some() {
-                emit!(_block_source_line, parse_line_block(&mut cur, options));
+                emit!(_block_source_line, parse_line_block(cur, options));
                 continue;
             }
             if detect_hardbreaks_block_open(line).is_some() {
-                emit!(
-                    _block_source_line,
-                    parse_hardbreaks_block(&mut cur, options)
-                );
+                emit!(_block_source_line, parse_hardbreaks_block(cur, options));
                 continue;
             }
             if detect_quote_block_open(line).is_some() {
-                emit!(_block_source_line, parse_quote_block(&mut cur, options));
+                emit!(_block_source_line, parse_quote_block(cur, options));
                 continue;
             }
             if detect_container_open(line).is_some() {
-                let (node, body) = open_container(&mut cur, options);
+                let (node, body) = open_container(cur, options);
                 let index = state.out.len();
                 emit!(_block_source_line, *node);
                 state.pending_bodies.push(PendingBody {
@@ -1621,15 +1741,15 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             false
         };
         let late_list_like =
-            is_late_list_like_line(&cur, line, invalid_brace_line, root_indented_text);
+            is_late_list_like_line(cur, line, invalid_brace_line, root_indented_text);
         let late_image_like =
             trim_ascii_start(line).starts_with("![") && detect_block_image(line).is_some();
         let has_leading_attrs = has_pending_leading_attrs(&state.leading_attrs, &state.out);
         if !late_list_like && !late_image_like {
-            if let Some(mut block) = try_extension_block(&mut cur, options) {
+            if let Some(mut block) = try_extension_block(cur, options) {
                 finish_unattributed_block(
                     &mut block,
-                    &cur,
+                    cur,
                     state.current_block_start.get(),
                     options,
                     has_leading_attrs,
@@ -1640,11 +1760,11 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
         }
         if late_image_like {
             let mut item_bodies = Vec::new();
-            let mut block = parse_block(&mut cur, options, &mut item_bodies)
+            let mut block = parse_block(cur, options, &mut item_bodies)
                 .expect("image-like line is not a consumed comment");
             finish_unattributed_block(
                 &mut block,
-                &cur,
+                cur,
                 state.current_block_start.get(),
                 options,
                 has_leading_attrs,
@@ -1666,21 +1786,21 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                 .line(cur.pos + 2)
                 .is_some_and(|next| caption_content(next).is_some())
         {
-            emit!(_block_source_line, parse_paragraph(&mut cur, options));
+            emit!(_block_source_line, parse_paragraph(cur, options));
             continue;
         }
         if !may_start_plain_paragraph(line) && !invalid_brace_line && !root_indented_text {
             if !late_list_like && trim_ascii_start(line).starts_with("$$`") {
-                if let Some(equation) = parse_equation_block(&mut cur, options) {
+                if let Some(equation) = parse_equation_block(cur, options) {
                     emit!(_block_source_line, equation);
                     continue;
                 }
             }
             if late_list_like {
-                let (mut node, item_bodies) = read_local_list_like_line(&mut cur, options);
+                let (mut node, item_bodies) = read_local_list_like_line(cur, options);
                 finish_unattributed_block(
                     &mut node,
-                    &cur,
+                    cur,
                     state.current_block_start.get(),
                     options,
                     has_leading_attrs,
@@ -1695,13 +1815,13 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                     }));
                 continue;
             }
-            emit!(_block_source_line, parse_paragraph(&mut cur, options));
+            emit!(_block_source_line, parse_paragraph(cur, options));
             continue;
         }
         if use_standard_event_paragraph(options, extents.is_some(), state.defer_pending)
             || crate::includes::code_include_line(line).is_some()
         {
-            emit!(_block_source_line, parse_paragraph(&mut cur, options));
+            emit!(_block_source_line, parse_paragraph(cur, options));
             continue;
         }
         let paragraph_start = cur.pos;
@@ -1742,7 +1862,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                 // Deferred fragments may already have called extensions. Parse
                 // this paragraph here so a fallback cannot call them twice.
                 cur.pos = paragraph_start;
-                emit!(_block_source_line, parse_paragraph(&mut cur, options));
+                emit!(_block_source_line, parse_paragraph(cur, options));
                 continue 'blocks;
             }
             paragraph_lines.push(trim_ascii_end(trim_ascii_start(next)));
@@ -1760,15 +1880,12 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             })
         );
     }
-    let EventLevelState {
-        mut out,
-        block_start_indices,
-        pending_bodies,
-        #[cfg(feature = "experimental-event-parser-options")]
-        source_lines,
-        leading_attrs,
-        ..
-    } = state;
+    let mut out = std::mem::take(&mut state.out);
+    let block_start_indices = std::mem::take(&mut state.block_start_indices);
+    let pending_bodies = std::mem::take(&mut state.pending_bodies);
+    #[cfg(feature = "experimental-event-parser-options")]
+    let source_lines = std::mem::take(&mut state.source_lines);
+    let leading_attrs = std::mem::take(&mut state.leading_attrs);
     if !leading_attrs.is_empty() {
         let mut next_visible = vec![None; out.len() + 1];
         for index in (0..out.len()).rev() {
@@ -1795,7 +1912,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                     apply_event_leading_attrs(
                         &mut out[index],
                         attrs,
-                        &cur,
+                        cur,
                         block_start_indices.get(index).copied().unwrap_or(0),
                         options,
                     );
@@ -1809,7 +1926,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             apply_event_leading_attrs(
                 &mut out[index],
                 attrs,
-                &cur,
+                cur,
                 block_start_indices.get(index).copied().unwrap_or(0),
                 options,
             );
@@ -1829,7 +1946,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             }
         }
     }
-    Some(out)
+    Some(EventLevelRun::Done(out))
 }
 
 #[cold]
