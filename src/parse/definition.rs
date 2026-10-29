@@ -256,7 +256,17 @@ pub(in crate::parse) fn parse_definition_list_with(
     final_only: bool,
 ) -> BlockNode {
     let mut scan = DefinitionListScan::new(cur);
-    while scan.step(cur, options, &mut defer, final_only) {}
+    loop {
+        match scan.step(cur, options) {
+            StepResult::Continue => {}
+            StepResult::NeedBody(request) => {
+                let children =
+                    parse_definition_description(request, cur, options, &mut defer, final_only);
+                scan.fill_body(children, cur, options);
+            }
+            StepResult::Done => break,
+        }
+    }
     scan.finish(cur, options)
 }
 
@@ -278,6 +288,20 @@ pub(in crate::parse) struct DefinitionListScan {
     terms: Vec<DefinitionTerm>,
     definitions: Vec<DefinitionDef>,
     phase: DefinitionPhase,
+    pending: Option<PendingBody>,
+}
+
+struct PendingBody {
+    item: usize,
+    description: usize,
+    start: usize,
+    source_line: Option<usize>,
+}
+
+pub(in crate::parse) enum StepResult {
+    Continue,
+    NeedBody(BodyRequest),
+    Done,
 }
 
 /// Collected description at the point where parsing may later be suspended.
@@ -297,17 +321,20 @@ impl DefinitionListScan {
             terms: Vec::new(),
             definitions: Vec::new(),
             phase: DefinitionPhase::Terms,
+            pending: None,
         }
     }
 
-    /// Returns true when another scan step is needed.
+    /// Advances to the next boundary. A yielded body must be filled before stepping again.
     pub(in crate::parse) fn step(
         &mut self,
         cur: &mut LineCursor,
         options: &Options<'_>,
-        defer: &mut Option<&mut dyn FnMut(usize, usize, MappedSource)>,
-        final_only: bool,
-    ) -> bool {
+    ) -> StepResult {
+        assert!(
+            self.pending.is_none(),
+            "fill the pending definition body first"
+        );
         match self.phase {
             DefinitionPhase::Terms => {
                 let Some(line) = cur.peek() else {
@@ -316,7 +343,7 @@ impl DefinitionListScan {
                     } else {
                         DefinitionPhase::Definitions
                     };
-                    return true;
+                    return StepResult::Continue;
                 };
                 // Lazy frames have no authored marker column.
                 let Some(term) =
@@ -328,7 +355,7 @@ impl DefinitionListScan {
                     } else {
                         DefinitionPhase::Definitions
                     };
-                    return true;
+                    return StepResult::Continue;
                 };
                 if is_blank_line(term) {
                     self.phase = if self.terms.is_empty() {
@@ -336,7 +363,7 @@ impl DefinitionListScan {
                     } else {
                         DefinitionPhase::Definitions
                     };
-                    return true;
+                    return StepResult::Continue;
                 }
                 // The SEPARATOR is the space, and whitespace past it is not content -
                 // the same rule `#`, `>` and `-` already follow, and the one carve#513
@@ -371,7 +398,7 @@ impl DefinitionListScan {
                 };
                 self.terms.push(parsed);
 
-                true
+                StepResult::Continue
             }
             DefinitionPhase::Definitions => {
                 // A blank separator belongs to this entry only when followed
@@ -397,17 +424,17 @@ impl DefinitionListScan {
                         }
                         _ => {
                             self.phase = DefinitionPhase::BetweenItems;
-                            return true;
+                            return StepResult::Continue;
                         }
                     }
                 }
                 let Some(line) = cur.peek() else {
                     self.phase = DefinitionPhase::BetweenItems;
-                    return true;
+                    return StepResult::Continue;
                 };
                 if !line.starts_with(LAZY) && cur.carried_reach(cur.pos) == Some(false) {
                     self.phase = DefinitionPhase::BetweenItems;
-                    return true;
+                    return StepResult::Continue;
                 }
                 let Some((def, definition_column)) = (!line.starts_with(ITEM_PARAGRAPH))
                     .then(|| {
@@ -417,11 +444,11 @@ impl DefinitionListScan {
                     .flatten()
                 else {
                     self.phase = DefinitionPhase::BetweenItems;
-                    return true;
+                    return StepResult::Continue;
                 };
                 if is_blank_line(def) {
                     self.phase = DefinitionPhase::BetweenItems;
-                    return true;
+                    return StepResult::Continue;
                 }
                 let def_source_line = cur.source_line(cur.pos);
                 let def_start = cur.pos;
@@ -517,23 +544,13 @@ impl DefinitionListScan {
                     item: self.items.len(),
                     description: self.definitions.len(),
                 };
-                let children =
-                    parse_definition_description(request, cur, options, defer, final_only);
-                let mut pos = span_of(cur, def_start, cur.pos, options);
-                if let (Some(pos), Some(last)) = (
-                    pos.as_mut(),
-                    children.iter().rev().find_map(crate::ast_json::block_pos),
-                ) {
-                    pos.end_line = last.end_line;
-                    pos.end_column = last.end_column;
-                    pos.end_offset = last.end_offset;
-                }
-                self.definitions.push(DefinitionDef {
-                    attrs: source_line_attrs(None, def_source_line, options),
-                    children,
-                    pos,
+                self.pending = Some(PendingBody {
+                    item: request.item,
+                    description: request.description,
+                    start: def_start,
+                    source_line: def_source_line,
                 });
-                true
+                StepResult::NeedBody(request)
             }
             DefinitionPhase::BetweenItems => {
                 self.items.push(DefinitionItem {
@@ -554,10 +571,35 @@ impl DefinitionListScan {
                     cur.pos = saved;
                     self.phase = DefinitionPhase::Done;
                 }
-                true
+                StepResult::Continue
             }
-            DefinitionPhase::Done => false,
+            DefinitionPhase::Done => StepResult::Done,
         }
+    }
+
+    pub(in crate::parse) fn fill_body(
+        &mut self,
+        children: Vec<BlockNode>,
+        cur: &LineCursor,
+        options: &Options<'_>,
+    ) {
+        let pending = self.pending.take().expect("no pending definition body");
+        debug_assert_eq!(pending.item, self.items.len());
+        debug_assert_eq!(pending.description, self.definitions.len());
+        let mut pos = span_of(cur, pending.start, cur.pos, options);
+        if let (Some(pos), Some(last)) = (
+            pos.as_mut(),
+            children.iter().rev().find_map(crate::ast_json::block_pos),
+        ) {
+            pos.end_line = last.end_line;
+            pos.end_column = last.end_column;
+            pos.end_offset = last.end_offset;
+        }
+        self.definitions.push(DefinitionDef {
+            attrs: source_line_attrs(None, pending.source_line, options),
+            children,
+            pos,
+        });
     }
 
     pub(in crate::parse) fn finish(self, cur: &LineCursor, options: &Options<'_>) -> BlockNode {
@@ -2023,5 +2065,135 @@ mod definition_past_fence_work {
         let large = measure(128);
         assert!(small.1 <= small.0 * 8 && large.1 <= large.0 * 8);
         assert!(large.1 <= small.1 * 6, "{small:?}, {large:?}");
+    }
+}
+
+#[cfg(test)]
+mod scan_tests {
+    use super::*;
+
+    #[test]
+    fn deferred_adapter_keeps_body_callback_order() {
+        let lines = [":: term", ":  first", ":  second", "# tail"];
+        let options = Options::default()
+            .with_positions(true)
+            .with_source_lines(true);
+        let line_map = [Some(1), Some(2), Some(3), Some(4)];
+        let col_map = [Some(0); 4];
+        let mut cursor = LineCursor::new_with_cols(&lines, Some(&line_map), Some(&col_map));
+        let mut calls = Vec::new();
+        let mut defer = |item, description, body: MappedSource| {
+            calls.push((item, description, body.source));
+        };
+        let deferred = parse_definition_list_with(&mut cursor, &options, Some(&mut defer), false);
+        assert_eq!(
+            calls,
+            [(0, 0, "first".to_string()), (0, 1, "second".to_string())]
+        );
+        assert_eq!(cursor.pos, 3);
+        let BlockNode::DefinitionList(list) = deferred else {
+            panic!("expected definition list")
+        };
+        assert_eq!(list.items[0].definitions.len(), 2);
+        assert!(list.items[0]
+            .definitions
+            .iter()
+            .all(|def| def.children.is_empty()));
+        assert!(list.items[0]
+            .definitions
+            .iter()
+            .all(|def| def.pos.is_some()));
+    }
+
+    #[test]
+    fn yields_each_body_before_parsing_and_resumes_at_next_description() {
+        let lines = [":: term", ":  first", ":  second", "# tail"];
+        for positions in [false, true] {
+            for source_lines in [false, true] {
+                let options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines);
+                let line_map = [Some(1), Some(2), Some(3), Some(4)];
+                let col_map = [Some(0); 4];
+                let mut cursor = LineCursor::new_with_cols(&lines, Some(&line_map), Some(&col_map));
+                let mut scan = DefinitionListScan::new(&cursor);
+                let mut seen = Vec::new();
+                loop {
+                    match scan.step(&mut cursor, &options) {
+                        StepResult::Continue => {}
+                        StepResult::NeedBody(request) => {
+                            seen.push((request.item, request.description, cursor.pos));
+                            assert_eq!(cursor.pos, 2 + request.description);
+                            let children = parse_mapped_source(&request.body, &options);
+                            scan.fill_body(children, &cursor, &options);
+                        }
+                        StepResult::Done => break,
+                    }
+                }
+                assert_eq!(seen, [(0, 0, 2), (0, 1, 3)]);
+                assert_eq!(cursor.pos, 3);
+                let stepped = scan.finish(&cursor, &options);
+                let mut eager_cursor =
+                    LineCursor::new_with_cols(&lines, Some(&line_map), Some(&col_map));
+                let eager = parse_definition_list(&mut eager_cursor, &options);
+                assert_eq!(format!("{stepped:?}"), format!("{eager:?}"));
+                assert_eq!(eager_cursor.pos, cursor.pos);
+            }
+        }
+    }
+
+    #[test]
+    fn mapped_definition_scan_resumes_from_owned_frame() {
+        let source = MappedSource {
+            source: ":: term\n:  first\n:  second\n# tail".into(),
+            line_map: vec![Some(11), Some(12), Some(13), Some(14)],
+            col_map: vec![Some(2); 4],
+            reached: vec![true, true, false, true],
+            in_quoted_body: false,
+            item_marker_at_start: false,
+            marker_tail: None,
+            opaque_blank_lines: Vec::new(),
+            discarded_outer_blank: false,
+            outer_plus_after_blank: false,
+            sublists_carry_authored_base: false,
+        };
+        let options = Options::default()
+            .with_positions(true)
+            .with_source_lines(true);
+        let lines: Vec<_> = source.source.lines().collect();
+        let mut cursor =
+            LineCursor::new_with_cols(&lines, Some(&source.line_map), Some(&source.col_map));
+        cursor.reached = Some(&source.reached);
+        let mut scan = DefinitionListScan::new(&cursor);
+        let first = loop {
+            if let StepResult::NeedBody(request) = scan.step(&mut cursor, &options) {
+                break request;
+            }
+        };
+        let first_children = parse_mapped_source(&first.body, &options);
+        scan.fill_body(first_children, &cursor, &options);
+        let mut frame =
+            crate::parse::cursor::OwnedMappedCursorFrame::new(source.clone(), &mut cursor);
+        drop(cursor);
+        drop(lines);
+        let resumed = frame.with_cursor(|cursor, _| {
+            loop {
+                match scan.step(cursor, &options) {
+                    StepResult::Continue => {}
+                    StepResult::NeedBody(request) => {
+                        let children = parse_mapped_source(&request.body, &options);
+                        scan.fill_body(children, cursor, &options);
+                    }
+                    StepResult::Done => break,
+                }
+            }
+            scan.finish(cursor, &options)
+        });
+        let eager_lines: Vec<_> = source.source.lines().collect();
+        let mut eager_cursor =
+            LineCursor::new_with_cols(&eager_lines, Some(&source.line_map), Some(&source.col_map));
+        eager_cursor.reached = Some(&source.reached);
+        let eager = parse_definition_list(&mut eager_cursor, &options);
+        assert_eq!(format!("{resumed:?}"), format!("{eager:?}"));
     }
 }

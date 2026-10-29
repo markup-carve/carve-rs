@@ -262,7 +262,142 @@ pub(in crate::parse) struct LineCursor<'a> {
     pub(in crate::parse) code_closer_last_index: Option<HashMap<u8, Vec<usize>>>,
 }
 
+/// Progress owned by a cursor. Borrowed input views stay with the caller while
+/// this state is suspended.
+#[allow(dead_code)]
+pub(in crate::parse) struct LineCursorOwnedState {
+    marker_tail: Option<MarkerTail>,
+    pos: usize,
+    last_block_start: Option<usize>,
+    block_starts: Option<Vec<usize>>,
+    block_extents: Option<Vec<(usize, usize)>>,
+    closed_initial_container_end: Option<usize>,
+    at_document_level: bool,
+    in_quoted_body: bool,
+    in_item_body: bool,
+    invisible_arms: bool,
+    sublists_carry_authored_base: bool,
+    #[cfg(feature = "experimental-event-parser")]
+    drain_follows: bool,
+    comment_closer_last_index: Option<HashMap<usize, usize>>,
+    future_quoted_comments: Option<FutureQuotedComments>,
+    literal_comments: Option<ContainerCommentClosers>,
+    literal_code: LiteralCodeLookup,
+    closed_comment_location: Option<(usize, usize)>,
+    marker_colon_closed: bool,
+    code_closer_last_index: Option<HashMap<u8, Vec<usize>>>,
+    list_fence_closer_last_index: Option<HashMap<u8, Vec<usize>>>,
+    list_code_closers: Option<Box<ListCodeClosers>>,
+}
+
+/// A suspended mapped cursor level. Line spans refer only to `source.source`;
+/// borrowed views are rebuilt for each visit and never stored here.
+#[allow(dead_code)]
+pub(in crate::parse) struct OwnedMappedCursorFrame {
+    source: MappedSource,
+    line_spans: Vec<std::ops::Range<usize>>,
+    state: Option<LineCursorOwnedState>,
+}
+
+#[allow(dead_code)]
+impl OwnedMappedCursorFrame {
+    pub(in crate::parse) fn new(source: MappedSource, cursor: &mut LineCursor<'_>) -> Self {
+        let base = source.source.as_ptr() as usize;
+        let line_spans = source
+            .source
+            .lines()
+            .map(|line| {
+                let start = line.as_ptr() as usize - base;
+                start..start + line.len()
+            })
+            .collect();
+        Self {
+            source,
+            line_spans,
+            state: Some(cursor.take_state()),
+        }
+    }
+
+    pub(in crate::parse) fn with_cursor<R>(
+        &mut self,
+        f: impl FnOnce(&mut LineCursor<'_>, &MappedSource) -> R,
+    ) -> R {
+        let lines: Vec<&str> = self
+            .line_spans
+            .iter()
+            .map(|span| &self.source.source[span.clone()])
+            .collect();
+        let mut cursor = LineCursor::new_with_cols(
+            &lines,
+            Some(&self.source.line_map),
+            Some(&self.source.col_map),
+        );
+        cursor.reached = Some(&self.source.reached);
+        cursor.restore_state(self.state.take().expect("mapped cursor frame state"));
+        let result = f(&mut cursor, &self.source);
+        self.state = Some(cursor.take_state());
+        result
+    }
+}
+
 impl<'a> LineCursor<'a> {
+    /// Remove owned progress without touching the borrowed input views.
+    #[allow(dead_code)]
+    pub(in crate::parse) fn take_state(&mut self) -> LineCursorOwnedState {
+        LineCursorOwnedState {
+            marker_tail: self.marker_tail.take(),
+            pos: std::mem::take(&mut self.pos),
+            last_block_start: self.last_block_start.take(),
+            block_starts: self.block_starts.take(),
+            block_extents: self.block_extents.take(),
+            closed_initial_container_end: self.closed_initial_container_end.take(),
+            at_document_level: std::mem::take(&mut self.at_document_level),
+            in_quoted_body: std::mem::take(&mut self.in_quoted_body),
+            in_item_body: std::mem::take(&mut self.in_item_body),
+            invisible_arms: std::mem::replace(&mut self.invisible_arms, true),
+            sublists_carry_authored_base: std::mem::take(&mut self.sublists_carry_authored_base),
+            #[cfg(feature = "experimental-event-parser")]
+            drain_follows: std::mem::take(&mut self.drain_follows),
+            comment_closer_last_index: self.comment_closer_last_index.take(),
+            future_quoted_comments: self.future_quoted_comments.get_mut().take(),
+            literal_comments: self.literal_comments.take(),
+            literal_code: std::mem::take(&mut self.literal_code),
+            closed_comment_location: self.closed_comment_location.take(),
+            marker_colon_closed: std::mem::take(&mut self.marker_colon_closed),
+            code_closer_last_index: self.code_closer_last_index.take(),
+            list_fence_closer_last_index: self.list_fence_closer_last_index.take(),
+            list_code_closers: self.list_code_closers.take(),
+        }
+    }
+
+    /// Restore progress into a cursor constructed with the same input views.
+    #[allow(dead_code)]
+    pub(in crate::parse) fn restore_state(&mut self, state: LineCursorOwnedState) {
+        self.marker_tail = state.marker_tail;
+        self.pos = state.pos;
+        self.last_block_start = state.last_block_start;
+        self.block_starts = state.block_starts;
+        self.block_extents = state.block_extents;
+        self.closed_initial_container_end = state.closed_initial_container_end;
+        self.at_document_level = state.at_document_level;
+        self.in_quoted_body = state.in_quoted_body;
+        self.in_item_body = state.in_item_body;
+        self.invisible_arms = state.invisible_arms;
+        self.sublists_carry_authored_base = state.sublists_carry_authored_base;
+        #[cfg(feature = "experimental-event-parser")]
+        {
+            self.drain_follows = state.drain_follows;
+        }
+        self.comment_closer_last_index = state.comment_closer_last_index;
+        *self.future_quoted_comments.get_mut() = state.future_quoted_comments;
+        self.literal_comments = state.literal_comments;
+        self.literal_code = state.literal_code;
+        self.closed_comment_location = state.closed_comment_location;
+        self.marker_colon_closed = state.marker_colon_closed;
+        self.code_closer_last_index = state.code_closer_last_index;
+        self.list_fence_closer_last_index = state.list_fence_closer_last_index;
+        self.list_code_closers = state.list_code_closers;
+    }
     pub(in crate::parse) fn new_with_cols(
         lines: &'a [&'a str],
         line_map: Option<&'a [Option<usize>]>,
@@ -426,5 +561,121 @@ impl<'a> LineCursor<'a> {
             .as_ref()
             .and_then(|last_index| last_index.get(&fence_len).copied())
             .is_some_and(|last| last >= start)
+    }
+}
+
+#[cfg(test)]
+mod owned_state_tests {
+    use super::*;
+    use std::num::NonZeroUsize;
+
+    #[test]
+    fn slice_state_round_trip() {
+        let lines = ["start", "```", "end"];
+        let source_lines = [Some(4), Some(5), Some(6)];
+        let columns = [Some(2), Some(2), Some(2)];
+        let reached = [true, false, true];
+        let mut before = LineCursor::new_with_cols(&lines, Some(&source_lines), Some(&columns));
+        before.reached = Some(&reached);
+        before.pos = 1;
+        before.marker_tail = Some(MarkerTail {
+            content_offset: NonZeroUsize::new(2).unwrap(),
+            column: 3,
+        });
+        before.marker_colon_closed = true;
+        before.closed_comment_location = Some((1, 4));
+        before.comment_closer_last_index = Some(HashMap::from([(3, 2)]));
+        before.code_closer_last_index = Some(HashMap::from([(b'`', vec![2])]));
+        before.list_fence_closer_last_index = Some(HashMap::from([(b'~', vec![3])]));
+        before.block_starts = Some(vec![0]);
+        before.block_extents = Some(vec![(0, 1)]);
+        before.at_document_level = true;
+        before.in_quoted_body = true;
+        before.in_item_body = true;
+        before.invisible_arms = false;
+        before.sublists_carry_authored_base = true;
+        let state = before.take_state();
+        let mut resumed = LineCursor::new_with_cols(&lines, Some(&source_lines), Some(&columns));
+        resumed.reached = Some(&reached);
+        resumed.restore_state(state);
+        assert_eq!(resumed.peek(), Some("```"));
+        assert_eq!(resumed.source_line(1), Some(5));
+        assert!(!resumed.reached.unwrap()[1]);
+        assert_eq!(resumed.marker_tail.unwrap().column, 3);
+        assert!(resumed.marker_colon_closed);
+        assert_eq!(resumed.closed_comment_location, Some((1, 4)));
+        assert_eq!(resumed.comment_closer_last_index.as_ref().unwrap()[&3], 2);
+        assert_eq!(
+            resumed.code_closer_last_index.as_ref().unwrap()[&b'`'],
+            vec![2]
+        );
+        assert_eq!(
+            resumed.list_fence_closer_last_index.as_ref().unwrap()[&b'~'],
+            vec![3]
+        );
+        assert_eq!(resumed.block_starts.as_ref().unwrap(), &vec![0]);
+        assert_eq!(resumed.block_extents.as_ref().unwrap(), &vec![(0, 1)]);
+        assert!(resumed.at_document_level && resumed.in_quoted_body && resumed.in_item_body);
+        assert!(!resumed.invisible_arms);
+        assert!(resumed.sublists_carry_authored_base);
+        assert_eq!(resumed.consume(), Some("```"));
+        assert_eq!(resumed.consume(), Some("end"));
+    }
+
+    #[test]
+    fn colon_view_state_round_trip() {
+        let mut buffer = LineBuffer::default();
+        buffer.push_at("first".into(), Some(12), Some(1));
+        buffer.push_at("second".into(), Some(13), Some(1));
+        let source = std::rc::Rc::new(ColonSource {
+            inner: buffer,
+            fence_closers: std::cell::OnceCell::new(),
+            boundaries: vec![None; 2],
+        });
+        let view = ColonView {
+            source: source.clone(),
+            start: 0,
+            end: 2,
+            marker_hosted: true,
+        };
+        let materialized = std::cell::OnceCell::new();
+        let lines = CursorLines::Colon {
+            source: &source.inner.lines,
+            view: &view,
+            base: 0,
+            materialized: &materialized,
+        };
+        let mut before = LineCursor::from_lines(lines, Some(&[]), None);
+        before.colon_view = Some(&view);
+        before.colon_geometry = Some(&source.inner.lines);
+        before.pos = 1;
+        before.marker_colon_closed = true;
+        let state = before.take_state();
+        let mut resumed = LineCursor::from_lines(lines, Some(&[]), None);
+        resumed.colon_view = Some(&view);
+        resumed.colon_geometry = Some(&source.inner.lines);
+        resumed.restore_state(state);
+        assert_eq!(resumed.peek(), Some("second"));
+        assert_eq!(resumed.source_line(1), Some(13));
+        assert!(resumed.marker_colon_closed);
+        assert_eq!(resumed.consume(), Some("second"));
+        assert!(resumed.eof());
+    }
+
+    #[test]
+    fn resumed_parse_matches_uninterrupted_parse() {
+        let lines = ["ignored", "paragraph", "", "second paragraph"];
+        let options = Options::default();
+        let mut uninterrupted = LineCursor::new_with_cols(&lines, None, None);
+        uninterrupted.pos = 1;
+        let mut suspended = LineCursor::new_with_cols(&lines, None, None);
+        suspended.pos = 1;
+        let state = suspended.take_state();
+        let mut resumed = LineCursor::new_with_cols(&lines, None, None);
+        resumed.restore_state(state);
+        let expected = parse_blocks(&mut uninterrupted, &options, &mut Vec::new());
+        let actual = parse_blocks(&mut resumed, &options, &mut Vec::new());
+        assert_eq!(format!("{expected:?}"), format!("{actual:?}"));
+        assert_eq!(resumed.pos, uninterrupted.pos);
     }
 }
