@@ -78,7 +78,7 @@ fn a_hosted_stacked_plus_attaches_a_column_zero_block() {
         ),
         (
             "> - > +\n  > b\n",
-            "<blockquote><ul><li><blockquote><p>b</p></blockquote></li></ul></blockquote>",
+            "<blockquote><ul><li><blockquote><p>+b</p></blockquote></li></ul></blockquote>",
         ),
     ]);
 }
