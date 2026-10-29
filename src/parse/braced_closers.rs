@@ -507,15 +507,8 @@ impl BracedClosers {
                     b'\\' => BracedStep::Jump(index((at + 2).min(bytes.len()))),
                     b'`' => match self.code_end(bytes, at) {
                         Some(end) => BracedStep::Jump(index(end)),
-                        None => {
-                            let mut raw = [usize::MAX; DELIM_BRACE_SLOTS];
-                            for &delim in b"+-~#/*_^,=" {
-                                let slot = delim_brace_slot(delim).unwrap();
-                                raw[slot] =
-                                    self.raw_close(bytes, at, delim).map_or(usize::MAX, index);
-                            }
-                            BracedStep::Raw(Box::new(raw))
-                        }
+                        // An unclosed run takes the rest of the block (carve#3973 X5).
+                        None => BracedStep::Raw(Box::new([usize::MAX; DELIM_BRACE_SLOTS])),
                     },
                     b'{' => {
                         BracedStep::Scope(delim_brace_slot(bytes[at + 1]).unwrap(), index(at + 2))
@@ -860,15 +853,8 @@ impl BracedClosers {
                                 attribute_tails.get(&end).copied().unwrap_or(end),
                             ))
                         }
-                        None => {
-                            let mut raw = [usize::MAX; DELIM_BRACE_SLOTS];
-                            for &delim in b"+-~#/*_^,=" {
-                                let slot = delim_brace_slot(delim).unwrap();
-                                raw[slot] =
-                                    self.raw_close(bytes, at, delim).map_or(usize::MAX, index);
-                            }
-                            BracedStep::Raw(Box::new(raw))
-                        }
+                        // An unclosed run takes the rest of the block (carve#3973 X5).
+                        None => BracedStep::Raw(Box::new([usize::MAX; DELIM_BRACE_SLOTS])),
                     },
                     b'{' => {
                         BracedStep::Scope(delim_brace_slot(bytes[at + 1]).unwrap(), index(at + 2))
@@ -981,7 +967,8 @@ impl BracedClosers {
             };
             let child_close = if let BracedStep::Scope(kind, from) = &steps[at] {
                 let close = resolve(current[*kind][*from], *kind);
-                (close != usize::MAX && points[close] >= position + 2).then_some(close)
+                // An empty group `{XX}` owns no closer (CARVE-P3-014).
+                (close != usize::MAX && points[close] > position + 2).then_some(close)
             } else {
                 None
             };
@@ -1054,12 +1041,12 @@ impl BracedClosers {
                     }
                 }
             }
-            // A guarded pair forms only where each guard in front of it opens: a
-            // guard of the walk's own kind is literal (E3), and one with no closer
-            // before the walk's closer does not open in its span (E2a).
+            // A guarded pair forms only where each guard in front of it is an open
+            // entry where it stands (carve#3973 X1): a guard of the walk's own kind
+            // is literal (E3).
             let guards_open = |slot: usize, pair: usize, end: usize, current: &[Vec<usize>]| {
                 let span = resolve(current[slot][index(end)], slot);
-                let mut from = index(end);
+                let from = index(end);
                 let mut guard = position - 1;
                 loop {
                     let kind = delim_brace_slot(bytes[guard]).unwrap();
@@ -1075,9 +1062,6 @@ impl BracedClosers {
                     if kind == slot {
                         return false;
                     }
-                    if close == usize::MAX || span != usize::MAX && points[close] >= points[span] {
-                        return false;
-                    }
                     let outer = guard.checked_sub(1).map(|at| bytes[at]);
                     match outer {
                         Some(byte) if byte == bytes[guard] => return false,
@@ -1085,7 +1069,6 @@ impl BracedClosers {
                         Some(b'/') if bytes[guard] == b'_' => {}
                         _ => return !outer.is_some_and(|byte| byte.is_ascii_alphanumeric()),
                     }
-                    from = close + 1;
                     guard -= 1;
                 }
             };
@@ -1238,7 +1221,9 @@ impl BracedClosers {
                         j = end;
                         resume = true;
                     }
-                    None => break self.raw_close(bytes, j, delim).map(|_| j | RAW_CLOSE_FLAG),
+                    // An unclosed run takes the rest of the block, so the pair
+                    // has no closer (carve#3973 X5).
+                    None => break None,
                 },
                 b if b == delim && bytes[j + 1] == b'}' => break Some(j),
                 b'{' if bytes[j + 1] != delim

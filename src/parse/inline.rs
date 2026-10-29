@@ -508,6 +508,8 @@ pub(in crate::parse) fn parse_inline_context_with_pairs(
         citation_brackets: std::cell::OnceCell::new(),
         // Keeps `_a](`×n / `*a](`×n linear. See cached_find_emphasis_close.
         emphasis_no_close: EmphasisMemo::default(),
+        open_entry_at: None,
+        open_entry_kinds: 0,
         attribute_target: None,
         attribute_slots: None,
         sink: InlineSink {
@@ -734,6 +736,11 @@ struct InlineRun<'a, 'o> {
     quotes: &'a quote_state::Frame,
     citation_brackets: std::cell::OnceCell<HashMap<usize, usize>>,
     emphasis_no_close: EmphasisMemo,
+    // The last unpaired open entry on this level's delimiter stack and the
+    // kinds held (E3): a `_` or `/` guard counts only where it stands as one
+    // (carve#3973 X1).
+    open_entry_at: Option<usize>,
+    open_entry_kinds: u8,
     attribute_target: Option<usize>,
     attribute_slots: Option<HashSet<AttrSlot>>,
     sink: InlineSink<'a>,
@@ -1324,6 +1331,7 @@ impl InlineRun<'_, '_> {
             }
         }
         // Bold-italic, sub, highlight, then single-char emphasis
+        let guard_open = i > 0 && self.open_entry_at == Some(i - 1);
         if let Some((node, consumed)) = match_emphasis(
             self.bytes,
             i,
@@ -1333,8 +1341,16 @@ impl InlineRun<'_, '_> {
             &self.bounds,
             self.sink.positions,
             self.sink.base,
+            guard_open,
         ) {
             return Some(self.emit_with_trailing_attrs(node, i, consumed));
+        }
+        if matches!(c, b'/' | b'*' | b'_' | b'~' | b'=')
+            && self.open_entry_kinds & OpenKinds::bit(c) == 0
+            && bare_opener_stands(self.bytes, i, guard_open)
+        {
+            self.open_entry_at = Some(i);
+            self.open_entry_kinds |= OpenKinds::bit(c);
         }
         if c == b'\n' {
             return Some(self.line_break(i));
