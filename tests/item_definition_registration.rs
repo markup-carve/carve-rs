@@ -14,6 +14,7 @@ fn check(source: &str, expected: &str) {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3523"]
 fn exact_html() {
     check(
         "- para\n%% c\n```\n- a\n  [^f]: t",

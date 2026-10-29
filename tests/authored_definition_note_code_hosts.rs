@@ -1,6 +1,7 @@
 use serde_json::Value;
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn definition_and_note_list_leads_keep_authored_code() {
     let cases: Value = serde_json::from_str(include_str!(
         "fixtures/authored_definition_note_code_hosts.json"

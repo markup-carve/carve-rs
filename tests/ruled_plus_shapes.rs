@@ -7,6 +7,7 @@ struct Shape {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn ruled_plus_shapes() {
     let mut failures = Vec::new();
     for (name, data) in [

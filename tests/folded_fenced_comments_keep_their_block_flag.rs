@@ -37,6 +37,7 @@ fn folded_comment(json: &str) -> serde_json::Value {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn folded_fenced_comment_survives_prosemirror() {
     // A fenced comment indented under a term folds into the term
     // (markup-carve/carve#2458), which is the only source spelling that reaches

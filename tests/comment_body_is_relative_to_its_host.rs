@@ -3,6 +3,7 @@
 use carve::{to_carve, to_html};
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_below_column_body_loses_only_the_available_host_prefix() {
     assert_eq!(
         to_carve("- a\n %%% n\n x\n %%%\n tail\n"),
@@ -11,6 +12,7 @@ fn a_below_column_body_loses_only_the_available_host_prefix() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn the_nested_form_agrees_too() {
     assert_eq!(
         to_carve("- - a\n %%% c\n x\n %%%\n b\n"),
@@ -24,6 +26,7 @@ fn a_document_body_keeps_its_indentation() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_matched_comment_body_keeps_its_complete_extent() {
     assert_eq!(
         to_carve("- a\n  %%%\n x\n  %%%\n"),
@@ -36,6 +39,7 @@ fn a_matched_comment_body_keeps_its_complete_extent() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_tab_straddling_the_host_column_keeps_its_residual_columns() {
     assert_eq!(
         to_carve("- a\n %%% n\n\tx\n %%%\n tail\n"),

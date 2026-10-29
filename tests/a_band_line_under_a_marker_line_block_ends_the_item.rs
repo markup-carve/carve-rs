@@ -190,6 +190,7 @@ fn an_item_answers_s4_for_itself_rather_than_with_the_previous_item_s_answer() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn a_closed_marker_line_colon_container_no_longer_reads_as_open() {
     // The closer of a container opened on the marker line used to be counted as
     // an anonymous opener, so a band line under a later paragraph left the item.

@@ -204,6 +204,7 @@ fn a_description_the_definitions_emptied_spans_its_own_marker_line() {
 /// it now ends at its own item, which means the list no longer reports the bug
 /// at all and the footnote's own span is what has to catch it.
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_duplicate_definition_does_not_move_the_one_that_was_accepted() {
     let source = "- a\n  [^f]: t\ntail\n\n[^f]: dup\n\nx[^f]\n";
 

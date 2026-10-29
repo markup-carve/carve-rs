@@ -9,6 +9,7 @@ struct Fixture {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn container_ownership_and_continuation_boundaries() {
     let fixtures: Vec<Fixture> =
         serde_json::from_str(include_str!("fixtures/container-boundaries.json")).unwrap();

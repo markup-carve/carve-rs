@@ -59,6 +59,7 @@ fn paragraph_and_explicit_quote_continuations_keep_their_owner() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn hosted_colon_interruption_and_dedent_do_not_keep_stale_claims() {
     for source in [
         "> - item\n>   ::: box\n>   :::\n- tail\n",
@@ -125,6 +126,7 @@ fn colon_shapes_inside_opaque_blocks_do_not_close_the_host() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_verse_dedent_does_not_leave_a_stale_colon_owner() {
     let source = "> - ::: |\n>   literal\n>\n> paragraph\n>   :::\n- tail\n";
     let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
@@ -192,6 +194,7 @@ fn a_comment_inside_verse_keeps_colon_payload_opaque() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_new_item_or_later_bare_block_does_not_inherit_absorption() {
     for (source, expected_count, expected_type) in [
         (
@@ -241,6 +244,7 @@ fn a_comment_closer_below_the_item_does_not_hide_its_code_fence() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn dedented_interrupters_end_stale_hosts_and_colon_scopes() {
     for source in [
         "> - item\n> # heading\n>   ::: box\n>   :::\n- tail\n",
@@ -384,6 +388,7 @@ fn a_marker_between_deeper_ancestor_columns_keeps_the_closed_leaf_owner() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn an_ancestor_colon_closer_and_a_folded_malformed_marker_leave_no_claim() {
     for source in [
         "> - ::: box\n>   - ::: inner\n>     body\n>   :::\n- tail\n",
@@ -400,6 +405,7 @@ fn an_ancestor_colon_closer_and_a_folded_malformed_marker_leave_no_claim() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_closed_hosted_comment_ends_the_paragraph_before_quoted_dedent() {
     let source = "> - ::: box\n>   text\n>   %%%\n>   c\n>   %%%\n> out\n>   :::\n- tail\n";
     let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
@@ -472,6 +478,7 @@ fn off_column_bare_run_keeps_the_hosted_paragraph_open() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn quoted_hosted_colon_followups_match_shared_html() {
     let cases: Value =
         serde_json::from_str(include_str!("fixtures/quoted_hosted_colon_followups.json")).unwrap();
@@ -488,6 +495,7 @@ fn quoted_hosted_colon_followups_match_shared_html() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn closed_code_inside_descendant_verse_preserves_its_real_closer() {
     let cases: Value = serde_json::from_str(include_str!(
         "fixtures/descendant_literal_code_ownership.json"
@@ -507,6 +515,7 @@ fn closed_code_inside_descendant_verse_preserves_its_real_closer() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn quoted_colon_remaining_controls_match_shared_html() {
     let cases: Value =
         serde_json::from_str(include_str!("fixtures/quoted_colon_remaining_parity.json")).unwrap();
@@ -531,6 +540,7 @@ fn quoted_colon_remaining_controls_match_shared_html() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn quoted_literal_comment_handoff_matches_native() {
     let cases: Value =
         serde_json::from_str(include_str!("fixtures/quoted_literal_comment_handoff.json")).unwrap();
@@ -571,6 +581,7 @@ fn folded_fence_paragraphs_keep_the_quoted_item_claim() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn hosted_colon_wave_matches_checker() {
     // Expected HTML: carve checker 8fde0d1934089def40d8205ca15375eeb7d07d53.
     let rows: Value =

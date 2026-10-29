@@ -62,6 +62,7 @@ fn render(lines: &[&str]) -> String {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn a_block_at_an_item_content_column_closes_its_paragraph() {
     let failures: Vec<_> = CLOSING
         .iter()

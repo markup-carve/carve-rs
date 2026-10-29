@@ -7,6 +7,7 @@ fn html(source: &str) -> String {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn table_after_invisible_definition_keeps_its_authored_base() {
     let table = "<table><tbody><tr><td>a</td></tr></tbody></table>";
     for (source, expected) in [

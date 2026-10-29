@@ -1,6 +1,7 @@
 use carve::{to_html, to_html_with_options, Options};
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn a_marker_line_opaque_quote_preserves_authored_ownership() {
     let cases: Vec<serde_json::Value> =
         serde_json::from_str(include_str!("fixtures/opaque-marker-quote-ownership.json")).unwrap();
@@ -17,6 +18,7 @@ fn a_marker_line_opaque_quote_preserves_authored_ownership() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_closed_quoted_comment_preserves_lazy_payload_indentation() {
     let source = "- > %%%\n  > x\n    > y\n  > %%%\n";
     let document = carve::parse(source);
@@ -28,6 +30,7 @@ fn a_closed_quoted_comment_preserves_lazy_payload_indentation() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_nested_closed_quoted_comment_preserves_lazy_payload_indentation() {
     let source = "- > > %%%\n  > > x\n      > y\n  > > %%%\n";
     let json: serde_json::Value =

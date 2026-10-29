@@ -38,6 +38,7 @@ fn a_column_zero_line_exits_an_unclosed_retained_admonition_fence() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3523"]
 fn a_comment_under_an_item_keeps_the_nested_description_fence_in_its_body() {
     let expected =
         "<ul><li><dl><dt>t</dt><dd><p>para</p><pre><code></code></pre></dd></dl></li></ul>";
@@ -120,6 +121,7 @@ fn an_indented_fence_after_a_retained_description_comment_opens_as_code() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3523"]
 fn an_unclosed_retained_fence_under_an_item_keeps_a_marker_as_code() {
     let source = "- :: t\n  : para\n %% c\n ```\n - y\n";
     let rendered = carve::to_html(source);

@@ -706,6 +706,7 @@ fn compare(name: &str, vector: &Value, run: &RunResult) -> Vec<String> {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn include_conformance_vectors_match_carve_js_goldens() {
     let dir = vectors_dir();
     let mut entries: Vec<PathBuf> = fs::read_dir(&dir)

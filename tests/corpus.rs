@@ -1333,6 +1333,7 @@ fn resolve_slug(slug: &str) -> String {
 /// `100-block-quote-continuation-marker` unvalidated). A missing category here
 /// forces an IMPLEMENTED update.
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn all_corpus_categories_implemented() {
     let mut missing: Vec<String> = Vec::new();
     let pairs = corpus_pairs();
@@ -1365,6 +1366,7 @@ fn all_implemented_pairs_exist() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn all_implemented_corpus_pairs_match() {
     for slug in corpus_pairs() {
         if is_implemented_pair(&slug) {

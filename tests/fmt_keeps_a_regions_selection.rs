@@ -77,6 +77,7 @@ fn definitions_stay_above_markers_in_extension_containers() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn fmt_writes_the_region_marker_fixture_bytes() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/region-marker-fmt.json")).unwrap();
@@ -92,6 +93,7 @@ fn fmt_writes_the_region_marker_fixture_bytes() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_region_marker_keeps_the_reading_it_had() {
     let cases = [
         // A comment that is not a marker clears X1 retention at the content

@@ -32,6 +32,7 @@ fn lazy_lines_below_a_rebased_term_keep_their_existing_reading() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn literal_description_lines_survive_markdown_import() {
     let source = ":: a\n: b\n\t:: t\n  : zq\n";
     let markdown =

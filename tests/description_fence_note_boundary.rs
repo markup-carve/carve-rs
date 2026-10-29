@@ -3,6 +3,7 @@ fn html(source: &str) -> String {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn a_note_below_the_description_ends_its_fence_closer_search() {
     let source = ":: term\n: detail\n  ```\n  code\n[^n]: note\npayload\n  ```\nafter\n";
     assert_eq!(

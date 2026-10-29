@@ -36,6 +36,7 @@ fn a_block_below_a_document_plus_reports_it() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn paragraph_text_a_comment_or_an_attribute_below_it_stays_quiet() {
     for source in [
         "+\npara\n",

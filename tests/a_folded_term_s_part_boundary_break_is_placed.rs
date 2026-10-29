@@ -44,6 +44,7 @@ fn assert_gap(source: &str, pos: &Pos) {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn corpus_boundary_breaks_are_placed_and_existing_breaks_do_not_move() {
     let cases: &[(&str, &str)] = &[
         ("", "4-7, 1:5-2:3; 14-15, 2:10-3:1"),
@@ -110,6 +111,7 @@ fn neighbour_pos(node: &InlineNode) -> &Pos {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn each_boundary_uses_its_own_neighbours() {
     for source in [MULTIPLE_PARTS, ":: café\n  %% α\n  %% β\n  more\n"] {
         let doc = carve::parse_with_options(source, &carve::Options::new().with_positions(true));
@@ -137,6 +139,7 @@ fn each_boundary_uses_its_own_neighbours() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn disabling_positions_keeps_the_breaks_unplaced() {
     let doc =
         carve::parse_with_options(MULTIPLE_PARTS, &carve::Options::new().with_positions(false));

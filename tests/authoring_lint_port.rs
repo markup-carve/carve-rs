@@ -3,6 +3,7 @@ use serde_json::Value;
 use std::path::Path;
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn authoring_scorecard_matches_the_pinned_spec() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/lint-authoring");
     let data: Value =

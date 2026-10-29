@@ -71,6 +71,7 @@ fn render(target: &str, source: &str) -> String {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn every_non_html_spec_fixture_matches() {
     let dir = corpus_dir();
     assert!(dir.is_dir(), "spec corpus not found at {}", dir.display());

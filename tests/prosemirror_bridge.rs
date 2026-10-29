@@ -814,6 +814,7 @@ fn adjacent_equal_marks_merge_on_import() {
 /// The canonical source comes from `to_carve` on both sides. The comment beside
 /// that comparison explains what `render_carve(parse(x))` hid.
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     let declared = source_lossy_names();

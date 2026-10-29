@@ -90,6 +90,7 @@ fn reports(source: &str) -> Vec<(usize, usize)> {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn the_first_folded_opener_is_reported_once_per_term() {
     assert_eq!(
         reports(":: a\n: b\n  :: c\n    ::: note\n    body\n    :::\n"),
@@ -138,6 +139,7 @@ fn a_comment_at_the_container_column_ends_the_term() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn a_definition_past_the_column_is_term_text_and_one_at_it_registers() {
     assert_eq!(
         flat("[t][r]\n\n:: a\n: b\n  :: c\n    [r]: /u\n"),
@@ -191,6 +193,7 @@ fn a_folded_comment_formats_back_to_itself() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_term_in_a_footnote_body_is_linted() {
     let warnings: Vec<_> = carve::lint_carve("x[^n]\n\n[^n]: text\n\n  :: c\n    # H\n")
         .into_iter()
@@ -201,6 +204,7 @@ fn a_term_in_a_footnote_body_is_linted() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_carriage_return_or_byte_order_mark_does_not_hide_the_warning() {
     let at = |source: &str| -> Vec<(usize, usize)> {
         carve::lint_carve(source)

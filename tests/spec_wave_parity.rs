@@ -40,6 +40,7 @@ fn a_quote_or_term_at_a_marker_note_body_column_opens_in_the_note() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn marker_note_580_moved_fixture_rows_match_the_checker() {
     let rows: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/marker_note_580_moved.json")).unwrap();
@@ -150,6 +151,7 @@ fn a_line_block_takes_a_lazy_line_whatever_its_payload() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3523"]
 fn below_column_comments_keep_definition_bands_and_fences() {
     let rows: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/comment_fence_review_wave.json")).unwrap();

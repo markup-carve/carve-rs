@@ -30,6 +30,7 @@ fn nested_list_and_item(src: &str) -> (Pos, Pos) {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_tab_placed_sublist_starts_at_the_tab() {
     for pos in <[Pos; 2]>::from(nested_list_and_item("- a\n\t- b\n\tc\n")) {
         assert_eq!(

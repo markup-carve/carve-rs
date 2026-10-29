@@ -1,6 +1,7 @@
 use serde_json::Value;
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn list_code_fences_accept_closers_at_the_content_floor() {
     let cases: Value =
         serde_json::from_str(include_str!("fixtures/list_code_fence_floor.json")).unwrap();

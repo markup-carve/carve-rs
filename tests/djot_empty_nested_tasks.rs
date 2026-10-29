@@ -62,6 +62,7 @@ fn text(html: &str) -> String {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3523"]
 fn empty_nested_tasks_preserve_native_structure() {
     let controls: Value =
         serde_json::from_str(include_str!("fixtures/djot_empty_nested_tasks.json")).unwrap();

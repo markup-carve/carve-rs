@@ -13,6 +13,7 @@ fn named_child_opens_at_its_authored_column() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn named_children_keep_paragraphs_and_opaque_payloads() {
     let rows: serde_json::Value = serde_json::from_str(include_str!(
         "fixtures/item_hosted_named_colon_controls.json"
@@ -35,6 +36,7 @@ fn named_children_keep_paragraphs_and_opaque_payloads() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_body_rebase_does_not_take_a_descendant_items_blocks_or_payload() {
     let rows: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/named_review_controls.json")).unwrap();

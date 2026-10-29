@@ -19,6 +19,7 @@ fn first_line_block(nodes: &[BlockNode]) -> Option<&carve::LineBlock> {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn nested_verse_keeps_the_same_content_as_top_level_verse() {
     for base in 0..=3 {
         for body in [

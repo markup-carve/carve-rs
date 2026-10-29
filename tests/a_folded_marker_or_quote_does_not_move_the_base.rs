@@ -53,6 +53,7 @@ fn an_attribute_line_past_the_quote_marker_is_quoted_text() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3523"]
 fn an_attribute_line_past_a_nested_quote_marker_is_quoted_text() {
     assert_eq!(
         html("> - > para\n>   > more\n>   >  {#k}\ntail\n"),

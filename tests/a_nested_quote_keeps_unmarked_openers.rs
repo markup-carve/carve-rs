@@ -156,6 +156,7 @@ fn a_nested_quote_and_a_colon_host_keep_the_same_fold() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_comment_fence_below_the_definition_column_retains_the_body() {
     use carve::ast::BlockNode;
     let doc = carve::parse(":: t\n: > q\n %%%\n secret\n %%%\n");

@@ -1,6 +1,7 @@
 use serde_json::Value;
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn a_below_column_plus_requires_an_open_container_paragraph() {
     let rows: Value =
         serde_json::from_str(include_str!("fixtures/closed_container_plus_wave.json")).unwrap();

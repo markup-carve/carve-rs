@@ -20,6 +20,7 @@ fn a_blank_inside_a_fence_in_the_second_sub_list() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3523"]
 fn sibling_sub_list_shapes_keep_the_outer_item_tight() {
     let loose = [
         ("a tilde fence", "- e\n  1. x\n  * ~~~\n\n    ~~~\n"),

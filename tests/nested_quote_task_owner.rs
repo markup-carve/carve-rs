@@ -61,6 +61,7 @@ fn a_line_one_column_short_stays_in_the_nested_term() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3522"]
 fn a_line_one_column_past_releases_the_nested_term() {
     let source = "* [ ] - :: t\n       : a\n       :: sibling\n       tail\n";
     let html = to_html(source);

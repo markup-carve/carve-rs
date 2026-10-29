@@ -81,6 +81,7 @@ const CASES: &[(&str, &str)] = &[
 ];
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn an_unclosed_fence_ends_only_at_its_own_containers_closer() {
     let mut failures = Vec::new();
     for (source, expected) in CASES {

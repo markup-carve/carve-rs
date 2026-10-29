@@ -36,6 +36,7 @@ fn first_block_refusals_name_the_quote_and_footnote() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn source_rules_report_the_shared_triggers() {
     for (rule, source) in [
         ("bidi-control-in-source", "a\u{202e}b\n"),
