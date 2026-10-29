@@ -592,6 +592,33 @@ fn parse_blocks_mapped(
 }
 
 #[cfg(feature = "experimental-event-parser-options")]
+fn parse_positioned_event_paragraph(
+    cur: &mut LineCursor<'_>,
+    lines: &[&str],
+    options: &Options<'_>,
+) -> BlockNode {
+    let start = cur.pos;
+    let trimmed: Vec<&str> = lines
+        .iter()
+        .map(|line| trim_ascii_end(trim_ascii_start(line)))
+        .collect();
+    let joined = trimmed.join("\n");
+    let anchors = trimmed
+        .iter()
+        .enumerate()
+        .map(|(offset, line)| inline_anchor_for_line(cur, start + offset, line))
+        .collect();
+    cur.pos += lines.len();
+    BlockNode::Paragraph(Paragraph {
+        attrs: None,
+        children: parse_inline_lines_with_anchor(&joined, options, anchors),
+        at_content_column: true,
+        block_image: false,
+        pos: span_of(cur, start, cur.pos, options),
+    })
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
 fn parse_positioned_simple_blocks(
     lines: &[&str],
     options: &Options<'_>,
@@ -616,7 +643,7 @@ fn parse_positioned_simple_blocks(
             }
             Event::Paragraph(start, paragraph_lines) => {
                 cur.pos = start;
-                let node = parse_paragraph(&mut cur, options);
+                let node = parse_positioned_event_paragraph(&mut cur, paragraph_lines, options);
                 (start, start + paragraph_lines.len(), node)
             }
         };
@@ -629,6 +656,68 @@ fn parse_positioned_simple_blocks(
         out.push(node);
     }
     Some(out)
+}
+
+#[cfg(all(test, feature = "experimental-event-parser-options"))]
+mod positioned_simple_paragraph_tests {
+    use super::*;
+
+    #[test]
+    fn event_paragraph_matches_standard_blocks_and_diagnostics() {
+        for source in [
+            "alpha",
+            "alpha\n",
+            "alpha\nbeta",
+            "alpha\nbeta\n",
+            "alpha\n\nbeta\n",
+            "# head\nalpha\nbeta\n## next\nend",
+            "alpha *emphasis* and `code`\nbeta [link](url)\n",
+            "alpha [broken](\nbeta\n",
+            "alpha\n# heading\nlast\n",
+        ] {
+            let lines: Vec<&str> = source.lines().collect();
+            let line_map: Vec<Option<usize>> = (1..=lines.len()).map(Some).collect();
+            for source_lines in [false, true] {
+                let options = Options::default()
+                    .with_positions(true)
+                    .with_source_lines(source_lines);
+                let actual = collecting_lint_events(|| {
+                    parse_positioned_simple_blocks(&lines, &options, &line_map)
+                        .expect("simple source admitted")
+                });
+                let expected = collecting_lint_events(|| {
+                    let cols = vec![Some(0); lines.len()];
+                    let mut cur = LineCursor::new_with_cols(&lines, Some(&line_map), Some(&cols));
+                    cur.at_document_level = true;
+                    let mut blocks = Vec::new();
+                    for event in (Events {
+                        lines: &lines,
+                        next: 0,
+                    }) {
+                        let (start, mut node) = match event {
+                            Event::Heading(start, level, text) => {
+                                cur.pos = start;
+                                (start, *parse_heading_block(&mut cur, level, text, &options))
+                            }
+                            Event::Paragraph(start, _) => {
+                                cur.pos = start;
+                                (start, parse_paragraph(&mut cur, &options))
+                            }
+                        };
+                        if source_lines {
+                            stamp_source_line(&mut node, line_map[start].unwrap());
+                        }
+                        blocks.push(node);
+                    }
+                    blocks
+                });
+                assert_eq!(
+                    actual, expected,
+                    "source={source:?} source_lines={source_lines}"
+                );
+            }
+        }
+    }
 }
 
 /// Stream simple top-level blocks as events while handing list and definition
