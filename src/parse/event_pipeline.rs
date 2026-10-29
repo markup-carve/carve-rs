@@ -1280,6 +1280,38 @@ fn parse_custom_mixed_blocks<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
     }
 }
 
+struct EventLevelState {
+    out: Vec<BlockNode>,
+    block_start_indices: Vec<usize>,
+    pending_bodies: Vec<PendingBody>,
+    #[cfg(feature = "experimental-event-parser-options")]
+    source_lines: Vec<Option<usize>>,
+    leading_attrs: Vec<(usize, Attrs, Option<Pos>)>,
+    current_block_start: Cell<usize>,
+    at_document_level: bool,
+    defer_pending: bool,
+    drain_follows: bool,
+    direct_owner: bool,
+}
+
+impl EventLevelState {
+    fn new(cur: &LineCursor<'_>, defer_pending: bool, direct_owner: bool) -> Self {
+        Self {
+            out: Vec::new(),
+            block_start_indices: Vec::new(),
+            pending_bodies: Vec::new(),
+            #[cfg(feature = "experimental-event-parser-options")]
+            source_lines: Vec::new(),
+            leading_attrs: Vec::new(),
+            current_block_start: Cell::new(0),
+            at_document_level: cur.at_document_level,
+            defer_pending,
+            drain_follows: !defer_pending || cur.drain_follows,
+            direct_owner,
+        }
+    }
+}
+
 fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
     lines: &[&str],
     options: &Options<'_>,
@@ -1291,40 +1323,34 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
     // unobserved colon body may defer quotes even when this argument is false.
     defer_quotes: bool,
 ) -> Option<Vec<BlockNode>> {
-    // Snapshot: nested paragraph probes toggle the cursor's flag and restore it.
-    let at_document_level = cur.at_document_level;
     let defer_pending = pending_out.is_some();
-    let drain_follows = !defer_pending || cur.drain_follows;
     let direct_owner = !defer_pending && extents.is_none();
     // Only the direct owner reads `lines`; everything else reads the cursor,
     // so a deferring caller may pass an empty slice instead of materializing.
     debug_assert!(!direct_owner || lines.len() == cur.lines.len());
-    let mut out = Vec::new();
-    let mut block_start_indices = Vec::new();
-    let mut pending_bodies = Vec::new();
-    let current_block_start = std::cell::Cell::new(0usize);
-    #[cfg(feature = "experimental-event-parser-options")]
-    let mut source_lines = Vec::new();
+    // Snapshot the cursor flag: nested paragraph probes may change it.
+    let mut state = EventLevelState::new(&cur, defer_pending, direct_owner);
     macro_rules! emit {
         ($line:expr, $node:expr) => {{
             let node = $node;
             if let Some(extents) = extents.as_deref_mut() {
-                extents.push((current_block_start.get(), cur.pos));
+                extents.push((state.current_block_start.get(), cur.pos));
             }
             if options.positions {
-                block_start_indices.push(current_block_start.get());
+                state
+                    .block_start_indices
+                    .push(state.current_block_start.get());
             }
             #[cfg(feature = "experimental-event-parser-options")]
             if options.source_lines {
-                source_lines.push($line);
+                state.source_lines.push($line);
             }
-            out.push(node);
+            state.out.push(node);
         }};
     }
-    let mut leading_attrs: Vec<(usize, Attrs, Option<Pos>)> = Vec::new();
     'blocks: while cur.peek().is_some() {
         if options.positions || extents.is_some() {
-            current_block_start.set(cur.pos);
+            state.current_block_start.set(cur.pos);
         }
         let _block_source_line = cur.source_line(cur.pos);
         if DEFINITIONS && cur.peek().is_some_and(is_definition_placeholder) {
@@ -1335,7 +1361,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             let at = cur.pos;
             if let Some(attrs) = parse_standalone_attrs_block(&mut cur) {
                 let pos = span_of(&cur, at, cur.pos, options);
-                leading_attrs.push((out.len(), attrs, pos));
+                state.leading_attrs.push((state.out.len(), attrs, pos));
                 continue;
             }
             true
@@ -1373,7 +1399,8 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             continue;
         }
         if line.starts_with(' ') && is_list_marker(trim_ascii_start(line)) {
-            if let Some(read) = direct_owner
+            if let Some(read) = state
+                .direct_owner
                 .then(|| direct_root_list_read(lines, cur.pos, options, line_map, true))
                 .flatten()
             {
@@ -1382,17 +1409,20 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             } else {
                 let mut item_bodies = Vec::new();
                 let list = parse_list(&mut cur, options, &mut item_bodies);
-                let index = out.len();
+                let index = state.out.len();
                 emit!(_block_source_line, *list);
-                pending_bodies.extend(item_bodies.into_iter().map(|body| PendingBody {
-                    index,
-                    body: Body::Item(body),
-                }));
+                state
+                    .pending_bodies
+                    .extend(item_bodies.into_iter().map(|body| PendingBody {
+                        index,
+                        body: Body::Item(body),
+                    }));
             }
             continue;
         }
         if is_list_marker(line) && !line.starts_with([' ', '\t']) {
-            let direct = direct_owner
+            let direct = state
+                .direct_owner
                 .then(|| direct_root_list_read(lines, cur.pos, options, line_map, false))
                 .flatten();
             if let Some(read) = direct {
@@ -1401,12 +1431,14 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             } else {
                 let mut item_bodies = Vec::new();
                 let list = parse_list(&mut cur, options, &mut item_bodies);
-                let index = out.len();
+                let index = state.out.len();
                 emit!(_block_source_line, *list);
-                pending_bodies.extend(item_bodies.into_iter().map(|body| PendingBody {
-                    index,
-                    body: Body::Item(body),
-                }));
+                state
+                    .pending_bodies
+                    .extend(item_bodies.into_iter().map(|body| PendingBody {
+                        index,
+                        body: Body::Item(body),
+                    }));
             }
             continue;
         }
@@ -1414,15 +1446,15 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             &mut cur,
             options,
             line,
-            out.len(),
-            &mut pending_bodies,
-            drain_follows,
+            state.out.len(),
+            &mut state.pending_bodies,
+            state.drain_follows,
         ) {
             emit!(_block_source_line, node);
             continue;
         }
         if is_definition_list_start(line) {
-            let direct = if direct_definition_allowed(direct_owner, options) {
+            let direct = if direct_definition_allowed(state.direct_owner, options) {
                 parse_simple_definition_list_prefix(lines, cur.pos, options, false)
             } else {
                 None
@@ -1436,16 +1468,16 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                     parse_definition_list_deferring(
                         &mut cur,
                         options,
-                        out.len(),
-                        &mut pending_bodies,
-                        drain_follows,
+                        state.out.len(),
+                        &mut state.pending_bodies,
+                        state.drain_follows,
                     )
                 );
             }
             continue;
         }
         if strip_blockquote_prefix(line).is_some() {
-            let direct = if direct_quote_allowed(direct_owner, options, line) {
+            let direct = if direct_quote_allowed(state.direct_owner, options, line) {
                 parse_simple_quote(lines, cur.pos, options)
                     .or_else(|| parse_marked_quote(lines, cur.pos, options))
                     .or_else(|| parse_simple_lazy_quote(lines, cur.pos, options))
@@ -1470,9 +1502,9 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                     in_group: IN_FIGURE_GROUP.with(Cell::get),
                 };
                 let node = finish_blockquote_shell(&mut cur, options, span_start, Vec::new(), true);
-                let index = out.len();
+                let index = state.out.len();
                 emit!(_block_source_line, *node);
-                pending_bodies.push(PendingBody {
+                state.pending_bodies.push(PendingBody {
                     index,
                     body: Body::Quote(body),
                 });
@@ -1485,7 +1517,8 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             continue;
         }
         if let Some(fence) = detect_fence_open(line) {
-            let mut block = if let Some((block, end)) = direct_owner
+            let mut block = if let Some((block, end)) = state
+                .direct_owner
                 .then(|| parse_direct_root_code_fence(lines, cur.pos, fence, options))
                 .flatten()
             {
@@ -1494,7 +1527,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             } else {
                 *parse_fenced_block(&mut cur, fence, options)
             };
-            let has_leading_attrs = has_pending_leading_attrs(&leading_attrs, &out);
+            let has_leading_attrs = has_pending_leading_attrs(&state.leading_attrs, &state.out);
             if !has_leading_attrs {
                 resolve_code_title(&mut block);
             }
@@ -1568,9 +1601,9 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             }
             if detect_container_open(line).is_some() {
                 let (node, body) = open_container(&mut cur, options);
-                let index = out.len();
+                let index = state.out.len();
                 emit!(_block_source_line, *node);
-                pending_bodies.push(PendingBody {
+                state.pending_bodies.push(PendingBody {
                     index,
                     body: Body::Colon(body),
                 });
@@ -1591,13 +1624,13 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             is_late_list_like_line(&cur, line, invalid_brace_line, root_indented_text);
         let late_image_like =
             trim_ascii_start(line).starts_with("![") && detect_block_image(line).is_some();
-        let has_leading_attrs = has_pending_leading_attrs(&leading_attrs, &out);
+        let has_leading_attrs = has_pending_leading_attrs(&state.leading_attrs, &state.out);
         if !late_list_like && !late_image_like {
             if let Some(mut block) = try_extension_block(&mut cur, options) {
                 finish_unattributed_block(
                     &mut block,
                     &cur,
-                    current_block_start.get(),
+                    state.current_block_start.get(),
                     options,
                     has_leading_attrs,
                 );
@@ -1612,16 +1645,18 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             finish_unattributed_block(
                 &mut block,
                 &cur,
-                current_block_start.get(),
+                state.current_block_start.get(),
                 options,
                 has_leading_attrs,
             );
-            let index = out.len();
+            let index = state.out.len();
             emit!(_block_source_line, *block);
-            pending_bodies.extend(item_bodies.into_iter().map(|body| PendingBody {
-                index,
-                body: Body::Item(body),
-            }));
+            state
+                .pending_bodies
+                .extend(item_bodies.into_iter().map(|body| PendingBody {
+                    index,
+                    body: Body::Item(body),
+                }));
             continue;
         }
         if line.starts_with("![")
@@ -1646,22 +1681,24 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                 finish_unattributed_block(
                     &mut node,
                     &cur,
-                    current_block_start.get(),
+                    state.current_block_start.get(),
                     options,
                     has_leading_attrs,
                 );
-                let index = out.len();
+                let index = state.out.len();
                 emit!(_block_source_line, node);
-                pending_bodies.extend(item_bodies.into_iter().map(|body| PendingBody {
-                    index,
-                    body: Body::Item(body),
-                }));
+                state
+                    .pending_bodies
+                    .extend(item_bodies.into_iter().map(|body| PendingBody {
+                        index,
+                        body: Body::Item(body),
+                    }));
                 continue;
             }
             emit!(_block_source_line, parse_paragraph(&mut cur, options));
             continue;
         }
-        if use_standard_event_paragraph(options, extents.is_some(), defer_pending)
+        if use_standard_event_paragraph(options, extents.is_some(), state.defer_pending)
             || crate::includes::code_include_line(line).is_some()
         {
             emit!(_block_source_line, parse_paragraph(&mut cur, options));
@@ -1699,7 +1736,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                 invalid_brace_line,
                 root_indented_text,
             ) {
-                if !at_document_level && !defer_pending {
+                if !state.at_document_level && !state.defer_pending {
                     return None;
                 }
                 // Deferred fragments may already have called extensions. Parse
@@ -1723,6 +1760,15 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             })
         );
     }
+    let EventLevelState {
+        mut out,
+        block_start_indices,
+        pending_bodies,
+        #[cfg(feature = "experimental-event-parser-options")]
+        source_lines,
+        leading_attrs,
+        ..
+    } = state;
     if !leading_attrs.is_empty() {
         let mut next_visible = vec![None; out.len() + 1];
         for index in (0..out.len()).rev() {

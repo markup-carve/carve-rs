@@ -2,6 +2,67 @@ use super::*;
 
 #[cfg(feature = "experimental-event-parser-options")]
 #[test]
+fn event_level_state_preserves_metadata_extensions_and_deep_bodies() {
+    use crate::{BlockMatch, CarveExtension, MatcherContext};
+
+    struct Observer(RefCell<Vec<String>>);
+
+    impl CarveExtension for Observer {
+        fn name(&self) -> &'static str {
+            "event-level-state-parity"
+        }
+
+        fn match_block(
+            &self,
+            lines: &[&str],
+            start: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<BlockMatch> {
+            self.0.borrow_mut().push(lines[start].to_owned());
+            None
+        }
+    }
+
+    let mut source = String::from("{#intro}\n# Heading\n\n");
+    for _ in 0..18 {
+        source.push_str("::: note\n");
+    }
+    source.push_str("- item\n  > quoted\n  > text\n\nparagraph\n");
+    for _ in 0..18 {
+        source.push_str(":::\n");
+    }
+    source.push_str("\n## Tail\nlast\n");
+
+    for positions in [false, true] {
+        for source_lines in [false, true] {
+            let run = |event| {
+                let observer = Observer(RefCell::new(Vec::new()));
+                let options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines)
+                    .with_extension(&observer);
+                let document = if event {
+                    let (document, _, used) = event_pipeline::parse_document_with_mode(
+                        &source,
+                        &options,
+                        ParseMode::Html,
+                    )
+                    .expect("event parser accepted source");
+                    assert!(used);
+                    document
+                } else {
+                    let _standard_nested = StandardNestedReaderGuard::install();
+                    parse_with_options_mode_and_index(&source, &options, ParseMode::Html).0
+                };
+                (document, observer.0.into_inner())
+            };
+            assert_eq!(run(true), run(false), "{positions}; {source_lines}");
+        }
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
 fn matcher_context_event_fragment_matches_standard_reentry() {
     use crate::{BlockMatch, CarveExtension, InlineMatch, MatcherContext};
 
