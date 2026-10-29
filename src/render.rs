@@ -1186,6 +1186,17 @@ fn plain_inlines_typography_at(
             InlineNode::Extension(e) => {
                 out.push_str(&plain_inlines_typography_at(&e.children, smart, depth + 1))
             }
+            // CARVE-P2-004: editorial text is carried text. Mirrors `plain_inlines_parse`.
+            InlineNode::CriticInsert(c) => {
+                out.push_str(&plain_inlines_typography_at(&c.children, smart, depth + 1))
+            }
+            InlineNode::CriticDelete(c) => {
+                out.push_str(&plain_inlines_typography_at(&c.children, smart, depth + 1))
+            }
+            InlineNode::CriticSubstitute(c) => {
+                out.push_str(&plain_inlines_typography_at(&c.old, smart, depth + 1));
+                out.push_str(&plain_inlines_typography_at(&c.new, smart, depth + 1));
+            }
             InlineNode::CitationGroup(g) => out.push_str(&g.raw),
             InlineNode::Abbreviation(a) => out.push_str(&a.abbr),
             InlineNode::Mention(m) => {

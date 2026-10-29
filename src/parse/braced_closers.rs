@@ -481,6 +481,25 @@ impl BracedClosers {
         let mut attributes = Vec::new();
         let mut label_ends = Vec::new();
         let mut last_label_end = None;
+        // PART 4: an attribute run is opaque only where it attaches to a host;
+        // one after plain text is text (`x{title="*}"}`).
+        let mut host_ends: std::collections::HashSet<usize> = self
+            .opaque
+            .iter()
+            .filter(|&(&open, _)| match bytes[open] {
+                b'[' | b'(' | b'`' => true,
+                b'<' => bytes.get(open + 1) != Some(&b'/'),
+                _ => false,
+            })
+            .map(|(_, &end)| end)
+            .collect();
+        let mut bare_openers = [false; 5];
+        let mut braced_depth = [0usize; 5];
+        // A `{X` with no `X}` after it is unmatched, so its `X` may open bare.
+        let last_closers: [Option<usize>; 5] = std::array::from_fn(|slot| {
+            let marker = b"/*_~="[slot];
+            bytes.windows(2).rposition(|pair| pair == [marker, b'}'])
+        });
         let mut at = 0;
         while at + 1 < bytes.len() {
             while label_ends.last().is_some_and(|&end| end <= at) {
@@ -489,6 +508,23 @@ impl BracedClosers {
             if bytes[at] == b'\\' {
                 at += 2;
                 continue;
+            }
+            if let Some(slot) = bare_slot(bytes[at]) {
+                let before = at.checked_sub(1).map(|prev| bytes[prev]);
+                let braced =
+                    before == Some(b'{') && last_closers[slot].is_some_and(|close| close > at);
+                if braced {
+                    braced_depth[slot] += 1;
+                } else if bytes[at + 1] == b'}' && braced_depth[slot] > 0 {
+                    braced_depth[slot] -= 1;
+                }
+                // E3: a bare opener inside a same-kind braced span is literal.
+                bare_openers[slot] |= !braced
+                    && braced_depth[slot] == 0
+                    && !before
+                        .is_some_and(|byte| byte.is_ascii_alphanumeric() || byte == bytes[at])
+                    && !matches!(bytes[at + 1], b' ' | b'\t' | b'\r' | b'\n')
+                    && bytes[at + 1] != bytes[at];
             }
             if let Some(&end) = self.opaque.get(&at) {
                 if bytes[at] == b'[' {
@@ -501,6 +537,7 @@ impl BracedClosers {
             let attribute_end = if bytes[at] == b'{'
                 && (bytes[at + 1].is_ascii_alphabetic()
                     || matches!(bytes[at + 1], b'.' | b'#' | b':'))
+                && attribute_host_before(bytes, at, &host_ends, &bare_openers)
             {
                 read_attrs_at(bytes, at, last_brace).map(|(_, end)| end)
             } else {
@@ -508,6 +545,7 @@ impl BracedClosers {
             };
             if let Some(end) = attribute_end {
                 attributes.push((at, end));
+                host_ends.insert(end);
             }
             let end = match bytes[at] {
                 b'`' => self
@@ -555,15 +593,16 @@ impl BracedClosers {
                         let close = next_comments[slot];
                         (close < bytes.len() && (marker == b'%' || close > at + 2))
                             .then_some(close + 2)
-                    } else if marker.is_ascii_alphabetic() || matches!(marker, b'.' | b'#' | b':') {
-                        read_attrs_at(bytes, at, last_brace).map(|(_, end)| end)
                     } else {
-                        None
+                        attribute_end
                     }
                 }
                 _ => None,
             };
             if let Some(end) = end {
+                if bytes[at] == b'`' || bytes[at] == b'<' && bytes[at + 1] != b'/' {
+                    host_ends.insert(end);
+                }
                 self.opaque.insert(at, end);
                 at = attribute_end.unwrap_or(end);
             } else {
@@ -956,6 +995,44 @@ impl DenseBracedClosers {
         let at = self.points.partition_point(|&point| point < from);
         let stop = *self.stops[delim_brace_slot(delim)?].get(at)?;
         (stop != usize::MAX).then(|| self.points[stop & !RAW_CLOSE_FLAG] | (stop & RAW_CLOSE_FLAG))
+    }
+}
+
+/// Whether the brace group at `at` follows an inline element it can attach to:
+/// a code span, autolink, bracket or destination, an earlier attribute block,
+/// a braced closer, or a bare closer with an opener candidate before it.
+fn attribute_host_before(
+    bytes: &[u8],
+    at: usize,
+    host_ends: &std::collections::HashSet<usize>,
+    bare_openers: &[bool; 5],
+) -> bool {
+    if host_ends.contains(&at) {
+        return true;
+    }
+    if at < 2 {
+        return false;
+    }
+    match bytes[at - 1] {
+        b'}' => matches!(
+            bytes[at - 2],
+            b'/' | b'*' | b'_' | b'^' | b',' | b'~' | b'=' | b'+' | b'-'
+        ),
+        marker => bare_slot(marker).is_some_and(|slot| {
+            bare_openers[slot]
+                && !matches!(bytes[at - 2], b' ' | b'\t' | b'\r' | b'\n' | b'{' | b'\\')
+        }),
+    }
+}
+
+fn bare_slot(byte: u8) -> Option<usize> {
+    match byte {
+        b'/' => Some(0),
+        b'*' => Some(1),
+        b'_' => Some(2),
+        b'~' => Some(3),
+        b'=' => Some(4),
+        _ => None,
     }
 }
 

@@ -1889,6 +1889,8 @@ mod two_adjacent_code_spans_take_a_separator;
 mod two_blank_lines_detach_a_caption;
 #[path = "../two_sibling_sub_lists_in_a_tight_item.rs"]
 mod two_sibling_sub_lists_in_a_tight_item;
+#[path = "../unattached_attributes_reference_labels_and_editorial_slugs.rs"]
+mod unattached_attributes_reference_labels_and_editorial_slugs;
 #[path = "../unknown_wire_property_is_refused.rs"]
 mod unknown_wire_property_is_refused;
 #[path = "../unquoted_attribute_values.rs"]
