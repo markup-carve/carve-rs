@@ -567,6 +567,7 @@ fn markdown_dropped_attributes(node: &BlockNode) -> bool {
         BlockNode::FigureGroup(n) => &n.attrs,
         BlockNode::BlockExtension(n) => &n.attrs,
         BlockNode::ExtensionCarrier(n) => &n.attrs,
+        BlockNode::LinkReferenceDefinition(n) => &n.attrs,
         _ => return dropped_attribute_line(node).is_some(),
     };
     nonempty_attributes(additional).is_some()

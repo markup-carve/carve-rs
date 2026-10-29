@@ -33,6 +33,25 @@ fn markdown_reports_each_unrepresentable_kind() {
 }
 
 #[test]
+fn markdown_reports_attributes_on_a_link_reference_definition() {
+    for source in [
+        "[a][ex]\n\n[ex]: https://example.com {.external}\n",
+        "[ex]: https://example.com {.external}\n\ntext\n",
+        "- [a][x]\n\n  [x]: u {#i}\n",
+    ] {
+        assert_eq!(codes(source), ["markdown-attributes-dropped"], "{source:?}");
+    }
+    let report = to_markdown_with_report(
+        "[a][ex] and [b][ex]\n\n[ex]: https://example.com {.external}\n",
+        CheckedRenderOptions::default(),
+    )
+    .unwrap();
+    let pos = report.losses[0].pos.as_ref().unwrap();
+    assert_eq!((pos.start_line, pos.start_column), (3, 1));
+    assert!(codes("[a][ex]\n\n[ex]: https://example.com\n").is_empty());
+}
+
+#[test]
 fn markdown_reports_effective_fence_title_without_language() {
     for source in [
         "``` \"notes.txt\"\nbody\n```\n",
