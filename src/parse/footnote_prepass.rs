@@ -54,10 +54,30 @@ pub(in crate::parse) fn extract_footnote_defs(
 
 /// Whether a note body still holds an open paragraph for the lazy line
 /// `rest`. A first-block `+` pulls in no list (PART 9 SS17 L4).
-fn note_paragraph_open(lines: &[String], rest: &str, options: &Options<'_>) -> bool {
+fn note_paragraph_open(note: &NoteBody, rest: &str, options: &Options<'_>) -> bool {
+    let lines = &note.lines;
     let last = lines.iter().rev().find(|line| !is_blank_line(line));
-    !(is_list_marker(rest) && last.is_some_and(|line| is_cont_marker_line(line)))
-        && body_ends_with_open_paragraph(&lines.join("\n"), options)
+    if is_list_marker(rest) && last.is_some_and(|line| is_cont_marker_line(line)) {
+        return false;
+    }
+    // Prose after an open paragraph continues it, so only the lines since the
+    // last full read are checked; a reparse per lazy line was quadratic.
+    if let Some(known) = note.open_paragraph_at.get() {
+        if known <= lines.len() && lines[known..].iter().all(|line| continues_paragraph(line)) {
+            note.open_paragraph_at.set(Some(lines.len()));
+            return true;
+        }
+    }
+    let open = body_ends_with_open_paragraph(&lines.join("\n"), options);
+    note.open_paragraph_at.set(open.then_some(lines.len()));
+    open
+}
+
+/// A line that can only be paragraph text: it starts with a letter or digit
+/// and is no list marker.
+fn continues_paragraph(line: &str) -> bool {
+    let text = trim_ascii_start(line.strip_prefix(LAZY).unwrap_or(line));
+    text.chars().next().is_some_and(char::is_alphanumeric) && !is_list_marker(text)
 }
 
 fn is_cont_marker_line(line: &str) -> bool {
@@ -119,6 +139,8 @@ struct NoteBody {
     line_map: Vec<Option<usize>>,
     col_map: Vec<Option<isize>>,
     positions: bool,
+    /// `lines.len()` when the body last read as ending in an open paragraph.
+    open_paragraph_at: Cell<Option<usize>>,
 }
 
 impl NoteBody {
@@ -734,6 +756,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 Vec::new()
             },
             positions: self.positions,
+            open_paragraph_at: Cell::new(None),
         };
         let body_indent = footnote_body_floor(raw_def_line);
         let container = IndentContainer {
@@ -977,7 +1000,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             // item hosts the note and the marker may continue that list.
             && (state.flush_def || !is_list_marker(rest))
             && !fence_with_closer(rest, &self.lines[*i + 1..])
-            && (lazy_open || note_paragraph_open(&note.lines, rest, self.options))
+            && (lazy_open || note_paragraph_open(note, rest, self.options))
         {
             let kept = format!("{LAZY}{}", trim_ascii_start(line));
             note.push_with(kept, Some(self.first_source_line + *i), |_| {
@@ -1649,7 +1672,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             // note's quotes; elsewhere it is text under the note's paragraph.
             && !(inside.is_some() && host.prefix_cols > 0 && is_list_marker(rest))
             && !fence_with_closer(rest, &self.lines[*i + 1..])
-            && (walk.lazy_open || note_paragraph_open(&note.lines, rest, self.options));
+            && (walk.lazy_open || note_paragraph_open(note, rest, self.options));
         if !lazy {
             return false;
         }
