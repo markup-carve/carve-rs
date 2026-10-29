@@ -255,294 +255,346 @@ pub(in crate::parse) fn parse_definition_list_with(
     mut defer: Option<&mut dyn FnMut(usize, usize, MappedSource)>,
     final_only: bool,
 ) -> BlockNode {
-    let list_start = cur.pos;
-    let marker_hosted = cur.colon_view.is_some_and(|view| view.marker_hosted);
-    let list_column = cur.peek().map_or(0, indent_columns);
-    let mut items = Vec::new();
-    while let Some(line) = cur.peek() {
-        // A LAZY-FRAMED marker line (`LAZY:: u`) reached this open list by the
-        // fold and carries no column (PART 0), so the frame is stripped before
-        // the marker is recognized - at column 0, whatever the container depth
-        // the line was written at (markup-carve/carve-rs#1538). The frame is a
-        // no-op on an ordinary flush-left term, so unframed lists are unchanged.
-        let Some(term) = definition_entry_at(strip_lazy(line), marker_hosted, list_column)
-            .and_then(|line| line.strip_prefix(":: "))
-        else {
-            break;
-        };
-        if is_blank_line(term) {
-            break;
-        }
-        // The SEPARATOR is the space, and whitespace past it is not content -
-        // the same rule `#`, `>` and `-` already follow, and the one carve#513
-        // and carve#530 restated twice as a property of the separator rather
-        // than of any one marker. `stripped_col` locates the column by matching
-        // this slice as a suffix of the raw line, so trimming here moves the
-        // term's own position with it instead of leaving it on the marker.
-        let term = trim_ascii_start(term);
-        let term_source_line = cur.source_line(cur.pos);
-        let term_start = cur.pos;
-        cur.consume();
-        // A term folds a following plain line like a heading (soft break), so a
-        // wrapped term line does not strand the definition. A blank line, a new
-        // marker (`::` / `:  `), a list marker, or a block opener ends the term.
-        let anchor = options
-            .positions
-            .then(|| inline_anchor_for_line(cur, term_start, term));
-        let children = fold_term(
-            cur,
-            options,
-            trim_ascii_end(term).to_string(),
-            anchor,
-            list_column,
-            marker_hosted,
-        );
-        // The span covers the `:: ` marker and every line the term folded, the
-        // same way a heading's covers its `#`.
-        let mut terms = vec![DefinitionTerm {
-            attrs: source_line_attrs(None, term_source_line, options),
-            children,
-            pos: span_of(cur, term_start, cur.pos, options),
-        }];
+    let mut scan = DefinitionListScan::new(cur);
+    while scan.step(cur, options, &mut defer, final_only) {}
+    scan.finish(cur, options)
+}
 
-        // CONSECUTIVE terms share an entry, which is what `:: a` / `:: b` on
-        // adjacent lines means and what the rendered `<dl>` shows - a run of
-        // `<dt>` followed by the `<dd>`s they share. This engine used to open a
-        // new entry per term line, so the same document grouped differently
-        // here and in carve-js while both rendered the same list; the grouping
-        // was an internal nobody could see, until the AST became something
-        // engines hand each other (PART 12).
-        while let Some(next) = cur.peek() {
-            let Some(next_term) = definition_entry_at(strip_lazy(next), marker_hosted, list_column)
-                .and_then(|line| line.strip_prefix(":: "))
-            else {
-                break;
-            };
-            if is_blank_line(next_term) {
-                break;
-            }
-            // Same separator rule as the item's first term above. A list can
-            // hold several terms and each one strips its own padding.
-            let next_term = trim_ascii_start(next_term);
-            let next_source_line = cur.source_line(cur.pos);
-            let next_start = cur.pos;
-            cur.consume();
-            let anchor = options
-                .positions
-                .then(|| inline_anchor_for_line(cur, next_start, next_term));
-            let children = fold_term(
-                cur,
-                options,
-                trim_ascii_end(next_term).to_string(),
-                anchor,
-                list_column,
-                marker_hosted,
-            );
-            terms.push(DefinitionTerm {
-                attrs: source_line_attrs(None, next_source_line, options),
-                children,
-                pos: span_of(cur, next_start, cur.pos, options),
-            });
-        }
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DefinitionPhase {
+    Terms,
+    Definitions,
+    BetweenItems,
+    Done,
+}
 
-        let mut defs = Vec::new();
+/// Owned progress through one list. Each step borrows the cursor only for its
+/// current term, description, or item boundary.
+pub(in crate::parse) struct DefinitionListScan {
+    list_start: usize,
+    list_column: usize,
+    marker_hosted: bool,
+    items: Vec<DefinitionItem>,
+    terms: Vec<DefinitionTerm>,
+    definitions: Vec<DefinitionDef>,
+    phase: DefinitionPhase,
+}
 
-        loop {
-            // A blank line before a `:  ` definition is a separator (djot
-            // parity): a definition may be separated from its term or a
-            // previous definition by a blank line. A blank not followed by a
-            // `:  ` definition ends the entry.
-            if matches!(cur.peek(), Some(l) if is_blank_line(l)) {
-                let mut look = 0usize;
-                while matches!(cur.lines.line(cur.pos + look), Some(l) if is_blank_line(l)) {
-                    look += 1;
-                }
-                match cur.lines.line(cur.pos + look) {
-                    Some(after)
-                        if !after.starts_with(ITEM_PARAGRAPH)
-                            && definition_entry_at(
-                                strip_lazy(after),
-                                marker_hosted,
-                                list_column,
-                            )
-                            .is_some_and(|line| strip_definition_marker(line).is_some()) =>
-                    {
-                        for _ in 0..look {
-                            cur.consume();
-                        }
-                    }
-                    _ => break,
-                }
-            }
-            let Some(line) = cur.peek() else {
-                break;
-            };
-            // The nested parser sees the marker after its containing body has
-            // normalized indentation. A marker that did not reach that body's
-            // column belongs to the surviving outer owner, even if rebasing
-            // placed it at this list's apparent marker column.
-            if !line.starts_with(LAZY) && cur.carried_reach(cur.pos) == Some(false) {
-                break;
-            }
-            let Some((def, definition_column)) = (!line.starts_with(ITEM_PARAGRAPH))
-                .then(|| {
-                    definition_entry_at(strip_lazy(line), marker_hosted, list_column)
-                        .and_then(strip_definition_marker)
-                })
-                .flatten()
-            else {
-                break;
-            };
-            if is_blank_line(def) {
-                break;
-            }
-            let def_source_line = cur.source_line(cur.pos);
-            let def_start = cur.pos;
-            // The `:  ` marker is three codepoints; add whatever an enclosing
-            // container already took so a nested block maps back to the document.
-            let def_source_col = cur
-                .source_col(cur.pos)
-                .map(|c| c + (list_column + definition_column) as isize);
-            cur.consume();
-            let def_trimmed = trim_ascii_end(def);
-            // First-block form (`:  +`, mirroring the list `- +`): when the sole
-            // content is a lone `+`, seed the body with the FOLLOWING flush-left
-            // block (no `+` literal), with no indentation. `:  \+` stays literal.
-            let mut body = if is_plus_marker(def_trimmed) {
-                let mut fb = LineBuffer::default();
-                let lines = cur.lines;
-                let mut boundary = |a: &str, _| {
-                    is_blank_line(a)
-                        || is_plus_marker(a)
-                        || (indent_columns(a) == 0 && is_list_marker(a))
-                        || strip_lazy(a).strip_prefix(":: ").is_some()
-                        || strip_definition_marker(strip_lazy(a)).is_some()
-                };
-                let classified = cur.continuation_decision(def_start);
-                let end = match classified {
-                    Some(decision)
-                        if decision.owner == Some(continuation_marker::Kind::Description)
-                            && decision.refusal.is_none() =>
-                    {
-                        attached_block_lines_classified(
-                            lines,
-                            cur.pos,
-                            &mut cur.comment_closer_last_index,
-                            &mut cur.code_closer_last_index,
-                            options,
-                            &mut boundary,
-                        )
-                    }
-                    _ => cur.pos,
-                };
-                while cur.pos < end {
-                    let a = cur.lines.at(cur.pos);
-                    fb.push_at(
-                        a.to_string(),
-                        cur.source_line(cur.pos),
-                        cur.source_col(cur.pos),
-                    );
-                    cur.consume();
-                }
-                fb.into_source()
-            } else {
-                MappedSource::new_line_at(def_trimmed.to_string(), def_source_line, def_source_col)
-            };
-            // A FENCED BODY IS NOT A PARAGRAPH, and a definition body is such a
-            // container (PART 0 S4, markup-carve/carve#956). The guard is on the
-            // OPEN FENCE rather than on where the fence was opened, so it is
-            // seeded from the `:  ` MARKER line - which no collector ever sees -
-            // and then followed by the collector on the lines it takes. The
-            // first-block (`:  +`) form seeds nothing: its body is the following
-            // flush-left block, which supplies no indentation for the rule to
-            // measure against.
-            let mut fence = DefinitionBodyFence {
-                open: if is_plus_marker(def_trimmed) {
-                    None
-                } else {
-                    detect_fence_open(def_trimmed)
-                },
-                closed_last: false,
-            };
-            let seed = body.source.clone();
-            body.append(collect_definition_body(
-                cur,
-                &mut fence,
-                &seed,
-                list_column + definition_column,
-                options,
-            ));
-            // The span covers the `:  ` marker through the last line the body
-            // consumed, so a multi-line definition is one region rather than
-            // just its opening line. `collect_definition_body` has already
-            // advanced the cursor past those lines.
-            // A DEFINITION BODY carries authored base for its sublists, so a list
-            // marker past the body's content column anchors its span at the
-            // marker rather than at the placing indent (markup-carve/carve#1980,
-            // corpus 461-...-sibling-4).
-            body.sublists_carry_authored_base = true;
-            let children = if body.source.trim_end_matches([' ', '\t', '\n']) == "{empty}" {
-                Vec::new()
-            } else if let Some(defer) = defer
-                .as_deref_mut()
-                .filter(|_| !final_only || only_blank_lines_left(cur))
-            {
-                defer(items.len(), defs.len(), body);
-                Vec::new()
-            } else {
-                parse_mapped_source(&body, options)
-            };
-            let mut pos = span_of(cur, def_start, cur.pos, options);
-            if let (Some(pos), Some(last)) = (
-                pos.as_mut(),
-                children.iter().rev().find_map(crate::ast_json::block_pos),
-            ) {
-                pos.end_line = last.end_line;
-                pos.end_column = last.end_column;
-                pos.end_offset = last.end_offset;
-            }
-            defs.push(DefinitionDef {
-                attrs: source_line_attrs(None, def_source_line, options),
-                children,
-                pos,
-            });
-        }
+/// Collected description at the point where parsing may later be suspended.
+pub(in crate::parse) struct BodyRequest {
+    body: MappedSource,
+    item: usize,
+    description: usize,
+}
 
-        items.push(DefinitionItem {
-            // NOT placed, though the cursor could say where it is. The wire
-            // format flattens items into a flat run of definition_term and
-            // definition_description nodes, so the item is regrouped on the way
-            // back in and any span here would not survive a round-trip
-            // (PART 12 section 6). A field that is Some before a round-trip and
-            // None after is worse than one that is always None.
-            terms,
-            definitions: defs,
-            pos: None,
-        });
-
-        let saved = cur.pos;
-        while matches!(cur.peek(), Some(line) if is_blank_line(line)) {
-            cur.consume();
-        }
-        if !cur.peek().is_some_and(|l| {
-            definition_entry_at(strip_lazy(l), marker_hosted, list_column)
-                .is_some_and(is_definition_list_start)
-        }) {
-            cur.pos = saved;
-            break;
+impl DefinitionListScan {
+    pub(in crate::parse) fn new(cur: &LineCursor) -> Self {
+        Self {
+            list_start: cur.pos,
+            marker_hosted: cur.colon_view.is_some_and(|view| view.marker_hosted),
+            list_column: cur.peek().map_or(0, indent_columns),
+            items: Vec::new(),
+            terms: Vec::new(),
+            definitions: Vec::new(),
+            phase: DefinitionPhase::Terms,
         }
     }
-    BlockNode::DefinitionList(DefinitionList {
-        attrs: None,
-        // §17 L7's key is CONSUMED off the preceding attribute line, which this
-        // constructor never sees - `apply_attrs_to_block` sets the flag.
-        loose: false,
-        // The cursor has rolled back past the trailing blanks it looked through
-        // for another item, so it points one line past the last definition -
-        // the span stops at the content, not at the gap after it.
-        pos: span_of(cur, list_start, cur.pos, options),
-        items,
-    })
+
+    /// Returns true when another scan step is needed.
+    pub(in crate::parse) fn step(
+        &mut self,
+        cur: &mut LineCursor,
+        options: &Options<'_>,
+        defer: &mut Option<&mut dyn FnMut(usize, usize, MappedSource)>,
+        final_only: bool,
+    ) -> bool {
+        match self.phase {
+            DefinitionPhase::Terms => {
+                let Some(line) = cur.peek() else {
+                    self.phase = if self.terms.is_empty() {
+                        DefinitionPhase::Done
+                    } else {
+                        DefinitionPhase::Definitions
+                    };
+                    return true;
+                };
+                // Lazy frames have no authored marker column.
+                let Some(term) =
+                    definition_entry_at(strip_lazy(line), self.marker_hosted, self.list_column)
+                        .and_then(|line| line.strip_prefix(":: "))
+                else {
+                    self.phase = if self.terms.is_empty() {
+                        DefinitionPhase::Done
+                    } else {
+                        DefinitionPhase::Definitions
+                    };
+                    return true;
+                };
+                if is_blank_line(term) {
+                    self.phase = if self.terms.is_empty() {
+                        DefinitionPhase::Done
+                    } else {
+                        DefinitionPhase::Definitions
+                    };
+                    return true;
+                }
+                // The SEPARATOR is the space, and whitespace past it is not content -
+                // the same rule `#`, `>` and `-` already follow, and the one carve#513
+                // and carve#530 restated twice as a property of the separator rather
+                // than of any one marker. `stripped_col` locates the column by matching
+                // this slice as a suffix of the raw line, so trimming here moves the
+                // term's own position with it instead of leaving it on the marker.
+                let term = trim_ascii_start(term);
+                let term_source_line = cur.source_line(cur.pos);
+                let term_start = cur.pos;
+                cur.consume();
+                // A term folds a following plain line like a heading (soft break), so a
+                // wrapped term line does not strand the definition. A blank line, a new
+                // marker (`::` / `:  `), a list marker, or a block opener ends the term.
+                let anchor = options
+                    .positions
+                    .then(|| inline_anchor_for_line(cur, term_start, term));
+                let children = fold_term(
+                    cur,
+                    options,
+                    trim_ascii_end(term).to_string(),
+                    anchor,
+                    self.list_column,
+                    self.marker_hosted,
+                );
+                // The span covers the `:: ` marker and every line the term folded, the
+                // same way a heading's covers its `#`.
+                let parsed = DefinitionTerm {
+                    attrs: source_line_attrs(None, term_source_line, options),
+                    children,
+                    pos: span_of(cur, term_start, cur.pos, options),
+                };
+                self.terms.push(parsed);
+
+                true
+            }
+            DefinitionPhase::Definitions => {
+                // A blank separator belongs to this entry only when followed
+                // by another description at the list column.
+                if matches!(cur.peek(), Some(l) if is_blank_line(l)) {
+                    let mut look = 0usize;
+                    while matches!(cur.lines.line(cur.pos + look), Some(l) if is_blank_line(l)) {
+                        look += 1;
+                    }
+                    match cur.lines.line(cur.pos + look) {
+                        Some(after)
+                            if !after.starts_with(ITEM_PARAGRAPH)
+                                && definition_entry_at(
+                                    strip_lazy(after),
+                                    self.marker_hosted,
+                                    self.list_column,
+                                )
+                                .is_some_and(|line| strip_definition_marker(line).is_some()) =>
+                        {
+                            for _ in 0..look {
+                                cur.consume();
+                            }
+                        }
+                        _ => {
+                            self.phase = DefinitionPhase::BetweenItems;
+                            return true;
+                        }
+                    }
+                }
+                let Some(line) = cur.peek() else {
+                    self.phase = DefinitionPhase::BetweenItems;
+                    return true;
+                };
+                if !line.starts_with(LAZY) && cur.carried_reach(cur.pos) == Some(false) {
+                    self.phase = DefinitionPhase::BetweenItems;
+                    return true;
+                }
+                let Some((def, definition_column)) = (!line.starts_with(ITEM_PARAGRAPH))
+                    .then(|| {
+                        definition_entry_at(strip_lazy(line), self.marker_hosted, self.list_column)
+                            .and_then(strip_definition_marker)
+                    })
+                    .flatten()
+                else {
+                    self.phase = DefinitionPhase::BetweenItems;
+                    return true;
+                };
+                if is_blank_line(def) {
+                    self.phase = DefinitionPhase::BetweenItems;
+                    return true;
+                }
+                let def_source_line = cur.source_line(cur.pos);
+                let def_start = cur.pos;
+                // The `:  ` marker is three codepoints; add whatever an enclosing
+                // container already took so a nested block maps back to the document.
+                let def_source_col = cur
+                    .source_col(cur.pos)
+                    .map(|c| c + (self.list_column + definition_column) as isize);
+                cur.consume();
+                let def_trimmed = trim_ascii_end(def);
+                // First-block form (`:  +`, mirroring the list `- +`): when the sole
+                // content is a lone `+`, seed the body with the FOLLOWING flush-left
+                // block (no `+` literal), with no indentation. `:  \+` stays literal.
+                let mut body = if is_plus_marker(def_trimmed) {
+                    let mut fb = LineBuffer::default();
+                    let lines = cur.lines;
+                    let mut boundary = |a: &str, _| {
+                        is_blank_line(a)
+                            || is_plus_marker(a)
+                            || (indent_columns(a) == 0 && is_list_marker(a))
+                            || strip_lazy(a).strip_prefix(":: ").is_some()
+                            || strip_definition_marker(strip_lazy(a)).is_some()
+                    };
+                    let classified = cur.continuation_decision(def_start);
+                    let end = match classified {
+                        Some(decision)
+                            if decision.owner == Some(continuation_marker::Kind::Description)
+                                && decision.refusal.is_none() =>
+                        {
+                            attached_block_lines_classified(
+                                lines,
+                                cur.pos,
+                                &mut cur.comment_closer_last_index,
+                                &mut cur.code_closer_last_index,
+                                options,
+                                &mut boundary,
+                            )
+                        }
+                        _ => cur.pos,
+                    };
+                    while cur.pos < end {
+                        let a = cur.lines.at(cur.pos);
+                        fb.push_at(
+                            a.to_string(),
+                            cur.source_line(cur.pos),
+                            cur.source_col(cur.pos),
+                        );
+                        cur.consume();
+                    }
+                    fb.into_source()
+                } else {
+                    MappedSource::new_line_at(
+                        def_trimmed.to_string(),
+                        def_source_line,
+                        def_source_col,
+                    )
+                };
+                // A FENCED BODY IS NOT A PARAGRAPH, and a definition body is such a
+                // container (PART 0 S4, markup-carve/carve#956). The guard is on the
+                // OPEN FENCE rather than on where the fence was opened, so it is
+                // seeded from the `:  ` MARKER line - which no collector ever sees -
+                // and then followed by the collector on the lines it takes. The
+                // first-block (`:  +`) form seeds nothing: its body is the following
+                // flush-left block, which supplies no indentation for the rule to
+                // measure against.
+                let mut fence = DefinitionBodyFence {
+                    open: if is_plus_marker(def_trimmed) {
+                        None
+                    } else {
+                        detect_fence_open(def_trimmed)
+                    },
+                    closed_last: false,
+                };
+                let seed = body.source.clone();
+                body.append(collect_definition_body(
+                    cur,
+                    &mut fence,
+                    &seed,
+                    self.list_column + definition_column,
+                    options,
+                ));
+                // The span covers the `:  ` marker through the last line the body
+                // consumed, so a multi-line definition is one region rather than
+                // just its opening line. `collect_definition_body` has already
+                // advanced the cursor past those lines.
+                // A DEFINITION BODY carries authored base for its sublists, so a list
+                // marker past the body's content column anchors its span at the
+                // marker rather than at the placing indent (markup-carve/carve#1980,
+                // corpus 461-...-sibling-4).
+                body.sublists_carry_authored_base = true;
+                let request = BodyRequest {
+                    body,
+                    item: self.items.len(),
+                    description: self.definitions.len(),
+                };
+                let children =
+                    parse_definition_description(request, cur, options, defer, final_only);
+                let mut pos = span_of(cur, def_start, cur.pos, options);
+                if let (Some(pos), Some(last)) = (
+                    pos.as_mut(),
+                    children.iter().rev().find_map(crate::ast_json::block_pos),
+                ) {
+                    pos.end_line = last.end_line;
+                    pos.end_column = last.end_column;
+                    pos.end_offset = last.end_offset;
+                }
+                self.definitions.push(DefinitionDef {
+                    attrs: source_line_attrs(None, def_source_line, options),
+                    children,
+                    pos,
+                });
+                true
+            }
+            DefinitionPhase::BetweenItems => {
+                self.items.push(DefinitionItem {
+                    terms: std::mem::take(&mut self.terms),
+                    definitions: std::mem::take(&mut self.definitions),
+                    pos: None,
+                });
+                let saved = cur.pos;
+                while matches!(cur.peek(), Some(line) if is_blank_line(line)) {
+                    cur.consume();
+                }
+                if cur.peek().is_some_and(|l| {
+                    definition_entry_at(strip_lazy(l), self.marker_hosted, self.list_column)
+                        .is_some_and(is_definition_list_start)
+                }) {
+                    self.phase = DefinitionPhase::Terms;
+                } else {
+                    cur.pos = saved;
+                    self.phase = DefinitionPhase::Done;
+                }
+                true
+            }
+            DefinitionPhase::Done => false,
+        }
+    }
+
+    pub(in crate::parse) fn finish(self, cur: &LineCursor, options: &Options<'_>) -> BlockNode {
+        BlockNode::DefinitionList(DefinitionList {
+            attrs: None,
+            loose: false,
+            pos: span_of(cur, self.list_start, cur.pos, options),
+            items: self.items,
+        })
+    }
+}
+
+/// Decide at the description boundary, while the enclosing list cursor is
+/// still parked before the next description or root block.
+fn parse_definition_description(
+    request: BodyRequest,
+    cur: &LineCursor,
+    options: &Options<'_>,
+    defer: &mut Option<&mut dyn FnMut(usize, usize, MappedSource)>,
+    final_only: bool,
+) -> Vec<BlockNode> {
+    let BodyRequest {
+        body,
+        item,
+        description,
+    } = request;
+    if body.source.trim_end_matches([' ', '\t', '\n']) == "{empty}" {
+        return Vec::new();
+    }
+    if let Some(defer) = defer
+        .as_deref_mut()
+        .filter(|_| !final_only || only_blank_lines_left(cur))
+    {
+        defer(item, description, body);
+        return Vec::new();
+    }
+    parse_mapped_source(&body, options)
 }
 
 fn only_blank_lines_left(cur: &LineCursor) -> bool {

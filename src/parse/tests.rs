@@ -1723,6 +1723,34 @@ mod deep_worklist_owner {
         }
     }
 
+    #[test]
+    fn non_final_observed_descriptions_preserve_exact_ast_and_callback_order() {
+        // The first body must finish before the second description is read;
+        // both must finish before the later root block is read.
+        let source = ":: term\n: first *one*\n  - nested *two*\n: second *three*\n  > quoted *four*\n\n# root *five*\n";
+        assert_eq!(
+            observed_definition_deferrals("non-final observed descriptions", source),
+            0
+        );
+        for row in full_matrix() {
+            check_row(1, "non-final observed descriptions", source, row);
+        }
+        for row in 0..CALLBACK_ROWS.len() {
+            check_callbacks(1, "non-final observed descriptions", source, row);
+        }
+    }
+
+    #[test]
+    fn definition_scan_keeps_terms_descriptions_and_item_boundaries() {
+        let source = ":: first *term*\n:: second term\n: first *body*\n\n: second body\n\n:: next term\n: next body\n\n# after\n";
+        for row in full_matrix() {
+            check_row(1, "definition scan boundaries", source, row);
+        }
+        for row in 0..CALLBACK_ROWS.len() {
+            check_callbacks(1, "definition scan boundaries", source, row);
+        }
+    }
+
     /// Every shape at `MAX_NESTING_DEPTH` on its own `PAIRWISE` row, then
     /// `DEEP_CELLS` for the other deep depths.
     #[test]
