@@ -106,6 +106,113 @@ fn angle_email() -> &'static regex::Regex {
     ANGLE_EMAIL.get_or_init(|| regex::Regex::new(r"<([A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*)>").unwrap())
 }
 
+/// Rewrites each top-level GitHub alert quote as the admonition the importer
+/// writes (CARVE-P2-033): the reference render gets the `<aside>`, the label
+/// line drops out, and the quote's row becomes `github-alert`.
+fn github_alert_events<'a>(
+    events: Vec<(Event<'a>, usize)>,
+    source: &str,
+    line_starts: &[usize],
+    diagnostics: &mut Vec<(usize, MigrationDiagnostic)>,
+) -> Vec<(Event<'a>, usize)> {
+    use crate::html_import::ImportFidelity::Normalized;
+    use crate::markdown_github_alerts::{aria_label, first_line_kind};
+    if !source.contains("[!") {
+        return events;
+    }
+    let mut out = Vec::with_capacity(events.len());
+    let mut depth = 0usize;
+    let mut index = 0;
+    while index < events.len() {
+        let (event, offset) = &events[index];
+        let alert = (depth == 0 && matches!(event, Event::Start(Tag::BlockQuote(_))))
+            .then(|| first_line_kind(&source[*offset..]))
+            .flatten()
+            .and_then(|alert| github_alert_span(&events, index, alert).map(|span| (alert, span)));
+        if let Some((alert, (dropped, body_start, end))) = alert {
+            let paragraph = events[index + 1].1;
+            let label_end = events[body_start - 1].1;
+            diagnostics.retain(|(at, row)| {
+                !(*at == paragraph && dropped && row.code == "markdown-paragraph")
+                    && !(*at == label_end && !dropped && row.code == "markdown-soft-break")
+                    && !(*at == *offset && row.code == "markdown-block-quote")
+            });
+            diagnostics.push(positioned("github-alert", line_starts, *offset, Normalized));
+            out.push((
+                Event::Html(
+                    format!(
+                        "<aside class=\"admonition {alert}\" aria-label=\"{}\">\n",
+                        aria_label(alert)
+                    )
+                    .into(),
+                ),
+                *offset,
+            ));
+            if !dropped {
+                let body = events[body_start].1;
+                for (at, row) in diagnostics.iter_mut() {
+                    if *at == paragraph && row.code == "markdown-paragraph" {
+                        *row = diagnostic("paragraph", line_starts, body, row.fidelity);
+                        *at = body;
+                    }
+                }
+                out.push((Event::Start(Tag::Paragraph), body));
+            }
+            out.extend(events[body_start..end].iter().cloned());
+            out.push((Event::Html("</aside>\n".into()), events[end].1));
+            index = end + 1;
+            continue;
+        }
+        match event {
+            Event::Start(_) => depth += 1,
+            Event::End(_) => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+        out.push(events[index].clone());
+        index += 1;
+    }
+    out
+}
+
+/// For a quote opening at `start`: whether the label paragraph drops out,
+/// where the body starts, and the index of the quote's end, when the label is
+/// the first paragraph's whole first line and a body follows it.
+fn github_alert_span(
+    events: &[(Event<'_>, usize)],
+    start: usize,
+    alert: &'static str,
+) -> Option<(bool, usize, usize)> {
+    let mut depth = 0usize;
+    let end = events[start..].iter().position(|(event, _)| {
+        match event {
+            Event::Start(_) => depth += 1,
+            Event::End(_) => depth -= 1,
+            _ => {}
+        }
+        depth == 0
+    })? + start;
+    if !matches!(events.get(start + 1)?.0, Event::Start(Tag::Paragraph)) {
+        return None;
+    }
+    let mut label = String::new();
+    let mut at = start + 2;
+    while let Some((Event::Text(text), _)) = events.get(at) {
+        label.push_str(text);
+        at += 1;
+    }
+    if crate::markdown_github_alerts::kind(&label) != Some(alert) {
+        return None;
+    }
+    let dropped = match events.get(at)?.0 {
+        Event::SoftBreak if !matches!(events.get(at + 1)?.0, Event::End(TagEnd::Paragraph)) => {
+            false
+        }
+        Event::End(TagEnd::Paragraph) => true,
+        _ => return None,
+    };
+    (at + 1 < end).then_some((dropped, at + 1, end))
+}
+
 fn email_events<'a>(
     events: Vec<(Event<'a>, usize)>,
     line_starts: &[usize],
@@ -340,6 +447,7 @@ fn shape(html: &str, list_marker: Option<&str>) -> Vec<Shape> {
                         | "ol"
                         | "li"
                         | "blockquote"
+                        | "aside"
                         | "table"
                         | "thead"
                         | "tbody"
@@ -1368,6 +1476,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
     ) {
         complete = false;
     }
+    let events = github_alert_events(events, &source, &line_starts, &mut diagnostics);
     let events = email_events(events, &line_starts, &mut diagnostics);
     if complete {
         complete = matches_writer_output(

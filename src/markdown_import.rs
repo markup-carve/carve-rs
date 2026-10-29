@@ -2253,6 +2253,9 @@ struct Builder {
     needs_email_walk: bool,
     track_code_lines: bool,
     code_lines: BTreeMap<Option<String>, Vec<Option<usize>>>,
+    /// The admonition kind the open top-level quote's first line names
+    /// (CARVE-P2-033).
+    alert_kind: Option<&'static str>,
 }
 
 impl Builder {
@@ -2690,7 +2693,12 @@ impl Builder {
         let frame = match tag {
             Tag::Paragraph => Frame::Paragraph(Vec::new()),
             Tag::Heading { level, .. } => Frame::Heading(heading_level(level), Vec::new()),
-            Tag::BlockQuote(_) => Frame::BlockQuote(Vec::new()),
+            Tag::BlockQuote(_) => {
+                if self.frames.is_empty() {
+                    self.alert_kind = crate::markdown_github_alerts::first_line_kind(source);
+                }
+                Frame::BlockQuote(Vec::new())
+            }
             Tag::List(start) => Frame::List {
                 ordered: start.is_some(),
                 start: start.map(|start| start as usize),
@@ -2943,13 +2951,24 @@ impl Builder {
                 children,
                 pos: None,
             })),
-            Frame::BlockQuote(children) => self.block(BlockNode::BlockQuote(BlockQuote {
-                attrs: None,
-                children,
-                // Markdown has one spelling, so an import carries none.
-                fenced: false,
-                pos: None,
-            })),
+            Frame::BlockQuote(children) => {
+                let quote = BlockQuote {
+                    attrs: None,
+                    children,
+                    // Markdown has one spelling, so an import carries none.
+                    fenced: false,
+                    pos: None,
+                };
+                let alert = if self.frames.is_empty() {
+                    self.alert_kind.take()
+                } else {
+                    None
+                };
+                self.block(match alert {
+                    Some(kind) => crate::markdown_github_alerts::admonition(kind, quote),
+                    None => BlockNode::BlockQuote(quote),
+                })
+            }
             Frame::List {
                 ordered,
                 start,

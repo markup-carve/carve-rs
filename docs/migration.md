@@ -86,6 +86,38 @@ definition, which then goes unused: `- [x] done`
 with `[x]: /u` beneath it imports as `- [x] done`, following cmark-gfm rather than
 GitHub's endpoint.
 
+A GitHub alert becomes an admonition (CARVE-P2-033). A top-level block quote
+whose first line is one of GitHub's five alert labels, alone on that line,
+imports as the matching admonition with the rest of the quote as its body and
+no title:
+
+| Markdown label | Carve admonition |
+|----------------|------------------|
+| `[!NOTE]`      | `::: note`       |
+| `[!TIP]`       | `::: tip`        |
+| `[!IMPORTANT]` | `::: info`       |
+| `[!WARNING]`   | `::: warning`    |
+| `[!CAUTION]`   | `::: danger`     |
+
+```md
+> [!WARNING]
+> Back up first.
+```
+
+migrates to
+
+```
+::: warning
+Back up first.
+:::
+```
+
+Anything else stays an ordinary quote: a label in another case (`[!note]`), an
+unknown label, text after the label on its line, a label line ending in a hard
+break, an escaped `\[!NOTE]`, a label below the quote's first line, an alert with
+no body, and an alert-shaped quote inside a list item, a footnote or another
+quote. `carve lint` then reports the literal marker as `github-alert-marker`.
+
 A leading `---` block becomes frontmatter under one rule
 (markup-carve/carve#2799). A typed opener - `---yaml`, `---toml`, `---json`,
 any `frontmatter_format` of letters and digits, with PART 1's optional single
