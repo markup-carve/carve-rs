@@ -35,6 +35,8 @@ mod an_unclosed_fence_below_a_marker_line_quote_is_lazy_text;
 mod ast_table_followups;
 #[path = "../folded_fence_closer_shapes.rs"]
 mod folded_fence_closer_shapes;
+#[path = "../inline_bracket_runs_guards_and_editorial_comments.rs"]
+mod inline_bracket_runs_guards_and_editorial_comments;
 #[path = "../lint_first_block_actual_attachment.rs"]
 mod lint_first_block_actual_attachment;
 #[path = "../nested_colon_div_plus_attachment.rs"]

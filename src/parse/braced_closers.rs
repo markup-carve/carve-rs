@@ -25,6 +25,7 @@ struct NativeBracedData {
     arrows: HashMap<usize, usize>,
     attributes: HashMap<usize, usize>,
     bare: HashMap<usize, (usize, usize)>,
+    bare_at_start: HashMap<usize, (usize, usize)>,
 }
 
 pub(super) struct CodeSpanIndex {
@@ -93,7 +94,9 @@ pub(super) struct BracedClosers {
     line_comment_ends: HashMap<usize, usize>,
     attribute_tails: HashMap<usize, usize>,
     has_attribute_candidates: Option<bool>,
+    comment_closes: Option<Vec<usize>>,
     bare_attribute_pairs: HashMap<usize, (usize, usize)>,
+    bare_attribute_pairs_at_start: HashMap<usize, (usize, usize)>,
     native_view: Option<NativeBracedView>,
     exported_native: Option<Rc<NativeBracedData>>,
     #[cfg(test)]
@@ -165,6 +168,7 @@ impl BracedClosers {
                 arrows,
                 attributes: self.attribute_tails.clone(),
                 bare: self.bare_attribute_pairs.clone(),
+                bare_at_start: self.bare_attribute_pairs_at_start.clone(),
             }));
         }
         NativeBracedView {
@@ -172,6 +176,22 @@ impl BracedClosers {
             offset: start,
             length,
         }
+    }
+
+    /// The end of the editorial comment opening at `at`. The closer scan steps
+    /// over every closed `{#...#}` (`edScan`), glued to a host or not.
+    fn comment_end(&mut self, bytes: &[u8], at: usize) -> Option<usize> {
+        if bytes.get(at..at + 2) != Some(b"{#") || crate::parse::decorated_braced_opener(bytes, at)
+        {
+            return None;
+        }
+        let closes = self.comment_closes.get_or_insert_with(|| {
+            (0..bytes.len().saturating_sub(1))
+                .filter(|&at| bytes[at] == b'#' && bytes[at + 1] == b'}')
+                .collect()
+        });
+        let close = *closes.get(closes.partition_point(|&close| close <= at + 2))?;
+        Some(close + 2)
     }
 
     pub(super) fn with_hosts(opaque: HashMap<usize, usize>) -> Self {
@@ -246,8 +266,32 @@ impl BracedClosers {
     }
 
     pub(super) fn bare_attributes(&mut self, bytes: &[u8], open: usize) -> Option<(usize, usize)> {
+        self.bare_attributes_from(bytes, open, false)
+    }
+
+    /// As `bare_attributes`, for an opener whose guard `_` or `/` before it
+    /// opens a span itself and so reads as START (the note under the templates).
+    pub(super) fn bare_attributes_at_start(
+        &mut self,
+        bytes: &[u8],
+        open: usize,
+    ) -> Option<(usize, usize)> {
+        self.bare_attributes_from(bytes, open, true)
+    }
+
+    fn bare_attributes_from(
+        &mut self,
+        bytes: &[u8],
+        open: usize,
+        at_start: bool,
+    ) -> Option<(usize, usize)> {
         if let Some(view) = &self.native_view {
-            let &(close, end) = view.data.bare.get(&(open + view.offset))?;
+            let pairs = if at_start {
+                &view.data.bare_at_start
+            } else {
+                &view.data.bare
+            };
+            let &(close, end) = pairs.get(&(open + view.offset))?;
             return (end <= view.offset + view.length)
                 .then_some((close - view.offset, end - view.offset));
         }
@@ -262,7 +306,11 @@ impl BracedClosers {
         if self.emphasis_pairs.is_none() {
             self.build_emphasis_pairs(bytes);
         }
-        self.bare_attribute_pairs.get(&open).copied()
+        if at_start {
+            self.bare_attribute_pairs_at_start.get(&open).copied()
+        } else {
+            self.bare_attribute_pairs.get(&open).copied()
+        }
     }
 
     pub(super) fn close(&mut self, bytes: &[u8], open: usize, delim: u8) -> Option<usize> {
@@ -374,11 +422,20 @@ impl BracedClosers {
     fn build_dense(&mut self, bytes: &[u8]) {
         self.queries = self.queries.max(2);
         let mut points = Vec::new();
+        let mut comments = HashMap::new();
+        for at in 0..bytes.len().saturating_sub(1) {
+            if !self.opaque.contains_key(&at) {
+                if let Some(end) = self.comment_end(bytes, at) {
+                    comments.insert(at, end);
+                }
+            }
+        }
         for at in 0..bytes.len().saturating_sub(1) {
             let next = bytes[at + 1];
             if (bytes[at] == b'`'
                 && (at == 0 || bytes[at - 1] != b'`' || (at > 1 && bytes[at - 2] == b'\\')))
                 || self.opaque.contains_key(&at)
+                || comments.contains_key(&at)
                 || bytes[at] == b'\\'
                 || (bytes[at] == b'{'
                     && matches!(
@@ -396,7 +453,7 @@ impl BracedClosers {
         let mut after_pair = Vec::new();
         for &at in &points[..points.len() - 1] {
             after_pair.push(index(at + 2));
-            let step = if let Some(&end) = self.opaque.get(&at) {
+            let step = if let Some(&end) = self.opaque.get(&at).or_else(|| comments.get(&at)) {
                 BracedStep::Jump(index(end))
             } else {
                 match bytes[at] {
@@ -622,6 +679,7 @@ impl BracedClosers {
             attribute_tails.insert(start, attribute_tails.get(&end).copied().unwrap_or(end));
         }
         let mut bare_attribute_pairs = HashMap::new();
+        let mut bare_attribute_pairs_at_start = HashMap::new();
         let mut bare_slots = [false; DELIM_BRACE_SLOTS];
         for &start in attribute_tails.keys() {
             if let Some(&marker) = start.checked_sub(1).and_then(|at| bytes.get(at)) {
@@ -805,6 +863,21 @@ impl BracedClosers {
             if let (Some(close), Some(end)) = (bare_close, bare_tail) {
                 bare_attribute_pairs.insert(position, (points[close], end));
             }
+            if matches!(before, Some(b'/' | b'_')) {
+                let start_close = bare_slot
+                    .filter(|_| {
+                        next.is_some_and(|byte| {
+                            !matches!(byte, b' ' | b'\t' | b'\r' | b'\n') && byte != marker
+                        }) && (marker != b'=' || next != Some(b'>'))
+                    })
+                    .map(|slot| bare[slot][at + 1])
+                    .filter(|&close| close != usize::MAX);
+                if let Some(close) = start_close {
+                    if let Some(&end) = attribute_tails.get(&(points[close] + 1)) {
+                        bare_attribute_pairs_at_start.insert(position, (points[close], end));
+                    }
+                }
+            }
             for slot in 0..DELIM_BRACE_SLOTS {
                 let mut stop = match &steps[at] {
                     BracedStep::Boundary => usize::MAX,
@@ -847,6 +920,7 @@ impl BracedClosers {
         }
         self.attribute_tails = attribute_tails;
         self.bare_attribute_pairs = bare_attribute_pairs;
+        self.bare_attribute_pairs_at_start = bare_attribute_pairs_at_start;
         self.native_opaque = Some(std::mem::replace(&mut self.opaque, original_opaque));
         self.emphasis_pairs = Some(Box::new(DenseBracedClosers {
             points,
@@ -926,7 +1000,12 @@ impl BracedClosers {
             {
                 self.steps += 1;
             }
-            if let Some(&end) = self.opaque.get(&j) {
+            if let Some(end) = self
+                .opaque
+                .get(&j)
+                .copied()
+                .or_else(|| self.comment_end(bytes, j))
+            {
                 j = end;
                 resume = true;
                 continue;
