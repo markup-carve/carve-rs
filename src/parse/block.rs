@@ -411,15 +411,16 @@ pub(in crate::parse) fn parse_blocks(
                 continue;
             }
         }
-        if line_flush {
-            let attrs_start = cur.pos;
-            if let Some(attrs) = parse_standalone_attrs_block(cur) {
-                merge_attrs_indexed(&mut pending_attrs, attrs, &mut pending_attr_slots);
-                if pending_attrs_pos.is_none() {
-                    *pending_attrs_pos = span_of(cur, attrs_start, cur.pos, options);
-                }
-                continue;
-            }
+        if line_flush
+            && take_standalone_attrs(
+                cur,
+                options,
+                &mut pending_attrs,
+                &mut pending_attr_slots,
+                &mut pending_attrs_pos,
+            )
+        {
+            continue;
         }
         let start_line = cur.pos;
         // The container's body is COLLECTED here and parsed later, on the heap,
@@ -482,6 +483,27 @@ pub(in crate::parse) fn parse_blocks(
         note_unattached_block_attrs(pending_attrs_pos.take());
     }
     out
+}
+
+/// Kept out of `parse_blocks`, whose frame every nesting level pays: the parsed
+/// `Attrs` would otherwise hold a slot in it.
+#[inline(never)]
+fn take_standalone_attrs(
+    cur: &mut LineCursor,
+    options: &Options<'_>,
+    pending_attrs: &mut Option<Attrs>,
+    pending_attr_slots: &mut Option<HashSet<AttrSlot>>,
+    pending_attrs_pos: &mut Option<Pos>,
+) -> bool {
+    let attrs_start = cur.pos;
+    let Some(attrs) = parse_standalone_attrs_block(cur) else {
+        return false;
+    };
+    merge_attrs_indexed(pending_attrs, attrs, pending_attr_slots);
+    if pending_attrs_pos.is_none() {
+        *pending_attrs_pos = span_of(cur, attrs_start, cur.pos, options);
+    }
+    true
 }
 
 /// True if `attrs` already carries a `title` key (case-insensitive, since HTML

@@ -4,6 +4,7 @@ use std::ops::ControlFlow;
 const NEXT: ControlFlow<()> = ControlFlow::Continue(());
 const END: ControlFlow<()> = ControlFlow::Break(());
 
+#[inline(never)]
 pub(crate) fn parse_list(
     cur: &mut LineCursor,
     options: &Options<'_>,
