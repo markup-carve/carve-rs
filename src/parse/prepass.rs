@@ -435,6 +435,9 @@ pub(in crate::parse) struct TermLineOwnership {
     pub(in crate::parse) fence_openers: HashMap<usize, TermFenceHost>,
     pub(in crate::parse) paragraph_quotes:
         std::cell::RefCell<HashMap<usize, Option<PrepassParagraph>>>,
+    // Per line, whether the run of nonblank lines ending there began on a list
+    // marker; memoized so the upward walk stays linear.
+    pub(in crate::parse) list_runs: std::cell::RefCell<HashMap<usize, bool>>,
 }
 
 pub(in crate::parse) struct TermFenceHost {
@@ -1595,6 +1598,29 @@ pub(in crate::parse) fn prepass_definition_line(line: &str) -> bool {
         || detect_abbreviation_def(bare).is_some()
 }
 
+/// Whether the run of nonblank lines ending at `index` began on a list marker.
+fn list_run(lines: &[&str], index: usize, terms: &TermLineOwnership) -> bool {
+    let mut memo = terms.list_runs.borrow_mut();
+    let mut at = index;
+    let found = loop {
+        if let Some(&known) = memo.get(&at) {
+            break known;
+        }
+        let bare = lines[at].trim_start_matches([' ', '\t', '>']);
+        if is_blank_line(bare) {
+            break false;
+        }
+        if is_list_marker(bare) || at == 0 {
+            break is_list_marker(bare);
+        }
+        at -= 1;
+    };
+    for line in at..=index {
+        memo.insert(line, found);
+    }
+    found
+}
+
 /// Is there a line below `index` that closes `open`?
 ///
 /// The suffix maximum rejects absent runs; column buckets answer compatible
@@ -1651,11 +1677,21 @@ pub(in crate::parse) fn prepass_fence_opens(
     let follows_colon_opener = index
         .checked_sub(1)
         .is_some_and(|above| detect_container_open(trim_ascii_start(lines[above])).is_some());
+    // A marker the stripper consumed starts an item body when a list is open
+    // above it (I2), so no paragraph there can hold a fence on its line.
+    let marker_line = prefix
+        .structural
+        .chars()
+        .any(|character| !matches!(character, '>' | ' ' | '\t'))
+        && index
+            .checked_sub(1)
+            .is_some_and(|above| list_run(lines, above, terms));
     PrepassFence {
         opens: closer_ahead
             || terms.fence_openers.contains_key(&index)
             || !paragraph_above
-            || follows_colon_opener,
+            || follows_colon_opener
+            || marker_line,
         quote_columns,
         host_content_col: if inline_marker_fence {
             0
