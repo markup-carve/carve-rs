@@ -168,6 +168,8 @@ pub(in crate::parse) fn resolve_pending_bodies(
         pending.into_iter().map(|body| (0usize, body)).collect();
     while let Some((slot, entry)) = work.pop() {
         let mut nested = Vec::new();
+        #[cfg(feature = "experimental-event-parser")]
+        let mut quote = None;
         let (children, item, loose_inside_chunk, layout) = match entry.body {
             Body::Colon(body) => {
                 // The body parses under the state its OPENER stood in, not the
@@ -186,6 +188,18 @@ pub(in crate::parse) fn resolve_pending_bodies(
                 let (children, loose, layout) = parse_item_body_into(body, options, &mut nested);
                 (children, Some(target), loose, layout)
             }
+            #[cfg(feature = "experimental-event-parser")]
+            Body::Quote(body) => {
+                let _depth = DepthScope::set(body.depth);
+                let _group = FigureGroupScope::set(body.in_group);
+                quote = Some(body.plus_anchor);
+                (
+                    parse_quote_parts_into(body.parts, options, &mut nested),
+                    None,
+                    false,
+                    None,
+                )
+            }
         };
         let child_slot = arena.len();
         arena.push(children);
@@ -196,6 +210,8 @@ pub(in crate::parse) fn resolve_pending_bodies(
             child_slot,
             loose_inside_chunk,
             layout,
+            #[cfg(feature = "experimental-event-parser")]
+            quote,
         });
         work.extend(nested.into_iter().map(|body| (child_slot, body)));
     }
@@ -219,6 +235,11 @@ pub(in crate::parse) fn resolve_pending_bodies(
             }
         }
         let node = &mut arena[link.slot][link.index];
+        #[cfg(feature = "experimental-event-parser")]
+        if let Some(plus_anchor) = link.quote {
+            fill_quote_children(node, children, plus_anchor);
+            continue;
+        }
         match link.item {
             None => fill_container_children(node, children),
             Some((item, widen_list)) => {

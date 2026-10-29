@@ -136,24 +136,565 @@ fn nested_event_cursor_fits_a_two_megabyte_stack_for_sixty_quotes() {
 
 #[cfg(feature = "experimental-event-parser-options")]
 #[test]
-fn deeper_quote_chains_decline_before_using_the_event_stack() {
+fn deeper_quote_chains_own_or_decline_on_a_small_stack() {
     let chain = format!("{}text\n", "> ".repeat(120));
-    for source in [
-        chain.clone(),
-        format!("\u{feff}{chain}"),
-        format!("prefix\r{chain}"),
+    for (source, owned) in [
+        (chain.clone(), true),
+        (format!("\u{feff}{chain}"), true),
+        (format!("prefix\r{chain}"), true),
+        (format!("> head\n{chain}"), true),
+        (format!("> head\nlazy\n{chain}"), true),
+        // Item and definition bodies parse their quotes eagerly.
+        (format!("- item\n  {chain}"), false),
+        (format!(":: term\n: desc\n  {chain}"), false),
+        // Colon bodies and footnotes keep their own readers.
+        (format!("::: note\n{chain}:::\n"), false),
+        (format!("[^n]: head\n    {chain}\nUse [^n].\n"), false),
     ] {
         std::thread::Builder::new()
             .stack_size(2 * 1024 * 1024)
             .spawn(move || {
-                let expected = parse_with_options(&source, &Options::default());
+                let expected = {
+                    let _standard_root = StandardEventRootGuard::install();
+                    let _standard_nested = StandardNestedReaderGuard::install();
+                    parse_with_options(&source, &Options::default())
+                };
                 let (actual, used) =
                     parse_experimental_event_blocks_with_options(&source, &Options::default());
-                assert!(!used);
-                assert_eq!(actual, expected);
+                assert_eq!(used, owned, "{source:?}");
+                assert_eq!(actual, expected, "{source:?}");
                 let (base_actual, base_used) = parse_experimental_event_blocks(&source);
-                assert!(!base_used);
-                assert_eq!(base_actual, expected);
+                assert_eq!(base_used, owned, "{source:?}");
+                assert_eq!(base_actual, expected, "{source:?}");
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+mod deep_quote_worklist {
+    use super::*;
+    use crate::{BlockMatch, CarveExtension, InlineMatch, MatcherContext};
+
+    const DEPTHS: [usize; 5] = [64, 120, 199, 200, 260];
+
+    #[derive(Default)]
+    struct Log {
+        blocks: RefCell<Vec<String>>,
+        inlines: RefCell<Vec<(usize, String)>>,
+    }
+
+    impl CarveExtension for Log {
+        fn name(&self) -> &'static str {
+            "deep-quote-order"
+        }
+
+        fn match_block(
+            &self,
+            lines: &[&str],
+            start: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<BlockMatch> {
+            self.blocks.borrow_mut().push(lines.get(start)?.to_string());
+            None
+        }
+
+        fn match_inline(
+            &self,
+            text: &str,
+            pos: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<InlineMatch> {
+            let prefix = text.get(pos..).unwrap_or("").chars().take(8).collect();
+            self.inlines.borrow_mut().push((pos, prefix));
+            None
+        }
+    }
+
+    fn quote(depth: usize) -> String {
+        "> ".repeat(depth)
+    }
+
+    /// A marker run with no content, which `strip_blockquote_prefix` reads
+    /// to an empty body.
+    fn bare(depth: usize) -> String {
+        format!("{}>", "> ".repeat(depth - 1))
+    }
+
+    fn staircase(depth: usize) -> String {
+        (1..=depth)
+            .rev()
+            .map(|level| format!("{}line\n{}\n", quote(level), bare(level)))
+            .collect()
+    }
+
+    /// `levels` lines, each one level shallower than the last and the first
+    /// `top - 1` deep, after a quote `depth` deep. As a caption, or a dangling
+    /// attribute when the parse order is observed, each line keeps one quote
+    /// eager, each inside the one before. With `top == levels` the eager
+    /// quotes are the outermost ones, above the whole deep chain.
+    fn eager_ladder(depth: usize, top: usize, levels: usize, line: &str) -> String {
+        let mut source = format!("{}text\n", quote(depth));
+        for step in 1..=levels {
+            source.push_str(&format!("{}{line}\n", quote(top - step)));
+        }
+        source
+    }
+
+    /// `(label, source, owned_when_observed, owned_unobserved)` for eager
+    /// ladders at the budget and one past it, at both ends of the chain.
+    fn eager_ladders(depth: usize) -> Vec<(String, String, bool, bool)> {
+        let budget = event_pipeline::DEEP_QUOTE_EAGER_BUDGET;
+        let mut ladders = Vec::new();
+        for (line, captioned) in [("^ caption", true), ("{.k}", false)] {
+            for levels in [budget, budget + 1] {
+                // "under direct": the eager quotes sit right below the
+                // levels the direct quote helpers parse, the deepest stacking
+                // of the two that admission allows.
+                for (end, top) in [
+                    ("inner", depth),
+                    ("outer", levels),
+                    (
+                        "under direct",
+                        event_pipeline::DIRECT_QUOTE_DEPTH_LIMIT + levels,
+                    ),
+                ] {
+                    let within = levels <= budget;
+                    ladders.push((
+                        format!("{line} ladder; levels={levels}; {end}"),
+                        eager_ladder(depth, top, levels, line),
+                        within,
+                        within || !captioned,
+                    ));
+                }
+            }
+        }
+        ladders
+    }
+
+    /// `(label, source, owned_when_observed)`. Every shape is owned when
+    /// nothing observes the parse order.
+    fn shapes(depth: usize) -> Vec<(String, String, bool)> {
+        let q = quote(depth);
+        let fixed = [
+            ("plain", format!("{q}text\n"), true),
+            ("unterminated", format!("{q}text"), true),
+            ("lazy", format!("{q}text\nlazy line\nmore lazy\n"), true),
+            ("root caption", format!("{q}text\n\n^ caption\n"), true),
+            (
+                "inner caption",
+                format!("{q}text\n{}^ inner\n", quote(depth - 1)),
+                true,
+            ),
+            ("emphasis leaf", format!("{q}*text* and _more_\n"), true),
+            ("list leaf", format!("{q}- one\n{q}- two\n"), true),
+            ("fence leaf", format!("{q}```\n{q}code\n{q}```\n"), true),
+            (
+                "attributes",
+                format!("{q}{{.k}}\n{q}text\n{}\n{q}{{.dangling}}\n", bare(depth)),
+                true,
+            ),
+            ("heading tail", format!("{q}text\n\n# after\n"), true),
+            (
+                "siblings",
+                format!("{q}deep\n{}\n{}tail\n", bare(2), quote(2)),
+                true,
+            ),
+            // One shallower line per level keeps every level eager when the
+            // parse order is observed, so that shape declines.
+            ("staircase", staircase(depth), false),
+        ];
+        let fixed = fixed
+            .into_iter()
+            .map(|(label, source, owned)| (label.to_string(), source, owned));
+        // A caption ladder past the budget declines even unobserved.
+        let ladders = eager_ladders(depth)
+            .into_iter()
+            .filter(|ladder| ladder.3)
+            .map(|(label, source, owned, _)| (label, source, owned));
+        fixed.chain(ladders).collect()
+    }
+
+    /// Item and definition bodies that host the deep chain. Their quotes
+    /// parse eagerly, outside the deferral and the eager budget, so admission
+    /// declines them before any callback runs.
+    fn item_hosted(depth: usize) -> Vec<(&'static str, String)> {
+        let q = quote(depth);
+        // `>   ` puts each deeper level at the content column of the item
+        // above it, so the chain alternates quote, item, quote, item.
+        let alternation = (0..depth)
+            .map(|level| {
+                let indent = ">   ".repeat(level);
+                format!("{indent}> - a\n{indent}>\n")
+            })
+            .collect();
+        vec![
+            ("quote/list alternation", alternation),
+            ("list hosts chain", format!("- item\n  {q}text\n")),
+            ("ordered hosts chain", format!("> 1. item\n>    {q}text\n")),
+            (
+                "definition hosts chain",
+                format!(":: term\n: desc\n  {q}text\n"),
+            ),
+        ]
+    }
+
+    /// With `collect`, the diagnostics collectors are installed, which makes
+    /// the parse order observable just as an extension does.
+    fn check(
+        label: &str,
+        source: &str,
+        options: &Options<'_>,
+        mode: ParseMode,
+        collect: bool,
+        owned: bool,
+    ) {
+        let run = |parse: &dyn Fn() -> Option<Document>| {
+            if collect {
+                let ((document, unattached), events) =
+                    collecting_lint_events(|| collecting_unattached_block_attrs(parse));
+                (document, unattached, events)
+            } else {
+                (parse(), Vec::new(), Vec::new())
+            }
+        };
+        let (expected, expected_unattached, expected_events) = run(&|| {
+            let _standard_root = StandardEventRootGuard::install();
+            let _standard_nested = StandardNestedReaderGuard::install();
+            Some(parse_with_options_mode_and_index(source, options, mode).0)
+        });
+        let used = std::cell::Cell::new(false);
+        let (actual, actual_unattached, actual_events) = run(&|| {
+            let (document, _, admitted) =
+                event_pipeline::parse_document_with_mode(source, options, mode)?;
+            used.set(admitted);
+            Some(document)
+        });
+        let Some(actual) = actual else {
+            assert!(!owned, "{label}: declined");
+            return;
+        };
+        assert!(owned, "{label}: expected a decline");
+        assert!(used.get(), "{label}");
+        assert_eq!(actual, expected.unwrap(), "{label}: ast");
+        assert_eq!(
+            actual_unattached, expected_unattached,
+            "{label}: unattached attributes"
+        );
+        assert_eq!(actual_events, expected_events, "{label}: lint events");
+    }
+
+    #[test]
+    fn deep_quote_shapes_match_standard_across_modes_and_options() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for depth in DEPTHS {
+                    for (shape, source, owned_observed) in shapes(depth) {
+                        for positions in [false, true] {
+                            for source_lines in [false, true] {
+                                let options = Options::default()
+                                    .with_positions(positions)
+                                    .with_source_lines(source_lines);
+                                for mode in
+                                    [ParseMode::Html, ParseMode::HtmlFacade, ParseMode::Carve]
+                                {
+                                    for collect in [false, true] {
+                                        let label = format!(
+                                            "depth={depth}; shape={shape}; positions={positions}; \
+                                             source_lines={source_lines}; mode={}; \
+                                             collect={collect}",
+                                            mode as u8
+                                        );
+                                        let owned = !collect || owned_observed;
+                                        check(&label, &source, &options, mode, collect, owned);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn deep_quote_shapes_keep_extension_callback_order() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for depth in DEPTHS {
+                    for (shape, source, owned) in shapes(depth) {
+                        for positions in [false, true] {
+                            for mode in [ParseMode::Html, ParseMode::HtmlFacade, ParseMode::Carve] {
+                                let label = format!(
+                                    "depth={depth}; shape={shape}; positions={positions}; mode={}",
+                                    mode as u8
+                                );
+                                let baseline = Log::default();
+                                let candidate = Log::default();
+                                let baseline_options = Options::default()
+                                    .with_positions(positions)
+                                    .with_extension(&baseline);
+                                let candidate_options = Options::default()
+                                    .with_positions(positions)
+                                    .with_extension(&candidate);
+                                let expected = {
+                                    let _standard_root = StandardEventRootGuard::install();
+                                    let _standard_nested = StandardNestedReaderGuard::install();
+                                    parse_with_options_mode_and_index(
+                                        &source,
+                                        &baseline_options,
+                                        mode,
+                                    )
+                                    .0
+                                };
+                                let event = event_pipeline::parse_document_with_mode(
+                                    &source,
+                                    &candidate_options,
+                                    mode,
+                                );
+                                let Some((actual, _, used)) = event else {
+                                    assert!(!owned, "{label}: declined");
+                                    assert!(candidate.blocks.borrow().is_empty(), "{label}");
+                                    assert!(candidate.inlines.borrow().is_empty(), "{label}");
+                                    continue;
+                                };
+                                assert!(owned, "{label}: expected a decline");
+                                assert!(used, "{label}");
+                                assert_eq!(actual, expected, "{label}: ast");
+                                assert_eq!(
+                                    *candidate.blocks.borrow(),
+                                    *baseline.blocks.borrow(),
+                                    "{label}: block callbacks"
+                                );
+                                assert_eq!(
+                                    *candidate.inlines.borrow(),
+                                    *baseline.inlines.borrow(),
+                                    "{label}: inline callbacks"
+                                );
+                            }
+                        }
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn deep_quote_item_bodies_decline_before_callbacks() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for depth in DEPTHS {
+                    let q = quote(depth);
+                    // Lists that host no deeper line stay owned.
+                    let near_misses = [
+                        ("list leaf", format!("{q}- one\n{q}- two\n")),
+                        ("list after chain", format!("{q}text\n> - after\n")),
+                    ];
+                    let declined = item_hosted(depth).into_iter().map(|(label, source)| {
+                        assert!(
+                            !event_pipeline::deep_quote_chain_owned(&source, &Options::default()),
+                            "depth={depth}; shape={label}: admitted"
+                        );
+                        (label, source, false)
+                    });
+                    let owned = near_misses
+                        .into_iter()
+                        .map(|(label, source)| (label, source, true));
+                    for (shape, source, owned) in declined.chain(owned) {
+                        for positions in [false, true] {
+                            let options = Options::default().with_positions(positions);
+                            for mode in [ParseMode::Html, ParseMode::HtmlFacade, ParseMode::Carve] {
+                                for collect in [false, true] {
+                                    let label = format!(
+                                        "depth={depth}; shape={shape}; positions={positions}; \
+                                         mode={}; collect={collect}",
+                                        mode as u8
+                                    );
+                                    check(&label, &source, &options, mode, collect, owned);
+                                }
+                                let log = Log::default();
+                                let observed = Options::default()
+                                    .with_positions(positions)
+                                    .with_extension(&log);
+                                let event = event_pipeline::parse_document_with_mode(
+                                    &source, &observed, mode,
+                                );
+                                assert_eq!(event.is_some(), owned, "depth={depth}; shape={shape}");
+                                if !owned {
+                                    assert!(log.blocks.borrow().is_empty(), "{shape}");
+                                    assert!(log.inlines.borrow().is_empty(), "{shape}");
+                                }
+                            }
+                        }
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// The event route must decline item-hosted chains on the release stack.
+    /// Only the event route runs here: the standard reader is not safe on
+    /// this stack at these depths, and admission is asserted first so a
+    /// regression fails as an assertion rather than an overflow.
+    #[test]
+    fn deep_quote_item_bodies_decline_on_the_release_stack() {
+        let stack = if cfg!(debug_assertions) {
+            4 * 1024 * 1024
+        } else {
+            512 * 1024
+        };
+        std::thread::Builder::new()
+            .stack_size(stack)
+            .spawn(|| {
+                for depth in [200, 260] {
+                    for (shape, source) in item_hosted(depth) {
+                        for positions in [false, true] {
+                            for observed in [false, true] {
+                                let label = format!(
+                                    "depth={depth}; shape={shape}; positions={positions}; \
+                                     observed={observed}"
+                                );
+                                let log = Log::default();
+                                let mut options = Options::default().with_positions(positions);
+                                if observed {
+                                    options = options.with_extension(&log);
+                                }
+                                assert!(
+                                    !event_pipeline::deep_quote_chain_owned(&source, &options),
+                                    "{label}: admitted"
+                                );
+                                let event = event_pipeline::parse_document_with_mode(
+                                    &source,
+                                    &options,
+                                    ParseMode::Html,
+                                );
+                                assert!(event.is_none(), "{label}: owned");
+                                assert!(log.blocks.borrow().is_empty(), "{label}");
+                                assert!(log.inlines.borrow().is_empty(), "{label}");
+                            }
+                        }
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// Each eager quote holds an event frame while its body and worklist run.
+    /// Admission keeps that chain short, so no quoted body runs out of frames
+    /// and drops the levels under it onto the recursive standard reader.
+    #[test]
+    fn deep_quote_eager_levels_keep_event_frames_on_the_release_stack() {
+        let stack = if cfg!(debug_assertions) {
+            4 * 1024 * 1024
+        } else {
+            512 * 1024
+        };
+        std::thread::Builder::new()
+            .stack_size(stack)
+            .spawn(|| {
+                for depth in [200, 260] {
+                    let mut cases = eager_ladders(depth);
+                    cases.push(("staircase".into(), staircase(depth), false, true));
+                    for (shape, source, owned_observed, owned_unobserved) in cases {
+                        for positions in [false, true] {
+                            for observer in ["none", "extension", "collectors"] {
+                                let label = format!(
+                                    "depth={depth}; shape={shape}; positions={positions}; \
+                                     observer={observer}"
+                                );
+                                let log = Log::default();
+                                let mut options = Options::default().with_positions(positions);
+                                if observer == "extension" {
+                                    options = options.with_extension(&log);
+                                }
+                                let parse = || {
+                                    event_pipeline::parse_document_with_mode(
+                                        &source,
+                                        &options,
+                                        ParseMode::Html,
+                                    )
+                                };
+                                event_pipeline::PEAK_EVENT_FRAMES.with(|peak| peak.set(0));
+                                let parsed = if observer == "collectors" {
+                                    let ((parsed, _), _) = collecting_lint_events(|| {
+                                        collecting_unattached_block_attrs(parse)
+                                    });
+                                    parsed
+                                } else {
+                                    parse()
+                                };
+                                let owned = if observer == "none" {
+                                    owned_unobserved
+                                } else {
+                                    owned_observed
+                                };
+                                let Some((document, _, used)) = parsed else {
+                                    assert!(!owned, "{label}: declined");
+                                    assert!(log.blocks.borrow().is_empty(), "{label}");
+                                    assert!(log.inlines.borrow().is_empty(), "{label}");
+                                    continue;
+                                };
+                                assert!(owned, "{label}: expected a decline");
+                                assert!(used, "{label}");
+                                let peak = event_pipeline::PEAK_EVENT_FRAMES.with(Cell::get);
+                                assert!(
+                                    peak < event_pipeline::NESTED_EVENT_DEPTH_LIMIT,
+                                    "{label}: {peak} event frames"
+                                );
+                                std::mem::forget(document);
+                            }
+                        }
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// The event route alone, on the stack a release embedder may give it.
+    /// Debug frames are several times larger, so a debug run only checks the
+    /// route on a stack no larger than the release floor times eight.
+    #[test]
+    fn deep_quote_event_route_fits_the_release_stack_floor() {
+        let stack = if cfg!(debug_assertions) {
+            4 * 1024 * 1024
+        } else {
+            512 * 1024
+        };
+        std::thread::Builder::new()
+            .stack_size(stack)
+            .spawn(|| {
+                for depth in [199, 200, 260] {
+                    for (shape, source, _) in shapes(depth) {
+                        for positions in [false, true] {
+                            let options = Options::default().with_positions(positions);
+                            let (document, _, used) = event_pipeline::parse_document_with_mode(
+                                &source,
+                                &options,
+                                ParseMode::Html,
+                            )
+                            .unwrap_or_else(|| panic!("depth={depth}; shape={shape}: declined"));
+                            assert!(used, "depth={depth}; shape={shape}");
+                            // Drop glue recurses once per level; this test is
+                            // about the parser's stack, not teardown.
+                            std::mem::forget(document);
+                        }
+                    }
+                }
             })
             .unwrap()
             .join()

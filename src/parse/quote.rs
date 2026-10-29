@@ -1,10 +1,23 @@
 use super::*;
 
+#[inline]
 pub(in crate::parse) fn parse_blockquote(
     cur: &mut LineCursor,
     options: &Options<'_>,
 ) -> Box<BlockNode> {
     let (span_start, parts, _) = collect_blockquote_body(cur, options);
+    parse_collected_blockquote(cur, options, span_start, parts)
+}
+
+/// The eager half of [`parse_blockquote`], for a caller that collected the body
+/// itself to decide whether the worklist may parse it instead.
+#[inline(never)]
+pub(in crate::parse) fn parse_collected_blockquote(
+    cur: &mut LineCursor,
+    options: &Options<'_>,
+    span_start: usize,
+    parts: Vec<LineBuffer>,
+) -> Box<BlockNode> {
     let mut children = Vec::new();
     for part in parts {
         let source = part.into_source();
@@ -12,48 +25,70 @@ pub(in crate::parse) fn parse_blockquote(
         drop(source);
         children.extend(blocks);
     }
-    if options.positions {
-        start_plus_quote_at_outer_marker(cur, span_start, &mut children);
+    if let Some(anchor) = nested_plus_quote_anchor(cur, options, span_start) {
+        anchor_nested_plus_quote(&mut children, anchor);
     }
     finish_blockquote(cur, options, span_start, children)
 }
 
+/// Where a quote opened as `> > +` starts the nested quote it hosts, when
+/// positions are on: the nested quote's own span starts on a later line.
+/// Out of line so its locals stay off the per-level frame of the quote descent.
 #[inline(never)]
-fn start_plus_quote_at_outer_marker(
+pub(in crate::parse) fn nested_plus_quote_anchor(
     cur: &LineCursor,
+    options: &Options<'_>,
     span_start: usize,
-    children: &mut [BlockNode],
-) {
-    let original = cur.lines.at(span_start);
-    let Some(after_outer) = strip_blockquote_prefix(original) else {
-        return;
-    };
-    if !strip_blockquote_prefix(after_outer).is_some_and(is_plus_marker) {
-        return;
+) -> Option<(usize, usize)> {
+    if !options.positions {
+        return None;
     }
-    if let (Some(line), Some(column), Some(BlockNode::BlockQuote(inner))) = (
-        cur.source_line(span_start),
-        cur.source_col(span_start),
-        children.first_mut(),
-    ) {
+    let original = cur.lines.at(span_start);
+    let after_outer = strip_blockquote_prefix(original)?;
+    if !strip_blockquote_prefix(after_outer).is_some_and(is_plus_marker) {
+        return None;
+    }
+    let line = cur.source_line(span_start)?;
+    let column = cur.source_col(span_start)?;
+    let outer_width = original[..original.len() - after_outer.len()]
+        .chars()
+        .count();
+    Some((line, document_column(column, outer_width)))
+}
+
+pub(in crate::parse) fn anchor_nested_plus_quote(
+    children: &mut [BlockNode],
+    (line, column): (usize, usize),
+) {
+    if let Some(BlockNode::BlockQuote(inner)) = children.first_mut() {
         if let Some(pos) = inner.pos.as_mut() {
             if pos.start_line > line {
-                let outer_width = original[..original.len() - after_outer.len()]
-                    .chars()
-                    .count();
                 pos.start_line = line;
-                pos.start_column = document_column(column, outer_width);
+                pos.start_column = column;
             }
         }
     }
 }
 
-#[inline(never)]
 pub(in crate::parse) fn finish_blockquote(
     cur: &mut LineCursor,
     options: &Options<'_>,
     span_start: usize,
     children: Vec<BlockNode>,
+) -> Box<BlockNode> {
+    let has_children = !children.is_empty();
+    finish_blockquote_shell(cur, options, span_start, children, has_children)
+}
+
+/// [`finish_blockquote`] for a node whose children may still be pending:
+/// `has_children` answers the caption question the children would.
+#[inline(never)]
+pub(in crate::parse) fn finish_blockquote_shell(
+    cur: &mut LineCursor,
+    options: &Options<'_>,
+    span_start: usize,
+    children: Vec<BlockNode>,
+    has_children: bool,
 ) -> Box<BlockNode> {
     let quote_pos = span_of(cur, span_start, cur.pos, options);
     // PART 9 §4d: a quote built out of nothing but structural-only `>` lines is
@@ -63,7 +98,7 @@ pub(in crate::parse) fn finish_blockquote(
     // empty quote nobody wrote the caption under (markup-carve/carve#2892).
     let caption_after_blank_reaches =
         cur.peek().is_some_and(is_blank_line) && cur.carried_reach(cur.pos + 1) == Some(true);
-    let caption = if children.is_empty()
+    let caption = if !has_children
         || (cur.carried_reach(cur.pos) == Some(false) && !caption_after_blank_reaches)
     {
         None

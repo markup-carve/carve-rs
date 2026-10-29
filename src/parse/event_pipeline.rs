@@ -1,9 +1,53 @@
 use super::*;
 
 const MIXED_QUOTE_DEPTH_LIMIT: usize = 32;
+// The direct quote helpers recurse through `parse_mixed_blocks` per level.
+pub(super) const DIRECT_QUOTE_DEPTH_LIMIT: usize = 8;
 // The mapped event frame is larger than the standard block frame on the stack.
 #[cfg(feature = "experimental-event-parser-options")]
 pub(super) const NESTED_EVENT_DEPTH_LIMIT: usize = 8;
+// Lines that may keep one quote level eager; see `deep_quote_chain_owned`.
+// The count bounds the eager quotes on any one chain, and each holds one event
+// frame, so a deep chain peaks at budget + 1 frames. Exhausting them would hand
+// the remaining ~190 levels to the recursive standard reader on top. Those
+// frames can sit under `DIRECT_QUOTE_DEPTH_LIMIT` direct helper levels, which
+// the count does not see; the release-stack tests run that stacking.
+#[cfg(feature = "experimental-event-parser-options")]
+pub(super) const DEEP_QUOTE_EAGER_BUDGET: usize = 3;
+#[cfg(feature = "experimental-event-parser-options")]
+const _: () = assert!(2 * (DEEP_QUOTE_EAGER_BUDGET + 1) <= NESTED_EVENT_DEPTH_LIMIT);
+
+// Event frames on the native stack. A deferred quote body is parsed from the
+// worklist, so its logical depth no longer measures the stack under it.
+#[cfg(feature = "experimental-event-parser-options")]
+thread_local! {
+    static EVENT_FRAMES: Cell<usize> = const { Cell::new(0) };
+}
+
+#[cfg(all(feature = "experimental-event-parser-options", test))]
+thread_local! {
+    pub(super) static PEAK_EVENT_FRAMES: Cell<usize> = const { Cell::new(0) };
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+struct EventFrame;
+
+#[cfg(feature = "experimental-event-parser-options")]
+impl EventFrame {
+    fn enter() -> Self {
+        EVENT_FRAMES.with(|frames| frames.set(frames.get() + 1));
+        #[cfg(test)]
+        PEAK_EVENT_FRAMES.with(|peak| peak.set(peak.get().max(EVENT_FRAMES.with(Cell::get))));
+        EventFrame
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+impl Drop for EventFrame {
+    fn drop(&mut self) {
+        EVENT_FRAMES.with(|frames| frames.set(frames.get().saturating_sub(1)));
+    }
+}
 
 #[cfg(test)]
 thread_local! {
@@ -557,9 +601,15 @@ pub(super) fn parse_nested_mapped_blocks(
     pending: &mut Vec<PendingBody>,
     positioned: bool,
 ) -> Option<Vec<BlockNode>> {
-    if NESTING_DEPTH.with(Cell::get) >= NESTED_EVENT_DEPTH_LIMIT {
+    let stacked = if scope.in_quoted_body {
+        EVENT_FRAMES.with(Cell::get)
+    } else {
+        NESTING_DEPTH.with(Cell::get)
+    };
+    if stacked >= NESTED_EVENT_DEPTH_LIMIT {
         return None;
     }
+    let _frame = EventFrame::enter();
     let _depth = DepthGuard::enter()?;
     let lines: Vec<&str> = source.source.lines().collect();
     let mut cur = LineCursor::new_with_cols(
@@ -584,10 +634,10 @@ pub(super) fn parse_nested_mapped_blocks(
         &lines,
         options,
         Some(&source.line_map),
-        scope.at_document_level,
         cur,
         record_extents.then_some(&mut observed),
         Some(&mut nested_pending),
+        scope.in_quoted_body,
     )?;
     #[cfg(test)]
     if !options.extensions.is_empty() {
@@ -633,6 +683,7 @@ pub(super) fn parse_drained_fragment(
     // The standard reader drains after its depth guard drops; each body
     // restores the depth it recorded when it was collected.
     let mut blocks = {
+        let _frame = EventFrame::enter();
         let _depth = DepthGuard::enter()?;
         let mut cur = LineCursor::new_with_cols(&lines, line_map, None);
         cur.reached = Some(&[]);
@@ -640,10 +691,10 @@ pub(super) fn parse_drained_fragment(
             &lines,
             options,
             line_map,
-            false,
             cur,
             None,
             Some(&mut pending),
+            false,
         )?
     };
     #[cfg(test)]
@@ -679,6 +730,7 @@ pub(super) fn parse_colon_body<'a>(
     if !colon_body_admitted(source) {
         return None;
     }
+    let _frame = EventFrame::enter();
     let _depth = DepthGuard::enter()?;
     let mut cur = if options.source_lines
         || options.positions
@@ -697,10 +749,10 @@ pub(super) fn parse_colon_body<'a>(
         &[],
         options,
         None,
-        false,
         cur,
         None,
         Some(pending),
+        false,
     )
     .expect("a deferring event cursor never declines");
     #[cfg(test)]
@@ -730,11 +782,56 @@ fn direct_definition_allowed(direct_owner: bool, options: &Options<'_>) -> bool 
 
 fn direct_quote_allowed(direct_owner: bool, options: &Options<'_>, line: &str) -> bool {
     direct_owner
+        && NESTING_DEPTH.with(Cell::get) < DIRECT_QUOTE_DEPTH_LIMIT
         && !options.source_lines
         && !options.positions
         && options.extensions.is_empty()
         && !needs_source_ending_map()
         && !line.contains("![")
+}
+
+/// May the worklist parse this collected quote body after the rest of the
+/// level? Only when the hollow node answers every question asked before the
+/// body is filled, and nothing observable moves across the deferral.
+fn quote_body_deferrable(
+    cur: &LineCursor<'_>,
+    options: &Options<'_>,
+    parts: &[LineBuffer],
+) -> bool {
+    // `finish_blockquote` asks whether the body is empty only to take a caption.
+    let after_blank_reaches =
+        cur.peek().is_some_and(is_blank_line) && cur.carried_reach(cur.pos + 1) == Some(true);
+    let caption_blocked = cur.carried_reach(cur.pos) == Some(false) && !after_blank_reaches;
+    let caption_follows = !caption_blocked && caption_slot_follows(cur);
+    if parse_order_observed(options) {
+        // The eager body would run before anything after the quote, so the
+        // level must end in silence: no caption, one part, blank lines only.
+        return !caption_follows
+            && parts.len() == 1
+            && (cur.pos..cur.lines.len()).all(|at| is_blank_line(cur.lines.at(at)));
+    }
+    !caption_follows || parts.iter().any(part_opens_with_block)
+}
+
+/// The lookahead of `consume_caption`, without consuming.
+fn caption_slot_follows(cur: &LineCursor<'_>) -> bool {
+    let mut at = cur.pos;
+    if cur.lines.line(at).is_some_and(is_blank_line) {
+        at += 1;
+    }
+    cur.lines
+        .line(at)
+        .is_some_and(|line| caption_content(line).is_some())
+}
+
+/// A part whose first line opens a quote, a paragraph or a list yields a block.
+fn part_opens_with_block(part: &LineBuffer) -> bool {
+    part.lines
+        .iter()
+        .map(|line| line.text.as_str())
+        .find(|line| !is_blank_line(line))
+        .and_then(|line| line.as_bytes().first())
+        .is_some_and(|byte| *byte == b'>' || byte.is_ascii_alphanumeric())
 }
 
 fn use_standard_event_paragraph(
@@ -894,13 +991,7 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
     let mut cur = LineCursor::new_with_cols(lines, line_map, col_map.as_deref());
     cur.at_document_level = at_document_level;
     parse_mixed_blocks_cursor::<DEFINITIONS, ABBREVIATIONS>(
-        lines,
-        options,
-        line_map,
-        at_document_level,
-        cur,
-        None,
-        None,
+        lines, options, line_map, cur, None, None, true,
     )
 }
 
@@ -917,10 +1008,10 @@ fn parse_mixed_blocks_with_root_columns<const DEFINITIONS: bool, const ABBREVIAT
         lines,
         options,
         Some(line_map),
-        true,
         cur,
         None,
         None,
+        true,
     )
 }
 
@@ -944,11 +1035,14 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
     lines: &[&str],
     options: &Options<'_>,
     line_map: Option<&[Option<usize>]>,
-    at_document_level: bool,
     mut cur: LineCursor<'_>,
     mut extents: Option<&mut Vec<(usize, usize)>>,
     pending_out: Option<&mut Vec<PendingBody>>,
+    // The caller fills hollow quotes before anything reads their children.
+    defer_quotes: bool,
 ) -> Option<Vec<BlockNode>> {
+    // Snapshot: nested paragraph probes toggle the cursor's flag and restore it.
+    let at_document_level = cur.at_document_level;
     let defer_pending = pending_out.is_some();
     let direct_owner = !defer_pending && extents.is_none();
     // Only the direct owner reads `lines`; everything else reads the cursor,
@@ -1101,8 +1195,28 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             if let Some((quote, end)) = direct {
                 cur.pos = end;
                 emit!(_block_source_line, BlockNode::BlockQuote(quote));
+                continue;
+            }
+            let (span_start, parts, _) = collect_blockquote_body(&mut cur, options);
+            if defer_quotes && quote_body_deferrable(&cur, options, &parts) {
+                let body = QuoteBodyPending {
+                    plus_anchor: nested_plus_quote_anchor(&cur, options, span_start),
+                    parts,
+                    depth: NESTING_DEPTH.with(Cell::get),
+                    in_group: IN_FIGURE_GROUP.with(Cell::get),
+                };
+                let node = finish_blockquote_shell(&mut cur, options, span_start, Vec::new(), true);
+                let index = out.len();
+                emit!(_block_source_line, *node);
+                pending_bodies.push(PendingBody {
+                    index,
+                    body: Body::Quote(body),
+                });
             } else {
-                emit!(_block_source_line, *parse_blockquote(&mut cur, options));
+                emit!(
+                    _block_source_line,
+                    *parse_collected_blockquote(&mut cur, options, span_start, parts)
+                );
             }
             continue;
         }
@@ -3687,6 +3801,7 @@ fn has_fence_candidate_without_final_newline(source: &str) -> bool {
 }
 
 pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
+    let original_source = source;
     let source_len = source.len();
     let normalized = if needs_event_normalization(source) {
         Some(normalize_source(source))
@@ -3697,8 +3812,23 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     // Rule A moves past-column openers before the block readers see them; the
     // event route reads lines in place, so it only takes documents the walk
     // leaves alone.
-    if has_deep_quote_chain(source) || walk_moves_lines(source) {
+    if walk_moves_lines(source) {
         return None;
+    }
+    if has_deep_quote_chain(source) {
+        // Only the option-aware route parses quote bodies on the worklist.
+        #[cfg(feature = "experimental-event-parser-options")]
+        return parse_document_with_custom_options(
+            original_source,
+            &Options::default(),
+            ParseMode::Html,
+        )
+        .map(|(document, _, admitted)| (document, admitted));
+        #[cfg(not(feature = "experimental-event-parser-options"))]
+        {
+            let _ = original_source;
+            return None;
+        }
     }
     if has_marker_description_comment_risk(source) {
         #[cfg(feature = "experimental-event-parser-options")]
@@ -4026,6 +4156,79 @@ fn has_deep_quote_chain(source: &str) -> bool {
     })
 }
 
+/// Whether a document with a deep quote chain keeps its quote levels on the
+/// worklist. A quote level stays eager, one native frame chain per level, only
+/// where `quote_body_deferrable` refuses it, and every refusal needs a line of
+/// its own: a caption, or, when the parse order is observed, the first line
+/// after the quote's last marked line, which is shallower than that line. A
+/// `+` line may split the parts of every quote around it, so it counts once
+/// per level. A quote marker after other text on its line (`- > >`) or a
+/// colon body is not proven here, so those decline. So does any line deeper
+/// than an earlier line that may open a list item or definition body: such a
+/// body parses its quotes eagerly, outside the deferral and this budget.
+#[cfg(feature = "experimental-event-parser-options")]
+pub(super) fn deep_quote_chain_owned(source: &str, options: &Options<'_>) -> bool {
+    // Footnote bodies parse on their own route.
+    if source.contains("[^") {
+        return false;
+    }
+    let observed = parse_order_observed(options);
+    let mut eager = 0usize;
+    let mut previous = 0usize;
+    // The shallowest depth at which a line may have opened an item body.
+    let mut item_depth: Option<usize> = None;
+    for line in source.lines() {
+        let mut rest = trim_ascii_start(line);
+        let mut depth = 0usize;
+        while let Some(next) = strip_blockquote_prefix(rest) {
+            rest = trim_ascii_start(next);
+            depth += 1;
+        }
+        if rest.contains('>') || rest.contains(":::") {
+            return false;
+        }
+        // Indentation is trimmed above, so a quote an item body hosts always
+        // counts deeper than the item's own line.
+        if item_depth.is_some_and(|item| depth > item) {
+            return false;
+        }
+        let trimmed = trim_ascii_end(rest);
+        if may_open_item_body(trimmed) {
+            item_depth = Some(item_depth.map_or(depth, |item| item.min(depth)));
+        }
+        if trimmed == "+" || trimmed.ends_with(" +") {
+            eager += depth + 1;
+        } else if caption_content(rest).is_some() || (observed && depth < previous) {
+            eager += 1;
+        }
+        if eager > DEEP_QUOTE_EAGER_BUDGET {
+            return false;
+        }
+        previous = depth;
+    }
+    true
+}
+
+/// Over-approximates every list marker (bullet, decimal, alphabetic, roman,
+/// bare dot) and definition marker (`::`, `:`) that could open a body.
+#[cfg(feature = "experimental-event-parser-options")]
+fn may_open_item_body(line: &str) -> bool {
+    let bytes = line.as_bytes();
+    match bytes.first() {
+        Some(b'-' | b'*' | b'.' | b':') => true,
+        // A bare `+` is the quote continuation marker, counted on its own.
+        Some(b'+') => bytes.len() > 1,
+        Some(byte) if byte.is_ascii_alphanumeric() => {
+            let run = bytes
+                .iter()
+                .take_while(|b| b.is_ascii_alphanumeric())
+                .count();
+            matches!(bytes.get(run), Some(b'.' | b')' | b'{'))
+        }
+        _ => false,
+    }
+}
+
 fn has_marker_description_comment_risk(source: &str) -> bool {
     if !source.contains("%%%") || !source.contains("::") {
         return false;
@@ -4053,7 +4256,7 @@ pub(super) fn parse_document_with_custom_options(
         None
     };
     let source = normalized.as_deref().unwrap_or(source);
-    if has_deep_quote_chain(source) || walk_moves_lines(source) {
+    if walk_moves_lines(source) || (has_deep_quote_chain(source) && !deep_quote_chain_owned(source, options)) {
         return None;
     }
     let may_have_link_defs = source.contains("]:") || !options.extensions.is_empty();

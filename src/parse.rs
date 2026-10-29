@@ -428,6 +428,16 @@ pub(crate) fn collecting_unattached_block_attrs<T>(f: impl FnOnce() -> T) -> (T,
     (out, collected.unwrap_or_default())
 }
 
+/// Whether anything records the ORDER in which block bodies are parsed:
+/// extension callbacks, the parser diagnostics, or the verse recorder.
+#[cfg(feature = "experimental-event-parser")]
+fn parse_order_observed(options: &Options<'_>) -> bool {
+    !options.extensions.is_empty()
+        || UNATTACHED_BLOCK_ATTRS.with(|slot| slot.borrow().is_some())
+        || LINT_EVENTS.with(|slot| slot.borrow().is_some())
+        || definition_regions::recording()
+}
+
 /// Record one dangling attribute run, if anybody is collecting.
 fn note_unattached_block_attrs(pos: Option<Pos>) {
     if probing() {
@@ -1437,6 +1447,36 @@ fn parse_quoted_mapped_source(source: &MappedSource, options: &Options<'_>) -> V
     })
 }
 
+/// [`parse_quoted_mapped_source`] for the worklist. Each part's own bodies
+/// join `pending`, shifted past the blocks of the parts before it.
+#[cfg(feature = "experimental-event-parser")]
+fn parse_quote_parts_into(
+    parts: Vec<LineBuffer>,
+    options: &Options<'_>,
+    pending: &mut Vec<PendingBody>,
+) -> Vec<BlockNode> {
+    let mut children = Vec::new();
+    for part in parts {
+        let source = part.into_source();
+        let mut part_pending = Vec::new();
+        let blocks = parse_mapped_source_at_level_into(
+            &source,
+            options,
+            false,
+            false,
+            true,
+            &mut part_pending,
+        );
+        let offset = children.len();
+        pending.extend(part_pending.into_iter().map(|mut body| {
+            body.index += offset;
+            body
+        }));
+        children.extend(blocks);
+    }
+    children
+}
+
 fn parse_mapped_source_at_document_level(
     source: &MappedSource,
     options: &Options<'_>,
@@ -2432,6 +2472,21 @@ enum Body {
     /// APPENDED to the item rather than assigned to it, and the worklist is
     /// what puts them back in source order (see [`resolve_pending_bodies`]).
     Item(ItemBody),
+    /// A quote's collected body. The event cursor defers one only where doing
+    /// so cannot reorder anything observable (see `quote_body_deferrable`).
+    #[cfg(feature = "experimental-event-parser")]
+    Quote(QuoteBodyPending),
+}
+
+/// A quote body collected by the event cursor but not yet parsed.
+#[cfg(feature = "experimental-event-parser")]
+struct QuoteBodyPending {
+    parts: Vec<LineBuffer>,
+    /// `NESTING_DEPTH` at the quote, as for [`ContainerBody`].
+    depth: usize,
+    in_group: bool,
+    /// `nested_plus_quote_anchor` at the quote, applied once the children exist.
+    plus_anchor: Option<(usize, usize)>,
 }
 
 /// A list item's content chunk, collected but not yet parsed.
@@ -2579,6 +2634,9 @@ struct ResolvedBody {
     loose_inside_chunk: bool,
     /// Recheck the gap after nested list bodies have filled their hollow nodes.
     layout: Option<ItemLayout>,
+    /// `Some` for a deferred quote body, carrying its `plus_anchor`.
+    #[cfg(feature = "experimental-event-parser")]
+    quote: Option<Option<(usize, usize)>>,
 }
 
 struct ItemLayout {
@@ -2612,6 +2670,26 @@ fn trailing_verbatim_pos(mut block: &BlockNode) -> Option<&Pos> {
             },
             _ => return None,
         };
+    }
+}
+
+/// Fill in the children of a quote the event cursor emitted hollow.
+#[cfg(feature = "experimental-event-parser")]
+fn fill_quote_children(
+    node: &mut BlockNode,
+    mut children: Vec<BlockNode>,
+    plus_anchor: Option<(usize, usize)>,
+) {
+    if let Some(anchor) = plus_anchor {
+        anchor_nested_plus_quote(&mut children, anchor);
+    }
+    match node {
+        BlockNode::BlockQuote(quote) => quote.children = children,
+        BlockNode::Figure(figure) => match &mut *figure.target {
+            FigureTarget::BlockQuote(quote) => quote.children = children,
+            _ => debug_assert!(false, "a pending quote body lost its quote"),
+        },
+        _ => debug_assert!(false, "a pending quote body lost its quote"),
     }
 }
 
