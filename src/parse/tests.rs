@@ -2074,6 +2074,154 @@ mod deep_worklist_owner {
             .join()
             .unwrap();
     }
+
+    /// `levels` items, each hosting an open `::: n` whose description body
+    /// holds the next level. Every entry takes the marker-hosted arm.
+    fn marker_definition_chain(levels: usize) -> String {
+        let lead = |level: usize| "    ".repeat(level);
+        wrapped(
+            (0..levels)
+                .map(|level| {
+                    let lead = lead(level);
+                    format!(
+                        "{lead}- l{level}\n{lead}  ::: n{level}\n{lead}  :: t{level}\n\
+                         {lead}  : d{level}\n\n"
+                    )
+                })
+                .chain([leaf(&lead(levels))])
+                .collect(),
+        )
+    }
+
+    /// Item, colon and description bodies: at least three levels each.
+    fn marker_chain_levels(depth: usize) -> usize {
+        depth.div_ceil(3)
+    }
+
+    /// Several items and descriptions in one marker-hosted body, and a loose
+    /// and a tight list around a multi-paragraph description.
+    const MARKER_HOSTED_CASES: [(&str, &str); 4] = [
+        (
+            "marker-hosted multiple definitions",
+            "::: wrap\n- a\n  ::: note\n  :: first\n  : alpha\n  : beta\n    - nested\n\
+             \x20 :: second\n  : gamma\n  : delta\n    > quote\n  :::\n:::\n",
+        ),
+        (
+            "marker-hosted indented term",
+            "::: wrap\n- a\n  ::: box\n   :: sub\n   : one\n   : two\n:::\n",
+        ),
+        (
+            "marker-hosted tight item",
+            "::: wrap\n- a\n  ::: note\n  :: t\n  : p1\n\n    p2\n  :::\n- b\n:::\n",
+        ),
+        (
+            "marker-hosted loose item",
+            "::: wrap\n- a\n  ::: note\n  :: t\n  : p1\n\n    p2\n  :::\n\n- b\n:::\n",
+        ),
+    ];
+
+    fn marker_hosted_definition_lists(label: &str, source: &str, options: &Options<'_>) -> usize {
+        event_pipeline::MARKER_HOSTED_DEFINITION_LISTS.with(|count| count.set(0));
+        let (document, _, used) =
+            event_pipeline::parse_document_with_mode(source, options, ParseMode::Html)
+                .unwrap_or_else(|| panic!("{label}: declined"));
+        assert!(used, "{label}");
+        std::mem::forget(document);
+        event_pipeline::MARKER_HOSTED_DEFINITION_LISTS.with(Cell::get)
+    }
+
+    #[test]
+    fn marker_hosted_definitions_match_standard() {
+        let chain = marker_definition_chain(SHALLOW_DEPTH);
+        let cases = MARKER_HOSTED_CASES
+            .into_iter()
+            .map(|(label, source)| (label, source.to_string()))
+            .chain([("marker definition chain", chain)]);
+        for (label, source) in cases {
+            let lists = marker_hosted_definition_lists(label, &source, &Options::default());
+            assert!(lists > 0, "{label}: marker-hosted arm not reached");
+            for row in full_matrix() {
+                check_row(1, label, &source, row);
+            }
+            for row in 0..CALLBACK_ROWS.len() {
+                check_callbacks(1, label, &source, row);
+            }
+            // A colon cursor never drains on the spot.
+            assert_eq!(
+                observed_definition_deferrals(label, &source),
+                0,
+                "{label}: deferred bodies"
+            );
+        }
+    }
+
+    /// Unobserved, each marker-hosted description body waits on the worklist,
+    /// so the chain reads deep on the event cursor without an event frame per
+    /// level.
+    fn check_marker_definition_chain(depth: usize, positions: bool) {
+        let label = format!("marker chain; depth={depth}; positions={positions}");
+        let levels = marker_chain_levels(depth);
+        let source = marker_definition_chain(levels);
+        event_pipeline::PEAK_EVENT_FRAMES.with(|peak| peak.set(0));
+        event_pipeline::PEAK_EVENT_DEPTH.with(|peak| peak.set(0));
+        let lists = marker_hosted_definition_lists(
+            &label,
+            &source,
+            &Options::default().with_positions(positions),
+        );
+        assert!(
+            lists >= levels.min(MAX_NESTING_DEPTH / 8),
+            "{label}: {lists} marker-hosted lists"
+        );
+        let frames = event_pipeline::PEAK_EVENT_FRAMES.with(Cell::get);
+        assert!(
+            frames < event_pipeline::EVENT_FRAME_LIMIT,
+            "{label}: {frames} frames"
+        );
+        let floor = levels.min(MAX_NESTING_DEPTH / 3) / 2;
+        let peak = event_pipeline::PEAK_EVENT_DEPTH.with(Cell::get);
+        assert!(peak >= floor, "{label}: event depth {peak}");
+        assert_eq!(WORKLIST_BASE.with(Cell::get), 0, "{label}: base leak");
+    }
+
+    #[test]
+    fn deep_marker_definition_chains_match_standard() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for (d, depth) in [SHALLOW_DEPTH, 64, 199, 200, 260].into_iter().enumerate() {
+                    check_marker_definition_chain(depth, d % 2 == 1);
+                    let source = marker_definition_chain(marker_chain_levels(depth));
+                    check_row(depth, "marker definition chain", &source, PAIRWISE[d]);
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// As in `deep_worklist_shapes_fit_the_release_stack_floor`.
+    #[test]
+    #[cfg_attr(debug_assertions, ignore = "release stack floor; run with --release")]
+    fn unobserved_marker_definition_chains_fit_the_release_stack_floor() {
+        let stack = if cfg!(debug_assertions) {
+            4 * 1024 * 1024
+        } else {
+            512 * 1024
+        };
+        std::thread::Builder::new()
+            .stack_size(stack)
+            .spawn(|| {
+                for depth in [199, 200, 260] {
+                    for positions in [false, true] {
+                        check_marker_definition_chain(depth, positions);
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
 }
 
 #[cfg(feature = "experimental-event-parser-options")]

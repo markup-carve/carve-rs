@@ -97,6 +97,7 @@ thread_local! {
     pub(super) static COLON_BODY_EVENT_PARSES: Cell<usize> = const { Cell::new(0) };
     pub(super) static DIRECT_QUOTE_PARSES: Cell<usize> = const { Cell::new(0) };
     pub(super) static OBSERVED_DEFINITION_DEFERRALS: Cell<usize> = const { Cell::new(0) };
+    pub(super) static MARKER_HOSTED_DEFINITION_LISTS: Cell<usize> = const { Cell::new(0) };
 }
 
 #[cfg(test)]
@@ -814,13 +815,25 @@ fn parse_marker_hosted_opener(
     cur: &mut LineCursor<'_>,
     options: &Options<'_>,
     line: &str,
+    index: usize,
+    pending: &mut Vec<PendingBody>,
+    drains_here: bool,
 ) -> Option<BlockNode> {
     if !cur.colon_view.is_some_and(|view| view.marker_hosted) {
         return None;
     }
     let line = trim_ascii_start(line);
+    // A colon cursor never drains on the spot, so observed bodies stay eager.
     if is_definition_list_start(line) {
-        return Some(parse_definition_list(cur, options));
+        #[cfg(test)]
+        MARKER_HOSTED_DEFINITION_LISTS.with(|count| count.set(count.get() + 1));
+        return Some(parse_definition_list_deferring(
+            cur,
+            options,
+            index,
+            pending,
+            drains_here,
+        ));
     }
     if strip_blockquote_prefix(line).is_some() {
         return Some(*parse_blockquote(cur, options));
@@ -1249,7 +1262,14 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             }
             continue;
         }
-        if let Some(node) = parse_marker_hosted_opener(&mut cur, options, line) {
+        if let Some(node) = parse_marker_hosted_opener(
+            &mut cur,
+            options,
+            line,
+            out.len(),
+            &mut pending_bodies,
+            drain_follows,
+        ) {
             emit!(_block_source_line, node);
             continue;
         }
