@@ -1756,6 +1756,28 @@ const MAX_GUARD_DEPTH: usize = 16;
 
 thread_local! {
     static GUARD_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    // Set while a walk asks whether it closes without its own guard's demotion.
+    static OWN_GUARD_KEPT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether the bare delimiter at `at` opens: 0 no, 1 yes, 2 only if the `_`
+/// or `/` before it is text.
+fn bare_opener_state(bytes: &[u8], at: usize) -> u8 {
+    let ch = bytes[at];
+    let Some(&next) = bytes.get(at + 1) else {
+        return 0;
+    };
+    let before = at.checked_sub(1).map(|b| bytes[b]);
+    if is_carve_ws(next) || next == ch || before == Some(ch) || (ch == b'=' && next == b'>') {
+        return 0;
+    }
+    match before {
+        None => 1,
+        Some(b'_') => 2,
+        Some(b'/') if matches!(ch, b'/' | b'_') => 2,
+        Some(b) if b.is_ascii_alphanumeric() => 0,
+        _ => 1,
+    }
 }
 
 /// Whether `pos` sits in a bracket run of this inline run. A kind open
@@ -1827,6 +1849,9 @@ fn find_emphasis_close_walk(
     let mut start = from;
     // The opener behind a guard that opened mid-walk; its pair is a guarded one.
     let mut guarded_at = None;
+    // The last opener of each other kind the walk has passed.
+    let mut last_opener: [Option<usize>; 5] = [None; 5];
+    let mut own_guard_opens: Option<bool> = None;
     let mut j = from;
     while j < bytes.len() {
         if opener_end.is_some_and(|end| j > end) {
@@ -1854,6 +1879,42 @@ fn find_emphasis_close_walk(
             } else {
                 bounds.braced_closers(bytes).bare_attributes(bytes, j)
             };
+            // A span of another kind open at this opener that closes inside
+            // its pair demotes the opener (E2), so the block is content. An
+            // opener the walk's own delimiter guards stays open only if the
+            // walk closes without that demotion.
+            let pair = pair.filter(|&(close, _)| {
+                !last_opener.iter().zip(*b"/*_~=").any(|(&open, d)| {
+                    let Some(open) = open else { return false };
+                    if d == ch {
+                        return false;
+                    }
+                    let state = bare_opener_state(bytes, open);
+                    if state != 1 && open != from {
+                        return false;
+                    }
+                    let crossed = cached_find_emphasis_close(bytes, open + 1, d, memo, bounds)
+                        .is_some_and(|outer| outer > j && outer < close);
+                    crossed
+                        && (state == 1
+                            || open != from
+                            || *own_guard_opens.get_or_insert_with(|| {
+                                if OWN_GUARD_KEPT.with(std::cell::Cell::get) {
+                                    return false;
+                                }
+                                OWN_GUARD_KEPT.with(|kept| kept.set(true));
+                                let mut seen = Vec::new();
+                                let mut block = None;
+                                let closes = find_emphasis_close_walk(
+                                    bytes, from, delim, memo, bounds, None, &mut seen, &mut block,
+                                )
+                                .or(block)
+                                .is_some();
+                                OWN_GUARD_KEPT.with(|kept| kept.set(false));
+                                closes
+                            }))
+                })
+            });
             if let Some((close, end)) = pair {
                 // Once the guard closes nowhere else its opener is blocked, and a
                 // later opener of the pair's kind takes the closer and the block.
@@ -1914,6 +1975,13 @@ fn find_emphasis_close_walk(
                     guarded_at = Some(j + 1);
                 }
             }
+        }
+        if matches!(ch, b'/' | b'*' | b'_' | b'~' | b'=')
+            && ch != delim
+            && !OpenKinds::is_open(ch)
+            && bare_opener_state(bytes, j) != 0
+        {
+            last_opener[emphasis_delim_index(ch)] = Some(j);
         }
         if let Some(&end) = attached.get(&j) {
             j = end;
