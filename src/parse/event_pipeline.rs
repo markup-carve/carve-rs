@@ -780,6 +780,27 @@ fn direct_definition_allowed(direct_owner: bool, options: &Options<'_>) -> bool 
     direct_owner && !options.source_lines && !options.positions && options.extensions.is_empty()
 }
 
+/// A marker-hosted colon body opens a quote or a definition entry below its
+/// own column too, ahead of every arm that would claim the line.
+#[inline(always)]
+fn parse_marker_hosted_opener(
+    cur: &mut LineCursor<'_>,
+    options: &Options<'_>,
+    line: &str,
+) -> Option<BlockNode> {
+    if !cur.colon_view.is_some_and(|view| view.marker_hosted) {
+        return None;
+    }
+    let line = trim_ascii_start(line);
+    if is_definition_list_start(line) {
+        return Some(parse_definition_list(cur, options));
+    }
+    if strip_blockquote_prefix(line).is_some() {
+        return Some(*parse_blockquote(cur, options));
+    }
+    None
+}
+
 fn direct_quote_allowed(direct_owner: bool, options: &Options<'_>, line: &str) -> bool {
     direct_owner
         && NESTING_DEPTH.with(Cell::get) < DIRECT_QUOTE_DEPTH_LIMIT
@@ -1159,15 +1180,8 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             }
             continue;
         }
-        // A marker-hosted colon body opens a quote or a definition entry below
-        // its own column too, ahead of every arm that would claim the line.
-        let marker_hosted = cur.colon_view.is_some_and(|view| view.marker_hosted);
-        if marker_hosted && is_definition_list_start(trim_ascii_start(line)) {
-            emit!(_block_source_line, parse_definition_list(&mut cur, options));
-            continue;
-        }
-        if marker_hosted && strip_blockquote_prefix(trim_ascii_start(line)).is_some() {
-            emit!(_block_source_line, *parse_blockquote(&mut cur, options));
+        if let Some(node) = parse_marker_hosted_opener(&mut cur, options, line) {
+            emit!(_block_source_line, node);
             continue;
         }
         if is_definition_list_start(line) {
