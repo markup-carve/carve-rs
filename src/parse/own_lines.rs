@@ -35,15 +35,19 @@ enum Last {
 
 #[derive(Clone, Copy)]
 enum Closer {
-    Fence(u8, usize),
+    /// Fence character, run length, and the opener's column.
+    Fence(u8, usize, usize),
     Colon(usize),
     Comment(usize),
 }
 
 impl Closer {
-    fn closes(self, rest: &str) -> bool {
+    fn closes(self, rest: &str, col: usize) -> bool {
         match self {
-            Closer::Fence(ch, len) => pure_fence(rest).is_some_and(|(c, n)| c == ch && n >= len),
+            // A run indented past its opener is code content (CARVE-P2-006).
+            Closer::Fence(ch, len, opener) => {
+                col <= opener && pure_fence(rest).is_some_and(|(c, n)| c == ch && n >= len)
+            }
             Closer::Colon(run) => colon_closer(rest) == Some(run),
             Closer::Comment(run) => comment_run(rest) == Some(run),
         }
@@ -54,6 +58,9 @@ struct Frame {
     kind: Kind,
     col: usize,
     canon: usize,
+    /// The column the block readers measure the frame at: a note's
+    /// marker-line content starts at its body column.
+    reader: usize,
     cut: usize,
     para: bool,
     last: Last,
@@ -67,6 +74,8 @@ struct Frame {
     line_block: bool,
     /// A fence or comment span open inside a line-block payload.
     span: Option<(u8, usize)>,
+    /// The marker line ends in a lone `+`, which may attach the next line (§17 L3).
+    plus: Option<usize>,
 }
 
 impl Frame {
@@ -75,6 +84,7 @@ impl Frame {
             kind,
             col: 0,
             canon: 0,
+            reader: 0,
             cut: 0,
             para: false,
             last: Last::None,
@@ -86,6 +96,7 @@ impl Frame {
             absorbs: false,
             line_block: false,
             span: None,
+            plus: None,
         }
     }
 }
@@ -265,13 +276,142 @@ fn closer_runs(lines: &[&str]) -> Runs {
     }
 }
 
+/// Per fence character, a max segment tree over columns holding the widest
+/// pure fence run still ahead at each column. Lines leave it in order.
+struct AheadTree {
+    size: usize,
+    /// Per column: the runs in line order and their suffix maxima.
+    columns: std::collections::HashMap<usize, (Vec<usize>, usize)>,
+    max: Vec<usize>,
+}
+
+struct Ahead {
+    next: usize,
+    /// Per line: the fence character and column of its pure run.
+    at: Vec<Option<(u8, usize)>>,
+    backtick: AheadTree,
+    tilde: AheadTree,
+}
+
+impl AheadTree {
+    fn new(found: &[(usize, usize)]) -> Self {
+        let mut size = 1;
+        for &(col, _) in found {
+            while size <= col {
+                size *= 2;
+            }
+        }
+        let mut columns: std::collections::HashMap<usize, (Vec<usize>, usize)> =
+            std::collections::HashMap::new();
+        for &(col, len) in found {
+            columns.entry(col).or_default().0.push(len);
+        }
+        let mut max = vec![0; 2 * size];
+        for (&col, (lens, _)) in columns.iter_mut() {
+            for k in (0..lens.len().saturating_sub(1)).rev() {
+                lens[k] = lens[k].max(lens[k + 1]);
+            }
+            max[size + col] = lens.first().copied().unwrap_or(0);
+        }
+        for k in (1..size).rev() {
+            max[k] = max[2 * k].max(max[2 * k + 1]);
+        }
+        AheadTree { size, columns, max }
+    }
+
+    fn pop(&mut self, col: usize) {
+        let (lens, from) = self.columns.get_mut(&col).expect("indexed column");
+        *from += 1;
+        let mut k = self.size + col;
+        self.max[k] = lens.get(*from).copied().unwrap_or(0);
+        k >>= 1;
+        while k > 0 {
+            self.max[k] = self.max[2 * k].max(self.max[2 * k + 1]);
+            k >>= 1;
+        }
+    }
+
+    fn widest(&self, lo: usize, hi: usize) -> usize {
+        let mut widest = 0;
+        let (mut l, mut r) = (self.size + lo, self.size + hi.min(self.size - 1) + 1);
+        while l < r {
+            if l & 1 == 1 {
+                widest = widest.max(self.max[l]);
+                l += 1;
+            }
+            if r & 1 == 1 {
+                r -= 1;
+                widest = widest.max(self.max[r]);
+            }
+            l >>= 1;
+            r >>= 1;
+        }
+        widest
+    }
+}
+
+impl Ahead {
+    fn new(lines: &[&str]) -> Self {
+        let mut found_b = Vec::new();
+        let mut found_t = Vec::new();
+        let mut at = Vec::with_capacity(lines.len());
+        for line in lines {
+            let (col, rest) = quoted_measure(line);
+            match pure_fence(rest) {
+                Some((ch, n)) => {
+                    if ch == b'`' {
+                        found_b.push((col, n));
+                    } else {
+                        found_t.push((col, n));
+                    }
+                    at.push(Some((ch, col)));
+                }
+                None => at.push(None),
+            }
+        }
+        Ahead {
+            next: 0,
+            at,
+            backtick: AheadTree::new(&found_b),
+            tilde: AheadTree::new(&found_t),
+        }
+    }
+
+    /// Drop every line up to and including `at`.
+    fn advance(&mut self, at: usize) {
+        while self.next <= at && self.next < self.at.len() {
+            if let Some((ch, col)) = self.at[self.next] {
+                if ch == b'`' {
+                    self.backtick.pop(col);
+                } else {
+                    self.tilde.pop(col);
+                }
+            }
+            self.next += 1;
+        }
+    }
+
+    fn widest(&self, ch: u8, lo: usize, hi: usize) -> usize {
+        if lo > hi {
+            return 0;
+        }
+        if ch == b'`' {
+            self.backtick.widest(lo, hi)
+        } else {
+            self.tilde.widest(lo, hi)
+        }
+    }
+}
+
 struct Walk<'a> {
     lines: Vec<&'a str>,
     frames: Vec<Frame>,
     reach: usize,
     runs: Option<Runs>,
-    /// `widest_from` tables per (fence char, column).
-    by_column: std::collections::HashMap<(u8, usize), Vec<usize>>,
+    ahead: Option<Ahead>,
+    /// Fence-shaped lines the walk read as paragraph text, with their owner's
+    /// content column.
+    text_fences: Vec<(usize, usize)>,
 }
 
 /// One line being rewritten: `out` is written, `src` remains.
@@ -311,6 +451,17 @@ impl<'s> Cursor<'s> {
                     .push((at, authored.len() as isize - col as isize));
             }
         }
+        self.src = self.rest;
+    }
+
+    /// Replace the leading run with `frame`, which the readers take as the
+    /// line's container prefix.
+    fn frame(&mut self, frame: &str) {
+        let authored = &self.src[..self.src.len() - self.rest.len()];
+        self.out.push_str(frame);
+        let at = self.out.chars().count();
+        self.edits
+            .push((at, authored.len() as isize - frame.chars().count() as isize));
         self.src = self.rest;
     }
 
@@ -374,16 +525,13 @@ fn walk_from(source: &str, frontmatter: bool) -> Option<OwnedSource> {
         frames: vec![Frame::new(Kind::Doc)],
         reach: 0,
         runs: None,
-        by_column: std::collections::HashMap::new(),
+        ahead: None,
+        text_fences: Vec::new(),
     };
-    let mut result = String::with_capacity(source.len());
-    result.push_str(prefix);
-    let mut edits = Vec::new();
+    let mut out_lines = Vec::with_capacity(walk.lines.len());
+    let mut line_edits = Vec::with_capacity(walk.lines.len());
     let mut after_plus = false;
     for at in 0..walk.lines.len() {
-        if at > 0 {
-            result.push('\n');
-        }
         let line = walk.lines[at];
         let mut c = Cursor {
             out: String::new(),
@@ -394,9 +542,20 @@ fn walk_from(source: &str, frontmatter: bool) -> Option<OwnedSource> {
         };
         c.measure();
         walk.line(at, &mut c, &mut after_plus);
-        result.push_str(&c.out);
-        result.push_str(c.src);
-        edits.extend(c.edits.into_iter().map(|(at_col, delta)| LineEdit {
+        c.out.push_str(c.src);
+        out_lines.push(c.out);
+        line_edits.push(c.edits);
+    }
+    frame_text_fences(&mut out_lines, &mut line_edits, &walk.text_fences);
+    let mut result = String::with_capacity(source.len());
+    result.push_str(prefix);
+    let mut edits = Vec::new();
+    for (at, (line, line_edit)) in out_lines.iter().zip(line_edits).enumerate() {
+        if at > 0 {
+            result.push('\n');
+        }
+        result.push_str(line);
+        edits.extend(line_edit.into_iter().map(|(at_col, delta)| LineEdit {
             line: first_line + at,
             at: at_col,
             delta,
@@ -406,6 +565,107 @@ fn walk_from(source: &str, frontmatter: bool) -> Option<OwnedSource> {
         source: result,
         edits,
     })
+}
+
+/// `^(`{3,}|~{3,})`: the fence character and run length.
+fn fence_run(rest: &str) -> Option<(u8, usize)> {
+    let ch = *rest.as_bytes().first()?;
+    if ch != b'`' && ch != b'~' {
+        return None;
+    }
+    let n = rest.bytes().take_while(|&b| b == ch).count();
+    (n >= 3).then_some((ch, n))
+}
+
+/// The readers re-derive a fence line's reading from the walk's output, where
+/// moved lines can supply a closer the source did not have (CARVE-P2-006). A
+/// fence-shaped line the walk read as text is framed LAZY at its owner's column
+/// when a closer-shaped run lies below it at its column or deeper.
+fn frame_text_fences(
+    lines: &mut [String],
+    edits: &mut [Vec<(usize, isize)>],
+    text_fences: &[(usize, usize)],
+) {
+    if text_fences.is_empty() {
+        return;
+    }
+    let segment = |line: &str| -> (usize, usize, usize) {
+        let mut s = line;
+        let (mut col, mut len) = indent_cols(s);
+        while let Some(n) = quote_marker(&s[len..]) {
+            s = &s[len + n..];
+            (col, len) = indent_cols(s);
+        }
+        (line.len() - s.len(), col, len)
+    };
+    let size = lines.iter().map(|line| segment(line).1).max().unwrap_or(0) + 2;
+    // Index `size - 1 - col`, so a prefix holds every column at or past `col`.
+    let mut backtick = vec![0usize; size];
+    let mut tilde = vec![0usize; size];
+    let add = |tree: &mut [usize], col: usize, run: usize| {
+        let mut k = size - 1 - col;
+        while k < size {
+            tree[k] = tree[k].max(run);
+            k |= k + 1;
+        }
+    };
+    let widest = |tree: &[usize], col: usize| {
+        let mut best = 0;
+        let mut k = (size - 1 - col) as isize;
+        while k >= 0 {
+            best = best.max(tree[k as usize]);
+            k = ((k as usize & (k as usize + 1)) as isize) - 1;
+        }
+        best
+    };
+    let mut next = text_fences.len();
+    for j in (0..lines.len()).rev() {
+        if next == 0 {
+            break;
+        }
+        let (prefix_len, col, indent_len) = segment(&lines[j]);
+        let rest_at = prefix_len + indent_len;
+        if text_fences[next - 1].0 == j {
+            let frame_col = text_fences[next - 1].1;
+            next -= 1;
+            if let Some((ch, n)) = fence_run(&lines[j][rest_at..]) {
+                let tree = if ch == b'`' { &backtick } else { &tilde };
+                if widest(tree, col) >= n {
+                    let line = &lines[j];
+                    let prefix_chars = line[..prefix_len].chars().count();
+                    let old_rest = line[..rest_at].chars().count();
+                    let authored_rest = old_rest as isize
+                        + edits[j]
+                            .iter()
+                            .filter(|e| e.0 <= old_rest)
+                            .map(|e| e.1)
+                            .sum::<isize>();
+                    edits[j].retain(|e| e.0 < prefix_chars);
+                    let kept: isize = edits[j].iter().map(|e| e.1).sum();
+                    let new_rest = prefix_chars + frame_col + LAZY.chars().count();
+                    let delta = authored_rest - new_rest as isize - kept;
+                    if delta != 0 {
+                        edits[j].push((new_rest, delta));
+                    }
+                    let mut framed = String::with_capacity(line.len() + frame_col + LAZY.len());
+                    framed.push_str(&line[..prefix_len]);
+                    framed.extend(std::iter::repeat(' ').take(frame_col));
+                    framed.push_str(LAZY);
+                    framed.push_str(&line[rest_at..]);
+                    lines[j] = framed;
+                }
+            }
+        }
+        let (prefix_len, col, indent_len) = segment(&lines[j]);
+        if let Some((ch, n)) = pure_fence(&lines[j][prefix_len + indent_len..]) {
+            let tree = if ch == b'`' {
+                &mut backtick
+            } else {
+                &mut tilde
+            };
+            add(tree, col, n);
+        }
+    }
 }
 
 /// Whether the walk moves any line of `source`.
@@ -450,27 +710,13 @@ fn absorbs_colon(rest: &str) -> bool {
 }
 
 impl<'a> Walk<'a> {
-    /// The widest closer run of `ch` at or after line `from`, counting only
-    /// closers written at `col` or deeper.
-    fn widest_from(&mut self, ch: u8, col: usize, from: usize) -> usize {
+    /// Whether a closer for a `len` run of `ch` lies after line `at`, written
+    /// from column `lo` to column `hi`. The walk asks in line order.
+    fn closer_ahead(&mut self, ch: u8, len: usize, at: usize, lo: usize, hi: usize) -> bool {
         let lines = &self.lines;
-        let widest = self.by_column.entry((ch, col)).or_insert_with(|| {
-            let mut widest = vec![0; lines.len() + 1];
-            for j in (0..lines.len()).rev() {
-                widest[j] = widest[j + 1];
-                let (m_col, rest) = quoted_measure(lines[j]);
-                if m_col < col {
-                    continue;
-                }
-                if let Some((c, n)) = pure_fence(rest) {
-                    if c == ch {
-                        widest[j] = widest[j].max(n);
-                    }
-                }
-            }
-            widest
-        });
-        widest.get(from).copied().unwrap_or(0)
+        let ahead = self.ahead.get_or_insert_with(|| Ahead::new(lines));
+        ahead.advance(at);
+        ahead.widest(ch, lo, hi) >= len
     }
 
     /// Whether line `next` holds a block at `col` under `depth` quote levels.
@@ -565,7 +811,7 @@ impl<'a> Walk<'a> {
                 if closes {
                     self.top().span = None;
                 }
-            } else if closer.is_some_and(|cl| cl.closes(c.rest)) {
+            } else if closer.is_some_and(|cl| cl.closes(c.rest, c.col)) {
                 self.frames.pop();
                 self.top().last = Last::Block;
             } else if line_block {
@@ -599,15 +845,49 @@ impl<'a> Walk<'a> {
         if inner.kind == Kind::Fence {
             self.frames.pop();
         }
-        let form = self.classify(c.rest, reached, at);
+        let col = c.col;
+        let form = self.classify(c.rest, reached, at, col);
         let top_para = self.frames.last().expect("frame").para;
+        // Past a missed note a marker opens where an item or a description body
+        // owns it (§10 I2), or beside a missed list.
+        let missed_note = missed
+            && self.frames[reached + 1..]
+                .iter()
+                .any(|f| f.kind == Kind::Note);
         if missed
             && !c.rest.is_empty()
             && top_para
             && !form.interrupts()
             && !matches!(&form, Form::Item(_, _, axes)
                 if self.frames.get(reached + 1).is_some_and(|f| f.kind == Kind::Item && &f.axes == axes))
+            && !(missed_note
+                && matches!(form, Form::Item(..))
+                && (matches!(self.frames[reached].kind, Kind::Item | Kind::Dd)
+                    || self.frames[reached + 1..]
+                        .iter()
+                        .any(|f| f.kind == Kind::Item)))
         {
+            // Past a missed note the line is framed LAZY in the deepest
+            // container, so every reader folds it there (carve#3885).
+            if missed_note && self.top().plus != Some(at.wrapping_sub(1)) {
+                let mut frame = String::new();
+                for k in reached + 1..self.frames.len() {
+                    if self.frames[k].kind == Kind::Quote {
+                        frame.extend(std::iter::repeat(' ').take(self.frames[k - 1].reader));
+                        frame.push_str("> ");
+                    }
+                }
+                let leaf = self.frames.last().expect("frame");
+                let col = if leaf.kind == Kind::Quote {
+                    0
+                } else {
+                    leaf.reader
+                };
+                frame.extend(std::iter::repeat(' ').take(col));
+                frame.push_str(LAZY);
+                c.frame(&frame);
+                return;
+            }
             let owner = &self.frames[reached];
             let next = &self.frames[reached + 1];
             let limit = if next.kind == Kind::Quote {
@@ -616,6 +896,10 @@ impl<'a> Walk<'a> {
                 next.canon.saturating_sub(1)
             };
             let target = c.col.saturating_sub(owner.cut).max(owner.canon).min(limit);
+            let canon = owner.canon;
+            if fence_run(c.rest).is_some() {
+                self.text_fences.push((at, canon));
+            }
             c.lead(target);
             return;
         }
@@ -648,6 +932,11 @@ impl<'a> Walk<'a> {
                 } else {
                     owner.canon
                 };
+                if owner.para && fence_run(c.rest).is_some() {
+                    let canon = owner.canon;
+                    self.text_fences.push((at, canon));
+                }
+                let owner = self.top();
                 owner.absorbs = (owner.para && owner.absorbs) || absorbs_colon(c.rest);
                 owner.para = true;
                 if !term {
@@ -660,17 +949,20 @@ impl<'a> Walk<'a> {
                 let col = c.col;
                 c.lead_as(canon, matches!(form, Form::Term | Form::Dd(_)));
                 let owner = self.frames.len() - 1;
-                self.apply(owner, col, form, canon, at, c);
+                let reader = self.frames[owner].reader;
+                self.apply(owner, col, form, canon, reader, at, c);
             }
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn apply(
         &mut self,
         owner: usize,
         col: usize,
         form: Form,
         canon: usize,
+        reader: usize,
         at: usize,
         c: &mut Cursor<'_>,
     ) {
@@ -693,6 +985,7 @@ impl<'a> Walk<'a> {
                 let mut f = Frame::new(Kind::Fence);
                 f.col = o_col;
                 f.canon = o_canon;
+                f.reader = reader;
                 f.cut = col.saturating_sub(canon);
                 f.closer = Some(closer);
                 f.line_block = line_block;
@@ -702,6 +995,7 @@ impl<'a> Walk<'a> {
                 let mut f = Frame::new(Kind::Colon);
                 f.col = o_col;
                 f.canon = o_canon;
+                f.reader = reader;
                 f.cut = col.saturating_sub(canon);
                 f.run = run;
                 self.frames.push(f);
@@ -717,13 +1011,14 @@ impl<'a> Walk<'a> {
                 self.content(at_frame, 0, 0, at, c);
             }
             Form::Item(width, head, axes) => {
-                self.push_marker(Kind::Item, col, canon, width, head, axes, at, c);
+                self.push_marker(Kind::Item, col, canon, reader, width, head, axes, at, c);
             }
             Form::Note(head) => {
                 self.push_marker(
                     Kind::Note,
                     col,
                     canon,
+                    reader,
                     FOOTNOTE_BODY_COLUMN,
                     head,
                     String::new(),
@@ -732,7 +1027,7 @@ impl<'a> Walk<'a> {
                 );
             }
             Form::Dd(w) => {
-                self.push_marker(Kind::Dd, col, canon, w, w, String::new(), at, c);
+                self.push_marker(Kind::Dd, col, canon, reader, w, w, String::new(), at, c);
             }
             _ => {}
         }
@@ -744,6 +1039,7 @@ impl<'a> Walk<'a> {
         kind: Kind,
         col: usize,
         canon: usize,
+        reader: usize,
         width: usize,
         head: usize,
         axes: String,
@@ -753,6 +1049,7 @@ impl<'a> Walk<'a> {
         let mut f = Frame::new(kind);
         f.col = col + width;
         f.canon = canon + width;
+        f.reader = reader + width;
         f.cut = col.saturating_sub(canon);
         f.marker = Some((col, canon));
         f.axes = axes;
@@ -769,29 +1066,44 @@ impl<'a> Walk<'a> {
         if c.rest.is_empty() || self.frames.len() > MAX_NESTING_DEPTH {
             return;
         }
-        let form = self.classify(c.rest, frame, at);
+        let opener_col = if self.frames[frame].kind == Kind::Quote {
+            c.col
+        } else {
+            start + c.col
+        };
+        let form = self.classify(c.rest, frame, at, opener_col);
         if matches!(form, Form::Text) {
             let col = c.col;
             let absorbs = absorbs_colon(c.rest);
             c.lead(col);
+            let plus = is_cont_marker(c.rest.trim_end_matches([' ', '\t']));
             let f = &mut self.frames[frame];
             f.absorbs = absorbs;
             f.para = true;
+            if plus {
+                f.plus = Some(at);
+            }
             f.last = Last::Para;
             return;
         }
         if self.frames[frame].kind == Kind::Quote {
             let col = c.col;
             c.lead(0);
-            return self.apply(frame, col, form, 0, at, c);
+            return self.apply(frame, col, form, 0, 0, at, c);
         }
         let col = start + c.col;
         let m = c.col;
         c.lead(m);
-        self.apply(frame, col, form, canon + m, at, c);
+        let f = &self.frames[frame];
+        let reader = if f.kind == Kind::Note {
+            f.reader
+        } else {
+            f.reader + canon + m - f.canon
+        };
+        self.apply(frame, col, form, canon + m, reader, at, c);
     }
 
-    fn classify(&mut self, rest: &str, owner: usize, at: usize) -> Form {
+    fn classify(&mut self, rest: &str, owner: usize, at: usize, col: usize) -> Form {
         // Line-final whitespace is trimmed before a line is read.
         let rest = rest.trim_end_matches([' ', '\t']);
         if rest.is_empty() {
@@ -839,11 +1151,11 @@ impl<'a> Walk<'a> {
             let len = rest.bytes().take_while(|&b| b == ch).count();
             // A closer below the owner's column never matches (CARVE-P0-014).
             let owner_col = self.frames[owner].col;
-            let reachable = self.widest_from(ch, owner_col, at + 1) >= len;
+            let reachable = self.closer_ahead(ch, len, at, owner_col, col);
             if owner_para && !reachable {
                 return Form::Text;
             }
-            return Form::Fence(Closer::Fence(ch, len), reachable, false);
+            return Form::Fence(Closer::Fence(ch, len, col), reachable, false);
         }
         if let Some(run) = comment_run(rest) {
             let lines = &self.lines;

@@ -402,6 +402,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             && is_line_comment_any_column(line)
             && !line.starts_with(LAZY)
             && !self.item_paragraph_open.get()
+            && (self.items.is_empty() || !self.comment_precedes_a_sibling(line))
         {
             return END;
         }
@@ -2407,7 +2408,18 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 .has_code_closer_after(self.cur.pos + 1, open.fence_char, open.fence_len)
                 && fence_interrupts
         });
-        if self.item_open_fence.is_some() || fence_open.is_none() || rejected_fence_has_closer {
+        // The walk frames a fence line it read as text; it is still the
+        // rejected fence the item's span reading starts from.
+        let walk_text_fence = fence_open.is_none()
+            && dedented.starts_with(LAZY)
+            && detect_fence_open(strip_lazy(&dedented)).is_some();
+        if walk_text_fence {
+            self.item_unopened_fence_span = true;
+            self.item_unclosed_fence_base.get_or_insert(indent);
+        } else if self.item_open_fence.is_some()
+            || fence_open.is_none()
+            || rejected_fence_has_closer
+        {
             track_collected_fence(&mut self.item_open_fence, &dedented, true, indent);
         } else {
             self.item_unopened_fence_span = true;

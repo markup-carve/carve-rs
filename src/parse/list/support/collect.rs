@@ -1079,6 +1079,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && !definition_comment_band
             && !definition_band_inline_closer
             && !retained_item_fence
+            && !comment_fence.is_some_and(|(run, _)| is_comment_fence_close_any_column(line, run))
         {
             break;
         }

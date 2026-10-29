@@ -740,11 +740,26 @@ pub(crate) const ITEM_PARAGRAPH: &str = "\u{0000}P\u{0000}";
 /// as a visible sentinel. `tests/lazy_framing_never_leaks.rs` generates the
 /// shapes that tell the two apart rather than listing them.
 pub(crate) fn strip_lazy(line: &str) -> &str {
-    line.strip_prefix(LAZY_OWNER)
-        .or_else(|| line.strip_prefix(LAZY_INDENT))
-        .or_else(|| line.strip_prefix(LAZY))
-        .or_else(|| line.strip_prefix(ITEM_PARAGRAPH))
-        .unwrap_or(line)
+    let mut line = line;
+    loop {
+        // The walk frames a lazy line at its owner's column, so a reader that
+        // removed fewer columns still sees the frame behind indentation, and a
+        // reader that frames it again leaves two.
+        let framed = line.trim_start_matches([' ', '\t']);
+        if framed.len() != line.len() && framed.starts_with(LAZY) {
+            line = framed;
+            continue;
+        }
+        match line
+            .strip_prefix(LAZY_OWNER)
+            .or_else(|| line.strip_prefix(LAZY_INDENT))
+            .or_else(|| line.strip_prefix(LAZY))
+            .or_else(|| line.strip_prefix(ITEM_PARAGRAPH))
+        {
+            Some(rest) => line = rest,
+            None => return line,
+        }
+    }
 }
 
 /// Join collected lines with a terminal newline so a trailing empty line
