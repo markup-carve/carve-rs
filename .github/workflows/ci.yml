@@ -248,6 +248,26 @@ jobs:
       # everything could not pass.
       - run: cargo test --locked --no-default-features --test includes --test include_conformance
 
+  stack-floor-release:
+    # The stack-floor ratchets carry separate release ceilings, and every other
+    # job builds debug, so a release-only regression reached main unseen
+    # (carve-rs#3491).
+    name: Stack floor ratchets (release)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - run: cargo nextest run --locked --release --test suite -E 'test(/^stack_floor_attribution::/)'
+
   event-parser:
     name: Experimental event parser parity
     runs-on: ubuntu-latest

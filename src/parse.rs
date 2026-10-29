@@ -1386,7 +1386,7 @@ fn parse_blocks_with_options_at_level_into_reached_recording(
     } else {
         Vec::new()
     };
-    let mut cursor = LineCursor::new_with_cols(
+    let mut cursor = boxed_cursor(
         &lines,
         want_lines.then_some(line_map.as_slice()),
         options.positions.then_some(col_map.as_slice()),
@@ -1412,6 +1412,17 @@ fn parse_blocks_with_options_at_level_into_reached_recording(
             closed_initial_container_end: cursor.closed_initial_container_end,
         },
     )
+}
+
+/// The cursor lives on the heap: this frame sits on the stack once per quote
+/// level, and a `LineCursor` held here made it the tallest one.
+#[inline(never)]
+fn boxed_cursor<'a>(
+    lines: &'a [&'a str],
+    line_map: Option<&'a [Option<usize>]>,
+    col_map: Option<&'a [Option<isize>]>,
+) -> Box<LineCursor<'a>> {
+    Box::new(LineCursor::new_with_cols(lines, line_map, col_map))
 }
 
 fn parse_mapped_source(source: &MappedSource, options: &Options<'_>) -> Vec<BlockNode> {
@@ -2130,6 +2141,7 @@ enum CommentBlock {
 /// attached it - one construct, two shapes, decided by which entry point ran
 /// (carve-rs#678). The rendered HTML agrees either way, since a comment renders
 /// nothing, which is why only the tree showed it.
+#[inline(never)]
 fn take_comment_block(cur: &mut LineCursor, options: &Options<'_>) -> CommentBlock {
     let Some(line) = cur.peek() else {
         return CommentBlock::NotAComment;
