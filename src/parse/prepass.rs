@@ -1690,18 +1690,19 @@ pub(in crate::parse) struct PrepassFence {
 /// An UNTERMINATED fence ends where its host does (PART 1 S4's otherwise), so a
 /// line below the fence's own content column is no longer its payload and a
 /// definition written there still has to be collected: `. ~~~` / `[d]: u` reads
-/// the definition at the document's column (carve-rs#2096). A fence with a
-/// closer ahead keeps everything down to that closer, flush-left payload
-/// included, so only the unterminated one asks.
+/// the definition at the document's column (carve-rs#2096). A closer ahead
+/// does not change that: the closer search passes a below-column line and the
+/// line still ends the fence (CARVE-P0-014). A quoted line's raw indent does
+/// not measure the fence's column, so it ends only a fence with no closer.
 pub(in crate::parse) fn prepass_fence_ends_above(
     line: &str,
     open: FenceOpen,
     closer_ahead: bool,
 ) -> bool {
-    !closer_ahead
-        && !open.quoted
+    !open.quoted
         && open.content_col > 0
         && !is_blank_line(line)
+        && !(closer_ahead && prepass_line_is_quoted(line))
         && indent_columns(line) < open.content_col
 }
 
@@ -1811,7 +1812,7 @@ pub(in crate::parse) fn extract_link_defs_with_guard_full(
     let mut inline_marker_fence = false;
     let mut inline_marker_paragraph = None;
     let mut term_fence_floor = 0;
-    // Whether that fence has a closer, which decides whether a dedent ends it.
+    // Whether that fence has a closer, which decides whether a quoted line ends it.
     let mut fence_closer_ahead = false;
     // A LINE BLOCK's body is inline content (`line_block_line = {whitespace},
     // inline_content, newline`), so a definition-shaped line inside one is text,
