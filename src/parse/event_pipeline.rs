@@ -843,36 +843,26 @@ fn parse_marker_hosted_opener(
         ));
     }
     if strip_blockquote_prefix(line).is_some() {
-        return Some(parse_quote_deferring(cur, options, index, pending, false));
+        return Some(parse_marker_hosted_quote(cur, options, index, pending));
     }
     None
 }
 
-/// The quote at `index` in the level's output. Its body waits on the worklist
-/// when the level defers quotes, or in a colon body when unobserved, so a
-/// colon -> quote chain does not hold an event frame per level; otherwise it
-/// parses here.
+/// The quote at `index` in a marker-hosted colon body. Unobserved, its body
+/// waits on the worklist; observed, it parses here.
 #[inline(never)]
-fn parse_quote_deferring(
+fn parse_marker_hosted_quote(
     cur: &mut LineCursor<'_>,
     options: &Options<'_>,
     index: usize,
     pending: &mut Vec<PendingBody>,
-    defer_quotes: bool,
 ) -> BlockNode {
     let (span_start, parts, _) = collect_blockquote_body(cur, options);
-    let defer = defer_quotes || (cur.colon_view.is_some() && !parse_order_observed(options));
-    if !defer || !quote_body_deferrable(cur, options, &parts) {
+    if parse_order_observed(options) || !quote_body_deferrable(cur, options, &parts) {
         return *parse_collected_blockquote(cur, options, span_start, parts);
     }
     #[cfg(test)]
-    match cur.colon_view {
-        Some(view) if view.marker_hosted => {
-            MARKER_HOSTED_QUOTE_DEFERRALS.with(|count| count.set(count.get() + 1));
-        }
-        Some(_) => COLON_QUOTE_DEFERRALS.with(|count| count.set(count.get() + 1)),
-        None => {}
-    }
+    MARKER_HOSTED_QUOTE_DEFERRALS.with(|count| count.set(count.get() + 1));
     let body = QuoteBodyPending {
         plus_anchor: nested_plus_quote_anchor(cur, options, span_start),
         parts,
@@ -885,6 +875,24 @@ fn parse_quote_deferring(
         body: Body::Quote(body),
     });
     *node
+}
+
+#[inline]
+fn quote_deferred_in_level(
+    cur: &LineCursor<'_>,
+    options: &Options<'_>,
+    parts: &[LineBuffer],
+    defer_quotes: bool,
+) -> bool {
+    (defer_quotes || (cur.colon_view.is_some() && !parse_order_observed(options)))
+        && quote_body_deferrable(cur, options, parts)
+}
+
+#[cfg(test)]
+fn count_colon_quote_deferral(cur: &LineCursor<'_>) {
+    if cur.colon_view.is_some() {
+        COLON_QUOTE_DEFERRALS.with(|count| count.set(count.get() + 1));
+    }
 }
 
 /// The definition list at `index` in the level's output. Unobserved, its
@@ -1358,16 +1366,29 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                 emit!(_block_source_line, BlockNode::BlockQuote(quote));
                 continue;
             }
-            emit!(
-                _block_source_line,
-                parse_quote_deferring(
-                    &mut cur,
-                    options,
-                    out.len(),
-                    &mut pending_bodies,
-                    defer_quotes,
-                )
-            );
+            let (span_start, parts, _) = collect_blockquote_body(&mut cur, options);
+            if quote_deferred_in_level(&cur, options, &parts, defer_quotes) {
+                #[cfg(test)]
+                count_colon_quote_deferral(&cur);
+                let body = QuoteBodyPending {
+                    plus_anchor: nested_plus_quote_anchor(&cur, options, span_start),
+                    parts,
+                    depth: NESTING_DEPTH.with(Cell::get),
+                    in_group: IN_FIGURE_GROUP.with(Cell::get),
+                };
+                let node = finish_blockquote_shell(&mut cur, options, span_start, Vec::new(), true);
+                let index = out.len();
+                emit!(_block_source_line, *node);
+                pending_bodies.push(PendingBody {
+                    index,
+                    body: Body::Quote(body),
+                });
+            } else {
+                emit!(
+                    _block_source_line,
+                    *parse_collected_blockquote(&mut cur, options, span_start, parts)
+                );
+            }
             continue;
         }
         if let Some(fence) = detect_fence_open(line) {
