@@ -551,7 +551,57 @@ pub(crate) fn parse_container_label_inlines(label: &str, options: &Options<'_>) 
 /// the fragment, so it is suppressed - see [`PROBING`].
 fn probe_blocks(source: &str, options: &Options<'_>) -> Vec<BlockNode> {
     let _probing = ProbeGuard::enter();
+    #[cfg(feature = "experimental-event-parser-options")]
+    if let Some(blocks) = probe_blocks_with_events(source, options) {
+        return blocks;
+    }
     parse_blocks_with_options(source, options)
+}
+
+/// The event route for [`probe_blocks`]. Only taken when nothing observes
+/// parse order: the event cursor offers extensions their lines at a different
+/// point than `parse_block`, and probes do not suppress lint events.
+#[cfg(feature = "experimental-event-parser-options")]
+#[cold]
+#[inline(never)]
+fn probe_blocks_with_events(source: &str, options: &Options<'_>) -> Option<Vec<BlockNode>> {
+    if options.positions
+        || options.source_lines
+        || parse_order_observed(options)
+        || !nested_event_allowed()
+    {
+        return None;
+    }
+    let _recording = definition_regions::RecordingPause::enter();
+    let _source_ending = SourceEndingGuard::fragment();
+    let blocks = event_pipeline::parse_drained_fragment(source, options)?;
+    #[cfg(test)]
+    probe_oracle::check(source, options, &blocks);
+    Some(blocks)
+}
+
+#[cfg(all(test, feature = "experimental-event-parser-options"))]
+mod probe_oracle {
+    use super::*;
+
+    thread_local! {
+        pub(super) static PROBE_EVENT_PARSES: Cell<usize> = const { Cell::new(0) };
+        pub(super) static ENABLED: Cell<bool> = const { Cell::new(false) };
+    }
+
+    /// Count an event-owned probe and, while the oracle is on, compare it with
+    /// the fully standard reader.
+    pub(super) fn check(source: &str, options: &Options<'_>, blocks: &[BlockNode]) {
+        PROBE_EVENT_PARSES.with(|count| count.set(count.get() + 1));
+        if !ENABLED.with(Cell::get) {
+            return;
+        }
+        let expected = {
+            let _standard_nested = StandardNestedReaderGuard::install();
+            parse_blocks_with_options(source, options)
+        };
+        assert_eq!(blocks, expected.as_slice(), "probe diverged: {source:?}");
+    }
 }
 
 /// [`probe_blocks`] for a fragment that stands at the DOCUMENT level.
@@ -1822,6 +1872,8 @@ pub(crate) fn parse_fragment_with_events(source: &str, options: &Options<'_>) ->
     let _source_ending = SourceEndingGuard::fragment();
     if nested_event_allowed() {
         if let Some(blocks) = event_pipeline::parse_drained_fragment(source, options) {
+            #[cfg(test)]
+            event_pipeline::LADDER_TAIL_EVENT_PARSES.with(|count| count.set(count.get() + 1));
             return blocks;
         }
     }

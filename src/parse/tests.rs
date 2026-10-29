@@ -5781,3 +5781,132 @@ mod event_root_rule_a {
         assert_eq!(pos.start_offset, source.find("- child").unwrap());
     }
 }
+
+/// `probe_blocks` takes the event route only when nothing observes parse
+/// order and the fragment carries no positions; every event-owned probe is
+/// checked against the fully standard reader while the oracle is on.
+#[cfg(feature = "experimental-event-parser-options")]
+mod event_probe_oracle {
+    use super::*;
+
+    struct OracleGuard(bool);
+
+    impl OracleGuard {
+        fn install() -> Self {
+            Self(probe_oracle::ENABLED.with(|on| on.replace(true)))
+        }
+    }
+
+    impl Drop for OracleGuard {
+        fn drop(&mut self) {
+            probe_oracle::ENABLED.with(|on| on.set(self.0));
+        }
+    }
+
+    fn event_probes() -> usize {
+        probe_oracle::PROBE_EVENT_PARSES.with(Cell::get)
+    }
+
+    fn standard_html(source: &str, options: &Options<'_>) -> Document {
+        let _standard_root = StandardEventRootGuard::install();
+        let _standard_nested = StandardNestedReaderGuard::install();
+        parse_with_options_mode_and_index(source, options, ParseMode::Html).0
+    }
+
+    const PROBED: &str = "- a\n  > b\n  c\nlazy\n";
+
+    #[test]
+    fn unobserved_probe_is_event_owned_and_matches_standard() {
+        let _oracle = OracleGuard::install();
+        let options = Options::default();
+        let before = event_probes();
+        let actual = parse_with_options_mode_and_index(PROBED, &options, ParseMode::Html).0;
+        assert!(event_probes() > before, "no event-owned probe");
+        assert_eq!(actual, standard_html(PROBED, &options));
+    }
+
+    #[test]
+    fn positioned_or_observed_probe_falls_back() {
+        let _oracle = OracleGuard::install();
+        let hook = event_ladder_tail::LadderHook::default();
+        let baseline = event_ladder_tail::LadderHook::default();
+        for (options, expected_options) in [
+            (
+                Options::default().with_positions(true),
+                Options::default().with_positions(true),
+            ),
+            (
+                Options::default().with_source_lines(true),
+                Options::default().with_source_lines(true),
+            ),
+            (
+                event_ladder_tail::hooked(&hook, false, false),
+                event_ladder_tail::hooked(&baseline, false, false),
+            ),
+        ] {
+            let before = event_probes();
+            let actual = parse_with_options_mode_and_index(PROBED, &options, ParseMode::Html).0;
+            assert_eq!(
+                event_probes(),
+                before,
+                "observed probe took the event route"
+            );
+            assert_eq!(actual, standard_html(PROBED, &expected_options));
+        }
+        event_ladder_tail::assert_same_callbacks(&hook, &baseline, PROBED);
+        let _continuation = continuation_marker::Guard::install("a\n+\nb");
+        let before = event_probes();
+        let joined = probe_blocks("a\n+\nb", &Options::default());
+        assert_eq!(event_probes(), before, "a `+` line must decline");
+        let standard = {
+            let _standard_nested = StandardNestedReaderGuard::install();
+            probe_blocks("a\n+\nb", &Options::default())
+        };
+        assert_eq!(joined, standard);
+
+        let source = ":  dangling\n\ntext\n";
+        let options = Options::default().with_positions(true);
+        let before = event_probes();
+        let actual = collecting_lint_events(|| {
+            collecting_unattached_block_attrs(|| probe_blocks(source, &options))
+        });
+        assert_eq!(
+            event_probes(),
+            before,
+            "diagnostic collector took event route"
+        );
+        let expected = {
+            let _standard_nested = StandardNestedReaderGuard::install();
+            collecting_lint_events(|| {
+                collecting_unattached_block_attrs(|| probe_blocks(source, &options))
+            })
+        };
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn corpus_probes_match_standard_reader() {
+        let _oracle = OracleGuard::install();
+        let corpus =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+        let before = event_probes();
+        for entry in std::fs::read_dir(corpus).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension() != Some(std::ffi::OsStr::new("crv")) {
+                continue;
+            }
+            let source = std::fs::read_to_string(&path).unwrap();
+            let options = Options::default();
+            let actual = parse_with_options_mode_and_index(&source, &options, ParseMode::Html).0;
+            assert_eq!(
+                actual,
+                standard_html(&source, &options),
+                "{}",
+                path.display()
+            );
+        }
+        let probes = event_probes() - before;
+        eprintln!("event-owned probes checked: {probes}");
+        assert!(probes > 0);
+    }
+}

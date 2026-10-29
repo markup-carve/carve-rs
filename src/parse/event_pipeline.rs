@@ -750,8 +750,6 @@ pub(super) fn parse_drained_fragment(
             false,
         )?
     };
-    #[cfg(test)]
-    LADDER_TAIL_EVENT_PARSES.with(|count| count.set(count.get() + 1));
     resolve_pending_bodies(&mut blocks, pending, options);
     Some(blocks)
 }
