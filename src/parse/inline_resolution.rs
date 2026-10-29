@@ -1855,7 +1855,23 @@ fn find_emphasis_close_walk(
                 bounds.braced_closers(bytes).bare_attributes(bytes, j)
             };
             if let Some((close, end)) = pair {
-                if guarded && j == from && bytes[j - 1] == delim && (delim == b'_' || ch == b'_') {
+                // Once the guard closes nowhere else its opener is blocked, and a
+                // later opener of the pair's kind takes the closer and the block.
+                let taken = || {
+                    (j + 1..close).any(|at| {
+                        bytes[at] == ch
+                            && bounds
+                                .braced_closers(bytes)
+                                .bare_attributes(bytes, at)
+                                .is_some_and(|(other, _)| other == close)
+                    })
+                };
+                if guarded
+                    && j == from
+                    && bytes[j - 1] == delim
+                    && (delim == b'_' || ch == b'_')
+                    && !taken()
+                {
                     *in_block = (close + 2..end).find(|&at| {
                         bytes[at] == delim
                             && !is_carve_ws(bytes[at - 1])
@@ -1884,7 +1900,13 @@ fn find_emphasis_close_walk(
                 && GUARD_DEPTH.with(|depth| depth.get() < MAX_GUARD_DEPTH)
             {
                 GUARD_DEPTH.with(|depth| depth.set(depth.get() + 1));
-                let opens = cached_find_emphasis_close(bytes, j + 1, ch, memo, bounds).is_some();
+                // A guard that closes inside the pair drops the pair's opener.
+                let pair_close = bounds
+                    .braced_closers(bytes)
+                    .bare_attributes_at_start(bytes, j + 1)
+                    .map(|(close, _)| close);
+                let opens = cached_find_emphasis_close(bytes, j + 1, ch, memo, bounds)
+                    .is_some_and(|close| pair_close.map_or(true, |pair| close > pair));
                 GUARD_DEPTH.with(|depth| depth.set(depth.get() - 1));
                 if opens && j == start {
                     start = j + 1;
