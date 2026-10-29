@@ -2703,6 +2703,8 @@ mod nested_quote_task_owner;
 #[path = "../parser_owner_transitions.rs"]
 mod parser_owner_transitions;
 
+#[path = "../a_block_of_a_pair_that_cannot_form_holds_the_closer.rs"]
+mod a_block_of_a_pair_that_cannot_form_holds_the_closer;
 #[path = "../a_footnote_label_holding_a_bracket_opens_no_bracket_run.rs"]
 mod a_footnote_label_holding_a_bracket_opens_no_bracket_run;
 #[path = "../a_matched_insertion_or_deletion_hides_a_substitution_arrow.rs"]

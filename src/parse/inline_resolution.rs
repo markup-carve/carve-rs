@@ -1776,7 +1776,6 @@ pub(in crate::parse) fn in_bracket_run(
         .is_some()
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(in crate::parse) fn find_emphasis_close(
     bytes: &[u8],
     from: usize,
@@ -1785,6 +1784,34 @@ pub(in crate::parse) fn find_emphasis_close(
     bounds: &InlineBounds<'_>,
     failed: Option<&[bool]>,
     visited: &mut Vec<usize>,
+) -> Option<usize> {
+    let mut in_block = None;
+    find_emphasis_close_walk(
+        bytes,
+        from,
+        delim,
+        memo,
+        bounds,
+        failed,
+        visited,
+        &mut in_block,
+    )
+    .or(in_block)
+}
+
+/// A guard's first closer may sit in the block of the pair it guards. Past the
+/// block is tried first; only when nothing closes there does the guard close in
+/// it, which leaves the block text. `in_block` reports that closer.
+#[allow(clippy::too_many_arguments)]
+fn find_emphasis_close_walk(
+    bytes: &[u8],
+    from: usize,
+    delim: u8,
+    memo: &mut EmphasisMemo,
+    bounds: &InlineBounds<'_>,
+    failed: Option<&[bool]>,
+    visited: &mut Vec<usize>,
+    in_block: &mut Option<usize>,
 ) -> Option<usize> {
     // The run the OPENER sits in, read at the byte before `from`: the
     // delimiter, or a `*` of the combined token. `from` itself may be a `]`.
@@ -1798,6 +1825,8 @@ pub(in crate::parse) fn find_emphasis_close(
     // A guard `_` or `/` that opens a span is markup, so the opener after it
     // starts at START: `from`, then each guard opener chained behind it.
     let mut start = from;
+    // The opener behind a guard that opened mid-walk; its pair is a guarded one.
+    let mut guarded_at = None;
     let mut j = from;
     while j < bytes.len() {
         if opener_end.is_some_and(|end| j > end) {
@@ -1808,12 +1837,16 @@ pub(in crate::parse) fn find_emphasis_close(
         }
         visited.push(j);
         let ch = bytes[j];
+        // The closer of a pair whose block is already attached opens nothing.
         if matches!(ch, b'/' | b'*' | b'_' | b'~' | b'=')
             && ch != delim
+            && !attached.contains_key(&(j + 1))
             && !(delim == COMBINED_CLOSER && matches!(ch, b'/' | b'*'))
             && (!OpenKinds::is_open(ch) || emphasis_run_at(bounds, &regions, j).is_some())
         {
-            let guarded = j == start && j > 0 && matches!(bytes[j - 1], b'/' | b'_');
+            let guarded = (j == start || guarded_at == Some(j))
+                && j > 0
+                && matches!(bytes[j - 1], b'/' | b'_');
             let pair = if guarded {
                 bounds
                     .braced_closers(bytes)
@@ -1822,11 +1855,24 @@ pub(in crate::parse) fn find_emphasis_close(
                 bounds.braced_closers(bytes).bare_attributes(bytes, j)
             };
             if let Some((close, end)) = pair {
+                if guarded && j == from && bytes[j - 1] == delim && (delim == b'_' || ch == b'_') {
+                    *in_block = (close + 2..end).find(|&at| {
+                        bytes[at] == delim
+                            && !is_carve_ws(bytes[at - 1])
+                            && !bytes.get(at + 1).is_some_and(|b| b.is_ascii_alphanumeric())
+                    });
+                }
                 attached.insert(close + 1, end);
             }
             // Only an attribute block behind the next opener makes the guard's
             // own closer matter, so the recursion stays off plain text.
-            if j == start
+            if (j == start
+                || guarded_at == Some(j)
+                || j.checked_sub(1).is_some_and(|prev| {
+                    !(bytes[prev].is_ascii_alphanumeric()
+                        || matches!(bytes[prev], b'_' | b'/')
+                        || bytes[prev] == ch)
+                }))
                 && matches!(ch, b'/' | b'_')
                 && bytes
                     .get(j + 1)
@@ -1840,8 +1886,10 @@ pub(in crate::parse) fn find_emphasis_close(
                 GUARD_DEPTH.with(|depth| depth.set(depth.get() + 1));
                 let opens = cached_find_emphasis_close(bytes, j + 1, ch, memo, bounds).is_some();
                 GUARD_DEPTH.with(|depth| depth.set(depth.get() - 1));
-                if opens {
+                if opens && j == start {
                     start = j + 1;
+                } else if opens {
+                    guarded_at = Some(j + 1);
                 }
             }
         }
