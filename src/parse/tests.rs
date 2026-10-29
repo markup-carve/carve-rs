@@ -2436,6 +2436,192 @@ mod deep_worklist_owner {
             .join()
             .unwrap();
     }
+
+    /// `(label, source, deferred)`: quotes the ordinary arm opens in a colon
+    /// body. `Some(deferred)` pins whether an unobserved parse defers a body
+    /// there; `None` only compares against the standard reader.
+    const COLON_QUOTE_CASES: [(&str, &str, Option<bool>); 13] = [
+        ("colon quote", "::: n\n> q *x*\n> - i\n:::\n", Some(true)),
+        (
+            "colon quote nested quote",
+            "::: n\n> q\n> > inner\n> > - i\n:::\n",
+            Some(true),
+        ),
+        (
+            "colon quote hosting a colon quote",
+            "::: n\n> q\n> ::: m\n> > deep *x*\n> :::\n:::\n",
+            Some(true),
+        ),
+        (
+            "colon quote caption",
+            "::: n\n> q\n^ cap\n:::\n",
+            Some(true),
+        ),
+        (
+            "colon quote structural caption",
+            "::: n\n>\n\n^ cap\n:::\n",
+            Some(false),
+        ),
+        (
+            "colon quote styled caption",
+            "::: n\n> *x*\n^ cap\n:::\n",
+            Some(false),
+        ),
+        (
+            "colon quote sibling",
+            "::: n\n> q\n\nafter *x*\n> r\n:::\n",
+            Some(true),
+        ),
+        ("colon quote plus", "::: n\n> > +\n>   deep\n:::\n", None),
+        ("colon quote attrs", "::: n\n{.k}\n> q\n:::\n", Some(true)),
+        ("colon quote eof fence", "::: n\n> ```\n> code\n\n\n", None),
+        (
+            "colon quote figure group",
+            "::: figure\n> q\n^ cap\n:::\n",
+            None,
+        ),
+        (
+            "colon quote in a quote",
+            "> ::: n\n> > q *x*\n> > - i\n> :::\n",
+            Some(true),
+        ),
+        ("colon quote lazy", "::: n\n> q\nlazy\n> r\n:::\n", None),
+    ];
+
+    fn colon_quote_deferrals(label: &str, source: &str, options: &Options<'_>) -> usize {
+        event_pipeline::COLON_QUOTE_DEFERRALS.with(|count| count.set(0));
+        let (document, _, used) =
+            event_pipeline::parse_document_with_mode(source, options, ParseMode::Html)
+                .unwrap_or_else(|| panic!("{label}: declined"));
+        assert!(used, "{label}");
+        std::mem::forget(document);
+        event_pipeline::COLON_QUOTE_DEFERRALS.with(Cell::get)
+    }
+
+    #[test]
+    fn colon_quotes_match_standard() {
+        let log = Log::default();
+        let observed = Options::default().with_extension(&log);
+        for (label, source, deferred) in COLON_QUOTE_CASES {
+            for positions in [false, true] {
+                for source_lines in [false, true] {
+                    let options = Options::default()
+                        .with_positions(positions)
+                        .with_source_lines(source_lines);
+                    let count = colon_quote_deferrals(label, source, &options);
+                    if let Some(deferred) = deferred {
+                        assert_eq!(count > 0, deferred, "{label}: {count} deferrals");
+                    }
+                }
+            }
+            assert_eq!(
+                colon_quote_deferrals(label, source, &observed),
+                0,
+                "{label}: observed deferral"
+            );
+            for row in full_matrix() {
+                check_row(1, label, source, row);
+            }
+            for row in 0..CALLBACK_ROWS.len() {
+                check_callbacks(1, label, source, row);
+            }
+        }
+        assert_eq!(
+            colon_quote_deferrals("root quote", "> q\n> - i\n", &Options::default()),
+            0,
+        );
+    }
+
+    /// `levels` EOF-closed colon containers, each holding a quote that holds
+    /// the next. The wrapper also closes at EOF.
+    /// Every level adds one quote marker, and a line with 64 of them declines
+    /// the document (`has_deep_quote_chain`), so the chain stops short of it.
+    fn colon_quote_chain(levels: usize) -> String {
+        let body: String = (0..levels)
+            .map(|level| {
+                let lead = "> ".repeat(level);
+                format!("{lead}::: n{level}\n{lead}> q{level}\n{lead}>\n")
+            })
+            .collect();
+        wrapped(format!("{body}{}deep *leaf*\n", "> ".repeat(levels)))
+    }
+
+    /// Colon and quote.
+    const COLON_QUOTE_CHAIN_LEVEL: usize = 2;
+
+    fn colon_quote_chain_levels(depth: usize) -> usize {
+        (depth.saturating_sub(1) / COLON_QUOTE_CHAIN_LEVEL).clamp(1, 63)
+    }
+
+    /// Unobserved, each colon body's quote waits on the worklist, so the chain
+    /// reads deep on the event cursor without an event frame per level.
+    fn check_colon_quote_chain(depth: usize, positions: bool) {
+        let label = format!("colon quote chain; depth={depth}; positions={positions}");
+        let levels = colon_quote_chain_levels(depth);
+        let source = colon_quote_chain(levels);
+        event_pipeline::PEAK_EVENT_FRAMES.with(|peak| peak.set(0));
+        event_pipeline::PEAK_EVENT_DEPTH.with(|peak| peak.set(0));
+        event_pipeline::EVENT_FRAME_REFUSALS.with(|count| count.set(0));
+        let deferrals = colon_quote_deferrals(
+            &label,
+            &source,
+            &Options::default().with_positions(positions),
+        );
+        assert!(deferrals >= levels, "{label}: {deferrals} deferrals");
+        let frames = event_pipeline::PEAK_EVENT_FRAMES.with(Cell::get);
+        assert!(
+            frames < event_pipeline::EVENT_FRAME_LIMIT,
+            "{label}: {frames} frames"
+        );
+        let nesting = COLON_QUOTE_CHAIN_LEVEL * levels + 1;
+        let peak = event_pipeline::PEAK_EVENT_DEPTH.with(Cell::get);
+        assert!(peak >= nesting / 2, "{label}: event depth {peak}");
+        let refusals = event_pipeline::EVENT_FRAME_REFUSALS.with(Cell::get);
+        assert_eq!(refusals, 0, "{label}: refused event frames");
+        assert_eq!(WORKLIST_BASE.with(Cell::get), 0, "{label}: base leak");
+    }
+
+    #[test]
+    fn deep_colon_quote_chains_match_standard() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for (d, depth) in [SHALLOW_DEPTH, 64, 127].into_iter().enumerate() {
+                    check_colon_quote_chain(depth, d % 2 == 1);
+                    let source = colon_quote_chain(colon_quote_chain_levels(depth));
+                    check_row(depth, "colon quote chain", &source, PAIRWISE[d]);
+                    if depth == SHALLOW_DEPTH {
+                        for row in 0..CALLBACK_ROWS.len() {
+                            check_callbacks(depth, "colon quote chain", &source, row);
+                        }
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// As in `deep_worklist_shapes_fit_the_release_stack_floor`.
+    #[test]
+    #[cfg_attr(debug_assertions, ignore = "release stack floor; run with --release")]
+    fn unobserved_colon_quote_chains_fit_the_release_stack_floor() {
+        let stack = if cfg!(debug_assertions) {
+            4 * 1024 * 1024
+        } else {
+            512 * 1024
+        };
+        std::thread::Builder::new()
+            .stack_size(stack)
+            .spawn(|| {
+                for positions in [false, true] {
+                    check_colon_quote_chain(127, positions);
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
 }
 
 #[cfg(feature = "experimental-event-parser-options")]

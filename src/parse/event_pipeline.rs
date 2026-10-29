@@ -104,6 +104,7 @@ thread_local! {
     pub(super) static OBSERVED_DEFINITION_DEFERRALS: Cell<usize> = const { Cell::new(0) };
     pub(super) static MARKER_HOSTED_DEFINITION_LISTS: Cell<usize> = const { Cell::new(0) };
     pub(super) static MARKER_HOSTED_QUOTE_DEFERRALS: Cell<usize> = const { Cell::new(0) };
+    pub(super) static COLON_QUOTE_DEFERRALS: Cell<usize> = const { Cell::new(0) };
 }
 
 #[cfg(test)]
@@ -842,27 +843,36 @@ fn parse_marker_hosted_opener(
         ));
     }
     if strip_blockquote_prefix(line).is_some() {
-        return Some(parse_marker_hosted_quote(cur, options, index, pending));
+        return Some(parse_quote_deferring(cur, options, index, pending, false));
     }
     None
 }
 
-/// The quote at `index` in a marker-hosted colon body. Unobserved, its body
-/// waits on the worklist like a root quote's, so a chain of hosted quotes
-/// does not hold an event frame per level; observed, it parses here.
+/// The quote at `index` in the level's output. Its body waits on the worklist
+/// when the level defers quotes, or in a colon body when unobserved, so a
+/// colon -> quote chain does not hold an event frame per level; otherwise it
+/// parses here.
 #[inline(never)]
-fn parse_marker_hosted_quote(
+fn parse_quote_deferring(
     cur: &mut LineCursor<'_>,
     options: &Options<'_>,
     index: usize,
     pending: &mut Vec<PendingBody>,
+    defer_quotes: bool,
 ) -> BlockNode {
     let (span_start, parts, _) = collect_blockquote_body(cur, options);
-    if parse_order_observed(options) || !quote_body_deferrable(cur, options, &parts) {
+    let defer = defer_quotes || (cur.colon_view.is_some() && !parse_order_observed(options));
+    if !defer || !quote_body_deferrable(cur, options, &parts) {
         return *parse_collected_blockquote(cur, options, span_start, parts);
     }
     #[cfg(test)]
-    MARKER_HOSTED_QUOTE_DEFERRALS.with(|count| count.set(count.get() + 1));
+    match cur.colon_view {
+        Some(view) if view.marker_hosted => {
+            MARKER_HOSTED_QUOTE_DEFERRALS.with(|count| count.set(count.get() + 1));
+        }
+        Some(_) => COLON_QUOTE_DEFERRALS.with(|count| count.set(count.get() + 1)),
+        None => {}
+    }
     let body = QuoteBodyPending {
         plus_anchor: nested_plus_quote_anchor(cur, options, span_start),
         parts,
@@ -1176,7 +1186,8 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
     mut cur: LineCursor<'_>,
     mut extents: Option<&mut Vec<(usize, usize)>>,
     pending_out: Option<&mut Vec<PendingBody>>,
-    // The caller fills hollow quotes before anything reads their children.
+    // The caller fills hollow quotes before reading their children. An
+    // unobserved colon body may defer quotes even when this argument is false.
     defer_quotes: bool,
 ) -> Option<Vec<BlockNode>> {
     // Snapshot: nested paragraph probes toggle the cursor's flag and restore it.
@@ -1347,27 +1358,16 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                 emit!(_block_source_line, BlockNode::BlockQuote(quote));
                 continue;
             }
-            let (span_start, parts, _) = collect_blockquote_body(&mut cur, options);
-            if defer_quotes && quote_body_deferrable(&cur, options, &parts) {
-                let body = QuoteBodyPending {
-                    plus_anchor: nested_plus_quote_anchor(&cur, options, span_start),
-                    parts,
-                    depth: NESTING_DEPTH.with(Cell::get),
-                    in_group: IN_FIGURE_GROUP.with(Cell::get),
-                };
-                let node = finish_blockquote_shell(&mut cur, options, span_start, Vec::new(), true);
-                let index = out.len();
-                emit!(_block_source_line, *node);
-                pending_bodies.push(PendingBody {
-                    index,
-                    body: Body::Quote(body),
-                });
-            } else {
-                emit!(
-                    _block_source_line,
-                    *parse_collected_blockquote(&mut cur, options, span_start, parts)
-                );
-            }
+            emit!(
+                _block_source_line,
+                parse_quote_deferring(
+                    &mut cur,
+                    options,
+                    out.len(),
+                    &mut pending_bodies,
+                    defer_quotes,
+                )
+            );
             continue;
         }
         if let Some(fence) = detect_fence_open(line) {
