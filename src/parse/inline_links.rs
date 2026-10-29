@@ -981,6 +981,13 @@ pub(in crate::parse) fn compute_bracket_runs(
             // tail reads as an image first.
             let image = open > 0
                 && bytes[open - 1] == b'!'
+                && bytes[..open - 1]
+                    .iter()
+                    .rev()
+                    .take_while(|&&b| b == b'\\')
+                    .count()
+                    % 2
+                    == 0
                 && matches[open] != NO_BRACKET_MATCH
                 && image_tail(bytes, matches[open] + 1);
             if image || label_end.is_some_and(|end| open <= end) {

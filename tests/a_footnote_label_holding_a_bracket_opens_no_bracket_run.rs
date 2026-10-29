@@ -71,4 +71,14 @@ fn an_editorial_scan_reads_the_reference_before_an_image() {
         html("{~![^[g]~>a](u) b~>c~}\n"),
         "<p><del>![^[g]</del><ins>a](u) b~&gt;c</ins></p>"
     );
+    assert_eq!(
+        html("{~a~>![^[g]~}](u) b~}\n"),
+        "<p><del>a</del><ins>![^[g]</ins>](u) b~}</p>"
+    );
+}
+
+/// An escaped `!` opens no image, so the reference behind it stays atomic.
+#[test]
+fn an_escaped_bang_leaves_the_reference_atomic() {
+    assert_eq!(html("/\\![^[g]/](u) b/\n"), "<p><em>![^[g]</em>](u) b/</p>");
 }

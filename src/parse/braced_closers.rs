@@ -239,7 +239,7 @@ impl BracedClosers {
         if let Some(view) = &self.native_view {
             let arrow = *view.data.arrows.get(&(open + view.offset))?;
             let arrow = arrow.checked_sub(view.offset)?;
-            return (arrow < pair).then_some((pair, arrow));
+            return (arrow < pair).then(|| (self.new_half_close(bytes, arrow, pair), arrow));
         }
         if self.substitution_hosts.is_none() {
             let mut hosts = self.native_opaque.as_ref().unwrap_or(&self.opaque).clone();
@@ -271,7 +271,19 @@ impl BracedClosers {
                 &mut self.code_ends,
                 self.substitution_hosts.as_ref().unwrap(),
             )
-            .map(|arrow| (pair, arrow))
+            .map(|arrow| (self.new_half_close(bytes, arrow, pair), arrow))
+    }
+
+    /// A reference the strike's table read as an image hides no `~}` from the
+    /// new half (`edSubNew`), so the first `~}` past the arrow closes there.
+    fn new_half_close(&mut self, bytes: &[u8], arrow: usize, pair: usize) -> usize {
+        if !self.note_refs.keys().any(|&at| at > arrow && at < pair) {
+            return pair;
+        }
+        match self.scan(bytes, arrow + 2, b'~', 0) {
+            Ok(Some(close)) if close & RAW_CLOSE_FLAG == 0 && close < pair => close,
+            _ => pair,
+        }
     }
 
     pub(super) fn after_attributes(&mut self, bytes: &[u8], end: usize) -> usize {
