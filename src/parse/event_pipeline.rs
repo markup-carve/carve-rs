@@ -33,6 +33,7 @@ thread_local! {
     pub(super) static PEAK_EVENT_DEPTH: Cell<usize> = const { Cell::new(0) };
     // The highest `stacked_depth` an unquoted body was admitted at.
     pub(super) static PEAK_UNQUOTED_STACKED_DEPTH: Cell<usize> = const { Cell::new(0) };
+    pub(super) static EVENT_FRAME_REFUSALS: Cell<usize> = const { Cell::new(0) };
 }
 
 #[cfg(feature = "experimental-event-parser-options")]
@@ -87,6 +88,10 @@ fn event_frame_admitted(quoted: bool) -> bool {
     if admitted && !quoted {
         PEAK_UNQUOTED_STACKED_DEPTH.with(|peak| peak.set(peak.get().max(stacked_depth())));
     }
+    #[cfg(test)]
+    if !admitted {
+        EVENT_FRAME_REFUSALS.with(|count| count.set(count.get() + 1));
+    }
     admitted
 }
 
@@ -98,6 +103,7 @@ thread_local! {
     pub(super) static DIRECT_QUOTE_PARSES: Cell<usize> = const { Cell::new(0) };
     pub(super) static OBSERVED_DEFINITION_DEFERRALS: Cell<usize> = const { Cell::new(0) };
     pub(super) static MARKER_HOSTED_DEFINITION_LISTS: Cell<usize> = const { Cell::new(0) };
+    pub(super) static MARKER_HOSTED_QUOTE_DEFERRALS: Cell<usize> = const { Cell::new(0) };
 }
 
 #[cfg(test)]
@@ -836,9 +842,39 @@ fn parse_marker_hosted_opener(
         ));
     }
     if strip_blockquote_prefix(line).is_some() {
-        return Some(*parse_blockquote(cur, options));
+        return Some(parse_marker_hosted_quote(cur, options, index, pending));
     }
     None
+}
+
+/// The quote at `index` in a marker-hosted colon body. Unobserved, its body
+/// waits on the worklist like a root quote's, so a chain of hosted quotes
+/// does not hold an event frame per level; observed, it parses here.
+#[inline(never)]
+fn parse_marker_hosted_quote(
+    cur: &mut LineCursor<'_>,
+    options: &Options<'_>,
+    index: usize,
+    pending: &mut Vec<PendingBody>,
+) -> BlockNode {
+    let (span_start, parts, _) = collect_blockquote_body(cur, options);
+    if parse_order_observed(options) || !quote_body_deferrable(cur, options, &parts) {
+        return *parse_collected_blockquote(cur, options, span_start, parts);
+    }
+    #[cfg(test)]
+    MARKER_HOSTED_QUOTE_DEFERRALS.with(|count| count.set(count.get() + 1));
+    let body = QuoteBodyPending {
+        plus_anchor: nested_plus_quote_anchor(cur, options, span_start),
+        parts,
+        depth: NESTING_DEPTH.with(Cell::get),
+        in_group: IN_FIGURE_GROUP.with(Cell::get),
+    };
+    let node = finish_blockquote_shell(cur, options, span_start, Vec::new(), true);
+    pending.push(PendingBody {
+        index,
+        body: Body::Quote(body),
+    });
+    *node
 }
 
 /// The definition list at `index` in the level's output. Unobserved, its

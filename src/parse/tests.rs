@@ -2155,6 +2155,114 @@ mod deep_worklist_owner {
         }
     }
 
+    /// `(label, source, deferred)`: quotes the marker-hosted arm opens.
+    /// `Some(deferred)` pins whether an unobserved parse defers a body there;
+    /// `None` only compares against the standard reader.
+    const MARKER_HOSTED_QUOTE_CASES: [(&str, &str, Option<bool>); 13] = [
+        (
+            "marker quote",
+            "::: wrap\n- a\n  ::: n\n  > q *x*\n  > - i\n  :::\n:::\n",
+            Some(true),
+        ),
+        (
+            "marker quote nested quote",
+            "::: wrap\n- a\n  ::: n\n  > q\n  > > inner\n  > > - i\n  :::\n:::\n",
+            Some(true),
+        ),
+        (
+            "marker quote hosting a marker quote",
+            "::: wrap\n- a\n  ::: n\n  > - b\n  >   ::: m\n  >   > deep *x*\n  >   :::\n\
+             \x20 :::\n:::\n",
+            Some(true),
+        ),
+        (
+            "marker quote caption",
+            "::: wrap\n- a\n  ::: n\n  > q\n  ^ cap\n  :::\n:::\n",
+            Some(true),
+        ),
+        (
+            "marker quote structural caption",
+            "::: wrap\n- a\n  ::: n\n  >\n\n  ^ cap\n  :::\n:::\n",
+            Some(false),
+        ),
+        (
+            "marker quote sibling",
+            "::: wrap\n- a\n  ::: n\n  > q\n\n  after *x*\n  > r\n  :::\n- b\n:::\n",
+            Some(true),
+        ),
+        (
+            "marker quote plus",
+            "::: wrap\n- a\n  ::: n\n  > > +\n  >   deep\n  :::\n:::\n",
+            None,
+        ),
+        (
+            "marker quote attrs",
+            "::: wrap\n- a\n  ::: n\n  {.k}\n  > q\n  :::\n:::\n",
+            Some(true),
+        ),
+        (
+            "marker quote eof fence",
+            "- a\n  ::: n\n  > ```\n  > code\n\n\n",
+            None,
+        ),
+        (
+            "marker quote figure group",
+            "::: wrap\n- a\n  ::: figure\n  > q\n  ^ cap\n  :::\n:::\n",
+            None,
+        ),
+        (
+            "marker quote in a description",
+            "::: wrap\n:: t\n:  d\n   ::: n\n   > q\n   > - i\n   :::\n:::\n",
+            None,
+        ),
+        (
+            "marker quote in a footnote",
+            "x[^f]\n\n[^f]: note\n\n    ::: n\n    > q\n    :::\n",
+            None,
+        ),
+        (
+            "marker quote tab and lazy",
+            "::: wrap\n- a\n\t::: n\n\t> q\n\tlazy\n  > r\n  lazy too\n  :::\n:::\n",
+            None,
+        ),
+    ];
+
+    fn marker_hosted_quote_deferrals(label: &str, source: &str, options: &Options<'_>) -> usize {
+        event_pipeline::MARKER_HOSTED_QUOTE_DEFERRALS.with(|count| count.set(0));
+        let (document, _, used) =
+            event_pipeline::parse_document_with_mode(source, options, ParseMode::Html)
+                .unwrap_or_else(|| panic!("{label}: declined"));
+        assert!(used, "{label}");
+        std::mem::forget(document);
+        event_pipeline::MARKER_HOSTED_QUOTE_DEFERRALS.with(Cell::get)
+    }
+
+    #[test]
+    fn marker_hosted_quotes_match_standard() {
+        let log = Log::default();
+        let observed = Options::default().with_extension(&log);
+        for (label, source, deferred) in MARKER_HOSTED_QUOTE_CASES {
+            for positions in [false, true] {
+                let options = Options::default().with_positions(positions);
+                let count = marker_hosted_quote_deferrals(label, source, &options);
+                if let Some(deferred) = deferred {
+                    assert_eq!(count > 0, deferred, "{label}: {count} deferrals");
+                }
+            }
+            assert_eq!(
+                marker_hosted_quote_deferrals(label, source, &observed),
+                0,
+                "{label}: observed deferral"
+            );
+            for row in full_matrix() {
+                check_row(1, label, source, row);
+            }
+            for row in 0..CALLBACK_ROWS.len() {
+                check_callbacks(1, label, source, row);
+            }
+        }
+    }
+
     /// Unobserved, each marker-hosted description body waits on the worklist,
     /// so the chain reads deep on the event cursor without an event frame per
     /// level.
@@ -2215,6 +2323,112 @@ mod deep_worklist_owner {
                 for depth in [199, 200, 260] {
                     for positions in [false, true] {
                         check_marker_definition_chain(depth, positions);
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// `levels` levels of three nested items, the innermost hosting an open
+    /// `::: n` whose quote holds the next level, so the quote on the
+    /// marker-hosted arm comes every [`QUOTE_CHAIN_LEVEL`] levels. A line with
+    /// 64 quote markers declines the whole document (`has_deep_quote_chain`),
+    /// so one quote per level would end the chain at 64 levels.
+    fn marker_quote_chain(levels: usize) -> String {
+        let lead = |level: usize| "      > ".repeat(level);
+        let body: String = (0..levels)
+            .map(|level| {
+                let lead = lead(level);
+                format!(
+                    "{lead}- l{level}\n{lead}  - m{level}\n{lead}    - o{level}\n\
+                     {lead}      ::: n{level}\n{lead}      > q{level}\n{lead}      >\n"
+                )
+            })
+            .collect();
+        wrapped(format!("{body}{}deep *leaf*\n", lead(levels)))
+    }
+
+    /// Three items, colon and quote.
+    const QUOTE_CHAIN_LEVEL: usize = 5;
+
+    /// The levels that, with the wrapping container, nest at most `depth` deep.
+    fn marker_quote_chain_levels(depth: usize) -> usize {
+        (depth.saturating_sub(1) / QUOTE_CHAIN_LEVEL).max(1)
+    }
+
+    /// Unobserved, each marker-hosted quote body waits on the worklist, so the
+    /// chain reads deep on the event cursor without an event frame per level.
+    fn check_marker_quote_chain(depth: usize, positions: bool) {
+        let label = format!("marker quote chain; depth={depth}; positions={positions}");
+        let levels = marker_quote_chain_levels(depth);
+        let source = marker_quote_chain(levels);
+        event_pipeline::PEAK_EVENT_FRAMES.with(|peak| peak.set(0));
+        event_pipeline::PEAK_EVENT_DEPTH.with(|peak| peak.set(0));
+        event_pipeline::EVENT_FRAME_REFUSALS.with(|count| count.set(0));
+        let deferrals = marker_hosted_quote_deferrals(
+            &label,
+            &source,
+            &Options::default().with_positions(positions),
+        );
+        assert!(
+            deferrals >= levels.min(MAX_NESTING_DEPTH / 8),
+            "{label}: {deferrals} deferrals"
+        );
+        let frames = event_pipeline::PEAK_EVENT_FRAMES.with(Cell::get);
+        assert!(
+            frames < event_pipeline::EVENT_FRAME_LIMIT,
+            "{label}: {frames} frames"
+        );
+        let nesting = QUOTE_CHAIN_LEVEL * levels + 1;
+        let floor = nesting.min(MAX_NESTING_DEPTH - 8) / 2;
+        let peak = event_pipeline::PEAK_EVENT_DEPTH.with(Cell::get);
+        assert!(peak >= floor, "{label}: event depth {peak}");
+        // Below the cap no level may fall back to the standard reader.
+        if nesting < MAX_NESTING_DEPTH {
+            let refusals = event_pipeline::EVENT_FRAME_REFUSALS.with(Cell::get);
+            assert_eq!(refusals, 0, "{label}: refused event frames");
+        }
+        assert_eq!(WORKLIST_BASE.with(Cell::get), 0, "{label}: base leak");
+    }
+
+    #[test]
+    fn deep_marker_quote_chains_match_standard() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for (d, depth) in [SHALLOW_DEPTH, 64, 194, 199].into_iter().enumerate() {
+                    check_marker_quote_chain(depth, d % 2 == 1);
+                    let source = marker_quote_chain(marker_quote_chain_levels(depth));
+                    check_row(depth, "marker quote chain", &source, PAIRWISE[d]);
+                    if depth == SHALLOW_DEPTH {
+                        for row in 0..CALLBACK_ROWS.len() {
+                            check_callbacks(depth, "marker quote chain", &source, row);
+                        }
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// As in `deep_worklist_shapes_fit_the_release_stack_floor`.
+    #[test]
+    #[cfg_attr(debug_assertions, ignore = "release stack floor; run with --release")]
+    fn unobserved_marker_quote_chains_fit_the_release_stack_floor() {
+        let stack = if cfg!(debug_assertions) {
+            4 * 1024 * 1024
+        } else {
+            512 * 1024
+        };
+        std::thread::Builder::new()
+            .stack_size(stack)
+            .spawn(|| {
+                for depth in [194, 199] {
+                    for positions in [false, true] {
+                        check_marker_quote_chain(depth, positions);
                     }
                 }
             })
