@@ -4296,7 +4296,9 @@ pub(super) fn parse_document_with_custom_options(
         None
     };
     let source = normalized.as_deref().unwrap_or(source);
-    if walk_moves_lines(source) || (has_deep_quote_chain(source) && !deep_quote_chain_owned(source, options)) {
+    if walk_moves_lines(source)
+        || (has_deep_quote_chain(source) && !deep_quote_chain_owned(source, options))
+    {
         return None;
     }
     let may_have_link_defs = source.contains("]:") || !options.extensions.is_empty();
