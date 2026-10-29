@@ -27,15 +27,15 @@ mod inline_crossrefs;
 mod inline_links;
 mod inline_resolution;
 mod list;
+mod own_lines;
 mod paragraph;
 mod positions;
 mod prepass;
 mod prepass_links;
 mod quote;
 mod rebase;
-mod own_lines;
-pub(crate) use own_lines::{own_lines, walk_moves_lines, EditsGuard};
 pub(in crate::parse) use own_lines::restore_authored_columns;
+pub(crate) use own_lines::{own_lines, walk_moves_lines, EditsGuard};
 mod table;
 #[cfg(test)]
 #[path = "parse/tests.rs"]
@@ -804,7 +804,9 @@ fn parse_with_options_mode_and_index(
     // positions in the walked text back to the authored columns.
     let owned = own_lines(normalized.as_ref());
     let _owned_edits = EditsGuard::install(owned.as_ref());
-    let source = owned.as_ref().map_or(normalized.as_ref(), |o| o.source.as_str());
+    let source = owned
+        .as_ref()
+        .map_or(normalized.as_ref(), |o| o.source.as_str());
     let _continuation_markers = continuation_marker::Guard::install(source);
     let _source_ending = SourceEndingGuard::install(source);
     // PICK THE DEFINITION PLACEHOLDERS FOR THIS DOCUMENT before anything reads
