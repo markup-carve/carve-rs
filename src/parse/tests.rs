@@ -181,9 +181,9 @@ mod deep_quote_worklist {
     const DEPTHS: [usize; 5] = [64, 120, 199, 200, 260];
 
     #[derive(Default)]
-    struct Log {
-        blocks: RefCell<Vec<String>>,
-        inlines: RefCell<Vec<(usize, String)>>,
+    pub(super) struct Log {
+        pub(super) blocks: RefCell<Vec<String>>,
+        pub(super) inlines: RefCell<Vec<(usize, String)>>,
     }
 
     impl CarveExtension for Log {
@@ -343,7 +343,7 @@ mod deep_quote_worklist {
 
     /// With `collect`, the diagnostics collectors are installed, which makes
     /// the parse order observable just as an extension does.
-    fn check(
+    pub(super) fn check(
         label: &str,
         source: &str,
         options: &Options<'_>,
@@ -651,7 +651,7 @@ mod deep_quote_worklist {
                                 assert!(used, "{label}");
                                 let peak = event_pipeline::PEAK_EVENT_FRAMES.with(Cell::get);
                                 assert!(
-                                    peak < event_pipeline::NESTED_EVENT_DEPTH_LIMIT,
+                                    peak < event_pipeline::EVENT_FRAME_LIMIT,
                                     "{label}: {peak} event frames"
                                 );
                                 std::mem::forget(document);
@@ -954,19 +954,21 @@ mod event_ladder_tail {
         }
     }
 
-    /// A tail at the event depth cap uses the standard reader before any
-    /// extension callback fires; the admitted tail keeps the same AST.
+    /// A tail past the event frame limit, or deep on the native stack, uses
+    /// the standard reader before any extension callback fires; a deep tail
+    /// in a worklist body stays event owned. All keep the standard AST.
     #[test]
-    fn ladder_tail_respects_depth_gate() {
-        for (body, depth, event_owned) in [
-            ("::: note\n@@@\ntext\n{.dangling}", 0, true),
-            (
-                "::: note\n{.c}\n@@@\ntext\n{.dangling}",
-                event_pipeline::NESTED_EVENT_DEPTH_LIMIT,
-                false,
-            ),
+    fn ladder_tail_respects_frame_gate() {
+        let limit = event_pipeline::EVENT_FRAME_LIMIT;
+        for (body, depth, base, frames, event_owned) in [
+            ("::: note\n@@@\ntext\n{.dangling}", 0, 0, 0, true),
+            ("::: note\n{.c}\n@@@\ntext\n{.dangling}", 150, 0, 0, false),
+            ("::: note\n{.c}\n@@@\ntext\n{.dangling}", 150, 150, 0, true),
+            ("::: note\n{.c}\n@@@\ntext\n{.dangling}", 0, 0, limit, false),
         ] {
             let _depth = DepthScope::set(depth);
+            let _base = WorklistBase::set(base, 0);
+            let _frames = event_pipeline::hold_event_frames(frames);
             let mapped = unpositioned_body(body);
             let baseline = LadderHook::default();
             let expected = {
@@ -982,6 +984,7 @@ mod event_ladder_tail {
             assert_eq!(actual, expected, "{body:?}");
             assert_same_callbacks(&candidate, &baseline, body);
         }
+        assert_eq!(WORKLIST_BASE.with(Cell::get), 0);
     }
 
     /// Each ladder tail opens a list whose item body is another ladder, so the
@@ -1230,8 +1233,8 @@ mod event_colon_body {
         }
     }
 
-    /// Bodies past the event depth cap and past the global nesting cap read
-    /// through the standard reader and its over-cap degrade.
+    /// Bodies deep in the worklist stay on the event cursor; past the global
+    /// nesting cap both readers degrade the same way.
     #[test]
     fn colon_depth_caps_match_the_standard_reader() {
         let nest = |levels: usize| -> String {
@@ -1245,10 +1248,7 @@ mod event_colon_body {
             }
             out
         };
-        for levels in [
-            event_pipeline::NESTED_EVENT_DEPTH_LIMIT + 2,
-            MAX_NESTING_DEPTH + 5,
-        ] {
+        for levels in [event_pipeline::EVENT_FRAME_LIMIT + 2, MAX_NESTING_DEPTH + 5] {
             let source = nest(levels);
             std::thread::Builder::new()
                 .stack_size(2 * 1024 * 1024)
@@ -1260,8 +1260,8 @@ mod event_colon_body {
     }
 
     #[test]
-    fn colon_bodies_at_the_event_depth_limit_decline() {
-        let _depth = DepthScope::set(event_pipeline::NESTED_EVENT_DEPTH_LIMIT);
+    fn colon_bodies_at_the_event_frame_limit_decline() {
+        let _frames = event_pipeline::hold_event_frames(event_pipeline::EVENT_FRAME_LIMIT);
         let baseline = LadderHook::default();
         let expected = {
             let _standard_root = StandardEventRootGuard::install();
@@ -1289,6 +1289,508 @@ mod event_colon_body {
         assert_eq!(colon_body_event_parses(), before);
         assert_eq!(actual.0 .0, expected.0 .0);
         assert_same_callbacks(&candidate, &baseline, "depth limit");
+    }
+}
+
+/// List, colon, definition and quote mixes whose depth rides the worklist.
+/// Their bodies stay on the event cursor through `MAX_NESTING_DEPTH` while
+/// the native event frames stay within `EVENT_FRAME_LIMIT`.
+#[cfg(feature = "experimental-event-parser-options")]
+mod deep_worklist_owner {
+    use super::deep_quote_worklist::{check, Log};
+    use super::*;
+
+    /// Deep standard parses dominate the runtime, so only this depth runs
+    /// every shape through the full matrix.
+    const SHALLOW_DEPTH: usize = 8;
+
+    /// Strength-2 covering rows over `(mode, positions, source_lines,
+    /// collect)`. At `MAX_NESTING_DEPTH` shape `s` takes row `s`, so the six
+    /// rows run there once each.
+    const PAIRWISE: [(ParseMode, bool, bool, bool); 6] = [
+        (ParseMode::Html, false, false, false),
+        (ParseMode::Html, true, true, true),
+        (ParseMode::HtmlFacade, false, true, false),
+        (ParseMode::HtmlFacade, true, false, true),
+        (ParseMode::Carve, false, false, true),
+        (ParseMode::Carve, true, true, false),
+    ];
+
+    /// `(depth, shape, PAIRWISE row)`: one standard comparison for each
+    /// remaining depth.
+    const DEEP_CELLS: [(usize, &str, usize); 4] = [
+        (64, "list siblings", 0),
+        (120, "quoted list", 2),
+        (199, "list", 4),
+        (260, "colon/list", 1),
+    ];
+
+    /// `(depth, shape, CALLBACK_ROWS row)` for the deep callback comparisons.
+    /// The definition chain crosses onto the standard reader at this depth.
+    const DEEP_CALLBACK_CELLS: [(usize, &str, usize); 2] =
+        [(199, "colon/list", 1), (199, "definition chain", 2)];
+
+    /// `(mode, positions)` rows for the callback test, indexed like `PAIRWISE`.
+    const CALLBACK_ROWS: [(ParseMode, bool); 6] = [
+        (ParseMode::Html, false),
+        (ParseMode::HtmlFacade, true),
+        (ParseMode::Carve, false),
+        (ParseMode::Html, true),
+        (ParseMode::HtmlFacade, false),
+        (ParseMode::Carve, true),
+    ];
+
+    fn full_matrix() -> Vec<(ParseMode, bool, bool, bool)> {
+        let mut rows = Vec::new();
+        for mode in [ParseMode::Html, ParseMode::HtmlFacade, ParseMode::Carve] {
+            for positions in [false, true] {
+                for source_lines in [false, true] {
+                    for collect in [false, true] {
+                        rows.push((mode, positions, source_lines, collect));
+                    }
+                }
+            }
+        }
+        rows
+    }
+
+    fn indent(level: usize) -> String {
+        "  ".repeat(level)
+    }
+
+    /// A paragraph, a quote, a definition list and a figure group at `lead`.
+    fn leaf(lead: &str) -> String {
+        format!(
+            "{lead}deep *leaf*\n\n{lead}> quoted\n\n{lead}:: term\n{lead}:  desc\n\n\
+             {lead}::: figure\n{lead}![a](b)\n{lead}^ caption\n{lead}:::\n"
+        )
+    }
+
+    /// Inside a container, so no root direct reader takes the whole shape.
+    fn wrapped(body: String) -> String {
+        format!("::: wrap\n{body}:::\n")
+    }
+
+    /// `(label, source)`; every shape but the last nests on the worklist.
+    fn shapes(depth: usize) -> Vec<(&'static str, String)> {
+        let list: String = (0..depth)
+            .map(|level| format!("{}- l{level}\n", indent(level)))
+            .chain([leaf(&indent(depth))])
+            .collect();
+        let colon = (0..depth)
+            .map(|level| format!("::: n{level}\n"))
+            .chain([leaf("")])
+            .chain((0..depth).map(|_| ":::\n".to_string()))
+            .collect();
+        // Even levels open a container inside the item above them.
+        let alternating = (0..depth)
+            .map(|level| {
+                let lead = indent(level / 2);
+                if level % 2 == 0 {
+                    format!("{lead}::: n{level}\n")
+                } else {
+                    format!("{lead}- l{level}\n")
+                }
+            })
+            .chain([leaf(&indent(depth / 2))])
+            .collect();
+        let siblings = (0..depth)
+            .map(|level| {
+                let lead = indent(level);
+                format!(
+                    "{lead}- l{level}\n\n{lead}  > q{level}\n\n{lead}  :: t{level}\n\
+                     {lead}  :  d{level}\n\n"
+                )
+            })
+            .collect();
+        let quoted = list.lines().map(|line| format!("> {line}\n")).collect();
+        // Definition bodies parse eagerly, so this chain holds a frame per
+        // level until the limit and reads the rest on the standard reader.
+        let definitions = (0..depth)
+            .map(|level| {
+                let lead = indent(level);
+                format!("{lead}:: t{level}\n{lead}: d{level}\n\n")
+            })
+            .chain([leaf(&indent(depth))])
+            .collect();
+        vec![
+            ("list", wrapped(list)),
+            ("colon", colon),
+            ("colon/list", wrapped(alternating)),
+            ("list siblings", wrapped(siblings)),
+            ("quoted list", wrapped(quoted)),
+            ("definition chain", definitions),
+        ]
+    }
+
+    fn worklist_shapes(depth: usize) -> impl Iterator<Item = (&'static str, String)> {
+        shapes(depth)
+            .into_iter()
+            .filter(|(shape, _)| *shape != "definition chain")
+    }
+
+    fn shape(depth: usize, name: &str) -> String {
+        shapes(depth)
+            .into_iter()
+            .find(|(shape, _)| *shape == name)
+            .unwrap_or_else(|| panic!("unknown shape {name}"))
+            .1
+    }
+
+    fn check_row(
+        depth: usize,
+        shape: &str,
+        source: &str,
+        (mode, positions, source_lines, collect): (ParseMode, bool, bool, bool),
+    ) {
+        let options = Options::default()
+            .with_positions(positions)
+            .with_source_lines(source_lines);
+        let label = format!(
+            "depth={depth}; shape={shape}; positions={positions}; \
+             source_lines={source_lines}; mode={}; collect={collect}",
+            mode as u8
+        );
+        check(&label, source, &options, mode, collect, true);
+    }
+
+    #[test]
+    fn shallow_worklist_shapes_match_standard_across_the_full_matrix() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for (shape, source) in shapes(SHALLOW_DEPTH) {
+                    for row in full_matrix() {
+                        check_row(SHALLOW_DEPTH, shape, &source, row);
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// Every shape at `MAX_NESTING_DEPTH` on its own `PAIRWISE` row, then
+    /// `DEEP_CELLS` for the other deep depths.
+    #[test]
+    fn deep_worklist_shapes_match_standard_on_a_covering_set() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for (s, (shape, source)) in shapes(MAX_NESTING_DEPTH).into_iter().enumerate() {
+                    check_row(MAX_NESTING_DEPTH, shape, &source, PAIRWISE[s]);
+                }
+                for (depth, name, row) in DEEP_CELLS {
+                    check_row(depth, name, &shape(depth, name), PAIRWISE[row]);
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// The old logical gate never admitted a body at depth 8 or deeper.
+    #[test]
+    fn deep_worklist_bodies_reach_the_event_cursor() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for depth in [64, 120, 199, 200, 260] {
+                    let floor = depth.min(MAX_NESTING_DEPTH - 8) / 2;
+                    for (shape, source) in worklist_shapes(depth) {
+                        event_pipeline::PEAK_EVENT_DEPTH.with(|peak| peak.set(0));
+                        let (document, _, used) = event_pipeline::parse_document_with_mode(
+                            &source,
+                            &Options::default(),
+                            ParseMode::Html,
+                        )
+                        .unwrap_or_else(|| panic!("depth={depth}; shape={shape}: declined"));
+                        assert!(used, "depth={depth}; shape={shape}");
+                        let peak = event_pipeline::PEAK_EVENT_DEPTH.with(Cell::get);
+                        assert!(peak >= floor, "depth={depth}; shape={shape}: peak {peak}");
+                        std::mem::forget(document);
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    fn check_callbacks(depth: usize, shape: &str, source: &str, row: usize) {
+        let (mode, positions) = CALLBACK_ROWS[row];
+        let label = format!(
+            "depth={depth}; shape={shape}; positions={positions}; mode={}",
+            mode as u8
+        );
+        let baseline = Log::default();
+        let candidate = Log::default();
+        let expected = {
+            let _standard_root = StandardEventRootGuard::install();
+            let _standard_nested = StandardNestedReaderGuard::install();
+            let options = Options::default()
+                .with_positions(positions)
+                .with_extension(&baseline);
+            parse_with_options_mode_and_index(source, &options, mode).0
+        };
+        let options = Options::default()
+            .with_positions(positions)
+            .with_extension(&candidate);
+        let (actual, _, used) = event_pipeline::parse_document_with_mode(source, &options, mode)
+            .unwrap_or_else(|| panic!("{label}: declined"));
+        assert!(used, "{label}");
+        assert_eq!(actual, expected, "{label}: ast");
+        assert_eq!(
+            *candidate.blocks.borrow(),
+            *baseline.blocks.borrow(),
+            "{label}: block callbacks"
+        );
+        assert_eq!(
+            *candidate.inlines.borrow(),
+            *baseline.inlines.borrow(),
+            "{label}: inline callbacks"
+        );
+    }
+
+    /// Every shape on every `CALLBACK_ROWS` row at `SHALLOW_DEPTH`, then
+    /// `DEEP_CALLBACK_CELLS`.
+    #[test]
+    fn deep_worklist_shapes_keep_extension_callback_order() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for (shape, source) in shapes(SHALLOW_DEPTH) {
+                    for row in 0..CALLBACK_ROWS.len() {
+                        check_callbacks(SHALLOW_DEPTH, shape, &source, row);
+                    }
+                }
+                for (depth, name, row) in DEEP_CALLBACK_CELLS {
+                    check_callbacks(depth, name, &shape(depth, name), row);
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// Only the event route runs here, as in the deep quote release tests.
+    /// The definition chain is left out: past the frame limit it recurses on
+    /// the standard reader, which this stack does not hold at these depths.
+    /// Each shape runs observed and unobserved at every depth; positions
+    /// alternate so each of those pairs sees both values across the depths.
+    /// Debug builds skip it; the `stack-floor-release` CI job runs it.
+    #[test]
+    #[cfg_attr(debug_assertions, ignore = "release stack floor; run with --release")]
+    fn deep_worklist_shapes_fit_the_release_stack_floor() {
+        let stack = if cfg!(debug_assertions) {
+            4 * 1024 * 1024
+        } else {
+            512 * 1024
+        };
+        std::thread::Builder::new()
+            .stack_size(stack)
+            .spawn(|| {
+                for (d, depth) in [199, 200, 260].into_iter().enumerate() {
+                    for (s, (shape, source)) in worklist_shapes(depth).enumerate() {
+                        for observed in [false, true] {
+                            let positions = (d + s + usize::from(observed)) % 2 == 1;
+                            let label = format!(
+                                "depth={depth}; shape={shape}; positions={positions}; \
+                                 observed={observed}"
+                            );
+                            let log = Log::default();
+                            let mut options = Options::default().with_positions(positions);
+                            if observed {
+                                options = options.with_extension(&log);
+                            }
+                            let (document, _, used) = event_pipeline::parse_document_with_mode(
+                                &source,
+                                &options,
+                                ParseMode::Html,
+                            )
+                            .unwrap_or_else(|| panic!("{label}: declined"));
+                            assert!(used, "{label}");
+                            std::mem::forget(document);
+                        }
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    const WORKLIST_DEPTH: usize = 150;
+
+    /// `levels` definition entries from `lead`, each in the description body
+    /// of the one before.
+    fn definition_chain(lead: &str, levels: usize) -> String {
+        (0..levels)
+            .map(|level| {
+                let lead = format!("{lead}{}", indent(level));
+                format!("{lead}:: t{level}\n{lead}: d{level}\n\n")
+            })
+            .collect()
+    }
+
+    /// An eager definition chain over stack the frame count does not see.
+    struct StackedChain {
+        label: String,
+        source: String,
+        /// Lowest logical depth some event frame must reach.
+        min_depth: usize,
+        /// The chain outlasts the budget, so it must take event frames up to
+        /// the last admitted level.
+        fills: bool,
+        direct_quotes: usize,
+    }
+
+    /// Chains whose stack under the eager part is bounded: the direct quote
+    /// helper levels, or a worklist body restored deep.
+    fn stacked_eager_chains() -> Vec<StackedChain> {
+        let limit = event_pipeline::EVENT_FRAME_LIMIT;
+        let direct = event_pipeline::DIRECT_QUOTE_DEPTH_LIMIT - 1;
+        let prefix = "> ".repeat(direct);
+        let quoted = definition_chain("", limit)
+            .lines()
+            .map(|line| {
+                if line.is_empty() {
+                    format!("{}\n", prefix.trim_end())
+                } else {
+                    format!("{prefix}{line}\n")
+                }
+            })
+            .collect();
+        let list: String = (0..WORKLIST_DEPTH)
+            .map(|level| format!("{}- l{level}\n", indent(level)))
+            .collect();
+        let worklist = wrapped(format!(
+            "{list}\n{}",
+            definition_chain(&indent(WORKLIST_DEPTH), limit)
+        ));
+        vec![
+            // The direct levels hold native frames, so the chain on top of
+            // them reads on the standard reader.
+            StackedChain {
+                label: "direct quotes over definitions".to_string(),
+                source: quoted,
+                min_depth: 0,
+                fills: false,
+                direct_quotes: direct,
+            },
+            StackedChain {
+                label: "worklist body over definitions".to_string(),
+                source: worklist,
+                min_depth: WORKLIST_DEPTH,
+                fills: true,
+                direct_quotes: 0,
+            },
+        ]
+    }
+
+    /// Root chains that go on past the budget on the standard reader, whose
+    /// own recursion sets the stack these need.
+    fn root_definition_chains() -> Vec<StackedChain> {
+        [MAX_NESTING_DEPTH - 1, MAX_NESTING_DEPTH]
+            .into_iter()
+            .map(|depth| StackedChain {
+                label: format!("root definitions; depth={depth}"),
+                source: shape(depth, "definition chain"),
+                min_depth: 0,
+                fills: true,
+                direct_quotes: 0,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn stacked_eager_chains_match_standard() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for chain in stacked_eager_chains()
+                    .into_iter()
+                    .chain(root_definition_chains())
+                {
+                    check(
+                        &chain.label,
+                        &chain.source,
+                        &Options::default(),
+                        ParseMode::Html,
+                        false,
+                        true,
+                    );
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// The event route alone on a `stack`-byte thread. No unquoted body takes
+    /// an event frame `EVENT_FRAME_LIMIT` or more levels above the worklist
+    /// base, so an eager chain spends its frames near the top of the stack.
+    fn check_frame_budget(stack: usize, chains: Vec<StackedChain>) {
+        let limit = event_pipeline::EVENT_FRAME_LIMIT;
+        std::thread::Builder::new()
+            .stack_size(stack)
+            .spawn(move || {
+                for chain in chains {
+                    let label = &chain.label;
+                    event_pipeline::PEAK_EVENT_FRAMES.with(|peak| peak.set(0));
+                    event_pipeline::PEAK_EVENT_DEPTH.with(|peak| peak.set(0));
+                    event_pipeline::PEAK_UNQUOTED_STACKED_DEPTH.with(|peak| peak.set(0));
+                    event_pipeline::DIRECT_QUOTE_PARSES.with(|count| count.set(0));
+                    let (document, _, used) = event_pipeline::parse_document_with_mode(
+                        &chain.source,
+                        &Options::default(),
+                        ParseMode::Html,
+                    )
+                    .unwrap_or_else(|| panic!("{label}: declined"));
+                    assert!(used, "{label}");
+                    let frames = event_pipeline::PEAK_EVENT_FRAMES.with(Cell::get);
+                    assert!(frames <= limit, "{label}: {frames} frames");
+                    let stacked = event_pipeline::PEAK_UNQUOTED_STACKED_DEPTH.with(Cell::get);
+                    assert!(stacked < limit, "{label}: stacked {stacked}");
+                    if chain.fills {
+                        assert!(frames > 0, "{label}: no event frame");
+                        assert_eq!(stacked, limit - 1, "{label}: stacked");
+                    }
+                    let depth = event_pipeline::PEAK_EVENT_DEPTH.with(Cell::get);
+                    assert!(depth >= chain.min_depth, "{label}: event depth {depth}");
+                    let quotes = event_pipeline::DIRECT_QUOTE_PARSES.with(Cell::get);
+                    assert_eq!(quotes, chain.direct_quotes, "{label}: direct quotes");
+                    assert_eq!(WORKLIST_BASE.with(Cell::get), 0, "{label}: base leak");
+                    std::mem::forget(document);
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// As in `deep_worklist_shapes_fit_the_release_stack_floor`.
+    #[test]
+    fn stacked_eager_chains_fit_the_release_stack_floor() {
+        let stack = if cfg!(debug_assertions) {
+            4 * 1024 * 1024
+        } else {
+            512 * 1024
+        };
+        check_frame_budget(stack, stacked_eager_chains());
+    }
+
+    /// A root chain at the cap recurses on the standard reader past the
+    /// budget, so 512 KiB is not a floor the event route can owe it; the
+    /// standard reader's own 2 MiB release budget is (`MAX_NESTING_DEPTH`).
+    #[test]
+    fn root_definition_chains_keep_the_frame_budget() {
+        let stack = if cfg!(debug_assertions) {
+            4 * 1024 * 1024
+        } else {
+            2 * 1024 * 1024
+        };
+        check_frame_budget(stack, root_definition_chains());
     }
 }
 

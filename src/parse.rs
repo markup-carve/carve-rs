@@ -2600,6 +2600,46 @@ impl Drop for DepthScope {
     }
 }
 
+#[cfg(feature = "experimental-event-parser-options")]
+thread_local! {
+    // Logical levels no native frame stands under: a worklist body restores
+    // a depth its own stack never descended. Signed, because a body restored
+    // shallower than the stack under its drain must not hide those levels.
+    // Plain initializer for the same MSRV reason as `NESTING_DEPTH`.
+    #[allow(clippy::missing_const_for_thread_local)]
+    static WORKLIST_BASE: Cell<isize> = Cell::new(0);
+}
+
+/// Logical levels above [`WORKLIST_BASE`], the ones holding native frames.
+#[cfg(feature = "experimental-event-parser-options")]
+fn stacked_depth() -> usize {
+    let depth = NESTING_DEPTH.with(Cell::get) as isize;
+    usize::try_from(depth - WORKLIST_BASE.with(Cell::get)).unwrap_or(0)
+}
+
+/// Set [`WORKLIST_BASE`] for one worklist body and restore it on drop.
+#[cfg(feature = "experimental-event-parser-options")]
+struct WorklistBase(isize);
+
+#[cfg(feature = "experimental-event-parser-options")]
+impl WorklistBase {
+    /// `restored` is the depth the body reinstates; `stacked` is
+    /// [`stacked_depth`] where the drain began, so the levels already on the
+    /// native stack under the drain keep counting inside the body.
+    fn set(restored: usize, stacked: usize) -> WorklistBase {
+        let base = restored as isize - stacked as isize;
+        WorklistBase(WORKLIST_BASE.with(|cell| cell.replace(base)))
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+impl Drop for WorklistBase {
+    fn drop(&mut self) {
+        let previous = self.0;
+        WORKLIST_BASE.with(|base| base.set(previous));
+    }
+}
+
 /// [`FigureGroupGuard`] for a value that is not always `true` - the worklist
 /// reinstates what the opener saw rather than entering a group.
 struct FigureGroupScope(bool);

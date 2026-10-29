@@ -3,9 +3,11 @@ use super::*;
 const MIXED_QUOTE_DEPTH_LIMIT: usize = 32;
 // The direct quote helpers recurse through `parse_mixed_blocks` per level.
 pub(super) const DIRECT_QUOTE_DEPTH_LIMIT: usize = 8;
-// The mapped event frame is larger than the standard block frame on the stack.
+// Event frames that may sit on the native stack at once. The mapped event
+// frame is larger than the standard block frame; logical depth is capped
+// separately by `MAX_NESTING_DEPTH`, exactly as on the standard reader.
 #[cfg(feature = "experimental-event-parser-options")]
-pub(super) const NESTED_EVENT_DEPTH_LIMIT: usize = 8;
+pub(super) const EVENT_FRAME_LIMIT: usize = 8;
 // Lines that may keep one quote level eager; see `deep_quote_chain_owned`.
 // The count bounds the eager quotes on any one chain, and each holds one event
 // frame, so a deep chain peaks at budget + 1 frames. Exhausting them would hand
@@ -15,10 +17,10 @@ pub(super) const NESTED_EVENT_DEPTH_LIMIT: usize = 8;
 #[cfg(feature = "experimental-event-parser-options")]
 pub(super) const DEEP_QUOTE_EAGER_BUDGET: usize = 3;
 #[cfg(feature = "experimental-event-parser-options")]
-const _: () = assert!(2 * (DEEP_QUOTE_EAGER_BUDGET + 1) <= NESTED_EVENT_DEPTH_LIMIT);
+const _: () = assert!(2 * (DEEP_QUOTE_EAGER_BUDGET + 1) <= EVENT_FRAME_LIMIT);
 
-// Event frames on the native stack. A deferred quote body is parsed from the
-// worklist, so its logical depth no longer measures the stack under it.
+// Event frames on the native stack. A worklist body restores the logical depth
+// it was collected at, so that depth no longer measures the stack under it.
 #[cfg(feature = "experimental-event-parser-options")]
 thread_local! {
     static EVENT_FRAMES: Cell<usize> = const { Cell::new(0) };
@@ -27,19 +29,33 @@ thread_local! {
 #[cfg(all(feature = "experimental-event-parser-options", test))]
 thread_local! {
     pub(super) static PEAK_EVENT_FRAMES: Cell<usize> = const { Cell::new(0) };
+    // The deepest logical level an event frame was entered at.
+    pub(super) static PEAK_EVENT_DEPTH: Cell<usize> = const { Cell::new(0) };
+    // The highest `stacked_depth` an unquoted body was admitted at.
+    pub(super) static PEAK_UNQUOTED_STACKED_DEPTH: Cell<usize> = const { Cell::new(0) };
 }
 
 #[cfg(feature = "experimental-event-parser-options")]
-struct EventFrame;
+pub(super) struct EventFrame;
 
 #[cfg(feature = "experimental-event-parser-options")]
 impl EventFrame {
     fn enter() -> Self {
         EVENT_FRAMES.with(|frames| frames.set(frames.get() + 1));
         #[cfg(test)]
-        PEAK_EVENT_FRAMES.with(|peak| peak.set(peak.get().max(EVENT_FRAMES.with(Cell::get))));
+        {
+            PEAK_EVENT_FRAMES.with(|peak| peak.set(peak.get().max(EVENT_FRAMES.with(Cell::get))));
+            let depth = NESTING_DEPTH.with(Cell::get);
+            PEAK_EVENT_DEPTH.with(|peak| peak.set(peak.get().max(depth)));
+        }
         EventFrame
     }
+}
+
+/// Occupy `count` event frames, as an eager chain above the caller would.
+#[cfg(all(feature = "experimental-event-parser-options", test))]
+pub(super) fn hold_event_frames(count: usize) -> Vec<EventFrame> {
+    (0..count).map(|_| EventFrame::enter()).collect()
 }
 
 #[cfg(feature = "experimental-event-parser-options")]
@@ -49,11 +65,37 @@ impl Drop for EventFrame {
     }
 }
 
+/// May a nested body take an event frame here? Asked before the cursor reads
+/// a line, so a refusal cannot repeat an extension callback.
+///
+/// `EVENT_FRAME_LIMIT` bounds the event frames on the native stack. An
+/// unquoted body is also held to `EVENT_FRAME_LIMIT` levels above
+/// `WORKLIST_BASE`: at the root that is the old logical gate, so an eager
+/// chain (a definition body, a `::: quote` block, a ladder tail, a drain)
+/// takes event frames only near the top and never on top of a deep standard
+/// recursion. A body popped from the worklist restores its depth over a base
+/// that discounts the levels with no frame under them, so it reads on the
+/// event cursor however deep it sits. A quoted body keeps the frame count
+/// alone, as before; its deep chains are bounded by `DEEP_QUOTE_EAGER_BUDGET`.
+/// The direct quote helpers stay gated by logical depth.
+#[cfg(feature = "experimental-event-parser-options")]
+fn event_frame_admitted(quoted: bool) -> bool {
+    let admitted = EVENT_FRAMES.with(Cell::get) < EVENT_FRAME_LIMIT
+        && NESTING_DEPTH.with(Cell::get) < MAX_NESTING_DEPTH
+        && (quoted || stacked_depth() < EVENT_FRAME_LIMIT);
+    #[cfg(test)]
+    if admitted && !quoted {
+        PEAK_UNQUOTED_STACKED_DEPTH.with(|peak| peak.set(peak.get().max(stacked_depth())));
+    }
+    admitted
+}
+
 #[cfg(test)]
 thread_local! {
     pub(super) static NESTED_EXTENSION_EVENT_PARSES: Cell<usize> = const { Cell::new(0) };
     pub(super) static LADDER_TAIL_EVENT_PARSES: Cell<usize> = const { Cell::new(0) };
     pub(super) static COLON_BODY_EVENT_PARSES: Cell<usize> = const { Cell::new(0) };
+    pub(super) static DIRECT_QUOTE_PARSES: Cell<usize> = const { Cell::new(0) };
 }
 
 #[cfg(test)]
@@ -601,12 +643,7 @@ pub(super) fn parse_nested_mapped_blocks(
     pending: &mut Vec<PendingBody>,
     positioned: bool,
 ) -> Option<Vec<BlockNode>> {
-    let stacked = if scope.in_quoted_body {
-        EVENT_FRAMES.with(Cell::get)
-    } else {
-        NESTING_DEPTH.with(Cell::get)
-    };
-    if stacked >= NESTED_EVENT_DEPTH_LIMIT {
+    if !event_frame_admitted(scope.in_quoted_body) {
         return None;
     }
     let _frame = EventFrame::enter();
@@ -659,10 +696,7 @@ pub(super) fn parse_drained_fragment(
     source: &str,
     options: &Options<'_>,
 ) -> Option<Vec<BlockNode>> {
-    if options.positions
-        || options.source_lines
-        || NESTING_DEPTH.with(Cell::get) >= NESTED_EVENT_DEPTH_LIMIT
-    {
+    if options.positions || options.source_lines || !event_frame_admitted(false) {
         return None;
     }
     let lines: Vec<&str> = source.lines().collect();
@@ -680,10 +714,12 @@ pub(super) fn parse_drained_fragment(
     };
     let line_map = want_lines.then_some(line_map.as_slice());
     let mut pending = Vec::new();
+    // The drain below runs on top of this frame, so it stays counted; each
+    // ladder level under it is one more eager fragment.
+    let _frame = EventFrame::enter();
     // The standard reader drains after its depth guard drops; each body
     // restores the depth it recorded when it was collected.
     let mut blocks = {
-        let _frame = EventFrame::enter();
         let _depth = DepthGuard::enter()?;
         let mut cur = LineCursor::new_with_cols(&lines, line_map, None);
         cur.reached = Some(&[]);
@@ -703,13 +739,6 @@ pub(super) fn parse_drained_fragment(
     Some(blocks)
 }
 
-/// Can the event cursor own this colon body? Decided before the cursor reads
-/// a line, so a refusal cannot repeat an extension callback.
-#[cfg(feature = "experimental-event-parser-options")]
-fn colon_body_admitted() -> bool {
-    NESTING_DEPTH.with(Cell::get) < NESTED_EVENT_DEPTH_LIMIT
-}
-
 /// The event counterpart of `parse_blocks` for a colon container body. Reads
 /// the shared view in place, with the cursor `parse_colon_view` would build,
 /// and leaves nested bodies on the caller's worklist.
@@ -722,7 +751,7 @@ pub(super) fn parse_colon_body<'a>(
     options: &Options<'_>,
     pending: &mut Vec<PendingBody>,
 ) -> Option<Vec<BlockNode>> {
-    if !colon_body_admitted() {
+    if !event_frame_admitted(false) {
         return None;
     }
     let _frame = EventFrame::enter();
@@ -1202,6 +1231,8 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                 None
             };
             if let Some((quote, end)) = direct {
+                #[cfg(test)]
+                DIRECT_QUOTE_PARSES.with(|count| count.set(count.get() + 1));
                 cur.pos = end;
                 emit!(_block_source_line, BlockNode::BlockQuote(quote));
                 continue;

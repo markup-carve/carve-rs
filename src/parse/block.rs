@@ -166,8 +166,21 @@ pub(in crate::parse) fn resolve_pending_bodies(
     let mut links: Vec<ResolvedBody> = Vec::new();
     let mut work: Vec<(usize, PendingBody)> =
         pending.into_iter().map(|body| (0usize, body)).collect();
+    // Levels on the native stack under this drain; every body below runs on
+    // top of them, whatever depth it restores.
+    #[cfg(feature = "experimental-event-parser-options")]
+    let stacked = stacked_depth();
     while let Some((slot, entry)) = work.pop() {
         let mut nested = Vec::new();
+        #[cfg(feature = "experimental-event-parser-options")]
+        let _base = WorklistBase::set(
+            match &entry.body {
+                Body::Colon(body) => body.depth,
+                Body::Item(body) => body.depth,
+                Body::Quote(body) => body.depth,
+            },
+            stacked,
+        );
         #[cfg(feature = "experimental-event-parser")]
         let mut quote = None;
         let (children, item, loose_inside_chunk, layout) = match entry.body {
