@@ -44,7 +44,7 @@ fn a_task_item_column_releases_the_nested_term() {
 }
 
 #[test]
-fn a_line_one_column_short_stays_in_the_nested_term() {
+fn a_line_one_column_short_releases_the_nested_term() {
     let source = "* [ ] - :: t\n     : a\n     :: sibling\n     tail\n";
     let html = to_html(source);
     let term = html
@@ -55,13 +55,13 @@ fn a_line_one_column_short_stays_in_the_nested_term() {
         .next()
         .unwrap();
     assert!(
-        term.contains(": a") && term.contains(":: sibling") && term.contains("tail"),
+        term.contains(": a") && !term.contains(":: sibling"),
         "{html}"
     );
+    assert!(html.contains("<dt>sibling"), "{html}");
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3522"]
 fn a_line_one_column_past_releases_the_nested_term() {
     let source = "* [ ] - :: t\n       : a\n       :: sibling\n       tail\n";
     let html = to_html(source);
