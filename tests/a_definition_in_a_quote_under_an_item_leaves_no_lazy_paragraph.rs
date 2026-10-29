@@ -20,6 +20,8 @@ fn a_column_zero_line_leaves_the_item() {
         let heading = line == "# H";
         if heading {
             assert!(got.ends_with("</ul><p>tail</p>"), "{line}: {got}");
+        } else if line == "[^f]: n" {
+            assert_eq!(got, QUOTED_LIST, "{line}");
         } else {
             assert_eq!(got, format!("{QUOTED_LIST}<p>tail</p>"), "{line}");
         }
@@ -30,7 +32,7 @@ fn a_column_zero_line_leaves_the_item() {
 fn a_footnote_under_a_quoted_paragraph_leaves_no_lazy_paragraph() {
     assert_eq!(
         html("- > para\n  > [^f]: n\ntail\n"),
-        "<ul><li><blockquote><p>para</p></blockquote></li></ul><p>tail</p>"
+        "<ul><li><blockquote><p>para</p></blockquote></li></ul>"
     );
 }
 
@@ -38,7 +40,7 @@ fn a_footnote_under_a_quoted_paragraph_leaves_no_lazy_paragraph() {
 fn a_line_at_the_outer_item_column_stays_in_the_item() {
     assert_eq!(
         html("- > - para\n  >   [^f]: n\n  tail\n"),
-        "<ul><li><blockquote><ul><li>para</li></ul></blockquote> tail </li></ul>"
+        "<ul><li><blockquote><ul><li>para</li></ul></blockquote></li></ul>"
     );
 }
 

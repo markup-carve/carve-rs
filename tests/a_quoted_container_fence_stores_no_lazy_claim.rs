@@ -32,10 +32,10 @@ flush
 "####,
             r####"<blockquote>
   <p>:  a</p>
-  <p><code>
-x
-flush</code></p>
+  <pre><code>x
+</code></pre>
 </blockquote>
+<p>flush</p>
 "####,
         ),
         (
@@ -405,7 +405,9 @@ fn code_and_raw_fences_across_quote_depths_and_marker_widths() {
 #[test]
 fn a_nested_quote_ends_the_previous_item_host() {
     let source = "> - a\n> > q\n>\n>   ```\n>   x\nflush\n";
-    assert!(carve::to_html(source).ends_with("<p><code>\nx\nflush</code></p>\n</blockquote>"));
+    assert!(carve::to_html(source).ends_with(
+        "  </ul>\n  <blockquote><p>q</p></blockquote>\n  <pre><code>x\n</code></pre>\n</blockquote>\n<p>flush</p>"
+    ));
 }
 
 #[test]

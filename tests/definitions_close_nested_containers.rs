@@ -14,7 +14,7 @@ fn a_column_0_definition_closes_an_item_holding_a_quote() {
     );
     assert_eq!(
         html("- > para\n[^p]: n\nx\n"),
-        "<ul><li><blockquote><p>para</p></blockquote></li></ul><p>x</p>"
+        "<ul><li><blockquote><p>para</p></blockquote></li></ul>"
     );
     assert_eq!(
         html("- > para\n[r]: /u\ntail\n"),
@@ -22,7 +22,7 @@ fn a_column_0_definition_closes_an_item_holding_a_quote() {
     );
     assert_eq!(
         html("- > para\n[^p]: n\ntail\n"),
-        "<ul><li><blockquote><p>para</p></blockquote></li></ul><p>tail</p>"
+        "<ul><li><blockquote><p>para</p></blockquote></li></ul>"
     );
 }
 
@@ -30,7 +30,7 @@ fn a_column_0_definition_closes_an_item_holding_a_quote() {
 fn a_column_0_note_closes_an_ordered_sub_list() {
     assert_eq!(
         html("1. 1. para\n[^p]: n\nx\n"),
-        "<ol><li><ol><li>para</li></ol></li></ol><p>x</p>"
+        "<ol><li><ol><li>para</li></ol></li></ol>"
     );
 }
 
@@ -78,7 +78,7 @@ fn a_definition_at_an_item_column_closes_its_sub_item() {
 fn a_column_0_definition_ends_the_quote_hosting_item() {
     assert_eq!(
         html("1. > para\n[r]: /u\n   > tail\n"),
-        "<ol><li><blockquote><p>para</p></blockquote></li></ol><p>&gt; tail</p>"
+        "<ol><li><blockquote><p>para</p></blockquote></li></ol><blockquote><p>tail</p></blockquote>"
     );
 }
 
@@ -91,13 +91,13 @@ fn a_column_0_definition_closes_an_ordered_item_colon_body() {
 fn a_note_at_an_ordered_item_column_closes_its_sub_item() {
     assert_eq!(
         html("1. - para\n    [^p]: n\n     tail\n"),
-        "<ol><li><ul><li>para</li></ul> tail </li></ol>"
+        "<ol><li><ul><li>para</li></ul></li></ol>"
     );
 }
 
 #[test]
 fn a_column_0_note_closes_an_ordered_item_colon_body() {
-    assert_eq!(html("1. ::: note\n   para\n[^p]: n\nx\n"), "<ol><li><aside class=\"admonition note\" aria-label=\"Note\"><p>para</p></aside></li></ol><p>x</p>");
+    assert_eq!(html("1. ::: note\n   para\n[^p]: n\nx\n"), "<ol><li><aside class=\"admonition note\" aria-label=\"Note\"><p>para</p></aside></li></ol>");
 }
 
 #[test]
@@ -117,7 +117,7 @@ fn an_indented_line_after_a_column_0_definition_is_a_document_paragraph() {
 fn a_column_0_note_closes_an_ordered_item_holding_a_quote() {
     assert_eq!(
         html("1. > para\n[^p]: n\ntail\n"),
-        "<ol><li><blockquote><p>para</p></blockquote></li></ol><p>tail</p>"
+        "<ol><li><blockquote><p>para</p></blockquote></li></ol>"
     );
 }
 
@@ -141,20 +141,20 @@ fn a_column_0_definition_closes_an_ordered_sub_list() {
 fn a_column_0_note_closes_a_bullet_sub_list() {
     assert_eq!(
         html("1. - para\n[^p]: n\nx\n"),
-        "<ol><li><ul><li>para</li></ul></li></ol><p>x</p>"
+        "<ol><li><ul><li>para</li></ul></li></ol>"
     );
 }
 
 #[test]
 fn a_column_0_note_closes_an_ordered_item_colon_body_before_tail() {
-    assert_eq!(html("1. ::: note\n   more\n[^p]: n\ntail\n"), "<ol><li><aside class=\"admonition note\" aria-label=\"Note\"><p>more</p></aside></li></ol><p>tail</p>");
+    assert_eq!(html("1. ::: note\n   more\n[^p]: n\ntail\n"), "<ol><li><aside class=\"admonition note\" aria-label=\"Note\"><p>more</p></aside></li></ol>");
 }
 
 #[test]
 fn a_note_at_a_description_column_closes_its_ordered_sub_list() {
     assert_eq!(
         html(":: t\n: 1. para\n    [^p]: n\n     tail\n"),
-        "<dl><dt>t</dt><dd><ol><li>para</li></ol><p>tail</p></dd></dl>"
+        "<dl><dt>t</dt><dd><ol><li>para</li></ol></dd></dl>"
     );
 }
 

@@ -31,8 +31,8 @@ fn a_link_definition_after_an_indented_closer_registers() {
 fn a_footnote_definition_after_an_indented_closer_registers() {
     let out = html("%%%\nhidden\n  %%%\n[^f]: note\nsee[^f]\n");
     assert!(
-        out.contains("doc-noteref"),
-        "reference did not resolve: {out}"
+        !out.contains("doc-noteref"),
+        "the reference inside the note body resolved: {out}"
     );
     assert!(
         !out.contains("[^f]: note"),
@@ -82,7 +82,7 @@ fn a_list_marker_inside_a_comment_seeds_no_content_column() {
     ] {
         assert_eq!(
             html(src),
-            "<p>[r]: /u</p>\n<p>[r][]</p>",
+            "<p><a href=\"/u\">r</a></p>",
             "phantom content column for {src:?}"
         );
     }

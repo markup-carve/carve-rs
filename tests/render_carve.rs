@@ -869,6 +869,7 @@ fn the_render_cap_still_bounds_a_hand_built_ast() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_literal_marker_escapes_only_the_character_that_opens_it() {
     // PART 11 §4: escape what would change the parse, and nothing else. A `:`
     // opens a definition marker or a colon fence only at the START of a line,

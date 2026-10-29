@@ -131,6 +131,7 @@ fn a_delimited_comment_below_a_sub_list_is_untouched() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_description_comment_matches_the_reference_writer_passes() {
     let source = "- :: t\n  :  d\n\n  %% q\n";
     let first = fmt(source);

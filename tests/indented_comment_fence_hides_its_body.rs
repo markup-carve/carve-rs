@@ -28,7 +28,7 @@ fn an_indented_fence_inside_a_list_item_keeps_the_item_open() {
     // content, the shape carve-rs#572 settled for a column-0 comment.
     assert_eq!(
         to_html("- a\n %%% n\n x\n %%%\n tail\n"),
-        "<ul>\n  <li>a\n    tail\n  </li>\n</ul>"
+        "<ul>\n  <li>a</li>\n</ul>\n<p>tail</p>"
     );
 }
 

@@ -1,4 +1,4 @@
-const EXPECTED: &str = "<dl>\n  <dt>a</dt>\n  <dd>\n    <p>b</p>\n    <dl>\n      <dt>t</dt>\n    </dl>\n    <p>: zq</p>\n  </dd>\n</dl>";
+const EXPECTED: &str = "<dl>\n  <dt>a</dt>\n  <dd>\n    <p>b</p>\n    <dl>\n      <dt>t</dt>\n      <dd>zq</dd>\n    </dl>\n  </dd>\n</dl>";
 
 #[test]
 fn a_separator_below_a_nested_description_list_stays_text() {

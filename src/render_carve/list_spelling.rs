@@ -586,7 +586,7 @@ pub(super) fn render_definition_list(
                 }
             }
             let body = trim_non_nbsp(&at_item_content_column(ctx, |ctx| {
-                render_blocks(session, def, ctx, None, true)
+                render_blocks(session, def, ctx, None)
             }))
             .to_string();
             if body.is_empty() {
@@ -595,15 +595,8 @@ pub(super) fn render_definition_list(
             }
             let mut lines = body.split('\n');
             out.push(format!(": {}", lines.next().unwrap_or_default()));
-            let guard = thematic_guard(session);
-            let mut previous_blank = false;
             for line in lines {
-                if !previous_blank && line.starts_with(guard.as_str()) {
-                    out.push(line.to_string());
-                } else {
-                    out.push(format!("  {line}"));
-                }
-                previous_blank = line.is_empty();
+                out.push(format!("  {line}"));
             }
         }
         escape_window::leave(session, recorded);

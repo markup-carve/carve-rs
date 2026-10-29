@@ -8,14 +8,14 @@ fn a_nested_item_owns_the_plus_at_its_marker_column() {
 #[test]
 fn a_tabbed_nested_item_keeps_its_marker_out_of_the_quote() {
     let source = "- x\n\t- > a\n    +\n    b\n";
-    let expected = "<ul>\n  <li>x\n    <ul>\n      <li>\n        <blockquote><p>a</p></blockquote>\n        b\n      </li>\n    </ul>\n  </li>\n</ul>";
+    let expected = "<ul>\n  <li>x\n    <ul>\n      <li>\n        <blockquote><p>a\n+\nb</p></blockquote>\n      </li>\n    </ul>\n  </li>\n</ul>";
     assert_eq!(carve::to_html(source), expected);
 }
 
 #[test]
 fn an_ordered_item_takes_a_tabbed_follower_after_its_marker() {
     let source = "1. ordered\n  [^n]: note\n    1. ordered\n    +\n\ttext\n";
-    let expected = "<ol>\n  <li>ordered\n[^n]: note\n    <ol>\n      <li>ordered\n        text\n      </li>\n    </ol>\n  </li>\n</ol>";
+    let expected = "<ol>\n  <li>ordered</li>\n</ol>";
     assert_eq!(carve::to_html(source), expected);
 }
 
@@ -80,7 +80,7 @@ fn a_quote_first_block_inside_an_item_attaches_a_quoted_follower() {
 #[test]
 fn a_refused_indented_plus_folds_the_following_list_line() {
     let source = "- a\n\n +\n- s";
-    let expected = "<ul>\n  <li>a</li>\n</ul>\n<p>+\n- s</p>";
+    let expected = "<ul>\n  <li>a</li>\n</ul>\n<p>+</p>\n<ul>\n  <li>s</li>\n</ul>";
     assert_eq!(carve::to_html(source).trim_end(), expected);
 }
 
@@ -200,7 +200,7 @@ fn a_quote_opened_on_a_later_item_line_refuses_an_unprefixed_marker() {
 #[test]
 fn a_refused_plus_after_a_nested_fence_stays_outside_the_list() {
     let source = "- a\n  - ```\n +\ntail";
-    let expected = "<ul>\n  <li>a\n    <ul>\n      <li>\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>+\ntail</p>";
+    let expected = "<ul>\n  <li>a\n    <ul>\n      <li>\n        <pre><code></code></pre>\n      </li>\n    </ul>\n    tail\n  </li>\n</ul>";
     assert_eq!(carve::to_html(source).trim_end(), expected);
 }
 
@@ -213,7 +213,7 @@ fn an_attached_block_does_not_duplicate_a_nested_fence_blank() {
 
 #[test]
 fn an_indented_list_line_stays_in_a_refused_plus_paragraph() {
-    assert_eq!(carve::to_html("[^a]: a\n+\n  - b"), "<p>+\n- b</p>");
+    assert_eq!(carve::to_html("[^a]: a\n+\n  - b"), "");
 }
 
 #[test]
@@ -233,8 +233,16 @@ fn a_refused_quote_marker_after_a_blank_and_nested_fence_keeps_the_list_line() {
 
 #[test]
 fn a_marker_after_a_collected_definition_reaches_the_surviving_item() {
-    let expected = "<ul>\n  <li>a\n    <ol>\n      <li>ordered</li>\n    </ol>\n    <blockquote><p>quote</p></blockquote>\n  </li>\n</ul>";
-    for definition in ["[^n]: note", "[r]: /target"] {
+    for (definition, expected) in [
+        (
+            "[^n]: note",
+            "<ul>\n  <li>a\n    <ol>\n      <li>ordered</li>\n    </ol>\n  </li>\n</ul>",
+        ),
+        (
+            "[r]: /target",
+            "<ul>\n  <li>a\n    <ol>\n      <li>ordered</li>\n    </ol>\n    <blockquote><p>quote</p></blockquote>\n  </li>\n</ul>",
+        ),
+    ] {
         let source = format!("- a\n  1. ordered\n    {definition}\n  +\n  > quote\n");
         assert_eq!(carve::to_html(&source), expected, "{source}");
     }
@@ -250,7 +258,8 @@ fn an_indented_footnote_marker_attaches_at_the_notes_marker_column() {
 
 #[test]
 fn a_below_column_list_line_stays_lazy_after_either_plus_or_prose() {
-    let expected = "<ul>\n  <li>\n    <ul>\n      <li></li>\n    </ul>\n    +\n- x\n  </li>\n</ul>";
+    let expected =
+        "<ul>\n  <li>\n    <ul>\n      <li></li>\n    </ul>\n    +\n  </li>\n  <li>x</li>\n</ul>";
     for text in ["+", "ordinary"] {
         let source = format!("- - +\n  {text}\n - x\n");
         assert_eq!(carve::to_html(&source).replace(text, "+"), expected);

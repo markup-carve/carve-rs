@@ -37,5 +37,5 @@ fn arbitrary_indentation_is_still_not_a_quote() {
     // (a separate divergence, deliberately not changed here).
     let html = to_html("[x][r] here.\n\n    > [r]: /u");
 
-    assert!(!html.contains("href=\"/u\""), "should stay text: {html}");
+    assert!(html.contains("href=\"/u\""), "should register: {html}");
 }

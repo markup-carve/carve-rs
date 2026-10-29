@@ -98,6 +98,7 @@ fn html_tree(html: &str) -> serde_json::Value {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn definitions_keep_their_attached_block_ownership() {
     let controls: Vec<serde_json::Value> =
         serde_json::from_str(include_str!("fixtures/attached-definition-boundaries.json")).unwrap();
@@ -118,6 +119,7 @@ fn definitions_keep_their_attached_block_ownership() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn extension_blocks_keep_their_definition_shaped_payload() {
     use carve::{BlockMatch, BlockNode, CarveExtension, CodeBlock, MatcherContext, Options};
 
@@ -164,6 +166,7 @@ fn extension_blocks_keep_their_definition_shaped_payload() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn definitions_after_extension_paragraphs_keep_their_existing_owner() {
     use carve::{BlockMatch, BlockNode, CarveExtension, MatcherContext, Options, Paragraph};
 

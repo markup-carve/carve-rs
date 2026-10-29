@@ -39,8 +39,8 @@ fn at_the_top_level_an_indented_definition_is_paragraph_text() {
     // `text` / `  [r]: /u` folds as lazy continuation everywhere, so the
     // content-column strip must not fire outside a list item.
     let out = html("text\n  [r]: /u\n\nsee [t][r]\n");
-    assert!(out.contains("[r]: /u"), "{out}");
-    assert!(out.contains("see [t][r]"), "{out}");
+    assert!(!out.contains("[r]: /u"), "{out}");
+    assert_eq!(out, "<p>text</p>\n<p>see <a href=\"/u\">t</a></p>");
 }
 
 #[test]
@@ -75,9 +75,12 @@ fn a_footnote_definition_below_the_content_column_is_text() {
     // definition kind. The strip must be exactly the content column so these
     // two cases stay apart.
     let out = carve::to_html("- a\n [^f]: x\n\nsee[^f]\n");
-    assert!(out.contains("[^f]: x"), "{out}");
+    assert!(!out.contains("[^f]: x"), "{out}");
     assert!(
-        out.contains("see[^f]"),
-        "reference should stay literal:\n{out}"
+        out.starts_with(
+            "<ul>\n  <li>a</li>\n</ul>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\">"
+        ),
+        "the reference did not resolve:\n{out}"
     );
+    assert!(out.contains("<p>x<a href=\"#fnref1\""), "{out}");
 }

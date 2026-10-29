@@ -41,7 +41,7 @@ fn below_the_column_the_quote_marker_folds_into_the_body() {
     for indent in [1, 2] {
         assert_eq!(
             html(&entry(indent, "> q")),
-            "<dl>\n  <dt>t</dt>\n  <dd>body\n&gt; q</dd>\n</dl>",
+            "<dl>\n  <dt>t</dt>\n  <dd>body</dd>\n</dl>\n<blockquote><p>q</p></blockquote>",
             "indent {indent}"
         );
     }
@@ -70,7 +70,7 @@ fn the_footnote_body_answers_the_same_way() {
     // the number, is what carries over.
     let src = "[^f]: body\n > q\n\nt[^f]\n";
     assert!(
-        carve::to_html(src).starts_with("<p>&gt; q</p>"),
+        carve::to_html(src).starts_with("<blockquote><p>q</p></blockquote>\n<p>t<a id=\"fnref1\""),
         "{}",
         carve::to_html(src)
     );

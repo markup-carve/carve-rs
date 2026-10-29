@@ -660,6 +660,7 @@ pub(in crate::parse) fn emptied_container_markup(
 
 /// Turn the line/column pair already on a span into codepoint offsets.
 pub(in crate::parse) fn apply_offsets(pos: &mut Pos, line_starts: &CodepointLineStarts) {
+    restore_authored_columns(pos);
     if let Some(start) = line_starts.get(pos.start_line.saturating_sub(1)) {
         pos.start_offset = start + pos.start_column.saturating_sub(1);
     }

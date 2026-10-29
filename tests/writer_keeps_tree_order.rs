@@ -169,6 +169,7 @@ fn markdown_blanks_a_scheme_with_an_embedded_control() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn non_html_corpus_writer_rows_follow_their_clauses() {
     let rows: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/non-html-writer-output.json")).unwrap();

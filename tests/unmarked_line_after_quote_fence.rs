@@ -15,5 +15,5 @@ fn check(source: &str, expected: &str) {
 
 #[test]
 fn exact_html() {
-    check("> - > ~~~\n  > y", "<blockquote>\n  <ul>\n    <li>\n      <blockquote>\n        <pre><code></code></pre>\n      </blockquote>\n    </li>\n  </ul>\n</blockquote>\n<p>&gt; y</p>\n");
+    check("> - > ~~~\n  > y", "<blockquote>\n  <ul>\n    <li>\n      <blockquote>\n        <pre><code></code></pre>\n      </blockquote>\n    </li>\n  </ul>\n  <p>y</p>\n</blockquote>\n");
 }

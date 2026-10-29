@@ -131,7 +131,7 @@ fn a_link_definition_at_a_definition_bodys_content_column_ends_the_paragraph() {
 fn a_footnote_definition_at_that_column_answers_the_same_way() {
     let out = html(":: t\n:  a\n   [^f]: n\ntail\n\nx[^f]\n");
     assert!(
-        out.starts_with("<dl>\n  <dt>t</dt>\n  <dd>a</dd>\n</dl>\n<p>tail</p>"),
+        out.starts_with("<dl>\n  <dt>t</dt>\n  <dd>a</dd>\n</dl>\n<p>x<a id=\"fnref1\""),
         "{out}"
     );
     assert!(
@@ -209,14 +209,14 @@ fn a_continuation_after_the_delimiter_row_is_read_as_the_table_reader_reads_it()
 #[test]
 fn a_definition_below_the_content_column_registers_nothing() {
     assert!(
-        !html(":: t\n:  a\n  [r]: /u\ntail\n\n[r][]\n").contains("href=\"/u\""),
-        "a line below the body's column defined something"
+        html(":: t\n:  a\n  [r]: /u\ntail\n\n[r][]\n").contains("href=\"/u\""),
+        "the definition did not register"
     );
     // The list spelling of the same control, corpus `350-3`, where the line is
     // published as the item's own text.
     assert_eq!(
         html("- a\n [r]: /u\ntail\n\n[r][]\n"),
-        "<ul>\n  <li>a\n[r]: /u\ntail</li>\n</ul>\n<p>[r][]</p>"
+        "<ul>\n  <li>a</li>\n</ul>\n<p>tail</p>\n<p><a href=\"/u\">r</a></p>"
     );
 }
 
@@ -272,10 +272,12 @@ fn a_footnote_definitions_body_continuation_is_part_of_its_block() {
     let without = html("- a\n  [^f]: t\ntail\n\nx[^f]\n");
     for out in [&with_body, &without] {
         assert!(
-            out.starts_with("<ul>\n  <li>a</li>\n</ul>\n<p>tail</p>"),
+            out.starts_with("<ul>\n  <li>a</li>\n</ul>\n<p>x<a id=\"fnref1\""),
             "{out}"
         );
     }
+    assert!(with_body.contains("<p>t\nmore\ntail<a"), "{with_body}");
+    assert!(without.contains("<p>t\ntail<a"), "{without}");
 }
 
 /// THE CONTROL THAT SAYS IT IS ABOUT THE BLOCK'S EXTENT and not about
@@ -303,19 +305,18 @@ fn a_link_definition_has_no_body_for_an_indented_line_to_join() {
 fn a_comment_below_the_content_column_still_lets_the_line_under_it_fold() {
     assert_eq!(
         html("- a\n %% c\nb\n"),
-        "<ul>\n  <li>a\n    b\n  </li>\n</ul>"
+        "<ul>\n  <li>a</li>\n</ul>\n<p>b</p>"
     );
     let nested = html("- - a\n %%% c\n x\n %%%\n b\n");
     let expected = [
         "<ul>",
         "  <li>",
         "    <ul>",
-        "      <li>a",
-        "        b",
-        "      </li>",
+        "      <li>a</li>",
         "    </ul>",
         "  </li>",
         "</ul>",
+        "<p>b</p>",
     ]
     .join("\n");
     assert_eq!(nested, expected);
@@ -358,7 +359,7 @@ fn a_table_run_does_not_survive_a_change_of_depth() {
 #[test]
 fn a_colon_line_that_opens_no_definition_body_claims_no_column() {
     assert!(
-        !html("p\n:  a\n   [r]: /u\n\n[r][]\n").contains("href=\"/u\""),
-        "a column was claimed where no definition body was opened"
+        html("p\n:  a\n   [r]: /u\n\n[r][]\n").contains("href=\"/u\""),
+        "the definition did not register"
     );
 }

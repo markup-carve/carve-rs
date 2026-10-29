@@ -7,6 +7,6 @@ fn a_closed_comment_at_the_description_column_keeps_its_follower() {
         to_html(source),
         to_html_with_options(source, &Options::default().with_positions(true)),
     ] {
-        assert!(html.contains("<p>tail</p>\n      </dd>"), "{html}");
+        assert!(html.contains("</ol>\n<p>tail</p>"), "{html}");
     }
 }

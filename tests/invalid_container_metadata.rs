@@ -109,6 +109,7 @@ fn djot_migration_keeps_rejected_opener_text() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn prose_opener_does_not_block_formatting() {
     let patch = carve::to_carve_patch("  ::: widget Bad\nx\n:::\n");
     assert!(!patch.edits.is_empty());

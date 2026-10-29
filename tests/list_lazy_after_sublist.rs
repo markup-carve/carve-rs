@@ -163,7 +163,7 @@ fn a_below_column_heading_after_a_marker_line_sublist_folds_as_text() {
     // body's column 0 and the recursive parse then read a heading.
     assert_eq!(
         carve::to_html("- - a\n # H"),
-        "<ul>\n  <li>\n    <ul>\n      <li>a\n# H</li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n    </ul>\n  </li>\n</ul>\n<section id=\"H\">\n  <h1>H</h1>\n</section>"
     );
 }
 
@@ -171,7 +171,7 @@ fn a_below_column_heading_after_a_marker_line_sublist_folds_as_text() {
 fn a_below_column_marker_after_a_marker_line_sublist_folds_as_text() {
     assert_eq!(
         carve::to_html("- - a\n - b"),
-        "<ul>\n  <li>\n    <ul>\n      <li>a\n- b</li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n    </ul>\n  </li>\n  <li>b</li>\n</ul>"
     );
 }
 
@@ -179,11 +179,11 @@ fn a_below_column_marker_after_a_marker_line_sublist_folds_as_text() {
 fn the_same_holds_for_a_following_line_sublist() {
     assert_eq!(
         carve::to_html("- x\n  - a\n - b"),
-        "<ul>\n  <li>x\n    <ul>\n      <li>a\n- b</li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>x\n    <ul>\n      <li>a</li>\n    </ul>\n  </li>\n  <li>b</li>\n</ul>"
     );
     assert_eq!(
         carve::to_html("- x\n  - a\n # H"),
-        "<ul>\n  <li>x\n    <ul>\n      <li>a\n# H</li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>x\n    <ul>\n      <li>a</li>\n    </ul>\n  </li>\n</ul>\n<section id=\"H\">\n  <h1>H</h1>\n</section>"
     );
 }
 
@@ -204,16 +204,16 @@ fn two_columns_in_folds_as_well() {
     // that reached the SUB-list's content column on the reparse (carve#603).
     assert_eq!(
         carve::to_html("-   x\n    - a\n  - b"),
-        "<ul>\n  <li>x\n    <ul>\n      <li>a\n- b</li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>x\n    <ul>\n      <li>a</li>\n    </ul>\n  </li>\n  <li>b</li>\n</ul>"
     );
     // Three columns in, and with the whole list indented, are the same line.
     assert_eq!(
         carve::to_html("-   x\n    - a\n   - b"),
-        "<ul>\n  <li>x\n    <ul>\n      <li>a\n- b</li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>x\n    <ul>\n      <li>a</li>\n    </ul>\n  </li>\n  <li>b</li>\n</ul>"
     );
     assert_eq!(
         carve::to_html("  - x\n    - a\n   - b"),
-        "<ul>\n  <li>x\n    <ul>\n      <li>a\n- b</li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>x\n    <ul>\n      <li>a</li>\n    </ul>\n  </li>\n  <li>b</li>\n</ul>"
     );
 }
 
@@ -231,7 +231,7 @@ fn a_below_column_term_and_separator_each_fold_into_their_owner() {
     // The TERM is not lenient: one column in it is text like any other opener.
     assert_eq!(
         carve::to_html("- - a\n :: term"),
-        "<ul>\n  <li>\n    <ul>\n      <li>a\n:: term</li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n    </ul>\n  </li>\n</ul>\n<dl>\n  <dt>term</dt>\n</dl>"
     );
     // The separator below the definition list's column folds into its term.
     assert_eq!(
@@ -244,10 +244,10 @@ fn a_below_column_term_and_separator_each_fold_into_their_owner() {
 fn a_below_column_quote_and_table_row_fold_as_text() {
     assert_eq!(
         carve::to_html("- - a\n > q"),
-        "<ul>\n  <li>\n    <ul>\n      <li>a\n&gt; q</li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n    </ul>\n  </li>\n</ul>\n<blockquote><p>q</p></blockquote>"
     );
     assert_eq!(
         carve::to_html("- - a\n | c |"),
-        "<ul>\n  <li>\n    <ul>\n      <li>a\n| c |</li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n    </ul>\n  </li>\n</ul>\n<table>\n  <tbody>\n    <tr><td>c</td></tr>\n  </tbody>\n</table>"
     );
 }

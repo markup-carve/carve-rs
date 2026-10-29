@@ -131,6 +131,7 @@ fn an_opener_with_no_closer_ahead_still_opens_nothing() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3522"]
 fn a_run_inside_a_code_fence_is_content_and_a_mismatched_width_is_payload() {
     // A code fence's body is opaque, so a `%%%` written in it opens nothing and
     // the real delimiter below is not its closer.

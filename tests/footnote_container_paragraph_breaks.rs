@@ -31,6 +31,7 @@ pub(super) fn payloads(root: &serde_json::Value) -> Vec<serde_json::Value> {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn footnote_containers_keep_paragraph_breaks_and_opaque_payloads() {
     let controls: Vec<serde_json::Value> = serde_json::from_str(include_str!(
         "fixtures/footnote-container-paragraph-breaks.json"

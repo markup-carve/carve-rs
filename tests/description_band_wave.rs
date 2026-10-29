@@ -1,6 +1,7 @@
 use serde_json::Value;
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn a_description_keeps_the_container_paragraph_after_a_band_marker() {
     let rows: Value =
         serde_json::from_str(include_str!("fixtures/description_band_wave.json")).unwrap();

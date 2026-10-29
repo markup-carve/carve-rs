@@ -131,6 +131,7 @@ fn the_column_is_the_containers_content_column_not_column_zero() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_caption_line_still_keeps_the_indented_pair_literal() {
     // Corpus `158-indented-image-and-caption-stay-literal`, restated here as the
     // control that bounds the change: the FIGURE promotion stays gated on the

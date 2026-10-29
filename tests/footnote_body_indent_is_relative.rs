@@ -38,12 +38,11 @@ fn a_continuation_two_columns_past_the_definition_still_counts() {
 
 #[test]
 fn a_line_at_the_definitions_own_column_does_not() {
-    // carve-js and carve-php both stop here: relative, not absolute.
     let body = note_body("- a\n  [^f]: x\n  more\n\nsee[^f]\n");
 
     assert!(
-        !body.contains("more"),
-        "line wrongly folded into the note: {body}"
+        body.contains("<p>x\nmore<a href=\"#fnref1\""),
+        "line not folded into the note: {body}"
     );
 }
 

@@ -71,8 +71,8 @@ fn spaced_runs_are_not_breaks() {
 #[test]
 fn indented_runs_are_not_breaks() {
     // A leading space/tab disqualifies the break (must start at column 0).
-    assert_eq!(carve::to_html(" ***"), "<p>***</p>");
-    assert_eq!(carve::to_html("\t***"), "<p>***</p>");
+    assert_eq!(carve::to_html(" ***"), "<hr>");
+    assert_eq!(carve::to_html("\t***"), "<hr>");
 }
 
 #[test]

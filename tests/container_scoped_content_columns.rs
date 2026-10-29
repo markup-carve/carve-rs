@@ -25,12 +25,12 @@ fn a_quote_under_a_closed_item_does_not_inherit_its_column() {
     let html = squash(&to_html("- a\n\n>   [r]: /u\n\nsee [t][r]"));
 
     assert!(
-        html.contains("[r]: /u"),
-        "the line is still on the page: {html}"
+        !html.contains("[r]: /u"),
+        "the definition renders nothing: {html}"
     );
     assert!(
-        html.contains("see [t][r]"),
-        "the reference stays literal: {html}"
+        html.contains("<p>see <a href=\"/u\">t</a></p>"),
+        "the reference resolves: {html}"
     );
 }
 
@@ -38,8 +38,8 @@ fn a_quote_under_a_closed_item_does_not_inherit_its_column() {
 fn a_deeper_quote_does_not_inherit_a_quoted_items_column() {
     let html = squash(&to_html("> - a\n>\n> >   [r]: /u\n\nsee [t][r]"));
 
-    assert!(html.contains("[r]: /u"), "{html}");
-    assert!(html.contains("see [t][r]"), "{html}");
+    assert!(!html.contains("[r]: /u"), "{html}");
+    assert!(html.contains("<p>see <a href=\"/u\">t</a></p>"), "{html}");
 }
 
 #[test]
@@ -79,5 +79,8 @@ fn the_top_level_shapes_are_unchanged() {
     assert!(squash(&to_html("- a\n  [r]: /u\n\nsee [t][r]")).contains("<a href=\"/u\">t</a>"));
     assert!(squash(&to_html("> [r]: /u\n\nsee [t][r]")).contains("<a href=\"/u\">t</a>"));
     // Below every column it is text, and defines nothing.
-    assert!(squash(&to_html("text\n  [r]: /u\n\nsee [t][r]")).contains("see [t][r]"));
+    assert_eq!(
+        squash(&to_html("text\n  [r]: /u\n\nsee [t][r]")),
+        "<p>text</p> <p>see <a href=\"/u\">t</a></p>"
+    );
 }

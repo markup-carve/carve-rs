@@ -171,6 +171,23 @@ fn unmatched_citation_openers_parse_bounded() {
 }
 
 #[test]
+fn footnote_body_lines_alternating_with_lazy_lines_parse_bounded() {
+    assert_conversion_near_linear_at(
+        |source| drop(carve::to_html(source)),
+        |n| {
+            let mut source = String::from("r[^n]\n\n[^n]: a\n");
+            for i in 0..n / 2 {
+                source.push_str(&format!("  b{i}\nc{i}\n"));
+            }
+            source
+        },
+        "footnote body lines alternating with lazy lines",
+        1024,
+        4096,
+    );
+}
+
+#[test]
 fn positioned_citation_groups_parse_bounded() {
     let citations = carve::Citations::new();
     let options = Options::new()

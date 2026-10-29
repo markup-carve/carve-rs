@@ -25,7 +25,7 @@ fn a_matched_fence_below_the_note_body_column_is_visible() {
 fn an_unclosed_fence_still_folds_into_the_note() {
     assert_eq!(
         html("lead\n[^n]: note\n%% comment\n```\ncode\n"),
-        "<p>lead</p>\n<p>code</p>"
+        "<p>lead</p>\n<pre><code>code\n</code></pre>"
     );
 }
 

@@ -98,6 +98,7 @@ fn html_tree(html: &str) -> serde_json::Value {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn multiline_code_keeps_its_payload_when_formatted() {
     let controls: Vec<serde_json::Value> =
         serde_json::from_str(include_str!("fixtures/multiline-inline-code.json")).unwrap();

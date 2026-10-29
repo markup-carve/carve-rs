@@ -1,4 +1,5 @@
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn visible_description_openers_close_an_unmatched_inline_code_run() {
     let rows: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/wave7_description_openers.json")).unwrap();

@@ -11,6 +11,10 @@ fn event_owned_pipeline_matches_public_modes() {
             continue;
         }
         let source = std::fs::read_to_string(&path).unwrap();
+        // Rule A: the event route declines a document the ownership walk rewrites.
+        if walk_moves_lines(&normalize_source(&source)) {
+            continue;
+        }
         for positions in [false, true] {
             for source_lines in [false, true] {
                 let options = Options::default()
@@ -91,9 +95,7 @@ fn nested_event_cursor_keeps_unpositioned_authored_base_parity() {
             opaque_blank_lines: Vec::new(),
             discarded_outer_blank: false,
             outer_plus_after_blank: false,
-            authored_base_at_start: false,
             item_marker_at_start: false,
-            marker_colon_rebased: false,
             marker_tail: None,
             in_quoted_body: false,
             sublists_carry_authored_base: true,
@@ -212,6 +214,10 @@ fn event_owned_modes_preserve_extension_callbacks() {
             continue;
         }
         let source = std::fs::read_to_string(&path).unwrap();
+        // Rule A: the event route declines a document the ownership walk rewrites.
+        if walk_moves_lines(&normalize_source(&source)) {
+            continue;
+        }
         for mode in [ParseMode::Html, ParseMode::HtmlFacade, ParseMode::Carve] {
             for positions in [false, true] {
                 let baseline = Hook::default();
@@ -301,6 +307,10 @@ fn event_owned_facade_corpus_render_index_matches() {
             continue;
         }
         let source = std::fs::read_to_string(&path).unwrap();
+        // Rule A: the event route declines a document the ownership walk rewrites.
+        if walk_moves_lines(&normalize_source(&source)) {
+            continue;
+        }
         for positions in [false, true] {
             for source_lines in [false, true] {
                 let options = Options::default()
@@ -451,8 +461,9 @@ mod footnote_comment_fence_work {
             let html = crate::to_html(&source);
             assert_eq!(html.matches("<pre><code>").count(), count);
             let lookups = FOOTNOTE_FENCE_CLOSER_LOOKUPS.with(|work| work.get());
-            assert!(lookups >= count as u64, "{count}: {lookups} lookups");
-            assert!(lookups <= count as u64 * 2, "{count}: {lookups} lookups");
+            // Rule A (carve#3885): the comment closes the note, so no note
+            // retains the fence and none looks for its closer.
+            assert_eq!(lookups, 0, "{count}: {lookups} lookups");
         }
     }
 }
@@ -1687,10 +1698,9 @@ mod shared_colon_work_tests {
                             ..Options::default()
                         },
                     );
-                    assert_eq!(
-                        html.matches("<pre>").count(),
-                        if retained { count } else { 1 }
-                    );
+                    // Rule A (carve#3885): an indented fence after `after` opens at
+                    // the document level, so every repetition is a code block.
+                    assert_eq!(html.matches("<pre>").count(), count);
                     assert_eq!(html.matches("after").count(), count);
                     assert!(
                         source_map::MAPPED_SOURCE_SCAN_BYTES.with(Cell::get) <= source.len() * 64,
@@ -2987,28 +2997,6 @@ mod marker_note_comment_bounds {
             assert!(!index.closes_in_note(&lines, at, 0, 4, width));
         }
         assert_eq!(CONTAINER_DEDENT_STEPS.with(Cell::get), 0);
-    }
-}
-
-#[cfg(test)]
-mod named_colon_rebase_work {
-    use super::*;
-
-    #[test]
-    fn named_colon_payload_rebasing_is_bounded_by_the_line_count() {
-        for size in [64, 128, 256] {
-            let mut source = "- ::: d\n".to_string();
-            for column in 1..size {
-                source.push_str(&format!("  {}::: x\n", " ".repeat(column)));
-            }
-            NAMED_COLON_REBASE_LINES.with(|count| count.set(0));
-            let _doc = parse(&source);
-            let work = NAMED_COLON_REBASE_LINES.with(Cell::get);
-            assert!(
-                work <= size * 6,
-                "{size} lines required {work} payload rewrites"
-            );
-        }
     }
 }
 

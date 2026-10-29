@@ -3,6 +3,7 @@
 use carve::Options;
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn nested_fence_ownership_matches_spec_509() {
     let rows = [
         ("509-a-fence-closer-below-a-nested-item-s-column-ends-containers-down-to-its-owner-10.crv", "- a\n  - b\n    ```\n    p\nx\n    ```\n", "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>p\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>x\n<code></code></p>\n"),
@@ -35,6 +36,7 @@ fn nested_fence_ownership_matches_spec_509() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn nested_fence_markers_payload_and_siblings() {
     let rows: Vec<serde_json::Value> =
         serde_json::from_str(include_str!("fixtures/nested-fence-ownership.json")).unwrap();

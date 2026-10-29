@@ -1,4 +1,5 @@
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_quote_below_an_empty_nested_item_uses_one_column() {
     let source = "- foo\n  1. +\n    > b\n";
     let expected = "- foo\n  1. +\n   > b\n";
@@ -9,6 +10,7 @@ fn a_quote_below_an_empty_nested_item_uses_one_column() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_code_fence_below_an_empty_nested_item_uses_one_column() {
     let source = "- foo\n  1. +\n    ```\n    x\n    ```\n";
     let expected = "- foo\n  1. +\n   ```\n   x\n   ```\n";

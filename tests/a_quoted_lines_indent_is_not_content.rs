@@ -58,7 +58,7 @@ fn the_ticket_s_table_rows_lose_their_column_too() {
     // renders the spec's paragraph.
     assert_eq!(
         both_paths("> x\n>  | A |\n>  | - |\n>  | b |\n").trim(),
-        "<blockquote><p>x\n| A |\n| - |\n| b |</p></blockquote>",
+        "<blockquote>\n  <p>x</p>\n  <table>\n    <thead>\n      <tr><th scope=\"col\">A</th></tr>\n    </thead>\n    <tbody>\n      <tr><td>b</td></tr>\n    </tbody>\n  </table>\n</blockquote>",
     );
 }
 

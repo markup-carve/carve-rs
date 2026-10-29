@@ -46,7 +46,7 @@ fn a_below_column_line_still_folds_the_fence_in_as_text() {
     );
     assert_eq!(
         to_html("- ::: note\n :::"),
-        "<ul>\n  <li>\n    <aside class=\"admonition note\" aria-label=\"Note\">\n\n    </aside>\n  </li>\n</ul>\n<p>:::</p>"
+        "<ul>\n  <li>\n    <aside class=\"admonition note\" aria-label=\"Note\">\n\n    </aside>\n  </li>\n</ul>\n<div>\n\n</div>"
     );
 }
 

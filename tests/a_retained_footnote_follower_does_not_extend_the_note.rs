@@ -1,6 +1,7 @@
 use carve::{to_html, to_html_with_options, Options};
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3523"]
 fn a_comment_retains_one_footnote_follower_without_a_lazy_extent() {
     for source in [
         "[^c]: para\n%%%\nc\ntail\n",

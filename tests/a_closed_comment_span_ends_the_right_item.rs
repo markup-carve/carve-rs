@@ -51,7 +51,7 @@ fn assert_html(src: &str, expected: &str) {
 fn the_reported_document_ends_the_inner_item() {
     assert_html(
         "- - x\n    %%% x\n    %%%\n # h\n",
-        "<ul>\n  <li>\n    <ul>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>\n<p># h</p>",
+        "<ul><li><ul><li>x</li></ul></li></ul><section id=\"h\"><h1>h</h1></section>",
     );
 }
 
@@ -61,7 +61,7 @@ fn the_reported_document_ends_the_inner_item() {
 fn the_degraded_spelling_answers_the_same_way() {
     assert_html(
         "- - x\n    %%% x\n # h\n",
-        "<ul>\n  <li>\n    <ul>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>\n<p># h</p>",
+        "<ul><li><ul><li>x</li></ul></li></ul><section id=\"h\"><h1>h</h1></section>",
     );
 }
 
@@ -70,7 +70,7 @@ fn the_degraded_spelling_answers_the_same_way() {
 fn a_wider_run_answers_the_same_way() {
     assert_html(
         "- - x\n    %%%% x\n    %%%%\n # h\n",
-        "<ul>\n  <li>\n    <ul>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>\n<p># h</p>",
+        "<ul><li><ul><li>x</li></ul></li></ul><section id=\"h\"><h1>h</h1></section>",
     );
 }
 
@@ -80,7 +80,7 @@ fn a_wider_run_answers_the_same_way() {
 fn depth_one_still_folds() {
     assert_html(
         "- x\n  %%% x\n  %%%\n # h\n",
-        "<ul>\n  <li>x</li>\n</ul>\n<p># h</p>",
+        "<ul><li>x</li></ul><section id=\"h\"><h1>h</h1></section>",
     );
 }
 
@@ -89,7 +89,7 @@ fn depth_one_still_folds() {
 fn depth_three_ends_every_frame_below() {
     assert_html(
         "- - - x\n      %%% x\n      %%%\n # h\n",
-        "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>x</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p># h</p>",
+        "<ul><li><ul><li><ul><li>x</li></ul></li></ul></li></ul><section id=\"h\"><h1>h</h1></section>",
     );
 }
 
@@ -110,7 +110,7 @@ fn a_line_reaching_the_outer_column_is_a_heading_there() {
 fn a_span_below_every_column_ends_nothing() {
     assert_html(
         "- - x\n %%% x\n %%%\n # h\n",
-        "<ul><li><ul><li>x # h</li></ul></li></ul>",
+        "<ul><li><ul><li>x</li></ul></li></ul><section id=\"h\"><h1>h</h1></section>",
     );
 }
 
@@ -119,7 +119,7 @@ fn a_span_below_every_column_ends_nothing() {
 fn a_thematic_break_follower_answers_the_same_way() {
     assert_html(
         "- - x\n    %%% x\n    %%%\n ---\n",
-        "<ul>\n  <li>\n    <ul>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>\n<p>—</p>",
+        "<ul><li><ul><li>x</li></ul></li></ul><hr>",
     );
 }
 
@@ -128,7 +128,7 @@ fn a_thematic_break_follower_answers_the_same_way() {
 fn a_quote_follower_answers_the_same_way() {
     assert_html(
         "- - x\n    %%% x\n    %%%\n > q\n",
-        "<ul>\n  <li>\n    <ul>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>\n<p>&gt; q</p>",
+        "<ul><li><ul><li>x</li></ul></li></ul><blockquote><p>q</p></blockquote>",
     );
 }
 
@@ -149,7 +149,7 @@ fn a_plain_follower_does_not_move() {
 fn a_second_span_left_open_still_ends_it() {
     assert_html(
         "- - x\n    %%% x\n    %%%\n    %%% y\n # h\n",
-        "<ul>\n  <li>\n    <ul>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>\n<p># h</p>",
+        "<ul><li><ul><li>x</li></ul></li></ul><section id=\"h\"><h1>h</h1></section>",
     );
 }
 
@@ -158,7 +158,7 @@ fn a_second_span_left_open_still_ends_it() {
 fn a_retained_marker_below_the_content_column_stays_text() {
     assert_html(
         "- - x\n    %%% x\n    %%%\n - m\n",
-        "<ul><li><ul><li>x</li></ul> - m</li></ul>",
+        "<ul><li><ul><li>x</li></ul></li><li>m</li></ul>",
     );
 }
 
@@ -170,7 +170,7 @@ fn a_retained_marker_below_the_content_column_stays_text() {
 fn a_span_that_reached_nothing_ends_nothing() {
     assert_html(
         "- - - x\n %%% x\n %%%\n # h\n",
-        "<ul><li><ul><li><ul><li>x # h</li></ul></li></ul></li></ul>",
+        "<ul><li><ul><li><ul><li>x</li></ul></li></ul></li></ul><section id=\"h\"><h1>h</h1></section>",
     );
 }
 
@@ -183,6 +183,6 @@ fn a_span_that_reached_nothing_ends_nothing() {
 fn a_line_reaching_an_ancestor_keeps_the_frame_open() {
     assert_html(
         "- - x\n    %%% x\n    %%%\n   - m\n",
-        "<ul>\n  <li>\n    <ul>\n      <li>x</li>\n    </ul>\n    <ul>\n      <li>m</li>\n    </ul>\n  </li>\n</ul>",
+        "<ul><li><ul><li>x</li><li>m</li></ul></li></ul>",
     );
 }

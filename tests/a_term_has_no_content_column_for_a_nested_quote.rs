@@ -10,6 +10,6 @@ fn html(source: &str) -> String {
 fn a_quote_past_an_item_term_remains_term_text() {
     assert_eq!(
         html("- :: term\n   > nested\n"),
-        "<ul><li><dl><dt>term &gt; nested</dt></dl></li></ul>"
+        "<ul><li><dl><dt>term</dt></dl><blockquote><p>nested</p></blockquote></li></ul>"
     );
 }

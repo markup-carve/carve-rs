@@ -130,7 +130,7 @@ fn nested_marker_attaches_fenced_code_without_extra_space() {
 fn dangling_marker_after_collected_note_remains_text() {
     assert_eq!(
         carve::to_html("> [^a]: n\n> +\n\npara\n"),
-        "<blockquote><p>+</p></blockquote>\n<p>para</p>"
+        "<blockquote>\n\n</blockquote>\n<p>para</p>"
     );
 }
 

@@ -1,4 +1,5 @@
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn an_indented_unmarked_term_folds_into_the_open_quoted_term() {
     for pad in 1..=4 {
         for positions in [false, true] {
@@ -26,6 +27,7 @@ fn an_indented_unmarked_term_folds_into_the_open_quoted_term() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn quoted_term_rows_match_the_checker() {
     let rows: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/wave7_quoted_term.json")).unwrap();

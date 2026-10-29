@@ -16,6 +16,7 @@ fn below_column_description_returns_to_its_outer_body() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn a_past_column_quote_remains_term_text() {
     for (source, expected_quotes) in [
         (":: outer\n:  detail\n     :: inner\n    > quote", 0),

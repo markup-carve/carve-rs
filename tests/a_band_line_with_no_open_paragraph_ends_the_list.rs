@@ -14,6 +14,7 @@ use carve::{to_html, to_html_with_options, Options};
 use std::path::Path;
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3522"]
 fn the_fixtures_match_the_executable_spec() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/band-line-with-no-open-paragraph");

@@ -17,6 +17,7 @@ fn marker_line_sublist_in_description_keeps_following_siblings() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn marker_below_the_nested_column_stays_in_the_paragraph() {
     let html = carve::to_html(":: t\n: - - a\n   - b\n");
     assert!(html.contains("a\n- b"), "{html}");

@@ -52,6 +52,50 @@ pub(in crate::parse) fn extract_footnote_defs(
     scan.finish()
 }
 
+/// Whether a note body still holds an open paragraph for the lazy line
+/// `rest`. A first-block `+` pulls in no list (PART 9 SS17 L4).
+fn note_paragraph_open(note: &NoteBody, rest: &str, options: &Options<'_>) -> bool {
+    let lines = &note.lines;
+    let last = lines.iter().rev().find(|line| !is_blank_line(line));
+    if is_list_marker(rest) && last.is_some_and(|line| is_cont_marker_line(line)) {
+        return false;
+    }
+    // Prose after an open paragraph continues it, so only the lines since the
+    // last full read are checked; a reparse per lazy line was quadratic.
+    if let Some(known) = note.open_paragraph_at.get() {
+        if known <= lines.len() && lines[known..].iter().all(|line| continues_paragraph(line)) {
+            note.open_paragraph_at.set(Some(lines.len()));
+            return true;
+        }
+    }
+    let open = body_ends_with_open_paragraph(&lines.join("\n"), options);
+    note.open_paragraph_at.set(open.then_some(lines.len()));
+    open
+}
+
+/// A line that can only be paragraph text: it starts with a letter or digit
+/// and is no list marker.
+fn continues_paragraph(line: &str) -> bool {
+    let text = trim_ascii_start(line.strip_prefix(LAZY).unwrap_or(line));
+    text.chars().next().is_some_and(char::is_alphanumeric) && !is_list_marker(text)
+}
+
+fn is_cont_marker_line(line: &str) -> bool {
+    trim_ascii(without_blockquote_prefixes(trim_ascii_start(line))) == "+"
+}
+
+/// A code fence opener with a closer on a later line, read inside its quotes.
+fn fence_with_closer(rest: &str, after: &[&str]) -> bool {
+    detect_fence_open(rest).is_some_and(|open| {
+        after.iter().any(|line| {
+            is_fence_close(
+                trim_ascii_start(without_blockquote_prefixes(trim_ascii_start(line))),
+                open,
+            )
+        })
+    })
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Flow {
     Next,
@@ -95,6 +139,8 @@ struct NoteBody {
     line_map: Vec<Option<usize>>,
     col_map: Vec<Option<isize>>,
     positions: bool,
+    /// `lines.len()` when the body last read as ending in an open paragraph.
+    open_paragraph_at: Cell<Option<usize>>,
 }
 
 impl NoteBody {
@@ -149,6 +195,9 @@ struct IndentedNote<'a> {
     open_term: bool,
     retained_below_comment: bool,
     below_comment_span: Option<usize>,
+    lazy_open: bool,
+    /// The definition line starts at column 0, so no container hosts the note.
+    flush_def: bool,
 }
 
 /// The quote / list / description host a container-hosted note sits in.
@@ -192,6 +241,7 @@ struct HostedWalk {
     track: bool,
     opacity: BodyCommentState,
     admitted_fence: Option<(FenceOpen, usize)>,
+    lazy_open: bool,
 }
 
 impl HostedWalk {
@@ -706,6 +756,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 Vec::new()
             },
             positions: self.positions,
+            open_paragraph_at: Cell::new(None),
         };
         let body_indent = footnote_body_floor(raw_def_line);
         let container = IndentContainer {
@@ -733,6 +784,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 open_term: term_start_column(def.first).is_some(),
                 retained_below_comment: false,
                 below_comment_span: None,
+                lazy_open: false,
+                flush_def: indent_columns(raw_def_line) == 0,
             };
             i = self.collect_indented_body(&mut note, i, state);
         } else if !self.nested {
@@ -763,7 +816,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         // First definition for a label wins (later duplicates are ignored).
         if first_for_label {
-            self.register_definition(normalized_label, &def, raw_def_line, note);
+            self.register_definition(normalized_label, &def, note);
         }
         self.push_definition_replacement(raw_def_line, &def, stripped, def_start_line);
         i
@@ -884,6 +937,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         i: &mut usize,
     ) -> Flow {
         let column = indent_columns(line);
+        let lazy_open = std::mem::take(&mut state.lazy_open);
         if let Some(flow) = self.retained_fence_line(state, note, line, column, i) {
             return flow;
         }
@@ -927,6 +981,32 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 Some(self.first_source_line + *i),
                 |kept| stripped_col(Some(0), line, kept),
             );
+            *i += 1;
+            return Flow::Next;
+        }
+        // Lazy continuation, the same rule as every container (ruling on
+        // carve#3885): a line that interrupts no paragraph joins an open one.
+        let rest = trim_ascii_start(line);
+        if !state.open_term
+            && !self.nested
+            && state.note_fence.is_none()
+            && !interrupts_paragraph_with_rest(line, &self.lines[*i + 1..])
+            && !interrupts_paragraph_with_rest(rest, &self.lines[*i + 1..])
+            && !is_colon_fence_opener_shape(line)
+            && exact_colon_fence_len(rest).is_none()
+            && parse_link_def_line(rest).is_none()
+            && parse_footnote_def_line(rest).is_none()
+            // §10 I2: under a note's paragraph a marker is text, unless an
+            // item hosts the note and the marker may continue that list.
+            && (state.flush_def || !is_list_marker(rest))
+            && !fence_with_closer(rest, &self.lines[*i + 1..])
+            && (lazy_open || note_paragraph_open(note, rest, self.options))
+        {
+            let kept = format!("{LAZY}{}", trim_ascii_start(line));
+            note.push_with(kept, Some(self.first_source_line + *i), |_| {
+                stripped_col(Some(0), line, trim_ascii_start(line))
+            });
+            state.lazy_open = true;
             *i += 1;
             return Flow::Next;
         }
@@ -977,6 +1057,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let below_comment = column < state.body_indent
             && trim_ascii_start(line).starts_with("%%")
             && !is_definition_placeholder(line);
+        // Rule A (carve#3885): a comment below the body's column closes the note.
+        if below_comment
+            && state.below_comment_span.is_none()
+            && state.note_fence.is_none()
+            && detect_comment_fence_line_any_column(line).is_none()
+        {
+            return Some(Flow::Stop);
+        }
         if below_comment
             && column == 0
             && state.below_comment_span.is_none()
@@ -1440,6 +1528,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             track,
             opacity: BodyCommentState::new(),
             admitted_fence: None,
+            lazy_open: false,
         };
         if walk.track {
             walk.opacity.observe(def.first);
@@ -1452,8 +1541,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             walk.opacity.comment = None;
         }
         let resume_at = self.next_hosted_non_blank(&host, i);
-        if resume_at >= self.lines.len() || !walk.reaches_floor(&host, self.lines[resume_at]) {
+        if resume_at >= self.lines.len() {
             return i;
+        }
+        if !walk.reaches_floor(&host, self.lines[resume_at]) {
+            while self.hosted_lazy_line(&host, &mut walk, note, &mut i) {}
+            if !walk.lazy_open {
+                return i;
+            }
         }
         while i < self.lines.len() {
             if self.hosted_line(&host, &mut walk, note, &mut i) == Flow::Stop {
@@ -1535,6 +1630,63 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             .any(|closer_column| self.closer_maxima.closes_after_at(at, open, closer_column))
     }
 
+    fn hosted_lazy_flow(
+        &mut self,
+        host: &NoteHost,
+        walk: &mut HostedWalk,
+        note: &mut NoteBody,
+        i: &mut usize,
+    ) -> Flow {
+        if self.hosted_lazy_line(host, walk, note, i) {
+            Flow::Next
+        } else {
+            Flow::Stop
+        }
+    }
+
+    /// A footnote body takes a lazy line like every container (carve#3885):
+    /// a line short of the note's floor that interrupts no paragraph joins an
+    /// open one.
+    fn hosted_lazy_line(
+        &mut self,
+        host: &NoteHost,
+        walk: &mut HostedWalk,
+        note: &mut NoteBody,
+        i: &mut usize,
+    ) -> bool {
+        let Some(&raw) = self.lines.get(*i) else {
+            return false;
+        };
+        let inside = host.content(raw);
+        let rest = trim_ascii_start(
+            inside.unwrap_or_else(|| without_blockquote_prefixes(trim_ascii_start(raw))),
+        );
+        let lazy = !is_blank_line(rest)
+            && walk.admitted_fence.is_none()
+            && walk.opacity.comment.is_none()
+            && walk.opacity.code.is_none()
+            && !interrupts_paragraph_with_rest(rest, &self.lines[*i + 1..])
+            && !is_colon_fence_opener_shape(rest)
+            && exact_colon_fence_len(rest).is_none()
+            && parse_link_def_line(rest).is_none()
+            && parse_footnote_def_line(rest).is_none()
+            // §10 I2: a marker continues a hosting list only from inside the
+            // note's quotes; elsewhere it is text under the note's paragraph.
+            && !(inside.is_some() && host.prefix_cols > 0 && is_list_marker(rest))
+            && !fence_with_closer(rest, &self.lines[*i + 1..])
+            && (walk.lazy_open || note_paragraph_open(note, rest, self.options));
+        if !lazy {
+            return false;
+        }
+        let kept = format!("{LAZY}{rest}");
+        note.push_with(kept, Some(self.first_source_line + *i), |_| {
+            stripped_col(Some(0), raw, rest)
+        });
+        walk.lazy_open = true;
+        *i += 1;
+        true
+    }
+
     fn next_hosted_non_blank(&self, host: &NoteHost, mut at: usize) -> usize {
         while at < self.lines.len() && host.blank(self.lines[at]) {
             at += 1;
@@ -1551,14 +1703,16 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
     ) -> Flow {
         let raw = self.lines[*i];
         let Some(line) = host.content(raw) else {
-            return Flow::Stop;
+            return self.hosted_lazy_flow(host, walk, note, i);
         };
         if is_blank_line(line) {
+            walk.lazy_open = false;
             return self.hosted_blank_run(host, walk, note, i);
         }
         if !walk.reaches_floor(host, raw) {
-            return Flow::Stop;
+            return self.hosted_lazy_flow(host, walk, note, i);
         }
+        walk.lazy_open = false;
         if host.marker_note && parse_footnote_def_line(trim_ascii_start(line)).is_some() {
             return Flow::Stop;
         }
@@ -1662,18 +1816,15 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         &mut self,
         normalized_label: String,
         def: &DefinitionLine<'a>,
-        raw_def_line: &str,
         note: NoteBody,
     ) {
         self.definition_keys
             .insert(normalized_label, def.label.to_string());
-        let mut definition_source = MappedSource {
+        let definition_source = MappedSource {
             col_map: note.col_map,
             source: note.lines.join("\n"),
             line_map: note.line_map,
-            authored_base_at_start: false,
             item_marker_at_start: false,
-            marker_colon_rebased: false,
             marker_tail: None,
             reached: vec![true; note.lines.len()],
             opaque_blank_lines: Vec::new(),
@@ -1685,18 +1836,6 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             in_quoted_body: false,
             sublists_carry_authored_base: true,
         };
-        let absorbed_note_marker =
-            detect_list_marker_full(without_blockquote_prefixes(raw_def_line))
-                .is_some_and(|marker| parse_footnote_def_line(marker.content).is_some());
-        if absorbed_note_marker || parse_footnote_def_line(trim_ascii_start(def.first)).is_none() {
-            rebase_body_blocks(
-                &mut definition_source,
-                true,
-                self.options,
-                absorbed_note_marker,
-                false,
-            );
-        }
         self.defs.insert(def.label.to_string(), definition_source);
     }
 
@@ -1767,9 +1906,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                     Vec::new()
                 },
                 source: joined_source(&self.body),
-                authored_base_at_start: false,
                 item_marker_at_start: false,
-                marker_colon_rebased: false,
                 marker_tail: None,
                 reached: Vec::new(),
                 opaque_blank_lines: Vec::new(),

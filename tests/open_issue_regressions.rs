@@ -149,7 +149,7 @@ fn a_below_column_line_ends_an_empty_div_after_a_paragraph() {
     let html = to_html(source);
     assert_eq!(
         html,
-        "<ul>\n  <li>a\n    <div class=\"d\">\n\n    </div>\n  </li>\n</ul>\n<p>y\n:::</p>"
+        "<ul>\n  <li>a\n    <div class=\"d\">\n\n    </div>\n  </li>\n</ul>\n<p>y</p>\n<div>\n\n</div>"
     );
 }
 
@@ -159,6 +159,6 @@ fn a_nested_items_bare_colon_run_stays_in_that_item() {
     let html = to_html(source);
     assert_eq!(
         html,
-        "<ul>\n  <li>x\n    <ul>\n      <li>\n        <div class=\"d\">\n\n        </div>\n      </li>\n    </ul>\n    y\n:::\n  </li>\n</ul>"
+        "<ul>\n  <li>x\n    <ul>\n      <li>\n        <div class=\"d\">\n\n        </div>\n      </li>\n    </ul>\n    y\n    <div>\n\n    </div>\n  </li>\n</ul>"
     );
 }

@@ -2,6 +2,7 @@ use carve::{parse_with_options, to_carve, to_html, Options};
 use serde_json::Value;
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn raised_colon_markers_follow_the_shared_corpus() {
     let rows: Vec<Value> =
         serde_json::from_str(include_str!("fixtures/raised-colon-markers.json")).unwrap();
@@ -26,15 +27,19 @@ fn bullet_ordered_and_task_markers_fold_at_each_column() {
                 "- head\n\n      :::\n      a\n{}{marker}\n",
                 " ".repeat(column)
             );
-            assert!(
-                to_html(&source).contains(&format!("<p>a\n{marker}</p>")),
-                "{source}"
-            );
+            let html = to_html(&source);
+            if column == 1 && marker.starts_with('-') {
+                assert!(html.contains("<p>a</p>\n    </div>"), "{source}");
+                assert!(!html.contains(&format!("<p>a\n{marker}</p>")), "{source}");
+            } else {
+                assert!(html.contains(&format!("<p>a\n{marker}</p>")), "{source}");
+            }
         }
     }
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn lazy_marker_positions_still_reach_the_authored_end() {
     use carve::ast::BlockNode;
     for column in [1, 2, 4, 6, 8] {

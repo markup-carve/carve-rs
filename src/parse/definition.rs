@@ -463,7 +463,6 @@ pub(in crate::parse) fn parse_definition_list(
             // consumed, so a multi-line definition is one region rather than
             // just its opening line. `collect_definition_body` has already
             // advanced the cursor past those lines.
-            rebase_overindented_blocks(&mut body, true, options);
             // A DEFINITION BODY carries authored base for its sublists, so a list
             // marker past the body's content column anchors its span at the
             // marker rather than at the placing indent (markup-carve/carve#1980,
@@ -581,38 +580,6 @@ impl DefinitionBodyFence {
         // opens a paragraph the fold can reach again.
         self.closed_last = was_open && self.open.is_none();
     }
-}
-
-/// The body's collected lines with their authored bases rebased away - the form
-/// `parse_mapped_source` will actually read (markup-carve/carve#1911).
-///
-/// Same `rebase_overindented_blocks` the caller runs on the finished body, over
-/// a throwaway `MappedSource` carrying no maps: the fold question needs the
-/// TEXT, and the real body keeps its own positions.
-pub(in crate::parse) fn body_as_read(
-    source: String,
-    reached: Vec<bool>,
-    options: &Options<'_>,
-) -> String {
-    let mut probe = MappedSource {
-        source,
-        line_map: Vec::new(),
-        col_map: Vec::new(),
-        // The body's own `MappedSource` is built with both of these, so the
-        // rebase reads the same document here as it does there.
-        authored_base_at_start: false,
-        item_marker_at_start: false,
-        marker_colon_rebased: false,
-        marker_tail: None,
-        reached,
-        opaque_blank_lines: Vec::new(),
-        discarded_outer_blank: false,
-        outer_plus_after_blank: false,
-        in_quoted_body: false,
-        sublists_carry_authored_base: false,
-    };
-    rebase_overindented_blocks(&mut probe, true, options);
-    probe.source
 }
 
 /// Does the definition body collected so far end in something a flush-left line
@@ -793,7 +760,6 @@ struct DefinitionBodyCollector<'s, 'o> {
     retained_fence: Option<(FenceOpen, bool)>,
     past_body_closers: Option<DefinitionBodyCloserIndex>,
     unopened_past_fence: Option<FenceOpen>,
-    below_comment_span: Option<usize>,
     // Seeded from the marker line's own content: does the body's LEAD open a
     // code fence NESTED past a list marker? Its verbatim body is the flush-left
     // lines below, which cannot close it - but an INDENTED closer written at or
@@ -880,7 +846,6 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             retained_fence: None,
             past_body_closers: None,
             unopened_past_fence: None,
-            below_comment_span: None,
             nested_lead_fence,
         }
     }
@@ -892,9 +857,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             col_map: self.col_map,
             source: self.lines.join("\n"),
             line_map: self.line_map,
-            authored_base_at_start: false,
             item_marker_at_start: false,
-            marker_colon_rebased: false,
             marker_tail: None,
             reached: self.reached,
             opaque_blank_lines: Vec::new(),
@@ -985,8 +948,9 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         }
         let below_comment =
             column < self.content_column && trim_ascii_start(line).starts_with("%%");
-        if self.below_comment_span.is_some() || below_comment {
-            return self.take_below_column_comment(cur, line, column);
+        // Rule A (carve#3885): a comment below the body's column closes the body.
+        if below_comment {
+            return self.take_below_column_comment(cur, line);
         }
         if column >= self.content_column {
             self.retained_below_comment = false;
@@ -1137,7 +1101,6 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
                 .is_some_and(|at| cur.source_col(at) == Some(comment_col))
         });
         ((!cur.in_item_body && !cur.sublists_carry_authored_base) || authored_opener_comment)
-            && self.below_comment_span.is_none()
             && detect_comment_fence_line_any_column(line).is_some_and(|open| {
                 cur.has_comment_closer_after(cur.pos + 1, open.fence_len)
                     && !cur
@@ -1147,44 +1110,17 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             })
     }
 
-    fn take_below_column_comment(
-        &mut self,
-        cur: &mut LineCursor<'_>,
-        line: &str,
-        column: usize,
-    ) -> BodyStep {
-        if self.below_comment_span.is_none()
-            && !self.retained_below_comment
-            && !self.folded_a_lazy_line
-            && !definition_body_fold(&self.body_so_far(), self.options).0
-        {
+    /// Rule A (carve#3885): a comment below the body's column ends the body,
+    /// unless it closes a comment span the body holds.
+    fn take_below_column_comment(&mut self, cur: &mut LineCursor<'_>, line: &str) -> BodyStep {
+        if !closes_a_held_comment_span(&self.lines, line) {
             return BodyStep::Stop;
         }
-        if let Some(width) = self.below_comment_span {
-            if is_comment_fence_close_any_column(line, width) {
-                self.below_comment_span = None;
-            }
-        } else if let Some(open) = detect_comment_fence_line_any_column(line) {
-            if cur.has_comment_closer_after(cur.pos + 1, open.fence_len) {
-                self.below_comment_span = Some(open.fence_len);
-            }
-        }
-        let keep_authored = column > 0
-            && ((self.nested_definition_open && self.lines.is_empty())
-                || detect_comment_fence_line_any_column(line)
-                    .is_some_and(|open| cur.has_comment_closer_after(cur.pos + 1, open.fence_len)));
-        let kept = if !keep_authored && trim_ascii_start(line).starts_with("%%") {
-            trim_ascii_start(line).to_owned()
-        } else {
-            line.to_owned()
-        };
+        let kept = trim_ascii_start(line).to_owned();
         let col = cur
             .source_col(cur.pos)
             .map(|col| col + (line.len() - kept.len()) as isize);
         self.push(kept, cur.source_line(cur.pos), col, false);
-        self.retained_below_comment = true;
-        self.retained_comment_column = column;
-        self.folded_a_lazy_line = false;
         cur.consume();
         BodyStep::Next
     }
@@ -1310,7 +1246,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         let accept_fence_opener = fence.open.is_none()
             && detect_fence_open(&sliced).is_some_and(|open| {
                 !paragraph_open
-                    || (cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
+                    || (cur.has_code_closer_after(cur.pos, open.fence_char, open.fence_len)
                         && self.closer_in_exact_body(cur, open))
             });
         // The nested description's `+`, or a quote's `> +`, already separates its next
@@ -1614,18 +1550,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         if self.folded_a_lazy_line {
             return true;
         }
-        // ASKED OF THE BODY AS THE BODY WILL READ IT
-        // (markup-carve/carve#1911). The collector slices each line at
-        // the body's content column and leaves the residue in front, so
-        // a heading written one column past a three-column body arrives
-        // here as ` # H` - not an opener - and reported a paragraph the
-        // body does not have. The caller rebases those residuals away
-        // before parsing; the fold question has to see the same lines.
-        // The seed is the `:  ` marker line's own content, which is
-        // at the body's column 0 by construction, so it reaches.
-        let mut probe_reached = vec![true; self.seed.lines().count()];
-        probe_reached.extend_from_slice(&self.reached);
-        let so_far = body_as_read(self.body_so_far(), probe_reached, self.options);
+        let so_far = self.body_so_far();
         if self.retained_below_comment {
             return true;
         }

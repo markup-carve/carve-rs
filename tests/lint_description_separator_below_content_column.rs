@@ -10,6 +10,7 @@ fn findings(source: &str) -> Vec<carve::LintWarning> {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn shared_vectors() {
     let data: Value = serde_json::from_str(include_str!(
         "fixtures/lint-rule-vectors/description-separator-below-content-column.json"
@@ -53,6 +54,7 @@ fn shared_vectors() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn marker_ranges() {
     for (name, source, line, column, marker, target) in [
         ("CRLF", "- a\r\n  :: term\r\n : detail\r\n", 3, 2, ":", 2),

@@ -15,8 +15,9 @@ fn adjacent_tight_lists_stay_in_a_description_body() {
             written,
             "{source:?}"
         );
+        // Rule A (carve#3885): the second marker sits at the body column.
         assert!(
-            written.contains(&format!("\n\n   {second}\n")),
+            written.contains("\n\n  ") && !written.contains("\n\n   "),
             "{written:?}"
         );
     }

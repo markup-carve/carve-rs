@@ -15,7 +15,7 @@
 fn c0_comment_then_tail() {
     assert_eq!(
         carve::to_html("- intro\n%% a\ntail\n"),
-        "<ul>\n  <li>intro\n    tail\n  </li>\n</ul>"
+        "<ul>\n  <li>intro</li>\n</ul>\n<p>tail</p>"
     );
 }
 
@@ -31,7 +31,7 @@ fn chunk_fence_c0comment_lazy() {
 fn d0() {
     assert_eq!(
         carve::to_html("- intro\n%% a\n%% b\ntail\n"),
-        "<ul>\n  <li>intro\n    tail\n  </li>\n</ul>"
+        "<ul>\n  <li>intro</li>\n</ul>\n<p>tail</p>"
     );
 }
 
@@ -124,7 +124,7 @@ fn marker_heading_c0comment() {
 fn marker_quote_c0comment() {
     assert_eq!(
         carve::to_html("- > q\n%% c\ntail\n"),
-        "<ul>\n  <li>\n    <blockquote><p>q</p></blockquote>\n    tail\n  </li>\n</ul>"
+        "<ul>\n  <li>\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ul>\n<p>tail</p>"
     );
 }
 
@@ -140,7 +140,7 @@ fn marker_table_c0comment() {
 fn marker_text_c0comment() {
     assert_eq!(
         carve::to_html("- a\n%% c\ntail\n"),
-        "<ul>\n  <li>a\n    tail\n  </li>\n</ul>"
+        "<ul>\n  <li>a</li>\n</ul>\n<p>tail</p>"
     );
 }
 

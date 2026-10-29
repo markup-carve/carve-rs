@@ -1,6 +1,7 @@
 use serde_json::Value;
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn pending_definition_terms_keep_unclosed_code_tails() {
     let cases: Value =
         serde_json::from_str(include_str!("fixtures/pending_term_code_lazy_tails.json")).unwrap();

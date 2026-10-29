@@ -328,6 +328,11 @@ fn try_layout_into(
     options: &Options<'_>,
     out: &mut impl LayoutWrite,
 ) -> Option<AcceptanceCounters> {
+    // The layout facade reads lines in place, so a document the rule A walk
+    // rewrites goes to the full parser.
+    if walk_moves_lines(&normalize_source(source)) {
+        return None;
+    }
     if !options.extensions.is_empty()
         || options.profile.is_some()
         || options.source_lines

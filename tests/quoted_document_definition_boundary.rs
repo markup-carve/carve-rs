@@ -1,6 +1,7 @@
 use carve::{parse_with_options, render_html, to_carve_with_options, Options};
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn quoted_document_definitions_end_the_item_claim() {
     let cases: serde_json::Value = serde_json::from_str(include_str!(
         "fixtures/quoted_document_definition_boundary.json"

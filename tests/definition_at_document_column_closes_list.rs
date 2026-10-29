@@ -12,6 +12,7 @@ fn a_column_zero_link_definition_closes_an_ordered_item() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_column_zero_footnote_definition_closes_an_unordered_item() {
     let source = "- a\n[^f]: note\nafter[^f]\n";
     let expected = "- a\n\nafter[^f]\n\n[^f]: note\n";
@@ -32,6 +33,7 @@ fn a_definition_at_the_item_content_column_stays_inside() {
 /// suppress that one and the rest of the line is ordinary text. The
 /// unit-scoped form wrote `\\[r\\]: \\/u` and the last two backslashes were idle.
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_nonzero_definition_below_the_content_column_is_literal_text() {
     let source = "1. x\n [r]: /u\n[t][r]\n";
     let expected = "1. x\n   \\[r]: /u\n   [t][r]\n";

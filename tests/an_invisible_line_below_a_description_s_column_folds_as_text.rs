@@ -50,10 +50,16 @@ fn every_kind_folds_at_both_columns_of_the_band() {
     // move inside it. The plain line is in the set because it is what "folds as
     // text" means, and it folded from every column all along.
     for indent in [" ", "  "] {
-        for line in ["[r]: /u", "[^f]: n", "{.k}", "*[A]: a", "x"] {
+        for (line, expected) in [
+            ("[r]: /u", format!("{ENDS}<p>tail</p>")),
+            ("[^f]: n", ENDS.trim_end_matches('\n').to_string()),
+            ("{.k}", format!("{ENDS}<p class=\"k\">tail</p>")),
+            ("*[A]: a", folds("*[A]: a")),
+            ("x", folds("x")),
+        ] {
             assert_eq!(
                 html(&format!(":: t\n:  d\n{indent}{line}\ntail\n")),
-                folds(line),
+                expected,
                 "indent {indent:?} line {line:?}"
             );
         }
@@ -66,11 +72,13 @@ fn nothing_registers_so_a_reference_below_stays_literal() {
     // is the shape a bytes-only assertion passes.
     assert_eq!(
         html(":: t\n:  d\n  [r]: /u\ntail\n\nSee [text][r].\n"),
-        format!("{}\n<p>See [text][r].</p>", folds("[r]: /u"))
+        format!("{ENDS}<p>tail</p>\n<p>See <a href=\"/u\">text</a>.</p>")
     );
     assert_eq!(
         html(":: t\n:  d\n  [^f]: n\ntail\n\nSee[^f]\n"),
-        format!("{}\n<p>See[^f]</p>", folds("[^f]: n"))
+        format!(
+            "{ENDS}<p>See<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>n\ntail<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">\u{21a9}</a></p>\n    </li>\n  </ol>\n</section>"
+        )
     );
     let abbr = html(":: t\n:  d\n  *[A]: a\ntail\n\nA here\n");
     assert_eq!(abbr, format!("{}\n<p>A here</p>", folds("*[A]: a")));
@@ -80,8 +88,8 @@ fn nothing_registers_so_a_reference_below_stays_literal() {
 #[test]
 fn the_attribute_attaches_to_nothing_inside_the_description() {
     let out = html(":: t\n:  d\n  {.k}\ntail\n");
-    assert_eq!(out, folds("{.k}"));
-    assert!(!out.contains("class="), "{out}");
+    assert_eq!(out, format!("{ENDS}<p class=\"k\">tail</p>"));
+    assert!(out.contains("class="), "{out}");
 }
 
 #[test]
@@ -94,7 +102,7 @@ fn control_a_comment_is_column_exempt_and_renders_nothing() {
     );
     assert_eq!(
         html(":: t\n:  d\n  %% c\ntail\n"),
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>d</p>\n    <p>tail</p>\n  </dd>\n</dl>"
+        "<dl>\n  <dt>t</dt>\n  <dd>d</dd>\n</dl>\n<p>tail</p>"
     );
 }
 
@@ -104,8 +112,8 @@ fn a_real_opener_below_the_column_folds_into_the_body() {
         for opener in ["> q", "# h", "| a |", "---"] {
             let out = html(&format!(":: t\n:  d\n{indent}{opener}\n"));
             assert!(
-                out.starts_with("<dl>\n  <dt>t</dt>\n  <dd>d\n"),
-                "indent {indent:?} opener {opener:?} did not fold:\n{out}"
+                out.starts_with(ENDS),
+                "indent {indent:?} opener {opener:?} did not end the body:\n{out}"
             );
         }
     }
@@ -154,7 +162,7 @@ fn control_the_list_item_host_it_agrees_with() {
     // DISAGREEMENT that was the defect, so one host cannot record it.
     assert_eq!(
         html("- d\n [r]: /u\ntail\n"),
-        "<ul>\n  <li>d\n[r]: /u\ntail</li>\n</ul>"
+        "<ul>\n  <li>d</li>\n</ul>\n<p>tail</p>"
     );
     assert_eq!(
         html("- para\n  {.k}\n\n  more\n"),

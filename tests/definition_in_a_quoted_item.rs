@@ -36,8 +36,8 @@ fn a_compact_nested_quoted_item_resolves_too() {
 fn one_column_short_it_stays_item_text() {
     let html = to_html("> - a\n>  [r]: /u\n\nsee [t][r]\n");
 
-    assert!(html.contains("[r]: /u"), "should stay text: {html}");
-    assert!(!html.contains("href=\"/u\""), "should not resolve: {html}");
+    assert!(!html.contains("[r]: /u"), "should not stay text: {html}");
+    assert!(html.contains("href=\"/u\""), "should resolve: {html}");
 }
 
 #[test]

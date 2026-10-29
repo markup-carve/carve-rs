@@ -1,4 +1,5 @@
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn agreed_rows_keep_their_html_and_canonical_source() {
     let rows: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/wave7_2607.json")).unwrap();

@@ -1,4 +1,5 @@
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn breaks_cover_their_original_line_endings() {
     for eol in ["\n", "\r\n", "\r"] {
         let source = ["> :: 😀", ">   %% note", ">   more", ""].join(eol);

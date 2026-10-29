@@ -1,5 +1,6 @@
 use serde_json::Value;
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn matches_checker() {
     let rows: Value =
         serde_json::from_str(include_str!("fixtures/invisible_leaf_after_quote.json")).unwrap();

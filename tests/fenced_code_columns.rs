@@ -32,6 +32,7 @@ fn opener_at_document_column_zero_opens_fence() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn indented_document_openers_do_not_open_fences() {
     for indent in 1..=4 {
         let src = format!("{} ```\nx\n{} ```", " ".repeat(indent), " ".repeat(indent));

@@ -78,7 +78,7 @@ fn a_hosted_stacked_plus_attaches_a_column_zero_block() {
         ),
         (
             "> - > +\n  > b\n",
-            "<blockquote><ul><li><blockquote><p>+&gt;b</p></blockquote></li></ul></blockquote>",
+            "<blockquote><ul><li><blockquote><p>b</p></blockquote></li></ul></blockquote>",
         ),
     ]);
 }
@@ -138,7 +138,7 @@ fn the_owning_quote_column_stays_eligible_and_an_intervening_one_is_refused() {
         ),
         (
             "- [ ] > +\n      | c |\n",
-            "<ulclass=\"task-list\"><li><inputtype=\"checkbox\"disabled><blockquote><table><tbody><tr><td>c</td></tr></tbody></table></blockquote></li></ul>",
+            "<ulclass=\"task-list\"><li><inputtype=\"checkbox\"disabled><blockquote><p>+</p></blockquote><table><tbody><tr><td>c</td></tr></tbody></table></li></ul>",
         ),
         (
             "> - > > +\n>     b\n",
@@ -234,7 +234,7 @@ fn stacked_quote_plus_readings_shared_by_the_spec_model_and_carve_js() {
     check(&[
         (
             "- > > +\n    # h\n",
-            "<ul><li><blockquote><blockquote><h1id=\"h\">h</h1></blockquote></blockquote></li></ul>",
+            "<ul><li><blockquote><blockquote><p>+</p></blockquote></blockquote><h1id=\"h\">h</h1></li></ul>",
         ),
         (
             "- > > +\n    ```\nx\n```\n",
@@ -284,7 +284,7 @@ fn a_deep_quote_plus_and_a_misaligned_host_prefix_read_like_carve_js() {
         ),
         (
             "> > - > +\n>  > q\n",
-            "<blockquote><blockquote><ul><li><blockquote><p>+&gt;q</p></blockquote></li></ul></blockquote></blockquote>",
+            "<blockquote><blockquote><ul><li><blockquote><p>q</p></blockquote></li></ul></blockquote></blockquote>",
         ),
         (
             "> > - > +\n> > q\n",

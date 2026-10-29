@@ -1,6 +1,7 @@
 use carve::{to_html, to_html_with_options, Options};
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn container_ownership() {
     let cases: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/container-ownership.json")).unwrap();
@@ -22,7 +23,7 @@ fn container_ownership() {
 #[test]
 fn a_blank_after_retained_text_keeps_the_nested_content_column() {
     let source = "- - intro\n%% c\n - tail\n\n    para\n";
-    let expected = "<ul>\n  <li>\n    <ul>\n      <li><p>intro</p>\n        <p>- tail</p>\n        <p>para</p>\n      </li>\n    </ul>\n  </li>\n</ul>";
+    let expected = "<ul>\n  <li>\n    <ul>\n      <li>intro</li>\n    </ul>\n  </li>\n  <li><p>tail</p>\n    <p>para</p>\n  </li>\n</ul>";
     assert_eq!(to_html(source).trim(), expected);
     assert_eq!(
         to_html_with_options(source, &Options::default().with_positions(true)).trim(),

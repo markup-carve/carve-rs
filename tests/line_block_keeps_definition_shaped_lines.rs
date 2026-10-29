@@ -74,10 +74,10 @@ fn an_indented_opener_does_not_start_a_line_block_in_the_prepass() {
     let html = carve::to_html("  ::: |\n[e]: http://e.de\n\nsee [e][]\n");
 
     assert!(
-        !html.contains("[e]: http://e.de"),
-        "the definition after an indented non-opener stayed visible: {html}"
+        html.contains("<div class=\"line-block\">\n  <p>[e]: http://e.de</p>"),
+        "the definition-shaped line left the line block: {html}"
     );
-    assert!(html.contains("href=\"http://e.de\""), "{html}");
+    assert!(!html.contains("href=\"http://e.de\""), "{html}");
 }
 
 /// A line block opened on a marker line closes at the item's content column,

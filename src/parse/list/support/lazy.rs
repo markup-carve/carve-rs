@@ -15,95 +15,6 @@ pub(crate) fn fold_lazy_run_and_resume_in_band(
     let mut staged = LineBuffer::default().into_source();
     let mut flush_separator_follows_other_block = false;
     loop {
-        // A COMMENT BELOW THE CONTENT COLUMN ENDS NOTHING. §10 I5's first
-        // exception keeps it invisible and paragraph-closing at any column, and
-        // §24 C3 reserves ending a container for a line that REACHED its
-        // column - so the comment joins the chunk and the line under it lands
-        // in the innermost open item rather than the outer one
-        // (markup-carve/carve-rs#1516). The marker-line sub-list ran this arm
-        // already, flush-left only, for the same reason (carve-rs#1424).
-        let candidate_comment = cur.peek().map(str::to_string);
-        let comment_run = candidate_comment
-            .as_deref()
-            .and_then(|line| matched_fence_below_item(cur, line, content_col));
-        if candidate_comment.as_deref().is_some_and(|line| {
-            indent_columns(line) < content_col
-                && (line_comment_keeps_the_container_open(cur, line) || comment_run.is_some())
-        }) {
-            // ONLY WHILE THERE IS A PARAGRAPH FOR IT TO CLOSE. The exception is
-            // about a comment not ENDING the container, and a container with no
-            // open paragraph has already ended under PART 1 S4's otherwise - the
-            // comment never reached it, so the comment and the line beneath it
-            // are the document's. Asked after the comment had joined, the gate
-            // could not tell the two apart, so `- # h` / `%% c` / `tail` revived
-            // an item its own heading had closed, and the same over a fence, a
-            // table and an indented comment (markup-carve/carve-rs#2109).
-            if !open_after_refused_marker(
-                nested,
-                last_consumed_line_below_column(cur, content_col),
-                &mut open,
-            ) {
-                break;
-            }
-            let line = cur.peek().unwrap();
-            let destination = if frame_band_lines {
-                &mut staged
-            } else {
-                &mut *nested
-            };
-            destination.push_newline_at(
-                trim_ascii_start(line).to_string(),
-                cur.source_line(cur.pos),
-                cur.source_col(cur.pos)
-                    .map(|col| col + leading_ws(line) as isize),
-            );
-            cur.consume();
-            if let Some(run) = comment_run {
-                append_comment_span_through_closer(cur, destination, run, true);
-            }
-            // The comment CLOSED the paragraph, so the open-paragraph gate
-            // below would stop the fold here - and the container is still open,
-            // which is the whole point of the exception. Resume against the
-            // sub-list's own column exactly as the plain lazy path does.
-            let retained_fence = collect_trailing_lazy_through_framed(
-                cur,
-                if frame_band_lines {
-                    &mut staged
-                } else {
-                    &mut *nested
-                },
-                lazy_column,
-                list_base,
-                content_col,
-                frame_band_lines,
-                (false, None),
-            );
-            if retained_fence {
-                break;
-            }
-            let before_resume = cur.pos;
-            let resumed = resume(cur);
-            if !frame_band_lines && body_ends_in_definition_list(&resumed.source, options) {
-                flush_separator_follows_other_block = false;
-            }
-            if frame_band_lines {
-                pending_chunks.push(std::mem::replace(
-                    &mut staged,
-                    LineBuffer::default().into_source(),
-                ));
-                pending_chunks.push(resumed);
-            } else {
-                nested.append(resumed);
-            }
-            let next_is_comment = cur
-                .peek()
-                .map(str::to_string)
-                .is_some_and(|line| line_comment_keeps_the_container_open(cur, &line));
-            if cur.pos == before_resume && !next_is_comment {
-                break;
-            }
-            continue;
-        }
         if cur
             .peek()
             .is_some_and(|line| indent_columns(line) == 0 && detect_fence_open(line).is_some())
@@ -112,22 +23,13 @@ pub(crate) fn fold_lazy_run_and_resume_in_band(
             break;
         }
         // CARVE-P2-017: a flush separator leaves an item's definition list.
-        // Quote X2 keeps an open quoted paragraph's lazy continuation.
         if !frame_band_lines
             && !flush_separator_follows_other_block
-            && (!cur.in_quoted_body
-                || definition_list_is_marker_line_only(nested)
-                || (lazy_column > list_base
-                    && cur
-                        .peek()
-                        .is_some_and(|line| indent_columns(line) <= list_base)))
             && cur.peek().is_some_and(|line| {
                 indent_columns(line) == 0 && strip_description_prefix(line).is_some()
             })
         {
-            let mut rebased = nested.clone();
-            rebase_overindented_blocks(&mut rebased, false, options);
-            if body_ends_in_definition_list(&rebased.source, options) {
+            if body_ends_in_definition_list(&nested.source, options) {
                 break;
             }
             flush_separator_follows_other_block = true;
@@ -211,56 +113,6 @@ pub(crate) fn fold_lazy_run_and_resume_in_band(
         pending_chunks.push(staged);
         nested.append_many(pending_chunks);
     }
-}
-
-/// Fold lazy lines down to a container's own base column.
-///
-/// Most callers parse at document column zero and pass zero for both columns.
-/// A flush comment can keep an INDENTED list open too, where a line at that
-/// list's base column is still below its content column and therefore lazy.
-///
-/// `list_base` is the column a SIBLING marker would be written at. Only a
-/// marker at or below it ends the run: `parse_list`'s own rule is that a marker
-/// indented past the list's base but below the content column folds as lazy
-/// item text (§10 - no marker interrupts a paragraph), and this collector broke
-/// on every marker instead, letting a below-column one out to open a sub-list
-/// (markup-carve/carve-rs#1514). The two callers that pass a `list_base` below
-/// `base_indent` are the marker-line sub-list's, where the band between the two
-/// columns exists at all.
-pub(crate) fn collect_trailing_lazy_through(
-    cur: &mut LineCursor,
-    nested: &mut MappedSource,
-    base_indent: usize,
-    list_base: usize,
-    content_col: usize,
-) -> bool {
-    collect_trailing_lazy_through_framed(
-        cur,
-        nested,
-        base_indent,
-        list_base,
-        content_col,
-        false,
-        (false, None),
-    )
-}
-
-pub(crate) fn collect_comment_lazy_through(
-    cur: &mut LineCursor,
-    nested: &mut MappedSource,
-    base_indent: usize,
-    list_base: usize,
-    content_col: usize,
-) -> bool {
-    collect_trailing_lazy_through_framed(
-        cur,
-        nested,
-        base_indent,
-        list_base,
-        content_col,
-        false,
-        (true, None),
-    )
 }
 
 pub(crate) fn collect_marker_sublist_lazy_through(

@@ -681,17 +681,6 @@ fn ends_in_definition_list(block: Option<&BlockNode>, nested: bool) -> bool {
     }
 }
 
-/// A list opened on the item's marker line starts at the marker column.
-/// A later term in the collected body can open a list at its own column.
-pub(crate) fn definition_list_is_marker_line_only(body: &MappedSource) -> bool {
-    if !body.item_marker_at_start {
-        return false;
-    }
-    let mut lines = body.source.lines();
-    lines.next().is_some_and(is_definition_list_start)
-        && !lines.any(|line| is_definition_list_start(trim_ascii_start(line)))
-}
-
 #[cfg(test)]
 mod description_separator_probe_work {
     use super::BODY_ENDS_DEFINITION_PROBE_BYTES;
@@ -948,26 +937,18 @@ impl<'a> ParagraphOpen<'a> {
 /// block is a paragraph, the dedented line is the quote's own lazy continuation
 /// and must stay INSIDE the item rather than ending it. A code block or table
 /// has no open paragraph, so it does NOT fold (the dedented line ends the item).
-/// [`nested_ends_with_open_paragraph`] on a collected body that is REBASED first,
-/// exactly as `item_body` rebases before it finalizes the item's children.
-///
-/// The plain probe re-parses the body string verbatim, so an over-indented block
-/// opener an item collected at its content column - `  # h` under `> - x` - reads
-/// as an indented PARAGRAPH while the finalized item, having run
-/// `rebase_overindented_blocks`, reads it as a HEADING. The lazy-fold decision
-/// then folds a following flush line the render leaves top-level
-/// (markup-carve/carve-rs#1538). Rebasing a clone here matches the render.
-pub(crate) fn nested_ends_with_open_paragraph_rebased(
+/// [`nested_ends_with_open_paragraph`] on a collected body with its refused
+/// marker tail masked.
+pub(crate) fn nested_ends_with_open_paragraph_masked(
     nested: &MappedSource,
     trailing_below_column: bool,
     below_outer_column: bool,
     options: &Options<'_>,
 ) -> bool {
-    let mut rebased = nested.clone();
-    rebase_overindented_blocks(&mut rebased, false, options);
-    mask_refused_marker_tail(&mut rebased);
+    let mut masked = nested.clone();
+    mask_refused_marker_tail(&mut masked);
     nested_ends_with_open_paragraph(
-        &rebased.source,
+        &masked.source,
         trailing_below_column,
         below_outer_column,
         options,
@@ -1041,55 +1022,13 @@ pub(crate) fn nested_ends_with_open_paragraph(
         return false;
     }
     let blocks = probe_blocks(nested, options);
-    let mut end = blocks.len();
-    if trailing_below_column {
-        let postblank_line_comment = {
-            let mut lines = nested.lines().rev().skip_while(|line| is_blank_line(line));
-            lines.next().is_some_and(|line| {
-                is_line_comment_any_column(line)
-                    || detect_comment_fence_line_any_column(line).is_some()
-            }) && lines.next().is_some_and(is_blank_line)
-        };
-        // §24 C3's COMMENT EXCEPTION, which the clause above says is unchanged.
-        // A comment written BELOW the content column is not a block of this
-        // container - it reaches the container only through S4's lazy fold - so
-        // it ends nothing and the line under it still folds: `- a` / ` %% c` /
-        // `b` keeps `b` in the item (corpus 183, and 192 for the fence
-        // spelling). The dedented body cannot say which of the two it was, since
-        // a line at column 1 under a content column of 2 and one at column 2
-        // both arrive flush; the caller reads it off the collector's own map.
-        while end > 0 {
-            let BlockNode::Comment(comment) = &blocks[end - 1] else {
-                break;
-            };
-            // The comment exception retains an item's paragraph only until a
-            // blank has cleared its claim. A comment after that blank cannot
-            // revive the older paragraph when the next line misses the item.
-            if postblank_line_comment
-                || comment.pos.as_ref().is_some_and(|pos| {
-                    pos.start_line > 1
-                        && nested
-                            .lines()
-                            .nth(pos.start_line - 2)
-                            .is_some_and(is_blank_line)
-                })
-            {
-                return false;
-            }
-            end -= 1;
-        }
-        if end == 0 {
-            // Everything collected renders nothing, so the still-open paragraph
-            // is the one on the MARKER line. An empty collection is a different
-            // thing and keeps the old answer.
-            return !blocks.is_empty();
-        }
-    } else if end == 0 {
+    // Rule A (carve#3885): a comment interrupts the paragraph above it.
+    let Some(last) = blocks.last() else {
         return false;
-    }
+    };
 
     block_ends_with_open_paragraph(
-        blocks.get(end - 1),
+        Some(last),
         colon_fences_left_open(nested),
         below_outer_column,
     )
@@ -1419,72 +1358,6 @@ pub(crate) fn label_without_trailing_comment<'a>(label: &'a str, options: &Optio
     label
 }
 
-/// Does a comment below this frame's content column leave the item open?
-///
-/// §24 C3's comment exception names both spellings in one breath - the `%%`
-/// line and the `%%%` fence, "whose body and closer travel with it" - and says
-/// a comment "does not close the ITEM either". §28 decides which of the two a
-/// `%%%` opener IS: with an exact-width closer AHEAD it opens a `fenced_comment`
-/// and is a comment BLOCK at the enclosing context's own opener column, which
-/// ends the item (corpus 214, 445-3); with no closer it opens nothing and IS one
-/// `comment_line`. That degradation is a CLASSIFICATION and it is TOTAL -
-/// ownership included - so the degraded opener leaves the frame open exactly as
-/// a `%%` line does (markup-carve/carve#1903, normative in carve#1919).
-///
-/// THE CLOSER IS LOOKED FOR AHEAD, not on the next line: `- x` / `%%%` / `y` /
-/// `%%%` / `z` opens a real block that hides `y` and ends the item.
-pub(crate) fn flush_comment_keeps_the_item_open(cur: &mut LineCursor<'_>, line: &str) -> bool {
-    if is_line_comment_any_column(line) && !is_definition_placeholder(line) {
-        return true;
-    }
-    detect_comment_fence_line_any_column(line)
-        .is_some_and(|open| !cur.has_comment_closer_after(cur.pos + 1, open.fence_len))
-}
-
-pub(crate) fn matched_fence_below_item(
-    cur: &mut LineCursor<'_>,
-    line: &str,
-    content_col: usize,
-) -> Option<usize> {
-    let column = indent_columns(line);
-    if column >= content_col
-        || (column == 0 && !cur.in_item_body && !cur.sublists_carry_authored_base)
-    {
-        return None;
-    }
-    let open = detect_comment_fence_line_any_column(line)?;
-    if !open.tail.is_empty() {
-        return None;
-    }
-    if cur
-        .lines
-        .line(cur.pos + 1)
-        .is_some_and(|next| is_comment_fence_close_any_column(next, open.fence_len))
-    {
-        return Some(open.fence_len);
-    }
-    if column == 0 || cur.pos == 0 || is_blank_line(cur.lines.at(cur.pos - 1)) {
-        return None;
-    }
-    let marker = cur
-        .lines
-        .range(0..cur.pos)
-        .rev()
-        .find_map(detect_list_marker_full)?;
-    if column <= marker.indent || marked_quote_before_comment(cur, cur.pos) {
-        return None;
-    }
-    for next in cur.lines.range(cur.pos + 1..cur.lines.len()) {
-        if is_blank_line(next) {
-            return None;
-        }
-        if is_comment_fence_close_any_column(next, open.fence_len) {
-            return Some(open.fence_len);
-        }
-    }
-    None
-}
-
 pub(crate) fn marked_quote_before_comment(cur: &LineCursor<'_>, comment_at: usize) -> bool {
     // CARVE-P0-013 keeps an unmatched fence after the span in the item.
     if let Some(open) = detect_comment_fence_line_any_column(cur.lines.at(comment_at)) {
@@ -1541,29 +1414,6 @@ pub(crate) fn matched_comment_before(cur: &LineCursor<'_>) -> Option<usize> {
             .is_some_and(|open| open.fence_len == close.fence_len)
     })?;
     Some(opener)
-}
-
-pub(crate) fn append_comment_span_through_closer(
-    cur: &mut LineCursor<'_>,
-    target: &mut MappedSource,
-    run: usize,
-    trim: bool,
-) {
-    debug_assert!(cur.has_comment_closer_after(cur.pos, run));
-    while let Some(line) = cur.peek() {
-        let closes = is_comment_fence_close_any_column(line, run);
-        let kept = if trim { trim_ascii_start(line) } else { line };
-        target.push_newline_at(
-            kept.to_string(),
-            cur.source_line(cur.pos),
-            cur.source_col(cur.pos)
-                .map(|col| col + (line.len() - kept.len()) as isize),
-        );
-        cur.consume();
-        if closes {
-            break;
-        }
-    }
 }
 
 /// The `%%` line form at ANY column.

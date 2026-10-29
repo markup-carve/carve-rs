@@ -11,6 +11,7 @@ fn quoted_link_definitions_in_footnotes_register_document_wide() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3523"]
 fn a_quoted_paragraph_keeps_a_definition_shaped_line_as_text() {
     let source = "[^n]: a\n  > prose\n  > [r]: /x\n[x][r] [^n]\n";
     let html = carve::to_html(source);

@@ -66,7 +66,7 @@ fn assert_substitutes(fence: &str, line: &str) {
 /// Corpus 445-1, the reported document, and 445-2 as its substitution control.
 #[test]
 fn the_reported_document_keeps_the_follower_in_the_item() {
-    assert_html("- x\n%%%\ny\n", "<ul><li>x y</li></ul>");
+    assert_html("- x\n%%%\ny\n", "<ul><li>x</li></ul><p>y</p>");
     assert_substitutes("- x\n%%%\ny\n", "- x\n%% z\ny\n");
 }
 
@@ -74,7 +74,7 @@ fn the_reported_document_keeps_the_follower_in_the_item() {
 /// same at its frame's column 0.
 #[test]
 fn an_ordered_marker_answers_the_same_way() {
-    assert_html("1. x\n%%%\ny\n", "<ol><li>x y</li></ol>");
+    assert_html("1. x\n%%%\ny\n", "<ol><li>x</li></ol><p>y</p>");
     assert_substitutes("1. x\n%%%\ny\n", "1. x\n%% z\ny\n");
 }
 
@@ -82,7 +82,7 @@ fn an_ordered_marker_answers_the_same_way() {
 /// marker still degrades at column 0.
 #[test]
 fn a_padded_marker_still_degrades_at_column_zero() {
-    assert_html("-   x\n%%%\ny\n", "<ul><li>x y</li></ul>");
+    assert_html("-   x\n%%%\ny\n", "<ul><li>x</li></ul><p>y</p>");
     assert_substitutes("-   x\n%%%\ny\n", "-   x\n%% z\ny\n");
 }
 
@@ -92,7 +92,7 @@ fn a_padded_marker_still_degrades_at_column_zero() {
 fn a_nested_frames_own_column_zero_answers_too() {
     assert_html(
         "- - x\n  %%%\n  y\n",
-        "<ul><li><ul><li>x y</li></ul></li></ul>",
+        "<ul><li><ul><li>x</li></ul> y</li></ul>",
     );
     assert_substitutes("- - x\n  %%%\n  y\n", "- - x\n  %% z\n  y\n");
 }
@@ -101,7 +101,7 @@ fn a_nested_frames_own_column_zero_answers_too() {
 /// what decides it.
 #[test]
 fn a_wider_unterminated_run_degrades_too() {
-    assert_html("- x\n%%%%\ny\n", "<ul><li>x y</li></ul>");
+    assert_html("- x\n%%%%\ny\n", "<ul><li>x</li></ul><p>y</p>");
     assert_substitutes("- x\n%%%%\ny\n", "- x\n%% z\ny\n");
 }
 
@@ -109,7 +109,7 @@ fn a_wider_unterminated_run_degrades_too() {
 /// opener is not one and the opener stays degraded.
 #[test]
 fn a_wider_run_below_the_opener_is_not_a_closer() {
-    assert_html("- x\n%%%\n%%%%\ny\n", "<ul><li>x y</li></ul>");
+    assert_html("- x\n%%%\n%%%%\ny\n", "<ul><li>x</li></ul><p>y</p>");
 }
 
 /// Corpus 445-10: the degraded comment leaves the LIST open, not only the item,
@@ -128,7 +128,7 @@ fn the_list_stays_open_for_a_sibling_marker() {
 fn a_column_zero_fence_below_every_content_column_keeps_the_inner_item() {
     assert_html(
         "- a\n  - x\n%%% c\ntail\n",
-        "<ul><li>a<ul><li>x tail</li></ul></li></ul>",
+        "<ul><li>a<ul><li>x</li></ul></li></ul><p>tail</p>",
     );
     assert_substitutes("- a\n  - x\n%%% c\ntail\n", "- a\n  - x\n%% c\ntail\n");
 }
@@ -140,7 +140,10 @@ fn a_column_zero_fence_below_every_content_column_keeps_the_inner_item() {
 /// as flush-left; the ladder's arm is a second, separate site.
 #[test]
 fn a_marker_ladder_keeps_the_follower_in_the_innermost_item() {
-    assert_html("- - x\n%%%\ny\n", "<ul><li><ul><li>x y</li></ul></li></ul>");
+    assert_html(
+        "- - x\n%%%\ny\n",
+        "<ul><li><ul><li>x</li></ul></li></ul><p>y</p>",
+    );
     assert_substitutes("- - x\n%%%\ny\n", "- - x\n%% z\ny\n");
 }
 
@@ -150,7 +153,7 @@ fn a_marker_ladder_keeps_the_follower_in_the_innermost_item() {
 fn a_three_rung_ladder_answers_the_same_way() {
     assert_html(
         "- - - x\n%%%\ny\n",
-        "<ul><li><ul><li><ul><li>x y</li></ul></li></ul></li></ul>",
+        "<ul><li><ul><li><ul><li>x</li></ul></li></ul></li></ul><p>y</p>",
     );
     assert_substitutes("- - - x\n%%%\ny\n", "- - - x\n%% z\ny\n");
 }
@@ -161,7 +164,7 @@ fn a_three_rung_ladder_answers_the_same_way() {
 fn a_blank_separated_sublist_keeps_the_follower_too() {
     assert_html(
         "- a\n\n  - x\n%%% c\ntail\n",
-        "<ul><li>a<ul><li>x tail</li></ul></li></ul>",
+        "<ul><li>a<ul><li>x</li></ul></li></ul><p>tail</p>",
     );
     assert_substitutes("- a\n\n  - x\n%%% c\ntail\n", "- a\n\n  - x\n%% c\ntail\n");
 }
@@ -174,7 +177,7 @@ fn a_blank_separated_sublist_keeps_the_follower_too() {
 /// the one the substitution requires the fence spelling to equal.
 #[test]
 fn the_line_form_is_unchanged() {
-    assert_html("- x\n%% z\ny\n", "<ul><li>x y</li></ul>");
+    assert_html("- x\n%% z\ny\n", "<ul><li>x</li></ul><p>y</p>");
 }
 
 /// Corpus 445-3: a TERMINATED fence at that column is a comment BLOCK written

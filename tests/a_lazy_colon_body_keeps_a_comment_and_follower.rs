@@ -8,7 +8,7 @@ fn a_below_column_comment_keeps_the_colon_body_open() {
         to_html_with_options(source, &Options::default().with_positions(true)),
     ] {
         assert!(html.contains("<p>para\nc</p>"), "{html}");
-        assert!(html.contains("<p>tail</p>\n    </aside>"), "{html}");
-        assert!(!html.contains("</ul>\n<p>tail</p>"), "{html}");
+        assert!(!html.contains("<p>tail</p>\n    </aside>"), "{html}");
+        assert!(html.contains("</ul>\n<p>tail</p>"), "{html}");
     }
 }

@@ -9,6 +9,7 @@ fn vectors(data: &str) -> Vec<Value> {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn vector_parse_and_render_premises() {
     for (rule, data) in [
         (
@@ -82,6 +83,7 @@ fn check(data: &str, rule: &str) {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn shared_vectors() {
     check(
         include_str!("fixtures/lint-rule-vectors/list-marker-below-content-column.json"),
@@ -94,6 +96,7 @@ fn shared_vectors() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn marker_positions_and_payloads() {
     for (source, expected) in [
         ("10. c\r\n   - d\r\n", vec![(2, 4)]),
@@ -120,6 +123,7 @@ fn marker_positions_and_payloads() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn split_positions_in_quotes_and_crlf() {
     for (source, expected) in [
         (" 9. nine\r\n10. ten\r\n", vec![(2, 1)]),

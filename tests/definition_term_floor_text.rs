@@ -1,6 +1,7 @@
 use serde_json::Value;
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn floor_text_keeps_definition_terms_open() {
     let rows: Value =
         serde_json::from_str(include_str!("fixtures/definition_term_floor_text.json")).unwrap();

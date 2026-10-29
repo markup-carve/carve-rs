@@ -93,14 +93,8 @@ fn below_the_bodys_minimum_column_the_block_leaves_the_footnote() {
             "opener {opener}:\n{flush}"
         );
 
-        // One column in, the line is lazy against the paragraph the footnote
-        // definition left open above it, so the `>` never opens.
         let lazy = html(&footnote(opener, 1));
-        assert!(
-            lazy.starts_with("<p>&gt; quote</p>\n<p>see"),
-            "opener {opener}:\n{lazy}"
-        );
-        assert!(!lazy.contains("<blockquote>"), "opener {opener}:\n{lazy}");
+        assert_eq!(lazy, flush, "opener {opener}");
     }
 }
 
@@ -181,12 +175,11 @@ fn a_list_item_host_keeps_its_own_answer_at_every_column() {
             " ".repeat(payload)
         ));
         let expected = match payload {
-            0 => "<ul>\n  <li>item\n    <ul>\n      <li>inner</li>\n    </ul>\n  </li>\n</ul>\n\
-                  <blockquote><p>quote</p></blockquote>"
-                .to_string(),
-            1 => "<ul>\n  <li>item\n    <ul>\n      <li>inner</li>\n    </ul>\n  </li>\n</ul>\n\
-                  <p>&gt; quote</p>"
-                .to_string(),
+            0 | 1 => {
+                "<ul>\n  <li>item\n    <ul>\n      <li>inner</li>\n    </ul>\n  </li>\n</ul>\n\
+                      <blockquote><p>quote</p></blockquote>"
+                    .to_string()
+            }
             2..=4 => outer_sibling.to_string(),
             _ => inner_own.to_string(),
         };

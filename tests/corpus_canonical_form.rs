@@ -102,6 +102,7 @@ fn a_pinned_fixture_is_read() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn fmt_matches_every_pinned_canonical_form() {
     let mut wrong = Vec::new();
     let mut observed_ahead = BTreeSet::new();

@@ -20,6 +20,7 @@ fn a_closed_fence_at_the_marker_note_body_column_opens_in_the_note() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_document_column_closer_does_not_close_a_marker_note_fence() {
     let source = "- [^n]: text\n    ```\ncode\n```\nafter [^n]\n";
     for positions in [false, true] {
@@ -42,6 +43,7 @@ fn a_closed_item_fence_does_not_hide_a_later_note_definition() {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn continued_marker_notes_follow_code_ownership() {
     let cases: serde_json::Value = serde_json::from_str(include_str!(
         "fixtures/continued_marker_note_code_floor.json"

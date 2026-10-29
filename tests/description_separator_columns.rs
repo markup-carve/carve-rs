@@ -80,6 +80,6 @@ fn term_text_inside_code_does_not_open_a_definition_list() {
 fn deeper_term_text_does_not_move_the_list_column() {
     assert_eq!(
         html("- a\n  :: m\n   :: n\n  : d\n"),
-        "<ul>\n  <li>a\n    <dl>\n      <dt>m\n :: n</dt>\n      <dd>d</dd>\n    </dl>\n  </li>\n</ul>"
+        "<ul>\n  <li>a\n    <dl>\n      <dt>m</dt>\n      <dt>n</dt>\n      <dd>d</dd>\n    </dl>\n  </li>\n</ul>"
     );
 }

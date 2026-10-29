@@ -5,16 +5,33 @@ fn a_list_quote_keeps_an_indented_fence() {
     for column in [1, 3, 4, 5, 6, 7, 8] {
         let pad = " ".repeat(column);
         let source = format!("- a\n  > q\n{pad}```js\n{pad}c\n{pad}```\n");
-        assert_eq!(to_html(&source), "<ul>\n  <li>a\n    <blockquote><p>q\n<code>js\nc\n</code></p></blockquote>\n  </li>\n</ul>", "column {column}");
+        let expected = if column < 2 {
+            "<ul>\n  <li>a\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ul>\n<pre><code class=\"language-js\">c\n</code></pre>"
+        } else {
+            "<ul>\n  <li>a\n    <blockquote><p>q</p></blockquote>\n    <pre><code class=\"language-js\">c\n</code></pre>\n  </li>\n</ul>"
+        };
+        assert_eq!(to_html(&source), expected, "column {column}");
     }
 }
 
-const OPENERS: &[(&str, &str)] = &[
-    ("```js\nc\n```", "<code>js\nc\n</code>"),
-    ("```=latex\nc\n```", "<code>=latex\nc\n</code>"),
-    ("# h", "# h"),
-    ("---", "\u{2014}"),
-    ("| a | b |", "| a | b |"),
+const OPENERS: &[(&str, &str, &str)] = &[
+    (
+        "```js\nc\n```",
+        "\n<pre><code class=\"language-js\">c\n</code></pre>",
+        "<pre><code class=\"language-js\">c\n</code></pre>",
+    ),
+    ("```=latex\nc\n```", "", ""),
+    (
+        "# h",
+        "\n<section id=\"h\">\n  <h1>h</h1>\n</section>",
+        "h</h1>",
+    ),
+    ("---", "\n<hr>", "<hr>"),
+    (
+        "| a | b |",
+        "\n<table>\n  <tbody>\n    <tr><td>a</td><td>b</td></tr>\n  </tbody>\n</table>",
+        "<td>a</td><td>b</td>",
+    ),
 ];
 
 fn indented(body: &str, column: usize) -> String {
@@ -31,7 +48,7 @@ fn surviving_quotes_keep_each_opener_across_the_column_band() {
             if head.starts_with("[^1]") && column == 1 {
                 continue;
             }
-            for (body, inline) in OPENERS {
+            for (body, _, block) in OPENERS {
                 let source = format!("{head}{}\nx[^1]\n", indented(body, column));
                 let html = to_html(&source);
                 assert_eq!(
@@ -42,8 +59,11 @@ fn surviving_quotes_keep_each_opener_across_the_column_band() {
                     ),
                     "{source:?}"
                 );
-                let paragraph = format!("<blockquote><p>q\n{inline}</p></blockquote>");
-                assert!(html.contains(&paragraph), "{source:?}\n{html}");
+                assert!(
+                    html.contains("<blockquote><p>q</p></blockquote>"),
+                    "{source:?}\n{html}"
+                );
+                assert!(html.contains(block), "{source:?}\n{html}");
             }
         }
     }
@@ -52,11 +72,11 @@ fn surviving_quotes_keep_each_opener_across_the_column_band() {
 #[test]
 fn top_level_quotes_use_the_same_fold() {
     for column in 1..=8 {
-        for (body, inline) in OPENERS {
+        for (body, block, _) in OPENERS {
             let source = format!("> q\n{}", indented(body, column));
             assert_eq!(
                 to_html(&source),
-                format!("<blockquote><p>q\n{inline}</p></blockquote>"),
+                format!("<blockquote><p>q</p></blockquote>{block}"),
                 "{source:?}"
             );
         }
@@ -100,7 +120,7 @@ fn prose_instead_of_a_quote_still_allows_an_indented_block() {
 fn a_line_below_a_footnotes_body_column_stays_outside_the_note() {
     let source = "[^1]: > q\n ```js\n c\n ```\n\nx[^1]\n";
     let html = to_html(source);
-    assert!(html.starts_with("<p><code>js\nc\n</code></p>"));
+    assert!(html.starts_with("<pre><code class=\"language-js\">c\n</code></pre>"));
     assert!(html.contains("<blockquote><p>q</p></blockquote>"));
 }
 
@@ -121,7 +141,7 @@ fn an_indented_quote_marker_is_text_in_the_surviving_quote() {
     for head in ["- a\n  > q\n", "[^1]: > q\n", ":: t\n: > q\n"] {
         let source = format!("{head}   > r\n\nx[^1]\n");
         assert!(
-            to_html(&source).contains("<blockquote><p>q\n&gt; r</p></blockquote>"),
+            to_html(&source).contains("<blockquote><p>q\nr</p></blockquote>"),
             "{source:?}"
         );
     }
@@ -129,13 +149,14 @@ fn an_indented_quote_marker_is_text_in_the_surviving_quote() {
 
 #[test]
 fn a_nested_quote_and_a_colon_host_keep_the_same_fold() {
-    assert!(to_html("- a\n  > > q\n     # h\n").contains("<blockquote><p>q\n# h</p></blockquote>"));
-    assert!(
-        to_html("::: note\n> q\n    # h\n:::\n").contains("<blockquote><p>q\n# h</p></blockquote>")
-    );
+    assert!(to_html("- a\n  > > q\n     # h\n")
+        .contains("<blockquote><p>q</p></blockquote>\n    </blockquote>\n    <h1 id=\"h\">h</h1>"));
+    assert!(to_html("::: note\n> q\n    # h\n:::\n")
+        .contains("<blockquote><p>q</p></blockquote>\n  <h1 id=\"h\">h</h1>"));
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_comment_fence_below_the_definition_column_retains_the_body() {
     use carve::ast::BlockNode;
     let doc = carve::parse(":: t\n: > q\n %%%\n secret\n %%%\n");

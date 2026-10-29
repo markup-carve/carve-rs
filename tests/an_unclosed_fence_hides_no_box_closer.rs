@@ -14,7 +14,7 @@ fn compact(source: &str) -> String {
 fn a_line_after_the_closed_box_leaves_the_list() {
     assert_eq!(
         compact("- ::: box\n  - item\n   ```\n   :::\n  :::\nafter\n"),
-        "<ul>|<li>|<div class=\"box\">|<ul>|<li>item|<code>|:::</code></li>|</ul>|</div>|</li>|</ul>|<p>after</p>"
+        "<ul>|<li>|<div class=\"box\">|<ul>|<li>item|<code></code></li>|</ul>|</div>|<div>||</div>|</li>|</ul>|<p>after</p>"
     );
     assert_eq!(
         compact("- ::: box\n  - item\n   ~~~\n  :::\nafter\n"),

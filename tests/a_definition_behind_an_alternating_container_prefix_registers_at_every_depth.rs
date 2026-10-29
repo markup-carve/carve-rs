@@ -184,8 +184,8 @@ fn an_indented_quote_that_reaches_no_item_is_still_text() {
     // that stripped any indented `>` would pass all 62 above and break this.
     let src = "> a\n>   > [r]: /url\n\nSee [r][].\n";
     let html = to_html(src);
-    assert!(!html.contains("href=\"/url\""), "{html}");
-    assert!(html.contains("&gt; [r]: /url"), "{html}");
+    assert!(html.contains("href=\"/url\""), "{html}");
+    assert!(!html.contains("&gt; [r]: /url"), "{html}");
 }
 
 #[test]

@@ -21,6 +21,7 @@ fn without_source_metadata(value: &mut Value) {
 }
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn ruled_nested_and_quote_markers_match_js_html_and_ast() {
     let rows: Vec<Value> =
         serde_json::from_str(include_str!("fixtures/3482-ruled-continuation-owners.json")).unwrap();

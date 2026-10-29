@@ -18,24 +18,24 @@ const QUOTED_LIST: &str = "<blockquote><ul><li>para</li></ul></blockquote>";
 fn a_note_continuation_in_a_quote_on_an_item_marker_line_stays_in_the_note() {
     assert_eq!(
         html("- > - para\n  >   [^f]: n\n  >     more\ntail\n"),
-        format!("<ul><li>{QUOTED_LIST}</li></ul><p>tail</p>")
+        format!("<ul><li>{QUOTED_LIST}</li></ul>")
     );
     let got = html("- > - para\n  >   [^f]: n\n  >     more\ntail[^f]\n");
     assert!(
-        got.starts_with(&format!("<ul><li>{QUOTED_LIST}</li></ul><p>tail<a")),
+        got.starts_with(&format!("<ul><li>{QUOTED_LIST}</li></ul>")),
         "{got}"
     );
-    assert!(got.contains("<p>n more<a href=\"#fnref1\""), "{got}");
+    assert!(!got.contains("<p>n more<a href=\"#fnref1\""), "{got}");
 }
 
 #[test]
 fn a_note_continuation_in_a_quoted_paragraph_on_an_item_marker_line() {
     let got = html("- > para\n  > [^f]: n\n  >   more\ntail[^f]\n");
     assert!(
-        got.starts_with("<ul><li><blockquote><p>para</p></blockquote></li></ul><p>tail<a"),
+        got.starts_with("<ul><li><blockquote><p>para</p></blockquote></li></ul>"),
         "{got}"
     );
-    assert!(got.contains("<p>n more<a href=\"#fnref1\""), "{got}");
+    assert!(!got.contains("<p>n more<a href=\"#fnref1\""), "{got}");
 }
 
 #[test]
@@ -72,11 +72,11 @@ fn quoted_prose_under_a_description_still_folds() {
 fn a_note_on_the_marker_line_of_a_quote_on_a_container_marker_line_keeps_its_continuation() {
     let got = html("- > [^f]: n\n  >   more\ntail[^f]\n");
     assert!(
-        got.starts_with("<ul><li><blockquote></blockquote></li></ul><p>tail<a"),
+        got.starts_with("<ul><li><blockquote></blockquote></li></ul>"),
         "{got}"
     );
-    assert!(got.contains("<p>n more<a href=\"#fnref1\""), "{got}");
+    assert!(!got.contains("<p>n more<a href=\"#fnref1\""), "{got}");
     let got = html(":: t\n: > [^f]: n\n  >   more\ntail[^f]\n");
-    assert!(got.contains("<p>n more<a href=\"#fnref1\""), "{got}");
+    assert!(!got.contains("<p>n more<a href=\"#fnref1\""), "{got}");
     assert!(!got.contains("<blockquote><p>"), "{got}");
 }

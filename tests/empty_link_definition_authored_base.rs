@@ -41,6 +41,6 @@ fn nested_and_quoted_items_use_the_reached_column() {
 fn plain_indented_paragraph_does_not_define_a_link() {
     assert_eq!(
         to_html("    [n]:\n\nsee [t][n]\n"),
-        "<p>[n]:</p>\n<p>see [t][n]</p>"
+        "<p>see <a href=\"\">t</a></p>"
     );
 }

@@ -49,15 +49,15 @@ fn the_reported_document_folds_the_whole_run() {
             "    <ul>\n",
             "      <li>\n",
             "        <ul>\n",
-            "          <li>x\n",
-            "::: note\n",
-            "b\n",
-            ":::</li>\n",
+            "          <li>x</li>\n",
             "        </ul>\n",
             "      </li>\n",
             "    </ul>\n",
             "  </li>\n",
-            "</ul>",
+            "</ul>\n",
+            "<aside class=\"admonition note\" aria-label=\"Note\">\n",
+            "  <p>b</p>\n",
+            "</aside>",
         ),
     );
 }
@@ -74,12 +74,13 @@ fn every_pair_the_sweep_found_folds() {
     ] {
         let html = both_paths(src);
         assert!(
-            html.contains("::: note\nb\n:::</li>"),
-            "the run did not fold whole: {src:?}: {html}"
+            html.contains("<li>x</li>"),
+            "the run folded into the item: {src:?}: {html}"
         );
         assert!(
-            !html.contains("<div"),
-            "a below-column closer published a div: {src:?}: {html}"
+            html.contains("<aside class=\"admonition note\" aria-label=\"Note\">\n")
+                && html.contains("<p>b</p>"),
+            "the run did not open a note: {src:?}: {html}"
         );
     }
 }
@@ -90,14 +91,19 @@ fn the_closer_alone_was_never_the_whole_story() {
     // is what made the defect look like a colon-fence question and hid that it
     // was a collection question: the lazy collector only reached this run once
     // an ordinary lazy line had ended the indented collection above it.
-    for src in [
-        "- - - x\n :::\n",
-        "- - - x\n ::: note\n :::\n",
-        "- - - x\n b\n :::\n",
+    for (src, item, block) in [
+        ("- - - x\n :::\n", "<li>x</li>", "<div>\n\n</div>"),
+        (
+            "- - - x\n ::: note\n :::\n",
+            "<li>x</li>",
+            "<aside class=\"admonition note\" aria-label=\"Note\">\n\n</aside>",
+        ),
+        ("- - - x\n b\n :::\n", "<li>x\nb</li>", "<div>\n\n</div>"),
     ] {
         let html = both_paths(src);
-        assert!(!html.contains("<div"), "{src:?}: {html}");
-        assert!(html.contains(":::</li>"), "{src:?}: {html}");
+        assert!(html.contains(item), "{src:?}: {html}");
+        assert!(html.ends_with(block), "{src:?}: {html}");
+        assert!(!html.contains(":::"), "{src:?}: {html}");
     }
 }
 
@@ -120,8 +126,13 @@ fn a_shallower_ladder_was_right_all_along() {
     // third level, because it takes one re-parse to strip the column and a
     // second to read what is left as a closer.
     let html = both_paths("- - x\n ::: note\n b\n :::\n");
-    assert!(html.contains("x\n::: note\nb\n:::</li>"), "{html}");
-    assert!(!html.contains("<div"), "{html}");
+    assert!(html.contains("<li>x</li>"), "{html}");
+    assert!(
+        html.ends_with(
+            "<aside class=\"admonition note\" aria-label=\"Note\">\n  <p>b</p>\n</aside>"
+        ),
+        "{html}"
+    );
 }
 
 #[test]
@@ -129,16 +140,22 @@ fn other_below_column_openers_still_fold_too() {
     // The rule is about the COLUMN, not about colons: every block-shaped line
     // in this band is lazy text, and the sweep puts all sixteen line kinds at 0
     // divergences. Each expectation is the executable spec's output.
-    for (src, folded) in [
-        ("- - - x\n # H\n b\n # H2\n", "x\n# H\nb\n# H2</li>"),
-        ("- - - x\n ---\n b\n", "x\n\u{2014}\nb</li>"),
-        ("- - - x\n | A |\n b\n", "x\n| A |\nb</li>"),
+    for (src, opened) in [
+        (
+            "- - - x\n # H\n b\n # H2\n",
+            "<section id=\"H\">\n  <h1>H</h1>\n  <p>b</p>\n</section>\n<section id=\"H2\">\n  <h1>H2</h1>\n</section>",
+        ),
+        ("- - - x\n ---\n b\n", "<hr>\n<p>b</p>"),
+        (
+            "- - - x\n | A |\n b\n",
+            "<table>\n  <tbody>\n    <tr><td>A</td></tr>\n  </tbody>\n</table>\n<p>b</p>",
+        ),
     ] {
         let html = both_paths(src);
-        assert!(html.contains(folded), "{src:?}: {html}");
+        assert!(html.contains("<li>x</li>"), "{src:?}: {html}");
         assert!(
-            !html.contains("<h1") && !html.contains("<hr>") && !html.contains("<table"),
-            "a below-column line opened a block: {src:?}: {html}"
+            html.ends_with(opened),
+            "a below-column line did not open its block: {src:?}: {html}"
         );
     }
 }
@@ -152,14 +169,14 @@ fn the_two_exceptions_still_dedent_all_the_way() {
     // block-shaped line's column would take both.
     let definition = both_paths("- one\n  :: term\n   :  def\n");
     assert!(
-        definition.contains("<dt>term\n :  def</dt>"),
+        definition.contains("<dt>term</dt>\n      <dd>def</dd>"),
         "{definition}"
     );
 
     // The comment is invisible and the line below it stays in the item, which
     // is the executable spec's own answer for this document.
     let comment = both_paths("- - - a\n b\n %% c\n d\n");
-    assert!(comment.contains("b\n"), "{comment}");
+    assert!(comment.contains("<li>a\nb</li>"), "{comment}");
     assert!(!comment.contains("%%"), "{comment}");
-    assert!(comment.contains('d'), "{comment}");
+    assert!(comment.ends_with("</ul>\n<p>d</p>"), "{comment}");
 }

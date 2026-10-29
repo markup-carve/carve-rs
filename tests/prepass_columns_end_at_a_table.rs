@@ -9,7 +9,7 @@
 fn a_table_row_ends_the_list_columns_above_it() {
     assert_eq!(
         carve::to_html("* }\n|b|\n  [f]: t\n"),
-        "<ul>\n  <li>}</li>\n</ul>\n<table>\n  <tbody>\n    <tr><td>b</td></tr>\n  </tbody>\n</table>\n<p>[f]: t</p>"
+        "<ul>\n  <li>}</li>\n</ul>\n<table>\n  <tbody>\n    <tr><td>b</td></tr>\n  </tbody>\n</table>"
     );
 }
 

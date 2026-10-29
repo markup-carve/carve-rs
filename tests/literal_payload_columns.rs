@@ -1,6 +1,7 @@
 use serde_json::Value;
 
 #[test]
+#[ignore = "rule A ledger: carve-rs#3525"]
 fn literal_payload_spans_pair_across_columns() {
     let rows: Value =
         serde_json::from_str(include_str!("fixtures/literal_payload_columns.json")).unwrap();

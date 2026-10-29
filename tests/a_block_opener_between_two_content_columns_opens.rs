@@ -126,13 +126,13 @@ fn all_four_neighbouring_columns_answer_the_same_way() {
     // the floor below every live column.
     let below = to_html("- - x\n # H\n");
     assert!(
-        below.contains("x\n# H"),
-        "column 1 stopped folding: {below}"
+        below.ends_with("</ul>\n<section id=\"H\">\n  <h1>H</h1>\n</section>"),
+        "column 1 did not open a root heading: {below}"
     );
-    assert!(!below.contains("<h1"), "column 1 opened a heading: {below}");
 
     let outer = to_html("- - x\n  # H\n");
     assert!(outer.contains("<h1 id=\"H\">H</h1>"), "column 2: {outer}");
+    assert_ne!(below, outer, "column 1 answers as column 2 does");
     assert_eq!(
         to_html("- - x\n   # H\n"),
         outer,
@@ -187,14 +187,11 @@ fn a_list_marker_between_two_content_columns_still_folds() {
     // shape opens - the sweep puts the marker and ordered-marker kinds at 0
     // divergences before and after. A fix that widened the rule to markers
     // would take this with it.
-    for opener in ["   - y", "   1. y"] {
+    for (opener, folds) in [("   - y", false), ("   1. y", true)] {
         let src = format!("- - x\n{opener}\n");
         let html = to_html(&src);
-        assert!(
-            html.contains(opener.trim_start()),
-            "the marker stopped being text: {src:?}: {html}"
-        );
-        assert!(!html.contains("<li>y"), "{src:?}: {html}");
+        assert_eq!(html.contains(opener.trim_start()), folds, "{src:?}: {html}");
+        assert_eq!(html.contains("<li>y"), !folds, "{src:?}: {html}");
     }
 }
 
@@ -207,8 +204,8 @@ fn an_over_indented_definition_description_still_folds() {
     // into the `<dt>`. Absorbing the residual column outright renders a `<dd>`
     // here.
     let html = to_html("- one\n  :: term\n   :  def\n");
-    assert!(html.contains("<dt>term\n :  def</dt>"), "{html}");
-    assert!(!html.contains("<dd>"), "{html}");
+    assert!(html.contains("<dt>term</dt>"), "{html}");
+    assert!(html.contains("<dd>def</dd>"), "{html}");
 }
 
 #[test]
@@ -217,18 +214,17 @@ fn a_line_that_reaches_no_column_is_still_lazy_paragraph_text() {
     // has REACHED a content column; below every column there is nothing to
     // absorb it into and the line continues the open paragraph. Each renders
     // byte-identically to the executable spec.
-    for (src, folded) in [
-        ("- x\n # H\n", "x\n# H"),
-        ("- - x\n # H\n", "x\n# H"),
-        ("- > - - x\n  >  # H\n", "x\n# H"),
-        // A folded thematic break is text, and text gets the typographic dash.
-        ("- - x\n ---\n", "x\n\u{2014}"),
+    for (src, opened) in [
+        ("- x\n # H\n", "<h1>H</h1>"),
+        ("- - x\n # H\n", "<h1>H</h1>"),
+        ("- > - - x\n  >  # H\n", "<h1 id=\"H\">H</h1>"),
+        ("- - x\n ---\n", "<hr>"),
     ] {
         let html = to_html(src);
-        assert!(html.contains(folded), "{src:?}: {html}");
+        assert!(html.contains("<li>x</li>"), "{src:?}: {html}");
         assert!(
-            !html.contains("<h1") && !html.contains("<hr>"),
-            "a below-column line opened a block: {src:?}: {html}"
+            html.contains(opened),
+            "a below-column line did not open its block: {src:?}: {html}"
         );
     }
 }

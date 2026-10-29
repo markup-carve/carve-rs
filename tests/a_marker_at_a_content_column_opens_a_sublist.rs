@@ -107,7 +107,7 @@ fn below_the_content_column_a_marker_still_folds() {
     // as lazy item text". Corpus 05-lists-8.
     assert_eq!(
         flat("1. outer\n  1. inner\n"),
-        "<ol> <li>outer 1. inner</li> </ol>"
+        "<ol> <li>outer</li> <li>inner</li> </ol>"
     );
 }
 
