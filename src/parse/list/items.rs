@@ -2433,9 +2433,38 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             .iter()
             .map(|line| trim_ascii_end(strip_lazy(line)))
             .collect();
-        let para_text = normalized_para_lines.join("\n");
+        // PART 10 I2: a code include line ends at its own line, so what the
+        // item folded in below it is the item's next paragraph.
+        let split = if crate::includes::code_include_line(normalized_para_lines[0]).is_some() {
+            1
+        } else {
+            normalized_para_lines.len()
+        };
+        let (mut anchors, rest_anchors) = match lead.anchors {
+            Some(mut anchors) => {
+                let rest = anchors.split_off(split.min(anchors.len()));
+                (Some(anchors), Some(rest))
+            }
+            None => (None, None),
+        };
+        let rest = (split < normalized_para_lines.len()).then(|| {
+            let text = normalized_para_lines[split..].join("\n");
+            let text = text.trim_end_matches([' ', '\t']);
+            let children = match rest_anchors {
+                Some(anchors) => parse_inline_lines_with_anchor(text, options, anchors),
+                None => parse_inline_with_options(text, options),
+            };
+            BlockNode::Paragraph(Paragraph {
+                attrs: None,
+                children,
+                at_content_column: false,
+                block_image: false,
+                pos: span_of(self.cur, item.at + split, self.cur.pos, options),
+            })
+        });
+        let para_text = normalized_para_lines[..split].join("\n");
         let para_text = para_text.trim_end_matches([' ', '\t']);
-        let children = if let Some(anchors) = lead.anchors {
+        let children = if let Some(anchors) = anchors.take() {
             parse_inline_lines_with_anchor(para_text, options, anchors)
         } else {
             parse_inline_with_options(para_text, options)
@@ -2455,7 +2484,11 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             pos: item_paragraph_span(
                 self.cur,
                 item.at,
-                self.cur.pos.saturating_sub(1),
+                if rest.is_some() {
+                    item.at
+                } else {
+                    self.cur.pos.saturating_sub(1)
+                },
                 item.marker.content,
                 options,
             ),
@@ -2467,7 +2500,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         }
         // This path's item IS a paragraph, so S4 has a paragraph for a lazy line.
         self.item_paragraph_open = ParagraphOpen::Known(true);
-        self.push_item(item, vec![paragraph]);
+        self.push_item(item, std::iter::once(paragraph).chain(rest).collect());
     }
 }
 

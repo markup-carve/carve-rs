@@ -946,11 +946,185 @@ pub(crate) fn code_line_selector_at(line: &str, column: usize) -> bool {
     matches!(parse_options(raw), ParsedDirective::Ok(d) if d.code.is_some() && d.lines.is_some())
 }
 
-/// Invalid line selectors remain one literal inline run in the core parser.
-/// The processor still validates the directive and reports its warning.
-pub(crate) fn invalid_line_directive_end(text: &str, start: usize) -> Option<usize> {
-    let (end, raw) = match_directive_at(text, start)?;
-    matches!(parse_options(raw), ParsedDirective::InvalidLines(_)).then_some(end)
+/// An `include_directive` (PART 6) read by its shape only: any identifier key,
+/// value or not. PART 10 I2 decides a code include line from this spelling, so
+/// an unknown or malformed option must not unmake it.
+pub(crate) struct DirectiveShape {
+    pub(crate) end: usize,
+    pub(crate) quoted: bool,
+    pub(crate) options: Vec<(String, Option<String>)>,
+}
+
+/// The end of a quoted run opening at `from`, or `None` when it never closes on its line.
+fn quoted_run_end(bytes: &[u8], from: usize) -> Option<usize> {
+    let quote = bytes[from];
+    let mut i = from + 1;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\n' => return None,
+            b'\\' => i += 1,
+            c if c == quote => return Some(i),
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+/// THE CLOSER: the first `}}` at or after `from` outside a terminated quoted run.
+fn closer_at(bytes: &[u8], from: usize) -> Option<usize> {
+    let mut i = from;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\n' => return None,
+            b'"' | b'\'' => {
+                if let Some(end) = quoted_run_end(bytes, i) {
+                    i = end;
+                }
+            }
+            b'}' if bytes.get(i + 1) == Some(&b'}') => return Some(i),
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+fn ident_end(bytes: &[u8], from: usize, digit_start: bool) -> Option<usize> {
+    let first = *bytes.get(from)?;
+    if !(first.is_ascii_alphabetic() || first == b'_' || digit_start && first.is_ascii_digit()) {
+        return None;
+    }
+    let mut i = from + 1;
+    while bytes
+        .get(i)
+        .is_some_and(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-'))
+    {
+        i += 1;
+    }
+    Some(i)
+}
+
+fn skip_spaces(bytes: &[u8], mut i: usize) -> usize {
+    while bytes.get(i) == Some(&b' ') {
+        i += 1;
+    }
+    i
+}
+
+/// Read the directive opening at `open` by its shape. It is parsed slot by
+/// slot, so a failed candidate costs only what it read; the closer it reaches
+/// must still be the first one outside a quoted run.
+pub(crate) fn directive_shape(text: &str, open: usize) -> Option<DirectiveShape> {
+    let bytes = text.as_bytes();
+    if !bytes[open..].starts_with(b"{{") {
+        return None;
+    }
+    let mut i = skip_spaces(bytes, open + 2);
+    if i == open + 2 {
+        return None;
+    }
+    let quoted = bytes.get(i) == Some(&b'"');
+    if quoted {
+        i = quoted_run_end(bytes, i)? + 1;
+    } else {
+        let start = i;
+        while bytes
+            .get(i)
+            .is_some_and(|c| !matches!(c, b'#' | b'@' | b'}' | b' ' | b'\n'))
+        {
+            i += 1;
+        }
+        if i == start {
+            return None;
+        }
+    }
+    let j = skip_spaces(bytes, i);
+    if bytes.get(j) == Some(&b'#') {
+        i = ident_end(bytes, j + 1, true)?;
+    }
+    let mut options = Vec::new();
+    loop {
+        let j = skip_spaces(bytes, i);
+        if bytes.get(j) != Some(&b'@') {
+            break;
+        }
+        let key_end = ident_end(bytes, j + 1, false)?;
+        let key = text[j + 1..key_end].to_string();
+        i = key_end;
+        if bytes.get(i) != Some(&b':') {
+            options.push((key, None));
+            continue;
+        }
+        if matches!(bytes.get(i + 1), Some(b'"' | b'\'')) {
+            let end = quoted_run_end(bytes, i + 1)?;
+            options.push((key, Some(text[i + 2..end].to_string())));
+            i = end + 1;
+        } else {
+            let start = i + 1;
+            let mut k = start;
+            while bytes.get(k).is_some_and(|c| {
+                !matches!(
+                    c,
+                    b'}' | b'|' | b'"' | b'\'' | b'\\' | b' ' | b'\t' | b'\r' | b'\n' | b'@'
+                )
+            }) {
+                k += 1;
+            }
+            if k == start {
+                return None;
+            }
+            options.push((key, Some(text[start..k].to_string())));
+            i = k;
+        }
+    }
+    let close = skip_spaces(bytes, i);
+    if close == i || !bytes[close..].starts_with(b"}}") || closer_at(bytes, open + 2) != Some(close)
+    {
+        return None;
+    }
+    Some(DirectiveShape {
+        end: close + 2,
+        quoted,
+        options,
+    })
+}
+
+/// Whether `line` holds only a directive with a `code` option; `Some(quoted)` when it does.
+pub(crate) fn code_include_line(line: &str) -> Option<bool> {
+    let line = line.trim_matches([' ', '\t']);
+    if !line.starts_with("{{") {
+        return None;
+    }
+    let shape = directive_shape(line, 0)?;
+    (shape.end == line.len() && shape.options.iter().any(|(key, _)| key == "code"))
+        .then_some(shape.quoted)
+}
+
+fn is_line_range(value: &str) -> bool {
+    let Some((start, end)) = value.split_once('-') else {
+        return false;
+    };
+    let decimal = |n: &str| {
+        n.bytes().next().is_some_and(|c| (b'1'..=b'9').contains(&c))
+            && n.bytes().all(|c| c.is_ascii_digit())
+    };
+    decimal(start) && decimal(end) && (start.len(), start) <= (end.len(), end)
+}
+
+/// The end of a directive at `start` that stays literal text in core inline
+/// content: an invalid `@lines` range, or a bare `@code` on a bare path.
+pub(crate) fn literal_inline_directive_end(text: &str, start: usize) -> Option<usize> {
+    let shape = directive_shape(text, start)?;
+    shape
+        .options
+        .iter()
+        .any(|(key, value)| match key.as_str() {
+            "lines" => !value.as_deref().is_some_and(is_line_range),
+            "code" => value.is_none() && !shape.quoted,
+            _ => false,
+        })
+        .then_some(shape.end)
 }
 
 /// Byte range of the first SHAPE-well-formed directive at or after `from`.
@@ -3684,6 +3858,41 @@ fn expand_paragraph(block: &mut Paragraph, state: &mut State<'_>) -> Option<Vec<
     None
 }
 
+/// The parser ends a code include at its own line (PART 10 I2), so a `^ `
+/// caption below a `{table}` include arrives as the next paragraph. Rejoin it
+/// for `expand_paragraph`, which reads the caption after the directive line.
+fn absorb_code_include_caption(blocks: &mut Vec<BlockNode>, i: usize) {
+    let (Some(BlockNode::Paragraph(lead)), Some(BlockNode::Paragraph(next))) =
+        (blocks.get(i), blocks.get(i + 1))
+    else {
+        return;
+    };
+    let caption = next.attrs.is_none()
+        && matches!(next.children.first(), Some(InlineNode::Text(t)) if t.value.starts_with("^ "));
+    let table = lead
+        .attrs
+        .as_ref()
+        .is_some_and(|attrs| attrs.key_values.get("table").is_some_and(String::is_empty));
+    // The caption slot allows no blank line or one before the `^ ` line.
+    let near = match (lead.pos.as_ref(), next.pos.as_ref()) {
+        (Some(lead), Some(next)) => next.start_line <= lead.end_line + 2,
+        _ => true,
+    };
+    if !(caption && table && near)
+        || !directive_source(&lead.children).is_some_and(|s| code_include_line(&s).is_some())
+    {
+        return;
+    }
+    let BlockNode::Paragraph(next) = blocks.remove(i + 1) else {
+        return;
+    };
+    if let Some(BlockNode::Paragraph(lead)) = blocks.get_mut(i) {
+        lead.children
+            .push(InlineNode::SoftBreak(crate::ast::Break { pos: None }));
+        lead.children.extend(next.children);
+    }
+}
+
 fn expand_blocks(blocks: &mut Vec<BlockNode>, state: &mut State<'_>) {
     // Spec I8: this block list is ONE container. Headings in it set the context
     // for later blocks and for containers nested inside it, but the entry value
@@ -3691,6 +3900,7 @@ fn expand_blocks(blocks: &mut Vec<BlockNode>, state: &mut State<'_>) {
     let entry_context = state.context_level;
     let mut i = 0usize;
     while i < blocks.len() {
+        absorb_code_include_caption(blocks, i);
         let mut replacement: Option<Vec<BlockNode>> = None;
         match &mut blocks[i] {
             BlockNode::Paragraph(p) => replacement = expand_paragraph(p, state),

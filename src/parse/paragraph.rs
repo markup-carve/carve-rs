@@ -83,7 +83,14 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
     let mut lines: Vec<&str> = Vec::new();
     let mut line_indices = Vec::new();
     let mut suppress_colon_interrupt = false;
+    // PART 10 I2: a code include line at a block start ends at its own line.
+    let code_include = cur
+        .peek()
+        .and_then(|line| crate::includes::code_include_line(strip_lazy(trim_ascii_start(line))));
     while let Some(line) = cur.peek() {
+        if code_include.is_some() && !lines.is_empty() {
+            break;
+        }
         if is_blank_line(line) {
             if image_lead
                 && lines.len() == 1
@@ -183,6 +190,25 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
         parse_inline_lines_with_anchor(joined, options, anchors)
     } else {
         parse_inline_with_options(joined, options)
+    };
+    // Unexpanded, it is literal text at document level; nested, its source is inline content.
+    let children = if code_include == Some(false) && cur.at_document_level {
+        let pos = children
+            .first()
+            .and_then(InlineNode::pos)
+            .zip(children.last().and_then(InlineNode::pos))
+            .map(|(first, last)| Pos {
+                end_line: last.end_line,
+                end_column: last.end_column,
+                end_offset: last.end_offset,
+                ..first.clone()
+            });
+        vec![InlineNode::Text(Text {
+            value: joined.to_string(),
+            pos,
+        })]
+    } else {
+        children
     };
     let pos = span_of(cur, span_start, cur.pos, options);
     BlockNode::Paragraph(Paragraph {
