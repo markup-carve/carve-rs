@@ -2042,7 +2042,8 @@ pub(in crate::parse) fn extract_link_defs_with_guard_full(
                 &columns,
                 after_term,
             );
-            if fence.opens {
+            // A `:` marker starts a body, so no paragraph above can hold its fence.
+            if fence.opens || (stripped.description && term_fence.is_none()) {
                 end_prepass_paragraph_at(&folded_into_term, line_index);
                 open.quoted |= !fence.quote_columns.is_empty();
                 in_fence = Some(open);

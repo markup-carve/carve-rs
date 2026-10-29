@@ -122,6 +122,8 @@ struct LineScan<'a> {
     after_term: bool,
     retained_unclosed_fence: bool,
     fence_line: &'a str,
+    /// The column of a fence written at a list item's content column.
+    fence_col: Option<usize>,
 }
 
 /// A line that parsed as a footnote definition and passed the fold guards.
@@ -384,7 +386,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             || self.in_comment_fence.is_some()
             || prepass_quote_line_is_folded(&self.folded_into_term, i, line)
             || retained_unclosed_fence;
-        self.columns.observe(line, opaque);
+        let content_col = self.columns.observe(line, opaque);
         // A quote nested in a list item sits AT the item's content column, so
         // the prefix scan needs that column to see it (carve-rs#588).
         //
@@ -406,8 +408,28 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         // This can collect a def from a container-nested fence body, but avoids
         // opening a fence the block parser never opens and swallowing every
         // later definition in the document.
+        let mut fence_col = None;
         let fence_line = match self.folded_into_term.fence_openers.get(&i) {
             Some(host) => &line[host.opener_offset..],
+            None if content_col > 0
+                && !stripped.description
+                && !self.columns.current().body_columns.contains(&content_col) =>
+            {
+                // As `extract_link_defs_with_guard_full`: a fence at an item's
+                // content column is payload for both collectors.
+                let kept = strip_container_prefixes_keep_indent(line);
+                let kept_indent = leading_ws(&kept);
+                let authored = trim_ascii_start(&kept);
+                if kept_indent >= content_col
+                    && line.ends_with(authored)
+                    && detect_fence_open(authored).is_some()
+                {
+                    fence_col = Some(kept_indent);
+                    &line[line.len() - authored.len()..]
+                } else {
+                    stripped.bare
+                }
+            }
             None => stripped.bare,
         };
         LineScan {
@@ -415,6 +437,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             after_term,
             retained_unclosed_fence,
             fence_line,
+            fence_col,
         }
     }
 
@@ -525,6 +548,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         if scan.stripped.description {
             open.content_col =
                 description_fence_content_column(line, &scan.stripped, &self.columns);
+        } else if let Some(col) = scan.fence_col {
+            open.content_col = col;
         }
         if let Some(host) = term_fence {
             open.content_col = host.content_col;
@@ -542,7 +567,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             &self.columns,
             scan.after_term,
         );
-        if fence.opens {
+        if fence.opens || (scan.stripped.description && term_fence.is_none()) {
             if scan.retained_unclosed_fence {
                 open.content_col = self.columns.current().cols.last().copied().unwrap_or(0);
             }
