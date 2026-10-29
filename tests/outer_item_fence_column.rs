@@ -30,7 +30,7 @@ fn a_quoted_plus_does_not_move_the_outer_fence_into_the_inner_item() {
 #[test]
 fn a_fence_at_the_inner_content_column_stays_in_the_inner_item() {
     let source = "- outer\n  - inner\n    ```\n+\n    ```\nnext\n";
-    let expected = "<ul>\n  <li>outer\n    <ul>\n      <li>inner\n<code>\n+\n</code>\nnext</li>\n    </ul>\n  </li>\n</ul>";
+    let expected = "<ul>\n  <li>outer\n    <ul>\n      <li>inner\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>+\n<code>\nnext</code></p>";
     assert_eq!(html(source), expected);
 }
 

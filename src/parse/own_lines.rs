@@ -450,6 +450,25 @@ impl<'a> Walk<'a> {
         widest.get(from).copied().unwrap_or(0)
     }
 
+    /// Whether line `next` holds a block at `col` under `depth` quote levels.
+    fn attaches_at(&self, next: usize, col: usize, depth: usize) -> bool {
+        let Some(line) = self.lines.get(next) else {
+            return false;
+        };
+        let (mut m_col, len) = indent_cols(line);
+        let mut rest = &line[len..];
+        for _ in 0..depth {
+            let Some(n) = quote_marker(rest) else {
+                return false;
+            };
+            rest = &rest[n..];
+            let (c, len) = indent_cols(rest);
+            m_col = c;
+            rest = &rest[len..];
+        }
+        !rest.trim().is_empty() && m_col == col
+    }
+
     fn top(&mut self) -> &mut Frame {
         self.frames.last_mut().expect("the document frame stays")
     }
@@ -460,9 +479,19 @@ impl<'a> Walk<'a> {
         for k in 1..self.frames.len() {
             let f = &self.frames[k];
             if let Some((marker_col, _)) = f.marker {
+                // A marker body takes only a block at that column (§17 L3, L4).
                 if is_cont_marker(c.rest)
                     && c.col == marker_col
-                    && (f.kind == Kind::Quote || c.col < f.col)
+                    && (f.kind == Kind::Quote
+                        || (c.col < f.col
+                            && self.attaches_at(
+                                at + 1,
+                                marker_col,
+                                self.frames[1..k]
+                                    .iter()
+                                    .filter(|q| q.kind == Kind::Quote)
+                                    .count(),
+                            )))
                 {
                     plus = Some(k);
                     break;
