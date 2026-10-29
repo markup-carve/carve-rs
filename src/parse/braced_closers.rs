@@ -735,6 +735,20 @@ impl BracedClosers {
                 }
             }
         }
+        // A block a bare closer takes hides a closer only through its opener,
+        // which checks the guards in front of it; the guard kinds need tables too.
+        let bare_hosted: std::collections::HashSet<usize> = attribute_tails
+            .keys()
+            .filter(|&&start| {
+                start > 0 && matches!(bytes[start - 1], b'/' | b'*' | b'_' | b'~' | b'=')
+            })
+            .copied()
+            .collect();
+        if !bare_hosted.is_empty() {
+            for marker in *b"/_" {
+                bare_slots[delim_brace_slot(marker).unwrap()] = true;
+            }
+        }
         let mut points = Vec::new();
         let bracket_ends: std::collections::HashSet<usize> = self
             .opaque
@@ -910,6 +924,7 @@ impl BracedClosers {
             if let (Some(close), Some(end)) = (bare_close, bare_tail) {
                 bare_attribute_pairs.insert(position, (points[close], end));
             }
+            let mut guarded = None;
             if matches!(before, Some(b'/' | b'_')) {
                 let start_close = bare_slot
                     .filter(|_| {
@@ -922,12 +937,43 @@ impl BracedClosers {
                 if let Some(close) = start_close {
                     if let Some(&end) = attribute_tails.get(&(points[close] + 1)) {
                         bare_attribute_pairs_at_start.insert(position, (points[close], end));
+                        if bare_open.is_none() && before != Some(marker) {
+                            guarded = Some((bare_slot.unwrap(), close, end));
+                        }
                     }
                 }
             }
+            // A guarded pair forms only where each guard in front of it opens: a
+            // guard of the walk's own kind is literal (E3), and one with no closer
+            // before the walk's closer does not open in its span (E2a).
+            let guards_open = |slot: usize, end: usize, current: &[Vec<usize>]| {
+                let span = resolve(current[slot][index(end)], slot);
+                let mut from = index(end);
+                let mut guard = position - 1;
+                loop {
+                    let kind = delim_brace_slot(bytes[guard]).unwrap();
+                    if kind == slot {
+                        return false;
+                    }
+                    let close = bare[kind][from];
+                    if close == usize::MAX || span != usize::MAX && points[close] >= points[span] {
+                        return false;
+                    }
+                    let outer = guard.checked_sub(1).map(|at| bytes[at]);
+                    match outer {
+                        Some(byte) if byte == bytes[guard] => return false,
+                        Some(b'_') => {}
+                        Some(b'/') if bytes[guard] == b'_' => {}
+                        _ => return !outer.is_some_and(|byte| byte.is_ascii_alphanumeric()),
+                    }
+                    from = close + 1;
+                    guard -= 1;
+                }
+            };
             for slot in 0..DELIM_BRACE_SLOTS {
                 let mut stop = match &steps[at] {
                     BracedStep::Boundary => usize::MAX,
+                    BracedStep::Jump(_) if bare_hosted.contains(&position) => current[slot][at + 1],
                     BracedStep::Jump(next) => current[slot][*next],
                     BracedStep::LineComment(raw, next) => {
                         if raw[slot] == usize::MAX {
@@ -957,6 +1003,14 @@ impl BracedClosers {
                         if kind != slot
                             && (stop == usize::MAX
                                 || points[stop & !RAW_CLOSE_FLAG] >= points[close])
+                        {
+                            stop = current[slot][index(end)];
+                        }
+                    } else if let Some((kind, close, end)) = guarded {
+                        if kind != slot
+                            && (stop == usize::MAX
+                                || points[stop & !RAW_CLOSE_FLAG] >= points[close])
+                            && guards_open(slot, end, &current)
                         {
                             stop = current[slot][index(end)];
                         }
