@@ -2,6 +2,105 @@ use super::*;
 
 #[cfg(feature = "experimental-event-parser-options")]
 #[test]
+fn matcher_context_event_fragment_matches_standard_reentry() {
+    use crate::{BlockMatch, CarveExtension, InlineMatch, MatcherContext};
+
+    struct Hook<'a> {
+        fragment: &'a str,
+        event: bool,
+        positions: bool,
+        source_lines: bool,
+        trace: RefCell<Vec<String>>,
+        nested: RefCell<Option<Vec<BlockNode>>>,
+    }
+
+    impl CarveExtension for Hook<'_> {
+        fn name(&self) -> &'static str {
+            "reentry-parity"
+        }
+
+        fn match_block(
+            &self,
+            lines: &[&str],
+            start: usize,
+            ctx: &MatcherContext<'_>,
+        ) -> Option<BlockMatch> {
+            let line = *lines.get(start)?;
+            self.trace.borrow_mut().push(format!("block:{line}"));
+            if line == "reenter" {
+                let blocks = if self.event {
+                    ctx.parse_blocks(self.fragment)
+                } else {
+                    parse_blocks_with_options(
+                        self.fragment,
+                        &Options::default()
+                            .with_positions(self.positions)
+                            .with_source_lines(self.source_lines)
+                            .with_extension(self),
+                    )
+                };
+                *self.nested.borrow_mut() = Some(blocks);
+            }
+            None
+        }
+
+        fn match_inline(
+            &self,
+            text: &str,
+            pos: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<InlineMatch> {
+            self.trace
+                .borrow_mut()
+                .push(format!("inline:{pos}:{}", &text[pos..]));
+            None
+        }
+    }
+
+    for (fragment, positions, source_lines) in [
+        ("inner\n\n- child\n", false, false),
+        ("inner\n+\n", false, false), // event preflight declines
+        ("inner\n", true, false),
+        ("inner\n", false, true),
+    ] {
+        let run = |event| {
+            event_pipeline::LADDER_TAIL_EVENT_PARSES.with(|count| count.set(0));
+            let hook = Hook {
+                fragment,
+                event,
+                positions,
+                source_lines,
+                trace: RefCell::new(Vec::new()),
+                nested: RefCell::new(None),
+            };
+            let options = Options::default()
+                .with_positions(positions)
+                .with_source_lines(source_lines)
+                .with_extension(&hook);
+            let document = {
+                let _standard_root = StandardEventRootGuard::install();
+                let _standard_nested = (!event).then(StandardNestedReaderGuard::install);
+                parse_with_options("reenter\n\nafter\n", &options)
+            };
+            let nested = hook.nested.borrow_mut().take().unwrap();
+            let trace = hook.trace.into_inner();
+            let event_parses = event_pipeline::LADDER_TAIL_EVENT_PARSES.with(Cell::get);
+            assert_eq!(
+                event_parses > 0,
+                event && !positions && !source_lines && !fragment.contains('+')
+            );
+            (document, nested, trace)
+        };
+        assert_eq!(
+            run(true),
+            run(false),
+            "{fragment:?}; {positions}; {source_lines}"
+        );
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
 fn event_owned_pipeline_matches_public_modes() {
     let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     let mut admitted = 0;

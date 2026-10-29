@@ -1592,7 +1592,7 @@ fn parse_unpositioned_mapped_source(
     #[cfg(feature = "experimental-event-parser-options")]
     if !at_document_level && !options.extensions.is_empty() {
         if let Some(blocks) =
-            parse_eof_closed_colon_ladder_with(source, options, parse_ladder_tail_with_events)
+            parse_eof_closed_colon_ladder_with(source, options, parse_fragment_with_events)
         {
             if let Some(extents) = extents {
                 extents.extend(blocks.iter().map(|_| (0, source.source.lines().count())));
@@ -1814,10 +1814,10 @@ fn parse_positioned_mapped_source_standard(
     blocks
 }
 
-/// Parse an EOF-closed ladder tail through the event cursor, draining its
-/// bodies before returning exactly as `parse_blocks_with_options` would.
+/// Parse a fragment through the event cursor and drain its bodies before
+/// returning, as `parse_blocks_with_options` does.
 #[cfg(feature = "experimental-event-parser-options")]
-fn parse_ladder_tail_with_events(source: &str, options: &Options<'_>) -> Vec<BlockNode> {
+pub(crate) fn parse_fragment_with_events(source: &str, options: &Options<'_>) -> Vec<BlockNode> {
     let _recording = definition_regions::RecordingPause::enter();
     let _source_ending = SourceEndingGuard::fragment();
     if nested_event_allowed() {
