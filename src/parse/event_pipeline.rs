@@ -707,7 +707,7 @@ pub(super) fn parse_drained_fragment(
     source: &str,
     options: &Options<'_>,
 ) -> Option<Vec<BlockNode>> {
-    if options.positions || !event_frame_admitted(false) {
+    if !event_frame_admitted(false) {
         return None;
     }
     let lines: Vec<&str> = source.lines().collect();
@@ -717,14 +717,17 @@ pub(super) fn parse_drained_fragment(
     }) {
         return None;
     }
-    let want_lines =
-        options.source_lines || needs_source_ending_map() || needs_quote_marker_line_map(source);
+    let want_lines = options.source_lines
+        || options.positions
+        || needs_source_ending_map()
+        || needs_quote_marker_line_map(source);
     let line_map: Vec<Option<usize>> = if want_lines {
         (1..=lines.len()).map(Some).collect()
     } else {
         Vec::new()
     };
     let line_map = want_lines.then_some(line_map.as_slice());
+    let col_map = options.positions.then(|| vec![Some(0); lines.len()]);
     let mut pending = Vec::new();
     // The drain below runs on top of this frame, so it stays counted; each
     // ladder level under it is one more eager fragment.
@@ -733,7 +736,7 @@ pub(super) fn parse_drained_fragment(
     // restores the depth it recorded when it was collected.
     let mut blocks = {
         let _depth = DepthGuard::enter()?;
-        let mut cur = LineCursor::new_with_cols(&lines, line_map, None);
+        let mut cur = LineCursor::new_with_cols(&lines, line_map, col_map.as_deref());
         cur.reached = Some(&[]);
         parse_mixed_blocks_cursor::<true, false>(
             &lines,
