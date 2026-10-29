@@ -199,7 +199,7 @@ pub use migration::{
 pub use parse::parse_experimental_event_blocks;
 #[cfg(feature = "experimental-event-parser-options")]
 pub use parse::parse_experimental_event_blocks_with_options;
-pub use parse::{parse, parse_with_options};
+pub use parse::{decision_trace, parse, parse_with_options};
 pub use profile::{DisallowedAction, LinkPolicy, Profile, ProfileViolation, ProfileViolationError};
 pub use profile_filter::{apply_profile, apply_profile_with_typography, ProfileFilterResult};
 pub use prosemirror::{

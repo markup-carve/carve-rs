@@ -267,6 +267,9 @@ fn main() -> ExitCode {
     if raw_args.first().map(String::as_str) == Some("region") {
         return run_region(&raw_args[1..]);
     }
+    if raw_args.first().map(String::as_str) == Some("trace") {
+        return run_trace(&raw_args[1..]);
+    }
     let bundled = BundledExtensions::new();
     let cli = match parse_args(raw_args) {
         Ok(cli) => cli,
@@ -1817,6 +1820,32 @@ fn run_region(args: &[String]) -> ExitCode {
 /// **2** could not run. A gate that collapsed 2 into 1 would report an unreadable
 /// file as a lint failure, and one that collapsed it into 0 would pass a build
 /// whose documents were never read.
+/// `carve trace <file>`: the block decision trace (carve `docs/decision-trace.md`).
+fn run_trace(args: &[String]) -> ExitCode {
+    let [path] = args else {
+        eprintln!("usage: carve trace <file>");
+        return ExitCode::from(2);
+    };
+    let source = if path == "-" {
+        let mut text = String::new();
+        if let Err(err) = std::io::stdin().read_to_string(&mut text) {
+            eprintln!("carve trace: cannot read stdin: {err}");
+            return ExitCode::from(2);
+        }
+        text
+    } else {
+        match std::fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(err) => {
+                eprintln!("carve trace: cannot read {path}: {err}");
+                return ExitCode::from(2);
+            }
+        }
+    };
+    print!("{}", carve::decision_trace(&source));
+    ExitCode::SUCCESS
+}
+
 fn run_lint(args: &[String]) -> ExitCode {
     let mut paths: Vec<&str> = Vec::new();
     let mut enable_extensions = false;
@@ -2398,6 +2427,7 @@ fn print_usage() {
          find a named include region (JSON start/end lines)\n  \
          carve merge [--json] BASE OURS THEIRS\n                              \
          merge independent structural edits\n  \
+         carve trace FILE            print the block decision trace (JSON lines)\n  \
          carve migrate --from FORMAT [options] [file]\n                              \
          convert html, markdown (md), djot or bbcode to Carve.\n                              \
          Folder: --from markdown --directory SOURCE --output TARGET.\n                              \

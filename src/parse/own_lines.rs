@@ -72,6 +72,10 @@ struct Frame {
     shift: usize,
     /// The output shift its marker was written with.
     marker_shift: usize,
+    /// 1-based line that opened the frame, for the decision trace.
+    line: usize,
+    /// A fence's trace family: `code`, `comment`, or `div` for a line block.
+    family: &'static str,
 }
 
 impl Frame {
@@ -93,6 +97,8 @@ impl Frame {
             span: None,
             shift: 0,
             marker_shift: 0,
+            line: 0,
+            family: "code",
         }
     }
 }
@@ -266,6 +272,105 @@ fn closer_runs(lines: &[&str]) -> Runs {
     }
 }
 
+/// One block record of the decision trace, format version 1.
+pub(crate) struct TraceRecord {
+    line: usize,
+    step: &'static str,
+    owner: String,
+    rule: Option<&'static str>,
+    form: &'static str,
+    cell: Option<String>,
+    closed: Option<usize>,
+    reached: Option<String>,
+    plus: Option<usize>,
+}
+
+impl TraceRecord {
+    fn new(
+        line: usize,
+        step: &'static str,
+        owner: String,
+        rule: Option<&'static str>,
+        form: &'static str,
+    ) -> Self {
+        TraceRecord {
+            line,
+            step,
+            owner,
+            rule,
+            form,
+            cell: None,
+            closed: None,
+            reached: None,
+            plus: None,
+        }
+    }
+
+    fn cell(mut self, cell: Option<String>) -> Self {
+        self.cell = cell;
+        self
+    }
+
+    /// Field order and spelling follow the spec model's records.
+    fn write_json(&self, out: &mut String) {
+        use std::fmt::Write as _;
+        let rule = self.rule.map_or("null".to_owned(), |r| format!("\"{r}\""));
+        let _ = write!(
+            out,
+            "{{\"line\":{},\"step\":\"{}\",\"owner\":\"{}\",\"rule\":{},\"form\":\"{}\"",
+            self.line, self.step, self.owner, rule, self.form
+        );
+        if let Some(cell) = &self.cell {
+            let _ = write!(out, ",\"cell\":\"{cell}\"");
+        }
+        if let Some(closed) = self.closed {
+            let _ = write!(out, ",\"closed\":{closed}");
+        }
+        if let Some(reached) = &self.reached {
+            let _ = write!(out, ",\"reached\":\"{reached}\"");
+        }
+        if let Some(plus) = self.plus {
+            let _ = write!(out, ",\"plus\":{plus}");
+        }
+        out.push('}');
+    }
+}
+
+/// The decision trace of `source` as JSON lines: the header, then one block
+/// record per source line from the ownership walk.
+pub fn decision_trace(source: &str) -> String {
+    let source = normalize_source(source);
+    let records = walk_traced(source.as_ref(), true, Some(Vec::new()))
+        .1
+        .unwrap_or_default();
+    let mut out = String::from(
+        "{\"trace\":\"carve-decision-trace\",\"version\":1,\"engine\":\"carve-rs\"}\n",
+    );
+    for record in &records {
+        record.write_json(&mut out);
+        out.push('\n');
+    }
+    out
+}
+
+/// The trace name of what a classified line opens or is.
+fn trace_form(form: &Form) -> &'static str {
+    match form {
+        Form::Blank => "blank",
+        Form::Quote => "quote",
+        Form::ColonClose(_) => "closer",
+        Form::Fence(Closer::Fence(..), ..) => "code",
+        Form::Fence(Closer::Comment(_), ..) => "comment",
+        Form::Fence(Closer::Colon(_), ..) | Form::Colon(..) => "div",
+        Form::Leaf(_) => "leaf",
+        Form::Note(_) => "footnote",
+        Form::Item(..) => "item",
+        Form::Term => "term",
+        Form::Dd(_) => "dd",
+        Form::Text => "text",
+    }
+}
+
 struct Walk<'a> {
     lines: Vec<&'a str>,
     frames: Vec<Frame>,
@@ -273,6 +378,10 @@ struct Walk<'a> {
     runs: Option<Runs>,
     /// `widest_from` tables per (fence char, column).
     by_column: std::collections::HashMap<(u8, usize), Vec<usize>>,
+    /// Decision trace records (carve `docs/decision-trace.md`); `None` on a parse.
+    trace: Option<Vec<TraceRecord>>,
+    /// 1-based line of `lines[0]`, past any frontmatter.
+    first_line: usize,
 }
 
 /// One line being rewritten: `out` is written, `src` remains.
@@ -367,6 +476,14 @@ pub(crate) fn walk_body(source: &str) -> Option<(String, Vec<(usize, isize)>)> {
 }
 
 fn walk_from(source: &str, frontmatter: bool) -> Option<OwnedSource> {
+    walk_traced(source, frontmatter, None).0
+}
+
+fn walk_traced(
+    source: &str,
+    frontmatter: bool,
+    trace: Option<Vec<TraceRecord>>,
+) -> (Option<OwnedSource>, Option<Vec<TraceRecord>>) {
     let (_, fm, body) = if frontmatter {
         split_frontmatter(source, false)
     } else {
@@ -385,7 +502,24 @@ fn walk_from(source: &str, frontmatter: bool) -> Option<OwnedSource> {
         reach: 0,
         runs: None,
         by_column: std::collections::HashMap::new(),
+        trace,
+        first_line,
     };
+    if let Some(trace) = walk.trace.as_mut() {
+        // INPUT: frontmatter lines are read before ownership.
+        // A closer on the last line leaves no newline after it.
+        let frontmatter_lines =
+            first_line - 1 + usize::from(!prefix.is_empty() && !prefix.ends_with('\n'));
+        for line in 1..=frontmatter_lines {
+            trace.push(TraceRecord::new(
+                line,
+                "INPUT",
+                "doc".into(),
+                None,
+                "frontmatter",
+            ));
+        }
+    }
     let mut result = String::with_capacity(source.len());
     result.push_str(prefix);
     let mut edits = Vec::new();
@@ -412,10 +546,11 @@ fn walk_from(source: &str, frontmatter: bool) -> Option<OwnedSource> {
             delta,
         }));
     }
-    (!edits.is_empty()).then_some(OwnedSource {
+    let owned = (!edits.is_empty()).then_some(OwnedSource {
         source: result,
         edits,
-    })
+    });
+    (owned, walk.trace)
 }
 
 /// Whether the walk moves any line of `source`.
@@ -460,6 +595,41 @@ fn absorbs_colon(rest: &str) -> bool {
 }
 
 impl<'a> Walk<'a> {
+    /// The owner path of frames `1..=depth`: `doc/item:1/quote:2`.
+    fn path(&self, depth: usize) -> String {
+        let mut path = String::from("doc");
+        for f in &self.frames[1..=depth] {
+            let kind = match f.kind {
+                Kind::Quote => "quote",
+                Kind::Item => "item",
+                Kind::Note => "footnote",
+                Kind::Dd => "dd",
+                Kind::Colon => "div",
+                Kind::Fence => f.family,
+                Kind::Doc => "doc",
+            };
+            path.push('/');
+            path.push_str(kind);
+            path.push(':');
+            path.push_str(&f.line.to_string());
+        }
+        path
+    }
+
+    fn deepest(&self) -> String {
+        self.path(self.frames.len() - 1)
+    }
+
+    fn emit(&mut self, at: usize, record: TraceRecord) {
+        // The empty string after a final newline is not a line.
+        if at + 1 == self.lines.len() && self.lines[at].is_empty() {
+            return;
+        }
+        if let Some(trace) = self.trace.as_mut() {
+            trace.push(record);
+        }
+    }
+
     /// The widest closer run of `ch` at or after line `from`, counting only
     /// closers written at `col` or deeper.
     fn widest_from(&mut self, ch: u8, col: usize, from: usize) -> usize {
@@ -507,6 +677,8 @@ impl<'a> Walk<'a> {
     }
 
     fn line(&mut self, at: usize, c: &mut Cursor<'_>, after_plus: &mut bool) {
+        let tracing = self.trace.is_some();
+        let line = self.first_line + at;
         let mut reached = 0;
         let mut plus = None;
         for k in 1..self.frames.len() {
@@ -553,6 +725,13 @@ impl<'a> Walk<'a> {
             let shift = f.marker_shift;
             c.lead_in(canon, shift, false);
             *after_plus = true;
+            if tracing {
+                // S2, B-plus-start: a lone `+` at an open marker column.
+                let record =
+                    TraceRecord::new(line, "S2", self.deepest(), Some("CARVE-P9-067"), "plus")
+                        .cell(Some("B-plus-start".into()));
+                self.emit(at, record);
+            }
             return;
         }
         let plus_follower = *after_plus;
@@ -561,9 +740,25 @@ impl<'a> Walk<'a> {
         self.reach = reached;
         let inner = self.frames.last().expect("document frame");
         if inner.kind == Kind::Fence && !missed {
+            // S1: an open payload tests its closer first (B-<family>-keep, -end).
             let target = c.col.saturating_sub(inner.cut).max(inner.canon);
             let (closer, span, line_block) = (inner.closer, inner.span, inner.line_block);
+            let family = inner.family;
             c.lead_in(target, inner.shift, false);
+            if tracing {
+                let payload = self.deepest();
+                let closes = !c.rest.is_empty()
+                    && span.is_none()
+                    && closer.is_some_and(|cl| cl.closes(c.rest));
+                let (form, end) = if closes {
+                    ("closer", "end")
+                } else {
+                    ("payload", "keep")
+                };
+                let record = TraceRecord::new(line, "S1", payload, Some("CARVE-P0-005"), form)
+                    .cell(Some(format!("B-{family}-{end}")));
+                self.emit(at, record);
+            }
             if c.rest.is_empty() {
                 return;
             }
@@ -636,8 +831,38 @@ impl<'a> Walk<'a> {
                 0
             };
             c.lead_in(target, shift, false);
+            if tracing {
+                // S4: a lazy line folds into the deepest open paragraph.
+                let mut record =
+                    TraceRecord::new(line, "S4", self.deepest(), Some("CARVE-P0-006"), "lazy");
+                record.reached = Some(self.path(reached));
+                self.emit(at, record);
+            }
             return;
         }
+        // S5: apply the boundary table to everything else.
+        let closed = self.frames.len() - 1 - reached;
+        let mut record = tracing.then(|| {
+            let name = trace_form(&form);
+            let opens = !matches!(form, Form::Blank | Form::Leaf(_) | Form::Text);
+            let cell = match form {
+                Form::ColonClose(_) => Some("B-div-end".to_owned()),
+                _ => opens.then(|| format!("B-{name}-start")),
+            };
+            let rule = match form {
+                Form::Blank => "CARVE-P0-003",
+                Form::Leaf(_) => "CARVE-P0-011",
+                _ => "CARVE-P0-024",
+            };
+            let mut record =
+                TraceRecord::new(line, "S5", String::new(), Some(rule), name).cell(cell);
+            if closed > 0 {
+                record.closed = Some(closed);
+                record.reached = Some(self.path(reached));
+            }
+            record.plus = plus_follower.then(|| line - 1);
+            record
+        });
         let closed_column = self.frames[reached + 1..]
             .iter()
             .any(|f| f.kind != Kind::Quote);
@@ -646,10 +871,13 @@ impl<'a> Walk<'a> {
             self.top().para = false;
             let col = c.col;
             c.lead(col);
+            self.emit_applied(at, record.take(), None);
             return;
         }
         match form {
             Form::ColonClose(k) => {
+                // B-div-end: the closer's owner is the div it closes.
+                self.emit_applied(at, record.take(), Some(k));
                 let (canon, shift) = (self.frames[k].canon, self.frames[k].shift);
                 c.lead_in(canon, shift, false);
                 self.frames.truncate(k);
@@ -687,6 +915,15 @@ impl<'a> Walk<'a> {
                 let owner = self.frames.len() - 1;
                 self.apply(owner, col, form, canon, at, c);
             }
+        }
+        self.emit_applied(at, record, None);
+    }
+
+    /// Emit an S5 record owned by the frames up to `depth`, or the deepest open one.
+    fn emit_applied(&mut self, at: usize, record: Option<TraceRecord>, depth: Option<usize>) {
+        if let Some(mut record) = record {
+            record.owner = depth.map_or_else(|| self.deepest(), |k| self.path(k));
+            self.emit(at, record);
         }
     }
 
@@ -726,6 +963,12 @@ impl<'a> Walk<'a> {
                 f.closer = Some(closer);
                 f.line_block = line_block;
                 f.shift = o_shift;
+                f.line = self.first_line + at;
+                f.family = match closer {
+                    Closer::Fence(..) => "code",
+                    Closer::Comment(_) => "comment",
+                    Closer::Colon(_) => "div",
+                };
                 self.frames.push(f);
             }
             Form::Colon(run, _) => {
@@ -735,12 +978,14 @@ impl<'a> Walk<'a> {
                 f.cut = col.saturating_sub(canon);
                 f.run = run;
                 f.shift = o_shift;
+                f.line = self.first_line + at;
                 self.frames.push(f);
             }
             Form::Quote => {
                 let mut f = Frame::new(Kind::Quote);
                 f.marker = Some((col, canon));
                 f.marker_shift = o_shift;
+                f.line = self.first_line + at;
                 self.frames.push(f);
                 let n = quote_marker(c.src).expect("classified as a quote");
                 c.take(n);
@@ -790,6 +1035,7 @@ impl<'a> Walk<'a> {
         f.axes = axes;
         f.shift = self.frames.last().map_or(0, |owner| owner.shift);
         f.marker_shift = f.shift;
+        f.line = self.first_line + at;
         self.frames.push(f);
         let head = head.min(c.src.len());
         c.take(head);
