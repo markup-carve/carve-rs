@@ -635,6 +635,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         if term
             && !lines.is_empty()
             && !surviving_definition_body_column.is_some_and(|column| indent >= column)
+            && definition_list_column != Some(indent)
             && (nested_item_columns
                 .last()
                 .is_some_and(|&(_, child_column)| indent < child_column)

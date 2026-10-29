@@ -1546,7 +1546,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         if !walk.reaches_floor(&host, self.lines[resume_at]) {
             while self.hosted_lazy_line(&host, &mut walk, note, &mut i) {}
-            return i;
+            if !walk.lazy_open {
+                return i;
+            }
         }
         while i < self.lines.len() {
             if self.hosted_line(&host, &mut walk, note, &mut i) == Flow::Stop {

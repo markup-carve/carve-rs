@@ -2713,3 +2713,5 @@ mod a_footnote_label_holding_a_bracket_opens_no_bracket_run;
 mod a_matched_insertion_or_deletion_hides_a_substitution_arrow;
 #[path = "../lint_cross_engine_parity.rs"]
 mod lint_cross_engine_parity;
+#[path = "../rule_a_lazy_resume_and_term_runs.rs"]
+mod rule_a_lazy_resume_and_term_runs;

@@ -681,17 +681,6 @@ fn ends_in_definition_list(block: Option<&BlockNode>, nested: bool) -> bool {
     }
 }
 
-/// A list opened on the item's marker line starts at the marker column.
-/// A later term in the collected body can open a list at its own column.
-pub(crate) fn definition_list_is_marker_line_only(body: &MappedSource) -> bool {
-    if !body.item_marker_at_start {
-        return false;
-    }
-    let mut lines = body.source.lines();
-    lines.next().is_some_and(is_definition_list_start)
-        && !lines.any(|line| is_definition_list_start(trim_ascii_start(line)))
-}
-
 #[cfg(test)]
 mod description_separator_probe_work {
     use super::BODY_ENDS_DEFINITION_PROBE_BYTES;

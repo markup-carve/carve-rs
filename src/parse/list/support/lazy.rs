@@ -23,15 +23,8 @@ pub(crate) fn fold_lazy_run_and_resume_in_band(
             break;
         }
         // CARVE-P2-017: a flush separator leaves an item's definition list.
-        // Quote X2 keeps an open quoted paragraph's lazy continuation.
         if !frame_band_lines
             && !flush_separator_follows_other_block
-            && (!cur.in_quoted_body
-                || definition_list_is_marker_line_only(nested)
-                || (lazy_column > list_base
-                    && cur
-                        .peek()
-                        .is_some_and(|line| indent_columns(line) <= list_base)))
             && cur.peek().is_some_and(|line| {
                 indent_columns(line) == 0 && strip_description_prefix(line).is_some()
             })

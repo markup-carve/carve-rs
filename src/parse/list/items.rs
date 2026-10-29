@@ -1825,8 +1825,20 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                     content_col,
                     options,
                 ));
+                return Some(false);
             }
-            return Some(false);
+            // A lazy line that reaches this item keeps later lines out of
+            // the sub-list until markup-carve/carve#3950 settles the reading.
+            if indent >= content_col {
+                return Some(false);
+            }
+            return Some(resume_marker_sublist(
+                cur,
+                stream,
+                nested_content_col,
+                content_col,
+                options,
+            ));
         }
         let before = cur.pos;
         collect_marker_sublist_lazy_through(
@@ -1845,14 +1857,13 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         }) {
             return Some(false);
         }
-        let before_block = cur.pos;
-        stream.append(collect_indented_block_mapped(
+        Some(resume_marker_sublist(
             cur,
-            nested_content_col - 1,
+            stream,
             nested_content_col,
+            content_col,
             options,
-        ));
-        Some(cur.pos > before_block && is_blank_line(cur.lines.at(cur.pos - 1)))
+        ))
     }
 
     fn finish_marker_sublist(
@@ -2643,6 +2654,27 @@ fn rebase_quoted_fence_payload(stream: &mut MappedSource, marker_leaf: &str) {
         lines.push(line.to_string());
     }
     stream.source = lines.join("\n");
+}
+
+/// After a lazy run, collect the lines that reach the sub-list's content
+/// column back into it. The stream is in the item's columns, not the
+/// sub-list's. A run of blanks alone stays with the item, which it loosens.
+/// Returns whether the collection ended on a blank line.
+fn resume_marker_sublist(
+    cur: &mut LineCursor,
+    stream: &mut MappedSource,
+    nested_content_col: usize,
+    content_col: usize,
+    options: &Options<'_>,
+) -> bool {
+    let before_block = cur.pos;
+    let resumed = collect_indented_block_mapped(cur, nested_content_col - 1, content_col, options);
+    if resumed.source.split('\n').all(is_blank_line) {
+        cur.pos = before_block;
+        return false;
+    }
+    stream.append(resumed);
+    cur.pos > before_block && is_blank_line(cur.lines.at(cur.pos - 1))
 }
 
 /// Reads a collected body the way the document walk reads a document: an
