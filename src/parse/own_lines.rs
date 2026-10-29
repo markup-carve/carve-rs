@@ -338,7 +338,30 @@ struct LineEdit {
 /// Run the ownership walk. `None` when it moves no line, which is the common
 /// case and lets every fast path keep reading the source as written.
 fn walk(source: &str) -> Option<OwnedSource> {
-    let (_, fm, body) = split_frontmatter(source, false);
+    walk_from(source, true)
+}
+
+/// Walk a body a collector cut out, so an opener past the body's column opens
+/// there as it does in a document. Returns the walked body and, per 0-based
+/// line, the leading columns it removed.
+pub(crate) fn walk_body(source: &str) -> Option<(String, Vec<(usize, isize)>)> {
+    let owned = walk_from(source, false)?;
+    let mut shifts: Vec<(usize, isize)> = Vec::new();
+    for edit in &owned.edits {
+        match shifts.last_mut() {
+            Some((line, delta)) if *line == edit.line - 1 => *delta += edit.delta,
+            _ => shifts.push((edit.line - 1, edit.delta)),
+        }
+    }
+    Some((owned.source, shifts))
+}
+
+fn walk_from(source: &str, frontmatter: bool) -> Option<OwnedSource> {
+    let (_, fm, body) = if frontmatter {
+        split_frontmatter(source, false)
+    } else {
+        (BTreeMap::new(), None, source)
+    };
     let prefix = if fm.is_some() {
         &source[..source.len() - body.len()]
     } else {

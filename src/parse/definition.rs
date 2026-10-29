@@ -463,7 +463,6 @@ pub(in crate::parse) fn parse_definition_list(
             // consumed, so a multi-line definition is one region rather than
             // just its opening line. `collect_definition_body` has already
             // advanced the cursor past those lines.
-            rebase_overindented_blocks(&mut body, true, options);
             // A DEFINITION BODY carries authored base for its sublists, so a list
             // marker past the body's content column anchors its span at the
             // marker rather than at the placing indent (markup-carve/carve#1980,
@@ -581,38 +580,6 @@ impl DefinitionBodyFence {
         // opens a paragraph the fold can reach again.
         self.closed_last = was_open && self.open.is_none();
     }
-}
-
-/// The body's collected lines with their authored bases rebased away - the form
-/// `parse_mapped_source` will actually read (markup-carve/carve#1911).
-///
-/// Same `rebase_overindented_blocks` the caller runs on the finished body, over
-/// a throwaway `MappedSource` carrying no maps: the fold question needs the
-/// TEXT, and the real body keeps its own positions.
-pub(in crate::parse) fn body_as_read(
-    source: String,
-    reached: Vec<bool>,
-    options: &Options<'_>,
-) -> String {
-    let mut probe = MappedSource {
-        source,
-        line_map: Vec::new(),
-        col_map: Vec::new(),
-        // The body's own `MappedSource` is built with both of these, so the
-        // rebase reads the same document here as it does there.
-        authored_base_at_start: false,
-        item_marker_at_start: false,
-        marker_colon_rebased: false,
-        marker_tail: None,
-        reached,
-        opaque_blank_lines: Vec::new(),
-        discarded_outer_blank: false,
-        outer_plus_after_blank: false,
-        in_quoted_body: false,
-        sublists_carry_authored_base: false,
-    };
-    rebase_overindented_blocks(&mut probe, true, options);
-    probe.source
 }
 
 /// Does the definition body collected so far end in something a flush-left line
@@ -890,9 +857,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             col_map: self.col_map,
             source: self.lines.join("\n"),
             line_map: self.line_map,
-            authored_base_at_start: false,
             item_marker_at_start: false,
-            marker_colon_rebased: false,
             marker_tail: None,
             reached: self.reached,
             opaque_blank_lines: Vec::new(),
@@ -1585,18 +1550,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         if self.folded_a_lazy_line {
             return true;
         }
-        // ASKED OF THE BODY AS THE BODY WILL READ IT
-        // (markup-carve/carve#1911). The collector slices each line at
-        // the body's content column and leaves the residue in front, so
-        // a heading written one column past a three-column body arrives
-        // here as ` # H` - not an opener - and reported a paragraph the
-        // body does not have. The caller rebases those residuals away
-        // before parsing; the fold question has to see the same lines.
-        // The seed is the `:  ` marker line's own content, which is
-        // at the body's column 0 by construction, so it reaches.
-        let mut probe_reached = vec![true; self.seed.lines().count()];
-        probe_reached.extend_from_slice(&self.reached);
-        let so_far = body_as_read(self.body_so_far(), probe_reached, self.options);
+        let so_far = self.body_so_far();
         if self.retained_below_comment {
             return true;
         }

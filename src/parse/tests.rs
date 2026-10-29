@@ -95,9 +95,7 @@ fn nested_event_cursor_keeps_unpositioned_authored_base_parity() {
             opaque_blank_lines: Vec::new(),
             discarded_outer_blank: false,
             outer_plus_after_blank: false,
-            authored_base_at_start: false,
             item_marker_at_start: false,
-            marker_colon_rebased: false,
             marker_tail: None,
             in_quoted_body: false,
             sublists_carry_authored_base: true,
@@ -2999,28 +2997,6 @@ mod marker_note_comment_bounds {
             assert!(!index.closes_in_note(&lines, at, 0, 4, width));
         }
         assert_eq!(CONTAINER_DEDENT_STEPS.with(Cell::get), 0);
-    }
-}
-
-#[cfg(test)]
-mod named_colon_rebase_work {
-    use super::*;
-
-    #[test]
-    fn named_colon_payload_rebasing_is_bounded_by_the_line_count() {
-        for size in [64, 128, 256] {
-            let mut source = "- ::: d\n".to_string();
-            for column in 1..size {
-                source.push_str(&format!("  {}::: x\n", " ".repeat(column)));
-            }
-            NAMED_COLON_REBASE_LINES.with(|count| count.set(0));
-            let _doc = parse(&source);
-            let work = NAMED_COLON_REBASE_LINES.with(Cell::get);
-            assert!(
-                work <= size * 6,
-                "{size} lines required {work} payload rewrites"
-            );
-        }
     }
 }
 

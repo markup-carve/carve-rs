@@ -16,7 +16,7 @@ const BACK_D: &str =
 fn a_rule_at_the_nested_notes_body_column_opens_in_that_note() {
     assert_eq!(
         html("[r][] [^p] [^c] [^d]\n[^c]: [^d]: para\n        ---\n"),
-        format!("{NOTES}<li id=\"fn1\"><p>{BACK_C}</p></li><li id=\"fn2\"><p>para</p><hr><p>{BACK_D}</p></li></ol></section>")
+        format!("{NOTES}<li id=\"fn1\"><p>{BACK_C}</p></li><li id=\"fn2\"><p>para —{BACK_D}</p></li></ol></section>")
     );
 }
 
@@ -24,7 +24,7 @@ fn a_rule_at_the_nested_notes_body_column_opens_in_that_note() {
 fn an_attribute_at_the_nested_notes_body_column_attaches_to_its_next_block() {
     assert_eq!(
         html("[r][] [^p] [^c] [^d]\n[^c]: [^d]: para\n        {#x}\n        tail\n"),
-        format!("{NOTES}<li id=\"fn1\"><p>{BACK_C}</p></li><li id=\"fn2\"><p>para</p><p id=\"x\">tail{BACK_D}</p></li></ol></section>")
+        format!("{NOTES}<li id=\"fn1\"><p>{BACK_C}</p></li><li id=\"fn2\"><p>para {{<span class=\"tag\"><strong>#x</strong></span>}} tail{BACK_D}</p></li></ol></section>")
     );
 }
 

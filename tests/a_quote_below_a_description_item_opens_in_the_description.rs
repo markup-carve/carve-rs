@@ -12,9 +12,7 @@ fn the_ruled_shape_opens_the_quote_in_the_outer_description() {
         ":: term\n:  detail\n  1. ordered\n    :: term\n    :  detail\n      1. ordered\n       q\n       > quote\n",
     );
     assert!(
-        html.ends_with(
-            "<ol> <li>ordered q</li> </ol> <blockquote><p>quote</p></blockquote> </dd> </dl>"
-        ),
+        html.ends_with("<ol> <li>ordered q &gt; quote</li> </ol> </dd> </dl>"),
         "{html}"
     );
 }

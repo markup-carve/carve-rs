@@ -36,9 +36,7 @@ pub(crate) fn fold_lazy_run_and_resume_in_band(
                 indent_columns(line) == 0 && strip_description_prefix(line).is_some()
             })
         {
-            let mut rebased = nested.clone();
-            rebase_overindented_blocks(&mut rebased, false, options);
-            if body_ends_in_definition_list(&rebased.source, options) {
+            if body_ends_in_definition_list(&nested.source, options) {
                 break;
             }
             flush_separator_follows_other_block = true;

@@ -115,9 +115,7 @@ impl LineBuffer {
             col_map,
             source,
             line_map,
-            authored_base_at_start: false,
             item_marker_at_start: false,
-            marker_colon_rebased: false,
             marker_tail: None,
             reached,
             opaque_blank_lines: Vec::new(),
@@ -139,12 +137,8 @@ pub(super) struct MappedSource {
     /// mapped back to a column in the document, which is why nested blocks
     /// could not carry a position (spec PART 12 section 4).
     pub(super) col_map: Vec<Option<isize>>,
-    /// The collector consumed an authored blank immediately before this
-    /// chunk's first line, making an over-indented opener a block boundary.
-    pub(super) authored_base_at_start: bool,
     /// The first line is the authored content of an enclosing item marker.
     pub(super) item_marker_at_start: bool,
-    pub(super) marker_colon_rebased: bool,
     /// Innermost marker content byte offset and column on an unchanged first line.
     pub(super) marker_tail: Option<MarkerTail>,
     /// Did each line REACH the enclosing container's content column?
@@ -169,10 +163,8 @@ pub(super) struct MappedSource {
     /// Whether an over-indented sublist in this source carries its own authored
     /// base, so its span begins AT ITS MARKER rather than at the placing indent.
     ///
-    /// A footnote body and a definition body both rebase over-indented blocks
-    /// with sublists included (`rebase_overindented_blocks(.., true)`), so a
-    /// list marker written past the body's own content column establishes a base
-    /// of its own (PART 9 §24 C3): its span starts on the marker. Everywhere
+    /// In a footnote body and a definition body a list marker written past
+    /// the body's own content column establishes a base of its own (PART 9 §24 C3): its span starts on the marker. Everywhere
     /// else - the document, a block quote, a list item - the run between the
     /// container's content column and the marker is the indentation that PLACES
     /// the marker, and PART 12 section 4 puts it INSIDE the span. Anchoring every
@@ -194,9 +186,7 @@ impl MappedSource {
             source: line,
             line_map: source_line.into_iter().map(Some).collect(),
             col_map: vec![stripped],
-            authored_base_at_start: false,
             item_marker_at_start: false,
-            marker_colon_rebased: false,
             marker_tail: None,
             reached: vec![false],
             opaque_blank_lines: Vec::new(),
@@ -207,8 +197,7 @@ impl MappedSource {
         }
     }
 
-    /// Lines in `source`, counted the way `rebase_overindented_blocks` counts
-    /// them so `reached` can be kept exactly as long.
+    /// Lines in `source`, counted so `reached` can be kept exactly as long.
     fn line_count(&self) -> usize {
         #[cfg(test)]
         MAPPED_SOURCE_SCAN_BYTES.with(|work| work.set(work.get() + self.source.len()));
@@ -259,7 +248,6 @@ impl MappedSource {
                 self.source.push('\n');
             } else {
                 self.item_marker_at_start = other.item_marker_at_start;
-                self.marker_colon_rebased = other.marker_colon_rebased;
                 self.marker_tail = other.marker_tail;
             }
             self.source.push_str(&other.source);
@@ -290,7 +278,6 @@ impl MappedSource {
             self.source.push('\n');
         } else {
             self.item_marker_at_start = other.item_marker_at_start;
-            self.marker_colon_rebased = other.marker_colon_rebased;
             self.marker_tail = other.marker_tail;
         }
         self.source.push_str(&other.source);
@@ -359,9 +346,7 @@ pub(super) fn remap_source(source: String, original: &MappedSource) -> MappedSou
             source,
             line_map: original.line_map[..source_line_count].to_vec(),
             col_map: original.col_map[..source_line_count.min(original.col_map.len())].to_vec(),
-            authored_base_at_start: original.authored_base_at_start,
             item_marker_at_start: original.item_marker_at_start,
-            marker_colon_rebased: original.marker_colon_rebased,
             marker_tail: None,
             reached: original.reached[..source_line_count.min(original.reached.len())].to_vec(),
             opaque_blank_lines: original
@@ -381,9 +366,7 @@ pub(super) fn remap_source(source: String, original: &MappedSource) -> MappedSou
         // Top-level source: nothing has been stripped, so every column in this
         // text is a column in the document.
         col_map: vec![Some(0); source_line_count],
-        authored_base_at_start: false,
         item_marker_at_start: false,
-        marker_colon_rebased: false,
         marker_tail: None,
         reached: Vec::new(),
         opaque_blank_lines: Vec::new(),
@@ -403,7 +386,6 @@ mod batch_append_tests {
     fn batching_preserves_line_origins_columns_reach_and_marker_flags() {
         for initial in ["", "prefix", "prefix\n"] {
             let mut expected = MappedSource::new_line_at(initial.into(), Some(4), Some(2));
-            expected.authored_base_at_start = true;
             expected.sublists_carry_authored_base = true;
             let mut actual = expected.clone();
             let pieces: Vec<_> = ["", "marker", "body\n", "tail"]
@@ -433,10 +415,6 @@ mod batch_append_tests {
             assert_eq!(actual.col_map, expected.col_map);
             assert_eq!(actual.reached, expected.reached);
             assert_eq!(actual.item_marker_at_start, expected.item_marker_at_start);
-            assert_eq!(
-                actual.authored_base_at_start,
-                expected.authored_base_at_start
-            );
             assert_eq!(
                 actual.sublists_carry_authored_base,
                 expected.sublists_carry_authored_base

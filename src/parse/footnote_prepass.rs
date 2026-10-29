@@ -793,7 +793,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         // First definition for a label wins (later duplicates are ignored).
         if first_for_label {
-            self.register_definition(normalized_label, &def, raw_def_line, note);
+            self.register_definition(normalized_label, &def, note);
         }
         self.push_definition_replacement(raw_def_line, &def, stripped, def_start_line);
         i
@@ -1791,18 +1791,15 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         &mut self,
         normalized_label: String,
         def: &DefinitionLine<'a>,
-        raw_def_line: &str,
         note: NoteBody,
     ) {
         self.definition_keys
             .insert(normalized_label, def.label.to_string());
-        let mut definition_source = MappedSource {
+        let definition_source = MappedSource {
             col_map: note.col_map,
             source: note.lines.join("\n"),
             line_map: note.line_map,
-            authored_base_at_start: false,
             item_marker_at_start: false,
-            marker_colon_rebased: false,
             marker_tail: None,
             reached: vec![true; note.lines.len()],
             opaque_blank_lines: Vec::new(),
@@ -1814,18 +1811,6 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             in_quoted_body: false,
             sublists_carry_authored_base: true,
         };
-        let absorbed_note_marker =
-            detect_list_marker_full(without_blockquote_prefixes(raw_def_line))
-                .is_some_and(|marker| parse_footnote_def_line(marker.content).is_some());
-        if absorbed_note_marker || parse_footnote_def_line(trim_ascii_start(def.first)).is_none() {
-            rebase_body_blocks(
-                &mut definition_source,
-                true,
-                self.options,
-                absorbed_note_marker,
-                false,
-            );
-        }
         self.defs.insert(def.label.to_string(), definition_source);
     }
 
@@ -1896,9 +1881,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                     Vec::new()
                 },
                 source: joined_source(&self.body),
-                authored_base_at_start: false,
                 item_marker_at_start: false,
-                marker_colon_rebased: false,
                 marker_tail: None,
                 reached: Vec::new(),
                 opaque_blank_lines: Vec::new(),

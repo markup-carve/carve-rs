@@ -33,9 +33,8 @@ mod positions;
 mod prepass;
 mod prepass_links;
 mod quote;
-mod rebase;
 pub(in crate::parse) use own_lines::restore_authored_columns;
-pub(crate) use own_lines::{own_lines, walk_moves_lines, EditsGuard};
+pub(crate) use own_lines::{own_lines, walk_body, walk_moves_lines, EditsGuard};
 mod table;
 #[cfg(test)]
 #[path = "parse/tests.rs"]
@@ -60,7 +59,6 @@ pub(crate) use positions::*;
 use prepass::*;
 use prepass_links::*;
 use quote::*;
-use rebase::*;
 use table::*;
 use verse::*;
 
@@ -849,9 +847,7 @@ fn parse_with_options_mode_and_index(
                     opaque_blank_lines: Vec::new(),
                     discarded_outer_blank: false,
                     outer_plus_after_blank: false,
-                    authored_base_at_start: false,
                     item_marker_at_start: false,
-                    marker_colon_rebased: false,
                     marker_tail: None,
                     in_quoted_body: false,
                     sublists_carry_authored_base: false,
@@ -1114,8 +1110,7 @@ fn extract_nested_footnote_defs(
             Some(&parent.line_map),
             options,
         );
-        let mut body = compose_mapped_source(body, &parent);
-        rebase_body_blocks(&mut body, true, options, false, false);
+        let body = compose_mapped_source(body, &parent);
         defs.insert(label, body);
 
         for (nested_label, nested_source) in nested {
@@ -2924,13 +2919,12 @@ fn item_body(
 fn item_body_with_layout_suppression(
     deferred: &mut Vec<ItemBody>,
     item: usize,
-    mut source: MappedSource,
+    source: MappedSource,
     attrs: Option<Attrs>,
     drop_empty_paragraphs: bool,
     suppress_tree_looseness: bool,
-    options: &Options<'_>,
+    _options: &Options<'_>,
 ) -> Vec<BlockNode> {
-    rebase_overindented_blocks(&mut source, false, options);
     deferred.push(ItemBody {
         item,
         chunk: Chunk::Source(source),
@@ -2986,10 +2980,8 @@ fn parse_item_chunk(
         );
         return (children, loose);
     }
-    let mut rebased = source.clone();
-    rebase_overindented_blocks(&mut rebased, false, options);
     let children = parse_mapped_source_at_level_into_recording(
-        &rebased,
+        source,
         options,
         false,
         true,
@@ -2998,9 +2990,9 @@ fn parse_item_chunk(
         Some(&mut extents),
     );
     let loose = item_chunk_tree_looseness(
-        &rebased.source,
-        &rebased.opaque_blank_lines,
-        rebased.discarded_outer_blank,
+        &source.source,
+        &source.opaque_blank_lines,
+        source.discarded_outer_blank,
         &children,
         &extents,
     );
@@ -3155,45 +3147,4 @@ thread_local! {
 
 pub(crate) fn carrier_next_is_list_marker(line: &str) -> bool {
     detect_list_marker_full(trim_ascii_start(line)).is_some()
-}
-
-struct BodyCodeColumns {
-    runs: HashMap<(usize, u8), Vec<(usize, usize)>>,
-}
-
-impl BodyCodeColumns {
-    fn new(lines: &[Cow<'_, str>]) -> Self {
-        let mut runs: HashMap<(usize, u8), Vec<(usize, usize)>> = HashMap::new();
-        for (index, line) in lines.iter().enumerate() {
-            let line = strip_lazy(line);
-            let bytes = trim_ascii_start(line).as_bytes();
-            let Some(&character @ (b'`' | b'~')) = bytes.first() else {
-                continue;
-            };
-            let width = bytes.iter().take_while(|&&byte| byte == character).count();
-            if bytes[width..]
-                .iter()
-                .all(|byte| matches!(byte, b' ' | b'\t'))
-            {
-                runs.entry((indent_columns(line), character))
-                    .or_default()
-                    .push((index, width));
-            }
-        }
-        for column in runs.values_mut() {
-            for index in (0..column.len().saturating_sub(1)).rev() {
-                column[index].1 = column[index].1.max(column[index + 1].1);
-            }
-        }
-        Self { runs }
-    }
-
-    fn closes_after(&self, at: usize, column: usize, open: FenceOpen) -> bool {
-        let Some(runs) = self.runs.get(&(column, open.fence_char)) else {
-            return false;
-        };
-        let after = runs.partition_point(|&(index, _)| index <= at);
-        runs.get(after)
-            .is_some_and(|&(_, width)| width >= open.fence_len)
-    }
 }

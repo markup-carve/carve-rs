@@ -948,26 +948,18 @@ impl<'a> ParagraphOpen<'a> {
 /// block is a paragraph, the dedented line is the quote's own lazy continuation
 /// and must stay INSIDE the item rather than ending it. A code block or table
 /// has no open paragraph, so it does NOT fold (the dedented line ends the item).
-/// [`nested_ends_with_open_paragraph`] on a collected body that is REBASED first,
-/// exactly as `item_body` rebases before it finalizes the item's children.
-///
-/// The plain probe re-parses the body string verbatim, so an over-indented block
-/// opener an item collected at its content column - `  # h` under `> - x` - reads
-/// as an indented PARAGRAPH while the finalized item, having run
-/// `rebase_overindented_blocks`, reads it as a HEADING. The lazy-fold decision
-/// then folds a following flush line the render leaves top-level
-/// (markup-carve/carve-rs#1538). Rebasing a clone here matches the render.
-pub(crate) fn nested_ends_with_open_paragraph_rebased(
+/// [`nested_ends_with_open_paragraph`] on a collected body with its refused
+/// marker tail masked.
+pub(crate) fn nested_ends_with_open_paragraph_masked(
     nested: &MappedSource,
     trailing_below_column: bool,
     below_outer_column: bool,
     options: &Options<'_>,
 ) -> bool {
-    let mut rebased = nested.clone();
-    rebase_overindented_blocks(&mut rebased, false, options);
-    mask_refused_marker_tail(&mut rebased);
+    let mut masked = nested.clone();
+    mask_refused_marker_tail(&mut masked);
     nested_ends_with_open_paragraph(
-        &rebased.source,
+        &masked.source,
         trailing_below_column,
         below_outer_column,
         options,

@@ -95,7 +95,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     nested_item_columns: &mut NestedCollectionState,
     options: &Options<'_>,
 ) -> MappedSource {
-    let authored_base_at_start = cur.peek().is_some_and(is_blank_line);
     // A plain paragraph begun after a blank can be interrupted by a later opener.
     let after_blank_paragraph = cur.pos > 0
         && is_blank_line(cur.lines.at(cur.pos - 1))
@@ -134,7 +133,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let mut discarded_outer_blank = false;
     let mut outer_plus_after_blank = false;
     // Strip authored code once before a nested strip changes its source columns.
-    let mut authored_code_base: Option<usize> = None;
     let mut colon_open: Vec<usize> = Vec::new();
     let marker_lead = cur
         .pos
@@ -174,10 +172,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let mut surviving_definition_body_column = open_definition_body_column;
     let mut after_definition_blank = false;
     let mut marker_definition_has_description = !marker_is_definition_term;
-    let mut marker_description_code_admitted = false;
-    let mut marker_description_has_inline_code = false;
     let mut definition_band_inline_run = None;
-    let mut marker_description_has_lazy_tail = false;
     let mut marker_description_is_paragraph = false;
     let mut nested_paragraph_column = None;
     let mut carried_lazy_owner = nested_item_columns.lazy_paragraph_owner.take();
@@ -507,8 +502,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             // What lies past the opener column is the code line's content
             // (PART 11 §7), so a line of spaces keeps that residue.
             if fence.is_some() && !folded_code_span {
-                let (residue, consumed, synthetic) =
-                    slice_columns_mapped(line, authored_code_base.unwrap_or(strip_cols), true);
+                let (residue, consumed, synthetic) = slice_columns_mapped(line, strip_cols, true);
                 opaque_blank_lines.push(lines.len());
                 lines.push(residue);
                 if cur.line_map.is_some() {
@@ -785,7 +779,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && (strip_blockquote_prefix(trim_ascii_start(line)).is_some()
                 || is_definition_list_start(trim_ascii_start(line)))
         {
-            authored_code_base = Some(indent);
             marker_note_intermediate_quote_open = marker_content
                 .is_some_and(is_collected_definition_placeholder)
                 && indent == strip_cols + 1
@@ -1433,9 +1426,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             if is_definition_list_start(trim_ascii_start(line)) && !below_definition_term {
                 nested_paragraph_column = None;
                 marker_definition_has_description = false;
-                marker_description_code_admitted = false;
-                marker_description_has_inline_code = false;
-                marker_description_has_lazy_tail = false;
                 marker_description_is_paragraph = false;
                 marker_term_paragraph_open = true;
                 marker_term_open = true;
@@ -1444,9 +1434,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 .flatten()
             {
                 marker_definition_has_description = true;
-                marker_description_code_admitted = false;
-                marker_description_has_inline_code = trim_ascii_start(line).contains('`');
-                marker_description_has_lazy_tail = false;
                 marker_description_is_paragraph = ParaOpen::from_line(body, false).get();
                 nested_paragraph_column = paragraph_owner_column(trim_ascii_start(line), indent)
                     .filter(|owner| *owner > strip_cols);
@@ -1456,7 +1443,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 && line_starts_paragraph(trim_ascii_start(line))
                 && detect_fence_open(trim_ascii_start(line)).is_none()
             {
-                marker_description_has_lazy_tail = true;
+                // A paragraph line after a description leaves the term state alone.
             } else if marker_term_open
                 && detect_fence_open(trim_ascii_start(line)).is_none()
                 && ((matches!(
@@ -1512,59 +1499,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 marker_term_open = false;
             }
         }
-        if marker_is_definition_term
-            && marker_definition_has_description
-            && !marker_description_has_inline_code
-            && detect_fence_open(trim_ascii_start(line)).is_some()
-            && lines.last().is_some_and(|line| is_blank_line(line))
-        {
-            marker_description_code_admitted = lines
-                .iter()
-                .rev()
-                .nth(1)
-                .is_some_and(|line| !is_blank_line(line));
-        }
-        if authored_code_base.is_none()
-            && (marker_definition_has_description || !marker_term_open)
-            && !marker_description_code_admitted
-            && !(marker_is_definition_term
-                && marker_description_is_paragraph
-                && !marker_description_has_inline_code
-                && !marker_description_has_lazy_tail
-                && lines
-                    .iter()
-                    .rev()
-                    .take(2)
-                    .filter(|line| is_blank_line(line))
-                    .count()
-                    < 2
-                && marker_definition_has_description
-                && detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
-                    list_code_fence_closer_ahead(cur, open, indent, parent_indent)
-                }))
-            && fence.is_none()
-            && !in_comment_span
-            && colon_open.is_empty()
-            && (stop_at_content_column_marker || marker_is_definition_lead)
-            && nested_item_columns.is_empty()
-            && indent > strip_cols
-            && !folded_code_span
-            && (marker_is_definition_lead
-                || line[..line.len() - trim_ascii_start(line).len()].contains('\t'))
-            && detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
-                (marker_definition_has_description
-                    || !collected_body_ends_in_a_quote_fold(&lines, &line_map))
-                    && (lines.is_empty()
-                        || lines.last().is_some_and(|line| is_blank_line(line))
-                        || list_code_fence_closer_ahead(cur, open, strip_cols, parent_indent))
-            })
-        {
-            authored_code_base = Some(indent);
-        }
         let stripped = match (in_comment_span, comment_fence_strip) {
-            _ if authored_code_base.is_some_and(|base| indent >= base) => {
-                authored_code_base.unwrap()
-            }
             // A line below the opener's base loses its available prefix.
             _ if literal_colon.is_none()
                 && fence.is_some_and(|open| {
@@ -1941,7 +1876,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             }
             if fence.is_none() {
                 folded_code_span = false;
-                authored_code_base = None;
             }
         }
         if !opaque_here {
@@ -2095,9 +2029,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         col_map,
         source,
         line_map,
-        authored_base_at_start,
         item_marker_at_start: false,
-        marker_colon_rebased: false,
         marker_tail: None,
         reached,
         opaque_blank_lines,
