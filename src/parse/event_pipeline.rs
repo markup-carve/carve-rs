@@ -711,10 +711,12 @@ pub(super) fn parse_drained_fragment(
         return None;
     }
     let lines: Vec<&str> = source.lines().collect();
-    if lines.iter().copied().any(|line| {
-        let line = trim_ascii(line);
-        line == "+" || line.ends_with(" +")
-    }) {
+    if continuation_marker::active()
+        && lines.iter().copied().any(|line| {
+            let line = trim_ascii(line);
+            line == "+" || line.ends_with(" +")
+        })
+    {
         return None;
     }
     let want_lines = options.source_lines

@@ -59,11 +59,14 @@ fn matcher_context_event_fragment_matches_standard_reentry() {
 
     for (fragment, positions, source_lines) in [
         ("inner\n\n- child\n", false, false),
-        ("inner\n+\n", false, false), // event preflight declines
+        ("inner\n+\n", false, false),
+        ("inner\n+\n", true, false),
+        ("inner\n+\n", true, true),
         ("inner\n", true, false),
         ("inner\n", false, true),
         ("outer\n\n- child\n  nested\n", false, true),
         ("inner\n+\n", false, true),
+        ("first\nsecond\n+\nlast", true, true),
     ] {
         let run = |event| {
             event_pipeline::LADDER_TAIL_EVENT_PARSES.with(|count| count.set(0));
@@ -87,7 +90,7 @@ fn matcher_context_event_fragment_matches_standard_reentry() {
             let nested = hook.nested.borrow_mut().take().unwrap();
             let trace = hook.trace.into_inner();
             let event_parses = event_pipeline::LADDER_TAIL_EVENT_PARSES.with(Cell::get);
-            assert_eq!(event_parses > 0, event && !fragment.contains('+'));
+            assert_eq!(event_parses > 0, event);
             (document, nested, trace)
         };
         assert_eq!(
@@ -996,16 +999,33 @@ mod event_ladder_tail {
     }
 
     #[test]
-    fn positioned_drained_fragment_keeps_plus_preflight() {
+    fn positioned_drained_fragment_admits_local_plus() {
         for source in ["text\n+", "text +\n", "- item\n  +"] {
             for source_lines in [false, true] {
                 let hook = LadderHook::default();
                 let options = hooked(&hook, true, source_lines);
-                assert!(event_pipeline::parse_drained_fragment(source, &options).is_none());
-                assert!(hook.blocks.borrow().is_empty());
-                assert!(hook.inlines.borrow().is_empty());
+                let baseline = LadderHook::default();
+                let expected = {
+                    let _standard = StandardNestedReaderGuard::install();
+                    parse_fragment_with_events(source, &hooked(&baseline, true, source_lines))
+                };
+                let actual = event_pipeline::parse_drained_fragment(source, &options)
+                    .expect("local plus fragment admitted");
+                assert_eq!(actual, expected, "{source:?}");
+                assert_same_callbacks(&hook, &baseline, source);
             }
         }
+    }
+
+    #[test]
+    fn classified_plus_fragment_declines_before_callbacks() {
+        let source = "first\n+\nlast";
+        let _classifier = continuation_marker::Guard::install(source);
+        let hook = LadderHook::default();
+        let options = hooked(&hook, true, true);
+        assert!(event_pipeline::parse_drained_fragment(source, &options).is_none());
+        assert!(hook.blocks.borrow().is_empty());
+        assert!(hook.inlines.borrow().is_empty());
     }
 
     fn unpositioned_body(body: &str) -> MappedSource {
