@@ -1036,6 +1036,10 @@ const IMPLEMENTED: &[&str] = &[
     "inside-a-note-a-footnote-shaped-run-is-a-bracket-run",
     "inside-a-note-a-nested-note-opener-is-a-caret-and-a-bracket-run",
     "invalid-body-row-metadata-leaves-one-table-body",
+    "a-task-item-uses-its-authored-term-base-one-column-past-a-child-marker",
+    "a-task-item-keeps-a-lazy-term-one-column-below-its-child-marker",
+    "a-hosted-footnote-keeps-a-heading-at-its-body-floor",
+    "a-note-claimed-fence-line-keeps-the-item-loose",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
@@ -1133,6 +1137,10 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     ("620-generated-container-documents-16", "preexisting parser gap at the new spec pin", "<ul>\n  <li>\n    <ul>\n      <li>body</li>\n    </ul>\n    <p>prose</p>\n  </li>\n</ul>"),
     ("629-a-dangling-plus-marker-adds-nothing-and-a-nested-quote-reads-it-like-an-unnested-one-4", "preexisting parser gap at the new spec pin", "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<p>+</p>\n<p>para</p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>note<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
     ("629-a-dangling-plus-marker-adds-nothing-and-a-nested-quote-reads-it-like-an-unnested-one-8", "preexisting parser gap at the new spec pin", "<blockquote><p>+</p></blockquote>\n<p>para</p>"),
+    ("752-a-task-item-uses-its-authored-term-base-one-column-past-a-child-marker", "rule A port: carve-rs#3522", "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <ul>\n      <li>\n        <dl>\n          <dt>t\n: a\n:: sibling\ntail</dt>\n        </dl>\n      </li>\n    </ul>\n  </li>\n</ul>"),
+    ("753-a-task-item-keeps-a-lazy-term-one-column-below-its-child-marker", "rule A port: carve-rs#3523", "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <ul>\n      <li>\n        <dl>\n          <dt>t\n: a\n:: sibling\ntail</dt>\n        </dl>\n      </li>\n    </ul>\n  </li>\n</ul>"),
+    ("758-a-hosted-footnote-keeps-a-heading-at-its-body-floor", "rule A port: carve-rs#3523", "<ul>\n  <li>a</li>\n</ul>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p># h\n# h<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
+    ("763-a-note-claimed-fence-line-keeps-the-item-loose", "rule A port: carve-rs#3523", "<ul>\n  <li><p>item</p>\n    <p>See<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a><a id=\"fnref2\" href=\"#fn2\" role=\"doc-noteref\"><sup>2</sup></a></p>\n  </li>\n</ul>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>~~~<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n    <li id=\"fn2\">\n      <p>para\nmore<a href=\"#fnref2\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
 ];
 
 fn check_pair(slug: &str) {
@@ -1363,7 +1371,6 @@ fn resolve_slug(slug: &str) -> String {
 /// `100-block-quote-continuation-marker` unvalidated). A missing category here
 /// forces an IMPLEMENTED update.
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn all_corpus_categories_implemented() {
     let mut missing: Vec<String> = Vec::new();
     let pairs = corpus_pairs();
