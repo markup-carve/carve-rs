@@ -3,8 +3,10 @@ use carve::{to_html, to_html_with_options, Options};
 // Each shape is checked on the fast path and on the full parser, which a
 // document the rule A walk moves always takes.
 fn both(source: &str) -> (String, String) {
-    let mut options = Options::default();
-    options.source_lines = true;
+    let options = Options {
+        source_lines: true,
+        ..Options::default()
+    };
     let full = to_html_with_options(source, &options);
     let mut stripped = String::new();
     let mut rest = full.as_str();
