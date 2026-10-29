@@ -745,7 +745,7 @@ impl BracedClosers {
             .copied()
             .collect();
         if !bare_hosted.is_empty() {
-            for marker in *b"/_" {
+            for marker in *b"/*_~=" {
                 bare_slots[delim_brace_slot(marker).unwrap()] = true;
             }
         }
@@ -882,6 +882,68 @@ impl BracedClosers {
             };
             steps.push(step);
         }
+        // Per bare kind, the point of an opener still pending before each point
+        // (none closed after it), outside skipped regions and after the last
+        // braced opener: a span that is open there.
+        let bare_kinds = *b"/*_~=";
+        let mut pending_open: [Vec<usize>; 5] = std::array::from_fn(|_| Vec::new());
+        if !bare_hosted.is_empty() {
+            let mut state = [usize::MAX; 5];
+            let mut skip_until = 0;
+            for kind in &mut pending_open {
+                kind.reserve(steps.len());
+            }
+            for (i, step) in steps.iter().enumerate() {
+                for (k, kind) in pending_open.iter_mut().enumerate() {
+                    kind.push(state[k]);
+                }
+                if i < skip_until {
+                    continue;
+                }
+                match step {
+                    BracedStep::Jump(next) | BracedStep::LineComment(_, next) => {
+                        if !bare_hosted.contains(&points[i]) {
+                            skip_until = *next;
+                        }
+                    }
+                    BracedStep::Boundary | BracedStep::Scope(_, _) => state = [usize::MAX; 5],
+                    BracedStep::Raw(_) => skip_until = usize::MAX,
+                    BracedStep::Literal | BracedStep::Closer(_) => {
+                        let position = points[i];
+                        let marker = bytes[position];
+                        if opener_marks.contains(&position) {
+                            continue;
+                        }
+                        let Some(k) = bare_kinds.iter().position(|&d| d == marker) else {
+                            continue;
+                        };
+                        let before = position.checked_sub(1).map(|at| bytes[at]);
+                        let next = bytes.get(position + 1).copied();
+                        if state[k] != usize::MAX
+                            && before
+                                .is_some_and(|byte| !matches!(byte, b' ' | b'\t' | b'\r' | b'\n'))
+                            && !next.is_some_and(|byte| byte.is_ascii_alphanumeric())
+                        {
+                            state[k] = usize::MAX;
+                        } else if state[k] == usize::MAX
+                            && next.is_some_and(|byte| {
+                                !matches!(byte, b' ' | b'\t' | b'\r' | b'\n') && byte != marker
+                            })
+                            && before != Some(marker)
+                            && (marker != b'=' || next != Some(b'>'))
+                            && (before.is_some_and(|_| opener_marks.contains(&(position - 1)))
+                                || !before.is_some_and(|byte| {
+                                    byte.is_ascii_alphanumeric()
+                                        || byte == b'_'
+                                        || byte == b'/' && matches!(marker, b'/' | b'_')
+                                }))
+                        {
+                            state[k] = i;
+                        }
+                    }
+                }
+            }
+        }
         let mut current: [Vec<usize>; DELIM_BRACE_SLOTS] =
             std::array::from_fn(|_| vec![usize::MAX; points.len()]);
         let mut bare: [Vec<usize>; DELIM_BRACE_SLOTS] = std::array::from_fn(|slot| {
@@ -953,11 +1015,25 @@ impl BracedClosers {
             let bare_close = bare_open
                 .map(|slot| bare[slot][at + 1])
                 .filter(|&close| close != usize::MAX);
-            let bare_tail = bare_close
+            let mut bare_tail = bare_close
                 .and_then(|close| attribute_tails.get(&(points[close] + 1)))
                 .copied();
             if let (Some(close), Some(end)) = (bare_close, bare_tail) {
                 bare_attribute_pairs.insert(position, (points[close], end));
+                // A span of another kind open here that closes inside the pair
+                // demotes this opener (E2), so its block is content.
+                let crossed = !pending_open[0].is_empty()
+                    && bare_kinds.iter().enumerate().any(|(k, &d)| {
+                        let slot = delim_brace_slot(d).unwrap();
+                        d != marker
+                            && pending_open[k][at] != usize::MAX
+                            && bare[slot].get(at + 1).is_some_and(|&outer| {
+                                outer != usize::MAX && points[outer] < points[close]
+                            })
+                    });
+                if crossed {
+                    bare_tail = None;
+                }
             }
             let mut guarded = None;
             if matches!(before, Some(b'/' | b'_')) {
