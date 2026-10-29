@@ -2707,6 +2707,8 @@ mod parser_owner_transitions;
 
 #[path = "../a_block_of_a_pair_that_cannot_form_holds_the_closer.rs"]
 mod a_block_of_a_pair_that_cannot_form_holds_the_closer;
+#[path = "../a_blocked_guarded_opener_frees_its_closer.rs"]
+mod a_blocked_guarded_opener_frees_its_closer;
 #[path = "../a_fence_on_an_item_marker_line_hides_its_payload.rs"]
 mod a_fence_on_an_item_marker_line_hides_its_payload;
 #[path = "../a_footnote_label_holding_a_bracket_opens_no_bracket_run.rs"]

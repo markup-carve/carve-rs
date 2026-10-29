@@ -759,6 +759,10 @@ impl BracedClosers {
             })
             .collect();
         let mut opener_marks = std::collections::HashSet::new();
+        // `{X` markers met while a bare X is still open: as a guard such a
+        // marker is a nested X, which does not open (E3).
+        let mut nested_marks = std::collections::HashSet::new();
+        let mut pending = [false; DELIM_BRACE_SLOTS];
         let mut at = 0;
         while at + 1 < bytes.len() {
             if bytes[at] == b'\\' {
@@ -766,11 +770,43 @@ impl BracedClosers {
                 continue;
             }
             if bytes[at] == b'{' && delim_brace_slot(bytes[at + 1]).is_some() {
+                if pending[delim_brace_slot(bytes[at + 1]).unwrap()] {
+                    nested_marks.insert(at + 1);
+                }
                 opener_marks.insert(at + 1);
                 at += 2;
-            } else {
-                at += 1;
+                continue;
             }
+            if let Some(&end) = self.opaque.get(&at) {
+                at = end.max(at + 1);
+                continue;
+            }
+            if bytes[at] == b'`' {
+                if let Some(end) = self.code_end(bytes, at) {
+                    at = end.max(at + 1);
+                    continue;
+                }
+            }
+            let marker = bytes[at];
+            if matches!(marker, b'/' | b'*' | b'_' | b'~' | b'=') {
+                let slot = delim_brace_slot(marker).unwrap();
+                let before = at.checked_sub(1).map(|prev| bytes[prev]);
+                let next = bytes[at + 1];
+                if pending[slot]
+                    && before.is_some_and(|byte| !matches!(byte, b' ' | b'\t' | b'\r' | b'\n'))
+                    && !next.is_ascii_alphanumeric()
+                {
+                    pending[slot] = false;
+                } else if !matches!(next, b' ' | b'\t' | b'\r' | b'\n')
+                    && next != marker
+                    && before != Some(marker)
+                    && !before.is_some_and(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+                    && (!matches!(marker, b'/' | b'_') || before != Some(b'/'))
+                {
+                    pending[slot] = true;
+                }
+            }
+            at += 1;
         }
         for at in 0..bytes.len() {
             let next = bytes.get(at + 1).copied().unwrap_or(0);
@@ -863,6 +899,12 @@ impl BracedClosers {
                 .and_then(|at| bytes.get(at))
                 .copied();
             let next = bytes.get(position + 1).copied();
+            let unguarded_opener = next.is_some_and(|byte| {
+                !matches!(byte, b' ' | b'\t' | b'\r' | b'\n') && byte != marker
+            }) && before != Some(marker)
+                && !before.is_some_and(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+                && (marker != b'=' || next != Some(b'>'))
+                && (!matches!(marker, b'/' | b'_') || before != Some(b'/'));
             let resolve = |encoded: usize, slot: usize| {
                 if encoded == usize::MAX {
                     usize::MAX
@@ -907,14 +949,7 @@ impl BracedClosers {
                 };
             }
             let bare_slot = delim_brace_slot(marker).filter(|&slot| bare_slots[slot]);
-            let bare_open = bare_slot.filter(|_| {
-                next.is_some_and(|byte| {
-                    !matches!(byte, b' ' | b'\t' | b'\r' | b'\n') && byte != marker
-                }) && before != Some(marker)
-                    && !before.is_some_and(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
-                    && (marker != b'=' || next != Some(b'>'))
-                    && (!matches!(marker, b'/' | b'_') || before != Some(b'/'))
-            });
+            let bare_open = bare_slot.filter(|_| unguarded_opener);
             let bare_close = bare_open
                 .map(|slot| bare[slot][at + 1])
                 .filter(|&close| close != usize::MAX);
@@ -946,16 +981,24 @@ impl BracedClosers {
             // A guarded pair forms only where each guard in front of it opens: a
             // guard of the walk's own kind is literal (E3), and one with no closer
             // before the walk's closer does not open in its span (E2a).
-            let guards_open = |slot: usize, end: usize, current: &[Vec<usize>]| {
+            let guards_open = |slot: usize, pair: usize, end: usize, current: &[Vec<usize>]| {
                 let span = resolve(current[slot][index(end)], slot);
                 let mut from = index(end);
                 let mut guard = position - 1;
                 loop {
                     let kind = delim_brace_slot(bytes[guard]).unwrap();
+                    let close = bare[kind][from];
+                    // The walk's own `{X` guards as a bare X when it does not form.
+                    // A first closer inside the pair would leave the pair's opener blocked.
+                    if kind == slot && guard > 0 && bytes[guard - 1] == b'{' {
+                        let first = bare[kind][at + 1];
+                        return !nested_marks.contains(&guard)
+                            && (first == usize::MAX || points[first] > points[pair])
+                            && (close != usize::MAX || span != usize::MAX);
+                    }
                     if kind == slot {
                         return false;
                     }
-                    let close = bare[kind][from];
                     if close == usize::MAX || span != usize::MAX && points[close] >= points[span] {
                         return false;
                     }
@@ -1010,7 +1053,7 @@ impl BracedClosers {
                         if kind != slot
                             && (stop == usize::MAX
                                 || points[stop & !RAW_CLOSE_FLAG] >= points[close])
-                            && guards_open(slot, end, &current)
+                            && guards_open(slot, close, end, &current)
                         {
                             stop = current[slot][index(end)];
                         }
