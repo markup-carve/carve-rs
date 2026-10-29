@@ -614,7 +614,7 @@ impl DefinitionListScan {
 
 /// Decide at the description boundary, while the enclosing list cursor is
 /// still parked before the next description or root block.
-fn parse_definition_description(
+pub(in crate::parse) fn parse_definition_description(
     request: BodyRequest,
     cur: &LineCursor,
     options: &Options<'_>,

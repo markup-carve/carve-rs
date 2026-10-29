@@ -805,6 +805,85 @@ mod event_level_resume_tests {
             }
         }
     }
+
+    #[test]
+    fn observed_definition_yields_before_later_description() {
+        let source = ":: term\n:  first\n:  second\n\n# Later\n";
+        let lines: Vec<&str> = source.lines().collect();
+        let run = |manual: bool| {
+            let observer = Observer(RefCell::new(Vec::new()));
+            let options = Options::default().with_extension(&observer);
+            let mut cur = LineCursor::new_with_cols(&lines, None, None);
+            cur.at_document_level = true;
+            let mut pending = Vec::new();
+            let mut blocks = if manual {
+                let mut state = EventLevelState::new(&cur, true, false);
+                let Some(EventLevelRun::NeedDefinitionBody(mut continuation)) =
+                    run_event_level::<true, false>(
+                        &lines,
+                        &options,
+                        None,
+                        &mut cur,
+                        &mut state,
+                        None,
+                        Some(&mut pending),
+                        true,
+                        None,
+                    )
+                else {
+                    panic!("expected definition body yield");
+                };
+                cur.restore_state(continuation.cursor);
+                assert_eq!(cur.pos, 2);
+                assert!(observer
+                    .0
+                    .borrow()
+                    .iter()
+                    .all(|(_, line)| !line.contains("second") && !line.contains("Later")));
+                state = continuation.state;
+                let children = parse_definition_description(
+                    continuation.request,
+                    &cur,
+                    &options,
+                    &mut None,
+                    false,
+                );
+                continuation.scan.fill_body(children, &cur, &options);
+                loop {
+                    match continuation.scan.step(&mut cur, &options) {
+                        StepResult::Continue => {}
+                        StepResult::NeedBody(request) => {
+                            let children = parse_definition_description(
+                                request, &cur, &options, &mut None, false,
+                            );
+                            continuation.scan.fill_body(children, &cur, &options);
+                        }
+                        StepResult::Done => break,
+                    }
+                }
+                state.out.push(continuation.scan.finish(&cur, &options));
+                match run_event_level::<true, false>(
+                    &lines,
+                    &options,
+                    None,
+                    &mut cur,
+                    &mut state,
+                    None,
+                    Some(&mut pending),
+                    true,
+                    None,
+                ) {
+                    Some(EventLevelRun::Done(blocks)) => blocks,
+                    _ => panic!("resumed level did not finish"),
+                }
+            } else {
+                crate::parse::block::parse_blocks(&mut cur, &options, &mut pending)
+            };
+            resolve_pending_bodies(&mut blocks, pending, &options);
+            (blocks, observer.0.into_inner())
+        };
+        assert_eq!(run(true), run(false));
+    }
 }
 
 /// Stream simple top-level blocks as events while handing list and definition
@@ -1404,8 +1483,8 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
     options: &Options<'_>,
     line_map: Option<&[Option<usize>]>,
     mut cur: LineCursor<'_>,
-    extents: Option<&mut Vec<(usize, usize)>>,
-    pending_out: Option<&mut Vec<PendingBody>>,
+    mut extents: Option<&mut Vec<(usize, usize)>>,
+    mut pending_out: Option<&mut Vec<PendingBody>>,
     // The caller fills hollow quotes before reading their children. An
     // unobserved colon body may defer quotes even when this argument is false.
     defer_quotes: bool,
@@ -1417,25 +1496,93 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
     debug_assert!(!direct_owner || lines.len() == cur.lines.len());
     // Snapshot the cursor flag: nested paragraph probes may change it.
     let mut state = EventLevelState::new(&cur, defer_pending, direct_owner);
-    match run_event_level::<DEFINITIONS, ABBREVIATIONS>(
+    let mut result = run_event_level::<DEFINITIONS, ABBREVIATIONS>(
         lines,
         options,
         line_map,
         &mut cur,
         &mut state,
-        extents,
-        pending_out,
+        extents.as_deref_mut(),
+        pending_out.as_deref_mut(),
         defer_quotes,
         None,
-    )? {
-        EventLevelRun::Done(out) => Some(out),
-        EventLevelRun::Yield => unreachable!("the wrapper does not request a boundary"),
+    )?;
+    loop {
+        match result {
+            EventLevelRun::Done(out) => return Some(out),
+            EventLevelRun::Yield => unreachable!("the wrapper does not request a boundary"),
+            EventLevelRun::NeedDefinitionBody(mut continuation) => {
+                cur.restore_state(continuation.cursor);
+                state = continuation.state;
+                let children = parse_definition_description(
+                    continuation.request,
+                    &cur,
+                    options,
+                    &mut None,
+                    false,
+                );
+                continuation.scan.fill_body(children, &cur, options);
+                loop {
+                    match continuation.scan.step(&mut cur, options) {
+                        StepResult::Continue => {}
+                        StepResult::NeedBody(request) => {
+                            continuation.request = request;
+                            continuation.cursor = cur.take_state();
+                            continuation.state = std::mem::replace(
+                                &mut state,
+                                EventLevelState::new(&cur, false, false),
+                            );
+                            result = EventLevelRun::NeedDefinitionBody(continuation);
+                            break;
+                        }
+                        StepResult::Done => {
+                            let node = continuation.scan.finish(&cur, options);
+                            if let Some(extents) = extents.as_deref_mut() {
+                                extents.push((continuation.start, cur.pos));
+                            }
+                            if options.positions {
+                                state.block_start_indices.push(continuation.start);
+                            }
+                            #[cfg(feature = "experimental-event-parser-options")]
+                            if options.source_lines {
+                                state.source_lines.push(continuation.source_line);
+                            }
+                            debug_assert_eq!(state.out.len(), continuation.index);
+                            state.out.push(node);
+                            result = run_event_level::<DEFINITIONS, ABBREVIATIONS>(
+                                lines,
+                                options,
+                                line_map,
+                                &mut cur,
+                                &mut state,
+                                extents.as_deref_mut(),
+                                pending_out.as_deref_mut(),
+                                defer_quotes,
+                                None,
+                            )?;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
 enum EventLevelRun {
     Done(Vec<BlockNode>),
     Yield,
+    NeedDefinitionBody(Box<DefinitionContinuation>),
+}
+
+struct DefinitionContinuation {
+    scan: DefinitionListScan,
+    request: BodyRequest,
+    start: usize,
+    source_line: Option<usize>,
+    index: usize,
+    cursor: LineCursorOwnedState,
+    state: EventLevelState,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1585,6 +1732,31 @@ fn run_event_level<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
             if let Some((list, end)) = direct {
                 cur.pos = end;
                 emit!(_block_source_line, BlockNode::DefinitionList(list));
+            } else if parse_order_observed(options) && !state.drain_follows {
+                let mut scan = DefinitionListScan::new(cur);
+                loop {
+                    match scan.step(cur, options) {
+                        StepResult::Continue => {}
+                        StepResult::NeedBody(request) => {
+                            return Some(EventLevelRun::NeedDefinitionBody(Box::new(
+                                DefinitionContinuation {
+                                    scan,
+                                    request,
+                                    start: state.current_block_start.get(),
+                                    source_line: _block_source_line,
+                                    index: state.out.len(),
+                                    cursor: cur.take_state(),
+                                    state: std::mem::replace(
+                                        state,
+                                        EventLevelState::new(cur, false, false),
+                                    ),
+                                },
+                            )));
+                        }
+                        StepResult::Done => break,
+                    }
+                }
+                emit!(_block_source_line, scan.finish(cur, options));
             } else {
                 emit!(
                     _block_source_line,
