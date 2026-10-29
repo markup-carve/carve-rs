@@ -1118,6 +1118,8 @@ mod container_scoped_content_columns;
 mod corpus;
 #[path = "../plain_unused_definition_denied.rs"]
 mod plain_unused_definition_denied;
+#[path = "../render_loss_includes.rs"]
+mod render_loss_includes;
 #[path = "../whole_grapheme_delimiters.rs"]
 mod whole_grapheme_delimiters;
 

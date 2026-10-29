@@ -62,18 +62,64 @@ pub struct Pos {
 /// PART 9 §25's nesting cap then multiplies again. One `Arc` per FILE rather
 /// than one string per node costs 8 bytes in the node and a refcount bump per
 /// clone.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SourceFile(std::sync::Arc<String>);
+#[derive(Debug, Clone)]
+pub struct SourceFile(std::sync::Arc<SourceFileData>);
+
+#[derive(Debug)]
+struct SourceFileData {
+    id: String,
+    sites: Option<Vec<crate::includes::IncludeSite>>,
+}
+
+impl PartialEq for SourceFile {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.id == other.0.id
+    }
+}
+
+impl Eq for SourceFile {}
+
+impl PartialOrd for SourceFile {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for SourceFile {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.id.cmp(&other.0.id)
+    }
+}
+
+impl std::hash::Hash for SourceFile {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::hash::Hash::hash(&self.0.id, state);
+    }
+}
 
 impl SourceFile {
     /// Wrap the identifier used for a file included in a document.
     pub fn new(id: impl Into<String>) -> Self {
-        Self(std::sync::Arc::new(id.into()))
+        Self(std::sync::Arc::new(SourceFileData {
+            id: id.into(),
+            sites: None,
+        }))
     }
 
     /// Borrow the file identifier without cloning it.
     pub fn as_str(&self) -> &str {
-        self.0.as_str()
+        self.0.id.as_str()
+    }
+
+    pub(crate) fn with_include_sites(id: &str, sites: &[crate::includes::IncludeSite]) -> Self {
+        Self(std::sync::Arc::new(SourceFileData {
+            id: id.to_string(),
+            sites: Some(sites.to_vec()),
+        }))
+    }
+
+    pub(crate) fn include_sites(&self) -> Option<&[crate::includes::IncludeSite]> {
+        self.0.sites.as_deref()
     }
 }
 

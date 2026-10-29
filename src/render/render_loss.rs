@@ -115,6 +115,10 @@ pub struct RenderLoss {
     pub node_type: RawNodeType,
     /// Source span, when available.
     pub pos: Option<Pos>,
+    /// Included file identity, when the loss came from an include.
+    pub file: Option<String>,
+    /// Directives leading to the included content.
+    pub included_by: Option<Vec<crate::includes::IncludeSite>>,
     /// Human-readable explanation.
     pub message: String,
 }
@@ -241,6 +245,8 @@ pub(crate) fn record_markdown_loss(kind: MarkdownLoss, node_type: RawNodeType, p
                 target: RenderTarget::Markdown,
                 node_type,
                 pos: pos.cloned(),
+                file: None,
+                included_by: None,
                 message: message.to_string(),
             });
         }
@@ -291,6 +297,8 @@ pub(crate) fn collect_markdown_unattached(spans: Vec<Pos>) {
                     target: RenderTarget::Markdown,
                     node_type: RawNodeType::Block,
                     pos: Some(pos),
+                    file: None,
+                    included_by: None,
                     message: "Dropped an unattached block attribute while rendering Markdown"
                         .to_string(),
                 });
@@ -326,6 +334,8 @@ pub(crate) fn record_table_span(cell: &crate::ast::TableCell) {
                 target: c.target,
                 node_type: RawNodeType::Block,
                 pos: cell.pos.clone(),
+                file: None,
+                included_by: None,
                 message: "Flattened a spanning table cell into separate cells".to_string(),
             });
         }
@@ -375,6 +385,8 @@ fn record_table_header_loss(code: &'static str, message: &str, pos: Option<&Pos>
                 target: c.target,
                 node_type: RawNodeType::Block,
                 pos: pos.cloned(),
+                file: None,
+                included_by: None,
                 message: message.to_string(),
             });
         }
@@ -408,6 +420,8 @@ pub(crate) fn record_raw_drop(format: &str, node_type: RawNodeType, pos: Option<
                 target: c.target,
                 node_type,
                 pos,
+                file: None,
+                included_by: None,
                 message: format!(
                     "Dropped {} raw format {:?} while rendering {}",
                     node_type.as_str(),
@@ -467,6 +481,8 @@ pub(crate) fn record_destination_denied(pos: Option<&Pos>, sink: DeniedSink) {
                 target: c.target,
                 node_type: RawNodeType::Inline,
                 pos: pos.cloned(),
+                file: None,
+                included_by: None,
                 message: sink.message().to_string(),
             });
         }
@@ -505,6 +521,8 @@ pub(crate) fn record_carrier_collision(
                 target: c.target,
                 node_type,
                 pos: pos.cloned(),
+                file: None,
+                included_by: None,
                 message: format!(
                     "Dropped authored attribute {authored:?}: the roundtrip carrier {carrier:?} owns that name"
                 ),
@@ -532,6 +550,8 @@ pub(crate) fn record_ruby_flattened(ruby: &Ruby) {
                 target: c.target,
                 node_type: RawNodeType::Inline,
                 pos: ruby.pos.clone(),
+                file: None,
+                included_by: None,
                 message: "Flattened ruby annotation".to_string(),
             });
         }
@@ -561,6 +581,8 @@ pub(crate) fn record_editorial_comment_flattened(pos: Option<&Pos>) {
                 target: c.target,
                 node_type: RawNodeType::Inline,
                 pos: pos.cloned(),
+                file: None,
+                included_by: None,
                 message: "Flattened an editorial comment into the surrounding text".to_string(),
             });
         }
@@ -588,6 +610,8 @@ pub(crate) fn record_definition_list_flattened(pos: Option<&Pos>) {
                 target: c.target,
                 node_type: RawNodeType::Block,
                 pos: pos.cloned(),
+                file: None,
+                included_by: None,
                 message: "Flattened a nested definition list without carrier markers".to_string(),
             });
         }
@@ -619,6 +643,8 @@ pub(crate) fn record_list_style_dropped(style: OrderedListType, pos: Option<&Pos
                 target: c.target,
                 node_type: RawNodeType::Block,
                 pos: pos.cloned(),
+                file: None,
+                included_by: None,
                 message: format!(
                     "Wrote a {style} ordered list as decimal while rendering markdown"
                 ),
@@ -684,7 +710,15 @@ pub fn with_render_loss_report<T>(
         });
     });
     let value = render();
-    let collector = COLLECTOR.with(|slot| slot.borrow_mut().take().unwrap());
+    let mut collector = COLLECTOR.with(|slot| slot.borrow_mut().take().unwrap());
+    for loss in &mut collector.losses {
+        if let Some(file) = loss.pos.as_ref().and_then(|pos| pos.file.as_ref()) {
+            if let Some(sites) = file.include_sites().filter(|sites| !sites.is_empty()) {
+                loss.file = Some(file.as_str().to_string());
+                loss.included_by = Some(sites.to_vec());
+            }
+        }
+    }
     let truncated = collector.total > collector.losses.len();
     if options.strict && collector.total > 0 {
         Err(RenderLossError {
@@ -725,6 +759,8 @@ pub(crate) fn record_list_delimiter_changed(delim: char, emitted: char, pos: Opt
                 target: c.target,
                 node_type: RawNodeType::Block,
                 pos: pos.cloned(),
+                file: None,
+                included_by: None,
                 message: format!(
                     "Changed an ordered list delimiter from {delim} to {emitted} while rendering markdown"
                 ),
