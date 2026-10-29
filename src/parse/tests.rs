@@ -1189,15 +1189,44 @@ mod event_colon_body {
         }
     }
 
-    /// These shapes stay on the standard reader. The gate runs before any
-    /// line is read, so their callbacks still match the standard log.
+    /// A `+` line reaches the extension hook through `parse_block` on both
+    /// routes, so the callback log keeps the standard order.
     #[test]
-    fn refused_colon_bodies_fall_back_before_any_callback() {
+    fn plus_lines_in_colon_bodies_keep_callback_order() {
         for source in [
             "::: note\n- a\n+\n  @@@\n:::\n",
             "::: note\n@@@ +\nmore\n:::\n",
+            "::: note\n- a\n+\n@@@\n\n+\n@@@\n:::\n",
         ] {
-            assert_colon_parity(source, false);
+            assert_colon_parity(source, true);
+        }
+    }
+
+    /// Colon bodies ask `+` for its decision through the colon geometry, so
+    /// accepted, refused and orphan markers match the standard reader.
+    #[test]
+    fn continuation_markers_in_colon_bodies_are_event_owned() {
+        for source in [
+            "::: note\n- a\n+\n```\ncode\n```\n:::\n",
+            "::: note\npara\n\n+\n:::\n",
+            "::: note\n+\npara\n:::\n",
+            "::: note\n- a\n\n+\nb\n:::\n",
+            "::: note\n- a\n +\nb\n:::\n",
+            "::: note\n- a\n+\n- b\n:::\n",
+            "::: note\n- a\n+\n:::\n",
+            "::: note\n1. one\n+\n> q\n:::\n",
+            "::: note\n:: t\n: d\n+\n  more\n:::\n",
+            "::: note\n> a\n+\nb\n:::\n",
+            "::: a\n::: b\n- x\n+\ny\n:::\n:::\n",
+            "::: note\n- a\n+\n::: box\ninner\n:::\n:::\n",
+            "- ::: note\n  - a\n  +\n  b\n  :::\n",
+            "> ::: note\n> - a\n> +\n> b\n> :::\n",
+            "::: note\n{.c}\n- a\n+\n{.d}\npara\n:::\n",
+            "::: note\n- a\n+\n{.dangling}\n:::\n",
+            "::: note\ntext +\nmore\n:::\n",
+            "::: note\r\n- a\r\n+\r\nmore\r\n:::\r\n",
+        ] {
+            assert_colon_parity(source, true);
         }
     }
 

@@ -706,13 +706,8 @@ pub(super) fn parse_drained_fragment(
 /// Can the event cursor own this colon body? Decided before the cursor reads
 /// a line, so a refusal cannot repeat an extension callback.
 #[cfg(feature = "experimental-event-parser-options")]
-fn colon_body_admitted(source: &[SourceLine]) -> bool {
-    // `+` decisions inside a colon body stay with the standard reader.
+fn colon_body_admitted() -> bool {
     NESTING_DEPTH.with(Cell::get) < NESTED_EVENT_DEPTH_LIMIT
-        && !source.iter().any(|line| {
-            let line = trim_ascii(&line.text);
-            line == "+" || line.ends_with(" +")
-        })
 }
 
 /// The event counterpart of `parse_blocks` for a colon container body. Reads
@@ -727,7 +722,7 @@ pub(super) fn parse_colon_body<'a>(
     options: &Options<'_>,
     pending: &mut Vec<PendingBody>,
 ) -> Option<Vec<BlockNode>> {
-    if !colon_body_admitted(source) {
+    if !colon_body_admitted() {
         return None;
     }
     let _frame = EventFrame::enter();
