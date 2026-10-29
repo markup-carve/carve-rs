@@ -222,14 +222,7 @@ pub(in crate::parse) fn resolve_pending_bodies(
                 let _group = FigureGroupScope::set(body.in_group);
                 definition = Some((body.item, body.description));
                 (
-                    parse_mapped_source_at_level_into(
-                        &body.source,
-                        options,
-                        false,
-                        false,
-                        false,
-                        &mut nested,
-                    ),
+                    parse_definition_body_into(&body.source, options, &mut nested),
                     None,
                     false,
                     None,

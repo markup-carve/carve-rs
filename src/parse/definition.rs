@@ -242,16 +242,18 @@ pub(in crate::parse) fn parse_definition_list(
     cur: &mut LineCursor,
     options: &Options<'_>,
 ) -> BlockNode {
-    parse_definition_list_with(cur, options, None)
+    parse_definition_list_with(cur, options, None, false)
 }
 
 /// With `defer`, each non-empty description body is handed to it as
 /// `(item, description, body)` and left hollow, for the caller's worklist to
-/// parse and fill (see `fill_definition_children`).
+/// parse and fill (see `fill_definition_children`). With `final_only`, only a
+/// body followed by nothing but blank lines is handed over; the rest parse here.
 pub(in crate::parse) fn parse_definition_list_with(
     cur: &mut LineCursor,
     options: &Options<'_>,
     mut defer: Option<&mut dyn FnMut(usize, usize, MappedSource)>,
+    final_only: bool,
 ) -> BlockNode {
     let list_start = cur.pos;
     let marker_hosted = cur.colon_view.is_some_and(|view| view.marker_hosted);
@@ -481,7 +483,10 @@ pub(in crate::parse) fn parse_definition_list_with(
             body.sublists_carry_authored_base = true;
             let children = if body.source.trim_end_matches([' ', '\t', '\n']) == "{empty}" {
                 Vec::new()
-            } else if let Some(defer) = defer.as_deref_mut() {
+            } else if let Some(defer) = defer
+                .as_deref_mut()
+                .filter(|_| !final_only || only_blank_lines_left(cur))
+            {
                 defer(items.len(), defs.len(), body);
                 Vec::new()
             } else {
@@ -538,6 +543,10 @@ pub(in crate::parse) fn parse_definition_list_with(
         pos: span_of(cur, list_start, cur.pos, options),
         items,
     })
+}
+
+fn only_blank_lines_left(cur: &LineCursor) -> bool {
+    (cur.pos..cur.lines.len()).all(|at| is_blank_line(cur.lines.at(at)))
 }
 
 /// A lone `+` (optionally followed by spaces/tabs) is the continuation marker

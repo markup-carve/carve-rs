@@ -1511,9 +1511,27 @@ fn parse_mapped_source_at_level_into(
         in_quoted_body,
         pending,
         None,
+        false,
     )
 }
 
+/// A description body popped off the worklist. The drain resumes the moment
+/// this returns, so the level may leave its own final body pending as well
+/// (`LineCursor::drain_follows`).
+#[cfg(feature = "experimental-event-parser")]
+fn parse_definition_body_into(
+    source: &MappedSource,
+    options: &Options<'_>,
+    pending: &mut Vec<PendingBody>,
+) -> Vec<BlockNode> {
+    parse_mapped_source_at_level_into_recording(
+        source, options, false, false, false, pending, None, true,
+    )
+}
+
+/// `drain_follows`: the caller resolves `pending` right after this returns,
+/// with no scan, probe or callback in between.
+#[allow(clippy::too_many_arguments)]
 fn parse_mapped_source_at_level_into_recording(
     source: &MappedSource,
     options: &Options<'_>,
@@ -1522,6 +1540,7 @@ fn parse_mapped_source_at_level_into_recording(
     in_quoted_body: bool,
     pending: &mut Vec<PendingBody>,
     extents: Option<&mut Vec<(usize, usize)>>,
+    drain_follows: bool,
 ) -> Vec<BlockNode> {
     if !options.source_lines
         && !options.positions
@@ -1537,6 +1556,7 @@ fn parse_mapped_source_at_level_into_recording(
             in_quoted_body,
             pending,
             extents,
+            drain_follows,
         );
     }
     parse_positioned_mapped_source(
@@ -1547,10 +1567,12 @@ fn parse_mapped_source_at_level_into_recording(
         in_quoted_body,
         pending,
         extents,
+        drain_follows,
     )
 }
 
 #[inline(never)]
+#[allow(clippy::too_many_arguments)]
 fn parse_unpositioned_mapped_source(
     source: &MappedSource,
     options: &Options<'_>,
@@ -1559,6 +1581,7 @@ fn parse_unpositioned_mapped_source(
     in_quoted_body: bool,
     pending: &mut Vec<PendingBody>,
     extents: Option<&mut Vec<(usize, usize)>>,
+    drain_follows: bool,
 ) -> Vec<BlockNode> {
     #[cfg(feature = "experimental-event-parser-options")]
     let mut extents = extents;
@@ -1590,6 +1613,7 @@ fn parse_unpositioned_mapped_source(
             extents.as_deref_mut(),
             pending,
             false,
+            drain_follows,
         ) {
             return blocks;
         }
@@ -1612,6 +1636,7 @@ fn parse_unpositioned_mapped_source(
             in_quoted_body,
             pending,
             extents,
+            drain_follows,
         );
     }
     parse_blocks_with_options_at_level_into_reached_recording(
@@ -1702,6 +1727,7 @@ impl Drop for StandardNestedReaderGuard {
 }
 
 #[inline(never)]
+#[allow(clippy::too_many_arguments)]
 fn parse_positioned_mapped_source(
     source: &MappedSource,
     options: &Options<'_>,
@@ -1710,7 +1736,10 @@ fn parse_positioned_mapped_source(
     in_quoted_body: bool,
     pending: &mut Vec<PendingBody>,
     extents: Option<&mut Vec<(usize, usize)>>,
+    drain_follows: bool,
 ) -> Vec<BlockNode> {
+    #[cfg(not(feature = "experimental-event-parser-options"))]
+    let _ = drain_follows;
     #[cfg(feature = "experimental-event-parser-options")]
     let mut extents = extents;
     #[cfg(feature = "experimental-event-parser-options")]
@@ -1727,6 +1756,7 @@ fn parse_positioned_mapped_source(
             extents.is_some().then_some(&mut event_extents),
             pending,
             true,
+            drain_follows,
         ) {
             if let Some(extents) = extents.as_deref_mut() {
                 extents.extend(event_extents);
@@ -2888,6 +2918,7 @@ fn parse_item_body_into(
                 false,
                 nested,
                 Some(&mut extents),
+                false,
             );
             if !suppress_tree_looseness {
                 if drop_empty_paragraphs {
@@ -3169,6 +3200,7 @@ fn parse_item_chunk(
             false,
             carried,
             Some(&mut extents),
+            false,
         );
         let loose = item_chunk_tree_looseness(
             &source.source,
@@ -3187,6 +3219,7 @@ fn parse_item_chunk(
         false,
         carried,
         Some(&mut extents),
+        false,
     );
     let loose = item_chunk_tree_looseness(
         &source.source,

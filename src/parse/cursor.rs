@@ -246,6 +246,11 @@ pub(in crate::parse) struct LineCursor<'a> {
     /// markup-carve/carve#1980). Never inherited by a nested container body,
     /// which collects into its own `MappedSource`.
     pub(in crate::parse) sublists_carry_authored_base: bool,
+    /// The caller resolves this level's pending bodies the moment it returns,
+    /// so an observed final description body may wait there too. Never
+    /// inherited: only `parse_nested_mapped_blocks` sets it.
+    #[cfg(feature = "experimental-event-parser")]
+    pub(in crate::parse) drain_follows: bool,
     pub(in crate::parse) comment_closer_last_index: Option<HashMap<usize, usize>>,
     pub(in crate::parse) future_quoted_comments: RefCell<Option<FutureQuotedComments>>,
     pub(in crate::parse) literal_comments: Option<ContainerCommentClosers>,
@@ -289,6 +294,8 @@ impl<'a> LineCursor<'a> {
             invisible_arms: true,
             reached: None,
             sublists_carry_authored_base: false,
+            #[cfg(feature = "experimental-event-parser")]
+            drain_follows: false,
             comment_closer_last_index: None,
             future_quoted_comments: RefCell::new(None),
             literal_comments: None,

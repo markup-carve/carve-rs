@@ -1308,19 +1308,24 @@ mod deep_worklist_owner {
 
     /// `(depth, shape, PAIRWISE row)`: one standard comparison for each
     /// remaining depth.
-    const DEEP_CELLS: [(usize, &str, usize); 6] = [
+    const DEEP_CELLS: [(usize, &str, usize); 8] = [
         (64, "list siblings", 0),
         (120, "quoted list", 2),
         (199, "list", 4),
         (260, "colon/list", 1),
         (199, "definition chain", 0),
         (260, "definition chain", 2),
+        (199, "definition chain", 3),
+        (260, "definition chain", 4),
     ];
 
     /// `(depth, shape, CALLBACK_ROWS row)` for the deep callback comparisons.
-    /// The definition chain crosses onto the standard reader at this depth.
-    const DEEP_CALLBACK_CELLS: [(usize, &str, usize); 2] =
-        [(199, "colon/list", 1), (199, "definition chain", 2)];
+    /// Observed, the definition chain's final bodies ride the worklist.
+    const DEEP_CALLBACK_CELLS: [(usize, &str, usize); 3] = [
+        (199, "colon/list", 1),
+        (199, "definition chain", 2),
+        (260, "definition chain", 5),
+    ];
 
     /// `(mode, positions)` rows for the callback test, indexed like `PAIRWISE`.
     const CALLBACK_ROWS: [(ParseMode, bool); 6] = [
@@ -1396,9 +1401,8 @@ mod deep_worklist_owner {
             })
             .collect();
         let quoted = list.lines().map(|line| format!("> {line}\n")).collect();
-        // Unobserved, description bodies ride the worklist. Observed, they
-        // parse eagerly, so the chain holds a frame per level until the limit
-        // and reads the rest on the standard reader.
+        // Every description body is final, so it rides the worklist observed
+        // or not (`tailed_definition_chain` is the eager counterpart).
         let definitions = (0..depth)
             .map(|level| {
                 let lead = indent(level);
@@ -1469,6 +1473,94 @@ mod deep_worklist_owner {
             ":: first\n: alpha\n: beta\n  - nested\n:: second\n: gamma\n: delta\n  > quote\n";
         for row in full_matrix() {
             check_row(2, "multiple definitions", source, row);
+        }
+    }
+
+    /// Root lists whose last description body has only blank lines after it,
+    /// with the number of bodies an observed parse leaves on the worklist. A
+    /// final body popped off the worklist defers its own final body too.
+    const FINAL_BODY_CASES: [(&str, &str, usize); 7] = [
+        ("single final body", ":: t\n: d\n  - one\n  - two\n", 1),
+        (
+            "earlier description eager",
+            ":: t\n: alpha\n: beta\n  > quote\n\n",
+            1,
+        ),
+        (
+            "several items",
+            ":: a\n: one\n  - x\n:: b\n: two\n  ::: note\n  inner\n  :::\n",
+            1,
+        ),
+        (
+            "earlier list and nested list",
+            "- before\n  - deeper\n\n:: t\n: d *x*\n  :: inner\n  : body\n\n",
+            2,
+        ),
+        ("dangling attribute in body", ":: t\n: d\n\n  {.k}\n", 1),
+        (
+            "nested final body",
+            ":: t\n: d\n\n  :: u\n  : e\n    - x\n",
+            2,
+        ),
+        (
+            "nested body with a tail",
+            ":: t\n: d\n\n  :: u\n  : e\n    - x\n\n  after *p*\n",
+            1,
+        ),
+    ];
+
+    /// Anything after the last body, or a level other than the root or a
+    /// worklist description body, keeps every observed body eager.
+    const EAGER_BODY_CASES: [(&str, &str); 5] = [
+        ("paragraph tail", ":: t\n: d\n  - x\n\nafter *para*\n"),
+        ("attribute tail", ":: t\n: d\n  - x\n\n{.k}\n"),
+        ("caption tail", ":: t\n: d\n  - x\n\n^ caption\n"),
+        ("sibling tail", ":: t\n: d\n  - x\n\n> quote\n"),
+        ("nested level", "::: wrap\n:: t\n: d\n  - x\n:::\n"),
+    ];
+
+    fn observed_definition_deferrals(label: &str, source: &str) -> usize {
+        let log = Log::default();
+        let options = Options::default().with_extension(&log);
+        event_pipeline::OBSERVED_DEFINITION_DEFERRALS.with(|count| count.set(0));
+        let (_, _, used) =
+            event_pipeline::parse_document_with_mode(source, &options, ParseMode::Html)
+                .unwrap_or_else(|| panic!("{label}: declined"));
+        assert!(used, "{label}");
+        event_pipeline::OBSERVED_DEFINITION_DEFERRALS.with(Cell::get)
+    }
+
+    #[test]
+    fn observed_final_definition_bodies_ride_the_worklist() {
+        for (label, source, deferred) in FINAL_BODY_CASES {
+            assert_eq!(
+                observed_definition_deferrals(label, source),
+                deferred,
+                "{label}: deferred bodies"
+            );
+            for row in full_matrix() {
+                check_row(1, label, source, row);
+            }
+            for row in 0..CALLBACK_ROWS.len() {
+                check_callbacks(1, label, source, row);
+            }
+        }
+    }
+
+    #[test]
+    fn observed_definition_bodies_with_a_tail_stay_eager() {
+        for (label, source) in EAGER_BODY_CASES {
+            assert_eq!(
+                observed_definition_deferrals(label, source),
+                0,
+                "{label}: deferred bodies"
+            );
+            for row in full_matrix() {
+                check_row(1, label, source, row);
+            }
+            for row in 0..CALLBACK_ROWS.len() {
+                check_callbacks(1, label, source, row);
+            }
         }
     }
 
@@ -1576,10 +1668,9 @@ mod deep_worklist_owner {
     }
 
     /// Only the event route runs here, as in the deep quote release tests.
-    /// The definition chain is left out: observed, past the frame limit it
-    /// recurses on the standard reader, which this stack does not hold at
-    /// these depths. `unobserved_definition_chains_fit_the_release_stack_floor`
-    /// runs it unobserved.
+    /// The definition chain has its own floor tests,
+    /// `unobserved_definition_chains_fit_the_release_stack_floor` and
+    /// `observed_definition_chains_fit_the_release_stack_floor`.
     /// Each shape runs observed and unobserved at every depth; positions
     /// alternate so each of those pairs sees both values across the depths.
     /// Debug builds skip it; the `stack-floor-release` CI job runs it.
@@ -1637,6 +1728,16 @@ mod deep_worklist_owner {
             .collect()
     }
 
+    /// `definition_chain` with a paragraph after each nested list, so no
+    /// description body is final and an observed parse keeps each one eager.
+    fn tailed_definition_chain(lead: &str, levels: usize) -> String {
+        let mut source = definition_chain(lead, levels);
+        for level in (0..levels).rev() {
+            source.push_str(&format!("{lead}{}after{level}\n\n", indent(level)));
+        }
+        source
+    }
+
     /// An eager definition chain over stack the frame count does not see.
     struct StackedChain {
         label: String,
@@ -1655,7 +1756,7 @@ mod deep_worklist_owner {
         let limit = event_pipeline::EVENT_FRAME_LIMIT;
         let direct = event_pipeline::DIRECT_QUOTE_DEPTH_LIMIT - 1;
         let prefix = "> ".repeat(direct);
-        let quoted = definition_chain("", limit)
+        let quoted = tailed_definition_chain("", limit)
             .lines()
             .map(|line| {
                 if line.is_empty() {
@@ -1693,13 +1794,14 @@ mod deep_worklist_owner {
     }
 
     /// Root chains that go on past the budget on the standard reader, whose
-    /// own recursion sets the stack these need.
+    /// own recursion sets the stack these need. Observed, the tails keep
+    /// every body eager.
     fn root_definition_chains() -> Vec<StackedChain> {
         [MAX_NESTING_DEPTH - 1, MAX_NESTING_DEPTH]
             .into_iter()
             .map(|depth| StackedChain {
-                label: format!("root definitions; depth={depth}"),
-                source: shape(depth, "definition chain"),
+                label: format!("root tailed definitions; depth={depth}"),
+                source: tailed_definition_chain("", depth),
                 min_depth: 0,
                 fills: true,
                 direct_quotes: 0,
@@ -1739,8 +1841,8 @@ mod deep_worklist_owner {
     /// The event route alone on a `stack`-byte thread. No unquoted body takes
     /// an event frame `EVENT_FRAME_LIMIT` or more levels above the worklist
     /// base, so an eager chain spends its frames near the top of the stack.
-    /// The collector makes the parse order observed, which keeps the
-    /// description bodies eager.
+    /// The collector makes the parse order observed, and every chain here has
+    /// a tail after each body, which keeps the bodies eager.
     fn check_frame_budget(stack: usize, chains: Vec<StackedChain>) {
         let limit = event_pipeline::EVENT_FRAME_LIMIT;
         std::thread::Builder::new()
@@ -1864,6 +1966,107 @@ mod deep_worklist_owner {
                 for depth in [199, 200, 260] {
                     for positions in [false, true] {
                         check_unobserved_definition_chain(depth, positions);
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// Observed by an extension or a collector, each final description body
+    /// still waits on the worklist, so the chain needs no event frame per
+    /// level.
+    fn check_observed_definition_chain(depth: usize, positions: bool, collect: bool) {
+        let label = format!("depth={depth}; positions={positions}; collect={collect}");
+        let source = shape(depth, "definition chain");
+        let log = Log::default();
+        let mut options = Options::default().with_positions(positions);
+        if !collect {
+            options = options.with_extension(&log);
+        }
+        event_pipeline::PEAK_EVENT_FRAMES.with(|peak| peak.set(0));
+        event_pipeline::PEAK_EVENT_DEPTH.with(|peak| peak.set(0));
+        event_pipeline::OBSERVED_DEFINITION_DEFERRALS.with(|count| count.set(0));
+        let parse = || event_pipeline::parse_document_with_mode(&source, &options, ParseMode::Html);
+        let parsed = if collect {
+            collecting_unattached_block_attrs(parse).0
+        } else {
+            parse()
+        };
+        let (document, _, used) = parsed.unwrap_or_else(|| panic!("{label}: declined"));
+        assert!(used, "{label}");
+        let frames = event_pipeline::PEAK_EVENT_FRAMES.with(Cell::get);
+        assert!(
+            frames < event_pipeline::EVENT_FRAME_LIMIT,
+            "{label}: {frames} frames"
+        );
+        let floor = depth.min(MAX_NESTING_DEPTH - 8) / 2;
+        let peak = event_pipeline::PEAK_EVENT_DEPTH.with(Cell::get);
+        assert!(peak >= floor, "{label}: event depth {peak}");
+        let deferred = event_pipeline::OBSERVED_DEFINITION_DEFERRALS.with(Cell::get);
+        assert!(deferred >= floor, "{label}: {deferred} deferred bodies");
+        assert_eq!(WORKLIST_BASE.with(Cell::get), 0, "{label}: base leak");
+        std::mem::forget(document);
+    }
+
+    #[test]
+    fn observed_definition_chains_reach_the_event_cursor() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for (d, depth) in [SHALLOW_DEPTH, 64, 120, 199, 200, 205, 260]
+                    .into_iter()
+                    .enumerate()
+                {
+                    for collect in [false, true] {
+                        check_observed_definition_chain(depth, d % 2 == 1, collect);
+                    }
+                }
+                // Tails keep every body eager, with the same callbacks.
+                for (depth, row) in [(SHALLOW_DEPTH, 0), (64, 3), (199, 4)] {
+                    let source = tailed_definition_chain("", depth);
+                    check_callbacks(depth, "tailed definition chain", &source, row);
+                    let deferred = {
+                        let log = Log::default();
+                        let options = Options::default().with_extension(&log);
+                        event_pipeline::OBSERVED_DEFINITION_DEFERRALS.with(|count| count.set(0));
+                        let (document, _, _) = event_pipeline::parse_document_with_mode(
+                            &source,
+                            &options,
+                            ParseMode::Html,
+                        )
+                        .expect("tailed chain");
+                        std::mem::forget(document);
+                        event_pipeline::OBSERVED_DEFINITION_DEFERRALS.with(Cell::get)
+                    };
+                    assert_eq!(deferred, 0, "depth={depth}: tailed chain deferred");
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// As in `deep_worklist_shapes_fit_the_release_stack_floor`.
+    #[test]
+    #[cfg_attr(debug_assertions, ignore = "release stack floor; run with --release")]
+    fn observed_definition_chains_fit_the_release_stack_floor() {
+        let stack = if cfg!(debug_assertions) {
+            4 * 1024 * 1024
+        } else {
+            512 * 1024
+        };
+        std::thread::Builder::new()
+            .stack_size(stack)
+            .spawn(|| {
+                for (d, depth) in [199, 200, 260].into_iter().enumerate() {
+                    for collect in [false, true] {
+                        check_observed_definition_chain(
+                            depth,
+                            (d + usize::from(collect)) % 2 == 1,
+                            collect,
+                        );
                     }
                 }
             })

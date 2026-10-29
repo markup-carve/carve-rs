@@ -96,6 +96,7 @@ thread_local! {
     pub(super) static LADDER_TAIL_EVENT_PARSES: Cell<usize> = const { Cell::new(0) };
     pub(super) static COLON_BODY_EVENT_PARSES: Cell<usize> = const { Cell::new(0) };
     pub(super) static DIRECT_QUOTE_PARSES: Cell<usize> = const { Cell::new(0) };
+    pub(super) static OBSERVED_DEFINITION_DEFERRALS: Cell<usize> = const { Cell::new(0) };
 }
 
 #[cfg(test)]
@@ -642,6 +643,7 @@ pub(super) fn parse_nested_mapped_blocks(
     extents: Option<&mut Vec<(usize, usize)>>,
     pending: &mut Vec<PendingBody>,
     positioned: bool,
+    drain_follows: bool,
 ) -> Option<Vec<BlockNode>> {
     if !event_frame_admitted(scope.in_quoted_body) {
         return None;
@@ -664,6 +666,7 @@ pub(super) fn parse_nested_mapped_blocks(
     cur.reached = Some(source.reached.as_slice());
     cur.sublists_carry_authored_base = positioned && source.sublists_carry_authored_base;
     cur.marker_tail = source.marker_tail;
+    cur.drain_follows = drain_follows;
     let mut observed = Vec::new();
     let record_extents = extents.is_some();
     let mut nested_pending = Vec::new();
@@ -827,20 +830,31 @@ fn parse_marker_hosted_opener(
 
 /// The definition list at `index` in the level's output. Unobserved, its
 /// description bodies wait on the worklist; observed, callbacks must see each
-/// body before what follows it, so they parse here.
+/// body before what follows it, so they parse here. The one exception is a
+/// body with only blank lines after it in a level whose pending bodies are
+/// resolved right after it (`drains_here`: a locally draining level or a
+/// worklist description body, see `LineCursor::drain_follows`). Nothing observable
+/// runs before that drain, and the body is the last entry, so it pops first,
+/// where it would have run.
 #[inline(never)]
 fn parse_definition_list_deferring(
     cur: &mut LineCursor<'_>,
     options: &Options<'_>,
     index: usize,
     pending: &mut Vec<PendingBody>,
+    drains_here: bool,
 ) -> BlockNode {
-    if parse_order_observed(options) {
+    let observed = parse_order_observed(options);
+    if observed && !drains_here {
         return parse_definition_list(cur, options);
     }
     let depth = NESTING_DEPTH.with(Cell::get);
     let in_group = IN_FIGURE_GROUP.with(Cell::get);
     let mut defer = |item: usize, description: usize, source: MappedSource| {
+        #[cfg(test)]
+        if observed {
+            OBSERVED_DEFINITION_DEFERRALS.with(|count| count.set(count.get() + 1));
+        }
         pending.push(PendingBody {
             index,
             body: Body::Definition(DefinitionBodyPending {
@@ -852,7 +866,7 @@ fn parse_definition_list_deferring(
             }),
         });
     };
-    parse_definition_list_with(cur, options, Some(&mut defer))
+    parse_definition_list_with(cur, options, Some(&mut defer), observed)
 }
 
 fn direct_quote_allowed(direct_owner: bool, options: &Options<'_>, line: &str) -> bool {
@@ -1119,6 +1133,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
     // Snapshot: nested paragraph probes toggle the cursor's flag and restore it.
     let at_document_level = cur.at_document_level;
     let defer_pending = pending_out.is_some();
+    let drain_follows = !defer_pending || cur.drain_follows;
     let direct_owner = !defer_pending && extents.is_none();
     // Only the direct owner reads `lines`; everything else reads the cursor,
     // so a deferring caller may pass an empty slice instead of materializing.
@@ -1254,7 +1269,8 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                         &mut cur,
                         options,
                         out.len(),
-                        &mut pending_bodies
+                        &mut pending_bodies,
+                        drain_follows,
                     )
                 );
             }
