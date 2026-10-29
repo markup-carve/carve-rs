@@ -13,7 +13,6 @@ fn parse_standard(source: &str) -> carve::Document {
 
 #[cfg(feature = "experimental-event-parser-options")]
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn eof_fence_option_route_matches_public_parser() {
     for source in [
         "```x",
@@ -86,7 +85,6 @@ fn eof_fence_option_route_matches_public_parser() {
 
 #[cfg(feature = "experimental-event-parser-options")]
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn simple_extension_route_preserves_hooks_and_single_invocation() {
     use carve::{
         BlockMatch, BlockNode, CarveExtension, Document, InlineMatch, InlineNode, MatcherContext,
@@ -286,7 +284,6 @@ fn simple_extension_route_preserves_hooks_and_single_invocation() {
 
 #[cfg(feature = "experimental-event-parser-options")]
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn complex_extension_route_keeps_callback_order_and_one_parse() {
     use carve::{
         BlockMatch, BlockNode, CarveExtension, CodeBlock, Document, InlineMatch, InlineNode,
@@ -600,7 +597,6 @@ fn abbreviation_definitions_keep_editor_positions_and_source_lines() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn marker_column_colon_line_stays_in_open_list_paragraph() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     let name = "161-below-content-column-div-body-in-a-list-item-stays-literal.crv";
@@ -734,7 +730,6 @@ fn malformed_quote_prefix_stays_literal() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn list_comment_and_lower_column_siblings_match_full_document() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     let name = "517-a-band-paragraph-after-an-invisible-line-leaves-the-item-loose-5.crv";
@@ -814,7 +809,6 @@ fn refused_plus_after_list_fence_matches_full_document() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn indented_root_list_frames_match_full_document() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     for name in [
@@ -966,7 +960,6 @@ fn list_continuation_after_blank_stays_with_its_frame() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn continuation_owned_quote_stays_inside_list_item() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     let name = "632-a-continuation-marker-uses-its-container-column-34.crv";
@@ -1221,7 +1214,6 @@ fn source_line_footnotes_match_standard_document() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn unsupported_root_literals_preserve_block_ownership() {
     for source in ["--\n", ": stray definition\n", "::: \tnote\n", "  {#id}\n"] {
         let (candidate, admitted) = parse_experimental_event_blocks(source);
@@ -1235,7 +1227,6 @@ fn unsupported_root_literals_preserve_block_ownership() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn post_blank_list_line_returns_to_root_at_authored_column() {
     for source in [
         "- one\n\n > q\n",
@@ -1295,7 +1286,6 @@ fn post_blank_list_line_returns_to_root_at_authored_column() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn indented_root_text_preserves_the_full_ast() {
     for source in [
         " y\n",
@@ -1467,7 +1457,6 @@ fn shared_crossref_index_preserves_heading_ids_and_hrefs() {
 
 #[cfg(feature = "experimental-event-parser-options")]
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn option_aware_event_corpus_matches_full_document() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     let options = [
@@ -2413,7 +2402,6 @@ fn nested_footnote_definitions_keep_exact_output() {
 
 #[cfg(feature = "experimental-event-parser-options")]
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn nested_footnote_definitions_keep_source_lines_and_positions() {
     for source in [
         "Text[^outer]\n\n[^outer]: Inside[^inner].\n[^inner]: Nested.\n",
@@ -2632,7 +2620,6 @@ fn two_level_tight_lists_keep_exact_ast_and_html() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn nested_list_keeps_indented_blocks_after_a_blank() {
     for source in [
         "- a\n  - b\n\n   > q\n",
@@ -3015,7 +3002,6 @@ fn root_continuation_owner_grid_matches_public_ast_and_html() {
 
 #[cfg(feature = "experimental-event-parser-options")]
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn delegated_paragraph_owner_keeps_exact_document() {
     let cases = [
         "Prose\n```js title=\"x\"\ncode\n```\n",
@@ -3092,7 +3078,6 @@ fn generated_delegated_paragraph_boundaries_keep_exact_document() {
 
 #[cfg(feature = "experimental-event-parser-options")]
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn nested_footnote_markers_survive_link_definition_guard() {
     let nested = [
         "x[^c]\n\n:: t\n: [^c]: para\n    # H\n",
@@ -3272,7 +3257,6 @@ fn footnote_like_lines_after_extraction_keep_link_semantics() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn marker_line_descriptions_with_comment_fences_keep_event_owner() {
     for source in [
         "1. :: t\n   : para\n  %%%\n  %%%\ntail\n",

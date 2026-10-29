@@ -38,10 +38,6 @@ fn admitted_corpus_preserves_parser_diagnostics() {
             continue;
         }
         let source = std::fs::read_to_string(&path).unwrap();
-        // Rule A: the event route declines a document the ownership walk rewrites.
-        if walk_moves_lines(&normalize_source(&source)) {
-            continue;
-        }
         let ((expected, expected_unattached), expected_events) = collecting_lint_events(|| {
             collecting_unattached_block_attrs(|| parse_with_options(&source, &options))
         });
@@ -67,16 +63,10 @@ fn admitted_corpus_preserves_parser_diagnostics() {
         "\n",
     ];
     let mut admitted = 0;
-    let mut walked = 0;
     for first in pieces {
         for second in pieces {
             for third in pieces {
                 let source = format!("{first}{second}{third}");
-                // Rule A: the event route declines a document the walk rewrites.
-                if walk_moves_lines(&source) {
-                    walked += 1;
-                    continue;
-                }
                 let ((expected, expected_unattached), expected_events) =
                     collecting_lint_events(|| {
                         collecting_unattached_block_attrs(|| parse_with_options(&source, &options))
@@ -96,8 +86,7 @@ fn admitted_corpus_preserves_parser_diagnostics() {
             }
         }
     }
-    assert_eq!(admitted + walked, pieces.len().pow(3));
-    assert!(admitted > walked, "{admitted} admitted, {walked} walked");
+    assert_eq!(admitted, pieces.len().pow(3));
     for source in [
         "::: note\n{.inner}\n:::\n\n{.outer}\n",
         "::: note\n{.inner}\n:::\n- a\n\n  {.item}\n",
@@ -191,10 +180,6 @@ fn eof_fences_preserve_parser_diagnostics() {
         }
         let authored = std::fs::read_to_string(&path).unwrap();
         let source = authored.strip_suffix('\n').unwrap_or(&authored);
-        // Rule A: the event route declines a document the ownership walk rewrites.
-        if walk_moves_lines(&normalize_source(source)) {
-            continue;
-        }
         let ((expected, expected_unattached), expected_events) = collecting_lint_events(|| {
             collecting_unattached_block_attrs(|| parse_with_options(source, &options))
         });

@@ -3849,12 +3849,10 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         None
     };
     let source = normalized.as_deref().unwrap_or(source);
-    // Rule A moves past-column openers before the block readers see them; the
-    // event route reads lines in place, so it only takes documents the walk
-    // leaves alone.
-    if walk_moves_lines(source) {
-        return None;
-    }
+    // Rule A: read the walked text, as the standard root does.
+    let owned = own_lines(source);
+    let _owned_edits = EditsGuard::install(owned.as_ref());
+    let source = owned.as_ref().map_or(source, |o| o.source.as_str());
     if has_deep_quote_chain(source) {
         // Only the option-aware route parses quote bodies on the worklist.
         #[cfg(feature = "experimental-event-parser-options")]
@@ -3871,9 +3869,14 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         }
     }
     if has_marker_description_comment_risk(source) {
+        // The authored text: the options root walks it again.
         #[cfg(feature = "experimental-event-parser-options")]
-        return parse_document_with_custom_options(source, &Options::default(), ParseMode::Html)
-            .map(|(document, _, admitted)| (document, admitted));
+        return parse_document_with_custom_options(
+            original_source,
+            &Options::default(),
+            ParseMode::Html,
+        )
+        .map(|(document, _, admitted)| (document, admitted));
         #[cfg(not(feature = "experimental-event-parser-options"))]
         return None;
     }
@@ -4296,9 +4299,12 @@ pub(super) fn parse_document_with_custom_options(
         None
     };
     let source = normalized.as_deref().unwrap_or(source);
-    if walk_moves_lines(source)
-        || (has_deep_quote_chain(source) && !deep_quote_chain_owned(source, options))
-    {
+    // Rule A: read the walked text, as the standard root does. The guard maps
+    // walked columns back to the authored lines in the offset pass.
+    let owned = own_lines(source);
+    let _owned_edits = EditsGuard::install(owned.as_ref());
+    let source = owned.as_ref().map_or(source, |o| o.source.as_str());
+    if has_deep_quote_chain(source) && !deep_quote_chain_owned(source, options) {
         return None;
     }
     let may_have_link_defs = source.contains("]:") || !options.extensions.is_empty();
@@ -4842,10 +4848,9 @@ mod link_definition_tests {
 mod marker_description_comment_owner_tests {
     use super::*;
 
-    // Rule A (carve#3885) moves a comment written below the item's column, so
-    // the event route declines these and the full parser reads them.
+    // Rule A moves these comments; both roots must read the walked text.
     #[test]
-    fn event_root_declines_comments_the_walk_moves() {
+    fn event_root_owns_comments_the_walk_moves() {
         let body = "1. :: t\n   : para\n  %%%\n  %%%\ntail\n";
         for source in [
             body.to_owned(),
@@ -4853,14 +4858,26 @@ mod marker_description_comment_owner_tests {
             format!("[ref]: /target\n\n{body}"),
             format!("*[abbr]: expansion\n\n{body}"),
         ] {
-            assert!(parse_document(&source).is_none(), "{source:?}");
+            let expected = {
+                let _standard_root = StandardEventRootGuard::install();
+                let _standard_nested = StandardNestedReaderGuard::install();
+                parse_with_options(&source, &Options::default())
+            };
+            let (actual, used) = parse_document(&source).expect("event root");
+            assert!(used, "{source:?}");
+            assert_eq!(actual, expected, "{source:?}");
             for positions in [false, true] {
                 let options = Options::default().with_positions(positions);
-                assert!(
+                let expected = {
+                    let _standard_root = StandardEventRootGuard::install();
+                    let _standard_nested = StandardNestedReaderGuard::install();
+                    parse_with_options(&source, &options)
+                };
+                let (actual, _, used) =
                     parse_document_with_custom_options(&source, &options, ParseMode::Html)
-                        .is_none(),
-                    "positions={positions} source={source:?}"
-                );
+                        .expect("event options root");
+                assert!(used, "positions={positions} source={source:?}");
+                assert_eq!(actual, expected, "positions={positions} source={source:?}");
             }
         }
     }

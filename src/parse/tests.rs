@@ -11,10 +11,6 @@ fn event_owned_pipeline_matches_public_modes() {
             continue;
         }
         let source = std::fs::read_to_string(&path).unwrap();
-        // Rule A: the event route declines a document the ownership walk rewrites.
-        if walk_moves_lines(&normalize_source(&source)) {
-            continue;
-        }
         for positions in [false, true] {
             for source_lines in [false, true] {
                 let options = Options::default()
@@ -755,10 +751,6 @@ fn event_owned_modes_preserve_extension_callbacks() {
             continue;
         }
         let source = std::fs::read_to_string(&path).unwrap();
-        // Rule A: the event route declines a document the ownership walk rewrites.
-        if walk_moves_lines(&normalize_source(&source)) {
-            continue;
-        }
         for mode in [ParseMode::Html, ParseMode::HtmlFacade, ParseMode::Carve] {
             for positions in [false, true] {
                 let baseline = Hook::default();
@@ -1837,10 +1829,6 @@ fn event_owned_facade_corpus_render_index_matches() {
             continue;
         }
         let source = std::fs::read_to_string(&path).unwrap();
-        // Rule A: the event route declines a document the ownership walk rewrites.
-        if walk_moves_lines(&normalize_source(&source)) {
-            continue;
-        }
         for positions in [false, true] {
             for source_lines in [false, true] {
                 let options = Options::default()
@@ -4570,4 +4558,227 @@ fn verse_spacing_does_not_enter_a_link_destination() {
 
     let linked = crate::to_html("::: |\n[a](/u \"t\")\n");
     assert!(linked.contains("<a href=\"/u\""), "{linked}");
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+mod event_root_rule_a {
+    use super::*;
+    use crate::{BlockMatch, CarveExtension, InlineMatch, MatcherContext};
+
+    #[derive(Default)]
+    struct Hook {
+        blocks: RefCell<Vec<String>>,
+        inlines: RefCell<Vec<(usize, String)>>,
+        after: Cell<usize>,
+    }
+
+    impl CarveExtension for Hook {
+        fn name(&self) -> &'static str {
+            "event-root-rule-a"
+        }
+
+        fn match_block(
+            &self,
+            lines: &[&str],
+            start: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<BlockMatch> {
+            self.blocks.borrow_mut().push(lines.get(start)?.to_string());
+            None
+        }
+
+        fn match_inline(
+            &self,
+            text: &str,
+            pos: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<InlineMatch> {
+            let prefix = text.get(pos..).unwrap_or("").chars().take(8).collect();
+            self.inlines.borrow_mut().push((pos, prefix));
+            None
+        }
+
+        fn after_parse(&self, doc: Document) -> Document {
+            self.after.set(self.after.get() + 1);
+            doc
+        }
+    }
+
+    /// Past-column openers under each host, at one to four columns past the
+    /// host's content column and through a tab.
+    fn walked_sources() -> Vec<String> {
+        let openers = [
+            "> q\n",
+            "- x\n",
+            "```\ncode\n```\n",
+            "::: note\nx\n:::\n",
+            ":: t\n:  d\n",
+            "%%%\nc\n%%%\n",
+            "a\n+\nb\n",
+        ];
+        // (header, continuation prefix, closer)
+        let hosts = [
+            ("- item\n", "  ", ""),
+            ("> quote\n", "> ", ""),
+            (":: term\n:  desc\n", "   ", ""),
+            ("::: note\n", "", ":::\n"),
+        ];
+        let mut sources = Vec::new();
+        for opener in openers {
+            for (header, prefix, closer) in hosts {
+                for extra in [" ", "  ", "   ", "    ", "\t"] {
+                    for blank in ["", "\n"] {
+                        let mut source = header.to_string();
+                        if !blank.is_empty() {
+                            source.push_str(prefix.trim_end());
+                            source.push('\n');
+                        }
+                        for line in opener.lines() {
+                            source.push_str(&format!("{prefix}{extra}{line}\n"));
+                        }
+                        source.push_str(closer);
+                        source.push_str("\ntail\n");
+                        sources.push(source);
+                    }
+                }
+            }
+        }
+        sources
+    }
+
+    fn assert_matches_standard(source: &str) -> bool {
+        let mut used_any = false;
+        for (mode_index, mode) in [ParseMode::Html, ParseMode::HtmlFacade, ParseMode::Carve]
+            .into_iter()
+            .enumerate()
+        {
+            for positions in [false, true] {
+                for source_lines in [false, true] {
+                    let plain = Options::default()
+                        .with_positions(positions)
+                        .with_source_lines(source_lines);
+                    let expected = {
+                        let _standard_root = StandardEventRootGuard::install();
+                        let _standard_nested = StandardNestedReaderGuard::install();
+                        parse_with_options_mode_and_index(source, &plain, mode).0
+                    };
+                    let label = format!(
+                        "mode={mode_index} positions={positions} source_lines={source_lines} \
+                         source={source:?}"
+                    );
+                    // The nested footnote body may still decline when positioned.
+                    let Some((actual, _, used)) =
+                        event_pipeline::parse_document_with_mode(source, &plain, mode)
+                    else {
+                        assert!(
+                            positions && source.contains("[^n]: head"),
+                            "declined: {label}"
+                        );
+                        continue;
+                    };
+                    assert_eq!(actual, expected, "{label}");
+                    assert!(used, "not event-owned: {label}");
+                    used_any |= used;
+
+                    let baseline = Hook::default();
+                    let baseline_options = Options::default()
+                        .with_positions(positions)
+                        .with_source_lines(source_lines)
+                        .with_extension(&baseline);
+                    let expected = {
+                        let _standard_root = StandardEventRootGuard::install();
+                        let _standard_nested = StandardNestedReaderGuard::install();
+                        parse_with_options_mode_and_index(source, &baseline_options, mode).0
+                    };
+                    let candidate = Hook::default();
+                    let candidate_options = Options::default()
+                        .with_positions(positions)
+                        .with_source_lines(source_lines)
+                        .with_extension(&candidate);
+                    let (actual, _, _) =
+                        event_pipeline::parse_document_with_mode(source, &candidate_options, mode)
+                            .unwrap_or_else(|| panic!("declined with extension: {label}"));
+                    assert_eq!(actual, expected, "extension: {label}");
+                    assert_eq!(
+                        *candidate.blocks.borrow(),
+                        *baseline.blocks.borrow(),
+                        "{label}"
+                    );
+                    assert_eq!(
+                        *candidate.inlines.borrow(),
+                        *baseline.inlines.borrow(),
+                        "{label}"
+                    );
+                    assert_eq!(candidate.after.get(), 1, "{label}");
+                    assert_eq!(baseline.after.get(), 1, "{label}");
+                }
+            }
+        }
+        used_any
+    }
+
+    #[test]
+    fn walked_documents_match_standard_root() {
+        let mut walked = 0;
+        let mut used = 0;
+        for source in walked_sources() {
+            if !walk_moves_lines(&normalize_source(&source)) {
+                continue;
+            }
+            walked += 1;
+            if assert_matches_standard(&source) {
+                used += 1;
+            }
+        }
+        assert!(walked > 0, "no generated source moved under rule A");
+        assert_eq!(used, walked, "some walked shapes were not event-owned");
+    }
+
+    #[test]
+    fn walked_frontmatter_footnotes_bom_and_crlf_match_standard_root() {
+        let rows = [
+            "---\ntitle: t\n---\n- item\n\n     - child\n".to_string(),
+            "- item\n\n     - child [^n]\n\n[^n]: note\n".to_string(),
+            "[^n]: head\n\n    - item\n\n         - child\n\nUse [^n].\n".to_string(),
+            "- item\n\n     - child\n\n[r]: /target\n\n[link][r]\n".to_string(),
+            "\u{feff}- item\n\n     - child\n".to_string(),
+            "- item\r\n\r\n     - child\r\n".to_string(),
+            "\u{feff}- item\r\n\r\n     > quote\r\n".to_string(),
+        ];
+        for source in rows {
+            assert!(
+                walk_moves_lines(&normalize_source(&source)),
+                "row does not exercise rule A: {source:?}"
+            );
+            assert!(
+                assert_matches_standard(&source),
+                "not event-owned: {source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn walked_child_span_keeps_its_authored_column() {
+        let source = "- item\n\n     - child\n";
+        assert!(walk_moves_lines(source));
+        let options = Options::default().with_positions(true);
+        let (document, _, used) =
+            event_pipeline::parse_document_with_mode(source, &options, ParseMode::Html)
+                .expect("event root admits a walked document");
+        assert!(used);
+        let BlockNode::List(outer) = &document.children[0] else {
+            panic!("{:?}", document.children);
+        };
+        let inner = outer.items[0]
+            .children
+            .iter()
+            .find_map(|block| match block {
+                BlockNode::List(list) => Some(list),
+                _ => None,
+            })
+            .expect("the moved marker opens a sublist");
+        let pos = inner.items[0].pos.as_ref().expect("positioned item");
+        assert_eq!((pos.start_line, pos.start_column), (3, 6));
+        assert_eq!(pos.start_offset, source.find("- child").unwrap());
+    }
 }
