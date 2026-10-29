@@ -229,6 +229,8 @@ pub(in crate::parse) struct NestedLevel {
     colon_absorption: bool,
     host_verse: Option<(usize, usize, usize)>,
     fence_ordinal: usize,
+    /// The level was reached through a quote marker at an item's content column.
+    hosted: bool,
 }
 
 impl NestedFenceReplay {
@@ -250,6 +252,17 @@ impl NestedFenceReplay {
             self.replay(lines, at, cur);
         }
         let deepest = self.chain.last()?;
+        // A one-line read cannot see a quote an item hosts.
+        if deepest.hosted
+            && !deepest.para
+            && deepest.fence.is_none()
+            && deepest.host_fence.is_none()
+            && deepest.host_comment.is_none()
+            && deepest.host_verse.is_none()
+            && deepest.comment.is_none()
+        {
+            return Some(false);
+        }
         if deepest.host_verse.is_some() && deepest.para && deepest.host_comment.is_none() {
             return Some(true);
         }
@@ -285,14 +298,59 @@ impl NestedFenceReplay {
             if self.replay_held(pos, text) {
                 return;
             }
-            let Some(rest) = strip_blockquote_prefix(text) else {
+            if let Some(rest) = strip_blockquote_prefix(text) {
+                self.descend(pos.level);
+                self.chain[pos.level + 1].hosted = self.chain[pos.level].hosted;
+                text = rest;
+            } else if let Some(rest) = self.hosted_quote(pos.level, text) {
+                text = rest;
+            } else {
                 break;
-            };
-            self.descend(pos.level);
-            text = rest;
+            }
             pos.level += 1;
         }
         self.replay_line(pos, text);
+    }
+
+    /// A quote marker at an open item's content column is that item's own
+    /// block, so the line descends a level and the item stays open (PART 1 S4).
+    fn hosted_quote<'t>(&mut self, level: usize, text: &'t str) -> Option<&'t str> {
+        let here = &mut self.chain[level];
+        let trimmed = trim_ascii_start(text);
+        if !trimmed.contains('>')
+            || here.hosts.is_empty() && detect_list_marker_full(trimmed).is_none()
+        {
+            return None;
+        }
+        let column = indent_columns(text);
+        let saved_hosts = here.hosts.clone();
+        let saved_terms = here.term_columns.clone();
+        while here.hosts.last().is_some_and(|&(_, col, _)| col > column) {
+            if let Some((_, column, _)) = here.hosts.pop() {
+                here.term_columns.remove(&column);
+            }
+        }
+        let sibling = marker_ends_replayed_item(&here.hosts, column);
+        let (inner, col, _) = here.open_hosts(text, column, sibling);
+        let rest = here
+            .hosts
+            .last()
+            .filter(|&&(_, floor, item)| item && col >= floor)
+            .and_then(|_| strip_blockquote_prefix(inner));
+        let Some(rest) = rest else {
+            here.hosts = saved_hosts;
+            here.term_columns = saved_terms;
+            return None;
+        };
+        here.para = false;
+        here.colon_absorption = false;
+        here.by_fence = false;
+        here.by_colon = false;
+        if self.chain.len() == level + 1 {
+            self.chain.push(NestedLevel::default());
+        }
+        self.chain[level + 1].hosted = true;
+        Some(rest)
     }
 
     /// Feeds `text` to a block that `pos.level` already holds open. True when
@@ -1181,7 +1239,7 @@ impl LiteralCodeIndex {
             LITERAL_CODE_LINES.with(|work| work.set(work.get() + 1));
             let mut boundary = text.starts_with(LAZY);
             for _ in 0..level {
-                let Some(rest) = strip_blockquote_prefix(text) else {
+                let Some(rest) = strip_blockquote_prefix(trim_ascii_start(text)) else {
                     boundary = true;
                     break;
                 };
@@ -1366,7 +1424,8 @@ pub(in crate::parse) fn closer_ahead(
             return false;
         }
         for _ in 0..level {
-            match strip_blockquote_prefix(text) {
+            // A nested quote's marker may stand at a hosted item's column.
+            match strip_blockquote_prefix(trim_ascii_start(text)) {
                 Some(rest) => text = rest,
                 None => return false,
             }

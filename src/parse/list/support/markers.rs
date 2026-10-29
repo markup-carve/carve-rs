@@ -862,6 +862,16 @@ pub(crate) fn quoted_body_ends_with_an_invisible_line(body: &str) -> bool {
     // The innermost quote's residue, with its depth.
     let residue = |line: &str| -> (usize, String) {
         let mut local = trim_ascii_start(line);
+        // An item marker line reaches the quote it opens.
+        while strip_blockquote_prefix(local).is_none() {
+            match detect_list_marker_full(local) {
+                Some(marker) => local = trim_ascii_start(marker.content),
+                None => break,
+            }
+        }
+        if strip_blockquote_prefix(local).is_none() {
+            local = trim_ascii_start(line);
+        }
         let mut depth = 0;
         while let Some(rest) = strip_blockquote_prefix(local) {
             depth += 1;
