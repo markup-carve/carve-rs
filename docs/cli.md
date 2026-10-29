@@ -81,6 +81,30 @@ independent field edits, insertions, deletions, and moves, while unresolved
 ambiguous edits are returned as JSON-Pointer conflicts. Derived position
 metadata is intentionally regenerated after serialization.
 
+## Decision trace
+
+`carve trace` prints the block ownership decisions the parser makes, one JSON
+record per source line, in the format of carve's
+[decision trace](https://github.com/markup-carve/carve/blob/main/docs/decision-trace.md):
+
+```bash
+carve trace notes.crv               # JSON lines on stdout
+carve trace -                       # read stdin
+```
+
+The records name the PART 0 step (`S1`, `S2`, `S4`, `S5`), the owning container
+path, the clause and the FAMILIES cell, so they compare directly with the spec
+model's trace. In a carve checkout next to this one, with the binary built:
+
+```bash
+node scripts/trace-diff.mjs input.crv --engine rs
+```
+
+prints the first line where carve-rs decides differently from the spec model.
+`CARVE_RS_DIR` points it at another checkout. Each step has an `S1` to `S5`
+marker comment in `src/parse/own_lines.rs`. The trace covers block ownership
+only; inline records follow once the spec model writes them.
+
 ## Other options
 
 ```bash
