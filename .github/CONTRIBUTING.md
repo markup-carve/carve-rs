@@ -46,18 +46,26 @@ need a compiler invocation per test rather than a binary to schedule.
 
 Almost every integration test compiles into ONE binary, `suite`
 (`tests/suite/main.rs`). One binary per file meant about 750 crates to compile
-and link on every CI run. `Cargo.toml` sets `autotests = false`, so a new
-`tests/foo.rs` is compiled only once it is registered:
+and link on every CI run. A new `tests/foo.rs` needs no registration: the
+`suite_modules!()` macro (`tests/suite/registry/`) declares a module for every
+`tests/*.rs` when the suite compiles, except the files `Cargo.toml` builds as
+their own `[[test]]` target. A file that needs shared helpers writes
+`use crate::common;` rather than `mod common;`. `perf_regressions`, `includes`
+and `include_conformance` stay separate targets, because CI selects them by name.
 
-```rust
-#[path = "../foo.rs"]
-mod foo;
+rustc does not track the directory listing, so a file added after your last
+build stays out of the suite until the suite recompiles, and
+`registry::every_test_file_is_compiled` fails with that message. Editing any
+suite file, or `touch tests/suite/main.rs`, brings it in. A removed file is picked
+up on its own.
+
+`cargo fmt` does not reach modules a macro declares, so format the test files
+directly. CI checks both:
+
+```bash
+cargo fmt --all
+rustfmt --edition 2021 tests/*.rs
 ```
-
-`registry::every_test_file_is_compiled` fails until that line exists. A file that
-needs shared helpers writes `use crate::common;` rather than `mod common;`.
-`perf_regressions`, `includes` and `include_conformance` stay separate targets,
-because CI selects them by name.
 
 To narrow a run, filter on the file's module: `cargo nextest run -E 'test(/^corpus::/)'`
 or `cargo test --test suite corpus::`. A test that re-runs its own binary with
@@ -93,6 +101,7 @@ CI runs each of these, and each is worth a local pass before pushing:
 |---------|----------------|
 | `cargo check --tests --all-features` | compiles, including the test targets a `--lib` check skips |
 | `cargo fmt --all -- --check` | formatting |
+| `rustfmt --check --edition 2021 tests/*.rs` | formatting of the suite's test files, which `cargo fmt` does not reach |
 | `cargo clippy --locked --all-targets -- -D warnings` | lints, with warnings fatal |
 | `cargo build --locked --no-default-features` | the `fs` feature is the only code in the crate that opens a file |
 | `python3 tools/sync-implemented.py --check` | whether a missing corpus category is a list problem or an engine one |
