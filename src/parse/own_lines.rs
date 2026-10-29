@@ -70,6 +70,8 @@ struct Frame {
     /// Columns added on output, so a block in a task item past its marker-line
     /// child lands where the item reader measures that child.
     shift: usize,
+    /// The output shift its marker was written with.
+    marker_shift: usize,
 }
 
 impl Frame {
@@ -90,6 +92,7 @@ impl Frame {
             line_block: false,
             span: None,
             shift: 0,
+            marker_shift: 0,
         }
     }
 }
@@ -547,7 +550,7 @@ impl<'a> Walk<'a> {
             let f = self.top();
             f.para = false;
             let canon = f.marker.expect("plus frames carry a marker").1;
-            let shift = self.frames[k - 1].shift;
+            let shift = f.marker_shift;
             c.lead_in(canon, shift, false);
             *after_plus = true;
             return;
@@ -627,11 +630,12 @@ impl<'a> Walk<'a> {
             // marker-line child's column as lazy text. At the item's own column
             // it reads as at the child's column.
             let target = c.col.saturating_sub(owner.cut).max(owner.canon).min(limit);
-            if target == owner.canon && c.col >= target {
-                c.lead_in(target, owner.shift, false);
+            let shift = if target == owner.canon && c.col >= target {
+                owner.shift
             } else {
-                c.lead(target);
-            }
+                0
+            };
+            c.lead_in(target, shift, false);
             return;
         }
         let closed_column = self.frames[reached + 1..]
@@ -668,7 +672,12 @@ impl<'a> Walk<'a> {
                 if !term {
                     owner.last = Last::Para;
                 }
-                let shift = owner.shift;
+                // As for a lazy line, only the item's own column moves.
+                let shift = if target == owner.canon {
+                    owner.shift
+                } else {
+                    0
+                };
                 c.lead_in(target, shift, term);
             }
             form => {
@@ -731,6 +740,7 @@ impl<'a> Walk<'a> {
             Form::Quote => {
                 let mut f = Frame::new(Kind::Quote);
                 f.marker = Some((col, canon));
+                f.marker_shift = o_shift;
                 self.frames.push(f);
                 let n = quote_marker(c.src).expect("classified as a quote");
                 c.take(n);
@@ -779,6 +789,7 @@ impl<'a> Walk<'a> {
         f.marker = Some((col, canon));
         f.axes = axes;
         f.shift = self.frames.last().map_or(0, |owner| owner.shift);
+        f.marker_shift = f.shift;
         self.frames.push(f);
         let head = head.min(c.src.len());
         c.take(head);
