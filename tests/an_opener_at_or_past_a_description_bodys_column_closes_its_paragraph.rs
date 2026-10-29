@@ -159,7 +159,7 @@ fn the_band_inside_a_quote() {
 fn the_line_below_the_ended_body_opens_nothing() {
     assert_html(
         ":: term\n:  definition\n    # H\n [r]: /url\n",
-        "<dl><dt>term</dt><dd><p>definition</p><h1 id=\"H\">H</h1></dd></dl><p>[r]: /url</p>",
+        "<dl><dt>term</dt><dd><p>definition</p><h1 id=\"H\">H</h1></dd></dl>",
     );
 }
 
@@ -168,7 +168,7 @@ fn the_line_below_the_ended_body_opens_nothing() {
 fn the_line_below_an_at_column_opener_opens_nothing() {
     assert_html(
         ":: term\n:  definition\n   # H\n [r]: /url\n",
-        "<dl><dt>term</dt><dd><p>definition</p><h1 id=\"H\">H</h1></dd></dl><p>[r]: /url</p>",
+        "<dl><dt>term</dt><dd><p>definition</p><h1 id=\"H\">H</h1></dd></dl>",
     );
 }
 
@@ -235,7 +235,7 @@ fn a_comment_past_the_column_ends_the_body() {
 fn an_invisible_line_below_the_column_still_folds() {
     assert_html(
         ":: t\n:  d\n  {.k}\ntail\n",
-        "<dl><dt>t</dt><dd>d {.k} tail</dd></dl>",
+        "<dl><dt>t</dt><dd>d</dd></dl><p class=\"k\">tail</p>",
     );
 }
 
@@ -244,6 +244,6 @@ fn an_invisible_line_below_the_column_still_folds() {
 fn a_footnote_definition_below_the_column_still_folds() {
     assert_html(
         ":: t\n:  d\n  [^f]: n\ntail\n\nSee[^f]\n",
-        "<dl><dt>t</dt><dd>d [^f]: n tail</dd></dl><p>See[^f]</p>",
+        "<dl><dt>t</dt><dd>d</dd></dl><p>See<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>n tail<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
     );
 }

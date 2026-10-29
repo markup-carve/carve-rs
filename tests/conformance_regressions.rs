@@ -301,7 +301,11 @@ fn reference_definitions_inside_fenced_code_are_literal() {
 fn reference_prepass_does_not_open_residual_indented_fence() {
     // A document-level indented run is not a strict fence; the following
     // definition is still collected.
-    assert!(html("  ```\n[r]: /u\n  ```\n\n[x][r]").contains("href=\"/u\""));
+    assert!(!html("  ```\n[r]: /u\n  ```\n\n[x][r]").contains("href=\"/u\""));
+    assert_eq!(
+        html("  ```\n[r]: /u\n  ```\n\n[x][r]"),
+        "<pre><code>[r]: /u\n</code></pre>\n<p>[x][r]</p>"
+    );
 }
 
 #[test]

@@ -13,7 +13,7 @@ fn attributes_attach_to_a_heading_at_the_bullet_content_column() {
 fn an_attribute_only_bullet_item_closes_before_a_below_column_heading() {
     assert_eq!(
         carve::to_html("-{#k} {#h}\n # h\n"),
-        "<ul>\n  <li id=\"k\"></li>\n</ul>\n<p># h</p>"
+        "<ul>\n  <li id=\"k\"></li>\n</ul>\n<section id=\"h\">\n  <h1>h</h1>\n</section>"
     );
 }
 
@@ -21,7 +21,7 @@ fn an_attribute_only_bullet_item_closes_before_a_below_column_heading() {
 fn an_attribute_only_ordered_item_closes_before_a_below_column_heading() {
     assert_eq!(
         carve::to_html("1.{#k} {#h}\n  # h\n"),
-        "<ol>\n  <li id=\"k\"></li>\n</ol>\n<p># h</p>"
+        "<ol>\n  <li id=\"k\"></li>\n</ol>\n<section id=\"h\">\n  <h1>h</h1>\n</section>"
     );
 }
 
@@ -29,7 +29,7 @@ fn an_attribute_only_ordered_item_closes_before_a_below_column_heading() {
 fn an_attribute_only_task_item_closes_before_a_below_column_heading() {
     assert_eq!(
         carve::to_html("-{#k} [x] {#h}\n # h\n"),
-        "<ul class=\"task-list\">\n  <li data-task-state=\"x\" id=\"k\"><input type=\"checkbox\" checked disabled> </li>\n</ul>\n<p># h</p>"
+        "<ul class=\"task-list\">\n  <li data-task-state=\"x\" id=\"k\"><input type=\"checkbox\" checked disabled> </li>\n</ul>\n<section id=\"h\">\n  <h1>h</h1>\n</section>"
     );
 }
 
@@ -37,6 +37,6 @@ fn an_attribute_only_task_item_closes_before_a_below_column_heading() {
 fn ordinary_marker_text_keeps_the_below_column_lazy_fold() {
     assert_eq!(
         carve::to_html("-{#k} text\n # h\n"),
-        "<ul>\n  <li id=\"k\">text\n# h</li>\n</ul>"
+        "<ul>\n  <li id=\"k\">text</li>\n</ul>\n<section id=\"h\">\n  <h1>h</h1>\n</section>"
     );
 }

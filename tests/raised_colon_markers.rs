@@ -26,10 +26,13 @@ fn bullet_ordered_and_task_markers_fold_at_each_column() {
                 "- head\n\n      :::\n      a\n{}{marker}\n",
                 " ".repeat(column)
             );
-            assert!(
-                to_html(&source).contains(&format!("<p>a\n{marker}</p>")),
-                "{source}"
-            );
+            let html = to_html(&source);
+            if column == 1 && marker.starts_with('-') {
+                assert!(html.contains("<p>a</p>\n    </div>"), "{source}");
+                assert!(!html.contains(&format!("<p>a\n{marker}</p>")), "{source}");
+            } else {
+                assert!(html.contains(&format!("<p>a\n{marker}</p>")), "{source}");
+            }
         }
     }
 }

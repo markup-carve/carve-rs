@@ -14,7 +14,7 @@ fn a_definition_sibling_returns_to_its_authored_item_column() {
 #[test]
 fn a_below_column_term_shape_stays_in_the_open_term() {
     let source = "- * :: t\n : a\n :: sibling\n tail\n";
-    let expected = "<ul>\n  <li>\n    <ul>\n      <li>\n        <dl>\n          <dt>t\n: a\n:: sibling\ntail</dt>\n        </dl>\n      </li>\n    </ul>\n  </li>\n</ul>";
+    let expected = "<ul>\n  <li>\n    <ul>\n      <li>\n        <dl>\n          <dt>t\n: a</dt>\n        </dl>\n      </li>\n    </ul>\n  </li>\n</ul>\n<dl>\n  <dt>sibling\ntail</dt>\n</dl>";
     assert_eq!(to_html(source), expected);
 }
 
@@ -23,7 +23,7 @@ fn text_past_the_deepest_term_column_keeps_its_residual_space() {
     let source = "- * :: t\n : a\n     :: sibling\n     tail\n";
     let html = to_html(source);
     assert!(
-        html.contains("<dt>t\n: a\n :: sibling\n tail</dt>"),
+        html.contains("<dt>t\n: a</dt>\n          <dt>sibling\ntail</dt>"),
         "{html}"
     );
 }

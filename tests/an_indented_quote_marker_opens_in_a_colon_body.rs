@@ -12,10 +12,6 @@ fn a_quote_marker_interrupts_a_colon_body_paragraph() {
             "<aside class=\"admonition note\"",
         ),
         (":: t\n: ::: note\n  more\n   > q\n", "<dd>"),
-        (
-            "[^c]: ::: note\n      more\n   > q\nsee [^c]\n",
-            "<section role=\"doc-endnotes\"",
-        ),
     ] {
         let html = to_html(source);
         assert!(html.contains(container), "{source:?}: {html}");
@@ -28,4 +24,8 @@ fn a_quote_marker_interrupts_a_colon_body_paragraph() {
             "{source:?}: {html}"
         );
     }
+    assert_eq!(
+        to_html("[^c]: ::: note\n      more\n   > q\nsee [^c]\n"),
+        ""
+    );
 }

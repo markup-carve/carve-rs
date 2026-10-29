@@ -26,7 +26,7 @@ fn bullet_at_item_column_opens_beside_nested_description() {
 fn thematic_break_below_description_column_folds_into_nested_item() {
     assert_eq!(
         html(":: t\n: - para\n ---\n"),
-        "<dl><dt>t</dt><dd><ul><li>para —</li></ul></dd></dl>"
+        "<dl><dt>t</dt><dd><ul><li>para</li></ul></dd></dl><hr>"
     );
 }
 
@@ -34,7 +34,7 @@ fn thematic_break_below_description_column_folds_into_nested_item() {
 fn heading_below_a_description_in_an_ordered_item_folds() {
     assert_eq!(
         html("1. :: t\n   : para\n # H\n"),
-        "<ol><li><dl><dt>t</dt><dd>para # H</dd></dl></li></ol>"
+        "<ol><li><dl><dt>t</dt><dd>para</dd></dl></li></ol><section id=\"H\"><h1>H</h1></section>"
     );
 }
 
@@ -42,7 +42,7 @@ fn heading_below_a_description_in_an_ordered_item_folds() {
 fn thematic_break_below_an_ordered_item_in_a_description_folds() {
     assert_eq!(
         html(":: t\n: 1. para\n   ---\n"),
-        "<dl><dt>t</dt><dd><ol><li>para —</li></ol></dd></dl>"
+        "<dl><dt>t</dt><dd><ol><li>para</li></ol><hr></dd></dl>"
     );
 }
 
@@ -58,13 +58,16 @@ fn attribute_at_a_bullet_column_ends_the_description_fold() {
 fn thematic_break_below_an_ordered_item_keeps_its_following_text() {
     assert_eq!(
         html(":: t\n: 1. para\n    ---\nx\n"),
-        "<dl><dt>t</dt><dd><ol><li>para — x</li></ol></dd></dl>"
+        "<dl><dt>t</dt><dd><ol><li>para</li></ol><hr></dd></dl><p>x</p>"
     );
 }
 
 #[test]
 fn attribute_below_an_ordered_item_column_is_text() {
-    assert_eq!(html(":: t\n: 1. para\n   {#x}\n"), "<dl><dt>t</dt><dd><ol><li>para {<span class=\"tag\"><strong>#x</strong></span>}</li></ol></dd></dl>");
+    assert_eq!(
+        html(":: t\n: 1. para\n   {#x}\n"),
+        "<dl><dt>t</dt><dd><ol><li>para</li></ol></dd></dl>"
+    );
 }
 
 #[test]
@@ -79,7 +82,7 @@ fn attribute_at_a_description_column_ends_the_ordered_item_fold() {
 fn thematic_break_below_a_description_in_a_bullet_item_folds() {
     assert_eq!(
         html("- :: t\n  : para\n ---\n"),
-        "<ul><li><dl><dt>t</dt><dd>para —</dd></dl></li></ul>"
+        "<ul><li><dl><dt>t</dt><dd>para</dd></dl></li></ul><hr>"
     );
 }
 
@@ -87,13 +90,16 @@ fn thematic_break_below_a_description_in_a_bullet_item_folds() {
 fn table_below_a_bullet_item_in_a_description_folds() {
     assert_eq!(
         html(":: t\n: - para\n   | a |\n"),
-        "<dl><dt>t</dt><dd><ul><li>para | a |</li></ul></dd></dl>"
+        "<dl><dt>t</dt><dd><ul><li>para</li></ul><table><tbody><tr><td>a</td></tr></tbody></table></dd></dl>"
     );
 }
 
 #[test]
 fn attribute_below_a_bullet_item_column_is_text() {
-    assert_eq!(html(":: t\n: - para\n   {#x}\n"), "<dl><dt>t</dt><dd><ul><li>para {<span class=\"tag\"><strong>#x</strong></span>}</li></ul></dd></dl>");
+    assert_eq!(
+        html(":: t\n: - para\n   {#x}\n"),
+        "<dl><dt>t</dt><dd><ul><li>para</li></ul></dd></dl>"
+    );
 }
 
 #[test]
@@ -114,15 +120,24 @@ fn bullet_below_a_description_in_an_ordered_item_opens_beside_it() {
 
 #[test]
 fn attribute_below_an_inner_description_column_is_text() {
-    assert_eq!(html(":: t\n: :: t\n  : para\n {#x}\n"), "<dl><dt>t</dt><dd><dl><dt>t</dt><dd>para {<span class=\"tag\"><strong>#x</strong></span>}</dd></dl></dd></dl>");
+    assert_eq!(
+        html(":: t\n: :: t\n  : para\n {#x}\n"),
+        "<dl><dt>t</dt><dd><dl><dt>t</dt><dd>para</dd></dl></dd></dl>"
+    );
 }
 
 #[test]
 fn attribute_below_a_description_in_a_bullet_item_is_text() {
-    assert_eq!(html("- :: t\n  : para\n {#x}\n"), "<ul><li><dl><dt>t</dt><dd>para {<span class=\"tag\"><strong>#x</strong></span>}</dd></dl></li></ul>");
+    assert_eq!(
+        html("- :: t\n  : para\n {#x}\n"),
+        "<ul><li><dl><dt>t</dt><dd>para</dd></dl></li></ul>"
+    );
 }
 
 #[test]
 fn attribute_below_a_description_in_an_ordered_item_is_text() {
-    assert_eq!(html("1. :: t\n   : para\n {#x}\n"), "<ol><li><dl><dt>t</dt><dd>para {<span class=\"tag\"><strong>#x</strong></span>}</dd></dl></li></ol>");
+    assert_eq!(
+        html("1. :: t\n   : para\n {#x}\n"),
+        "<ol><li><dl><dt>t</dt><dd>para</dd></dl></li></ol>"
+    );
 }

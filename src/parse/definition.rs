@@ -793,7 +793,6 @@ struct DefinitionBodyCollector<'s, 'o> {
     retained_fence: Option<(FenceOpen, bool)>,
     past_body_closers: Option<DefinitionBodyCloserIndex>,
     unopened_past_fence: Option<FenceOpen>,
-    below_comment_span: Option<usize>,
     // Seeded from the marker line's own content: does the body's LEAD open a
     // code fence NESTED past a list marker? Its verbatim body is the flush-left
     // lines below, which cannot close it - but an INDENTED closer written at or
@@ -880,7 +879,6 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             retained_fence: None,
             past_body_closers: None,
             unopened_past_fence: None,
-            below_comment_span: None,
             nested_lead_fence,
         }
     }
@@ -986,15 +984,8 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         let below_comment =
             column < self.content_column && trim_ascii_start(line).starts_with("%%");
         // Rule A (carve#3885): a comment below the body's column closes the body.
-        if below_comment
-            && self.below_comment_span.is_none()
-            && detect_comment_fence_line_any_column(line).is_none()
-            && !follower_reaches(cur, self.content_column)
-        {
-            return BodyStep::Stop;
-        }
-        if self.below_comment_span.is_some() || below_comment {
-            return self.take_below_column_comment(cur, line, column);
+        if below_comment {
+            return self.take_below_column_comment(cur, line);
         }
         if column >= self.content_column {
             self.retained_below_comment = false;
@@ -1145,7 +1136,6 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
                 .is_some_and(|at| cur.source_col(at) == Some(comment_col))
         });
         ((!cur.in_item_body && !cur.sublists_carry_authored_base) || authored_opener_comment)
-            && self.below_comment_span.is_none()
             && detect_comment_fence_line_any_column(line).is_some_and(|open| {
                 cur.has_comment_closer_after(cur.pos + 1, open.fence_len)
                     && !cur
@@ -1155,44 +1145,17 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             })
     }
 
-    fn take_below_column_comment(
-        &mut self,
-        cur: &mut LineCursor<'_>,
-        line: &str,
-        column: usize,
-    ) -> BodyStep {
-        if self.below_comment_span.is_none()
-            && !self.retained_below_comment
-            && !self.folded_a_lazy_line
-            && !definition_body_fold(&self.body_so_far(), self.options).0
-        {
+    /// Rule A (carve#3885): a comment below the body's column ends the body,
+    /// unless it closes a comment span the body holds.
+    fn take_below_column_comment(&mut self, cur: &mut LineCursor<'_>, line: &str) -> BodyStep {
+        if !closes_a_held_comment_span(&self.lines, line) {
             return BodyStep::Stop;
         }
-        if let Some(width) = self.below_comment_span {
-            if is_comment_fence_close_any_column(line, width) {
-                self.below_comment_span = None;
-            }
-        } else if let Some(open) = detect_comment_fence_line_any_column(line) {
-            if cur.has_comment_closer_after(cur.pos + 1, open.fence_len) {
-                self.below_comment_span = Some(open.fence_len);
-            }
-        }
-        let keep_authored = column > 0
-            && ((self.nested_definition_open && self.lines.is_empty())
-                || detect_comment_fence_line_any_column(line)
-                    .is_some_and(|open| cur.has_comment_closer_after(cur.pos + 1, open.fence_len)));
-        let kept = if !keep_authored && trim_ascii_start(line).starts_with("%%") {
-            trim_ascii_start(line).to_owned()
-        } else {
-            line.to_owned()
-        };
+        let kept = trim_ascii_start(line).to_owned();
         let col = cur
             .source_col(cur.pos)
             .map(|col| col + (line.len() - kept.len()) as isize);
         self.push(kept, cur.source_line(cur.pos), col, false);
-        self.retained_below_comment = true;
-        self.retained_comment_column = column;
-        self.folded_a_lazy_line = false;
         cur.consume();
         BodyStep::Next
     }
@@ -2048,18 +2011,4 @@ mod definition_past_fence_work {
         assert!(small.1 <= small.0 * 8 && large.1 <= large.0 * 8);
         assert!(large.1 <= small.1 * 6, "{small:?}, {large:?}");
     }
-}
-
-/// Whether the next visible line after a comment reaches `column`: a comment is
-/// transparent for ownership, so its follower decides (carve#3885).
-pub(in crate::parse) fn follower_reaches(cur: &LineCursor<'_>, column: usize) -> bool {
-    let mut at = cur.pos + 1;
-    while let Some(next) = cur.lines.line(at) {
-        if is_blank_line(next) || trim_ascii_start(next).starts_with("%%") {
-            at += 1;
-            continue;
-        }
-        return indent_columns(next) >= column;
-    }
-    false
 }

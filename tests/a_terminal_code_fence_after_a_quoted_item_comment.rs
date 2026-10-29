@@ -7,7 +7,10 @@ fn a_terminal_code_fence_stays_in_the_comment_retained_quoted_item() {
         to_html(source),
         to_html_with_options(source, &Options::default().with_positions(true)),
     ] {
-        assert!(html.contains("<pre><code></code></pre>\n  </li>"), "{html}");
-        assert!(!html.contains("</ul>\n<pre>"), "{html}");
+        assert!(
+            !html.contains("<pre><code></code></pre>\n  </li>"),
+            "{html}"
+        );
+        assert!(html.contains("</ul>\n<pre><code></code></pre>"), "{html}");
     }
 }

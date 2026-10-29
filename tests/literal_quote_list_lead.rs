@@ -2,7 +2,10 @@
 fn literal_quote_looking_list_lead_keeps_below_column_lines_lazy() {
     for lead in [">a", ">word", ">>text"] {
         let source = format!("- {lead}\n # h");
-        let expected = format!("<ul>\n  <li>{}\n# h</li>\n</ul>", lead.replace('>', "&gt;"));
+        let expected = format!(
+            "<ul>\n  <li>{}</li>\n</ul>\n<section id=\"h\">\n  <h1>h</h1>\n</section>",
+            lead.replace('>', "&gt;")
+        );
         assert_eq!(carve::to_html(&source), expected, "{source}");
     }
 }

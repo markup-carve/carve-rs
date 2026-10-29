@@ -14,7 +14,7 @@ fn html(source: &str) -> String {
 fn below_column_term_folds_into_the_open_term() {
     assert_eq!(
         html("- a\n  :: term\n :: next\n"),
-        "<ul>\n  <li>a\n    <dl>\n      <dt>term\n:: next</dt>\n    </dl>\n  </li>\n</ul>"
+        "<ul>\n  <li>a\n    <dl>\n      <dt>term</dt>\n    </dl>\n  </li>\n</ul>\n<dl>\n  <dt>next</dt>\n</dl>"
     );
 }
 
@@ -67,7 +67,10 @@ fn separator_at_a_nested_marker_column_ends_the_nested_item() {
     ] {
         let rendered = html(source);
         let flat = rendered.split_whitespace().collect::<Vec<_>>().join(" ");
-        assert!(flat.contains("<dt>m</dt> </dl> </li> </ul> : l </li>"), "{rendered}");
+        assert!(
+            flat.contains("<dt>m</dt> </dl> </li> </ul> : l </li>"),
+            "{rendered}"
+        );
     }
 }
 

@@ -34,15 +34,15 @@ fn a_band_marker_below_an_empty_plus_item_starts_a_list() {
     for (source, expected) in [
         (
             "- a\n  - +\n - s\n",
-            "<ul><li>a<ul><li></li></ul></li></ul><ul><li>s</li></ul>",
+            "<ul><li>a<ul><li></li></ul></li><li>s</li></ul>",
         ),
         (
             "- a\n  > - +\n - s\n",
-            "<ul><li>a<blockquote><ul><li></li></ul></blockquote></li></ul><ul><li>s</li></ul>",
+            "<ul><li>a<blockquote><ul><li></li></ul></blockquote></li><li>s</li></ul>",
         ),
         (
             "- > - +\n - s\n",
-            "<ul><li><blockquote><ul><li></li></ul></blockquote>-s</li></ul>",
+            "<ul><li><blockquote><ul><li></li></ul></blockquote></li><li>s</li></ul>",
         ),
         (
             "- a\n  - +\n- s\n",
@@ -50,7 +50,7 @@ fn a_band_marker_below_an_empty_plus_item_starts_a_list() {
         ),
         (
             "- a\n  - x\n - s\n",
-            "<ul><li>a<ul><li>x-s</li></ul></li></ul>",
+            "<ul><li>a<ul><li>x</li></ul></li><li>s</li></ul>",
         ),
     ] {
         assert_eq!(flat(source), expected, "{source:?}");

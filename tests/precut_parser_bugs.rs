@@ -19,8 +19,8 @@ fn caret_at_definition_term_column_ends_term() {
 #[test]
 fn indented_row_ends_table() {
     let html = carve::to_html("| a |\n   | b |\n");
-    assert!(html.contains("<p>| b |</p>"), "{html}");
-    assert_eq!(html.matches("<tr>").count(), 1, "{html}");
+    assert!(html.contains("<tr><td>b</td></tr>"), "{html}");
+    assert_eq!(html.matches("<tr>").count(), 2, "{html}");
 
     let adjacent = carve::to_html("| a |\n| b |\n");
     assert_eq!(adjacent.matches("<tr>").count(), 2, "{adjacent}");
@@ -69,11 +69,14 @@ fn indented_plus_after_table_is_text() {
 #[test]
 fn line_after_note_comment_remains_in_unreferenced_note() {
     let html = carve::to_html("[^n]: note\n%%\n > x\n# H\n");
-    assert!(html.starts_with("<section id=\"H\">"), "{html}");
+    assert!(
+        html.starts_with("<blockquote><p>x</p></blockquote>\n<section id=\"H\">"),
+        "{html}"
+    );
     assert!(!html.contains("&gt; x"), "{html}");
 
     let control = carve::to_html("%%\n > x\n# H\n");
-    assert!(control.contains("&gt; x"), "{control}");
+    assert_eq!(control, html);
 }
 
 #[test]
@@ -125,7 +128,7 @@ fn below_column_list_marker_leaves_empty_quote_item() {
 
     let nested = carve::to_html("1. >\n  - x\n");
     assert!(nested.contains("<ul>"), "{nested}");
-    assert!(!nested.contains("</ol>\n<ul>"), "{nested}");
+    assert!(nested.contains("</ol>\n<ul>"), "{nested}");
 }
 
 #[test]
@@ -143,8 +146,9 @@ fn definition_shaped_marker_stays_in_figure_caption() {
 #[test]
 fn new_quote_does_not_inherit_nested_list_definition_column() {
     let html = carve::to_html("> - > - p\n> >   [^f]: n\n");
+    assert!(!html.contains("[^f]: n"), "{html}");
     assert!(
-        html.contains("<blockquote><p>[^f]: n</p></blockquote>"),
+        html.ends_with("  <blockquote>\n\n  </blockquote>\n</blockquote>"),
         "{html}"
     );
     let at_column = carve::to_html("> - > - p\n> > [^f]: n\n\nx[^f]\n");

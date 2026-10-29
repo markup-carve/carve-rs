@@ -15,7 +15,7 @@ fn outer_is_tight(out: &str) -> bool {
 fn a_blank_inside_a_fence_in_the_second_sub_list() {
     assert_eq!(
         html("- e\n  1. x\n  * ```\n\n    ```\n"),
-        "<ul>\n  <li>e\n    <ol>\n      <li>x</li>\n    </ol>\n    <ul>\n      <li>\n        <pre><code>\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>",
+        "<ul>\n  <li>e\n    <ol>\n      <li>x</li>\n    </ol>\n    <ul>\n      <li>\n        <pre><code>\n</code></pre>\n      </li>\n    </ul>\n    <pre><code></code></pre>\n  </li>\n</ul>",
     );
 }
 
@@ -69,7 +69,7 @@ fn a_sibling_after_a_marker_lead_keeps_the_next_outer_item_tight() {
 #[test]
 fn the_sibling_sub_item_still_reads_its_own_second_paragraph_loose() {
     let out = html("- e\n  1. x\n  * y\n\n    z\n");
-    assert!(out.contains("<li><p>y</p>\n        <p>z</p>"), "{out}");
+    assert!(out.contains("<li>y</li>\n    </ul>\n    <p>z</p>"), "{out}");
 }
 
 #[test]

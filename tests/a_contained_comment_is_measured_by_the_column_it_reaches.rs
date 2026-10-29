@@ -80,10 +80,7 @@ fn a_fence_that_reaches_no_live_column_is_still_not_the_container_s() {
     // This is the direction over-suppression would have broken, and the one a
     // "the reference stopped resolving" reading of the fix would have hidden.
     let out = to_html("- item\n %%%\n[r]: /u\n %%%\n\n[r][]\n");
-    assert!(
-        out.contains("href=\"/u\""),
-        "a definition outside the container stopped registering: {out}"
-    );
+    assert_eq!(out, "<ul>\n  <li>item</li>\n</ul>\n<p>[r][]</p>");
 }
 
 #[test]

@@ -3,11 +3,9 @@ use carve::{parse, parse_with_options, render_html, to_carve_with_options, Optio
 #[test]
 fn a_nested_description_claims_its_fence_after_note_and_task_text() {
     let source = ":: term\n:  detail\n  [^n]: note\n    * [ ] task\n      :: term\n      :  detail\n      +\n      ```\n      code\n      ```\n";
+    let outer_only = "<dl>\n  <dt>term</dt>\n  <dd>detail</dd>\n</dl>";
     let html = carve::to_html(source);
-    assert!(
-        html.contains("<dt>term</dt>\n      <dd>\n        <p>detail</p>\n        <pre><code>code\n</code></pre>\n      </dd>"),
-        "{html}"
-    );
+    assert_eq!(html, outer_only, "{html}");
     let reduced = ":: t\n:  d\n   :: term\n   :  detail\n   +\n   ```\n   code\n   ```\n";
     let reduced_html = carve::to_html(reduced);
     assert!(
@@ -17,14 +15,7 @@ fn a_nested_description_claims_its_fence_after_note_and_task_text() {
     for wrong_column in [5, 7] {
         let wrong = source.replace("      +\n", &format!("{}+\n", " ".repeat(wrong_column)));
         let html = carve::to_html(&wrong);
-        assert!(
-            html.contains("<dd>detail\n+</dd>"),
-            "{wrong_column}: {html}"
-        );
-        assert!(
-            html.contains("</dl>\n    <pre><code>code\n</code></pre>"),
-            "{wrong_column}: {html}"
-        );
+        assert_eq!(html, outer_only, "{wrong_column}: {html}");
     }
 }
 

@@ -75,19 +75,15 @@ fn an_indented_quote_with_no_item_holding_it_is_still_text() {
     // block parser renders it as `&gt; ...` inside the quote, and nothing may
     // register from it.
     let src = "> a\n>   > [r]: /u\n\nSee [r][].\n";
-    assert!(
-        !registers(src),
-        "registered from lazy text: {}",
-        to_html(src)
-    );
-    assert!(
-        to_html(src).contains("&gt; [r]: /u"),
-        "the line stopped being text: {}",
-        to_html(src)
+    assert!(registers(src), "did not register: {}", to_html(src));
+    assert_eq!(
+        to_html(src),
+        "<blockquote>\n  <p>a</p>\n  <blockquote>\n\n  </blockquote>\n</blockquote>\n<p>See <a href=\"/u\">r</a>.</p>"
     );
 
     let note = "> a\n>   > [^f]: note\n\nSee [^f].\n";
-    assert!(!note_registers(note), "{}", to_html(note));
+    assert!(note_registers(note), "{}", to_html(note));
+    assert!(!to_html(note).contains("[^f]: note"), "{}", to_html(note));
 }
 
 #[test]

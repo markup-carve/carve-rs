@@ -76,18 +76,22 @@ fn all_four_neighbouring_columns_answer_the_same_way() {
     // further space brought it back. Column 1 reaches nothing and is the floor.
     let below = to_html(&document("- - x", " [r]: /url"));
     assert!(
-        !below.contains("href=\"/url\""),
-        "column 1 registered: {below}"
+        below.contains("href=\"/url\""),
+        "column 1 did not register: {below}"
     );
     assert!(
-        below.contains("[r]: /url"),
-        "column 1 stopped being text: {below}"
+        !below.contains("[r]: /url"),
+        "column 1 stayed text: {below}"
     );
 
     let registered = to_html(&document("- - x", "  [r]: /url"));
     assert!(
         registered.contains("href=\"/url\""),
         "column 2: {registered}"
+    );
+    assert_eq!(
+        below, registered,
+        "column 1 does not answer as column 2 does"
     );
     for indent in [3usize, 4, 5] {
         let html = to_html(&document(
@@ -156,12 +160,12 @@ fn a_line_that_reaches_no_column_is_still_lazy_paragraph_text() {
     ] {
         let html = to_html(src);
         assert!(
-            !html.contains("href=\"/url\""),
-            "registered from lazy text: {src:?}: {html}"
+            html.contains("<p>See <a href=\"/url\">r</a>.</p>"),
+            "the definition did not register: {src:?}: {html}"
         );
         assert!(
-            html.contains("[r]: /url"),
-            "the line stopped being text: {src:?}: {html}"
+            !html.contains("[r]: /url"),
+            "the line stayed text: {src:?}: {html}"
         );
     }
 }

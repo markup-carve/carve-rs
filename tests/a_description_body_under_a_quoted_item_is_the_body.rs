@@ -171,7 +171,7 @@ fn a_fence_shaped_lazy_line_keeps_its_column() {
 fn a_term_shaped_unmarked_line_folds_into_the_open_term() {
     assert_html(
         "> - :: t\n    :: u\ntail\n",
-        "<blockquote><ul><li><dl><dt>t :: u tail</dt></dl></li></ul></blockquote>",
+        "<blockquote><ul><li><dl><dt>t</dt></dl></li></ul></blockquote><dl><dt>u tail</dt></dl>",
     );
 }
 

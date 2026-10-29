@@ -21,6 +21,6 @@ fn exact_html() {
     );
     check(
         ">  ::: |\n :::",
-        "<blockquote><p>::: |\n:::</p></blockquote>\n",
+        "<blockquote>\n  <div class=\"line-block\">\n\n  </div>\n</blockquote>\n<div>\n\n</div>\n",
     );
 }

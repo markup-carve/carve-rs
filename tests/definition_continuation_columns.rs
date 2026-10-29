@@ -25,6 +25,13 @@ fn collected_definitions_close_the_below_content_column_path() {
         for definition in ["[^f]: t", "[r]: /u"] {
             for column in 1..content_column {
                 let html = carve::to_html(&source(head, content_column, definition, column));
+                if definition.starts_with("[^") {
+                    assert!(
+                        !html.contains("tail"),
+                        "{head:?} {definition:?} column {column}: {html}"
+                    );
+                    continue;
+                }
                 assert!(
                     !tail_is_inside(&html),
                     "{head:?} {definition:?} column {column}: {html}"
@@ -52,10 +59,14 @@ fn item_prose_reopens_at_its_column_and_one_short_of_a_footnote_body() {
     for (head, content_column) in HEADS {
         for definition in ["[^f]: t", "[r]: /u"] {
             let html = carve::to_html(&source(head, content_column, definition, content_column));
-            assert!(tail_is_inside(&html), "{head:?} {definition:?}: {html}");
+            if definition.starts_with("[^") {
+                assert!(!html.contains("tail"), "{head:?} {definition:?}: {html}");
+            } else {
+                assert!(tail_is_inside(&html), "{head:?} {definition:?}: {html}");
+            }
         }
         let html = carve::to_html(&source(head, content_column, "[^f]: t", content_column + 1));
-        assert!(tail_is_inside(&html), "{head:?}: {html}");
+        assert!(!html.contains("tail"), "{head:?}: {html}");
     }
 }
 

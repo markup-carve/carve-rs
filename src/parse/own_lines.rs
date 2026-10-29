@@ -62,6 +62,8 @@ struct Frame {
     closer: Option<Closer>,
     run: usize,
     term_cut: usize,
+    /// The open paragraph absorbed an invalid colon opener (CARVE-P9-016).
+    absorbs: bool,
     line_block: bool,
     /// A fence or comment span open inside a line-block payload.
     span: Option<(u8, usize)>,
@@ -81,6 +83,7 @@ impl Frame {
             closer: None,
             run: 0,
             term_cut: 0,
+            absorbs: false,
             line_block: false,
             span: None,
         }
@@ -166,12 +169,20 @@ fn comment_run(rest: &str) -> Option<usize> {
 }
 
 fn quoted_rest(line: &str) -> &str {
-    let mut rest = &line[indent_cols(line).1..];
+    quoted_measure(line).1
+}
+
+/// The innermost quote level's indentation column and rest.
+fn quoted_measure(line: &str) -> (usize, &str) {
+    let (mut col, len) = indent_cols(line);
+    let mut rest = &line[len..];
     while let Some(n) = quote_marker(rest) {
         rest = &rest[n..];
-        rest = &rest[indent_cols(rest).1..];
+        let (c, len) = indent_cols(rest);
+        col = c;
+        rest = &rest[len..];
     }
-    rest
+    (col, rest)
 }
 
 fn is_heading(rest: &str) -> bool {
@@ -236,7 +247,11 @@ fn closer_runs(lines: &[&str]) -> Runs {
         backtick[j] = backtick[j + 1];
         tilde[j] = tilde[j + 1];
         if let Some((ch, n)) = pure_fence(rest) {
-            let slot = if ch == b'`' { &mut backtick[j] } else { &mut tilde[j] };
+            let slot = if ch == b'`' {
+                &mut backtick[j]
+            } else {
+                &mut tilde[j]
+            };
             *slot = (*slot).max(n);
         }
         if let Some(n) = comment_run(rest) {
@@ -255,6 +270,8 @@ struct Walk<'a> {
     frames: Vec<Frame>,
     reach: usize,
     runs: Option<Runs>,
+    /// `widest_from` tables per (fence char, column).
+    by_column: std::collections::HashMap<(u8, usize), Vec<usize>>,
 }
 
 /// One line being rewritten: `out` is written, `src` remains.
@@ -290,7 +307,8 @@ impl<'s> Cursor<'s> {
             self.out.extend(std::iter::repeat(' ').take(col));
             if authored.len() != col || authored.contains('\t') {
                 let at = self.out.chars().count();
-                self.edits.push((at, authored.len() as isize - col as isize));
+                self.edits
+                    .push((at, authored.len() as isize - col as isize));
             }
         }
         self.src = self.rest;
@@ -333,6 +351,7 @@ fn walk(source: &str) -> Option<OwnedSource> {
         frames: vec![Frame::new(Kind::Doc)],
         reach: 0,
         runs: None,
+        by_column: std::collections::HashMap::new(),
     };
     let mut result = String::with_capacity(source.len());
     result.push_str(prefix);
@@ -394,7 +413,43 @@ pub(crate) fn own_lines(source: &str) -> Option<OwnedSource> {
     owned
 }
 
+fn colon_opener(rest: &str) -> bool {
+    detect_container_open(rest).is_some()
+        || detect_line_block_open(rest).is_some()
+        || detect_hardbreaks_block_open(rest).is_some()
+        || detect_quote_block_open(rest).is_some()
+}
+
+/// A colon run that opens nothing: an open paragraph absorbs it.
+fn absorbs_colon(rest: &str) -> bool {
+    let rest = rest.trim_end_matches([' ', '\t']);
+    colon_run(rest) >= 3 && !colon_opener(rest)
+}
+
 impl<'a> Walk<'a> {
+    /// The widest closer run of `ch` at or after line `from`, counting only
+    /// closers written at `col` or deeper.
+    fn widest_from(&mut self, ch: u8, col: usize, from: usize) -> usize {
+        let lines = &self.lines;
+        let widest = self.by_column.entry((ch, col)).or_insert_with(|| {
+            let mut widest = vec![0; lines.len() + 1];
+            for j in (0..lines.len()).rev() {
+                widest[j] = widest[j + 1];
+                let (m_col, rest) = quoted_measure(lines[j]);
+                if m_col < col {
+                    continue;
+                }
+                if let Some((c, n)) = pure_fence(rest) {
+                    if c == ch {
+                        widest[j] = widest[j].max(n);
+                    }
+                }
+            }
+            widest
+        });
+        widest.get(from).copied().unwrap_or(0)
+    }
+
     fn top(&mut self) -> &mut Frame {
         self.frames.last_mut().expect("the document frame stays")
     }
@@ -472,7 +527,11 @@ impl<'a> Walk<'a> {
                 });
                 let new_span = match fence {
                     Some((ch, len)) => {
-                        let widest = if ch == b'`' { &runs.backtick } else { &runs.tilde };
+                        let widest = if ch == b'`' {
+                            &runs.backtick
+                        } else {
+                            &runs.tilde
+                        };
                         (widest.get(at + 1).copied().unwrap_or(0) >= len).then_some((ch, len))
                     }
                     None => comment_run(rest)
@@ -537,6 +596,7 @@ impl<'a> Walk<'a> {
                 } else {
                     owner.canon
                 };
+                owner.absorbs = (owner.para && owner.absorbs) || absorbs_colon(c.rest);
                 owner.para = true;
                 if !term {
                     owner.last = Last::Para;
@@ -608,7 +668,16 @@ impl<'a> Walk<'a> {
                 self.push_marker(Kind::Item, col, canon, width, head, axes, at, c);
             }
             Form::Note(head) => {
-                self.push_marker(Kind::Note, col, canon, FOOTNOTE_BODY_COLUMN, head, String::new(), at, c);
+                self.push_marker(
+                    Kind::Note,
+                    col,
+                    canon,
+                    FOOTNOTE_BODY_COLUMN,
+                    head,
+                    String::new(),
+                    at,
+                    c,
+                );
             }
             Form::Dd(w) => {
                 self.push_marker(Kind::Dd, col, canon, w, w, String::new(), at, c);
@@ -651,8 +720,10 @@ impl<'a> Walk<'a> {
         let form = self.classify(c.rest, frame, at);
         if matches!(form, Form::Text) {
             let col = c.col;
+            let absorbs = absorbs_colon(c.rest);
             c.lead(col);
             let f = &mut self.frames[frame];
+            f.absorbs = absorbs;
             f.para = true;
             f.last = Last::Para;
             return;
@@ -669,6 +740,8 @@ impl<'a> Walk<'a> {
     }
 
     fn classify(&mut self, rest: &str, owner: usize, at: usize) -> Form {
+        // Line-final whitespace is trimmed before a line is read.
+        let rest = rest.trim_end_matches([' ', '\t']);
         if rest.is_empty() {
             return Form::Blank;
         }
@@ -693,12 +766,12 @@ impl<'a> Walk<'a> {
                 }
             }
             let line_block = detect_line_block_open(rest).is_some();
-            let opener = detect_container_open(rest).is_some()
-                || line_block
-                || detect_hardbreaks_block_open(rest).is_some()
-                || detect_quote_block_open(rest).is_some();
-            if opener {
-                let interrupts = colon_closer(rest).is_none();
+            if colon_opener(rest) {
+                // A bare `:::` interrupts unless the paragraph's own lines
+                // absorbed an invalid opener (§10 I4, CARVE-P9-016, CARVE-P9-017).
+                let absorbed =
+                    owner == self.frames.len() - 1 && owner_para && self.frames[owner].absorbs;
+                let interrupts = colon_closer(rest).is_none() || !absorbed;
                 if owner_para && !interrupts {
                     return Form::Text;
                 }
@@ -712,10 +785,9 @@ impl<'a> Walk<'a> {
             let _ = open;
             let ch = rest.as_bytes()[0];
             let len = rest.bytes().take_while(|&b| b == ch).count();
-            let lines = &self.lines;
-            let runs = self.runs.get_or_insert_with(|| closer_runs(lines));
-            let widest = if ch == b'`' { &runs.backtick } else { &runs.tilde };
-            let reachable = widest.get(at + 1).copied().unwrap_or(0) >= len;
+            // A closer below the owner's column never matches (CARVE-P0-014).
+            let owner_col = self.frames[owner].col;
+            let reachable = self.widest_from(ch, owner_col, at + 1) >= len;
             if owner_para && !reachable {
                 return Form::Text;
             }
@@ -737,7 +809,8 @@ impl<'a> Walk<'a> {
             return Form::Note(close + 2 + spaces);
         }
         if let Some((width, head, axes)) = list_marker(rest) {
-            if owner_para && owner_kind != Kind::Item {
+            // A term is not a paragraph a marker continues.
+            if owner_para && owner_kind != Kind::Item && owner_last != Last::Term {
                 return Form::Text;
             }
             return Form::Item(width, head, axes);

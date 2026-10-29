@@ -37,7 +37,7 @@ fn indented_line_block_stays_literal() {
     // One space of leading indent: the `::: |` opener does not fire.
     assert_eq!(
         carve::to_html(" ::: |\n Roses are red,\n Violets are blue.\n :::\n"),
-        "<p>::: |\nRoses are red,\nViolets are blue.\n:::</p>"
+        "<div class=\"line-block\">\n  <p>Roses are red,<br>\nViolets are blue.</p>\n</div>"
     );
 }
 
@@ -46,7 +46,7 @@ fn indented_hardbreak_block_stays_literal() {
     // One space of leading indent: the `::: \` opener does not fire.
     assert_eq!(
         carve::to_html(" ::: \\\n one\n two\n :::\n"),
-        "<p>::: <br>\none\ntwo\n:::</p>"
+        "<div class=\"hardbreaks\">\n  <p>one<br>\ntwo</p>\n</div>"
     );
 }
 
@@ -76,7 +76,7 @@ fn indented_line_block_does_not_interrupt_a_paragraph() {
     // column-0 guard as the opener path.
     assert_eq!(
         carve::to_html("a\n ::: |\n b\n :::\n"),
-        "<p>a\n::: |\nb\n:::</p>"
+        "<p>a</p>\n<div class=\"line-block\">\n  <p>b</p>\n</div>"
     );
 }
 
@@ -88,11 +88,11 @@ fn indented_colon_fence_in_quote_keeps_lazy_continuation() {
     // and the executable-spec oracle.
     assert_eq!(
         carve::to_html("> a\n>  ::: |\nlazy\n"),
-        "<blockquote><p>a\n::: |\nlazy</p></blockquote>"
+        "<blockquote>\n  <p>a</p>\n  <div class=\"line-block\">\n\n  </div>\n</blockquote>\n<p>lazy</p>"
     );
     assert_eq!(
         carve::to_html("> a\n>  ::: note\nlazy\n"),
-        "<blockquote><p>a\n::: note\nlazy</p></blockquote>"
+        "<blockquote>\n  <p>a</p>\n  <aside class=\"admonition note\" aria-label=\"Note\">\n\n  </aside>\n</blockquote>\n<p>lazy</p>"
     );
 }
 

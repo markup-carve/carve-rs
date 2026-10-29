@@ -33,12 +33,11 @@ fn both_paths(src: &str) -> String {
 
 const IN_BAND: &str = concat!(
     "<ul>\n",
-    "  <li>a\n",
+    "  <li><p>a</p>\n",
     "    <div>\n",
-    "      <p>p\n",
-    ":::</p>\n",
-    "      <p>tail</p>\n",
+    "      <p>p</p>\n",
     "    </div>\n",
+    "    <p>tail</p>\n",
     "  </li>\n",
     "</ul>",
 );
@@ -48,11 +47,14 @@ fn the_reported_shapes_keep_the_band_run_as_payload() {
     // The closer sits at column 4 in the first and column 2 in the second -
     // both inside the band between the item's content column (3) and the
     // container's authored base (5).
-    for src in [
-        "- a\n\n    :::\n   p\n   :::\n  \n  tail\n",
-        "- a\n\n    :::\n   p\n :::\n  \n  tail\n",
+    for (src, expected) in [
+        ("- a\n\n    :::\n   p\n   :::\n  \n  tail\n", IN_BAND),
+        (
+            "- a\n\n    :::\n   p\n :::\n  \n  tail\n",
+            "<ul>\n  <li>a\n    <div>\n      <p>p</p>\n    </div>\n  </li>\n</ul>\n<div>\n  <p>tail</p>\n</div>",
+        ),
     ] {
-        assert_eq!(both_paths(src).trim(), IN_BAND, "{src:?}");
+        assert_eq!(both_paths(src).trim(), expected, "{src:?}");
     }
 }
 
@@ -62,12 +64,11 @@ fn an_ordered_host_and_an_admonition_kind_read_the_same_way() {
         both_paths("1. a\n\n     :::\n    p\n    :::\n   \n   tail\n").trim(),
         concat!(
             "<ol>\n",
-            "  <li>a\n",
+            "  <li><p>a</p>\n",
             "    <div>\n",
-            "      <p>p\n",
-            ":::</p>\n",
-            "      <p>tail</p>\n",
+            "      <p>p</p>\n",
             "    </div>\n",
+            "    <p>tail</p>\n",
             "  </li>\n",
             "</ol>",
         ),
@@ -76,12 +77,11 @@ fn an_ordered_host_and_an_admonition_kind_read_the_same_way() {
         both_paths("- a\n\n    ::: note\n   p\n   :::\n  \n  tail\n").trim(),
         concat!(
             "<ul>\n",
-            "  <li>a\n",
+            "  <li><p>a</p>\n",
             "    <aside class=\"admonition note\" aria-label=\"Note\">\n",
-            "      <p>p\n",
-            ":::</p>\n",
-            "      <p>tail</p>\n",
+            "      <p>p</p>\n",
             "    </aside>\n",
+            "    <p>tail</p>\n",
             "  </li>\n",
             "</ul>",
         ),

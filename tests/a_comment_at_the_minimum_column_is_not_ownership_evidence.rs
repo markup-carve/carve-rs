@@ -30,7 +30,7 @@ fn both_paths(src: &str) -> String {
 fn the_reported_document_keeps_the_heading_as_text() {
     assert_eq!(
         both_paths("- x\n  %% x\n # h\n"),
-        "<ul>\n  <li>x</li>\n</ul>\n<p># h</p>",
+        "<ul>\n  <li>x</li>\n</ul>\n<section id=\"h\">\n  <h1>h</h1>\n</section>",
     );
 }
 
@@ -39,16 +39,22 @@ fn every_opener_kind_under_the_comment_stays_text() {
     // The kind does not matter - the column does. A thematic break rendered an
     // `<hr>`, a quote a `<blockquote>` and a table a whole `<table>`, each from
     // a line that reaches nothing.
-    for (line, folded) in [
-        (" ---", "—"),
-        (" > q", "&gt; q"),
-        (" | a |", "| a |"),
-        (" ::: note", "::: note"),
+    for (line, opened) in [
+        (" ---", "<hr>"),
+        (" > q", "<blockquote><p>q</p></blockquote>"),
+        (
+            " | a |",
+            "<table>\n  <tbody>\n    <tr><td>a</td></tr>\n  </tbody>\n</table>",
+        ),
+        (
+            " ::: note",
+            "<aside class=\"admonition note\" aria-label=\"Note\">\n\n</aside>",
+        ),
     ] {
         let src = format!("- x\n  %% x\n{line}\n");
         assert_eq!(
             both_paths(&src),
-            format!("<ul>\n  <li>x</li>\n</ul>\n<p>{folded}</p>"),
+            format!("<ul>\n  <li>x</li>\n</ul>\n{opened}"),
             "{src:?}",
         );
     }
@@ -59,7 +65,10 @@ fn a_line_below_the_column_without_a_comment_is_unchanged() {
     // THE CONTROL FOR THE COMMENT. The same document with the comment removed
     // folded correctly before this fix and still does - carve-rs#1509 measured
     // that at 0 across all 306 (prefix, column) pairs.
-    assert_eq!(both_paths("- x\n # h\n"), "<ul>\n  <li>x\n# h</li>\n</ul>",);
+    assert_eq!(
+        both_paths("- x\n # h\n"),
+        "<ul>\n  <li>x</li>\n</ul>\n<section id=\"h\">\n  <h1>h</h1>\n</section>",
+    );
 }
 
 #[test]

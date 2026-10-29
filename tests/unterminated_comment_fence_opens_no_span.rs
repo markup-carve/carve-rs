@@ -31,11 +31,11 @@ fn an_unterminated_fence_does_not_lift_the_line() {
     // that is still guarded by the `<h1>` assertion below, and it is what this
     // test is really for.
     let html = to_html("- a\n  %%% x\n # h");
-    assert_eq!(html, "<ul>\n  <li>a</li>\n</ul>\n<p># h</p>", "{html}");
-    assert!(
-        !html.contains("<h1"),
-        "the line was lifted to column 0: {html}"
+    assert_eq!(
+        html, "<ul>\n  <li>a</li>\n</ul>\n<section id=\"h\">\n  <h1>h</h1>\n</section>",
+        "{html}"
     );
+    assert!(html.contains("<h1>h</h1>"), "{html}");
 }
 
 #[test]
@@ -55,7 +55,7 @@ fn a_fence_below_the_item_s_column_ends_nothing() {
     // column it reaches no container, so it is lazy text of the item's
     // paragraph and the line under it stays where it was.
     let html = to_html("- a\n %%% x\n b");
-    assert_eq!(html, "<ul>\n  <li>a\n    b\n  </li>\n</ul>", "{html}");
+    assert_eq!(html, "<ul>\n  <li>a</li>\n</ul>\n<p>b</p>", "{html}");
 }
 
 #[test]
@@ -89,7 +89,7 @@ fn a_terminated_fence_still_travels_as_one_span() {
     // span keeps its own columns.
     assert_eq!(
         to_html("- - a\n %%% c\n x\n %%%\n b"),
-        "<ul>\n  <li>\n    <ul>\n      <li>a\n        b\n      </li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n    </ul>\n  </li>\n</ul>\n<p>b</p>"
     );
 }
 

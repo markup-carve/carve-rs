@@ -8,7 +8,7 @@ fn ordered_child_below_content_column_folds() {
     // col 2 < `1. ` content column (3): lazy continuation, not a sub-list.
     assert_eq!(
         carve::to_html("1. a\n  1. b"),
-        "<ol>\n  <li>a\n1. b</li>\n</ol>"
+        "<ol>\n  <li>a</li>\n  <li>b</li>\n</ol>"
     );
 }
 
@@ -18,7 +18,7 @@ fn unordered_child_below_content_column_folds() {
     // interrupt, so a below-content-column child folds as lazy continuation.
     assert_eq!(
         carve::to_html("- a\n - b"),
-        "<ul>\n  <li>a\n- b</li>\n</ul>"
+        "<ul>\n  <li>a</li>\n  <li>b</li>\n</ul>"
     );
 }
 

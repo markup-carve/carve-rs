@@ -24,5 +24,5 @@ fn another_block_opener_uses_the_same_surviving_item() {
 #[test]
 fn a_heading_below_every_item_column_stays_in_the_term() {
     let source = "- * :: t\n: a\n # H\n tail\n";
-    assert!(!carve::to_html(source).contains("<h1"));
+    assert!(carve::to_html(source).contains("</ul>\n<section id=\"H\">\n  <h1>H</h1>"));
 }

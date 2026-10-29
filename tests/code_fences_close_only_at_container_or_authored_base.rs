@@ -215,7 +215,7 @@ fn a_fence_in_a_footnote_body_closes_at_two_columns() {
         ),
         (
             "x[^1]\n\n[^1]: note\n\n    ```\n    a\n   ```\n\n  tail\n",
-            "a\n```\n\ntail\n",
+            "a\n",
             3,
             "the band",
         ),
@@ -245,19 +245,19 @@ fn a_fence_in_a_footnote_body_closes_at_two_columns() {
         ),
         (
             "x[^1]\n\n[^1]: note\n\n      ```\n      a\n   ```\n\n  tail\n",
-            "a\n```\n\ntail\n",
+            "a\n",
             3,
             "the band",
         ),
         (
             "x[^1]\n\n[^1]: note\n\n      ```\n      a\n    ```\n\n  tail\n",
-            "a\n```\n\ntail\n",
+            "a\n",
             4,
             "the band",
         ),
         (
             "x[^1]\n\n[^1]: note\n\n      ```\n      a\n     ```\n\n  tail\n",
-            "a\n```\n\ntail\n",
+            "a\n",
             5,
             "the band",
         ),
@@ -294,7 +294,7 @@ fn a_fence_in_a_definition_description_closes_at_two_columns() {
         ),
         (
             ":: t\n:  d\n\n     ```\n     a\n    ```\n\n   tail\n",
-            "a\n```\n\ntail\n",
+            "a\n",
             4,
             "the band",
         ),
@@ -324,19 +324,19 @@ fn a_fence_in_a_definition_description_closes_at_two_columns() {
         ),
         (
             ":: t\n:  d\n\n       ```\n       a\n    ```\n\n   tail\n",
-            "a\n```\n\ntail\n",
+            "a\n",
             4,
             "the band",
         ),
         (
             ":: t\n:  d\n\n       ```\n       a\n     ```\n\n   tail\n",
-            "a\n```\n\ntail\n",
+            "a\n",
             5,
             "the band",
         ),
         (
             ":: t\n:  d\n\n       ```\n       a\n      ```\n\n   tail\n",
-            "a\n```\n\ntail\n",
+            "a\n",
             6,
             "the band",
         ),

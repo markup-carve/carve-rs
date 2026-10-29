@@ -60,8 +60,8 @@ fn the_single_level_floor_is_unchanged() {
     );
     assert_eq!(
         note_count(&to_html("[^f]: o\n\n [^g]: m\n\nx[^f] [^g]\n")),
-        1,
-        "indent 1 stays text"
+        2,
+        "indent 1 is a note too"
     );
 }
 

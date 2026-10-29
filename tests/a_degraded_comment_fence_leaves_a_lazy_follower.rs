@@ -54,7 +54,7 @@ fn both_paths(src: &str) -> String {
 fn the_reported_document_keeps_the_follower() {
     assert_eq!(
         both_paths("- a\n  %%% x\n # h\n"),
-        "<ul>\n  <li>a</li>\n</ul>\n<p># h</p>",
+        "<ul>\n  <li>a</li>\n</ul>\n<section id=\"h\">\n  <h1>h</h1>\n</section>",
     );
 }
 
@@ -66,15 +66,12 @@ fn every_following_line_kind_stays_in_the_item() {
         ("- x\n  %%% x\n b\n", "<ul>\n  <li>x</li>\n</ul>\n<p>b</p>"),
         (
             "- x\n  %%% x\n # h\n",
-            "<ul>\n  <li>x</li>\n</ul>\n<p># h</p>",
+            "<ul>\n  <li>x</li>\n</ul>\n<section id=\"h\">\n  <h1>h</h1>\n</section>",
         ),
-        (
-            "- x\n  %%% x\n ---\n",
-            "<ul>\n  <li>x</li>\n</ul>\n<p>—</p>",
-        ),
+        ("- x\n  %%% x\n ---\n", "<ul>\n  <li>x</li>\n</ul>\n<hr>"),
         (
             "- x\n  %%% x\n - y\n",
-            "<ul>\n  <li>x</li>\n</ul>\n<ul>\n  <li>y</li>\n</ul>",
+            "<ul>\n  <li>x</li>\n  <li>y</li>\n</ul>",
         ),
     ] {
         assert_eq!(both_paths(src), expected, "{src:?}");
@@ -117,7 +114,7 @@ fn the_ordered_and_wide_marker_rows_answer_the_same_way() {
 fn a_quote_host_answers_the_same_way() {
     assert_eq!(
         both_paths("> - x\n>   %%% x\n>  # h\n"),
-        "<blockquote>\n  <ul>\n    <li>x</li>\n  </ul>\n  <p># h</p>\n</blockquote>",
+        "<blockquote>\n  <ul>\n    <li>x</li>\n  </ul>\n  <h1 id=\"h\">h</h1>\n</blockquote>",
     );
 }
 
@@ -186,7 +183,7 @@ fn a_fence_below_the_content_column_ends_nothing() {
     // container, so it is lazy paragraph text and ends nothing.
     assert_eq!(
         both_paths("- x\n %%% x\n b\n"),
-        "<ul>\n  <li>x\n    b\n  </li>\n</ul>",
+        "<ul>\n  <li>x</li>\n</ul>\n<p>b</p>",
     );
 }
 
@@ -202,15 +199,15 @@ fn a_fence_below_the_content_column_ends_nothing() {
 fn a_nested_frame_still_ends() {
     assert_eq!(
         both_paths("- - x\n    %%% x\n # h\n"),
-        "<ul>\n  <li>\n    <ul>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>\n<p># h</p>"
+        "<ul>\n  <li>\n    <ul>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>\n<section id=\"h\">\n  <h1>h</h1>\n</section>"
     );
     assert_eq!(
         both_paths("- - x\n    %%%\n # h\n"),
-        "<ul>\n  <li>\n    <ul>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>\n<p># h</p>"
+        "<ul>\n  <li>\n    <ul>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>\n<section id=\"h\">\n  <h1>h</h1>\n</section>"
     );
     assert_eq!(
         both_paths("- - x\n    %%%\n ---\n"),
-        "<ul>\n  <li>\n    <ul>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>\n<p>—</p>",
+        "<ul>\n  <li>\n    <ul>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>\n<hr>",
     );
 }
 

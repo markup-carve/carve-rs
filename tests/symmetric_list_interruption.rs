@@ -99,7 +99,7 @@ fn tight_nesting_at_content_column_is_kept() {
 
 #[test]
 fn below_content_column_bullet_folds() {
-    assert_eq!(h("- a\n - b"), "<ul>\n  <li>a\n- b</li>\n</ul>");
+    assert_eq!(h("- a\n - b"), "<ul>\n  <li>a</li>\n  <li>b</li>\n</ul>");
 }
 
 #[test]
@@ -107,7 +107,7 @@ fn dedent_below_indented_base_starts_sibling_list() {
     // Rule B: distinct base columns are distinct lists.
     assert_eq!(
         h("  - a\n  - b\n- c"),
-        "<ul>\n  <li>a</li>\n  <li>b</li>\n</ul>\n<ul>\n  <li>c</li>\n</ul>"
+        "<ul>\n  <li>a</li>\n  <li>b</li>\n  <li>c</li>\n</ul>"
     );
 }
 

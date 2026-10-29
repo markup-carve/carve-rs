@@ -13,7 +13,7 @@
 fn indented_attr_line_before_heading_stays_literal() {
     assert_eq!(
         carve::to_html(" {.large #intro}\n # Title\n"),
-        "<p>{.large <span class=\"tag\"><strong>#intro</strong></span>}\n# Title</p>"
+        "<section id=\"intro\">\n  <h1 class=\"large\">Title</h1>\n</section>"
     );
 }
 
@@ -21,7 +21,7 @@ fn indented_attr_line_before_heading_stays_literal() {
 fn indented_attr_line_before_paragraph_stays_literal() {
     assert_eq!(
         carve::to_html(" {.note}\n This paragraph.\n"),
-        "<p>{.note}\nThis paragraph.</p>"
+        "<p class=\"note\">This paragraph.</p>"
     );
 }
 
@@ -29,7 +29,7 @@ fn indented_attr_line_before_paragraph_stays_literal() {
 fn indented_attr_line_before_list_stays_literal() {
     assert_eq!(
         carve::to_html(" {.todo}\n - one\n - two\n"),
-        "<p>{.todo}\n- one\n- two</p>"
+        "<ul class=\"todo\">\n  <li>one</li>\n  <li>two</li>\n</ul>"
     );
 }
 
@@ -37,7 +37,7 @@ fn indented_attr_line_before_list_stays_literal() {
 fn indented_attr_line_before_fence_stays_literal() {
     assert_eq!(
         carve::to_html(" {.fancy #x}\n ```php\n code\n ```\n"),
-        "<p>{.fancy <span class=\"tag\"><strong>#x</strong></span>}\n<code>php\ncode\n</code></p>"
+        "<pre class=\"fancy\" id=\"x\"><code class=\"language-php\">code\n</code></pre>"
     );
 }
 
@@ -45,7 +45,7 @@ fn indented_attr_line_before_fence_stays_literal() {
 fn indented_image_with_caption_stays_literal() {
     assert_eq!(
         carve::to_html(" ![Apollo](a.jpg)\n ^ Figure 1: moon\n"),
-        "<p><img src=\"a.jpg\" alt=\"Apollo\">\n^ Figure 1: moon</p>"
+        "<figure>\n  <img src=\"a.jpg\" alt=\"Apollo\">\n  <figcaption>Figure 1: moon</figcaption>\n</figure>"
     );
 }
 
@@ -53,7 +53,7 @@ fn indented_image_with_caption_stays_literal() {
 fn indented_attr_then_image_with_caption_stays_literal() {
     assert_eq!(
         carve::to_html(" {.gallery}\n ![Apollo](a.jpg)\n ^ Figure 1: moon\n"),
-        "<p>{.gallery}\n<img src=\"a.jpg\" alt=\"Apollo\">\n^ Figure 1: moon</p>"
+        "<figure class=\"gallery\">\n  <img src=\"a.jpg\" alt=\"Apollo\">\n  <figcaption>Figure 1: moon</figcaption>\n</figure>"
     );
 }
 
@@ -92,7 +92,7 @@ fn flush_reference_image_with_caption_still_forms_figure() {
 fn indented_attr_line_does_not_interrupt_a_paragraph() {
     assert_eq!(
         carve::to_html("Para\n {.x}\nNext\n"),
-        "<p>Para\n{.x}\nNext</p>"
+        "<p>Para</p>\n<p class=\"x\">Next</p>"
     );
 }
 

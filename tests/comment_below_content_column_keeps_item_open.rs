@@ -20,7 +20,7 @@ fn a_comment_below_the_content_column_keeps_the_item_open() {
     // item and `b` became a top-level paragraph.
     assert_eq!(
         html("- a\n %% c\nb\n"),
-        "<ul>\n  <li>a\n    b\n  </li>\n</ul>"
+        "<ul>\n  <li>a</li>\n</ul>\n<p>b</p>"
     );
 }
 

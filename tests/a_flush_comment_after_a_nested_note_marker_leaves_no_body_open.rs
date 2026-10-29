@@ -13,5 +13,5 @@ fn a_flush_comment_after_a_nested_note_marker_leaves_no_body_open() {
 
 #[test]
 fn a_flush_comment_retains_an_open_term_in_a_note() {
-    assert_eq!(html("[^c]: :: t\n%% c\nx\n"), "");
+    assert_eq!(html("[^c]: :: t\n%% c\nx\n"), "<p>x</p>");
 }

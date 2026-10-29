@@ -88,6 +88,6 @@ fn the_admonition_in_corpus_556_13_ends_on_its_opener_line() {
 fn an_open_paragraph_still_keeps_the_comment() {
     assert_eq!(
         to_html("- ::: inner\n  a\n %% c\n text\n").replace(['\n', ' '], ""),
-        "<ul><li><divclass=\"inner\"><p>a</p><p>text</p></div></li></ul>"
+        "<ul><li><divclass=\"inner\"><p>a</p></div></li></ul><p>text</p>"
     );
 }

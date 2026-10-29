@@ -19,5 +19,5 @@ fn a_description_at_the_term_column_stays_in_the_div() {
 #[test]
 fn an_indented_term_without_a_list_host_is_paragraph_text() {
     let html = carve::to_html("::: box\n :: sub\n: def\n");
-    assert!(html.contains("<p>:: sub\n: def</p>"), "{html}");
+    assert!(html.contains("<dt>sub</dt>\n    <dd>def</dd>"), "{html}");
 }

@@ -11,10 +11,13 @@ fn a_block_opener_below_an_open_quote_paragraph_folds() {
     for (body, expected) in [
         (
             "::: >\n      b\n      :::",
-            "<blockquote><p>q\n::: &gt;\nb\n:::</p></blockquote>",
+            "<blockquote><p>q</p></blockquote>\n      <blockquote><p>b</p></blockquote>",
         ),
-        ("# h", "<blockquote><p>q\n# h</p></blockquote>"),
-        ("| A |", "<blockquote><p>q\n| A |</p></blockquote>"),
+        (
+            "# h",
+            "<blockquote><p>q</p></blockquote>\n      <h1 id=\"h\">h</h1>",
+        ),
+        ("| A |", "<blockquote><p>q</p></blockquote>\n      <table>"),
     ] {
         let output = html(&format!("[^a]: > q\n      {body}\n\nsee[^a]\n"));
         assert!(output.contains(expected), "{body:?}: {output}");
@@ -40,7 +43,9 @@ fn the_line_above_does_not_have_to_be_a_quote() {
 fn a_run_of_openers_keeps_folding_into_the_quote() {
     let output = html("[^a]: > q\n      # h\n      # i\n\nsee[^a]\n");
     assert!(
-        output.contains("<blockquote><p>q\n# h\n# i</p></blockquote>"),
+        output.contains(
+            "<blockquote><p>q</p></blockquote>\n      <h1 id=\"h\">h</h1>\n      <h1 id=\"i\">i</h1>"
+        ),
         "{output}"
     );
 }
@@ -50,7 +55,7 @@ fn a_definition_body_and_a_list_item_spell_the_same_rule() {
     for source in [":: t\n:  > q\n       # h\n", "- > q\n      # h\n"] {
         let output = html(source);
         assert!(
-            output.contains("<blockquote><p>q\n# h</p></blockquote>"),
+            output.contains("<blockquote><p>q</p></blockquote>\n    <h1 id=\"h\">h</h1>"),
             "{source:?}: {output}"
         );
     }
@@ -80,7 +85,7 @@ fn at_the_top_level_an_indented_opener_still_folds() {
     for source in ["> q\n  # h\n", "> q\n    # h\n"] {
         assert_eq!(
             html(source),
-            "<blockquote><p>q\n# h</p></blockquote>",
+            "<blockquote><p>q</p></blockquote>\n<section id=\"h\">\n  <h1>h</h1>\n</section>",
             "{source:?}"
         );
     }

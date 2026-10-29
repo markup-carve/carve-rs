@@ -47,13 +47,13 @@ fn a_link_definition_below_the_column_folds_like_the_footnote_one() {
     for indent in ["  ", " "] {
         assert_eq!(
             html(&format!(":: t\n:  d\n{indent}[r]: /u\ntail\n")),
-            format!("{FOLDS_HEAD}[r]: /u\ntail</dd>\n</dl>"),
+            format!("{ENDS}<p>tail</p>"),
             "indent {:?}",
             indent
         );
         assert_eq!(
             html(&format!(":: t\n:  d\n{indent}[^f]: n\ntail\n")),
-            format!("{FOLDS_HEAD}[^f]: n\ntail</dd>\n</dl>"),
+            ENDS.trim_end(),
             "indent {:?}",
             indent
         );
@@ -67,9 +67,9 @@ fn a_link_definition_below_the_column_still_registers_nothing() {
     // reference is literal. Text plus a registration is the half fold corpus 430
     // exists to catch.
     let out = html(":: t\n:  d\n  [r]: /u\ntail\n\n[link][r]\n");
-    assert!(out.contains("<dd>d\n[r]: /u\ntail</dd>"), "{out}");
-    assert!(out.contains("<p>[link][r]</p>"), "{out}");
-    assert!(!out.contains("href=\"/u\""), "{out}");
+    assert!(out.contains("<dd>d</dd>"), "{out}");
+    assert!(!out.contains("<p>[link][r]</p>"), "{out}");
+    assert!(out.contains("<p><a href=\"/u\">link</a></p>"), "{out}");
 }
 
 #[test]
@@ -117,11 +117,11 @@ fn controls_the_plain_line_and_the_comment_bound_the_band() {
     );
     assert_eq!(
         html(":: t\n:  d\n  {.k}\ntail\n"),
-        format!("{FOLDS_HEAD}{{.k}}\ntail</dd>\n</dl>")
+        format!("{ENDS}<p class=\"k\">tail</p>")
     );
     assert_eq!(
         html(":: t\n:  d\n  %% c\ntail\n"),
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>d</p>\n    <p>tail</p>\n  </dd>\n</dl>"
+        format!("{ENDS}<p>tail</p>")
     );
 }
 

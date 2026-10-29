@@ -9,7 +9,7 @@ fn nested_task_without_a_paragraph_releases_the_outer_item_band() {
     let source = "- -{#k} [x] {#h}\n # h\n";
     assert_eq!(
         html(source),
-        "<ul>\n  <li>\n    <ul class=\"task-list\">\n      <li data-task-state=\"x\" id=\"k\"><input type=\"checkbox\" checked disabled> </li>\n    </ul>\n  </li>\n</ul>\n<p># h</p>"
+        "<ul>\n  <li>\n    <ul class=\"task-list\">\n      <li data-task-state=\"x\" id=\"k\"><input type=\"checkbox\" checked disabled> </li>\n    </ul>\n  </li>\n</ul>\n<section id=\"h\">\n  <h1>h</h1>\n</section>"
     );
 }
 

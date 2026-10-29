@@ -2,22 +2,25 @@ use carve::{to_html, to_html_with_options, Options};
 
 #[test]
 fn a_matched_comment_below_the_child_column_keeps_the_list_item() {
-    for source in [
-        ":: t\n: - para\n %%%\n c\n %%%\n    tail\n",
-        ":: t\n: - para\n   %%%\n   c\n   %%%\n    tail\n",
-        "[^c]: 1. para\n   %%%\n   c\n   %%%\n         tail\nsee [^c]\n",
+    for (source, expected) in [
+        (
+            ":: t\n: - para\n %%%\n c\n %%%\n    tail\n",
+            "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>para</li>\n    </ul>\n  </dd>\n</dl>\n<p>tail</p>",
+        ),
+        (
+            ":: t\n: - para\n   %%%\n   c\n   %%%\n    tail\n",
+            "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>para</li>\n    </ul>\n    <p>tail</p>\n  </dd>\n</dl>",
+        ),
+        (
+            "[^c]: 1. para\n   %%%\n   c\n   %%%\n         tail\nsee [^c]\n",
+            "",
+        ),
     ] {
         for html in [
             to_html(source),
             to_html_with_options(source, &Options::default().with_positions(true)),
         ] {
-            let item = html.split("<li>para").nth(1).expect("the child list item");
-            let tail = item.find("tail").expect("the retained tail");
-            assert!(
-                tail < item.find("</li>").expect("the item closer"),
-                "{source:?}: {html}"
-            );
-            assert!(!html.contains("<p>c</p>"), "{source:?}: {html}");
+            assert_eq!(html, expected, "{source:?}");
         }
     }
 }

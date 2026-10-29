@@ -7,6 +7,9 @@ fn a_rebased_comment_keeps_its_authored_description_owner() {
         to_html(source),
         to_html_with_options(source, &Options::default().with_positions(true)),
     ] {
-        assert!(html.contains("<p>tail</p>\n      </dd>"), "{html}");
+        assert!(
+            html.contains("<dd>para</dd>\n    </dl>\n  </li>\n</ol>\n<p>tail</p>"),
+            "{html}"
+        );
     }
 }

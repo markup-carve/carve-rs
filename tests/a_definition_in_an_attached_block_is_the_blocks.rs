@@ -67,10 +67,10 @@ fn one_definition_keeps_the_extent() {
 fn a_footnote_definition_keeps_the_extent() {
     assert_html(
         "- a\n+\n[^n]: note\nmore\n\nSee [^n].\n",
-        "<ul><li>a more</li></ul>\
+        "<ul><li>a</li></ul>\
          <p>See <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a>.</p>\
          <section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\">\
-         <p>note<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\
+         <p>note more<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\
          </li></ol></section>",
     );
 }

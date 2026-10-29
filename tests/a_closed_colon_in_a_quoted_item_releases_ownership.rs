@@ -365,12 +365,12 @@ fn a_marker_below_an_ancestor_content_column_keeps_the_leaf_paragraph() {
             "{source}: {ast}"
         );
         assert_eq!(ast["children"][1]["type"], "list", "{source}: {ast}");
-        assert!(carve::to_html(&source).contains("body\n- next"), "{source}");
+        assert!(carve::to_html(&source).contains("<li>next"), "{source}");
     }
     let source = "> - a\n>   - ::: box\n>     body\n>    - ::: inner\n>       :::\n- tail\n";
     let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
-    assert_eq!(ast["children"].as_array().unwrap().len(), 1, "{ast}");
-    assert!(carve::to_html(source).contains("- tail"));
+    assert_eq!(ast["children"].as_array().unwrap().len(), 2, "{ast}");
+    assert!(carve::to_html(source).contains("<li>tail</li>"));
 }
 
 #[test]
@@ -380,7 +380,7 @@ fn a_marker_between_deeper_ancestor_columns_keeps_the_closed_leaf_owner() {
     let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
     assert_eq!(ast["children"].as_array().unwrap().len(), 2, "{ast}");
     assert_eq!(ast["children"][1]["type"], "list", "{ast}");
-    assert!(carve::to_html(source).contains("body\n- next"));
+    assert!(carve::to_html(source).contains("<li>next"));
 }
 
 #[test]
@@ -413,7 +413,7 @@ fn a_closed_marker_line_colon_releases_an_unquoted_nested_item() {
     let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
     assert_eq!(ast["children"].as_array().unwrap().len(), 2, "{ast}");
     assert_eq!(ast["children"][1]["type"], "paragraph", "{ast}");
-    assert!(carve::to_html(source).contains("body\n- next"));
+    assert!(carve::to_html(source).contains("<li>next"));
 }
 #[test]
 fn a_new_item_left_of_the_first_quoted_marker_registers_its_colon_host() {
@@ -465,7 +465,7 @@ fn transparent_comment_preserves_the_hosted_closer() {
 fn off_column_bare_run_keeps_the_hosted_paragraph_open() {
     let source = "> - ::: box\n>\n>    :::\n- tail\n";
     assert!(
-        carve::to_html(source).contains(":::\n- tail</p>"),
+        carve::to_html(source).contains("<li>tail</li>"),
         "{}",
         carve::to_html(source)
     );

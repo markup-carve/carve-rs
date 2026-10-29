@@ -100,12 +100,12 @@ fn a_footnote_definition_ends_the_item() {
     let out = html("- [^f]: t\ntail\n\nsee[^f]\n");
 
     assert!(
-        out.starts_with("<ul>\n  <li></li>\n</ul>\n<p>tail</p>\n"),
+        out.starts_with("<ul>\n  <li></li>\n</ul>\n<p>see<a "),
         "{out}"
     );
     // Collected from inside the item it no longer holds, and still resolved.
     assert!(
-        out.contains("<li id=\"fn1\">\n      <p>t<a href=\"#fnref1\""),
+        out.contains("<li id=\"fn1\">\n      <p>t\ntail<a href=\"#fnref1\""),
         "{out}"
     );
 }

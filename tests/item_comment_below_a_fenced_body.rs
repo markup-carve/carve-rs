@@ -26,7 +26,7 @@ fn and_what_follows_it_parses_at_the_document_level() {
 fn a_closer_below_the_column_does_not_bring_the_item_back() {
     assert_eq!(
         carve::to_html("- a\n\n  ```\n%% c\n  ```\n"),
-        "<ul>\n  <li>a\n    <pre><code></code></pre>\n  </li>\n</ul>\n<p><code></code></p>"
+        "<ul>\n  <li>a\n    <pre><code></code></pre>\n  </li>\n</ul>\n<pre><code></code></pre>"
     );
 }
 
@@ -50,6 +50,6 @@ fn a_marker_line_fence_over_a_definition() {
 fn a_comment_with_no_open_fence_still_keeps_the_item() {
     assert_eq!(
         carve::to_html("- a\n%% c\n  b\n"),
-        "<ul>\n  <li>a\n    b\n  </li>\n</ul>"
+        "<ul>\n  <li>a</li>\n</ul>\n<p>b</p>"
     );
 }

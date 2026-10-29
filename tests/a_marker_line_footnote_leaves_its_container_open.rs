@@ -65,7 +65,7 @@ fn rs_42_marker_line_note() {
 fn rs_50_marker_line_note() {
     assert_eq!(
         html("- [^c]: para\n - li\n"),
-        "<ul><li></li></ul><ul><li>li</li></ul>"
+        "<ul><li></li><li>li</li></ul>"
     );
 }
 

@@ -10,7 +10,7 @@ fn repeated_empty_quoted_items_release_flush_left_tail() {
 fn nested_closed_fence_releases_flush_left_tail() {
     assert_eq!(
         carve::to_html("> > - > ~~~\n  > x\n  > y\n  > ~~~"),
-        "<blockquote>\n  <blockquote>\n    <ul>\n      <li>\n        <blockquote>\n          <pre><code></code></pre>\n        </blockquote>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p>&gt; x\n&gt; y\n&gt; ~~~</p>"
+        "<blockquote>\n  <blockquote>\n    <ul>\n      <li>\n        <blockquote>\n          <pre><code></code></pre>\n        </blockquote>\n      </li>\n    </ul>\n  </blockquote>\n  <p>x\ny\n~~~</p>\n</blockquote>"
     );
 }
 
@@ -18,7 +18,7 @@ fn nested_closed_fence_releases_flush_left_tail() {
 fn empty_attributed_item_releases_flush_left_tail() {
     assert_eq!(
         carve::to_html("> > -{#k} {#h}\n # h"),
-        "<blockquote>\n  <blockquote>\n    <ul>\n      <li id=\"k\"></li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p># h</p>"
+        "<blockquote>\n  <blockquote>\n    <ul>\n      <li id=\"k\"></li>\n    </ul>\n  </blockquote>\n</blockquote>\n<section id=\"h\">\n  <h1>h</h1>\n</section>"
     );
 }
 

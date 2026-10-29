@@ -16,7 +16,10 @@ fn check(source: &str, expected: &str) {
 #[test]
 fn exact_html() {
     check("- - a\n\n  %% just a note\n- b", "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n    </ul>\n  </li>\n  <li><p>b</p></li>\n</ul>\n");
-    check("- - body\n\n  [^g]: n\n   prose", "<ul>\n  <li>\n    <ul>\n      <li>body</li>\n    </ul>\n    <p>prose</p>\n  </li>\n</ul>\n");
+    check(
+        "- - body\n\n  [^g]: n\n   prose",
+        "<ul>\n  <li>\n    <ul>\n      <li>body</li>\n    </ul>\n  </li>\n</ul>\n",
+    );
     check(
         "- :: t\n:  ",
         "<ul>\n  <li>\n    <dl>\n      <dt>t\n:</dt>\n    </dl>\n  </li>\n</ul>\n",

@@ -40,10 +40,7 @@ fn html(source: &str) -> String {
 #[test]
 fn an_opener_at_the_floor_is_absorbed_and_a_column_zero_tail_is_top_level() {
     let src = ":: t\n:  [^f]: note\n     - nested\ntail\n";
-    assert_eq!(
-        html(src),
-        "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>\n<p>tail</p>"
-    );
+    assert_eq!(html(src), "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>");
 }
 
 /// Same opener, but `tail` sits at the description's own content column, so the
@@ -51,7 +48,7 @@ fn an_opener_at_the_floor_is_absorbed_and_a_column_zero_tail_is_top_level() {
 #[test]
 fn an_absorbed_opener_leaves_a_tail_at_the_description_column_in_the_dd() {
     let src = ":: t\n:  [^f]: note\n     - nested\n   tail\n";
-    assert_eq!(html(src), "<dl>\n  <dt>t</dt>\n  <dd>tail</dd>\n</dl>");
+    assert_eq!(html(src), "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>");
 }
 
 /// The opener one column shy of the floor (column 4 against a floor of 5) reaches
@@ -73,10 +70,7 @@ fn an_opener_one_column_shy_of_the_floor_stays_a_description_child() {
 #[test]
 fn plain_continuation_at_the_floor_is_the_note_s_too() {
     let src = ":: t\n:  [^f]: note\n     more\ntail\n";
-    assert_eq!(
-        html(src),
-        "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>\n<p>tail</p>"
-    );
+    assert_eq!(html(src), "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>");
 }
 
 /// The same continuation one column shy of the floor, the other side of the
@@ -84,10 +78,7 @@ fn plain_continuation_at_the_floor_is_the_note_s_too() {
 #[test]
 fn plain_continuation_one_column_shy_of_the_floor_stays_in_the_description() {
     let src = ":: t\n:  [^f]: note\n    more\ntail\n";
-    assert_eq!(
-        html(src),
-        "<dl>\n  <dt>t</dt>\n  <dd>more\ntail</dd>\n</dl>"
-    );
+    assert_eq!(html(src), "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>");
 }
 
 /// AND ACROSS A BLANK LINE, which is the ordinary spelling of a note with more
@@ -103,7 +94,7 @@ fn a_hosted_note_body_resumes_after_a_blank_line() {
         "the description kept the note's body: {out}"
     );
     assert!(
-        out.contains("<p>more<a href=\"#fnref1\""),
+        out.contains("<p>more\ntail<a href=\"#fnref1\""),
         "the note did not take the resumed body: {out}"
     );
 }

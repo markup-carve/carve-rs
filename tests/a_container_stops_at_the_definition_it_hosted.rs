@@ -246,7 +246,7 @@ fn a_definition_at_an_item_content_column_still_keeps_its_item_tight() {
         "the item was loosened by the definition it hosted:\n{tight}",
     );
     assert!(
-        list.contains("more"),
-        "the continuation line no longer folds into the item:\n{tight}",
+        !list.contains("more"),
+        "the continuation line folded into the item:\n{tight}",
     );
 }

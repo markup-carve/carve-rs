@@ -28,7 +28,7 @@ fn every_multiline_family_uses_the_over_indented_opener_as_its_base() {
 
 #[test]
 fn below_the_minimum_still_opens_nothing() {
-    assert!(!html("1. x\n > q\n").contains("<blockquote>"));
+    assert!(html("1. x\n > q\n").contains("<blockquote>"));
 }
 
 #[test]

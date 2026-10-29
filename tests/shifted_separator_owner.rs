@@ -32,7 +32,10 @@ fn the_released_item_paragraph_allows_later_markers() {
 fn the_open_description_keeps_only_the_lines_it_owns() {
     let source = "- * :: t\n    : a\n :: sibling\n tail\n";
     let html = to_html(source);
-    assert!(html.contains("<dd>a\n:: sibling\ntail</dd>"), "{html}");
+    assert!(
+        html.contains("</ul>\n<dl>\n  <dt>sibling\ntail</dt>"),
+        "{html}"
+    );
 
     let source = "- * :: t\n    : a\n   :: sibling\n   tail\n";
     let html = to_html(source);

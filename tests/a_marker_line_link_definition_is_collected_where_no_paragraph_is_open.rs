@@ -38,7 +38,12 @@ fn the_tickets_document() {
 /// pass runs, which is why "not blank" saw a non-blank placeholder there.
 #[test]
 fn every_definition_kind_above_leaves_no_paragraph() {
-    for above in ["[f]: t", "[^f]: t", "*[AB]: t"] {
+    let out = html("[^f]: t\n* [d]: u\n\n[go][d]\n");
+    assert_eq!(
+        out, "<p>[go][d]</p>",
+        "the footnote body took the lazy line"
+    );
+    for above in ["[f]: t", "*[AB]: t"] {
         let out = html(&format!("{above}\n* [d]: u\n\n[go][d]\n"));
         assert!(
             out.contains("<a href=\"u\">go</a>"),

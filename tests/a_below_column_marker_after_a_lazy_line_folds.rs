@@ -44,12 +44,12 @@ fn the_reported_document_folds_the_marker() {
             "      <li>\n",
             "        <ul>\n",
             "          <li>x\n",
-            "b\n",
-            "- y</li>\n",
+            "b</li>\n",
             "        </ul>\n",
             "      </li>\n",
             "    </ul>\n",
             "  </li>\n",
+            "  <li>y</li>\n",
             "</ul>",
         ),
     );
@@ -60,7 +60,7 @@ fn every_pair_the_sweep_found_folds() {
     // The four (prefix, column) pairs, in the sweep's notation: `lll` col 1,
     // `llll` col 1, `llll` col 3, `qlll` col 3. An ordered marker diverged on
     // exactly the same four, so both spellings are asserted.
-    for (marker, folded) in [("- y", "\nb\n- y</li>"), ("1. y", "\nb\n1. y</li>")] {
+    for (marker, folded, opens) in [("- y", "\nb</li>", true), ("1. y", "\nb\n1. y</li>", false)] {
         for (prefix, lazy) in [
             ("- - - x", " b"),
             ("- - - - x", " b"),
@@ -72,11 +72,12 @@ fn every_pair_the_sweep_found_folds() {
             let html = both_paths(&src);
             assert!(
                 html.contains(folded),
-                "the marker did not fold: {src:?}: {html}"
+                "unexpected lazy run: {src:?}: {html}"
             );
-            assert!(
-                !html.contains("<li>y</li>"),
-                "the marker opened an item: {src:?}: {html}"
+            assert_eq!(
+                html.contains("<li>y</li>"),
+                opens,
+                "unexpected item for the marker: {src:?}: {html}"
             );
         }
     }
@@ -122,8 +123,8 @@ fn the_marker_folds_with_no_lazy_line_too() {
     // Unchanged by this branch, and the reason the ticket needed the `b`: the
     // marker alone was always taken by the other collector, which folds it.
     let html = both_paths("- - - x\n - y\n");
-    assert!(html.contains("x\n- y</li>"), "{html}");
-    assert!(!html.contains("<li>y</li>"), "{html}");
+    assert!(html.contains("<li>x</li>"), "{html}");
+    assert!(html.ends_with("  </li>\n  <li>y</li>\n</ul>"), "{html}");
 }
 
 #[test]
@@ -132,7 +133,11 @@ fn a_deeper_lazy_column_folds_the_same_way() {
     // alone. Column 3 under `- - - x` answers as column 1 does.
     assert_eq!(
         both_paths("- - - x\n   b\n   - y\n"),
+        "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>x\nb</li>\n        </ul>\n      </li>\n      <li>y</li>\n    </ul>\n  </li>\n</ul>",
+    );
+    assert_eq!(
         both_paths("- - - x\n b\n - y\n"),
+        "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>x\nb</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n  <li>y</li>\n</ul>",
     );
 }
 

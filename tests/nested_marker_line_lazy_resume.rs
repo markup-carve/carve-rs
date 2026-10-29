@@ -6,16 +6,13 @@ fn every_column_resumes_the_innermost_open_paragraph() {
         for column in 0..=5 {
             let source = format!("* * u\n{middle}\n{}:\n", " ".repeat(column));
             let html = to_html(&source);
-            let inner = if middle == "%" {
-                "u\n%\n:".to_string()
+            let expected = if middle == "%" {
+                "<ul>\n  <li>\n    <ul>\n      <li>u\n%\n:</li>\n    </ul>\n  </li>\n</ul>"
             } else {
-                "u\n        :\n      ".to_string()
+                "<ul>\n  <li>\n    <ul>\n      <li>u</li>\n    </ul>\n  </li>\n</ul>\n<p>:</p>"
             };
             assert_eq!(
-                html,
-                format!(
-                    "<ul>\n  <li>\n    <ul>\n      <li>{inner}</li>\n    </ul>\n  </li>\n</ul>"
-                ),
+                html, expected,
                 "middle {middle:?}, column {column}: {source:?}",
             );
         }

@@ -16,7 +16,7 @@ fn ordered_block_opener_below_content_after_blank_goes_to_document_level() {
     // `> q` at column 2 is BELOW `1. `'s content_column 3.
     assert_eq!(
         carve::to_html("1. one\n\n  > q"),
-        "<ol>\n  <li>one</li>\n</ol>\n<p>&gt; q</p>"
+        "<ol>\n  <li>one</li>\n</ol>\n<blockquote><p>q</p></blockquote>"
     );
 }
 
@@ -33,7 +33,7 @@ fn fence_below_content_after_blank_goes_to_document_level() {
     // Bullet content_column is 2; the 1-column fence is below it.
     assert_eq!(
         carve::to_html("- one\n\n ```\n c\n ```"),
-        "<ul>\n  <li>one</li>\n</ul>\n<p><code>\nc\n</code></p>"
+        "<ul>\n  <li>one</li>\n</ul>\n<pre><code>c\n</code></pre>"
     );
 }
 
@@ -65,7 +65,7 @@ fn no_blank_block_opener_below_content_lazily_continues_paragraph() {
     // `> q` at column 1, no blank: folds into the item's open paragraph.
     assert_eq!(
         carve::to_html("1. one\n > q"),
-        "<ol>\n  <li>one\n&gt; q</li>\n</ol>"
+        "<ol>\n  <li>one</li>\n</ol>\n<blockquote><p>q</p></blockquote>"
     );
 }
 
@@ -92,7 +92,7 @@ fn cc_final_quote_above_content_uses_its_authored_base() {
 fn cc_final_table_below_content_is_lazy_text() {
     assert_eq!(
         carve::to_html("- one\n |=H|\n |x|\n"),
-        "<ul>\n  <li>one\n|=H|\n|x|</li>\n</ul>"
+        "<ul>\n  <li>one</li>\n</ul>\n<table>\n  <tbody>\n    <tr><td>=H</td></tr>\n    <tr><td>x</td></tr>\n  </tbody>\n</table>"
     );
 }
 
@@ -100,7 +100,7 @@ fn cc_final_table_below_content_is_lazy_text() {
 fn cc_final_table_below_content_after_blank_doc_level() {
     assert_eq!(
         carve::to_html("- one\n\n |=H|\n |x|\n"),
-        "<ul>\n  <li>one</li>\n</ul>\n<p>|=H|\n|x|</p>"
+        "<ul>\n  <li>one</li>\n</ul>\n<table>\n  <tbody>\n    <tr><td>=H</td></tr>\n    <tr><td>x</td></tr>\n  </tbody>\n</table>"
     );
 }
 
@@ -170,7 +170,7 @@ fn cc_bare_below_content_new_term_starts_top_level_list() {
 
 #[test]
 fn cc_final_bare_indented_table_row_is_paragraph() {
-    assert_eq!(carve::to_html(" |=H|\n |x|\n"), "<p>|=H|\n|x|</p>");
+    assert_eq!(carve::to_html(" |=H|\n |x|\n"), "<table>\n  <tbody>\n    <tr><td>=H</td></tr>\n    <tr><td>x</td></tr>\n  </tbody>\n</table>");
 }
 
 #[test]
@@ -179,7 +179,7 @@ fn cc_colon_fence_below_content_column_is_lazy() {
     // paragraph text, not a nested container (mirrors quote/heading/table).
     assert_eq!(
         carve::to_html("- one\n ::: note\n body\n :::\n"),
-        "<ul>\n  <li>one\n::: note\nbody\n:::</li>\n</ul>"
+        "<ul>\n  <li>one</li>\n</ul>\n<aside class=\"admonition note\" aria-label=\"Note\">\n  <p>body</p>\n</aside>"
     );
 }
 

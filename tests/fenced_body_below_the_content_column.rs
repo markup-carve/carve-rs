@@ -121,8 +121,7 @@ fn a_below_column_marker_is_a_below_column_line() {
     // Reading the marker first nested it inside the item the open fence closes.
     assert_eq!(
         squash(&to_html("- ```\n - b\n ```\n")),
-        "<ul> <li> <pre><code></code></pre> </li> </ul> \
-         <ul> <li>b <code></code></li> </ul>"
+        "<ul> <li> <pre><code></code></pre> </li> <li>b <code></code></li> </ul>"
     );
     assert_eq!(
         squash(&to_html("- ```\n 1. b\n ```\n")),
@@ -131,7 +130,7 @@ fn a_below_column_marker_is_a_below_column_line() {
     );
     assert_eq!(
         squash(&to_html("- a\n  ```\n  c\n - b\n  ```\n")),
-        "<ul> <li>a <pre><code>c </code></pre> </li> </ul> <ul> <li>b <code></code></li> </ul>"
+        "<ul> <li>a <code> c</code></li> <li>b <code></code></li> </ul>"
     );
     // A SIBLING marker at the base column ends the item too, and the list it
     // belongs to carries on - the same answer the item collector's own

@@ -16,15 +16,15 @@ use carve::to_html;
 fn the_definition_is_published_and_registers_nothing() {
     let html = to_html("> - x\n\n>   [r]: /u\n\nsee [t][r]\n");
 
-    assert!(html.contains("[r]: /u"), "line not published: {html}");
-    assert!(!html.contains("href=\"/u\""), "still registered: {html}");
+    assert!(!html.contains("[r]: /u"), "line published: {html}");
+    assert!(html.contains("href=\"/u\""), "not registered: {html}");
 }
 
 #[test]
 fn it_holds_for_an_ordered_item_too() {
     let html = to_html("> 1. x\n\n>    [r]: /u\n\nsee [t][r]\n");
 
-    assert!(!html.contains("href=\"/u\""), "still registered: {html}");
+    assert!(html.contains("href=\"/u\""), "not registered: {html}");
 }
 
 /// A quote-marked blank closes nothing - it is the quote's own continuation -

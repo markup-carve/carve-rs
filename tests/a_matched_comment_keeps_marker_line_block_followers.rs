@@ -7,11 +7,9 @@ fn a_matched_comment_keeps_a_fence_in_a_marker_line_description() {
         to_html(source),
         to_html_with_options(source, &Options::default().with_positions(true)),
     ] {
-        let code = html
-            .find("<pre><code></code></pre>")
-            .expect("empty code fence");
-        assert!(code < html.find("</dd>").unwrap(), "{html}");
-        assert!(html.ends_with("<p>x</p>"), "{html}");
+        let code = html.find("x\n</code></pre>").expect("code fence");
+        assert!(code > html.find("</ol>").unwrap(), "{html}");
+        assert!(!html.contains("<p>x</p>"), "{html}");
     }
 }
 
@@ -22,6 +20,8 @@ fn a_matched_comment_keeps_a_lazy_tail_in_a_marker_line_colon_body() {
         to_html(source),
         to_html_with_options(source, &Options::default().with_positions(true)),
     ] {
-        assert!(html.contains("<p>tail</p>\n    </aside>"), "{html}");
+        assert!(html.contains("more</p>\n    </aside>"), "{html}");
+        let list_end = html.find("</ol>").unwrap();
+        assert!(html[list_end..].contains("tail</p>"), "{html}");
     }
 }

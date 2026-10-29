@@ -55,8 +55,8 @@ fn both_paths(src: &str) -> String {
     facade
 }
 
-/// `# h` as the OUTERMOST item's text, the three-deep ladder having ended.
-const OUTER_TEXT: &str = "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>x</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p># h</p>";
+/// `# h` as a top-level heading, the three-deep ladder having ended.
+const OUTER_TEXT: &str = "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>x</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<section id=\"h\">\n  <h1>h</h1>\n</section>";
 
 /// The reported document. Column 5 is neither the innermost frame's own content
 /// column (6) nor a listed descendant's (2, 4).
@@ -96,8 +96,7 @@ fn the_frames_own_column_is_unchanged() {
 fn a_fence_below_every_column_ends_nothing() {
     assert_eq!(
         both_paths("- - - x\n %%% x\n # h\n"),
-        "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>x\n            \
-         # h\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>x</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<section id=\"h\">\n  <h1>h</h1>\n</section>"
     );
 }
 
@@ -122,7 +121,7 @@ fn a_text_follower_answers_the_same_way() {
 /// A QUOTE HOST answers the same way, and it moved with this change too.
 #[test]
 fn a_quote_host_answers_the_same_way() {
-    assert_eq!(both_paths("> - - x\n>      %%% x\n>  # h\n"), "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>x</li>\n      </ul>\n    </li>\n  </ul>\n  <p># h</p>\n</blockquote>");
+    assert_eq!(both_paths("> - - x\n>      %%% x\n>  # h\n"), "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>x</li>\n      </ul>\n    </li>\n  </ul>\n  <h1 id=\"h\">h</h1>\n</blockquote>");
 }
 
 /// OUT OF SCOPE, PINNED SO IT CANNOT MOVE SILENTLY. At depth two with the fence
@@ -133,6 +132,6 @@ fn a_quote_host_answers_the_same_way() {
 fn the_shared_residue_does_not_move() {
     assert_eq!(
         both_paths("- - x\n   %%% x\n # h\n"),
-        "<ul>\n  <li>\n    <ul>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>\n<p># h</p>"
+        "<ul>\n  <li>\n    <ul>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>\n<section id=\"h\">\n  <h1>h</h1>\n</section>"
     );
 }

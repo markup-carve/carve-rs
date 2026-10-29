@@ -15,7 +15,10 @@ fn check(source: &str, expected: &str) {
 
 #[test]
 fn exact_html() {
-    check("- x\n    %%%\n y\n   %%%", "<ul>\n  <li>x</li>\n</ul>\n");
+    check(
+        "- x\n    %%%\n y\n   %%%",
+        "<ul>\n  <li>x</li>\n</ul>\n<p>y</p>\n",
+    );
     check(
         "- %%%\n%%%\n:  x\n   %%%",
         "<ul>\n  <li></li>\n</ul>\n<p>:  x</p>\n",

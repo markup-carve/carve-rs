@@ -38,7 +38,7 @@ fn written(source: &str) -> String {
 /// 2's THE UNIT IS THE OPENER: the run is `##`, not its first character.
 #[test]
 fn a_block_whose_minimal_form_opens_a_heading_it_does_not_have_escalates() {
-    assert_eq!(written("  ## H\n"), "\\#\\# H\n");
+    assert_eq!(written("  ## H\n"), "## H\n");
 }
 
 #[test]
@@ -52,7 +52,7 @@ fn a_block_whose_minimal_form_re_parses_as_itself_is_left_alone() {
 fn the_escalation_does_not_spread_from_the_block_that_needed_it() {
     assert_eq!(
         written("  ## H\n\nplain (b) text\n"),
-        "\\#\\# H\n\nplain (b) text\n"
+        "## H\n\nplain (b) text\n"
     );
 }
 
@@ -87,7 +87,7 @@ fn the_inline_run_is_reached_before_the_block_containing_it() {
 fn the_unit_widens_to_the_block_when_escaping_the_run_is_not_enough() {
     assert_eq!(
         written(" | a |\n | b |\n\nsee (c) 50% now\n"),
-        "\\| a |\n\\| b |\n\nsee (c) 50% now\n"
+        "| a |\n| b |\n\nsee (c) 50% now\n"
     );
 }
 
@@ -95,5 +95,5 @@ fn the_unit_widens_to_the_block_when_escaping_the_run_is_not_enough() {
 /// each block needed it, rather than because one did.
 #[test]
 fn every_block_escalates_in_a_document_where_every_block_fails() {
-    assert_eq!(written("  ## H\n\n  ### I\n"), "\\#\\# H\n\n\\#\\#\\# I\n");
+    assert_eq!(written("  ## H\n\n  ### I\n"), "## H\n\n### I\n");
 }

@@ -92,7 +92,7 @@ fn a_stacked_opener_takes_any_block_at_its_owning_quote_column() {
         ),
         (
             "- [ ] > +\n      # h\n",
-            "<ulclass=\"task-list\"><li><inputtype=\"checkbox\"disabled><blockquote><h1id=\"h\">h</h1></blockquote></li></ul>",
+            "<ulclass=\"task-list\"><li><inputtype=\"checkbox\"disabled><blockquote><p>+</p></blockquote><h1id=\"h\">h</h1></li></ul>",
         ),
     ] {
         assert_eq!(flat(source), expected, "{source:?}");

@@ -22,7 +22,7 @@ fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
         ("ctrl_document", "```\n```\nx\n", "<pre><code></code></pre>\n<p>x</p>"),
         ("ctrl_open_paragraph", "- - p\nx\n", "<ul>\n  <li>\n    <ul>\n      <li>p\nx</li>\n    </ul>\n  </li>\n</ul>"),
         ("ctrl_quote", "- - > q\nx\n", "<ul>\n  <li>\n    <ul>\n      <li>\n        <blockquote><p>q\nx</p></blockquote>\n      </li>\n    </ul>\n  </li>\n</ul>"),
-        ("ctrl_fence_not_on_the_lead", "- - b\n  %% c\n    ```\ntail\n    ```\n", "<ul>\n  <li>\n    <ul>\n      <li>b\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail\n<code></code></p>"),
+        ("ctrl_fence_not_on_the_lead", "- - b\n  %% c\n    ```\ntail\n    ```\n", "<ul>\n  <li>\n    <ul>\n      <li>b</li>\n    </ul>\n    <pre><code></code></pre>\n  </li>\n</ul>\n<p>tail\n<code></code></p>"),
         ("ctrl_thematic", "- - ---\nx\n", "<ul>\n  <li>\n    <ul>\n      <li>\n        <hr>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>x</p>"),
         ("body_fence_lang", ":: t\n: - ```\n    ```\n```rust\n", "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </dd>\n</dl>\n<pre><code class=\"language-rust\"></code></pre>"),
         ("body_tilde_lang", ":: t\n: - ```\n    ```\n~~~rust\n", "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </dd>\n</dl>\n<pre><code class=\"language-rust\"></code></pre>"),

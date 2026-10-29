@@ -36,11 +36,11 @@ fn a_matched_fence_at_a_list_column_leaves_no_paragraph_for_column_zero() {
 fn a_matched_fence_below_a_definition_column_keeps_its_follower() {
     assert_render(
         "- :: t\n  : para\n %%%\n %%%\n    tail\n",
-        "<ul><li><dl><dt>t</dt><dd><p>para</p><p>tail</p></dd></dl></li></ul>",
+        "<ul><li><dl><dt>t</dt><dd>para</dd></dl></li></ul><p>tail</p>",
     );
     assert_render(
         ":: t\n: para\n %%%\n %%%\n```\n",
-        "<dl><dt>t</dt><dd><p>para</p><pre><code></code></pre></dd></dl>",
+        "<dl><dt>t</dt><dd>para</dd></dl><pre><code></code></pre>",
     );
 }
 
@@ -56,6 +56,6 @@ fn a_matched_fence_below_a_note_column_keeps_a_nested_quote() {
 fn an_unclosed_fence_below_a_colon_body_keeps_the_following_paragraph() {
     assert_render(
         "1. ::: note\n   para\n  %%%\ntail\n",
-        "<ol><li><aside class=\"admonition note\" aria-label=\"Note\"><p>para</p><p>tail</p></aside></li></ol>",
+        "<ol><li><aside class=\"admonition note\" aria-label=\"Note\"><p>para</p></aside></li></ol><p>tail</p>",
     );
 }

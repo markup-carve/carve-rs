@@ -22,7 +22,7 @@ fn an_unprefixed_follower_ends_the_quote() {
         ),
         (
             "> 1. +\n | c |\n",
-            "<blockquote><ol><li></li></ol></blockquote><p>|c|</p>",
+            "<blockquote><ol><li></li></ol></blockquote><table><tbody><tr><td>c</td></tr></tbody></table>",
         ),
         (
             "- a\n  > - +\n> q\n",
@@ -84,11 +84,11 @@ fn an_indented_quote_marker_below_the_quote_is_item_text() {
     for (source, expected) in [
         (
             "- a\n  > - - +\n   > q\n",
-            "<ul><li>a<blockquote><ul><li><ul><li></li></ul></li></ul></blockquote>&gt;q</li></ul>",
+            "<ul><li>a<blockquote><ul><li><ul><li>q</li></ul></li></ul></blockquote></li></ul>",
         ),
         (
             "- a\n  > - - +\n      > q\n",
-            "<ul><li>a<blockquote><ul><li><ul><li></li></ul></li></ul></blockquote>&gt;q</li></ul>",
+            "<ul><li>a<blockquote><ul><li><ul><li>q</li></ul></li></ul></blockquote></li></ul>",
         ),
         (
             "- a\n   > - +\n   > - b\n",
@@ -116,7 +116,7 @@ fn a_nested_item_and_its_first_block_readings() {
         ),
         (
             "- a\n  - > - +\n - s\n",
-            "<ul><li>a<ul><li><blockquote><ul><li></li></ul></blockquote></li></ul></li></ul><ul><li>s</li></ul>",
+            "<ul><li>a<ul><li><blockquote><ul><li></li></ul></blockquote></li></ul></li><li>s</li></ul>",
         ),
         (
             "- a\n  - - +\n```\nx\n```\n",

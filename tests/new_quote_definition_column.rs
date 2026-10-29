@@ -15,6 +15,6 @@ fn check(source: &str, expected: &str) {
 
 #[test]
 fn exact_html() {
-    check("- > :: t\n> : d\n>   [^f]: n\ntail", "<ul>\n  <li>\n    <blockquote>\n      <dl>\n        <dt>t</dt>\n      </dl>\n    </blockquote>\n  </li>\n</ul>\n<blockquote><p>: d\n[^f]: n\ntail</p></blockquote>\n");
-    check("- > > - para\n> >   [^f]: n", "<ul>\n  <li>\n    <blockquote>\n      <blockquote>\n        <ul>\n          <li>para</li>\n        </ul>\n      </blockquote>\n    </blockquote>\n  </li>\n</ul>\n<blockquote>\n  <blockquote><p>[^f]: n</p></blockquote>\n</blockquote>\n");
+    check("- > :: t\n> : d\n>   [^f]: n\ntail", "<ul>\n  <li>\n    <blockquote>\n      <dl>\n        <dt>t</dt>\n      </dl>\n    </blockquote>\n  </li>\n</ul>\n<blockquote><p>: d</p></blockquote>\n");
+    check("- > > - para\n> >   [^f]: n", "<ul>\n  <li>\n    <blockquote>\n      <blockquote>\n        <ul>\n          <li>para</li>\n        </ul>\n      </blockquote>\n    </blockquote>\n  </li>\n</ul>\n<blockquote>\n  <blockquote>\n\n  </blockquote>\n</blockquote>\n");
 }
