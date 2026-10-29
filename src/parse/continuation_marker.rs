@@ -94,6 +94,9 @@ impl Entry {
 
 struct Classifier {
     lines: Vec<String>,
+    /// 0-based quote `+` lines the ownership walk refused by the follower's
+    /// raw column, with whether it stands right (CARVE-P9-067).
+    refused_quote_plus: HashMap<usize, bool>,
     matching_code_closer: Vec<bool>,
     walk: Walk,
     scanned: usize,
@@ -157,6 +160,7 @@ impl Guard {
         let reported = vec![false; lines.len()];
         let classifier = Classifier {
             lines,
+            refused_quote_plus: HashMap::new(),
             matching_code_closer,
             walk: Walk {
                 stack: Vec::new(),
@@ -226,7 +230,14 @@ pub(super) fn decision(source_line: usize) -> Option<Decision> {
         while classifier.scanned <= index && classifier.scanned < classifier.lines.len() {
             classifier.step();
         }
-        let found = classifier.walk.decisions.get(index).copied().flatten();
+        let mut found = classifier.walk.decisions.get(index).copied().flatten();
+        if let (Some(decision), Some(&right)) =
+            (found.as_mut(), classifier.refused_quote_plus.get(&index))
+        {
+            if decision.owner == Some(Kind::Quote) && decision.refusal.is_none() {
+                decision.refusal = Some(if right { Refusal::Right } else { Refusal::Left });
+            }
+        }
         if let Some(decision) = found {
             // A document-level `+` no container claims is reported by the paragraph
             // reader, and only before a block (carve#3421).
@@ -246,6 +257,18 @@ pub(super) fn decision(source_line: usize) -> Option<Decision> {
         }
         found
     })
+}
+
+/// Record the walk's raw-column quote `+` refusals (1-based lines) on the installed classifier.
+pub(super) fn refuse_quote_plus(lines: &[(usize, bool)]) {
+    CLASSIFIER.with(|slot| {
+        if let Some(classifier) = slot.borrow_mut().as_mut() {
+            classifier.refused_quote_plus = lines
+                .iter()
+                .map(|&(line, right)| (line - 1, right))
+                .collect();
+        }
+    });
 }
 
 pub(super) fn document_column(source_line: usize) -> Option<usize> {

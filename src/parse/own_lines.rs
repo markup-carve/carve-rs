@@ -70,6 +70,11 @@ struct Frame {
     /// Columns added on output, so a block in a task item past its marker-line
     /// child lands where the item reader measures that child.
     shift: usize,
+    /// Document column of the marker, and the line that opened the frame.
+    doc_marker: usize,
+    line: Option<usize>,
+    /// The line holding this frame's lone first-block `+`.
+    plus: Option<usize>,
 }
 
 impl Frame {
@@ -90,6 +95,9 @@ impl Frame {
             line_block: false,
             span: None,
             shift: 0,
+            doc_marker: 0,
+            line: None,
+            plus: None,
         }
     }
 }
@@ -131,6 +139,17 @@ fn indent_cols(s: &str) -> (usize, usize) {
         len += 1;
     }
     (col, len)
+}
+
+/// The document column where `rest`, a suffix of `line`, starts.
+fn doc_column(line: &str, rest: &str) -> usize {
+    line[..line.len() - rest.len()].chars().fold(0, |col, ch| {
+        if ch == '\t' {
+            (col / 4 + 1) * 4
+        } else {
+            col + 1
+        }
+    })
 }
 
 fn is_ws_only(s: &str) -> bool {
@@ -270,6 +289,9 @@ struct Walk<'a> {
     runs: Option<Runs>,
     /// `widest_from` tables per (fence char, column).
     by_column: std::collections::HashMap<(u8, usize), Vec<usize>>,
+    /// 0-based quote first-block `+` lines whose follower stands at an
+    /// ineligible raw column (CARVE-P9-067), and whether it stands right.
+    refused_plus: Vec<(usize, bool)>,
 }
 
 /// One line being rewritten: `out` is written, `src` remains.
@@ -333,6 +355,9 @@ impl<'s> Cursor<'s> {
 pub(crate) struct OwnedSource {
     pub(crate) source: String,
     edits: Vec<LineEdit>,
+    /// 1-based lines whose quote first-block `+` the walk refused by the
+    /// follower's raw column, with whether the follower stands right of it.
+    pub(crate) refused_plus: Vec<(usize, bool)>,
 }
 
 #[derive(Clone, Copy)]
@@ -382,6 +407,7 @@ fn walk_from(source: &str, frontmatter: bool) -> Option<OwnedSource> {
         reach: 0,
         runs: None,
         by_column: std::collections::HashMap::new(),
+        refused_plus: Vec::new(),
     };
     let mut result = String::with_capacity(source.len());
     result.push_str(prefix);
@@ -409,9 +435,15 @@ fn walk_from(source: &str, frontmatter: bool) -> Option<OwnedSource> {
             delta,
         }));
     }
-    (!edits.is_empty()).then_some(OwnedSource {
+    let refused_plus: Vec<(usize, bool)> = walk
+        .refused_plus
+        .iter()
+        .map(|&(line, right)| (first_line + line, right))
+        .collect();
+    (!edits.is_empty() || !refused_plus.is_empty()).then_some(OwnedSource {
         source: result,
         edits,
+        refused_plus,
     })
 }
 
@@ -506,8 +538,22 @@ impl<'a> Walk<'a> {
     fn line(&mut self, at: usize, c: &mut Cursor<'_>, after_plus: &mut bool) {
         let mut reached = 0;
         let mut plus = None;
+        // A quote's first-block `+` reads a follower by its raw column (CARVE-P9-067).
+        let top = self.frames.len() - 1;
+        let quote_plus = (at > 0
+            && self.frames[top].kind == Kind::Quote
+            && self.frames[top].plus == Some(at - 1))
+        .then_some(top);
+        let base_at =
+            quote_plus.and_then(|_| self.frames.iter().position(|f| f.line == Some(at - 1)));
+        let mut stack_col: Option<Option<usize>> = None;
+        // Column 0 of the follower's own quote level, past host quote prefixes.
+        let mut zero = 0;
         for k in 1..self.frames.len() {
             let f = &self.frames[k];
+            if quote_plus.is_some() && stack_col.is_none() && f.line == Some(at - 1) {
+                stack_col = Some(None);
+            }
             if let Some((marker_col, _)) = f.marker {
                 // A marker body takes only a block at that column (§17 L3, L4).
                 if is_cont_marker(c.rest)
@@ -529,10 +575,16 @@ impl<'a> Walk<'a> {
             }
             if f.kind == Kind::Quote {
                 let Some(_) = quote_marker(c.rest) else { break };
+                if stack_col == Some(None) {
+                    stack_col = Some(Some(doc_column(self.lines[at], c.rest)));
+                }
                 let (canon, shift) = (self.frames[k - 1].canon, self.frames[k - 1].shift);
                 c.lead_in(canon, shift, false);
                 let n = quote_marker(c.src).expect("measured above");
                 c.take(n);
+                if base_at.is_some_and(|b| k < b) {
+                    zero = doc_column(self.lines[at], c.src);
+                }
                 c.measure();
                 reached = k;
                 continue;
@@ -555,6 +607,17 @@ impl<'a> Walk<'a> {
         let plus_follower = *after_plus;
         *after_plus = false;
         let missed = reached < self.frames.len() - 1;
+        // A follower at an ineligible raw column refuses the `+` whatever block it starts (carve#3421).
+        if let (Some(q), Some(base)) = (quote_plus, base_at) {
+            let stacked = stack_col.flatten();
+            if (missed || stacked.is_some()) && !c.rest.is_empty() && !is_cont_marker(c.rest) {
+                let col = stacked.unwrap_or_else(|| doc_column(self.lines[at], c.rest));
+                let marker = self.frames[q].doc_marker;
+                if col != 0 && col != zero && col != self.frames[base].doc_marker && col != marker {
+                    self.refused_plus.push((at - 1, col > marker));
+                }
+            }
+        }
         self.reach = reached;
         let inner = self.frames.last().expect("document frame");
         if inner.kind == Kind::Fence && !missed {
@@ -731,6 +794,8 @@ impl<'a> Walk<'a> {
             Form::Quote => {
                 let mut f = Frame::new(Kind::Quote);
                 f.marker = Some((col, canon));
+                f.doc_marker = doc_column(self.lines[at], c.src);
+                f.line = Some(at);
                 self.frames.push(f);
                 let n = quote_marker(c.src).expect("classified as a quote");
                 c.take(n);
@@ -779,6 +844,8 @@ impl<'a> Walk<'a> {
         f.marker = Some((col, canon));
         f.axes = axes;
         f.shift = self.frames.last().map_or(0, |owner| owner.shift);
+        f.doc_marker = doc_column(self.lines[at], c.src);
+        f.line = Some(at);
         self.frames.push(f);
         let head = head.min(c.src.len());
         c.take(head);
@@ -808,9 +875,13 @@ impl<'a> Walk<'a> {
             let col = c.col;
             let absorbs = absorbs_colon(c.rest);
             c.lead(col);
+            let plus = is_cont_marker(c.src);
             let f = &mut self.frames[frame];
             f.absorbs = absorbs;
             f.para = true;
+            if plus {
+                f.plus = Some(at);
+            }
             f.last = Last::Para;
             return;
         }

@@ -806,6 +806,9 @@ fn parse_with_options_mode_and_index(
         .as_ref()
         .map_or(normalized.as_ref(), |o| o.source.as_str());
     let _continuation_markers = continuation_marker::Guard::install(source);
+    if let Some(owned) = owned.as_ref() {
+        continuation_marker::refuse_quote_plus(&owned.refused_plus);
+    }
     let _source_ending = SourceEndingGuard::install(source);
     // PICK THE DEFINITION PLACEHOLDERS FOR THIS DOCUMENT before anything reads
     // them. Every entry point funnels through here, and the guard restores the
