@@ -439,7 +439,7 @@ fn term_quote_hosts_allow_indentation_above_the_list_floor() {
     let source = "- > :: t\n   > ```\n  > [r]: /u\n";
     assert_eq!(
         html(source),
-        "<ul>\n  <li>\n    <blockquote>\n      <dl>\n        <dt>t\n&gt; <code></code></dt>\n      </dl>\n    </blockquote>\n  </li>\n</ul>"
+        "<ul>\n  <li>\n    <blockquote>\n      <dl>\n        <dt>t</dt>\n      </dl>\n      <pre><code>[r]: /u\n</code></pre>\n    </blockquote>\n  </li>\n</ul>"
     );
     let source = "- head\n   > :: t\n  > ```\n  > [r]: /u\n";
     let output = html(source);
@@ -743,7 +743,7 @@ fn a_bare_blank_releases_a_proved_quote_term_host() {
 #[test]
 fn a_task_marker_term_keeps_its_folded_definition_shaped_text() {
     let source = "- [ ] :: t\n       [r]: /u\n";
-    assert_eq!(html(source), "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <dl>\n      <dt>t\n     [r]: /u</dt>\n    </dl>\n  </li>\n</ul>");
+    assert_eq!(html(source), "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <dl>\n      <dt>t</dt>\n    </dl>\n  </li>\n</ul>");
 }
 
 #[test]

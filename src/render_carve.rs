@@ -1403,7 +1403,6 @@ fn render_blocks(
     blocks: &[BlockNode],
     ctx: &mut CarveContext,
     item: Option<&Pos>,
-    description_body: bool,
 ) -> String {
     if ctx.block_depth >= MAX_RENDER_DEPTH {
         crate::render_depth::record("carve");
@@ -1434,7 +1433,6 @@ fn render_blocks(
     let mut previous_list: Option<&List> = None;
     let mut adjacent_list_indent = 0;
     let mut separated_from_previous = false;
-    let mut description_list_offset = 0;
     let mut previous_emitted: Option<&BlockNode> = None;
     let mut moved_marker: Option<&BlockNode> = None;
     let list = blocks.as_ptr() as usize;
@@ -1463,14 +1461,10 @@ fn render_blocks(
         if let BlockNode::List(list) = block {
             separated_from_previous =
                 previous_list.is_some_and(|previous| lists_would_merge(previous, list));
-            if !separated_from_previous {
-                description_list_offset = 0;
-            }
             previous_list = Some(list);
         } else if !writes_nothing(&text) {
             previous_list = None;
             separated_from_previous = false;
-            description_list_offset = 0;
         }
         if !writes_nothing(&text) {
             let adjacent = previous_emitted
@@ -1487,13 +1481,7 @@ fn render_blocks(
                 let last = rendered.len() - 1;
                 rendered[last].push('\n');
                 rendered[last].push_str(&text);
-            } else if separated_from_previous && !rendered.is_empty() && description_body {
-                description_list_offset += 1;
-                let last = rendered.len() - 1;
-                rendered[last].push_str("\n\n");
-                rendered[last].push_str(&indent_adjacent_list(&text, description_list_offset));
             } else {
-                description_list_offset = 0;
                 rendered.push(if separated_from_previous && !rendered.is_empty() {
                     hard_list_boundary(session, &text)
                 } else {
@@ -1845,7 +1833,7 @@ fn render_inside_colon_container(
 ) -> String {
     ctx.colon_fence_depth += 1;
     ctx.indented_host_depth += 1;
-    let body = render_blocks(session, blocks, ctx, None, false);
+    let body = render_blocks(session, blocks, ctx, None);
     ctx.indented_host_depth -= 1;
     ctx.colon_fence_depth -= 1;
     body
@@ -2011,7 +1999,7 @@ fn render_item_blocks(
     relative_boundaries: &mut Vec<(usize, usize)>,
 ) -> String {
     if !tight {
-        return render_blocks(session, blocks, ctx, item, false);
+        return render_blocks(session, blocks, ctx, item);
     }
     if ctx.block_depth >= MAX_RENDER_DEPTH {
         crate::render_depth::record("carve");
@@ -2336,7 +2324,7 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
             }
             ctx.quote_depth += 1;
             let inner = with_reset_colon_fence_depth(ctx, |ctx| {
-                render_blocks(session, &quote.children, ctx, None, false)
+                render_blocks(session, &quote.children, ctx, None)
             });
             ctx.quote_depth -= 1;
             let body = inner
@@ -2527,7 +2515,7 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
             let body = render_inside_colon_container(session, &div.children, ctx);
             with_block_attrs(&div.attrs, &format!("{fence}{label}\n{body}\n{fence}"))
         }
-        BlockNode::Section(section) => render_blocks(session, &section.children, ctx, None, false),
+        BlockNode::Section(section) => render_blocks(session, &section.children, ctx, None),
         BlockNode::DefinitionList(list) => {
             let body = with_reset_colon_fence_depth(ctx, |ctx| {
                 render_definition_list(session, &list.items, ctx)
@@ -2602,7 +2590,7 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
         }
         BlockNode::ExtensionCarrier(extension) => with_block_attrs(
             &extension.attrs,
-            &render_blocks(session, &extension.children, ctx, None, false),
+            &render_blocks(session, &extension.children, ctx, None),
         ),
     }
 }
@@ -2701,7 +2689,7 @@ fn render_footnote_def_source(
     let previous_footnote_body = ctx.in_footnote_body;
     let previous_guard_types = std::mem::take(&mut ctx.footnote_guard_types);
     ctx.in_footnote_body = true;
-    let raw_body = render_blocks(session, blocks, ctx, None, false);
+    let raw_body = render_blocks(session, blocks, ctx, None);
     ctx.in_footnote_body = previous_footnote_body;
     let guard_types = std::mem::replace(&mut ctx.footnote_guard_types, previous_guard_types);
     if previous_footnote_body {
@@ -4849,6 +4837,17 @@ fn verbatim_needs_padding(content: &str) -> bool {
             && !content.chars().all(|c| c == ' '))
 }
 
+/// A closer glued to a definition-shaped last line becomes its destination, and
+/// indentation no longer keeps the line in the paragraph (rule A, carve#3885).
+fn last_line_reads_as_definition(content: &str) -> bool {
+    static DEFINITION: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    content.rsplit_once('\n').is_some_and(|(_, last)| {
+        DEFINITION
+            .get_or_init(|| regex::Regex::new(r"^\[[^\]\n]+\]:[ \t]").unwrap())
+            .is_match(last)
+    })
+}
+
 fn line_block_closer_in(content: &str, ctx: &CarveContext) -> bool {
     ctx.line_block_depth > 0
         && content.split_inclusive('\n').any(|line| {
@@ -4981,7 +4980,7 @@ fn render_code_with_unclosed(
     // unchanged. Padding it instead grew the span by two spaces on every fmt
     // pass. One-sided space is left as-is (the parser only strips when both
     // sides are spaces).
-    let needs_pad = verbatim_needs_padding(content);
+    let needs_pad = verbatim_needs_padding(content) || last_line_reads_as_definition(content);
     let reason = if content
         .as_bytes()
         .windows(2)

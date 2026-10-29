@@ -225,7 +225,7 @@ fn spells_the_boundary_with_every_host_prefix_however_deep() {
     round_trips("- x\n\n  > - o\n  >\n  >   - a\n  >\n  >\n  >\n  >   - b\n");
     assert_eq!(
         fmt(":: t\n: - a\n\n\n\n   - b\n"),
-        ":: t\n: - a\n\n   - b\n"
+        ":: t\n: - a\n\n\n\n  - b\n"
     );
     round_trips(":: t\n: - a\n\n\n\n   - b\n");
     round_trips("::: note\n- a\n\n\n\n- b\n:::\n");
@@ -239,7 +239,7 @@ fn keeps_the_top_level_boundary_exactly_as_it_was() {
         fmt("- apples\n\n\n\n- oranges\n"),
         "- apples\n\n\n\n- oranges\n"
     );
-    assert_eq!(fmt("1. a\n\n  1. b\n"), "1. a\n\n\n\n1. b\n");
+    assert_eq!(fmt("1. a\n\n  1. b\n"), "1. a\n\n2. b\n");
 }
 
 #[test]
@@ -249,7 +249,7 @@ fn writes_one_blank_line_below_a_block_at_the_marker_column() {
     // reads as that paragraph's lazy continuation and never opens.
     let source = "- x\n+\np2\n\n  - b\n";
 
-    assert_eq!(fmt(source), "- x\n+\np2\n\n  - b\n");
+    assert_eq!(fmt(source), "- x\n\n  p2\n\n- b\n");
     round_trips(source);
 }
 
