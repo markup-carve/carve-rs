@@ -402,6 +402,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             && is_line_comment_any_column(line)
             && !line.starts_with(LAZY)
             && !self.item_paragraph_open.get()
+            && (self.items.is_empty() || !self.comment_precedes_a_sibling(line))
         {
             return END;
         }

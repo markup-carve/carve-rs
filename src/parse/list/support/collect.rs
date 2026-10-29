@@ -1059,7 +1059,10 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && !definition_comment_band
             && !definition_band_inline_closer
             && !fence_owns_flush_left
-            && !comment_fence.is_some_and(|(run, _)| is_comment_fence_close_any_column(line, run))
+            && !comment_fence.is_some_and(|(run, _)| {
+                is_comment_fence_close_any_column(line, run)
+                    || detect_comment_fence_line_any_column(line).is_some()
+            })
             && !closes_a_held_comment_span(&lines, line)
             && !caption_follower
         {
@@ -1079,6 +1082,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && !definition_comment_band
             && !definition_band_inline_closer
             && !retained_item_fence
+            && !comment_fence.is_some_and(|(run, _)| is_comment_fence_close_any_column(line, run))
         {
             break;
         }
