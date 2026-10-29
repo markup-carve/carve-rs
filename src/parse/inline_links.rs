@@ -1395,8 +1395,9 @@ pub(in crate::parse) fn match_emphasis(
         _ => return None,
     };
     let delim = c;
-    // E3: an opener of a kind already open is content (markup-carve/carve#2078).
-    if OpenKinds::is_open(delim) {
+    // E3: an opener of a kind already open is content (markup-carve/carve#2078),
+    // unless a bracket run holds it: the run bounds emphasis (E2b, carve#3897).
+    if OpenKinds::is_open(delim) && !in_bracket_run(bytes, i, no_close, bounds) {
         return None;
     }
     // Opener: next char must exist and not be whitespace (CARVE-P3-013) or delim

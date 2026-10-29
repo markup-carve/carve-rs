@@ -1048,6 +1048,12 @@ impl InlineRun<'_, '_> {
         if let Some(next) = self.delimited_comment(i) {
             return Some(next);
         }
+        // `{#id}` glued to a host is its attribute block, even with a `#}` later.
+        if self.bytes.get(i + 1) == Some(&b'#') {
+            if let Some(next) = self.attach_attributes(i) {
+                return Some(next);
+            }
+        }
         let (bytes, options, in_footnote) = (self.bytes, self.options, self.in_footnote);
         let (positions, base) = (self.sink.positions, self.sink.base);
         if let Some((critic, consumed)) = parse_critic_markup(

@@ -1082,6 +1082,11 @@ pub(in crate::parse) fn enforce_no_nesting_inline(
                 c.children = enforce_no_nesting_inline(c.children, inside_link);
                 out.push(InlineNode::CriticDelete(c));
             }
+            InlineNode::CriticSubstitute(mut c) => {
+                c.old = enforce_no_nesting_inline(c.old, inside_link);
+                c.new = enforce_no_nesting_inline(c.new, inside_link);
+                out.push(InlineNode::CriticSubstitute(c));
+            }
             other => out.push(other),
         }
     }
@@ -1747,6 +1752,30 @@ pub(in crate::parse) fn emphasis_run_at(
     run
 }
 
+const MAX_GUARD_DEPTH: usize = 16;
+
+thread_local! {
+    static GUARD_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Whether `pos` sits in a bracket run of this inline run. A kind open
+/// outside the run is not reachable inside it for E3 (carve#3897).
+pub(in crate::parse) fn in_bracket_run(
+    bytes: &[u8],
+    pos: usize,
+    memo: &mut EmphasisMemo,
+    bounds: &InlineBounds<'_>,
+) -> bool {
+    bounds.bracket_run_at(pos).is_some()
+        && emphasis_run_at(
+            bounds,
+            memo.atomic
+                .get_or_insert_with(|| atomic_link_regions(bytes, bounds).into()),
+            pos,
+        )
+        .is_some()
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(in crate::parse) fn find_emphasis_close(
     bytes: &[u8],
@@ -1766,6 +1795,9 @@ pub(in crate::parse) fn find_emphasis_close(
     let opener_run = emphasis_run_at(bounds, &regions, from - 1);
     let opener_end = opener_run.map(|open| bounds.matches[open]);
     let mut attached = HashMap::new();
+    // A guard `_` or `/` that opens a span is markup, so the opener after it
+    // starts at START: `from`, then each guard opener chained behind it.
+    let mut start = from;
     let mut j = from;
     while j < bytes.len() {
         if opener_end.is_some_and(|end| j > end) {
@@ -1779,10 +1811,38 @@ pub(in crate::parse) fn find_emphasis_close(
         if matches!(ch, b'/' | b'*' | b'_' | b'~' | b'=')
             && ch != delim
             && !(delim == COMBINED_CLOSER && matches!(ch, b'/' | b'*'))
-            && !OpenKinds::is_open(ch)
+            && (!OpenKinds::is_open(ch) || emphasis_run_at(bounds, &regions, j).is_some())
         {
-            if let Some((close, end)) = bounds.braced_closers(bytes).bare_attributes(bytes, j) {
+            let guarded = j == start && j > 0 && matches!(bytes[j - 1], b'/' | b'_');
+            let pair = if guarded {
+                bounds
+                    .braced_closers(bytes)
+                    .bare_attributes_at_start(bytes, j)
+            } else {
+                bounds.braced_closers(bytes).bare_attributes(bytes, j)
+            };
+            if let Some((close, end)) = pair {
                 attached.insert(close + 1, end);
+            }
+            // Only an attribute block behind the next opener makes the guard's
+            // own closer matter, so the recursion stays off plain text.
+            if j == start
+                && matches!(ch, b'/' | b'_')
+                && bytes
+                    .get(j + 1)
+                    .is_some_and(|&next| !is_carve_ws(next) && next != ch)
+                && bounds
+                    .braced_closers(bytes)
+                    .bare_attributes_at_start(bytes, j + 1)
+                    .is_some()
+                && GUARD_DEPTH.with(|depth| depth.get() < MAX_GUARD_DEPTH)
+            {
+                GUARD_DEPTH.with(|depth| depth.set(depth.get() + 1));
+                let opens = cached_find_emphasis_close(bytes, j + 1, ch, memo, bounds).is_some();
+                GUARD_DEPTH.with(|depth| depth.set(depth.get() - 1));
+                if opens {
+                    start = j + 1;
+                }
             }
         }
         if let Some(&end) = attached.get(&j) {
