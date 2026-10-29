@@ -1160,7 +1160,9 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             emit!(_block_source_line, parse_paragraph(&mut cur, options));
             continue;
         }
-        if use_standard_event_paragraph(options, extents.is_some(), defer_pending) {
+        if use_standard_event_paragraph(options, extents.is_some(), defer_pending)
+            || crate::includes::code_include_line(line).is_some()
+        {
             emit!(_block_source_line, parse_paragraph(&mut cur, options));
             continue;
         }
