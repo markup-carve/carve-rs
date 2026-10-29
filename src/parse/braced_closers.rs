@@ -154,6 +154,7 @@ impl BracedClosers {
                 for (&open, &(close, _)) in &ends {
                     hosts.insert(open, close + 2);
                 }
+                self.insert_editorial_hosts(bytes, &mut hosts);
                 let mut scanner = SubstitutionScanner::default();
                 for (open, close) in strikes {
                     if let Some(arrow) =
@@ -176,6 +177,20 @@ impl BracedClosers {
             offset: start,
             length,
         }
+    }
+
+    /// Matched `{+ +}` and `{- -}` frames bound a substitution's arrow scan (PART 9 E2a).
+    fn insert_editorial_hosts(&mut self, bytes: &[u8], hosts: &mut HashMap<usize, usize>) {
+        let outer_verbatim = self.last_verbatim_start;
+        for at in 0..bytes.len().saturating_sub(1) {
+            if bytes[at] != b'{' || !matches!(bytes[at + 1], b'+' | b'-') {
+                continue;
+            }
+            if let Some(close) = self.close_editorial(bytes, at, bytes[at + 1]) {
+                hosts.entry(at).or_insert(close + 2);
+            }
+        }
+        self.last_verbatim_start = outer_verbatim;
     }
 
     /// The end of the editorial comment opening at `at`. The closer scan steps
@@ -229,6 +244,7 @@ impl BracedClosers {
                     hosts.insert(at, close + 2);
                 }
             }
+            self.insert_editorial_hosts(bytes, &mut hosts);
             self.substitution_hosts = Some(hosts);
         }
         self.substitutions
