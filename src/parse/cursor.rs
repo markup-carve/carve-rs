@@ -30,6 +30,21 @@ pub(in crate::parse) fn document_block_starts<'a>(
     lines: &'a [&'a str],
     options: &Options<'_>,
 ) -> DocumentBlockStarts {
+    if let Some(starts) = simple_event_block_starts(lines, options) {
+        #[cfg(test)]
+        SIMPLE_EVENT_PROBE_ADMISSIONS.with(|count| count.set(count.get() + 1));
+        return DocumentBlockStarts {
+            starts,
+            closed_initial_container_end: None,
+        };
+    }
+    standard_document_block_starts(lines, options)
+}
+
+fn standard_document_block_starts<'a>(
+    lines: &'a [&'a str],
+    options: &Options<'_>,
+) -> DocumentBlockStarts {
     let _recording = definition_regions::RecordingPause::enter();
     let _probing = ProbeGuard::enter();
     let _source_ending = SourceEndingGuard::fragment();
@@ -56,6 +71,159 @@ pub(in crate::parse) fn document_block_starts<'a>(
     DocumentBlockStarts {
         starts: cursor.block_starts.take().unwrap_or_default(),
         closed_initial_container_end: cursor.closed_initial_container_end,
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(in crate::parse) static SIMPLE_EVENT_PROBE_ADMISSIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(feature = "experimental-event-parser")]
+fn simple_event_block_starts(lines: &[&str], options: &Options<'_>) -> Option<Vec<usize>> {
+    if options.positions
+        || options.source_lines
+        || needs_source_ending_map()
+        || parse_order_observed(options)
+    {
+        return None;
+    }
+    // Admit the whole run before reading any event. These bytes cannot spell
+    // a block marker, attribute, definition, comment, or continuation.
+    for &line in lines {
+        if is_blank_line(line) {
+            if !line.bytes().all(|byte| byte == b' ' || byte == b'\t') {
+                return None;
+            }
+            continue;
+        }
+        let text = if line.starts_with('#') {
+            let (_, text) = detect_heading(line)?;
+            text
+        } else {
+            line
+        };
+        if !text.is_empty()
+            && (text.as_bytes()[0] == b' ' || !text.as_bytes()[0].is_ascii_alphabetic())
+        {
+            return None;
+        }
+        if !text
+            .bytes()
+            .all(|byte| byte.is_ascii_alphabetic() || byte == b' ')
+        {
+            return None;
+        }
+    }
+    Some(
+        event_pipeline::Events { lines, next: 0 }
+            .map(|event| match event {
+                event_pipeline::Event::Heading(start, ..)
+                | event_pipeline::Event::Paragraph(start, ..) => start,
+            })
+            .collect(),
+    )
+}
+
+#[cfg(not(feature = "experimental-event-parser"))]
+fn simple_event_block_starts(_: &[&str], _: &Options<'_>) -> Option<Vec<usize>> {
+    None
+}
+
+#[cfg(all(test, feature = "experimental-event-parser"))]
+mod simple_probe_tests {
+    use super::*;
+    use crate::{BlockMatch, CarveExtension, MatcherContext};
+    use std::cell::Cell;
+
+    #[test]
+    fn event_starts_match_standard_probe() {
+        let parts = [
+            "",
+            "\n",
+            " \t\n",
+            "alpha\n",
+            "alpha beta\n",
+            "# Heading\n",
+            "## Other\n",
+        ];
+        let options = Options::default();
+        for a in parts {
+            for b in parts {
+                for c in parts {
+                    let source = format!("{a}{b}{c}");
+                    let lines: Vec<&str> = source.lines().collect();
+                    let expected = standard_document_block_starts(&lines, &options);
+                    let before = SIMPLE_EVENT_PROBE_ADMISSIONS.with(Cell::get);
+                    let actual = document_block_starts(&lines, &options);
+                    assert_eq!(actual.starts, expected.starts, "{source:?}");
+                    assert_eq!(
+                        actual.closed_initial_container_end, expected.closed_initial_container_end,
+                        "{source:?}"
+                    );
+                    assert_eq!(
+                        SIMPLE_EVENT_PROBE_ADMISSIONS.with(Cell::get),
+                        before + 1,
+                        "{source:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    struct Probe(Cell<usize>);
+    impl CarveExtension for Probe {
+        fn name(&self) -> &'static str {
+            "simple-probe-control"
+        }
+        fn match_block(&self, _: &[&str], _: usize, _: &MatcherContext<'_>) -> Option<BlockMatch> {
+            self.0.set(self.0.get() + 1);
+            None
+        }
+    }
+
+    #[test]
+    fn complex_lines_decline_with_callback_and_diagnostic_parity() {
+        let probe = Probe(Cell::new(0));
+        let options = Options::default().with_extension(&probe);
+        for source in [
+            "{#id}\nalpha\n",
+            "%% comment\n",
+            "::: note\ntext\n:::\n",
+            "[x]: /url\n",
+            "- item\n",
+            "alpha\n+\nbeta\n",
+            "```\ncode\n```\n",
+        ] {
+            let lines: Vec<&str> = source.lines().collect();
+            let before = SIMPLE_EVENT_PROBE_ADMISSIONS.with(Cell::get);
+            let ((expected, expected_attrs), expected_lint) = collecting_lint_events(|| {
+                collecting_unattached_block_attrs(|| {
+                    standard_document_block_starts(&lines, &options)
+                })
+            });
+            let expected_calls = probe.0.replace(0);
+            let ((actual, actual_attrs), actual_lint) = collecting_lint_events(|| {
+                collecting_unattached_block_attrs(|| document_block_starts(&lines, &options))
+            });
+            assert_eq!(actual.starts, expected.starts, "{source:?}");
+            assert_eq!(
+                actual.closed_initial_container_end, expected.closed_initial_container_end,
+                "{source:?}"
+            );
+            assert_eq!(probe.0.replace(0), expected_calls, "{source:?}");
+            assert_eq!(actual_attrs, expected_attrs, "{source:?}");
+            assert_eq!(
+                format!("{actual_lint:?}"),
+                format!("{expected_lint:?}"),
+                "{source:?}"
+            );
+            assert_eq!(
+                SIMPLE_EVENT_PROBE_ADMISSIONS.with(Cell::get),
+                before,
+                "{source:?}"
+            );
+        }
     }
 }
 

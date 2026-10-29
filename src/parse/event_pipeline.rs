@@ -487,14 +487,14 @@ mod continuation_owner_tests {
     }
 }
 
-enum Event<'a> {
+pub(super) enum Event<'a> {
     Heading(usize, u8, &'a str),
     Paragraph(usize, &'a [&'a str]),
 }
 
-struct Events<'a> {
-    lines: &'a [&'a str],
-    next: usize,
+pub(super) struct Events<'a> {
+    pub(super) lines: &'a [&'a str],
+    pub(super) next: usize,
 }
 
 impl<'a> Iterator for Events<'a> {
