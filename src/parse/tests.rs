@@ -62,6 +62,8 @@ fn matcher_context_event_fragment_matches_standard_reentry() {
         ("inner\n+\n", false, false), // event preflight declines
         ("inner\n", true, false),
         ("inner\n", false, true),
+        ("outer\n\n- child\n  nested\n", false, true),
+        ("inner\n+\n", false, true),
     ] {
         let run = |event| {
             event_pipeline::LADDER_TAIL_EVENT_PARSES.with(|count| count.set(0));
@@ -87,7 +89,7 @@ fn matcher_context_event_fragment_matches_standard_reentry() {
             let event_parses = event_pipeline::LADDER_TAIL_EVENT_PARSES.with(Cell::get);
             assert_eq!(
                 event_parses > 0,
-                event && !positions && !source_lines && !fragment.contains('+')
+                event && !positions && !fragment.contains('+')
             );
             (document, nested, trace)
         };

@@ -707,7 +707,7 @@ pub(super) fn parse_drained_fragment(
     source: &str,
     options: &Options<'_>,
 ) -> Option<Vec<BlockNode>> {
-    if options.positions || options.source_lines || !event_frame_admitted(false) {
+    if options.positions || !event_frame_admitted(false) {
         return None;
     }
     let lines: Vec<&str> = source.lines().collect();
@@ -717,7 +717,8 @@ pub(super) fn parse_drained_fragment(
     }) {
         return None;
     }
-    let want_lines = needs_source_ending_map() || needs_quote_marker_line_map(source);
+    let want_lines =
+        options.source_lines || needs_source_ending_map() || needs_quote_marker_line_map(source);
     let line_map: Vec<Option<usize>> = if want_lines {
         (1..=lines.len()).map(Some).collect()
     } else {
