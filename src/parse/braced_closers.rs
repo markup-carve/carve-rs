@@ -80,6 +80,9 @@ pub(super) struct BracedClosers {
     queries: usize,
     last_verbatim_start: Option<usize>,
     opaque: HashMap<usize, usize>,
+    /// `[^` references an image opener holds in `opaque`; the editorial and
+    /// substitution scans read the reference first (`edScan`, `edSubAtom`).
+    note_refs: HashMap<usize, usize>,
     states: HashMap<(u8, usize, usize), Option<usize>>,
     substitutions: SubstitutionScanner,
     code_ends: Option<CodeSpanIndex>,
@@ -151,6 +154,7 @@ impl BracedClosers {
             let mut arrows = HashMap::new();
             if !strikes.is_empty() {
                 let mut hosts = self.native_opaque.as_ref().unwrap_or(&self.opaque).clone();
+                hosts.extend(&self.note_refs);
                 for (&open, &(close, _)) in &ends {
                     hosts.insert(open, close + 2);
                 }
@@ -216,6 +220,17 @@ impl BracedClosers {
         }
     }
 
+    pub(super) fn set_note_refs(&mut self, note_refs: HashMap<usize, usize>) {
+        self.note_refs = note_refs;
+    }
+
+    fn editorial_host(&self, at: usize) -> Option<usize> {
+        self.note_refs
+            .get(&at)
+            .or_else(|| self.opaque.get(&at))
+            .copied()
+    }
+
     pub(super) fn substitution(&mut self, bytes: &[u8], open: usize) -> Option<(usize, usize)> {
         if bytes.get(open + 1) != Some(&b'~') {
             return None;
@@ -228,6 +243,7 @@ impl BracedClosers {
         }
         if self.substitution_hosts.is_none() {
             let mut hosts = self.native_opaque.as_ref().unwrap_or(&self.opaque).clone();
+            hosts.extend(&self.note_refs);
             let points = self.emphasis_pairs.as_ref().unwrap().points.clone();
             for at in points {
                 if bytes.get(at) != Some(&b'{') {
@@ -440,7 +456,7 @@ impl BracedClosers {
         let mut points = Vec::new();
         let mut comments = HashMap::new();
         for at in 0..bytes.len().saturating_sub(1) {
-            if !self.opaque.contains_key(&at) {
+            if self.editorial_host(at).is_none() {
                 if let Some(end) = self.comment_end(bytes, at) {
                     comments.insert(at, end);
                 }
@@ -450,7 +466,7 @@ impl BracedClosers {
             let next = bytes[at + 1];
             if (bytes[at] == b'`'
                 && (at == 0 || bytes[at - 1] != b'`' || (at > 1 && bytes[at - 2] == b'\\')))
-                || self.opaque.contains_key(&at)
+                || self.editorial_host(at).is_some()
                 || comments.contains_key(&at)
                 || bytes[at] == b'\\'
                 || (bytes[at] == b'{'
@@ -469,7 +485,10 @@ impl BracedClosers {
         let mut after_pair = Vec::new();
         for &at in &points[..points.len() - 1] {
             after_pair.push(index(at + 2));
-            let step = if let Some(&end) = self.opaque.get(&at).or_else(|| comments.get(&at)) {
+            let step = if let Some(end) = self
+                .editorial_host(at)
+                .or_else(|| comments.get(&at).copied())
+            {
                 BracedStep::Jump(index(end))
             } else {
                 match bytes[at] {
@@ -1017,9 +1036,7 @@ impl BracedClosers {
                 self.steps += 1;
             }
             if let Some(end) = self
-                .opaque
-                .get(&j)
-                .copied()
+                .editorial_host(j)
                 .or_else(|| self.comment_end(bytes, j))
             {
                 j = end;

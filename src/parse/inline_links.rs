@@ -732,9 +732,26 @@ pub(crate) fn structural_bracket_offsets(source: &str) -> Option<Vec<usize>> {
     Some(offsets)
 }
 
+/// Whether `at` opens an image's `(dest)` or `[ref]` tail (`destSlot`, `refTail`).
+fn image_tail(bytes: &[u8], at: usize) -> bool {
+    match bytes.get(at) {
+        Some(b'(') => {
+            let body = bytes[at + 1..].iter().take_while(|&&b| b == b' ').count();
+            bytes.get(at + 1 + body) == Some(&b')') || link_destination_end(bytes, at).is_some()
+        }
+        Some(b'[') => {
+            bytes[at + 1..]
+                .iter()
+                .find(|&&b| matches!(b, b']' | b'\n' | b'\r'))
+                == Some(&b']')
+        }
+        _ => false,
+    }
+}
+
 /// Each `[^` whose label (up to the first `]` on its line) holds a `[`, as
-/// (open, close). Image openers are left out: `![` reads as an image first.
-fn footnote_labels_holding_bracket(bytes: &[u8]) -> Vec<(usize, usize)> {
+/// (open, close).
+pub(in crate::parse) fn footnote_labels_holding_bracket(bytes: &[u8]) -> Vec<(usize, usize)> {
     let mut found = Vec::new();
     // Shared forward cursors keep the scan linear; `bytes.len()` means none ahead.
     let (mut stop, mut bracket) = (0, 0);
@@ -746,15 +763,7 @@ fn footnote_labels_holding_bracket(bytes: &[u8]) -> Vec<(usize, usize)> {
             .rev()
             .take_while(|&&b| b == b'\\')
             .count();
-        let bang = open > 0 && bytes[open - 1] == b'!' && {
-            let before = bytes[..open - 1]
-                .iter()
-                .rev()
-                .take_while(|&&b| b == b'\\')
-                .count();
-            before % 2 == 0
-        };
-        if escapes % 2 == 1 || bang {
+        if escapes % 2 == 1 {
             continue;
         }
         if stop < open + 2 {
@@ -794,6 +803,15 @@ fn footnote_labels_holding_bracket(bytes: &[u8]) -> Vec<(usize, usize)> {
 /// Entry `i` is meaningful only when `bytes[i] == b'['`; it holds the matching
 /// `]` index, or `NO_BRACKET_MATCH` when that `[` never closes.
 pub(in crate::parse) fn compute_bracket_matches(bytes: &[u8]) -> (Vec<usize>, Vec<usize>) {
+    compute_bracket_runs(bytes, true)
+}
+
+/// [`compute_bracket_matches`] for a slot that may or may not read `[^`
+/// references; an inline note's body does not (SS16).
+pub(in crate::parse) fn compute_bracket_runs(
+    bytes: &[u8],
+    footnote_refs: bool,
+) -> (Vec<usize>, Vec<usize>) {
     let mut matches = vec![NO_BRACKET_MATCH; bytes.len()];
     // For each position, the `[` of the INNERMOST bracket run holding it, or
     // `NO_BRACKET_MATCH` outside every run. Filled by the same pass that pairs
@@ -845,11 +863,19 @@ pub(in crate::parse) fn compute_bracket_matches(bytes: &[u8]) -> (Vec<usize>, Ve
     };
     let crossref_end = CrossrefScan::default();
     // A `[^` reference is read before bracket scanning (PART 8), so a `[` in its
-    // label opens no run. Inside a closed run (a link label) or behind `!` the
-    // brackets nest as usual, so only refs the plain pass leaves outside every
-    // closed run are atomic, and a second pass reads them so.
-    let footnote_candidates = footnote_labels_holding_bracket(bytes);
+    // label opens no run. Every run's content is read again as inline text, so
+    // that holds inside a run as well, while each run keeps the extent plain
+    // nesting gives it (`nested`). The second pass reads the references the
+    // plain pass reached as atomic, and a `]` that plain nesting paired with a
+    // `[` in a label closes nothing.
+    let footnote_candidates: HashMap<usize, usize> = if footnote_refs {
+        footnote_labels_holding_bracket(bytes).into_iter().collect()
+    } else {
+        HashMap::new()
+    };
+    let mut reached: Vec<(usize, usize)> = Vec::new();
     let mut atomic: HashMap<usize, usize> = HashMap::new();
+    let mut freed: HashSet<usize> = HashSet::new();
     let mut spans: Vec<(usize, usize)>;
     let mut passes = 0;
     loop {
@@ -903,16 +929,20 @@ pub(in crate::parse) fn compute_bracket_matches(bytes: &[u8]) -> (Vec<usize>, Ve
                 }
                 b'[' if atomic.contains_key(&i) => {
                     let close = atomic[&i];
-                    // Every `[` still open here never closes in the plain pass.
-                    stack.clear();
-                    alt.clear();
-                    run_at[i] = NO_BRACKET_MATCH;
-                    run_at[close] = NO_BRACKET_MATCH;
+                    run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
+                    run_at[close] = run_at[i];
                     fill_run(&mut run_at[..close], &[i], i + 1, close);
                     matches[i] = close;
                     i = close + 1;
                 }
+                b']' if freed.contains(&i) => {
+                    run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
+                    i += 1;
+                }
                 b'[' => {
+                    if let Some(&close) = footnote_candidates.get(&i) {
+                        reached.push((i, close));
+                    }
                     run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
                     stack.push(i);
                     alt.push(in_alt || (i > 0 && last_bang == i - 1));
@@ -942,18 +972,28 @@ pub(in crate::parse) fn compute_bracket_matches(bytes: &[u8]) -> (Vec<usize>, Ve
             }
         }
         passes += 1;
-        let settled: HashMap<usize, usize> = footnote_candidates
-            .iter()
-            .filter(|&&(open, _)| {
-                let holder = run_at[open];
-                holder == NO_BRACKET_MATCH || matches[holder] == NO_BRACKET_MATCH
-            })
-            .copied()
-            .collect();
-        if passes == 2 || settled.is_empty() {
+        if passes == 2 || reached.is_empty() {
             break;
         }
-        atomic = settled;
+        let mut label_end = None;
+        for &(open, close) in &reached {
+            // A `[^` inside an earlier label is label text, and `![` with a
+            // tail reads as an image first.
+            let image = open > 0
+                && bytes[open - 1] == b'!'
+                && matches[open] != NO_BRACKET_MATCH
+                && image_tail(bytes, matches[open] + 1);
+            if image || label_end.is_some_and(|end| open <= end) {
+                continue;
+            }
+            label_end = Some(close);
+            atomic.insert(open, close);
+            for at in open..close {
+                if bytes[at] == b'[' && matches[at] != NO_BRACKET_MATCH && matches[at] > close {
+                    freed.insert(matches[at]);
+                }
+            }
+        }
         matches.fill(NO_BRACKET_MATCH);
         run_at.fill(NO_BRACKET_MATCH);
     }
