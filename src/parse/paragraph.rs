@@ -21,6 +21,7 @@ pub(super) fn detect_block_image(line: &str) -> Option<Image> {
         delim_brace: [None; DELIM_BRACE_SLOTS],
         braced_closers: RefCell::new(None),
         native_pairs: None,
+        footnote_refs: true,
     };
     let (img, consumed) = parse_image_at(bytes, 0, &bounds)?;
     let after = &line[consumed..];
@@ -49,6 +50,7 @@ fn reference_image_line(line: &str) -> bool {
         delim_brace: [None; DELIM_BRACE_SLOTS],
         braced_closers: RefCell::new(None),
         native_pairs: None,
+        footnote_refs: true,
     };
     parse_reference_image(bytes, 0, &bounds)
         .is_some_and(|(_, consumed)| trim_ascii(&line[consumed..]).is_empty())

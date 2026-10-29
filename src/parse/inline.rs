@@ -63,6 +63,8 @@ pub(in crate::parse) struct InlineBounds<'a> {
     pub(in crate::parse) delim_brace: [Option<usize>; DELIM_BRACE_SLOTS],
     pub(in crate::parse) braced_closers: RefCell<Option<BracedClosers>>,
     pub(in crate::parse) native_pairs: Option<NativeBracedView>,
+    /// Whether `[^` references are read here; an inline note's body reads none (SS16).
+    pub(in crate::parse) footnote_refs: bool,
 }
 
 pub(in crate::parse) fn inline_pos(
@@ -137,6 +139,15 @@ impl InlineBounds<'_> {
         std::cell::RefMut::map(self.braced_closers.borrow_mut(), |memo| {
             memo.get_or_insert_with(|| {
                 let mut memo = BracedClosers::with_hosts(self.braced_hosts(bytes));
+                if self.footnote_refs {
+                    memo.set_note_refs(
+                        footnote_labels_holding_bracket(bytes)
+                            .into_iter()
+                            .filter(|&(open, close)| self.matches.get(open) != Some(&close))
+                            .map(|(open, close)| (open, close + 1))
+                            .collect(),
+                    );
+                }
                 memo.inherit(self.native_pairs.clone());
                 memo
             })
@@ -470,7 +481,7 @@ pub(in crate::parse) fn parse_inline_context_with_pairs(
     // at the run's closer (CARVE-P9-041, markup-carve/carve#2576), and an
     // emphasis delimiter does not pair across one (PART 8, carve#2577).
     let (bracket_matches, bracket_run_at) = if has_open_bracket {
-        compute_bracket_matches(bytes)
+        compute_bracket_runs(bytes, !in_footnote)
     } else {
         (Vec::new(), Vec::new())
     };
@@ -491,6 +502,7 @@ pub(in crate::parse) fn parse_inline_context_with_pairs(
             &bracket_openers,
             &bracket_run_at,
             pairs,
+            !in_footnote,
         ),
         quotes: &quotes,
         citation_brackets: std::cell::OnceCell::new(),
@@ -574,6 +586,7 @@ fn inline_bounds<'a>(
     openers: &'a [usize],
     run_at: &'a [usize],
     pairs: Option<NativeBracedView>,
+    footnote_refs: bool,
 ) -> InlineBounds<'a> {
     let bytes = text.as_bytes();
     // Last-occurrence positions of each mandatory closer, precomputed once so the
@@ -631,6 +644,7 @@ fn inline_bounds<'a>(
         delim_brace,
         braced_closers: RefCell::new(None),
         native_pairs: pairs,
+        footnote_refs,
     }
 }
 

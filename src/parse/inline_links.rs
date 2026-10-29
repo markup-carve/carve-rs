@@ -732,6 +732,62 @@ pub(crate) fn structural_bracket_offsets(source: &str) -> Option<Vec<usize>> {
     Some(offsets)
 }
 
+/// Whether `at` opens an image's `(dest)` or `[ref]` tail (`destSlot`, `refTail`).
+fn image_tail(bytes: &[u8], at: usize) -> bool {
+    match bytes.get(at) {
+        Some(b'(') => {
+            let body = bytes[at + 1..].iter().take_while(|&&b| b == b' ').count();
+            bytes.get(at + 1 + body) == Some(&b')') || link_destination_end(bytes, at).is_some()
+        }
+        Some(b'[') => {
+            bytes[at + 1..]
+                .iter()
+                .find(|&&b| matches!(b, b']' | b'\n' | b'\r'))
+                == Some(&b']')
+        }
+        _ => false,
+    }
+}
+
+/// Each `[^` whose label (up to the first `]` on its line) holds a `[`, as
+/// (open, close).
+pub(in crate::parse) fn footnote_labels_holding_bracket(bytes: &[u8]) -> Vec<(usize, usize)> {
+    let mut found = Vec::new();
+    // Shared forward cursors keep the scan linear; `bytes.len()` means none ahead.
+    let (mut stop, mut bracket) = (0, 0);
+    let mut at = 0;
+    while let Some(open) = find_seq(bytes, at, b"[^") {
+        at = open + 1;
+        let escapes = bytes[..open]
+            .iter()
+            .rev()
+            .take_while(|&&b| b == b'\\')
+            .count();
+        if escapes % 2 == 1 {
+            continue;
+        }
+        if stop < open + 2 {
+            stop = bytes[open + 2..]
+                .iter()
+                .position(|&b| matches!(b, b']' | b'\n' | b'\r'))
+                .map_or(bytes.len(), |len| open + 2 + len);
+        }
+        if stop == bytes.len() {
+            break;
+        }
+        if bracket < open + 2 {
+            bracket = bytes[open + 2..]
+                .iter()
+                .position(|&b| b == b'[')
+                .map_or(bytes.len(), |len| open + 2 + len);
+        }
+        if stop > open + 2 && bytes[stop] == b']' && bracket < stop {
+            found.push((open, stop));
+        }
+    }
+    found
+}
+
 /// Precompute the matching `]` index for every `[` in `bytes`, giving the
 /// answer `read_bracketed` gives scanning from that `[` (CARVE-P3-001): backslash
 /// escapes skip two bytes, and a verbatim span, editorial comment or autolink
@@ -747,6 +803,15 @@ pub(crate) fn structural_bracket_offsets(source: &str) -> Option<Vec<usize>> {
 /// Entry `i` is meaningful only when `bytes[i] == b'['`; it holds the matching
 /// `]` index, or `NO_BRACKET_MATCH` when that `[` never closes.
 pub(in crate::parse) fn compute_bracket_matches(bytes: &[u8]) -> (Vec<usize>, Vec<usize>) {
+    compute_bracket_runs(bytes, true)
+}
+
+/// [`compute_bracket_matches`] for a slot that may or may not read `[^`
+/// references; an inline note's body does not (SS16).
+pub(in crate::parse) fn compute_bracket_runs(
+    bytes: &[u8],
+    footnote_refs: bool,
+) -> (Vec<usize>, Vec<usize>) {
     let mut matches = vec![NO_BRACKET_MATCH; bytes.len()];
     // For each position, the `[` of the INNERMOST bracket run holding it, or
     // `NO_BRACKET_MATCH` outside every run. Filled by the same pass that pairs
@@ -797,82 +862,147 @@ pub(in crate::parse) fn compute_bracket_matches(bytes: &[u8]) -> (Vec<usize>, Ve
         find_seq(bytes, at + 2, b"%}").map(|close| close + 2)
     };
     let crossref_end = CrossrefScan::default();
-    // Closed verbatim spans the pass skipped, as (content start, end).
-    let mut spans: Vec<(usize, usize)> = Vec::new();
-    let mut stack: Vec<usize> = Vec::new();
-    // Per open bracket, whether it is (inside) an image alt.
-    let mut alt: Vec<bool> = Vec::new();
-    let mut last_bang = usize::MAX;
-    let mut slot_budget = BRACKET_RESCAN_BUDGET * bytes.len() + 64;
-    let mut i = 0;
-    while i < bytes.len() {
-        let in_alt = alt.last().copied().unwrap_or(false);
-        match bytes[i] {
-            b'\\' if i + 1 < bytes.len() => {
-                fill_run(&mut run_at, &stack, i, i + 2);
-                i += 2;
-            }
-            b'`' => match closed_span_end(i) {
-                (len, Some(end)) => {
-                    spans.push((i + len, end));
-                    fill_run(&mut run_at, &stack, i, end);
-                    i = end;
+    // A `[^` reference is read before bracket scanning (PART 8), so a `[` in its
+    // label opens no run. Every run's content is read again as inline text, so
+    // that holds inside a run as well, while each run keeps the extent plain
+    // nesting gives it (`nested`). The second pass reads the references the
+    // plain pass reached as atomic, and a `]` that plain nesting paired with a
+    // `[` in a label closes nothing.
+    let footnote_candidates: HashMap<usize, usize> = if footnote_refs {
+        footnote_labels_holding_bracket(bytes).into_iter().collect()
+    } else {
+        HashMap::new()
+    };
+    let mut reached: Vec<(usize, usize)> = Vec::new();
+    let mut atomic: HashMap<usize, usize> = HashMap::new();
+    let mut freed: HashSet<usize> = HashSet::new();
+    let mut spans: Vec<(usize, usize)>;
+    let mut passes = 0;
+    loop {
+        // Closed verbatim spans the pass skipped, as (content start, end).
+        spans = Vec::new();
+        let mut stack: Vec<usize> = Vec::new();
+        // Per open bracket, whether it is (inside) an image alt.
+        let mut alt: Vec<bool> = Vec::new();
+        let mut last_bang = usize::MAX;
+        let mut slot_budget = BRACKET_RESCAN_BUDGET * bytes.len() + 64;
+        let mut i = 0;
+        while i < bytes.len() {
+            let in_alt = alt.last().copied().unwrap_or(false);
+            match bytes[i] {
+                b'\\' if i + 1 < bytes.len() => {
+                    fill_run(&mut run_at, &stack, i, i + 2);
+                    i += 2;
                 }
-                (len, None) => {
-                    fill_run(&mut run_at, &stack, i, i + len);
-                    stack.clear();
-                    alt.clear();
-                    i += len;
-                }
-            },
-            b'{' if comment_end(i).is_some() => {
-                let end = comment_end(i).unwrap_or(i + 1);
-                fill_run(&mut run_at, &stack, i, end);
-                i = end;
-            }
-            b'{' if delimited_end(i, in_alt).is_some() => {
-                let end = delimited_end(i, in_alt).unwrap_or(i + 1);
-                fill_run(&mut run_at, &stack, i, end);
-                i = end;
-            }
-            b'<' if crossref_end.end(bytes, i).is_some() => {
-                let end = crossref_end.end(bytes, i).unwrap_or(i + 1);
-                fill_run(&mut run_at, &stack, i, end);
-                i = end;
-            }
-            b'<' if scanned_autolink_end(bytes, i).is_some() => {
-                let end = scanned_autolink_end(bytes, i).unwrap_or(i);
-                fill_run(&mut run_at, &stack, i, end + 1);
-                i = end + 1;
-            }
-            b'[' => {
-                run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
-                stack.push(i);
-                alt.push(in_alt || (i > 0 && last_bang == i - 1));
-                i += 1;
-            }
-            b']' => {
-                if let Some(open) = stack.pop() {
-                    matches[open] = i;
-                }
-                alt.pop();
-                run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
-                i += 1;
-                if !stack.is_empty() {
-                    if let Some(end) = nested_destination_slot_end(bytes, i, &mut slot_budget) {
+                b'`' => match closed_span_end(i) {
+                    (len, Some(end)) => {
+                        spans.push((i + len, end));
                         fill_run(&mut run_at, &stack, i, end);
                         i = end;
                     }
+                    (len, None) => {
+                        fill_run(&mut run_at, &stack, i, i + len);
+                        stack.clear();
+                        alt.clear();
+                        i += len;
+                    }
+                },
+                b'{' if comment_end(i).is_some() => {
+                    let end = comment_end(i).unwrap_or(i + 1);
+                    fill_run(&mut run_at, &stack, i, end);
+                    i = end;
                 }
-            }
-            byte => {
-                if byte == b'!' {
-                    last_bang = i;
+                b'{' if delimited_end(i, in_alt).is_some() => {
+                    let end = delimited_end(i, in_alt).unwrap_or(i + 1);
+                    fill_run(&mut run_at, &stack, i, end);
+                    i = end;
                 }
-                run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
-                i += 1;
+                b'<' if crossref_end.end(bytes, i).is_some() => {
+                    let end = crossref_end.end(bytes, i).unwrap_or(i + 1);
+                    fill_run(&mut run_at, &stack, i, end);
+                    i = end;
+                }
+                b'<' if scanned_autolink_end(bytes, i).is_some() => {
+                    let end = scanned_autolink_end(bytes, i).unwrap_or(i);
+                    fill_run(&mut run_at, &stack, i, end + 1);
+                    i = end + 1;
+                }
+                b'[' if atomic.contains_key(&i) => {
+                    let close = atomic[&i];
+                    run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
+                    run_at[close] = run_at[i];
+                    fill_run(&mut run_at[..close], &[i], i + 1, close);
+                    matches[i] = close;
+                    i = close + 1;
+                }
+                b']' if freed.contains(&i) => {
+                    run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
+                    i += 1;
+                }
+                b'[' => {
+                    if let Some(&close) = footnote_candidates.get(&i) {
+                        reached.push((i, close));
+                    }
+                    run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
+                    stack.push(i);
+                    alt.push(in_alt || (i > 0 && last_bang == i - 1));
+                    i += 1;
+                }
+                b']' => {
+                    if let Some(open) = stack.pop() {
+                        matches[open] = i;
+                    }
+                    alt.pop();
+                    run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
+                    i += 1;
+                    if !stack.is_empty() {
+                        if let Some(end) = nested_destination_slot_end(bytes, i, &mut slot_budget) {
+                            fill_run(&mut run_at, &stack, i, end);
+                            i = end;
+                        }
+                    }
+                }
+                byte => {
+                    if byte == b'!' {
+                        last_bang = i;
+                    }
+                    run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
+                    i += 1;
+                }
             }
         }
+        passes += 1;
+        if passes == 2 || reached.is_empty() {
+            break;
+        }
+        let mut label_end = None;
+        for &(open, close) in &reached {
+            // A `[^` inside an earlier label is label text, and `![` with a
+            // tail reads as an image first.
+            let image = open > 0
+                && bytes[open - 1] == b'!'
+                && bytes[..open - 1]
+                    .iter()
+                    .rev()
+                    .take_while(|&&b| b == b'\\')
+                    .count()
+                    % 2
+                    == 0
+                && matches[open] != NO_BRACKET_MATCH
+                && image_tail(bytes, matches[open] + 1);
+            if image || label_end.is_some_and(|end| open <= end) {
+                continue;
+            }
+            label_end = Some(close);
+            atomic.insert(open, close);
+            for at in open..close {
+                if bytes[at] == b'[' && matches[at] != NO_BRACKET_MATCH && matches[at] > close {
+                    freed.insert(matches[at]);
+                }
+            }
+        }
+        matches.fill(NO_BRACKET_MATCH);
+        run_at.fill(NO_BRACKET_MATCH);
     }
     let mut budget = BRACKET_RESCAN_BUDGET * bytes.len() + 64;
     let mut scan_from = |open: usize| -> Option<usize> {
