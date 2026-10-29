@@ -1120,6 +1120,12 @@ pub(in crate::parse) fn plain_inlines_parse(nodes: &[InlineNode]) -> String {
             InlineNode::AutoLink(a) => out.push_str(&a.text),
             InlineNode::Image(i) => out.push_str(&i.alt),
             InlineNode::Extension(e) => out.push_str(&plain_inlines_parse(&e.children)),
+            InlineNode::CriticInsert(c) => out.push_str(&plain_inlines_parse(&c.children)),
+            InlineNode::CriticDelete(c) => out.push_str(&plain_inlines_parse(&c.children)),
+            InlineNode::CriticSubstitute(c) => {
+                out.push_str(&plain_inlines_parse(&c.old));
+                out.push_str(&plain_inlines_parse(&c.new));
+            }
             InlineNode::CitationGroup(g) => out.push_str(&g.raw),
             InlineNode::Abbreviation(a) => out.push_str(&a.abbr),
             InlineNode::Mention(m) => {
@@ -1987,7 +1993,28 @@ pub(in crate::parse) fn opens_a_link(
         return false;
     }
     // The `^` of a `{^` opener belongs to that opener, not to a note `^[`.
-    open == 0 || bytes[open - 1] != b'^' || braced_superscript_marker(bytes, open - 1)
+    if open > 0 && bytes[open - 1] == b'^' && !braced_superscript_marker(bytes, open - 1) {
+        return false;
+    }
+    !is_reference_label_slot(bytes, open, bounds)
+}
+
+/// Whether the bracket opening at `open` is the label half of a reference
+/// pair: glued brackets pair up left to right, so `[a]` in `[b][a](u)` is a
+/// label and its `(u)` is text, while `[c]` in `[b][a][c](u)` is a link.
+fn is_reference_label_slot(bytes: &[u8], open: usize, bounds: &InlineBounds<'_>) -> bool {
+    let mut label = false;
+    let mut at = open;
+    while at > 0 && bytes[at - 1] == b']' {
+        match bounds.openers.get(at - 1) {
+            Some(&prev) if prev != NO_BRACKET_MATCH && bytes.get(prev + 1) != Some(&b'^') => {
+                label = !label;
+                at = prev;
+            }
+            _ => break,
+        }
+    }
+    label
 }
 
 fn braced_superscript_marker(bytes: &[u8], caret: usize) -> bool {
