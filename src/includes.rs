@@ -96,7 +96,7 @@ pub struct IncludeWarning {
 }
 
 /// Source location of one directive in an include chain.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IncludeSite {
     /// Identity of the file containing the directive, or an empty string when
     /// the root document has no source path.
@@ -2498,9 +2498,9 @@ fn doc_carries_positions(doc: &Document) -> bool {
     found
 }
 
-fn stamp_source_file(blocks: &mut [BlockNode], file: &str) {
+fn stamp_source_file(blocks: &mut [BlockNode], file: &str, reach: &[IncludeSite]) {
     // One identity for the whole child, handed to every node in it.
-    let file = crate::ast::SourceFile::new(file);
+    let file = crate::ast::SourceFile::with_include_sites(file, reach);
     let mut stamp = Stamp { file: &file };
     for block in blocks.iter_mut() {
         crate::include_walk::visit_block_children(block, &mut stamp);
@@ -2663,6 +2663,14 @@ fn expand_child(d: &Directive, state: &mut State<'_>, inline: bool) -> Option<Ex
         position_base,
         selected_range,
     } = resolve_child(d, state)?;
+    let mut reach = state.reach.clone();
+    if let Some(pos) = &state.warning_position {
+        reach.push(IncludeSite {
+            file: state.file.clone().unwrap_or_default(),
+            line: pos.line,
+            column: pos.column,
+        });
+    }
     // I4 fragment containment: the child is PARSED as a self-contained
     // document, never spliced as source. A construct still open at the end of
     // the child closes at child EOF and can never swallow parent content.
@@ -2722,7 +2730,7 @@ fn expand_child(d: &Directive, state: &mut State<'_>, inline: bool) -> Option<Ex
             end_column,
             start_offset,
             end_offset,
-            file: Some(crate::ast::SourceFile::new(&id)),
+            file: Some(crate::ast::SourceFile::with_include_sites(&id, &reach)),
         });
         let mut doc = crate::parse_with_options("", &child_options);
         doc.children
@@ -2788,7 +2796,7 @@ fn expand_child(d: &Directive, state: &mut State<'_>, inline: bool) -> Option<Ex
                     end_column: lines.last().map_or(1, |line| 1 + line.chars().count()),
                     start_offset: usize::from(whole.starts_with('\u{feff}')),
                     end_offset: whole.chars().count(),
-                    file: Some(crate::ast::SourceFile::new(&id)),
+                    file: Some(crate::ast::SourceFile::with_include_sites(&id, &reach)),
                 }),
                 ..code.clone()
             };
@@ -2946,15 +2954,6 @@ fn expand_child(d: &Directive, state: &mut State<'_>, inline: bool) -> Option<Ex
         }
     }
 
-    let site = state.warning_position.as_ref().map(|p| IncludeSite {
-        file: state.file.clone().unwrap_or_default(),
-        line: p.line,
-        column: p.column,
-    });
-    let mut reach = state.reach.clone();
-    if let Some(site) = site {
-        reach.push(site);
-    }
     let report = if state.opts.collect_included {
         if d.code.is_some() {
             // Lint checks the content the renderer converts, not the raw bytes.
@@ -3063,7 +3062,7 @@ fn expand_child(d: &Directive, state: &mut State<'_>, inline: bool) -> Option<Ex
     };
     shift_blocks(&mut children, shift, state);
     // After the child's own includes, so a grandchild keeps its own identity.
-    stamp_source_file(&mut children, &id);
+    stamp_source_file(&mut children, &id, &reach);
     // THE FOOTNOTE BODIES TOO. They travel beside the blocks rather than in
     // them, so stamping only `children` left every merged definition with no
     // file identity - and the writer orders collected definitions by source
@@ -3071,7 +3070,7 @@ fn expand_child(d: &Directive, state: &mut State<'_>, inline: bool) -> Option<Ex
     // each defining a note near their own start then tied, and the order fell
     // back to the label.
     for body in footnotes.values_mut() {
-        stamp_source_file(body, &id);
+        stamp_source_file(body, &id, &reach);
     }
     state.file = outer_file;
     Some(ExpandedChild {

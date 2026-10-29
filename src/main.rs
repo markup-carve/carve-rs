@@ -782,6 +782,7 @@ fn run_render<'a>(mut cli: CliArgs<'a>, bundled: &'a BundledExtensions) -> ExitC
         && carve::expands_for_target(include_target)
         && (cli.include_root.is_some() || source.contains("{{"));
     let has_include_root = root.is_some();
+    let display_root = root.clone();
     let resolver = match include_resolver(want_includes, root, cli.include_root.is_some()) {
         Ok(resolver) => resolver,
         Err(code) => return code,
@@ -827,7 +828,12 @@ fn run_render<'a>(mut cli: CliArgs<'a>, bundled: &'a BundledExtensions) -> ExitC
         render_source(&source, format, target, checked_options, options)
     };
     match outcome {
-        Ok(outcome) => finish_render(outcome, &cli.input_paths, cli.reports),
+        Ok(outcome) => finish_render(
+            outcome,
+            &cli.input_paths,
+            display_root.as_deref(),
+            cli.reports,
+        ),
         Err(code) => code,
     }
 }
@@ -1087,8 +1093,32 @@ fn render_source(
 fn finish_render(
     mut outcome: RenderOutcome,
     input_paths: &[String],
+    include_root: Option<&str>,
     reports: LossReporting,
 ) -> ExitCode {
+    let root_path = include_root.and_then(|root| std::fs::canonicalize(root).ok());
+    let display = |file: &str| -> String {
+        root_path
+            .as_ref()
+            .and_then(|root| std::path::Path::new(file).strip_prefix(root).ok())
+            .map_or_else(
+                || file.to_string(),
+                |path| path.to_string_lossy().replace('\\', "/"),
+            )
+    };
+    let input_file = input_paths.first().map(String::as_str).unwrap_or("<stdin>");
+    for loss in &mut outcome.losses {
+        if let (Some(file), Some(sites)) = (&mut loss.file, &mut loss.included_by) {
+            *file = display(file);
+            for (index, site) in sites.iter_mut().enumerate() {
+                site.file = if index == 0 {
+                    input_file.to_string()
+                } else {
+                    display(&site.file)
+                };
+            }
+        }
+    }
     if outcome.total_losses > 0
         && outcome
             .totals_by_code
@@ -1108,7 +1138,23 @@ fn finish_render(
                 .as_ref()
                 .map(|pos| format!(":{}:{}", pos.start_line, pos.start_column))
                 .unwrap_or_default();
-            eprintln!("{file}{at} {} - {}", loss.code, loss.message);
+            let chain = loss.included_by.as_ref().map(|sites| {
+                sites
+                    .iter()
+                    .map(|site| format!("{}:{}:{}", site.file, site.line, site.column))
+                    .collect::<Vec<_>>()
+                    .join(" > ")
+            });
+            let chain = chain
+                .filter(|chain| !chain.is_empty())
+                .map(|chain| format!(" (included from {chain})"))
+                .unwrap_or_default();
+            eprintln!(
+                "{}{at} {} - {}{chain}",
+                loss.file.as_deref().unwrap_or(file),
+                loss.code,
+                loss.message
+            );
         }
         eprintln!(
             "{file}: {total_losses} render loss{}",
@@ -1572,8 +1618,13 @@ fn render_loss_json(losses: &[carve::RenderLoss], total: usize, truncated: bool)
         let colspan_field = loss.colspan.map(|count| format!(",\"colspan\":{count}")).unwrap_or_default();
         let rowspan_field = loss.rowspan.map(|count| format!(",\"rowspan\":{count}")).unwrap_or_default();
         let format_field = loss.format.as_ref().map(|format| format!(",\"format\":{}", json_string(format))).unwrap_or_default();
+        let file_field = loss.file.as_ref().map(|file| format!(",\"file\":{}", json_string(file))).unwrap_or_default();
+        let included_by_field = loss.included_by.as_ref().map(|sites| {
+            let sites = sites.iter().map(|site| format!("{{\"file\":{},\"line\":{},\"column\":{}}}", json_string(&site.file), site.line, site.column)).collect::<Vec<_>>().join(",");
+            format!(",\"includedBy\":[{sites}]")
+        }).unwrap_or_default();
         format!(
-            "{{\"code\":{}{format_field}{attribute_field}{style_field}{delim_field}{emitted_field}{colspan_field}{rowspan_field},\"target\":{},\"nodeType\":{},\"message\":{}{pos}}}",
+            "{{\"code\":{}{format_field}{attribute_field}{style_field}{delim_field}{emitted_field}{colspan_field}{rowspan_field},\"target\":{},\"nodeType\":{},\"message\":{}{pos}{file_field}{included_by_field}}}",
             json_string(loss.code), json_string(loss.target.as_str()),
             json_string(loss.node_type.as_str()), json_string(&loss.message),
         )
