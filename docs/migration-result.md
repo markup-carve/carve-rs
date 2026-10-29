@@ -47,6 +47,10 @@ form resolved. Confidence follows the opener, `inferred` for a bare `---` and
 `structure-unspellable`. This deliberately fails closed at the worst-case
 outcome: byte differences are not evidence of semantic fidelity.
 
+Markdown reports each GitHub alert it converts to an admonition as
+`markdown-github-alert`, info/normalized/exact, at the quote's first line, in
+place of `markdown-block-quote`.
+
 Markdown reports each GFM table body row with cells past the header width as
 `markdown-table-extra-cells`, warning/dropped/exact, at `line:N`. GFM ignores
 those cells, so the import omits their content.

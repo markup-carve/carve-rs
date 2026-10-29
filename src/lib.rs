@@ -58,6 +58,7 @@ mod markdown_assessment;
 #[doc(hidden)]
 pub use markdown_assessment::take_attribute_opener_scan_bytes;
 mod markdown_gfm_autolinks;
+mod markdown_github_alerts;
 pub mod markdown_import;
 mod markdown_strike;
 /// Import and migration results for supported source formats.

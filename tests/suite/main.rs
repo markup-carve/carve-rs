@@ -487,6 +487,8 @@ mod a_form_feed_is_content_in_the_bold_italic_guard;
 mod a_further_plus_ends_the_attached_block;
 #[path = "../a_generated_content_kind_parses_to_a_directive.rs"]
 mod a_generated_content_kind_parses_to_a_directive;
+#[path = "../a_github_alert_imports_as_an_admonition.rs"]
+mod a_github_alert_imports_as_an_admonition;
 #[path = "../a_hard_break_in_a_table_cell_is_one_space.rs"]
 mod a_hard_break_in_a_table_cell_is_one_space;
 #[path = "../a_headings_math_feeds_its_id.rs"]
