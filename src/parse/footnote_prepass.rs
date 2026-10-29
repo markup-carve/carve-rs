@@ -572,6 +572,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 open.content_col = fence.host_content_col;
             }
             end_prepass_paragraph_at(&self.folded_into_term, i);
+            // A fence on a quoted item's marker line is measured from inside the
+            // quote, so a quoted line's raw indent does not end it.
+            open.quoted |= !fence.quote_columns.is_empty()
+                && scan
+                    .stripped
+                    .structural
+                    .chars()
+                    .any(|character| !matches!(character, '>' | ' ' | '\t'));
             let inline_paragraph = if fence.inline_marker {
                 previous_prepass_paragraph(&self.folded_into_term, i)
             } else {
