@@ -178,11 +178,14 @@ pub(in crate::parse) fn resolve_pending_bodies(
                 Body::Colon(body) => body.depth,
                 Body::Item(body) => body.depth,
                 Body::Quote(body) => body.depth,
+                Body::Definition(body) => body.depth,
             },
             stacked,
         );
         #[cfg(feature = "experimental-event-parser")]
         let mut quote = None;
+        #[cfg(feature = "experimental-event-parser")]
+        let mut definition = None;
         let (children, item, loose_inside_chunk, layout) = match entry.body {
             Body::Colon(body) => {
                 // The body parses under the state its OPENER stood in, not the
@@ -213,6 +216,25 @@ pub(in crate::parse) fn resolve_pending_bodies(
                     None,
                 )
             }
+            #[cfg(feature = "experimental-event-parser")]
+            Body::Definition(body) => {
+                let _depth = DepthScope::set(body.depth);
+                let _group = FigureGroupScope::set(body.in_group);
+                definition = Some((body.item, body.description));
+                (
+                    parse_mapped_source_at_level_into(
+                        &body.source,
+                        options,
+                        false,
+                        false,
+                        false,
+                        &mut nested,
+                    ),
+                    None,
+                    false,
+                    None,
+                )
+            }
         };
         let child_slot = arena.len();
         arena.push(children);
@@ -225,6 +247,8 @@ pub(in crate::parse) fn resolve_pending_bodies(
             layout,
             #[cfg(feature = "experimental-event-parser")]
             quote,
+            #[cfg(feature = "experimental-event-parser")]
+            definition,
         });
         work.extend(nested.into_iter().map(|body| (child_slot, body)));
     }
@@ -251,6 +275,11 @@ pub(in crate::parse) fn resolve_pending_bodies(
         #[cfg(feature = "experimental-event-parser")]
         if let Some(plus_anchor) = link.quote {
             fill_quote_children(node, children, plus_anchor);
+            continue;
+        }
+        #[cfg(feature = "experimental-event-parser")]
+        if let Some(target) = link.definition {
+            fill_definition_children(node, target, children);
             continue;
         }
         match link.item {

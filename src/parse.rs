@@ -2476,6 +2476,22 @@ enum Body {
     /// so cannot reorder anything observable (see `quote_body_deferrable`).
     #[cfg(feature = "experimental-event-parser")]
     Quote(QuoteBodyPending),
+    /// A definition description's collected body. Deferred only where the
+    /// parse order is unobserved; nothing reads a description's children
+    /// before the worklist fills them.
+    #[cfg(feature = "experimental-event-parser")]
+    Definition(DefinitionBodyPending),
+}
+
+/// A description body collected by the event cursor but not yet parsed.
+#[cfg(feature = "experimental-event-parser")]
+struct DefinitionBodyPending {
+    item: usize,
+    description: usize,
+    source: MappedSource,
+    /// `NESTING_DEPTH` at the definition list, as for [`ContainerBody`].
+    depth: usize,
+    in_group: bool,
 }
 
 /// A quote body collected by the event cursor but not yet parsed.
@@ -2677,6 +2693,9 @@ struct ResolvedBody {
     /// `Some` for a deferred quote body, carrying its `plus_anchor`.
     #[cfg(feature = "experimental-event-parser")]
     quote: Option<Option<(usize, usize)>>,
+    /// `Some((item, description))` for a deferred description body.
+    #[cfg(feature = "experimental-event-parser")]
+    definition: Option<(usize, usize)>,
 }
 
 struct ItemLayout {
@@ -2731,6 +2750,37 @@ fn fill_quote_children(
         },
         _ => debug_assert!(false, "a pending quote body lost its quote"),
     }
+}
+
+/// Fill in one description `parse_definition_list_with` emitted hollow, and
+/// widen its span to the last placed child as the eager parse does.
+#[cfg(feature = "experimental-event-parser")]
+fn fill_definition_children(
+    node: &mut BlockNode,
+    (item, description): (usize, usize),
+    children: Vec<BlockNode>,
+) {
+    let BlockNode::DefinitionList(list) = node else {
+        debug_assert!(false, "a pending description lost its definition list");
+        return;
+    };
+    let Some(target) = list
+        .items
+        .get_mut(item)
+        .and_then(|entry| entry.definitions.get_mut(description))
+    else {
+        debug_assert!(false, "a pending description pointed past its list");
+        return;
+    };
+    if let (Some(pos), Some(last)) = (
+        target.pos.as_mut(),
+        children.iter().rev().find_map(crate::ast_json::block_pos),
+    ) {
+        pos.end_line = last.end_line;
+        pos.end_column = last.end_column;
+        pos.end_offset = last.end_offset;
+    }
+    target.children = children;
 }
 
 /// Fill in the children of a node [`open_container`] emitted hollow.

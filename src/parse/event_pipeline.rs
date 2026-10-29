@@ -825,6 +825,36 @@ fn parse_marker_hosted_opener(
     None
 }
 
+/// The definition list at `index` in the level's output. Unobserved, its
+/// description bodies wait on the worklist; observed, callbacks must see each
+/// body before what follows it, so they parse here.
+#[inline(never)]
+fn parse_definition_list_deferring(
+    cur: &mut LineCursor<'_>,
+    options: &Options<'_>,
+    index: usize,
+    pending: &mut Vec<PendingBody>,
+) -> BlockNode {
+    if parse_order_observed(options) {
+        return parse_definition_list(cur, options);
+    }
+    let depth = NESTING_DEPTH.with(Cell::get);
+    let in_group = IN_FIGURE_GROUP.with(Cell::get);
+    let mut defer = |item: usize, description: usize, source: MappedSource| {
+        pending.push(PendingBody {
+            index,
+            body: Body::Definition(DefinitionBodyPending {
+                item,
+                description,
+                source,
+                depth,
+                in_group,
+            }),
+        });
+    };
+    parse_definition_list_with(cur, options, Some(&mut defer))
+}
+
 fn direct_quote_allowed(direct_owner: bool, options: &Options<'_>, line: &str) -> bool {
     direct_owner
         && NESTING_DEPTH.with(Cell::get) < DIRECT_QUOTE_DEPTH_LIMIT
@@ -1218,7 +1248,15 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                 cur.pos = end;
                 emit!(_block_source_line, BlockNode::DefinitionList(list));
             } else {
-                emit!(_block_source_line, parse_definition_list(&mut cur, options));
+                emit!(
+                    _block_source_line,
+                    parse_definition_list_deferring(
+                        &mut cur,
+                        options,
+                        out.len(),
+                        &mut pending_bodies
+                    )
+                );
             }
             continue;
         }

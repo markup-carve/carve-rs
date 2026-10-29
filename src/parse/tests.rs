@@ -1308,11 +1308,13 @@ mod deep_worklist_owner {
 
     /// `(depth, shape, PAIRWISE row)`: one standard comparison for each
     /// remaining depth.
-    const DEEP_CELLS: [(usize, &str, usize); 4] = [
+    const DEEP_CELLS: [(usize, &str, usize); 6] = [
         (64, "list siblings", 0),
         (120, "quoted list", 2),
         (199, "list", 4),
         (260, "colon/list", 1),
+        (199, "definition chain", 0),
+        (260, "definition chain", 2),
     ];
 
     /// `(depth, shape, CALLBACK_ROWS row)` for the deep callback comparisons.
@@ -1394,8 +1396,9 @@ mod deep_worklist_owner {
             })
             .collect();
         let quoted = list.lines().map(|line| format!("> {line}\n")).collect();
-        // Definition bodies parse eagerly, so this chain holds a frame per
-        // level until the limit and reads the rest on the standard reader.
+        // Unobserved, description bodies ride the worklist. Observed, they
+        // parse eagerly, so the chain holds a frame per level until the limit
+        // and reads the rest on the standard reader.
         let definitions = (0..depth)
             .map(|level| {
                 let lead = indent(level);
@@ -1458,6 +1461,15 @@ mod deep_worklist_owner {
             .unwrap()
             .join()
             .unwrap();
+    }
+
+    #[test]
+    fn multiple_items_and_descriptions_keep_their_worklist_slots() {
+        let source =
+            ":: first\n: alpha\n: beta\n  - nested\n:: second\n: gamma\n: delta\n  > quote\n";
+        for row in full_matrix() {
+            check_row(2, "multiple definitions", source, row);
+        }
     }
 
     /// Every shape at `MAX_NESTING_DEPTH` on its own `PAIRWISE` row, then
@@ -1564,8 +1576,10 @@ mod deep_worklist_owner {
     }
 
     /// Only the event route runs here, as in the deep quote release tests.
-    /// The definition chain is left out: past the frame limit it recurses on
-    /// the standard reader, which this stack does not hold at these depths.
+    /// The definition chain is left out: observed, past the frame limit it
+    /// recurses on the standard reader, which this stack does not hold at
+    /// these depths. `unobserved_definition_chains_fit_the_release_stack_floor`
+    /// runs it unobserved.
     /// Each shape runs observed and unobserved at every depth; positions
     /// alternate so each of those pairs sees both values across the depths.
     /// Debug builds skip it; the `stack-floor-release` CI job runs it.
@@ -1702,14 +1716,19 @@ mod deep_worklist_owner {
                     .into_iter()
                     .chain(root_definition_chains())
                 {
-                    check(
-                        &chain.label,
-                        &chain.source,
-                        &Options::default(),
-                        ParseMode::Html,
-                        false,
-                        true,
-                    );
+                    // Collecting keeps the bodies eager; without it they
+                    // ride the worklist.
+                    for collect in [false, true] {
+                        let label = format!("{}; collect={collect}", chain.label);
+                        check(
+                            &label,
+                            &chain.source,
+                            &Options::default(),
+                            ParseMode::Html,
+                            collect,
+                            true,
+                        );
+                    }
                 }
             })
             .unwrap()
@@ -1720,6 +1739,8 @@ mod deep_worklist_owner {
     /// The event route alone on a `stack`-byte thread. No unquoted body takes
     /// an event frame `EVENT_FRAME_LIMIT` or more levels above the worklist
     /// base, so an eager chain spends its frames near the top of the stack.
+    /// The collector makes the parse order observed, which keeps the
+    /// description bodies eager.
     fn check_frame_budget(stack: usize, chains: Vec<StackedChain>) {
         let limit = event_pipeline::EVENT_FRAME_LIMIT;
         std::thread::Builder::new()
@@ -1731,11 +1752,14 @@ mod deep_worklist_owner {
                     event_pipeline::PEAK_EVENT_DEPTH.with(|peak| peak.set(0));
                     event_pipeline::PEAK_UNQUOTED_STACKED_DEPTH.with(|peak| peak.set(0));
                     event_pipeline::DIRECT_QUOTE_PARSES.with(|count| count.set(0));
-                    let (document, _, used) = event_pipeline::parse_document_with_mode(
-                        &chain.source,
-                        &Options::default(),
-                        ParseMode::Html,
-                    )
+                    let (document, _, used) = collecting_unattached_block_attrs(|| {
+                        event_pipeline::parse_document_with_mode(
+                            &chain.source,
+                            &Options::default(),
+                            ParseMode::Html,
+                        )
+                    })
+                    .0
                     .unwrap_or_else(|| panic!("{label}: declined"));
                     assert!(used, "{label}");
                     let frames = event_pipeline::PEAK_EVENT_FRAMES.with(Cell::get);
@@ -1781,6 +1805,71 @@ mod deep_worklist_owner {
             2 * 1024 * 1024
         };
         check_frame_budget(stack, root_definition_chains());
+    }
+
+    /// Unobserved, each description body waits on the worklist, so the chain
+    /// stays on the event cursor without an event frame per level.
+    fn check_unobserved_definition_chain(depth: usize, positions: bool) {
+        let label = format!("depth={depth}; positions={positions}");
+        event_pipeline::PEAK_EVENT_FRAMES.with(|peak| peak.set(0));
+        event_pipeline::PEAK_EVENT_DEPTH.with(|peak| peak.set(0));
+        let (document, _, used) = event_pipeline::parse_document_with_mode(
+            &shape(depth, "definition chain"),
+            &Options::default().with_positions(positions),
+            ParseMode::Html,
+        )
+        .unwrap_or_else(|| panic!("{label}: declined"));
+        assert!(used, "{label}");
+        let frames = event_pipeline::PEAK_EVENT_FRAMES.with(Cell::get);
+        assert!(
+            frames < event_pipeline::EVENT_FRAME_LIMIT,
+            "{label}: {frames} frames"
+        );
+        let floor = depth.min(MAX_NESTING_DEPTH - 8) / 2;
+        let peak = event_pipeline::PEAK_EVENT_DEPTH.with(Cell::get);
+        assert!(peak >= floor, "{label}: event depth {peak}");
+        assert_eq!(WORKLIST_BASE.with(Cell::get), 0, "{label}: base leak");
+        std::mem::forget(document);
+    }
+
+    #[test]
+    fn unobserved_definition_chains_reach_the_event_cursor() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for (d, depth) in [SHALLOW_DEPTH, 64, 120, 199, 200, 260]
+                    .into_iter()
+                    .enumerate()
+                {
+                    check_unobserved_definition_chain(depth, d % 2 == 1);
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// As in `deep_worklist_shapes_fit_the_release_stack_floor`.
+    #[test]
+    #[cfg_attr(debug_assertions, ignore = "release stack floor; run with --release")]
+    fn unobserved_definition_chains_fit_the_release_stack_floor() {
+        let stack = if cfg!(debug_assertions) {
+            4 * 1024 * 1024
+        } else {
+            512 * 1024
+        };
+        std::thread::Builder::new()
+            .stack_size(stack)
+            .spawn(|| {
+                for depth in [199, 200, 260] {
+                    for positions in [false, true] {
+                        check_unobserved_definition_chain(depth, positions);
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
     }
 }
 
