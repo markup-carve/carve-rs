@@ -1246,7 +1246,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         let accept_fence_opener = fence.open.is_none()
             && detect_fence_open(&sliced).is_some_and(|open| {
                 !paragraph_open
-                    || (cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
+                    || (cur.has_code_closer_after(cur.pos, open.fence_char, open.fence_len)
                         && self.closer_in_exact_body(cur, open))
             });
         // The nested description's `+`, or a quote's `> +`, already separates its next
