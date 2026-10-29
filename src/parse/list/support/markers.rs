@@ -1041,55 +1041,13 @@ pub(crate) fn nested_ends_with_open_paragraph(
         return false;
     }
     let blocks = probe_blocks(nested, options);
-    let mut end = blocks.len();
-    if trailing_below_column {
-        let postblank_line_comment = {
-            let mut lines = nested.lines().rev().skip_while(|line| is_blank_line(line));
-            lines.next().is_some_and(|line| {
-                is_line_comment_any_column(line)
-                    || detect_comment_fence_line_any_column(line).is_some()
-            }) && lines.next().is_some_and(is_blank_line)
-        };
-        // §24 C3's COMMENT EXCEPTION, which the clause above says is unchanged.
-        // A comment written BELOW the content column is not a block of this
-        // container - it reaches the container only through S4's lazy fold - so
-        // it ends nothing and the line under it still folds: `- a` / ` %% c` /
-        // `b` keeps `b` in the item (corpus 183, and 192 for the fence
-        // spelling). The dedented body cannot say which of the two it was, since
-        // a line at column 1 under a content column of 2 and one at column 2
-        // both arrive flush; the caller reads it off the collector's own map.
-        while end > 0 {
-            let BlockNode::Comment(comment) = &blocks[end - 1] else {
-                break;
-            };
-            // The comment exception retains an item's paragraph only until a
-            // blank has cleared its claim. A comment after that blank cannot
-            // revive the older paragraph when the next line misses the item.
-            if postblank_line_comment
-                || comment.pos.as_ref().is_some_and(|pos| {
-                    pos.start_line > 1
-                        && nested
-                            .lines()
-                            .nth(pos.start_line - 2)
-                            .is_some_and(is_blank_line)
-                })
-            {
-                return false;
-            }
-            end -= 1;
-        }
-        if end == 0 {
-            // Everything collected renders nothing, so the still-open paragraph
-            // is the one on the MARKER line. An empty collection is a different
-            // thing and keeps the old answer.
-            return !blocks.is_empty();
-        }
-    } else if end == 0 {
+    // Rule A (carve#3885): a comment interrupts the paragraph above it.
+    let Some(last) = blocks.last() else {
         return false;
-    }
+    };
 
     block_ends_with_open_paragraph(
-        blocks.get(end - 1),
+        Some(last),
         colon_fences_left_open(nested),
         below_outer_column,
     )
