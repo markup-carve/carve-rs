@@ -70,7 +70,7 @@ struct PrepassFenceState {
     inline_marker: bool,
     inline_paragraph: Option<PrepassParagraph>,
     term_floor: usize,
-    // Whether that fence has a closer, which decides whether a dedent ends it.
+    // Whether that fence has a closer, which decides whether a quoted line ends it.
     closer_ahead: bool,
 }
 
@@ -411,10 +411,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let mut fence_col = None;
         let fence_line = match self.folded_into_term.fence_openers.get(&i) {
             Some(host) => &line[host.opener_offset..],
-            None if content_col > 0
-                && !stripped.description
-                && !self.columns.current().body_columns.contains(&content_col) =>
-            {
+            None if content_col > 0 && !stripped.description => {
                 // As `extract_link_defs_with_guard_full`: a fence at an item's
                 // content column is payload for both collectors.
                 let kept = strip_container_prefixes_keep_indent(line);
@@ -719,7 +716,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 first: def.first,
                 container,
                 body_indent,
-                note_fence: None,
+                // A marker starts the body, so a fence on it opens (PART 0 O1).
+                note_fence: detect_fence_open(def.first).map(|mut open| {
+                    open.content_col = body_indent;
+                    open
+                }),
                 body_open_below: false,
                 open_term: term_start_column(def.first).is_some(),
                 retained_below_comment: false,
@@ -1230,8 +1231,21 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             if is_fence_close(trimmed, open) {
                 state.note_fence = None;
             }
-        } else if let Some(mut open) = detect_fence_open(trimmed) {
-            open.content_col = indent_columns(line);
+        } else if let Some(open) = detect_fence_open(trimmed)
+            .map(|mut open| {
+                open.content_col = indent_columns(line);
+                open
+            })
+            .filter(|open| {
+                // §10 I4: an unterminated fence does not interrupt an open paragraph.
+                !note.lines.last().is_some_and(|above| {
+                    let above = trim_ascii_start(above);
+                    !is_blank_line(above)
+                        && !item_block_opener(above)
+                        && detect_fence_open(above).is_none()
+                }) || self.closer_maxima.closes_after(*i, *open)
+            })
+        {
             state.note_fence = Some(open);
         } else if (!state.open_term || indent_columns(trimmed) == 0)
             && self.hoist_note_link_def(note_link_def_candidate(trimmed, note), *i)
