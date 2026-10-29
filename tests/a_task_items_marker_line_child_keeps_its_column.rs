@@ -93,3 +93,10 @@ fn a_task_item_in_a_quote_reads_its_child_the_same_way() {
         "<blockquote>\n  <ul class=\"task-list\">\n    <li><input type=\"checkbox\" disabled> \n      <ul>\n        <li>a</li>\n      </ul>\n      <h1 id=\"b\">b</h1>\n    </li>\n  </ul>\n</blockquote>",
     );
 }
+#[test]
+fn a_plus_at_the_child_marker_column_stays_lazy_text_in_the_term() {
+    check(
+        "- [ ] - :: t\n      +\n      x\n",
+        "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <ul>\n      <li>\n        <dl>\n          <dt>t\n+\nx</dt>\n        </dl>\n      </li>\n    </ul>\n  </li>\n</ul>",
+    );
+}
