@@ -67,6 +67,9 @@ struct Frame {
     line_block: bool,
     /// A fence or comment span open inside a line-block payload.
     span: Option<(u8, usize)>,
+    /// Columns added on output, so a block in a task item past its marker-line
+    /// child lands where the item reader measures that child.
+    shift: usize,
 }
 
 impl Frame {
@@ -86,6 +89,7 @@ impl Frame {
             absorbs: false,
             line_block: false,
             span: None,
+            shift: 0,
         }
     }
 }
@@ -219,12 +223,6 @@ fn list_marker(rest: &str) -> Option<(usize, usize, String)> {
     } else {
         marker.content.as_ptr() as usize - rest.as_ptr() as usize
     };
-    let head = if marker.checked.is_some() {
-        // The task box is content: the head stops after the separator run.
-        i + spaces
-    } else {
-        head
-    };
     let axes = match marker.delim {
         Some(d) => (d as char).to_string(),
         None => marker.marker.to_owned(),
@@ -291,7 +289,8 @@ impl<'s> Cursor<'s> {
         self.rest = &self.src[len..];
     }
 
-    /// Write the leading run at `target`; ownership only removes indentation.
+    /// Write the leading run at `target`; ownership only removes indentation,
+    /// apart from a frame's output `shift`.
     fn lead(&mut self, target: usize) {
         self.lead_as(target, false);
     }
@@ -299,7 +298,15 @@ impl<'s> Cursor<'s> {
     /// `spaces` writes a leading tab as the columns it reaches, so a term and
     /// its body read alike in both spellings.
     fn lead_as(&mut self, target: usize, spaces: bool) {
-        let col = target.min(self.col);
+        self.lead_at(target.min(self.col), spaces);
+    }
+
+    /// Like `lead_as`, plus the owner's output shift.
+    fn lead_in(&mut self, target: usize, shift: usize, spaces: bool) {
+        self.lead_at(target.min(self.col) + shift, spaces);
+    }
+
+    fn lead_at(&mut self, col: usize, spaces: bool) {
         let authored = &self.src[..self.src.len() - self.rest.len()];
         if col == self.col && !(spaces && self.out.is_empty() && authored.contains('\t')) {
             self.out.push_str(authored);
@@ -522,8 +529,8 @@ impl<'a> Walk<'a> {
             }
             if f.kind == Kind::Quote {
                 let Some(_) = quote_marker(c.rest) else { break };
-                let canon = self.frames[k - 1].canon;
-                c.lead(canon);
+                let (canon, shift) = (self.frames[k - 1].canon, self.frames[k - 1].shift);
+                c.lead_in(canon, shift, false);
                 let n = quote_marker(c.src).expect("measured above");
                 c.take(n);
                 c.measure();
@@ -540,7 +547,8 @@ impl<'a> Walk<'a> {
             let f = self.top();
             f.para = false;
             let canon = f.marker.expect("plus frames carry a marker").1;
-            c.lead(canon);
+            let shift = self.frames[k - 1].shift;
+            c.lead_in(canon, shift, false);
             *after_plus = true;
             return;
         }
@@ -552,7 +560,7 @@ impl<'a> Walk<'a> {
         if inner.kind == Kind::Fence && !missed {
             let target = c.col.saturating_sub(inner.cut).max(inner.canon);
             let (closer, span, line_block) = (inner.closer, inner.span, inner.line_block);
-            c.lead(target);
+            c.lead_in(target, inner.shift, false);
             if c.rest.is_empty() {
                 return;
             }
@@ -613,10 +621,17 @@ impl<'a> Walk<'a> {
             let limit = if next.kind == Kind::Quote {
                 usize::MAX
             } else {
-                next.canon.saturating_sub(1)
+                (next.canon + next.shift).saturating_sub(1)
             };
+            // A lazy line keeps its column: the item reader folds a line below a
+            // marker-line child's column as lazy text. At the item's own column
+            // it reads as at the child's column.
             let target = c.col.saturating_sub(owner.cut).max(owner.canon).min(limit);
-            c.lead(target);
+            if target == owner.canon && c.col >= target {
+                c.lead_in(target, owner.shift, false);
+            } else {
+                c.lead(target);
+            }
             return;
         }
         let closed_column = self.frames[reached + 1..]
@@ -631,8 +646,8 @@ impl<'a> Walk<'a> {
         }
         match form {
             Form::ColonClose(k) => {
-                let canon = self.frames[k].canon;
-                c.lead(canon);
+                let (canon, shift) = (self.frames[k].canon, self.frames[k].shift);
+                c.lead_in(canon, shift, false);
                 self.frames.truncate(k);
                 let top = self.top();
                 top.para = false;
@@ -653,12 +668,13 @@ impl<'a> Walk<'a> {
                 if !term {
                     owner.last = Last::Para;
                 }
-                c.lead_as(target, term);
+                let shift = owner.shift;
+                c.lead_in(target, shift, term);
             }
             form => {
-                let canon = self.top().canon;
+                let (canon, shift) = (self.top().canon, self.top().shift);
                 let col = c.col;
-                c.lead_as(canon, matches!(form, Form::Term | Form::Dd(_)));
+                c.lead_in(canon, shift, matches!(form, Form::Term | Form::Dd(_)));
                 let owner = self.frames.len() - 1;
                 self.apply(owner, col, form, canon, at, c);
             }
@@ -674,7 +690,11 @@ impl<'a> Walk<'a> {
         at: usize,
         c: &mut Cursor<'_>,
     ) {
-        let (o_col, o_canon) = (self.frames[owner].col, self.frames[owner].canon);
+        let (o_col, o_canon, o_shift) = (
+            self.frames[owner].col,
+            self.frames[owner].canon,
+            self.frames[owner].shift,
+        );
         {
             let o = &mut self.frames[owner];
             o.para = false;
@@ -696,6 +716,7 @@ impl<'a> Walk<'a> {
                 f.cut = col.saturating_sub(canon);
                 f.closer = Some(closer);
                 f.line_block = line_block;
+                f.shift = o_shift;
                 self.frames.push(f);
             }
             Form::Colon(run, _) => {
@@ -704,6 +725,7 @@ impl<'a> Walk<'a> {
                 f.canon = o_canon;
                 f.cut = col.saturating_sub(canon);
                 f.run = run;
+                f.shift = o_shift;
                 self.frames.push(f);
             }
             Form::Quote => {
@@ -756,12 +778,24 @@ impl<'a> Walk<'a> {
         f.cut = col.saturating_sub(canon);
         f.marker = Some((col, canon));
         f.axes = axes;
+        f.shift = self.frames.last().map_or(0, |owner| owner.shift);
         self.frames.push(f);
         let head = head.min(c.src.len());
         c.take(head);
         c.measure();
         let at_frame = self.frames.len() - 1;
         self.content(at_frame, col + head, canon + head, at, c);
+        // The item reader measures a marker-line sub-list past a task box at
+        // its source column, and the item's later blocks against that column.
+        if kind == Kind::Item
+            && head > width
+            && self
+                .frames
+                .get(at_frame + 1)
+                .is_some_and(|child| child.kind == Kind::Item)
+        {
+            self.frames[at_frame].shift += head - width;
+        }
     }
 
     /// The rest of a marker line. Only a quote starts new coordinates.
