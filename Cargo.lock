@@ -21,6 +21,7 @@ checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
 name = "carve-lang"
 version = "0.1.13"
 dependencies = [
+ "carve-suite-registry",
  "html5ever",
  "markup5ever_rcdom",
  "memchr",
@@ -31,6 +32,10 @@ dependencies = [
  "smallvec",
  "unicode-normalization",
 ]
+
+[[package]]
+name = "carve-suite-registry"
+version = "0.0.0"
 
 [[package]]
 name = "cfg-if"

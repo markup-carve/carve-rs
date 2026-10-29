@@ -317,6 +317,8 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo fmt --all -- --check
+      # The suite declares its modules through a macro, which cargo fmt does not expand.
+      - run: rustfmt --check --edition 2021 tests/*.rs
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo clippy --locked --all-targets --features experimental-event-parser -- -D warnings
       - run: cargo clippy --locked --all-targets --features experimental-event-parser-options -- -D warnings

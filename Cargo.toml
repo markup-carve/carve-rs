@@ -19,6 +19,10 @@ autotests = false
 # `tests/spec` submodule (1200+ corpus/doc files) which consumers do not need.
 include = ["/src/**/*", "/resources/**/*", "/Cargo.toml", "/README.md", "/LICENSE", "/CHANGELOG.md"]
 
+[workspace]
+# The proc macro that declares the suite's test modules; see tests/suite/main.rs.
+members = ["tests/suite/registry"]
+
 [features]
 # The filesystem resolver, ON by default. Off, the crate carries no code that
 # opens a file: a sandboxed, WASM or browser-hosted build can DROP it rather
@@ -64,6 +68,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["unbounded_depth"] }
 
 [dev-dependencies]
+# Path-only, so `cargo publish` drops it.
+carve-suite-registry = { path = "tests/suite/registry" }
 
 [lib]
 name = "carve"
