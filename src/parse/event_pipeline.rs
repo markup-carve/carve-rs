@@ -135,6 +135,80 @@ mod standard_reader_probe_tests {
     }
 
     #[test]
+    fn reference_captions_in_colon_bodies_match_standard_reader() {
+        for body in [
+            "![a][r]\n^ *cap*\n",
+            "![a][r]\n^ *cap*\n\n",
+            "![a][r]\n^ *cap*\n\nnext\n",
+            "![a][r]\n^ *cap*\nnext\n",
+            "![a][r]\n\n^ *cap*\n",
+        ] {
+            for resolved in [false, true] {
+                let source = format!(
+                    "::: box\n{body}:::\n{}",
+                    if resolved { "\n[r]: /u\n" } else { "" }
+                );
+                for (positions, source_lines) in
+                    [(false, false), (true, false), (false, true), (true, true)]
+                {
+                    let observer = Observer(RefCell::new(Vec::new()));
+                    let options = Options::default()
+                        .with_positions(positions)
+                        .with_source_lines(source_lines)
+                        .with_extension(&observer);
+                    STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+                    let ((actual, admitted), diagnostics) = collecting_lint_events(|| {
+                        parse_document_with_options(&source, &options).unwrap()
+                    });
+                    assert!(admitted, "{source:?}");
+                    let entries = STANDARD_PARAGRAPH_ENTRIES.with(Cell::get);
+                    let callbacks = observer.0.into_inner();
+                    let standard_observer = Observer(RefCell::new(Vec::new()));
+                    let standard_options = Options::default()
+                        .with_positions(positions)
+                        .with_source_lines(source_lines)
+                        .with_extension(&standard_observer);
+                    let (expected, standard_diagnostics) = {
+                        let _standard = StandardEventRootGuard::install();
+                        collecting_lint_events(|| parse_with_options(&source, &standard_options))
+                    };
+                    assert_eq!(
+                        (actual, diagnostics),
+                        (expected, standard_diagnostics),
+                        "{source:?}"
+                    );
+                    assert_eq!(callbacks, standard_observer.0.into_inner(), "{source:?}");
+                    if body == "![a][r]\n^ *cap*\n\n" {
+                        assert_eq!(entries, 0, "{source:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn reference_caption_in_deep_colon_body_uses_event_reader() {
+        let mut source = "::: box\n".repeat(150);
+        source.push_str("![a][r]\n^ *cap*\n\n");
+        source.push_str(&":::\n".repeat(150));
+        source.push_str("\n[r]: /u\n");
+        for positions in [false, true] {
+            let options = Options::default()
+                .with_positions(positions)
+                .with_source_lines(true);
+            STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+            let (actual, admitted) = parse_document_with_options(&source, &options).unwrap();
+            assert!(admitted);
+            assert_eq!(STANDARD_PARAGRAPH_ENTRIES.with(Cell::get), 0);
+            let expected = {
+                let _standard = StandardEventRootGuard::install();
+                parse_with_options(&source, &options)
+            };
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
     fn nested_mapped_plain_paragraphs_match_standard_reader() {
         for wrapper in [
             "::: note\n{body}\n:::\n",
@@ -2467,6 +2541,56 @@ fn collect_event_paragraph<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
     Some(lines.join("\n"))
 }
 
+// Keep inline parsing out of the recursive event frame's native stack.
+#[inline(never)]
+fn collect_reference_caption(cur: &mut LineCursor<'_>, options: &Options<'_>) -> Option<BlockNode> {
+    let line = cur.peek()?;
+    if !reference_caption_shape(cur, line) {
+        return None;
+    }
+    let start = cur.pos;
+    let first = trim_ascii_end(trim_ascii_start(line));
+    let second = trim_ascii_end(cur.lines.line(start + 1).unwrap());
+    let joined = format!("{first}\n{second}");
+    cur.consume();
+    cur.consume();
+    let children = if options.positions {
+        parse_inline_lines_with_anchor(
+            &joined,
+            options,
+            vec![
+                inline_anchor_for_line(cur, start, first),
+                inline_anchor_for_line(cur, start + 1, second),
+            ],
+        )
+    } else {
+        parse_inline_with_options(&joined, options)
+    };
+    Some(BlockNode::Paragraph(Paragraph {
+        attrs: None,
+        children,
+        at_content_column: true,
+        block_image: false,
+        pos: span_of(cur, start, cur.pos, options),
+    }))
+}
+
+#[inline(never)]
+fn reference_caption_shape(cur: &LineCursor<'_>, line: &str) -> bool {
+    !(line.starts_with([' ', '\t'])
+        || !reference_image_line(line)
+        || !cur
+            .lines
+            .line(cur.pos + 1)
+            .is_some_and(|next| !next.starts_with([' ', '\t']) && caption_content(next).is_some())
+        || !cur.lines.line(cur.pos + 2).map_or(true, is_blank_line))
+}
+
+#[inline(never)]
+fn parse_event_or_standard_paragraph(cur: &mut LineCursor<'_>, options: &Options<'_>) -> BlockNode {
+    collect_reference_caption(cur, options).unwrap_or_else(|| parse_paragraph(cur, options))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_event_level<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
     lines: &[&str],
@@ -2878,10 +3002,14 @@ fn run_event_level<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
             && state.defer_pending
             && extents.is_none()
             && event_owned_plain_paragraph(cur, options);
-        if (standard_paragraph && !simple_colon_paragraph)
+        if reference_caption_shape(cur, line)
+            || (standard_paragraph && !simple_colon_paragraph)
             || crate::includes::code_include_line(line).is_some()
         {
-            emit!(_block_source_line, parse_paragraph(cur, options));
+            emit!(
+                _block_source_line,
+                parse_event_or_standard_paragraph(cur, options)
+            );
             continue;
         }
         let paragraph_start = cur.pos;
