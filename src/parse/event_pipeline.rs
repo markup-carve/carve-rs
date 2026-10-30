@@ -372,6 +372,49 @@ mod standard_reader_probe_tests {
     }
 
     #[test]
+    fn standalone_attrs_after_colon_paragraph_match_standard_reader() {
+        for source in [
+            "::: outer\n::: inner\nalpha\n{#id}\n# sibling\n:::\n:::\n",
+            "::: outer\n::: inner\nalpha\n{.class}\n# sibling\n:::\n:::\n",
+            "::: outer\n::: inner\nalpha\n{#id}{.class}\n# sibling\n:::\n:::\n",
+            "::: outer\n::: inner\nalpha\n{#id}\n{.class}\n# sibling\n:::\n:::\n",
+            "::: outer\n::: inner\nalpha\n\n{.class}\n# sibling\n:::\n:::\n",
+        ] {
+            for (positions, source_lines) in
+                [(false, false), (true, false), (false, true), (true, true)]
+            {
+                let observer = Observer(RefCell::new(Vec::new()));
+                let options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines)
+                    .with_extension(&observer);
+                STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+                let ((actual, admitted), diagnostics) = collecting_lint_events(|| {
+                    parse_document_with_options(source, &options).unwrap()
+                });
+                assert!(admitted, "{source:?}");
+                assert_eq!(STANDARD_PARAGRAPH_ENTRIES.with(Cell::get), 0, "{source:?}");
+                let callbacks = observer.0.into_inner();
+                let observer = Observer(RefCell::new(Vec::new()));
+                let options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines)
+                    .with_extension(&observer);
+                let (expected, standard_diagnostics) = {
+                    let _standard = StandardEventRootGuard::install();
+                    collecting_lint_events(|| parse_with_options(source, &options))
+                };
+                assert_eq!(
+                    (actual, diagnostics),
+                    (expected, standard_diagnostics),
+                    "{source:?}"
+                );
+                assert_eq!(callbacks, observer.0.into_inner(), "{source:?}");
+            }
+        }
+    }
+
+    #[test]
     fn attached_id_colon_paragraph_matches_standard_reader() {
         for source in [
             "::: note\nalpha{#id}\n:::\n",
@@ -1812,6 +1855,13 @@ fn event_owned_plain_paragraph(cur: &LineCursor<'_>, options: &Options<'_>) -> b
         if is_blank_line(line) {
             break;
         }
+        if count != 0
+            && line.len() <= 256
+            && !line.starts_with([' ', '\t'])
+            && parse_standalone_attrs(line).is_some()
+        {
+            break;
+        }
         bytes += line.len();
         // An attached ID on a single, otherwise plain line is handled by the
         // inline parser. Keep the next line out of this fast path so a block
@@ -2382,6 +2432,13 @@ fn collect_event_paragraph<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
             break;
         }
         if is_blank_line(next) || detect_heading(next).is_some() {
+            break;
+        }
+        if !lines.is_empty()
+            && next.len() <= 256
+            && !next.starts_with([' ', '\t'])
+            && parse_standalone_attrs(next).is_some()
+        {
             break;
         }
         if !lines.is_empty() {
