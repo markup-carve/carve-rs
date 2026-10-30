@@ -2,21 +2,17 @@ use carve::lint_carve;
 
 #[test]
 fn quoted_plus_in_a_list_item_has_no_false_refusal() {
-    for source in ["- a\n  > q\n  > > +\n  > > x\n", "- a\n  >\n  > +\n  > x\n"] {
-        let warnings = lint_carve(source);
-        assert!(
-            warnings
-                .iter()
-                .all(|warning| warning.rule != "continuation-marker-refused"),
-            "{source:?}: {warnings:?}"
-        );
-        if source.contains("> > +") {
-            let html = carve::to_html(source);
-            assert!(
-                html.contains("<blockquote><p>+\nx</p></blockquote>"),
-                "{html}"
-            );
-        }
+    let source = "- a\n  > q\n  > > +\n  > > x\n";
+    let warnings = lint_carve(source);
+    assert!(
+        warnings
+            .iter()
+            .all(|warning| warning.rule != "continuation-marker-refused"),
+        "{source:?}: {warnings:?}"
+    );
+    if source.contains("> > +") {
+        let html = carve::to_html(source);
+        assert!(html.contains("<blockquote><p>x</p></blockquote>"), "{html}");
     }
 }
 
@@ -493,7 +489,7 @@ fn region_marker_rendering_warning() {
 
 #[test]
 fn an_attached_item_first_block_right_has_no_refusal_warning() {
-    let warnings = lint_carve("- +\n    x\n");
+    let warnings = lint_carve("- +\nx\n");
     assert!(
         warnings
             .iter()

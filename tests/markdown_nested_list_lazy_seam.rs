@@ -105,7 +105,7 @@ fn a_tail_that_cannot_take_lazy_text_keeps_its_paragraph_glued() {
         "- a\n  - b\n    # N\n\nlazy\n"
     );
     // An empty nested item has no paragraph to continue.
-    assert_eq!(carve::to_markdown("* * +\n  x\n"), "* *\n  x\n");
+    assert_eq!(carve::to_markdown("* * +\n  x\n"), "* * x\n");
 }
 
 #[test]

@@ -68,9 +68,7 @@ impl IndentContainer {
         decision: Option<continuation_marker::Decision>,
     ) -> bool {
         is_plus_marker(trim_ascii_start(line))
-            && decision.is_some_and(|decision| {
-                decision.owner == Some(self.owner) && decision.refusal.is_none()
-            })
+            && decision.is_some_and(|decision| decision.owner == Some(self.owner))
     }
 
     pub(super) fn classify(

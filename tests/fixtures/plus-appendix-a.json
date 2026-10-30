@@ -1,0 +1,537 @@
+[
+ {
+  "name": "384-a-continuation-marker-attaches-only-a-flush-left-block-2",
+  "source": "* * +\n  x\n",
+  "html": "<ul>\n  <li>\n    <ul>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "384-a-continuation-marker-attaches-only-a-flush-left-block-3",
+  "source": "* * +\n x\n",
+  "html": "<ul>\n  <li>\n    <ul>\n      <li>+\nx</li>\n    </ul>\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "384-a-continuation-marker-attaches-only-a-flush-left-block-5",
+  "source": "- +\n  x\n",
+  "html": "<ul>\n  <li>+\nx</li>\n</ul>\n"
+ },
+ {
+  "name": "384-a-continuation-marker-attaches-only-a-flush-left-block",
+  "source": "* * +\nx\n",
+  "html": "<ul>\n  <li>\n    <ul>\n      <li>+\nx</li>\n    </ul>\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "436-an-empty-description-body-claims-no-line-below-column-0-2",
+  "source": ":: t\n:  +\n flush\n",
+  "html": "<dl>\n  <dt>t</dt>\n  <dd>+\nflush</dd>\n</dl>\n"
+ },
+ {
+  "name": "436-an-empty-description-body-claims-no-line-below-column-0-4",
+  "source": ":: t\n:  +\n  flush\n",
+  "html": "<dl>\n  <dt>t</dt>\n  <dd>+\nflush</dd>\n</dl>\n"
+ },
+ {
+  "name": "436-an-empty-description-body-claims-no-line-below-column-0-7",
+  "source": "- +\n flush\n",
+  "html": "<ul>\n  <li>+\nflush</li>\n</ul>\n"
+ },
+ {
+  "name": "437-a-leading-continuation-marker-in-a-footnote-body-or-a-quote-is-text-3",
+  "source": "[^a]: +\n  flush\n\nsee[^a]\n",
+  "html": "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>+\nflush<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>\n"
+ },
+ {
+  "name": "588-a-block-quote-and-a-footnote-body-take-the-first-block-form-5",
+  "source": "> > +\n```\nx\n```\n",
+  "html": "<blockquote>\n  <blockquote><p>+</p></blockquote>\n</blockquote>\n<pre><code>x\n</code></pre>\n"
+ },
+ {
+  "name": "626-an-indented-plus-below-a-nested-fence-stays-content-at-every-depth-5",
+  "source": "- - ```\n\n\n  +\ntail\n",
+  "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <pre><code>\n\n</code></pre>\n      </li>\n    </ul>\n    <p>+\ntail</p>\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "626-an-indented-plus-below-a-nested-fence-stays-content-at-every-depth-7",
+  "source": "- 1. ```\n\n\n  +\ntail\n",
+  "html": "<ul>\n  <li>\n    <ol>\n      <li>\n        <pre><code>\n\n</code></pre>\n      </li>\n    </ol>\n    <p>+\ntail</p>\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "630-a-continuation-marker-stands-alone-at-column-zero-or-right-after-a-block-opener-10",
+  "source": "  > +\nq\n",
+  "html": "<blockquote><p>+\nq</p></blockquote>\n"
+ },
+ {
+  "name": "630-a-continuation-marker-stands-alone-at-column-zero-or-right-after-a-block-opener-13",
+  "source": "- - +\npara\n",
+  "html": "<ul>\n  <li>\n    <ul>\n      <li>+\npara</li>\n    </ul>\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "630-a-continuation-marker-stands-alone-at-column-zero-or-right-after-a-block-opener-16",
+  "source": "1. - +\npara\n",
+  "html": "<ol>\n  <li>\n    <ul>\n      <li>+\npara</li>\n    </ul>\n  </li>\n</ol>\n"
+ },
+ {
+  "name": "630-a-continuation-marker-stands-alone-at-column-zero-or-right-after-a-block-opener-18",
+  "source": "- a\n  - +\npara\n",
+  "html": "<ul>\n  <li>a\n    <ul>\n      <li>+\npara</li>\n    </ul>\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "631-a-task-item-takes-a-first-block-continuation-marker-after-its-checkbox-4",
+  "source": "- - [ ] +\n```\ncode\n```\n",
+  "html": "<ul>\n  <li>\n    <ul class=\"task-list\">\n      <li><input type=\"checkbox\" disabled aria-label=\"+\"> +</li>\n    </ul>\n  </li>\n</ul>\n<pre><code>code\n</code></pre>\n"
+ },
+ {
+  "name": "632-a-continuation-marker-uses-its-container-column-28",
+  "source": "- a\n  - +\n> b\n",
+  "html": "<ul>\n  <li>a\n    <ul>\n      <li>+</li>\n    </ul>\n  </li>\n</ul>\n<blockquote><p>b</p></blockquote>\n"
+ },
+ {
+  "name": "632-a-continuation-marker-uses-its-container-column-29",
+  "source": "- - +\n> q\n",
+  "html": "<ul>\n  <li>\n    <ul>\n      <li>+</li>\n    </ul>\n  </li>\n</ul>\n<blockquote><p>q</p></blockquote>\n"
+ },
+ {
+  "name": "632-a-continuation-marker-uses-its-container-column-30",
+  "source": "- - [ ] +\n> q\n",
+  "html": "<ul>\n  <li>\n    <ul class=\"task-list\">\n      <li><input type=\"checkbox\" disabled aria-label=\"+\"> +</li>\n    </ul>\n  </li>\n</ul>\n<blockquote><p>q</p></blockquote>\n"
+ },
+ {
+  "name": "632-a-continuation-marker-uses-its-container-column-33",
+  "source": "1. - +\n> q\n",
+  "html": "<ol>\n  <li>\n    <ul>\n      <li>+</li>\n    </ul>\n  </li>\n</ol>\n<blockquote><p>q</p></blockquote>\n"
+ },
+ {
+  "name": "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-10",
+  "source": "- foo\n  - +\n    > b\n",
+  "html": "<ul>\n  <li>foo\n    <ul>\n      <li>+\n        <blockquote><p>b</p></blockquote>\n      </li>\n    </ul>\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-11",
+  "source": "- foo\n  - [ ] +\n> b\n",
+  "html": "<ul>\n  <li>foo\n    <ul class=\"task-list\">\n      <li><input type=\"checkbox\" disabled aria-label=\"+\"> +</li>\n    </ul>\n  </li>\n</ul>\n<blockquote><p>b</p></blockquote>\n"
+ },
+ {
+  "name": "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-12",
+  "source": "- foo\n  - [ ] +\n > b\n",
+  "html": "<ul>\n  <li>foo\n    <ul class=\"task-list\">\n      <li><input type=\"checkbox\" disabled aria-label=\"+\"> +</li>\n    </ul>\n  </li>\n</ul>\n<blockquote><p>b</p></blockquote>\n"
+ },
+ {
+  "name": "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-14",
+  "source": "- foo\n  - [ ] +\n    > b\n",
+  "html": "<ul>\n  <li>foo\n    <ul class=\"task-list\">\n      <li><input type=\"checkbox\" disabled aria-label=\"+\"> +\n        <blockquote><p>b</p></blockquote>\n      </li>\n    </ul>\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-15",
+  "source": "- foo\n  1. +\n> b\n",
+  "html": "<ul>\n  <li>foo\n    <ol>\n      <li>+</li>\n    </ol>\n  </li>\n</ul>\n<blockquote><p>b</p></blockquote>\n"
+ },
+ {
+  "name": "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-16",
+  "source": "- foo\n  1. +\n > b\n",
+  "html": "<ul>\n  <li>foo\n    <ol>\n      <li>+</li>\n    </ol>\n  </li>\n</ul>\n<blockquote><p>b</p></blockquote>\n"
+ },
+ {
+  "name": "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-18",
+  "source": "- foo\n  1. +\n    > b\n",
+  "html": "<ul>\n  <li>foo\n    <ol>\n      <li>+</li>\n    </ol>\n    <blockquote><p>b</p></blockquote>\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-19",
+  "source": "- foo\n  - +\n```\nx\n```\n",
+  "html": "<ul>\n  <li>foo\n    <ul>\n      <li>+</li>\n    </ul>\n  </li>\n</ul>\n<pre><code>x\n</code></pre>\n"
+ },
+ {
+  "name": "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-20",
+  "source": "- foo\n  - +\n ```\n x\n ```\n",
+  "html": "<ul>\n  <li>foo\n    <ul>\n      <li>+</li>\n    </ul>\n  </li>\n</ul>\n<pre><code>x\n</code></pre>\n"
+ },
+ {
+  "name": "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-22",
+  "source": "- foo\n  - +\n    ```\n    x\n    ```\n",
+  "html": "<ul>\n  <li>foo\n    <ul>\n      <li>+\n        <pre><code>x\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-23",
+  "source": "- foo\n  - [ ] +\n```\nx\n```\n",
+  "html": "<ul>\n  <li>foo\n    <ul class=\"task-list\">\n      <li><input type=\"checkbox\" disabled aria-label=\"+\"> +</li>\n    </ul>\n  </li>\n</ul>\n<pre><code>x\n</code></pre>\n"
+ },
+ {
+  "name": "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-24",
+  "source": "- foo\n  - [ ] +\n ```\n x\n ```\n",
+  "html": "<ul>\n  <li>foo\n    <ul class=\"task-list\">\n      <li><input type=\"checkbox\" disabled aria-label=\"+\"> +</li>\n    </ul>\n  </li>\n</ul>\n<pre><code>x\n</code></pre>\n"
+ },
+ {
+  "name": "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-26",
+  "source": "- foo\n  - [ ] +\n    ```\n    x\n    ```\n",
+  "html": "<ul>\n  <li>foo\n    <ul class=\"task-list\">\n      <li><input type=\"checkbox\" disabled aria-label=\"+\"> +\n        <pre><code>x\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-27",
+  "source": "- foo\n  1. +\n```\nx\n```\n",
+  "html": "<ul>\n  <li>foo\n    <ol>\n      <li>+</li>\n    </ol>\n  </li>\n</ul>\n<pre><code>x\n</code></pre>\n"
+ },
+ {
+  "name": "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-28",
+  "source": "- foo\n  1. +\n ```\n x\n ```\n",
+  "html": "<ul>\n  <li>foo\n    <ol>\n      <li>+</li>\n    </ol>\n  </li>\n</ul>\n<pre><code>x\n</code></pre>\n"
+ },
+ {
+  "name": "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-30",
+  "source": "- foo\n  1. +\n    ```\n    x\n    ```\n",
+  "html": "<ul>\n  <li>foo\n    <ol>\n      <li>+</li>\n    </ol>\n    <pre><code>x\n</code></pre>\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-31",
+  "source": "- foo\n  - +\n  - x\n",
+  "html": "<ul>\n  <li>foo\n    <ul>\n      <li>+</li>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-33",
+  "source": "- foo\n  - +\n  * x\n",
+  "html": "<ul>\n  <li>foo\n    <ul>\n      <li>+</li>\n    </ul>\n    <ul>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-34",
+  "source": "- foo\n  - +\n  1. x\n",
+  "html": "<ul>\n  <li>foo\n    <ul>\n      <li>+</li>\n    </ul>\n    <ol>\n      <li>x</li>\n    </ol>\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-35",
+  "source": "- foo\n  - +\n  - [ ] x\n",
+  "html": "<ul>\n  <li>foo\n    <ul>\n      <li>+</li>\n    </ul>\n    <ul class=\"task-list\">\n      <li><input type=\"checkbox\" disabled aria-label=\"x\"> x</li>\n    </ul>\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-36",
+  "source": "- foo\n  - +\n    - x\n",
+  "html": "<ul>\n  <li>foo\n    <ul>\n      <li>+\n        <ul>\n          <li>x</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-5",
+  "source": "- foo\n  - +\n> b\n",
+  "html": "<ul>\n  <li>foo\n    <ul>\n      <li>+</li>\n    </ul>\n  </li>\n</ul>\n<blockquote><p>b</p></blockquote>\n"
+ },
+ {
+  "name": "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-6",
+  "source": "- foo\n  - +\n x\n",
+  "html": "<ul>\n  <li>foo\n    <ul>\n      <li>+\nx</li>\n    </ul>\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-7",
+  "source": "- foo\n  - +\n> b\n",
+  "html": "<ul>\n  <li>foo\n    <ul>\n      <li>+</li>\n    </ul>\n  </li>\n</ul>\n<blockquote><p>b</p></blockquote>\n"
+ },
+ {
+  "name": "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-8",
+  "source": "- foo\n  - +\n > b\n",
+  "html": "<ul>\n  <li>foo\n    <ul>\n      <li>+</li>\n    </ul>\n  </li>\n</ul>\n<blockquote><p>b</p></blockquote>\n"
+ },
+ {
+  "name": "633-a-first-block-marker-on-an-indented-opener-reads-two-columns",
+  "source": "- foo\n  - +\n- x\n",
+  "html": "<ul>\n  <li>foo\n    <ul>\n      <li>+</li>\n    </ul>\n  </li>\n  <li>x</li>\n</ul>\n"
+ },
+ {
+  "name": "634-a-refused-continuation-plus-remains-text-23",
+  "source": "- +\n",
+  "html": "<ul>\n  <li>+</li>\n</ul>\n"
+ },
+ {
+  "name": "634-a-refused-continuation-plus-remains-text-24",
+  "source": "- +\n\npara\n",
+  "html": "<ul>\n  <li>+</li>\n</ul>\n<p>para</p>\n"
+ },
+ {
+  "name": "634-a-refused-continuation-plus-remains-text-25",
+  "source": "- +\n- b\n",
+  "html": "<ul>\n  <li>+</li>\n  <li>b</li>\n</ul>\n"
+ },
+ {
+  "name": "634-a-refused-continuation-plus-remains-text-26",
+  "source": "1. +\n",
+  "html": "<ol>\n  <li>+</li>\n</ol>\n"
+ },
+ {
+  "name": "634-a-refused-continuation-plus-remains-text-27",
+  "source": "- [ ] +\n",
+  "html": "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled aria-label=\"+\"> +</li>\n</ul>\n"
+ },
+ {
+  "name": "634-a-refused-continuation-plus-remains-text-28",
+  "source": "- foo\n  - +\n  - b\n",
+  "html": "<ul>\n  <li>foo\n    <ul>\n      <li>+</li>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "634-a-refused-continuation-plus-remains-text-30",
+  "source": "> > +\nflush\n",
+  "html": "<blockquote>\n  <blockquote><p>+\nflush</p></blockquote>\n</blockquote>\n"
+ },
+ {
+  "name": "634-a-refused-continuation-plus-remains-text-31",
+  "source": "- a\n  - - +\n  > b\n",
+  "html": "<ul>\n  <li>a\n    <ul>\n      <li>\n        <ul>\n          <li>+</li>\n        </ul>\n      </li>\n    </ul>\n    <blockquote><p>b</p></blockquote>\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "634-a-refused-continuation-plus-remains-text-32",
+  "source": "- a\n  - - +\n> b\n",
+  "html": "<ul>\n  <li>a\n    <ul>\n      <li>\n        <ul>\n          <li>+</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<blockquote><p>b</p></blockquote>\n"
+ },
+ {
+  "name": "643-a-first-block-marker-does-not-pull-a-column-zero-list-into-a-note-or-description-2",
+  "source": ":: t\n: +\n- a list\n",
+  "html": "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>a list</li>\n    </ul>\n  </dd>\n</dl>\n"
+ },
+ {
+  "name": "643-a-first-block-marker-does-not-pull-a-column-zero-list-into-a-note-or-description",
+  "source": "[^a]: +\n- a list\n\nsee[^a]\n",
+  "html": "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <ul>\n        <li>a list</li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>\n"
+ },
+ {
+  "name": "646-a-quote-prefixed-plus-takes-one-space-after-each-quote-marker-and-attaches-a-quote-2",
+  "source": "> > +\nq\n",
+  "html": "<blockquote>\n  <blockquote><p>+\nq</p></blockquote>\n</blockquote>\n"
+ },
+ {
+  "name": "649-a-first-block-plus-refuses-a-follower-at-an-intervening-column-4",
+  "source": "> > +\n  > q\n",
+  "html": "<blockquote>\n  <blockquote><p>+\nq</p></blockquote>\n</blockquote>\n"
+ },
+ {
+  "name": "649-a-first-block-plus-refuses-a-follower-at-an-intervening-column-5",
+  "source": "- a\n  > > +\n    > q\n",
+  "html": "<ul>\n  <li>a\n    <blockquote>\n      <blockquote><p>+\nq</p></blockquote>\n    </blockquote>\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "651-a-stacked-first-block-plus-takes-a-follower-only-at-column-zero-or-its-line-s-column-2",
+  "source": "- - +\n  b\n",
+  "html": "<ul>\n  <li>\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "652-a-quote-s-first-block-plus-refuses-a-list-follower-in-every-host",
+  "source": "> - > q\n>   > > +\n>   > - s\n",
+  "html": "<blockquote>\n  <ul>\n    <li>\n      <blockquote>\n        <p>q</p>\n        <blockquote>\n          <ul>\n            <li>s</li>\n          </ul>\n        </blockquote>\n      </blockquote>\n    </li>\n  </ul>\n</blockquote>\n"
+ },
+ {
+  "name": "728-a-first-block-item-takes-the-next-owned-block-2",
+  "source": "- +\n  x\n# h\n",
+  "html": "<ul>\n  <li>+\nx</li>\n</ul>\n<section id=\"h\">\n  <h1>h</h1>\n</section>\n"
+ },
+ {
+  "name": "728-a-first-block-item-takes-the-next-owned-block-3",
+  "source": "- +\n  x\n---\n",
+  "html": "<ul>\n  <li>+\nx</li>\n</ul>\n<hr>\n"
+ },
+ {
+  "name": "728-a-first-block-item-takes-the-next-owned-block-4",
+  "source": "- +\n\tx\n>\n",
+  "html": "<ul>\n  <li>+\nx</li>\n</ul>\n<blockquote>\n\n</blockquote>\n"
+ },
+ {
+  "name": "728-a-first-block-item-takes-the-next-owned-block",
+  "source": "- +\n  x\n>\n",
+  "html": "<ul>\n  <li>+\nx</li>\n</ul>\n<blockquote>\n\n</blockquote>\n"
+ },
+ {
+  "name": "734-a-nested-first-block-item-releases-the-next-root-block-2",
+  "source": "- - +\n    x\n# tail\n",
+  "html": "<ul>\n  <li>\n    <ul>\n      <li>+\nx</li>\n    </ul>\n  </li>\n</ul>\n<section id=\"tail\">\n  <h1>tail</h1>\n</section>\n"
+ },
+ {
+  "name": "734-a-nested-first-block-item-releases-the-next-root-block-3",
+  "source": "- - +\n    x\n---\n",
+  "html": "<ul>\n  <li>\n    <ul>\n      <li>+\nx</li>\n    </ul>\n  </li>\n</ul>\n<hr>\n"
+ },
+ {
+  "name": "734-a-nested-first-block-item-releases-the-next-root-block-4",
+  "source": "- - +\n    x\n::: note\ntail\n:::\n",
+  "html": "<ul>\n  <li>\n    <ul>\n      <li>+\nx</li>\n    </ul>\n  </li>\n</ul>\n<aside class=\"admonition note\" aria-label=\"Note\">\n  <p>tail</p>\n</aside>\n"
+ },
+ {
+  "name": "734-a-nested-first-block-item-releases-the-next-root-block-5",
+  "source": "- - +\n    x\n:: tail\n:  definition\n",
+  "html": "<ul>\n  <li>\n    <ul>\n      <li>+\nx</li>\n    </ul>\n  </li>\n</ul>\n<dl>\n  <dt>tail</dt>\n  <dd>definition</dd>\n</dl>\n"
+ },
+ {
+  "name": "734-a-nested-first-block-item-releases-the-next-root-block",
+  "source": "- - +\n    x\n> tail\n",
+  "html": "<ul>\n  <li>\n    <ul>\n      <li>+\nx</li>\n    </ul>\n  </li>\n</ul>\n<blockquote><p>tail</p></blockquote>\n"
+ },
+ {
+  "name": "750-a-below-column-line-returns-to-its-definition-body",
+  "source": ":: t\n: - +\n  x\n",
+  "html": "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>x</li>\n    </ul>\n  </dd>\n</dl>\n"
+ },
+ {
+  "name": "757-an-intervening-column-refuses-a-description-hosted-first-block",
+  "source": ":: t\n: - +\n # H\n",
+  "html": "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>+</li>\n    </ul>\n  </dd>\n</dl>\n<section id=\"H\">\n  <h1>H</h1>\n</section>\n"
+ },
+ {
+  "name": "760-a-heading-inside-the-intervening-band-stays-description-text",
+  "source": ":: t\n: - +\n   # H\n",
+  "html": "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>+</li>\n    </ul>\n    <h1 id=\"H\">H</h1>\n  </dd>\n</dl>\n"
+ },
+ {
+  "name": "782-a-first-block-plus-hands-its-block-to-the-host-as-the-host-reads-it-10",
+  "source": "- +\n  ```\n  x\n- b\n",
+  "html": "<ul>\n  <li>+\n    <pre><code>x\n</code></pre>\n  </li>\n  <li>b</li>\n</ul>\n"
+ },
+ {
+  "name": "782-a-first-block-plus-hands-its-block-to-the-host-as-the-host-reads-it-12",
+  "source": "- +\n  {.x}\n  ```\n  x\n",
+  "html": "<ul>\n  <li>+\n    <pre class=\"x\"><code>x\n</code></pre>\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "782-a-first-block-plus-hands-its-block-to-the-host-as-the-host-reads-it-5",
+  "source": "- +\n  ```\n  x\n",
+  "html": "<ul>\n  <li>+\n    <pre><code>x\n</code></pre>\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "782-a-first-block-plus-hands-its-block-to-the-host-as-the-host-reads-it-6",
+  "source": "- foo\n  - +\n    ```\n    x\n    ``\n",
+  "html": "<ul>\n  <li>foo\n    <ul>\n      <li>+\n        <pre><code>x\n``\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "782-a-first-block-plus-hands-its-block-to-the-host-as-the-host-reads-it-7",
+  "source": "- a\n  - ```\n +\n````\n",
+  "html": "<ul>\n  <li>a\n    <ul>\n      <li>\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>+</p>\n<pre><code></code></pre>\n"
+ },
+ {
+  "name": "782-a-first-block-plus-hands-its-block-to-the-host-as-the-host-reads-it-9",
+  "source": "- +\n  ```\n  x\n  ```\n  para\n",
+  "html": "<ul>\n  <li>+\n    <pre><code>x\n</code></pre>\n    para\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "801-a-footnote-body-takes-its-first-block-at-its-body-column-2",
+  "source": "[^a]: +\n  - x\n  - y\n\nsee[^a]\n",
+  "html": "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>+\n- x\n- y<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>\n"
+ },
+ {
+  "name": "801-a-footnote-body-takes-its-first-block-at-its-body-column-3",
+  "source": "[^a]: +\n\n  later\n\nsee[^a]\n",
+  "html": "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>+</p>\n      <p>later<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>\n"
+ },
+ {
+  "name": "801-a-footnote-body-takes-its-first-block-at-its-body-column-5",
+  "source": "- - +\npara\n",
+  "html": "<ul>\n  <li>\n    <ul>\n      <li>+\npara</li>\n    </ul>\n  </li>\n</ul>\n"
+ },
+ {
+  "name": "801-a-footnote-body-takes-its-first-block-at-its-body-column-6",
+  "source": ":: t\n: +\n    flush\n",
+  "html": "<dl>\n  <dt>t</dt>\n  <dd>+\nflush</dd>\n</dl>\n"
+ },
+ {
+  "name": "801-a-footnote-body-takes-its-first-block-at-its-body-column-7",
+  "source": "- [^q]: +\n  para\n\nr[^q]\n",
+  "html": "<ul>\n  <li></li>\n</ul>\n<p>r<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>para<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>\n"
+ },
+ {
+  "name": "801-a-footnote-body-takes-its-first-block-at-its-body-column-8",
+  "source": "- [^q]: +\n    flush\n\nr[^q]\n",
+  "html": "<ul>\n  <li></li>\n</ul>\n<p>r<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>+\nflush<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>\n"
+ },
+ {
+  "name": "801-a-footnote-body-takes-its-first-block-at-its-body-column",
+  "source": "[^a]: +\n  flush\n\nsee[^a]\n",
+  "html": "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>+\nflush<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>\n"
+ },
+ {
+  "name": "802-an-unprefixed-line-does-not-reach-a-quoted-note-s-first-block-7",
+  "source": "> [^b]: +\n>   flush\n\nr[^b]\n",
+  "html": "<blockquote>\n\n</blockquote>\n<p>r<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>+\nflush<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>\n"
+ },
+ {
+  "name": "806-a-description-body-in-an-item-takes-a-column-zero-block-after-its-first-block-plus-2",
+  "source": "- a\n  - b\n    :: t\n    : +\n```\nx\n```\n",
+  "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <dl>\n          <dt>t</dt>\n          <dd>+</dd>\n        </dl>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>x\n</code></pre>\n"
+ },
+ {
+  "name": "806-a-description-body-in-an-item-takes-a-column-zero-block-after-its-first-block-plus-3",
+  "source": "1. a\n   :: t\n   : +\n> q\n",
+  "html": "<ol>\n  <li>a\n    <dl>\n      <dt>t</dt>\n      <dd>+</dd>\n    </dl>\n  </li>\n</ol>\n<blockquote><p>q</p></blockquote>\n"
+ },
+ {
+  "name": "806-a-description-body-in-an-item-takes-a-column-zero-block-after-its-first-block-plus-4",
+  "source": "- a\n  :: t\n  : +\n# H\n",
+  "html": "<ul>\n  <li>a\n    <dl>\n      <dt>t</dt>\n      <dd>+</dd>\n    </dl>\n  </li>\n</ul>\n<section id=\"H\">\n  <h1>H</h1>\n</section>\n"
+ },
+ {
+  "name": "806-a-description-body-in-an-item-takes-a-column-zero-block-after-its-first-block-plus-5",
+  "source": "- a\n  :: t\n  : +\n```\nx\n\nsee\n",
+  "html": "<ul>\n  <li>a\n    <dl>\n      <dt>t</dt>\n      <dd>+</dd>\n    </dl>\n  </li>\n</ul>\n<pre><code>x\n\nsee\n</code></pre>\n"
+ },
+ {
+  "name": "806-a-description-body-in-an-item-takes-a-column-zero-block-after-its-first-block-plus",
+  "source": "- a\n  :: t\n  : +\n```\nx\n```\n",
+  "html": "<ul>\n  <li>a\n    <dl>\n      <dt>t</dt>\n      <dd>+</dd>\n    </dl>\n  </li>\n</ul>\n<pre><code>x\n</code></pre>\n"
+ },
+ {
+  "name": "806-a-marker-folds-into-the-paragraph-a-first-block-plus-took",
+  "source": "- +\n  b\n * w1\n",
+  "html": "<ul>\n  <li>+\nb\n* w1</li>\n</ul>\n"
+ },
+ {
+  "name": "811-a-first-block-plus-does-not-take-the-closer-of-its-div-2",
+  "source": "::: d\n:: t\n: d\n  :: u\n  : +\n:::\nafter\n",
+  "html": "<div class=\"d\">\n  <dl>\n    <dt>t</dt>\n    <dd>\n      <p>d</p>\n      <dl>\n        <dt>u</dt>\n        <dd>+</dd>\n      </dl>\n    </dd>\n  </dl>\n</div>\n<p>after</p>\n"
+ },
+ {
+  "name": "811-a-first-block-plus-does-not-take-the-closer-of-its-div",
+  "source": "::: d\n- d\n  - +\n:::\nafter\n",
+  "html": "<div class=\"d\">\n  <ul>\n    <li>d\n      <ul>\n        <li>+</li>\n      </ul>\n    </li>\n  </ul>\n</div>\n<p>after</p>\n"
+ },
+ {
+  "name": "811-a-lazy-line-after-a-narrower-list-in-a-note-folds-into-its-item",
+  "source": "[^a]: 1. +\n  - y\ntail\n\nr[^a]\n",
+  "html": "<p>r<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <ol>\n        <li>+</li>\n      </ol>\n      <ul>\n        <li>y\ntail</li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>\n"
+ },
+ {
+  "name": "815-a-line-below-an-empty-div-after-a-first-block-plus-is-not-lazy-4",
+  "source": "- +\n  ::: d\n  {.c}\nafter\n",
+  "html": "<ul>\n  <li>+\n    <div class=\"d\">\n\n    </div>\n  </li>\n</ul>\n<p>after</p>\n"
+ },
+ {
+  "name": "815-a-line-below-an-empty-div-after-a-first-block-plus-is-not-lazy",
+  "source": "::: d\n- d\n  - e\n    - +\n  :::\nafter\n",
+  "html": "<div class=\"d\">\n  <ul>\n    <li>d\n      <ul>\n        <li>e\n          <ul>\n            <li>+</li>\n          </ul>\n        </li>\n      </ul>\n      <div>\n\n      </div>\n    </li>\n  </ul>\n  <p>after</p>\n</div>\n"
+ },
+ {
+  "name": "826-a-comment-or-link-definition-at-a-body-s-column-spends-its-first-block-plus-2",
+  "source": "- +\n  %% c\nafter\n",
+  "html": "<ul>\n  <li>+</li>\n</ul>\n<p>after</p>\n"
+ },
+ {
+  "name": "826-a-comment-or-link-definition-at-a-body-s-column-spends-its-first-block-plus-3",
+  "source": "- a\n  * +\n    [r]: /u\nafter\n",
+  "html": "<ul>\n  <li>a\n    <ul>\n      <li>+</li>\n    </ul>\n  </li>\n</ul>\n<p>after</p>\n"
+ },
+ {
+  "name": "826-a-comment-or-link-definition-at-a-body-s-column-spends-its-first-block-plus-4",
+  "source": "- +\n  %% c\n  %% d\n```\nz\n```\n",
+  "html": "<ul>\n  <li>+</li>\n</ul>\n<pre><code>z\n</code></pre>\n"
+ },
+ {
+  "name": "826-a-comment-or-link-definition-at-a-body-s-column-spends-its-first-block-plus-5",
+  "source": "- a\n  * +\n[r]: /u\n  after\n",
+  "html": "<ul>\n  <li>a\n    <ul>\n      <li>+</li>\n    </ul>\n  </li>\n</ul>\n<p>after</p>\n"
+ },
+ {
+  "name": "826-a-comment-or-link-definition-at-a-body-s-column-spends-its-first-block-plus-6",
+  "source": "- a\n  * +\n%% c\n  after\n",
+  "html": "<ul>\n  <li>a\n    <ul>\n      <li>+</li>\n    </ul>\n  </li>\n</ul>\n<p>after</p>\n"
+ },
+ {
+  "name": "826-a-comment-or-link-definition-at-a-body-s-column-spends-its-first-block-plus",
+  "source": "- a\n  * +\n    %% c\nafter\n",
+  "html": "<ul>\n  <li>a\n    <ul>\n      <li>+</li>\n    </ul>\n  </li>\n</ul>\n<p>after</p>\n"
+ },
+ {
+  "name": "838-an-item-on-a-body-s-marker-line-takes-a-column-zero-block-after-its-plus-2",
+  "source": "[^n]: - +\np\n\nr[^n]\n",
+  "html": "<p>r<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <ul>\n        <li>+\np</li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>\n"
+ },
+ {
+  "name": "838-an-item-on-a-body-s-marker-line-takes-a-column-zero-block-after-its-plus",
+  "source": ":: t\n: - +\np\n",
+  "html": "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>+\np</li>\n    </ul>\n  </dd>\n</dl>\n"
+ }
+]

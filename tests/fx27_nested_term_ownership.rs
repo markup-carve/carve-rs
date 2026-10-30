@@ -10,8 +10,8 @@ fn below_column_description_returns_to_its_outer_body() {
     for source in hosts {
         let html = carve::to_html(source);
         assert!(html.contains("<dt>inner</dt>"), "{source:?}: {html}");
-        assert!(html.contains("<p>:  tail</p>"), "{source:?}: {html}");
-        assert!(!html.contains("<dd>tail</dd>"), "{source:?}: {html}");
+        assert!(html.contains("<dd>tail</dd>"), "{source:?}: {html}");
+        assert!(!html.contains("<p>:  tail</p>"), "{source:?}: {html}");
     }
 }
 

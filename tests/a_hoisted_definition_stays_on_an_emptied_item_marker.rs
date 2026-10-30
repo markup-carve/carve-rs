@@ -37,7 +37,7 @@ const SHAPES: &[(&str, &str, &str)] = &[
     (
         "empty sibling item",
         "- a\n- [d]: u\n",
-        "- a\n- +\n\n[d]: u\n",
+        "- a\n- {empty}\n\n[d]: u\n",
     ),
     (
         "inside a div",

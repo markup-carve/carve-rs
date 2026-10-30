@@ -433,6 +433,8 @@ pub(in crate::parse) fn parse_inline_context_with_pairs(
     base: usize,
     pairs: Option<NativeBracedView>,
 ) -> Vec<InlineNode> {
+    let restored = continuation_marker::restore_letter(text);
+    let text = restored.as_ref();
     // Recursion cap (see MAX_NESTING_DEPTH). Nested links/spans/emphasis recurse
     // through here one frame per level; over the cap, keep the remaining text
     // literal rather than recursing further (prevents a stack-overflow abort on

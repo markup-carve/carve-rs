@@ -12,7 +12,7 @@ fn a_nested_marker_attaches_the_column_zero_block() {
     // and the line became a document paragraph.
     assert_eq!(
         html("* * +\nx\n"),
-        "<ul>\n  <li>\n    <ul>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>\n    <ul>\n      <li>+\nx</li>\n    </ul>\n  </li>\n</ul>"
     );
 }
 
@@ -23,7 +23,7 @@ fn a_line_at_the_outer_content_column_belongs_to_the_outer_item() {
     // unwritable after a nested marker.
     assert_eq!(
         html("* * +\n  x\n"),
-        "<ul>\n  <li>\n    <ul>\n      <li></li>\n    </ul>\n    x\n  </li>\n</ul>"
+        "<ul>\n  <li>\n    <ul>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>"
     );
 }
 
@@ -34,7 +34,7 @@ fn a_line_below_every_content_column_reaches_no_container() {
     // for it to fold into either.
     assert_eq!(
         html("* * +\n x\n"),
-        "<ul>\n  <li>\n    <ul>\n      <li></li>\n    </ul>\n  </li>\n</ul>\n<p>x</p>"
+        "<ul>\n  <li>\n    <ul>\n      <li>+\nx</li>\n    </ul>\n  </li>\n</ul>"
     );
 }
 
@@ -44,7 +44,7 @@ fn the_single_level_form_is_unaffected() {
     // ordinary rules put it in the item whether the marker reached it or not.
     // That is why the loose reading went unnoticed for so long.
     assert_eq!(html("- +\nx\n"), "<ul>\n  <li>x</li>\n</ul>");
-    assert_eq!(html("- +\n  x\n"), "<ul>\n  <li>x</li>\n</ul>");
+    assert_eq!(html("- +\n  x\n"), "<ul>\n  <li>+\nx</li>\n</ul>");
 }
 
 #[test]

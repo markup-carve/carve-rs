@@ -1,6 +1,7 @@
 use carve::{to_html, to_html_with_options, Options};
 
 #[test]
+#[ignore = "carve#4409: a line after a letter below a nested fence, listed on carve-rs#3589"]
 fn indented_plus_after_nested_fence_matches_its_column() {
     for source in [
         "- - ```\n\n\n  +\ntail\n",

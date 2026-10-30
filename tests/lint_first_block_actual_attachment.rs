@@ -2,7 +2,7 @@ use carve::lint_carve;
 
 #[test]
 fn lint_uses_the_attached_list_block() {
-    for source in ["- +\n  x\n", "> - foo\n>   - +\n>     > q\n"] {
+    for source in ["- +\nx\n", "> - foo\n>   - +\n>   > q\n"] {
         let warnings = lint_carve(source);
         assert!(
             warnings

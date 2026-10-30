@@ -337,7 +337,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             || item_block_opener(trim_ascii_start(line)))
             && cur.pos.checked_sub(1).is_some_and(|previous| {
                 cur.continuation_decision(previous)
-                    .is_some_and(|decision| decision.first_block && decision.refusal.is_none())
+                    .is_some_and(|decision| decision.first_block)
             });
         if follows_first_block {
             let start = cur.pos;
@@ -358,6 +358,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                                 || detect_list_marker_full(next)
                                     .is_some_and(|marker| marker.indent <= parent_indent)
                                 || attached_fence && indent_columns(next) < strip_cols
+                                // A `+`-filled description's sibling ends its block (carve#4408).
+                                || strip_definition_marker(trim_ascii_start(next)).is_some()
                         },
                     )
                 })
@@ -401,9 +403,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             outer_plus_after_blank |= lines.last().is_some_and(|prior| is_blank_line(prior));
             break;
         }
-        if nested_bare_marker_then_plain(cur, strip_cols)
-            || refused_first_block_below_column(cur, strip_cols)
-        {
+        if nested_bare_marker_then_plain(cur, strip_cols) {
             break;
         }
         if active_nested_fence.is_some_and(|open| {
@@ -417,14 +417,11 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         outer_plus_after_blank |= trim_ascii(line) == "+"
             && indent_columns(line) == strip_cols
             && lines.last().is_some_and(|prior| is_blank_line(prior))
-            && cur.continuation_decision(cur.pos).is_some_and(|decision| {
-                decision.owner == Some(continuation_marker::Kind::List)
-                    && decision.refusal.is_none()
-            });
-        if trim_ascii(line) == "+"
             && cur
                 .continuation_decision(cur.pos)
-                .is_some_and(|decision| decision.refusal.is_none())
+                .is_some_and(|decision| decision.owner == Some(continuation_marker::Kind::List));
+        if trim_ascii(line) == "+"
+            && cur.continuation_decision(cur.pos).is_some()
             && indent_columns(line) < strip_cols
             && !lines
                 .last()
@@ -662,9 +659,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && indent >= strip_cols
             && line_starts_paragraph(trim_ascii_start(line))
             && !(is_plus_marker(trim_ascii_start(line))
-                && cur
-                    .continuation_decision(cur.pos)
-                    .is_some_and(|decision| decision.refusal.is_none())
+                && cur.continuation_decision(cur.pos).is_some()
                 && cur.lines.line(cur.pos + 1).is_some_and(|next| {
                     line_starts_paragraph(trim_ascii_start(next))
                         && !item_block_opener(trim_ascii_start(next))
@@ -938,51 +933,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                         && detect_fence_open(trim_ascii_start(prior)).is_none()
                 })
                 && !interrupts_lazy_continuation_as_container(cur, line));
-        // The first block's attachment is resolved before ordinary item collection.
-        if lead_is_continuation && lines.is_empty() {
-            if indent == 0 && detect_list_marker_full(line).is_some() {
-                break;
-            }
-            if indent == 0 {
-                // A fence takes its payload and closer along (carve#3421): the first block
-                // is the whole fence, not its opener line.
-                let end = if detect_fence_open(line).is_some() {
-                    attached_block_lines_classified(
-                        cur.lines,
-                        cur.pos,
-                        &mut cur.comment_closer_last_index,
-                        &mut cur.code_closer_last_index,
-                        options,
-                        &mut |next, _| is_blank_line(next) || is_plus_marker(next),
-                    )
-                    .max(cur.pos + 1)
-                } else {
-                    cur.pos + 1
-                };
-                while cur.pos < end {
-                    let line = cur.lines.at(cur.pos);
-                    // THE MAPS MOVE WITH THE LINE. This collector keeps `line_map`
-                    // and `col_map` parallel to `lines`, and a push that skips them
-                    // desynchronises all three - which does not fail here but panics
-                    // later, where a slice of the map is taken by the line range.
-                    lines.push(slice_columns(line, 0, true).to_string());
-                    if cur.line_map.is_some() {
-                        line_map.push(cur.source_line(cur.pos));
-                    }
-                    reached.push(false);
-                    if building_maps {
-                        col_map.push(cur.source_col(cur.pos));
-                    }
-                    cur.consume();
-                }
-                continue;
-            }
-            if indent < strip_cols
-                || (indent == strip_cols && detect_list_marker_full(line).is_none())
-            {
-                break;
-            }
-        }
         if nested_fence.is_some() && indent < strip_cols {
             *fence = nested_fence;
             break;
@@ -1298,7 +1248,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && comment_fence.is_none()
             && colon_open.is_empty()
             && !surviving_definition_body_column.is_some_and(|column| indent >= column)
-            && !collected_body_ends_in_a_quote_fold(&lines, &line_map)
+            && !collected_body_ends_in_a_quote_fold(&lines)
         {
             break;
         }
@@ -1662,7 +1612,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         } else {
             &sliced
         };
-        let mut frame_lazy_fence = false;
         if !in_comment_span {
             let was_in_code = fence.is_some();
             let may_track_code = literal_colon.map_or(true, |(_, column, floor)| {
@@ -1672,19 +1621,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                             literal_code_closes_cursor(cur, floor, column, open)
                         }))
             });
-            // A quote marker past the column, below a quote whose list `+` refused it,
-            // is no quote of its own: the indented `>` is paragraph text (carve#3421).
-            frame_lazy_fence = indent > strip_cols
-                    && cur.pos > 0
-                    && strip_blockquote_prefix(trim_ascii_start(line)).is_some()
-                    && trim_ascii_start(cur.lines.at(cur.pos - 1)).starts_with('>')
-                    // Only a `>` out of line with the quote's own marker.
-                    && indent_columns(cur.lines.at(cur.pos - 1)) != indent
-                    && cur.continuation_decision(cur.pos - 1).is_some_and(|decision| {
-                        decision.first_block
-                            && decision.refusal.is_some()
-                            && decision.owner == Some(continuation_marker::Kind::List)
-                    });
             if may_track_code {
                 let tracked = if literal_colon.is_some() {
                     trim_ascii_start(fence_line)
@@ -1757,9 +1693,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && indent < strip_cols
             && is_line_comment_any_column(line)
             && !is_definition_placeholder(line);
-        lines.push(if frame_lazy_fence {
-            format!("{LAZY}{}", trim_ascii_start(&sliced))
-        } else if term_comment_below_column {
+        lines.push(if term_comment_below_column {
             format!(" {sliced}")
         } else {
             sliced

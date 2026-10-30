@@ -1681,7 +1681,12 @@ impl BlockMarkerScan<'_> {
                 self.empty_task_breaks
                     .insert(index, lines[index][..prefix].trim_end().to_owned());
             }
-            lines[index] = format!("{}{}{} +", &lines[index][..prefix], &rest[..indent], marker);
+            lines[index] = format!(
+                "{}{}{} {{empty}}",
+                &lines[index][..prefix],
+                &rest[..indent],
+                marker
+            );
             retain_items_before(&mut self.item_columns, depth, column);
             self.item_columns.push((depth, column));
             self.boundary = true;

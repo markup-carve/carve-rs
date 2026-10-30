@@ -26,7 +26,7 @@ fn cli(args: &[&str], input: &str) -> (i32, String) {
 fn sibling_after_a_stacked_first_block_stays_a_sibling() {
     assert_eq!(
         carve::to_html("- - +\n  x\n- sibling\n"),
-        "<ul>\n  <li>\n    <ul>\n      <li></li>\n    </ul>\n    x\n  </li>\n  <li>sibling</li>\n</ul>"
+        "<ul>\n  <li>\n    <ul>\n      <li>x</li>\n    </ul>\n  </li>\n  <li>sibling</li>\n</ul>"
     );
 }
 

@@ -97,7 +97,11 @@ fn admitted_corpus_preserves_parser_diagnostics() {
         }
     }
     assert_eq!(admitted + walked, pieces.len().pow(3));
-    assert!(admitted > walked, "{admitted} admitted, {walked} walked");
+    // A piece with a lone `+` now always walks, so these no longer outnumber the walked.
+    assert!(
+        admitted > walked / 2,
+        "{admitted} admitted, {walked} walked"
+    );
     for source in [
         "::: note\n{.inner}\n:::\n\n{.outer}\n",
         "::: note\n{.inner}\n:::\n- a\n\n  {.item}\n",

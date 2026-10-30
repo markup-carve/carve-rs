@@ -899,6 +899,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         {
             return i;
         }
+        let attached_list = is_list_marker(lines[i]);
         let end = attached_block_lines_classified(
             CursorLines::Slice(lines),
             i,
@@ -908,7 +909,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             &mut |line, _| {
                 is_blank_line(line)
                     || is_plus_marker(line)
-                    || (indent_columns(line) == 0 && is_list_marker(line))
+                    || (!attached_list && indent_columns(line) == 0 && is_list_marker(line))
             },
         );
         if end > i {
@@ -1285,22 +1286,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         *i += 1;
         let mut attached: Vec<String> = Vec::new();
         let attached_start = *i;
-        let refused_first_plus = self
-            .decision_at(self.first_source_line + attached_start)
-            .is_some_and(|decision| decision.refusal.is_some())
-            && lines
-                .get(attached_start + 1)
-                .map_or(true, |line| is_blank_line(line));
         let end = attached_block_lines_classified(
             CursorLines::Slice(lines),
             *i,
             &mut self.comment_closers,
             &mut self.closer_index,
             self.options,
-            &mut |a, at| {
-                is_blank_line(a)
-                    || (is_plus_marker(a) && !(at == attached_start && refused_first_plus))
-                    || parse_footnote_def_line(a).is_some()
+            &mut |a, _| {
+                is_blank_line(a) || is_plus_marker(a) || parse_footnote_def_line(a).is_some()
             },
         );
         while *i < end {
@@ -1544,6 +1537,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 .is_some_and(|marker| parse_footnote_def_line(marker.content).is_some()),
             description_host,
         };
+        let i = self.hosted_first_block(&host, note, i, def.first);
         let mut i = self.attach_quoted_plus_block(&host, note, i, raw_def_line);
         let source = self.source;
         let track = *self
@@ -1583,6 +1577,46 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         i
     }
 
+    /// A hosted note's marker-line `+` takes its one block through the host's prefix.
+    fn hosted_first_block(
+        &mut self,
+        host: &NoteHost,
+        note: &mut NoteBody,
+        i: usize,
+        first: &str,
+    ) -> usize {
+        let lines = self.lines;
+        if trim_ascii(first) != "+"
+            || !self
+                .decision_at(self.first_source_line + i - 1)
+                .is_some_and(|decision| decision.owner == Some(continuation_marker::Kind::Footnote))
+        {
+            return i;
+        }
+        let attached: Vec<&str> = lines[i..]
+            .iter()
+            .map_while(|raw| host.content(raw).filter(|line| !is_blank_line(line)))
+            .collect();
+        if attached.is_empty() {
+            return i;
+        }
+        let count = attached_one_block_lines(CursorLines::Slice(&attached), self.options);
+        note.lines[0].clear();
+        note.line_map[0] = None;
+        if self.positions {
+            note.col_map[0] = None;
+        }
+        for (offset, line) in attached.into_iter().take(count).enumerate() {
+            note.push_with(
+                line.to_string(),
+                Some(self.first_source_line + i + offset),
+                |_| Some((lines[i + offset].chars().count() - line.chars().count()) as isize),
+            );
+        }
+        note.push_blank();
+        i + count
+    }
+
     fn attach_quoted_plus_block(
         &mut self,
         host: &NoteHost,
@@ -1600,7 +1634,6 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 .decision_at(self.first_source_line + i)
                 .is_some_and(|decision| {
                     decision.owner == Some(continuation_marker::Kind::Footnote)
-                        && decision.refusal.is_none()
                 });
         if !applies {
             return i;
@@ -1743,6 +1776,34 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         walk.lazy_open = false;
         if host.marker_note && parse_footnote_def_line(trim_ascii_start(line)).is_some() {
             return Flow::Stop;
+        }
+        if trim_ascii(line) == "+"
+            && self
+                .decision_at(self.first_source_line + *i)
+                .is_some_and(|decision| decision.owner == Some(continuation_marker::Kind::Footnote))
+        {
+            let start = *i + 1;
+            let lines = self.lines;
+            let attached: Vec<&str> = lines[start..]
+                .iter()
+                .map_while(|raw| host.content(raw).filter(|line| !is_blank_line(line)))
+                .take_while(|line| *line != "+")
+                .collect();
+            let count = attached_one_block_lines(CursorLines::Slice(&attached), self.options);
+            note.push_blank();
+            for (offset, line) in attached.into_iter().take(count).enumerate() {
+                note.push_with(
+                    line.to_string(),
+                    Some(self.first_source_line + start + offset),
+                    |_| {
+                        Some(
+                            (lines[start + offset].chars().count() - line.chars().count()) as isize,
+                        )
+                    },
+                );
+            }
+            *i = start + count;
+            return Flow::Next;
         }
         let dedented = strip_leading_columns(line, host.note_floor);
         // A link definition at the note's own column is metadata,

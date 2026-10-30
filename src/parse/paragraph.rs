@@ -58,16 +58,6 @@ fn reference_image_line(line: &str) -> bool {
 
 pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let span_start = cur.pos;
-    let refused_plus = cur
-        .peek()
-        .is_some_and(|line| is_plus_marker(trim_ascii_start(line)))
-        && cur
-            .continuation_decision(span_start)
-            .is_some_and(|decision| {
-                decision.refusal.is_some()
-                    && decision.owner != Some(continuation_marker::Kind::Footnote)
-                    && !decision.after_quote_blank
-            });
     // A caption at the content column can attach to an indented image-only
     // paragraph. An indented caption remains literal paragraph text.
     let image_lead = cur.peek().is_some_and(|line| {
@@ -107,36 +97,9 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
         // First line is always part of the paragraph; from the second on, a
         // visible block opener interrupts (§10).
         let line_owned = line.to_string();
-        let same_authored_column = cur
-            .source_line(span_start)
-            .zip(cur.source_line(cur.pos))
-            .map(|(first, next)| {
-                continuation_marker::document_column(first)
-                    == continuation_marker::document_column(next)
-            })
-            .unwrap_or(true);
         if !lines.is_empty()
             && ((reference_caption_claimed && caption_content(line).is_some())
-                || (!refused_plus || !is_list_marker(&line_owned) || same_authored_column)
-                    && interrupts_paragraph(cur, &line_owned)
-                || (refused_plus
-                    && lines.len() == 1
-                    && cur.lines.at(span_start).starts_with('+')
-                    && cur
-                        .continuation_decision(span_start)
-                        .is_some_and(|decision| {
-                            (decision.owner.is_some()
-                                || cur.source_line(span_start).is_some_and(|source_line| {
-                                    continuation_marker::preceding_nested_list_marker(
-                                        source_line,
-                                        decision.quote_depth == 0,
-                                    )
-                                }))
-                                && decision.sibling_interrupt
-                        })
-                    && is_list_marker(line)
-                    && indent_columns(line) == 0
-                    && same_authored_column)
+                || interrupts_paragraph(cur, &line_owned)
                 || (cur.colon_view.is_some_and(|view| view.marker_hosted)
                     && strip_blockquote_prefix(trim_ascii_start(line)).is_some()))
             && !(suppress_colon_interrupt && is_suppressed_colon_fence_line(&line_owned))
@@ -227,8 +190,7 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
 fn report_unclaimed_document_plus(cur: &mut LineCursor<'_>, line: &str) {
     if !cur.at_document_level
         || cur.colon_view.is_some()
-        || !line.starts_with('+')
-        || !line[1..].bytes().all(|b| matches!(b, b' ' | b'\t'))
+        || !continuation_marker::is_refused_letter(line)
     {
         return;
     }

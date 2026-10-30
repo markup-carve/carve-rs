@@ -48,8 +48,8 @@ fn the_neighbouring_spellings_are_untouched() {
 /// definition must be written once, at the document level, not inside the item.
 #[test]
 fn a_definition_on_the_marker_line_still_empties_its_item() {
-    assert_eq!(fmt("- [^f]: note\n"), "- +\n\n[^f]: note\n");
-    assert_eq!(fmt("> - [^f]: note\n"), "> - +\n\n[^f]: note\n");
+    assert_eq!(fmt("- [^f]: note\n"), "- {empty}\n\n[^f]: note\n");
+    assert_eq!(fmt("> - [^f]: note\n"), "> - {empty}\n\n[^f]: note\n");
     // Nested, the definition goes back on the line it was written on.
     assert_eq!(fmt("- - [^f]: note\n"), "- - [^f]: note\n");
 }

@@ -249,7 +249,7 @@ fn writes_one_blank_line_below_a_block_at_the_marker_column() {
     // reads as that paragraph's lazy continuation and never opens.
     let source = "- x\n+\np2\n\n  - b\n";
 
-    assert_eq!(fmt(source), "- x\n\n  p2\n\n- b\n");
+    assert_eq!(fmt(source), "- x\n+\np2\n\n  - b\n");
     round_trips(source);
 }
 
