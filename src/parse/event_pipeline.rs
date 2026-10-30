@@ -208,6 +208,12 @@ mod standard_reader_probe_tests {
             "::: note\nalpha!\n:::\n",
             "::: note\nalpha, beta.\ngamma?\n:::\n",
             "::: note\nalpha\n\nbeta\n:::\n",
+            "::: note\nalpha *bold* and _italic_\n:::\n",
+            "::: note\ncafé κόσμος\n:::\n",
+            "::: note\nalpha [link](https://example.org/a)\n:::\n",
+            "::: note\nalpha ![alt](image.png)\n:::\n",
+            "::: note\nalpha \\*literal\\*\n:::\n",
+            "::: note\nalpha *bold*\nbeta [link](https://example.org)\n:::\n",
         ] {
             for (positions, source_lines) in
                 [(false, false), (true, false), (false, true), (true, true)]
@@ -255,8 +261,15 @@ mod standard_reader_probe_tests {
                     parse_with_options(source, &standard_options)
                 };
                 assert_eq!(event_doc, standard_doc, "{source:?}");
+                let event_callbacks = event_observer.0.into_inner();
+                let expected_calls = if source.contains("\n\nbeta") { 2 } else { 1 };
                 assert_eq!(
-                    event_observer.0.into_inner(),
+                    event_callbacks.len(),
+                    expected_calls,
+                    "{source:?}: {event_callbacks:?}"
+                );
+                assert_eq!(
+                    event_callbacks,
                     standard_observer.0.into_inner(),
                     "{source:?}"
                 );
@@ -283,6 +296,79 @@ mod standard_reader_probe_tests {
             collecting_lint_events(|| parse_mapped_source(&source, &options))
         };
         assert_eq!((actual, diagnostics), (expected, standard_diagnostics));
+    }
+
+    #[test]
+    fn long_plain_colon_paragraph_stays_event_owned() {
+        let source = format!("::: note\n{}\n:::\n", "alpha beta.\n".repeat(40));
+        for (positions, source_lines) in
+            [(false, false), (true, false), (false, true), (true, true)]
+        {
+            let event_observer = Observer(RefCell::new(Vec::new()));
+            let options = Options::default()
+                .with_positions(positions)
+                .with_source_lines(source_lines)
+                .with_extension(&event_observer);
+            STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+            let ((actual, admitted), diagnostics) =
+                collecting_lint_events(|| parse_document_with_options(&source, &options).unwrap());
+            assert!(admitted);
+            assert_eq!(STANDARD_PARAGRAPH_ENTRIES.with(Cell::get), 0);
+            let callbacks = event_observer.0.into_inner();
+            assert_eq!(callbacks.len(), 1);
+
+            let standard_observer = Observer(RefCell::new(Vec::new()));
+            let options = Options::default()
+                .with_positions(positions)
+                .with_source_lines(source_lines)
+                .with_extension(&standard_observer);
+            let (expected, standard_diagnostics) = {
+                let _standard = StandardEventRootGuard::install();
+                collecting_lint_events(|| parse_with_options(&source, &options))
+            };
+            assert_eq!((actual, diagnostics), (expected, standard_diagnostics));
+            assert_eq!(callbacks, standard_observer.0.into_inner());
+        }
+    }
+
+    #[test]
+    fn colon_paragraph_preflight_refuses_attributes_and_long_runs() {
+        for source in [
+            "::: note\nalpha{#id}\n:::\n",
+            "::: note\nalpha *bold*\nbeta\ngamma\ndelta\nepsilon\n:::\n",
+            "::: note\nalpha ![alt](image.png){#id}\n:::\n",
+        ] {
+            for (positions, source_lines) in [(false, false), (true, true)] {
+                let observer = Observer(RefCell::new(Vec::new()));
+                let options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines)
+                    .with_extension(&observer);
+                STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+                let ((actual, admitted), diagnostics) = collecting_lint_events(|| {
+                    parse_document_with_options(source, &options).unwrap()
+                });
+                assert!(admitted, "{source:?}");
+                assert_eq!(STANDARD_PARAGRAPH_ENTRIES.with(Cell::get), 1, "{source:?}");
+                let callbacks = observer.0.into_inner();
+                assert_eq!(callbacks.len(), 1, "{source:?}: {callbacks:?}");
+                let observer = Observer(RefCell::new(Vec::new()));
+                let options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines)
+                    .with_extension(&observer);
+                let (expected, standard_diagnostics) = {
+                    let _standard = StandardEventRootGuard::install();
+                    collecting_lint_events(|| parse_with_options(source, &options))
+                };
+                assert_eq!(
+                    (actual, diagnostics),
+                    (expected, standard_diagnostics),
+                    "{source:?}"
+                );
+                assert_eq!(callbacks, observer.0.into_inner(), "{source:?}");
+            }
+        }
     }
 }
 
@@ -1683,16 +1769,50 @@ fn event_owned_plain_paragraph(cur: &LineCursor<'_>, options: &Options<'_>) -> b
         return false;
     }
     let mut count = 0;
+    let mut bytes = 0;
+    let mut complex = false;
     for line in cur.lines.range(cur.pos..cur.lines.len()) {
         if is_blank_line(line) {
             break;
         }
-        if !line.as_bytes()[0].is_ascii_alphabetic()
-            || !line.bytes().all(|byte| {
+        bytes += line.len();
+        let plain = line.as_bytes()[0].is_ascii_alphabetic()
+            && line.bytes().all(|byte| {
                 byte.is_ascii_alphabetic()
                     || matches!(byte, b' ' | b'.' | b',' | b'!' | b'?' | b';' | b':')
-            })
-        {
+            });
+        if !plain {
+            complex = true;
+            if count >= 4
+                || bytes > 256
+                || !line.chars().next().is_some_and(char::is_alphabetic)
+                || !line.chars().all(|ch| {
+                    ch.is_alphabetic()
+                        || matches!(
+                            ch,
+                            ' ' | '.'
+                                | ','
+                                | '!'
+                                | '?'
+                                | ';'
+                                | ':'
+                                | '*'
+                                | '_'
+                                | '`'
+                                | '['
+                                | ']'
+                                | '('
+                                | ')'
+                                | '/'
+                                | '-'
+                                | '\\'
+                        )
+                })
+            {
+                return false;
+            }
+        }
+        if complex && (count >= 4 || bytes > 256) {
             return false;
         }
         count += 1;
