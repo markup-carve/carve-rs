@@ -25,11 +25,8 @@
         "fences-1d7384b2e284",
         "fences-350b56897079",
         "fences-5e87d36367a5",
-        "fences-6896ccccb1be",
         "fences-77de8e162288",
-        "fences-822c8fc1fa74",
         "fences-97b499ad9a5e",
-        "fences-a1f115ea2c3d",
         "fences-c122b842ba25",
         "fences-e6b042364968",
         "fences-e727fbef63d9",
@@ -113,8 +110,6 @@
         "ownership-2d71e91b5e4d",
         "ownership-34ea3231e4b7",
         "ownership-7cea0b1dbdb9",
-        "ownership-8a13cefe3964",
-        "ownership-b123037b4aaa",
         "ownership-c57ed3f05fdf",
         "ownership-dabd40ea2cb5",
         "ownership-edfbea8daa50"
@@ -166,7 +161,6 @@
       "ticket": "markup-carve/carve-rs#3534",
       "cause": "untriaged drift in the fences family at the e7952c45 pin",
       "cases": [
-        "fences-46f2e4a2187b",
         "fences-a6ede733e700",
         "fences-beb7a2645809"
       ]

@@ -41,9 +41,13 @@ enum Closer {
 }
 
 impl Closer {
-    fn closes(self, rest: &str) -> bool {
+    /// `col` is the line's column and `open_col` the opener's: a code fence
+    /// run past its opener is content (CARVE-P2-006).
+    fn closes(self, rest: &str, col: usize, open_col: usize) -> bool {
         match self {
-            Closer::Fence(ch, len) => pure_fence(rest).is_some_and(|(c, n)| c == ch && n >= len),
+            Closer::Fence(ch, len) => {
+                col <= open_col && pure_fence(rest).is_some_and(|(c, n)| c == ch && n >= len)
+            }
             Closer::Colon(run) => colon_closer(rest) == Some(run),
             Closer::Comment(run) => comment_run(rest) == Some(run),
         }
@@ -60,6 +64,7 @@ struct Frame {
     marker: Option<(usize, usize)>,
     axes: String,
     closer: Option<Closer>,
+    open_col: usize,
     run: usize,
     term_cut: usize,
     /// The open paragraph absorbed an invalid colon opener (CARVE-P9-016).
@@ -90,6 +95,7 @@ impl Frame {
             marker: None,
             axes: String::new(),
             closer: None,
+            open_col: 0,
             run: 0,
             term_cut: 0,
             absorbs: false,
@@ -717,13 +723,14 @@ impl<'a> Walk<'a> {
             // S1: an open payload tests its closer first (B-<family>-keep, -end).
             let target = c.col.saturating_sub(inner.cut).max(inner.canon);
             let (closer, span, line_block) = (inner.closer, inner.span, inner.line_block);
+            let (col, open_col) = (c.col, inner.open_col);
             let family = inner.family;
             c.lead_in(target, inner.shift, false);
             if tracing {
                 let payload = self.deepest();
                 let closes = !c.rest.is_empty()
                     && span.is_none()
-                    && closer.is_some_and(|cl| cl.closes(c.rest));
+                    && closer.is_some_and(|cl| cl.closes(c.rest, col, open_col));
                 let (form, end) = if closes {
                     ("closer", "end")
                 } else {
@@ -745,7 +752,7 @@ impl<'a> Walk<'a> {
                 if closes {
                     self.top().span = None;
                 }
-            } else if closer.is_some_and(|cl| cl.closes(c.rest)) {
+            } else if closer.is_some_and(|cl| cl.closes(c.rest, col, open_col)) {
                 self.frames.pop();
                 self.top().last = Last::Block;
             } else if line_block {
@@ -935,6 +942,7 @@ impl<'a> Walk<'a> {
                 f.canon = o_canon;
                 f.cut = col.saturating_sub(canon);
                 f.closer = Some(closer);
+                f.open_col = col;
                 f.line_block = line_block;
                 f.shift = o_shift;
                 f.line = self.first_line + at;
