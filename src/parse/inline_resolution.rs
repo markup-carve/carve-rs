@@ -1498,8 +1498,8 @@ impl Drop for InLineBlock {
 }
 
 thread_local! {
-    static OPEN_KINDS: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
-    static PASSED_KINDS: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+    static OPEN_KINDS: std::cell::Cell<u16> = const { std::cell::Cell::new(0) };
+    static PASSED_KINDS: std::cell::Cell<u16> = const { std::cell::Cell::new(0) };
 }
 
 /// The emphasis kinds open around the inline run being scanned (PART 9 §9 E3).
@@ -1508,11 +1508,11 @@ thread_local! {
 /// reads its content; every other call starts from none, so a link label or a
 /// table cell opens every kind again.
 pub(in crate::parse) struct OpenKinds {
-    outer: u8,
+    outer: u16,
 }
 
 impl OpenKinds {
-    pub(in crate::parse) fn bit(delim: u8) -> u8 {
+    pub(in crate::parse) fn bit(delim: u8) -> u16 {
         match delim {
             b'/' => 1,
             b'*' => 2,
@@ -1531,7 +1531,11 @@ impl OpenKinds {
 
     /// Set while the run is combined `/*` content, nested bare spans included:
     /// there a `%%` comment stops before a `*/` (`biSpComment`).
-    pub(in crate::parse) const COMBINED: u8 = 128;
+    pub(in crate::parse) const COMBINED: u16 = 128;
+
+    /// Set while the run is insert or delete content. It opens no emphasis kind
+    /// again, but its first character starts no `%%` comment (CARVE-P9-041).
+    pub(in crate::parse) const CRITIC: u16 = 256;
 
     /// Whether the run is the content of an emphasis span.
     pub(in crate::parse) fn any_open() -> bool {
@@ -1543,13 +1547,13 @@ impl OpenKinds {
     }
 
     /// Hand the open kinds plus `added` to the next `parse_inline_context`.
-    pub(in crate::parse) fn pass_on(added: u8) {
+    pub(in crate::parse) fn pass_on(added: u16) {
         let open = OPEN_KINDS.with(|kinds| kinds.get());
         PASSED_KINDS.with(|passed| passed.set(open | added));
     }
 
     /// Hand only `kinds` to the next `parse_inline_context`.
-    fn pass_only(kinds: u8) {
+    pub(in crate::parse) fn pass_only(kinds: u16) {
         PASSED_KINDS.with(|passed| passed.set(kinds));
     }
 
@@ -1613,6 +1617,7 @@ pub(in crate::parse) struct EmphasisMemo {
     last_brace: Option<Option<usize>>,
     last_comment_close: Option<Option<usize>>,
     pub(in crate::parse) atomic: Option<std::rc::Rc<[(usize, usize)]>>,
+    literal_directives: Option<std::rc::Rc<[(usize, usize)]>>,
 }
 
 /// Whether the `*/` at `at` can close the combined token (`biCloser`).
@@ -1856,10 +1861,27 @@ fn find_emphasis_close_walk(
     let mut guarded_at = None;
     // The last opener of each other kind the walk has passed.
     let mut last_opener: [Option<usize>; 5] = [None; 5];
+    let literals = memo
+        .literal_directives
+        .get_or_insert_with(|| literal_directive_regions(bytes).into())
+        .clone();
+    let mut literal = 0;
     let mut j = from;
     while j < bytes.len() {
         if opener_end.is_some_and(|end| j > end) {
             return None;
+        }
+        // A literal directive's tokens open nothing, though the walk's own
+        // closer still breaks it (CARVE-P6-001, CARVE-P9-043).
+        while literals.get(literal).is_some_and(|&(_, end)| end <= j) {
+            literal += 1;
+        }
+        if bytes[j] != delim
+            && delim != COMBINED_CLOSER
+            && literals.get(literal).is_some_and(|&(open, _)| open <= j)
+        {
+            j += 1;
+            continue;
         }
         if failed.is_some_and(|f| f[j]) && emphasis_run_at(bounds, &regions, j) == opener_run {
             return None;
@@ -2104,18 +2126,14 @@ fn find_emphasis_close_walk(
                 continue;
             }
             let prev = bytes.get(j.wrapping_sub(1)).copied().unwrap_or(b' ');
-            if is_carve_ws(prev) {
+            if is_carve_ws(prev) || (delim == b'=' && comparison_equals_at(bytes, j, &regions)) {
                 j += 1;
                 continue;
             }
             // Word-boundary closer (spec §9): no bare delimiter closes when
             // followed by an alphanumeric. Applies to every delimiter.
-            // NOTE: a `=` is NOT excluded here when it abuts a smart operator
-            // (`=b=>`): both reference impls (carve-js, carve-php) let the
-            // highlight close there, so rs matches them rather than being the
-            // lone grammar-pedantic outlier on this unpinned corner. The
-            // operator exclusion applies only to the OPENER (the corpus-pinned
-            // `a => b` case).
+            // An arrow's `=` may still close (`=b=>`, PART 9 §9); only a
+            // comparison's is shielded, above.
             if let Some(&next) = bytes.get(j + 1) {
                 if next.is_ascii_alphanumeric() || followed_by_grapheme_extender(bytes, j + 1) {
                     j += 1;
@@ -2151,6 +2169,56 @@ pub(in crate::parse) fn opens_a_link(
         return false;
     }
     !is_reference_label_slot(bytes, open, bounds)
+}
+
+/// The spans of the literal directives in `bytes`, in order.
+fn literal_directive_regions(bytes: &[u8]) -> Vec<(usize, usize)> {
+    let mut regions = Vec::new();
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        return regions;
+    };
+    let mut at = 0;
+    while let Some(open) = text[at..].find("{{").map(|offset| at + offset) {
+        match crate::includes::literal_inline_directive_end(text, open) {
+            Some(end) => {
+                regions.push((open, end));
+                at = end;
+            }
+            None => at = open + 1,
+        }
+    }
+    regions
+}
+
+/// Whether the `=` at `at` ends a comparison `<=`, `>=` or `!=`: it is part of
+/// that symbol and closes no bare highlight (PART 9 §9). The same bytes inside
+/// a longer arrow (`<==`, `<=>`, `->=`) or after an escape are not a comparison.
+fn comparison_equals_at(bytes: &[u8], at: usize, atomic: &[(usize, usize)]) -> bool {
+    let Some(symbol) = at.checked_sub(1) else {
+        return false;
+    };
+    let before = symbol.checked_sub(1).map(|b| bytes[b]);
+    let backslashes = bytes[..symbol]
+        .iter()
+        .rev()
+        .take_while(|&&b| b == b'\\')
+        .count();
+    if backslashes % 2 == 1 {
+        return false;
+    }
+    match bytes[symbol] {
+        b'!' => true,
+        b'<' => !matches!(bytes.get(at + 1), Some(b'=' | b'>')),
+        b'>' => {
+            let ends_arrow = before == Some(b'-')
+                || (before == Some(b'=')
+                    && symbol
+                        .checked_sub(2)
+                        .is_some_and(|b| matches!(bytes[b], b'=' | b'<')));
+            !ends_arrow && atomic.binary_search_by_key(&at, |&(_, end)| end).is_err()
+        }
+        _ => false,
+    }
 }
 
 /// Whether the bracket opening at `open` is the label half of a reference
