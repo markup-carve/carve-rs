@@ -452,6 +452,7 @@ pub(crate) struct OwnedSource {
 }
 
 impl OwnedSource {
+    #[cfg(feature = "experimental-event-parser")]
     pub(crate) fn moves_fence_line(&self, source: &str) -> bool {
         let mut edits = self.edits.iter().peekable();
         for (index, line) in source.lines().enumerate() {
