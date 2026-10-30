@@ -254,6 +254,18 @@ pub(crate) fn record_markdown_loss(kind: MarkdownLoss, node_type: RawNodeType, p
 }
 
 pub(crate) fn collect_markdown_unattached(spans: Vec<Pos>) {
+    collect_markdown_block_spans(
+        spans,
+        "Dropped an unattached block attribute while rendering Markdown",
+    );
+}
+
+pub(crate) fn collect_markdown_promoted_image_runs(spans: Vec<Pos>) {
+    let (_, message) = MarkdownLoss::Attributes.details();
+    collect_markdown_block_spans(spans, message);
+}
+
+fn collect_markdown_block_spans(spans: Vec<Pos>, message: &str) {
     if spans.is_empty() {
         return;
     }
@@ -299,8 +311,7 @@ pub(crate) fn collect_markdown_unattached(spans: Vec<Pos>) {
                     pos: Some(pos),
                     file: None,
                     included_by: None,
-                    message: "Dropped an unattached block attribute while rendering Markdown"
-                        .to_string(),
+                    message: message.to_string(),
                 });
             } else if let Some(loss) = rendered.next() {
                 merged.push(loss);

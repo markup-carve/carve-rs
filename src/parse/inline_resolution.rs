@@ -24,6 +24,9 @@ pub(crate) fn publish_block_image_attrs(paragraph: &mut Paragraph) {
         return;
     };
     if let Some(attrs) = paragraph.attrs.take() {
+        if attrs.id.is_some() || !attrs.classes.is_empty() || !attrs.key_values.is_empty() {
+            note_promoted_image_block_run(paragraph.pos.clone());
+        }
         if let InlineNode::Image(image) = &mut paragraph.children[index] {
             merge_leading_attrs(&mut image.attrs, attrs);
         }

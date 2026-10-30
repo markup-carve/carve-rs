@@ -406,6 +406,8 @@ thread_local! {
     // Plain initializer for the same MSRV reason as `NESTING_DEPTH`.
     #[allow(clippy::missing_const_for_thread_local)]
     static UNATTACHED_BLOCK_ATTRS: RefCell<Option<Vec<Pos>>> = const { RefCell::new(None) };
+    #[allow(clippy::missing_const_for_thread_local)]
+    static PROMOTED_IMAGE_BLOCK_RUNS: RefCell<Option<Vec<Pos>>> = const { RefCell::new(None) };
 }
 
 /// Run `f`, collecting the source spans of every block attribute that reached
@@ -431,6 +433,33 @@ pub(crate) fn collecting_unattached_block_attrs<T>(f: impl FnOnce() -> T) -> (T,
     let collected = UNATTACHED_BLOCK_ATTRS.with(|slot| slot.take());
     drop(guard);
     (out, collected.unwrap_or_default())
+}
+
+/// Run `f`, collecting the spans of promoted images that took a block attribute
+/// run, which Markdown drops (CARVE-P2-024).
+pub(crate) fn collecting_promoted_image_block_runs<T>(f: impl FnOnce() -> T) -> (T, Vec<Pos>) {
+    struct CollectorGuard(Option<Vec<Pos>>);
+    impl Drop for CollectorGuard {
+        fn drop(&mut self) {
+            PROMOTED_IMAGE_BLOCK_RUNS.with(|slot| slot.replace(self.0.take()));
+        }
+    }
+    let guard =
+        CollectorGuard(PROMOTED_IMAGE_BLOCK_RUNS.with(|slot| slot.replace(Some(Vec::new()))));
+    let out = f();
+    let collected = PROMOTED_IMAGE_BLOCK_RUNS.with(|slot| slot.take());
+    drop(guard);
+    (out, collected.unwrap_or_default())
+}
+
+/// Record a block attribute run merged into a promoted image, if anybody is collecting.
+fn note_promoted_image_block_run(pos: Option<Pos>) {
+    let Some(pos) = pos else { return };
+    PROMOTED_IMAGE_BLOCK_RUNS.with(|slot| {
+        if let Some(spans) = slot.borrow_mut().as_mut() {
+            spans.push(pos);
+        }
+    });
 }
 
 /// Record one dangling attribute run, if anybody is collecting.
