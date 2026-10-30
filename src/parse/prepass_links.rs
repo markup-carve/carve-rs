@@ -175,8 +175,41 @@ pub(in crate::parse) fn without_blockquote_prefixes(line: &str) -> &str {
 /// was neither collected nor hoisted - PART 12 §10 puts it on the DOCUMENT
 /// (markup-carve/carve#840). A div was the one container that worked, because
 /// it adds no per-line prefix for this to hide behind.
+#[cfg(test)]
 pub(in crate::parse) fn opens_definition_entry(previous: &str) -> bool {
     opens_definition_entry_bare(strip_container_prefixes(previous, false).bare)
+}
+
+/// The last non-blank line, read for the `after_term` gate. A `: ` line opens an
+/// entry only under a term: with no term above it, it is paragraph text and
+/// what follows its next `: ` is too (PART 9 §24 C3).
+#[derive(Clone, Copy, Default)]
+pub(in crate::parse) struct PreviousLine {
+    in_definition_list: bool,
+    after_blank: bool,
+    after_term: bool,
+}
+
+impl PreviousLine {
+    pub(in crate::parse) fn note(&mut self, line: &str) {
+        if is_blank_line(line) {
+            self.after_blank = true;
+            return;
+        }
+        let bare = strip_container_prefixes(line, false).bare;
+        let opens = opens_definition_entry_bare(bare);
+        if opens && trim_ascii_start(bare).starts_with("::") {
+            self.in_definition_list = true;
+        } else if !opens && self.after_blank {
+            self.in_definition_list = false;
+        }
+        self.after_blank = false;
+        self.after_term = opens && self.in_definition_list;
+    }
+
+    pub(in crate::parse) fn after_term(&self) -> bool {
+        self.after_term
+    }
 }
 
 pub(in crate::parse) fn opens_definition_entry_bare(previous: &str) -> bool {
