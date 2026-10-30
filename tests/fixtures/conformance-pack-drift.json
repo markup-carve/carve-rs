@@ -101,7 +101,6 @@
       "cause": "untriaged day-one drift in the ownership family",
       "cases": [
         "ownership-119dbf924b70",
-        "ownership-1b881d6519ca",
         "ownership-1cdee5ee6a0a",
         "ownership-276fc2ecc9ec",
         "ownership-2c82d60868cc",
@@ -124,7 +123,6 @@
       "ticket": "markup-carve/carve-rs#3534",
       "cause": "untriaged day-one drift in the roundtrip family",
       "cases": [
-        "roundtrip-240abed534fb",
         "roundtrip-29bf84d5501e",
         "roundtrip-50e7fa11ce58",
         "roundtrip-7439f84f3de0",

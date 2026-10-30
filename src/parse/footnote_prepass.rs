@@ -322,7 +322,7 @@ struct FootnoteScan<'a, 'o> {
     // The line the `after_term` gate below asks about. See its note: a blank
     // line between entries is transparent to a definition list, so the gate
     // reads past one.
-    previous_non_blank: &'a str,
+    previous_line: PreviousLine,
     last_folded_marker: bool,
 }
 
@@ -369,7 +369,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             comment_closers: None,
             closer_index: None,
             columns: ContentColumns::new(),
-            previous_non_blank: "",
+            previous_line: PreviousLine::default(),
             last_folded_marker: false,
         }
     }
@@ -462,12 +462,10 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         // loose. Asking the line above left the `:  ` marker unstripped after
         // one, so a definition written as that description's body was consumed
         // by the parser and collected by nobody (#1500).
-        let after_term = opens_definition_entry(self.previous_non_blank);
+        let after_term = self.previous_line.after_term();
         let stripped = strip_container_prefixes_at(line, &self.columns, after_term);
         remember_prepass_paragraph_line(&self.folded_into_term, i, line, &stripped, &self.columns);
-        if !is_blank_line(line) {
-            self.previous_non_blank = line;
-        }
+        self.previous_line.note(line);
         // A footnote definition is NEVER collected from inside a fenced code
         // block: a `[^x]: ...` line there is literal content. The prepass has
         // only a prefix-stripped line, not the block parser's container-column

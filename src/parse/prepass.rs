@@ -604,7 +604,7 @@ struct TermScan<'a, 'o> {
     admitted_term_host: Option<(usize, usize, usize)>,
     admitted_host_quote_columns: Vec<usize>,
     columns: ContentColumns,
-    previous_non_blank: &'a str,
+    previous_line: PreviousLine,
     index: usize,
 }
 
@@ -642,7 +642,7 @@ impl<'a, 'o> TermScan<'a, 'o> {
             admitted_term_host: None,
             admitted_host_quote_columns: Vec::new(),
             columns: ContentColumns::new(),
-            previous_non_blank: "",
+            previous_line: PreviousLine::default(),
             index: 0,
         }
     }
@@ -746,10 +746,8 @@ impl<'a, 'o> TermScan<'a, 'o> {
         {
             self.admitted_term_host = None;
         }
-        let after_term = opens_definition_entry(self.previous_non_blank);
-        if !is_blank_line(line) {
-            self.previous_non_blank = line;
-        }
+        let after_term = self.previous_line.after_term();
+        self.previous_line.note(line);
         let prefix = strip_container_prefixes_at(line, &self.columns, after_term);
         remember_prepass_paragraph_line(&self.ownership, index, line, &prefix, &self.columns);
         if self.quote_is_term_text(line) {
@@ -787,7 +785,7 @@ impl<'a, 'o> TermScan<'a, 'o> {
             for opaque in index..=close {
                 end_prepass_paragraph_at(&self.ownership, opaque);
             }
-            self.previous_non_blank = self.lines[close];
+            self.previous_line.note(self.lines[close]);
             self.index = close + 1;
             return;
         }
@@ -900,7 +898,7 @@ impl<'a, 'o> TermScan<'a, 'o> {
             // A folded comment fence takes its body and closer with it.
             let last = comment.unwrap_or(index);
             self.ownership.folded.extend(index..=last);
-            self.previous_non_blank = self.lines[last];
+            self.previous_line.note(self.lines[last]);
             self.index = last + 1;
             return ControlFlow::Break(());
         }
@@ -1062,9 +1060,7 @@ impl<'a, 'o> TermScan<'a, 'o> {
                 kept
             };
             let closes = is_fence_close(close_line, body.open);
-            if !is_blank_line(line) {
-                self.previous_non_blank = line;
-            }
+            self.previous_line.note(line);
             self.index += 1;
             if closes {
                 if body.inline_marker {
@@ -1853,7 +1849,7 @@ pub(in crate::parse) fn extract_link_defs_with_guard_full(
     // container-scoped comment fence pays nothing for it.
     let mut container_closers: Option<ContainerCommentClosers> = None;
     // See `extract_footnote_defs`: the line the `after_term` gate asks about.
-    let mut previous_non_blank = "";
+    let mut previous_line = PreviousLine::default();
     let mut last_folded_marker = false;
     for (line_index, line) in all_lines.iter().copied().enumerate() {
         let folded_fence = detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
@@ -1897,12 +1893,10 @@ pub(in crate::parse) fn extract_link_defs_with_guard_full(
         // THE PREVIOUS NON-BLANK LINE - see the note in `extract_footnote_defs`
         // (#1500). Carried rather than scanned backwards, so a document of
         // blank lines does not make this pre-pass quadratic.
-        let after_term = opens_definition_entry(previous_non_blank);
+        let after_term = previous_line.after_term();
         let stripped = strip_container_prefixes_at(line, &columns, after_term);
         remember_prepass_paragraph_line(&folded_into_term, line_index, line, &stripped, &columns);
-        if !is_blank_line(line) {
-            previous_non_blank = line;
-        }
+        previous_line.note(line);
         let raw_is_quoted = prepass_line_is_quoted(line);
         if verse_lines[line_index].is_owned() {
             body.push(std::borrow::Cow::Borrowed(line));
