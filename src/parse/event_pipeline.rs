@@ -209,6 +209,72 @@ mod standard_reader_probe_tests {
     }
 
     #[test]
+    fn blank_image_captions_match_standard_reader_without_paragraph_entry() {
+        for image in ["![a](/u)", "![a][r]"] {
+            for resolved in [false, true] {
+                for tail in ["", "\n", "\nnext\n", "\n\nnext\n"] {
+                    let source = format!(
+                        "::: box\n{image}\n\n^ *cap*\n{tail}:::\n{}",
+                        if resolved { "\n[r]: /u\n" } else { "" }
+                    );
+                    for (positions, source_lines) in
+                        [(false, false), (true, false), (false, true), (true, true)]
+                    {
+                        let observer = Observer(RefCell::new(Vec::new()));
+                        let options = Options::default()
+                            .with_positions(positions)
+                            .with_source_lines(source_lines)
+                            .with_extension(&observer);
+                        STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+                        let ((actual, admitted), diagnostics) = collecting_lint_events(|| {
+                            parse_document_with_options(&source, &options).unwrap()
+                        });
+                        assert!(admitted, "{source:?}");
+                        let entries = STANDARD_PARAGRAPH_ENTRIES.with(Cell::get);
+                        let callbacks = observer.0.into_inner();
+                        let standard_observer = Observer(RefCell::new(Vec::new()));
+                        let standard_options = Options::default()
+                            .with_positions(positions)
+                            .with_source_lines(source_lines)
+                            .with_extension(&standard_observer);
+                        let (expected, standard_diagnostics) = {
+                            let _standard = StandardEventRootGuard::install();
+                            collecting_lint_events(|| {
+                                parse_with_options(&source, &standard_options)
+                            })
+                        };
+                        assert_eq!(
+                            (actual, diagnostics),
+                            (expected, standard_diagnostics),
+                            "{source:?}"
+                        );
+                        assert_eq!(callbacks, standard_observer.0.into_inner(), "{source:?}");
+                        if tail.starts_with('\n') {
+                            assert_eq!(entries, 0, "{source:?}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn blank_image_caption_in_deep_colon_body_uses_default_stack() {
+        let mut source = "::: box\n".repeat(150);
+        source.push_str("![a](/u)\n\n^ cap\n\n");
+        source.push_str(&":::\n".repeat(150));
+        STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+        let (actual, admitted) = parse_document_with_options(&source, &Options::default()).unwrap();
+        assert!(admitted);
+        assert_eq!(STANDARD_PARAGRAPH_ENTRIES.with(Cell::get), 0);
+        let expected = {
+            let _standard = StandardEventRootGuard::install();
+            parse_with_options(&source, &Options::default())
+        };
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
     fn nested_mapped_plain_paragraphs_match_standard_reader() {
         for wrapper in [
             "::: note\n{body}\n:::\n",
@@ -2740,7 +2806,54 @@ fn reference_caption_shape(cur: &LineCursor<'_>, line: &str) -> bool {
 
 #[inline(never)]
 fn parse_event_or_standard_paragraph(cur: &mut LineCursor<'_>, options: &Options<'_>) -> BlockNode {
-    collect_reference_caption(cur, options).unwrap_or_else(|| parse_paragraph(cur, options))
+    collect_reference_caption(cur, options)
+        .or_else(|| collect_blank_image_caption(cur, options))
+        .unwrap_or_else(|| parse_paragraph(cur, options))
+}
+
+#[inline(never)]
+fn collect_blank_image_caption(
+    cur: &mut LineCursor<'_>,
+    options: &Options<'_>,
+) -> Option<BlockNode> {
+    let start = cur.pos;
+    let image = cur.peek()?;
+    if !image.starts_with("![")
+        || (detect_block_image(image).is_none() && !reference_image_line(image))
+        || !cur.lines.line(start + 1).is_some_and(is_blank_line)
+    {
+        return None;
+    }
+    let caption = cur.lines.line(start + 2)?;
+    if caption_content(caption).is_none() || !cur.lines.line(start + 3).map_or(true, is_blank_line)
+    {
+        return None;
+    }
+    let image = trim_ascii_end(image);
+    let caption = trim_ascii_end(trim_ascii_start(caption));
+    let joined = format!("{image}\n{caption}");
+    cur.consume();
+    cur.consume();
+    cur.consume();
+    let children = if options.positions {
+        parse_inline_lines_with_anchor(
+            &joined,
+            options,
+            vec![
+                inline_anchor_for_line(cur, start, image),
+                inline_anchor_for_line(cur, start + 2, caption),
+            ],
+        )
+    } else {
+        parse_inline_with_options(&joined, options)
+    };
+    Some(BlockNode::Paragraph(Paragraph {
+        attrs: None,
+        children,
+        at_content_column: true,
+        block_image: false,
+        pos: span_of(cur, start, cur.pos, options),
+    }))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3116,7 +3229,10 @@ fn run_event_level<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
                 .line(cur.pos + 2)
                 .is_some_and(|next| caption_content(next).is_some())
         {
-            emit!(_block_source_line, parse_paragraph(cur, options));
+            emit!(
+                _block_source_line,
+                parse_event_or_standard_paragraph(cur, options)
+            );
             continue;
         }
         if !may_start_plain_paragraph(line) && !invalid_brace_line && !root_indented_text {
