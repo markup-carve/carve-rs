@@ -3952,15 +3952,7 @@ fn settle_empty_code_spans(
             crate::render_carve::empty_code_run_children_mut(&mut node)
         {
             let held = !children.is_empty();
-            settle_empty_code_spans(
-                children,
-                if braced { false } else { after },
-                if braced { labelled } else { true },
-                cell_not_last,
-                writing,
-                keep,
-                emptied,
-            );
+            settle_empty_code_spans(children, after, true, cell_not_last, writing, keep, emptied);
             if braced && held && children.is_empty() {
                 emptied();
                 join = true;
@@ -4438,6 +4430,15 @@ fn import(
                     return true;
                 }
                 let (node, path) = &empty_code_spans[index];
+                if code.attrs.take().is_some() {
+                    importer.diag(
+                        HtmlImportDiagnosticCode::AttributeDropped,
+                        EMPTY_CODE_ATTRIBUTES_DROPPED.into(),
+                        HtmlImportSeverity::Info,
+                        path,
+                        node,
+                    );
+                }
                 if !ends {
                     last_dropped.set(Some(index));
                     importer.diag(
@@ -4448,15 +4449,6 @@ fn import(
                         node,
                     );
                     return false;
-                }
-                if code.attrs.take().is_some() {
-                    importer.diag(
-                        HtmlImportDiagnosticCode::AttributeDropped,
-                        EMPTY_CODE_ATTRIBUTES_DROPPED.into(),
-                        HtmlImportSeverity::Info,
-                        path,
-                        node,
-                    );
                 }
                 true
             },

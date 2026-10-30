@@ -2318,7 +2318,8 @@ pub(in crate::parse) fn braced_inline_scan(
     } else {
         bounds.braced_closers(bytes).close(bytes, open, delim)?
     };
-    if close == content && OpenKinds::bit(delim) == 0 {
+    // An empty group `{XX}` forms no span (CARVE-P3-014).
+    if close == content {
         return None;
     }
     Some(

@@ -63,7 +63,7 @@ fn comment_and_unclosed_code_boundaries() {
             "<p><strong>a <span class=\"critic-comment\"> *} </span> b</strong></p>",
         ),
         ("a {*b %% c*}", "<p>a <strong>b</strong></p>"),
-        ("{*a `{*}", "<p><strong>a <code>{</code></strong></p>"),
+        ("{*a `{*}", "<p>{*a <code>{*}</code></p>"),
     ] {
         assert_eq!(carve::to_html(source).trim(), html, "{}", source);
         let written = carve::render_carve(&carve::parse(source)).unwrap();

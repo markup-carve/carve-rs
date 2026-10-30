@@ -31,7 +31,7 @@ cases! {
 
 // Controls.
 cases! {
-    an_unclosed_run_ends_at_the_pair_closer: "{~` ~}" => "<p><s><code></code></s></p>",
+    an_unclosed_run_ends_at_the_pair_closer: "{~` ~}" => "<p>{~<code> ~}</code></p>",
     a_closed_run_inside_the_pair: "{*a`b`c*}" => "<p><strong>a<code>b</code>c</strong></p>",
     an_empty_pair_is_literal: "{**}" => "<p>{**}</p>",
     a_braced_hyphen_pair_is_an_en_dash: "a {--}(p) b" => "<p>a \u{2013}(p) b</p>",
@@ -47,20 +47,21 @@ fn a_bare_closer_does_not_pair_into_the_span() {
     assert_eq!(html("*x{+`a+}*`"), "<p>*x{+<code>a+}*</code></p>");
 }
 
-/// The writer gives an empty code span a run that no later run in the block
-/// closes, so its bytes read back as the tree.
+/// The writer closes a code span holding a later run with a run longer than
+/// it, so its bytes read back as the tree.
 #[test]
 fn an_empty_span_before_a_later_run_is_written_longer() {
     let source = "{-`-}x ``\n";
     let written = carve::to_carve(source);
-    assert_eq!(written, "{-```-}x ``\n");
+    assert_eq!(written, "{-``` -}x `` ```\n");
     assert_eq!(carve::to_html(&written), carve::to_html(source));
 }
 
-/// Control: with no later run the empty span keeps its two backticks.
+/// Control: with no later run the code span the writer closes takes one
+/// backtick.
 #[test]
 fn an_empty_span_alone_keeps_two_backticks() {
-    assert_eq!(carve::to_carve("{~` ~}\n"), "{~``~}\n");
+    assert_eq!(carve::to_carve("{~` ~}\n"), "{~` ~}`\n");
 }
 
 /// An empty span right after a code span still takes the separator, although

@@ -762,7 +762,11 @@ impl BracedClosers {
                 at += 2;
                 continue;
             }
-            if bytes[at] == b'{' && delim_brace_slot(bytes[at + 1]).is_some() {
+            // `{X}` is characters (CARVE-P3-014): its X is no opener mark.
+            if bytes[at] == b'{'
+                && delim_brace_slot(bytes[at + 1]).is_some()
+                && bytes.get(at + 2) != Some(&b'}')
+            {
                 if pending[delim_brace_slot(bytes[at + 1]).unwrap()] {
                     nested_marks.insert(at + 1);
                 }
@@ -1352,10 +1356,8 @@ mod braced_closer_memo_tests {
         while j + 1 < bytes.len() {
             match bytes[j] {
                 b'\\' => j += 2,
-                b'`' => match skip_code_span(bytes, j) {
-                    Some(end) => j = end,
-                    None => return find_seq(bytes, j, &[delim, b'}']),
-                },
+                // An unclosed run takes the rest of the block (carve#3973 X5).
+                b'`' => j = skip_code_span(bytes, j)?,
                 b if b == delim && bytes[j + 1] == b'}' => return Some(j),
                 b'{' if bytes[j + 1] != delim
                     && matches!(
@@ -1409,8 +1411,9 @@ mod braced_closer_memo_tests {
         let mut dense = BracedClosers::with_hosts(hosts);
         dense.build_dense(text.as_bytes());
         for memo in [&mut sparse, &mut dense] {
-            assert_eq!(memo.close_editorial(text.as_bytes(), 0, b'*'), Some(8));
-            assert_eq!(memo.last_verbatim_start(), Some(3));
+            // The unclosed run takes the rest of the block (carve#3973 X5).
+            assert_eq!(memo.close_editorial(text.as_bytes(), 0, b'*'), None);
+            assert_eq!(memo.last_verbatim_start(), None);
         }
     }
 
@@ -1568,7 +1571,8 @@ mod braced_closer_memo_tests {
             reference_close(text.as_bytes(), 0, b'_', 0)
         );
         assert_eq!(memo.code_ends.as_ref().unwrap().runs.len(), 1024);
-        assert!(memo.raw_closers.is_some());
+        // An unclosed run has no closer to search for (carve#3973 X5).
+        assert!(memo.raw_closers.is_none());
     }
 
     #[test]

@@ -15,21 +15,21 @@ fn a_guard_that_cannot_open_leaves_the_block_text() {
     let rows = [
         (
             "{*x /_a_{t=a*} b*}\n",
-            "<p><strong>x /_a_{t=a</strong> b*}</p>",
+            "<p><strong>x /<u t=\"a*\">a</u> b</strong></p>",
         ),
         (
             "{*x _/a/{t=a*} b*}\n",
-            "<p><strong>x _/a/{t=a</strong> b*}</p>",
+            "<p><strong>x _<em t=\"a*\">a</em> b</strong></p>",
         ),
-        ("{=x /_a_{t=a=} b=}\n", "<p><mark>x /_a_{t=a</mark> b=}</p>"),
+        ("{=x /_a_{t=a=} b=}\n", "<p><mark>x /<u t=\"a=\">a</u> b</mark></p>"),
         ("{_x _*a*{t=a_} b_}\n", "<p><u>x _*a*{t=a</u> b_}</p>"),
         (
             "{/x _*a*{t=a/} [a_] /} e_\n",
-            "<p><em>x _*a*{t=a</em> [a_] /} e_</p>",
+            "<p><em>x _<strong t=\"a/\">a</strong> [a_] </em> e_</p>",
         ),
         (
             "{*x /_=a={t=\"*}\"} a_ b*}\n",
-            "<p><strong>x /_=a={t=“</strong>”} a_ b*}</p>",
+            "<p><strong>x /<u><mark t=\"*}\">a</mark> a</u> b</strong></p>",
         ),
     ];
     for (src, expected) in rows {
@@ -60,7 +60,7 @@ fn the_bare_walk_reads_guards_mid_walk() {
     );
     assert_eq!(
         html("/a _~a~{t=a_} c/\n"),
-        "<p><em>a <u><s>a</s>{t=a</u>} c</em></p>"
+        "<p><em>a _<s t=\"a_\">a</s> c</em></p>"
     );
     assert_eq!(
         html("~a /*a*{t=a/} c~\n"),

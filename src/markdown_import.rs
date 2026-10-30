@@ -717,8 +717,11 @@ fn preserve_html_code_for_writing(
                             || code.value.is_empty()
                             || code.value.contains(['\n', '\r']))
                     {
+                        // The probe writes the span at the top level; inside a
+                        // container no closer ends an empty span's run (carve#3973 X5).
                         if (self.paragraph || self.heading)
                             && self.label_depth == 0
+                            && !(code.value.is_empty() && self.inline_depth > 1)
                             && !self.force_all
                         {
                             let mut probe =

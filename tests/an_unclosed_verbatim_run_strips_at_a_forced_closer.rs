@@ -1,6 +1,5 @@
-//! An unclosed verbatim run strips its trailing whitespace at whatever ends
-//! it, and a forced-span closer ends it as much as the block end does
-//! (markup-carve/carve#2051).
+//! An unclosed verbatim run takes the rest of the block, a forced-span closer
+//! included (markup-carve/carve#3973 X5), and strips nothing there.
 
 use carve::{parse, render_carve, render_html};
 
@@ -9,14 +8,14 @@ fn html(src: &str) -> String {
 }
 
 #[test]
-fn a_forced_span_closer_strips_the_run_it_ends() {
-    assert_eq!(html("{~` ~}\n"), "<p><s><code></code></s></p>");
-    assert_eq!(html("{~`a  ~}\n"), "<p><s><code>a</code></s></p>");
+fn a_forced_span_closer_does_not_end_the_run() {
+    assert_eq!(html("{~` ~}\n"), "<p>{~<code> ~}</code></p>");
+    assert_eq!(html("{~`a  ~}\n"), "<p>{~<code>a  ~}</code></p>");
 }
 
 #[test]
-fn a_tab_is_stripped_too() {
-    assert_eq!(html("{~`a\t~}\n"), "<p><s><code>a</code></s></p>");
+fn a_tab_before_the_closer_is_content_too() {
+    assert_eq!(html("{~`a\t~}\n"), "<p>{~<code>a\t~}</code></p>");
 }
 
 #[test]
@@ -28,7 +27,7 @@ fn a_newline_is_content_only_in_a_line_block() {
         "{}",
         html("::: |\n`\n%%\n:::\n")
     );
-    assert_eq!(html("{~` a\n~}\n"), "<p><s><code> a</code></s></p>");
+    assert_eq!(html("{~` a\n~}\n"), "<p>{~<code> a\n~}</code></p>");
 }
 
 #[test]
@@ -38,15 +37,14 @@ fn a_closed_span_inside_a_forced_span_is_untouched() {
     assert_eq!(html("{~`x`~}\n"), "<p><s><code>x</code></s></p>");
 }
 
-/// The strip leaves an EMPTY code span, whose only spelling is a backtick run
-/// its container ends. Inside an emphasis only the braced closer ends it: the
-/// bare `~` is swallowed by the open run.
+/// The pair has no closer, so its opener is text and the writer closes the
+/// run it reads.
 #[test]
-fn an_emphasis_ending_in_an_empty_code_span_writes_the_braced_closer() {
+fn an_unclosed_run_in_a_braced_pair_is_written_as_text_and_a_closed_run() {
     for (src, want) in [
-        ("{~` ~}\n", "{~``~}\n"),
-        ("a {~` ~} b\n", "a {~``~} b\n"),
-        ("{*`  *}\n", "{*``*}\n"),
+        ("{~` ~}\n", "{~` ~}`\n"),
+        ("a {~` ~} b\n", "a {~` ~} b`\n"),
+        ("{*`  *}\n", "{*`  *}`\n"),
     ] {
         let doc = parse(src);
         let written = render_carve(&doc).expect("writes");

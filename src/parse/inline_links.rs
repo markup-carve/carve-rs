@@ -1626,8 +1626,7 @@ pub(in crate::parse) fn bare_opener_stands(bytes: &[u8], i: usize, guard_open: b
     if before.is_some_and(|b| b.is_ascii_alphanumeric()) || (delim == b'=' && after == b'>') {
         return false;
     }
-    guard_open
-        || !(before == Some(b'_') || (matches!(delim, b'/' | b'_') && before == Some(b'/')))
+    guard_open || !(before == Some(b'_') || (matches!(delim, b'/' | b'_') && before == Some(b'/')))
 }
 
 pub(in crate::parse) fn try_extension_inline(

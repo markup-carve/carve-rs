@@ -1,11 +1,13 @@
 #[test]
 fn braced_openers_do_not_supply_bare_emphasis_closers() {
-    for source in ["{*{*}", "{~{~}", "{={=}", "{_{_}"] {
-        assert_eq!(
-            carve::to_html(source),
-            format!("<p>{source}</p>"),
-            "{source}"
-        );
+    // `{X}` is characters (CARVE-P3-014), so its `X}` closes the outer `{X`.
+    for (source, html) in [
+        ("{*{*}", "<p><strong>{</strong></p>"),
+        ("{~{~}", "<p><s>{</s></p>"),
+        ("{={=}", "<p><mark>{</mark></p>"),
+        ("{_{_}", "<p><u>{</u></p>"),
+    ] {
+        assert_eq!(carve::to_html(source), html, "{source}");
     }
 }
 
