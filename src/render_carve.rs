@@ -2989,9 +2989,9 @@ fn code_needs_open_run(value: &str) -> bool {
 }
 
 /// An empty code span is an open backtick run, which ends only at the end of a
-/// block or at a braced closer (PART 3, UNCLOSED RUN). `followed` is true when
+/// block (PART 3, UNCLOSED RUN, carve#3973 X5). `followed` is true when
 /// something after this sequence would be read into the run; `labelled` when a
-/// link, span or note label must close after it.
+/// closer of an enclosing span, link or note must follow it.
 fn holds_unspellable_empty_code(
     nodes: &[InlineNode],
     followed: bool,
@@ -3005,15 +3005,9 @@ fn holds_unspellable_empty_code(
                 !empty_code_position_ends_its_run(after, labelled, cell_not_last)
                     || !render_attrs(&code.attrs).is_empty()
             }
-            _ => match empty_code_run_children(node) {
-                Some((true, children)) => {
-                    holds_unspellable_empty_code(children, false, labelled, cell_not_last)
-                }
-                Some((false, children)) => {
-                    holds_unspellable_empty_code(children, after, true, cell_not_last)
-                }
-                None => false,
-            },
+            _ => empty_code_run_children(node).is_some_and(|(_, children)| {
+                holds_unspellable_empty_code(children, after, true, cell_not_last)
+            }),
         }
     })
 }
@@ -3031,8 +3025,8 @@ pub(crate) fn run_reads_on(rest: &[InlineNode]) -> bool {
         .any(|next| !matches!(next, InlineNode::Text(text) if text.value.is_empty()))
 }
 
-/// The inline children an open run can reach, and whether the container
-/// closes with a braced closer, which ends the run.
+/// The inline children an open run can reach, and whether the container is a
+/// delimiter pair, which an empty pair of its delimiters cannot stand for.
 fn empty_code_run_children(node: &InlineNode) -> Option<(bool, &[InlineNode])> {
     match node {
         InlineNode::Emphasis(n) => Some((true, &n.children)),
@@ -3589,20 +3583,6 @@ fn render_inline_body(
                         render_forced_emphasis(delim, &content),
                         render_inline_attrs(&emphasis.attrs, ctx)
                     );
-                }
-            }
-            // An EMPTY code span has one spelling, a backtick run that its
-            // container ends, and only the braced closer ends it inside an
-            // emphasis: a bare closer is swallowed by the open run.
-            if let Some(InlineNode::Code(code)) = emphasis.children.last() {
-                if code_needs_open_run(&code.value) && code.attrs.is_none() {
-                    if let Some(delim) = bare_delimiter(emphasis.kind) {
-                        return format!(
-                            "{}{}",
-                            render_forced_emphasis(delim, &content),
-                            render_inline_attrs(&emphasis.attrs, ctx)
-                        );
-                    }
                 }
             }
             let (delim, body) = match emphasis.kind {

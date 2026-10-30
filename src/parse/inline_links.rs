@@ -1437,6 +1437,7 @@ pub(in crate::parse) fn match_emphasis(
     bounds: &InlineBounds<'_>,
     positions: Option<&InlinePositionMap<'_>>,
     base: usize,
+    guard_open: bool,
 ) -> Option<(InlineNode, usize)> {
     let c = bytes[i];
     if i > 0 && bytes[i - 1] == b'{' {
@@ -1472,7 +1473,9 @@ pub(in crate::parse) fn match_emphasis(
         && !i
             .checked_sub(1)
             .and_then(|before| bytes.get(before))
-            .is_some_and(|before| before.is_ascii_alphanumeric() || matches!(before, b'_' | b'/'))
+            .is_some_and(|before| {
+                before.is_ascii_alphanumeric() || (!guard_open && matches!(before, b'_' | b'/'))
+            })
     {
         let start = i + 2;
         // Opener guard: the first content byte must exist and not be whitespace.
@@ -1569,12 +1572,12 @@ pub(in crate::parse) fn match_emphasis(
         // alphanumeric or `_`, keeping paths/identifiers/numbers literal
         // (`a/b/c`, `foo*bar*baz`, `snake_case`, `x = 5`, `key=value`, `1,2,3`).
         // Use the forced `{X…X}` family for deliberate intraword emphasis.
-        if prev.is_ascii_alphanumeric() || prev == b'_' {
+        if prev.is_ascii_alphanumeric() {
             return None;
         }
-        // Italic/underline additionally can't open after `/` (path protection,
-        // e.g. `snake_/case/`).
-        if (delim == b'/' || delim == b'_') && prev == b'/' {
+        // A `_` or `/` guard blocks the opener unless it is an open entry
+        // where the opener stands (carve#3973 X1); `/` guards only `/` and `_`.
+        if !guard_open && (prev == b'_' || (matches!(delim, b'/' | b'_') && prev == b'/')) {
             return None;
         }
     }
@@ -1603,6 +1606,27 @@ pub(in crate::parse) fn match_emphasis(
         }),
         close + 1 - i,
     ))
+}
+
+/// Whether the bare delimiter at `i` is pushed as an open entry (E4 under E3).
+/// `guard_open`: the `_` or `/` before it is itself an open entry there, so it
+/// does not guard (carve#3973 X1).
+pub(in crate::parse) fn bare_opener_stands(bytes: &[u8], i: usize, guard_open: bool) -> bool {
+    let delim = bytes[i];
+    let Some(&after) = bytes.get(i + 1) else {
+        return false;
+    };
+    if is_carve_ws(after) || followed_by_grapheme_extender(bytes, i + 1) {
+        return false;
+    }
+    let before = i.checked_sub(1).map(|at| bytes[at]);
+    if after == delim || before == Some(delim) || OpenKinds::is_open(delim) {
+        return false;
+    }
+    if before.is_some_and(|b| b.is_ascii_alphanumeric()) || (delim == b'=' && after == b'>') {
+        return false;
+    }
+    guard_open || !(before == Some(b'_') || (matches!(delim, b'/' | b'_') && before == Some(b'/')))
 }
 
 pub(in crate::parse) fn try_extension_inline(

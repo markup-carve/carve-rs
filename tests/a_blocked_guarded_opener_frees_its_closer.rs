@@ -11,15 +11,15 @@ fn html(src: &str) -> String {
 #[test]
 fn the_reported_shapes_match_the_spec_model() {
     let rows = [
-        ("_*a*{t=\"_\"}\n", "<p><u><strong>a</strong>{t=“</u>”}</p>"),
+        ("_*a*{t=\"_\"}\n", "<p>_<strong t=\"_\">a</strong></p>"),
         (
             "_*a*{t=\"_\"} /a/{t=a_}\n",
-            "<p><u><strong>a</strong>{t=“</u>”} <em t=\"a_\">a</em></p>",
+            "<p>_<strong t=\"_\">a</strong> <em t=\"a_\">a</em></p>",
         ),
         ("{_~b~{c_}\n", "<p><u><s>b</s>{c</u></p>"),
         ("{c_}x{_/==~/{c_}\n", "<p>{c_}x<u><em>==~</em>{c</u></p>"),
         ("{_*/a/ b/{c_}\n", "<p><u>*<em>a</em> b/{c</u></p>"),
-        ("_*//*{c_}\n", "<p><u><strong>//</strong>{c</u>}</p>"),
+        ("_*//*{c_}\n", "<p>_<strong c_=\"\">//</strong></p>"),
     ];
     for (src, want) in rows {
         assert_eq!(html(src), want, "{src:?}");
@@ -31,15 +31,15 @@ fn the_reported_shapes_match_the_spec_model() {
 #[test]
 fn a_later_opener_takes_the_closer_of_a_blocked_guarded_pair() {
     let rows = [
-        ("_/a /b/{t=a_}\n", "<p>_/a <em t=\"a_\">b</em></p>"),
-        ("_*a *b*{t=a_}\n", "<p>_*a <strong t=\"a_\">b</strong></p>"),
+        ("_/a /b/{t=a_}\n", "<p>_<em t=\"a_\">a /b</em></p>"),
+        ("_*a *b*{t=a_}\n", "<p>_<strong t=\"a_\">a *b</strong></p>"),
         (
             "_/=a={t=\"_\"} /a/{t=a_}\n",
-            "<p>_/<mark t=\"_\">a</mark> <em t=\"a_\">a</em></p>",
+            "<p>_<em t=\"a_\"><mark t=\"_\">a</mark> /a</em></p>",
         ),
         (
             "> ~q~ _/~b c~{t=\"_\"} /a/{t=a_}\n",
-            "<blockquote><p><s>q</s> _/<s t=\"_\">b c</s> <em t=\"a_\">a</em></p></blockquote>",
+            "<blockquote><p><s>q</s> _<em t=\"a_\"><s t=\"_\">b c</s> /a</em></p></blockquote>",
         ),
     ];
     for (src, want) in rows {

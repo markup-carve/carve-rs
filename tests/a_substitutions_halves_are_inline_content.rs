@@ -32,7 +32,7 @@ macro_rules! cases {
 
 // The arrow does not split the pair where it is not at the top level.
 cases! {
-    inside_an_unclosed_code_span: "{~`a~>b~}" => "<p><s><code>a~&gt;b</code></s></p>",
+    inside_an_unclosed_code_span: "{~`a~>b~}" => "<p>{~<code>a~&gt;b~}</code></p>",
     inside_a_closed_code_span: "{~a `x~>y` b~}" => "<p><s>a <code>x~&gt;y</code> b</s></p>",
     escaped: "{~a\\~>b~}" => "<p><s>a~&gt;b</s></p>",
 }

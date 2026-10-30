@@ -11,23 +11,17 @@ fn html(source: &str) -> String {
 
 #[test]
 fn a_forced_closer_after_a_break() {
-    assert_eq!(
-        html("x{*`a\n*}\n"),
-        "<p>x<strong><code>a</code></strong></p>"
-    );
+    assert_eq!(html("x{*`a\n*}\n"), "<p>x{*<code>a\n*}</code></p>");
 }
 
 #[test]
 fn an_editorial_closer_after_a_break() {
-    assert_eq!(html("x{+`a\n+}\n"), "<p>x<ins><code>a</code></ins></p>");
+    assert_eq!(html("x{+`a\n+}\n"), "<p>x{+<code>a\n+}</code></p>");
 }
 
 #[test]
 fn several_breaks_and_spaces_go_together() {
-    assert_eq!(
-        html("x{*`a  \n  *}\n"),
-        "<p>x<strong><code>a</code></strong></p>"
-    );
+    assert_eq!(html("x{*`a  \n  *}\n"), "<p>x{*<code>a\n*}</code></p>");
 }
 
 /// In a line block the break is content, so it stays.
@@ -35,17 +29,14 @@ fn several_breaks_and_spaces_go_together() {
 fn a_line_block_keeps_the_break() {
     assert_eq!(
         html("::: |\nx{*`a\n*}\n:::\n"),
-        "<div class=\"line-block\">\n  <p>x<strong><code>a\n</code></strong></p>\n</div>"
+        "<div class=\"line-block\">\n  <p>x{*<code>a\n*}</code></p>\n</div>"
     );
 }
 
 /// Control: content before the trailing whitespace is untouched.
 #[test]
 fn the_content_itself_is_kept() {
-    assert_eq!(
-        html("x{*`a b\n*}\n"),
-        "<p>x<strong><code>a b</code></strong></p>"
-    );
+    assert_eq!(html("x{*`a b\n*}\n"), "<p>x{*<code>a b\n*}</code></p>");
 }
 
 /// Control: a closed span keeps every byte between its runs.

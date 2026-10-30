@@ -44,6 +44,6 @@ fn a_pair_crossing_an_open_span_does_not_hide_its_block() {
 fn a_blocked_crossing_opener_leaves_the_block_attached() {
     assert_eq!(
         html("_/~/b/~{t=_} b=\n"),
-        "<p>_/<s t=\"_\"><em>b</em></s> b=</p>"
+        "<p><u><em>~/b</em>~{t=</u>} b=</p>"
     );
 }

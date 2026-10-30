@@ -21,12 +21,12 @@ macro_rules! cases {
 }
 
 cases! {
-    after_a_forced_strong: "Run {*`make*}[the docs](u)." => "<p>Run <strong><code>make</code></strong><a href=\"u\">the docs</a>.</p>",
-    after_a_forced_emphasis: "x{/`a/}[n](u)" => "<p>x<em><code>a</code></em><a href=\"u\">n</a></p>",
-    after_an_empty_run_in_a_forced_strong: "x{*``*}[n](u)" => "<p>x<strong><code></code></strong><a href=\"u\">n</a></p>",
-    an_image_after_it: "x{*`a*}![n](u)" => "<p>x<strong><code>a</code></strong><img src=\"u\" alt=\"n\"></p>",
-    a_span_after_it: "x{*`a*}[n]{.k}" => "<p>x<strong><code>a</code></strong><span class=\"k\">n</span></p>",
-    after_an_insertion: "{+`a+} [n](u)" => "<p><ins><code>a</code></ins> <a href=\"u\">n</a></p>",
+    after_a_forced_strong: "Run {*`make*}[the docs](u)." => "<p>Run {*<code>make*}[the docs](u).</code></p>",
+    after_a_forced_emphasis: "x{/`a/}[n](u)" => "<p>x{/<code>a/}[n](u)</code></p>",
+    after_an_empty_run_in_a_forced_strong: "x{*``*}[n](u)" => "<p>x{*<code>*}[n](u)</code></p>",
+    an_image_after_it: "x{*`a*}![n](u)" => "<p>x{*<code>a*}![n](u)</code></p>",
+    a_span_after_it: "x{*`a*}[n]{.k}" => "<p>x{*<code>a*}[n]{.k}</code></p>",
+    after_an_insertion: "{+`a+} [n](u)" => "<p>{+<code>a+} [n](u)</code></p>",
     after_an_attribute_value: "[a]{title=\"`\"} [n](u)" => "<p><span title=\"`\">a</span> <a href=\"u\">n</a></p>",
     after_a_comment: "{% a ` %}[n](u)" => "<p><a href=\"u\">n</a></p>",
     after_a_destination_with_a_later_pair_of_runs: "[m](u`) and [m](`v) and [n](w)"

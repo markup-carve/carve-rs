@@ -1,5 +1,5 @@
 //! An empty code span is an open backtick run, which ends only at the end of a
-//! block or at a braced closer. Anywhere else the writer's output reads back as
+//! block (markup-carve/carve#3973 X5). Anywhere else the writer's output reads back as
 //! a different tree, so the writer refuses it and the HTML importer drops it
 //! (markup-carve/carve-rs#1705).
 //!
@@ -51,6 +51,12 @@ refused! {
     the_end_of_an_inline_note: "a ^[x `Q`]\n",
     the_end_of_a_middle_table_cell: "| a | x `Q` | c |\n",
     a_braced_closer_inside_a_middle_table_cell: "| a | {~x `Q`~} | c |\n",
+    the_end_of_a_strike: "~x `Q`~\n",
+    a_strike_with_text_after_it: "{~x `Q`~}y\n",
+    the_end_of_a_superscript: "{^x `Q`^}\n",
+    the_end_of_an_insertion: "{+x `Q`+}\n",
+    a_braced_strike_inside_a_strong: "*~x `Q`~ y*\n",
+    a_braced_strike_with_text_after_it_in_the_last_cell: "| a | {~x `Q`~}y |\n",
 }
 
 macro_rules! written {
@@ -80,13 +86,7 @@ macro_rules! written {
 
 written! {
     the_end_of_a_paragraph: "x `Q`\n" => "x ``\n",
-    the_end_of_a_strike: "~x `Q`~\n" => "{~x ``~}\n",
-    a_strike_with_text_after_it: "{~x `Q`~}y\n" => "{~x ``~}y\n",
-    the_end_of_a_superscript: "{^x `Q`^}\n" => "{^x ``^}\n",
-    the_end_of_an_insertion: "{+x `Q`+}\n" => "{+x ``+}\n",
-    a_braced_strike_inside_a_strong: "*~x `Q`~ y*\n" => "*{~x ``~} y*\n",
     the_end_of_the_last_table_cell: "| a | x `Q` |\n" => "| a | x `` |\n",
-    a_braced_strike_with_text_after_it_in_the_last_cell: "| a | {~x `Q`~}y |\n" => "| a | {~x ``~}y |\n",
     the_end_of_a_heading: "{#h}\n# x `Q`\n" => "{#h}\n# x ``\n",
 }
 
@@ -155,13 +155,15 @@ macro_rules! imports {
 }
 
 imports! {
-    an_empty_strike_content: "<p><s><code></code></s></p>" => "{~``~}\n", [],
-    the_end_of_a_strike: "<p><s>x<code></code></s></p>" => "{~x``~}\n", [],
+    an_empty_strike_content: "<p><s><code></code></s></p>" => "\n", [StructureUnspellable, StructureUnspellable],
+    the_end_of_a_strike: "<p><s>x<code></code></s></p>" => "~x~\n", [StructureUnspellable],
     text_after_it_in_a_strike: "<p><s><code></code>y</s></p>" => "~y~\n", [StructureUnspellable],
     text_after_it_in_a_paragraph: "<p>x<code></code>y</p>" => "xy\n", [StructureUnspellable],
     the_end_of_a_link_label: "<p><a href=\"u\">z<code></code></a></p>" => "[z](u)\n", [StructureUnspellable],
-    attributes: "<p><s><code class=\"c\"></code></s></p>" => "{~``~}\n", [AttributeDropped],
-    trailing_whitespace_after_it: "<p><s>x<code></code> </s></p>" => "{~x``~}\n", [],
+    attributes: "<p><s><code class=\"c\"></code></s></p>" => "\n", [AttributeDropped, StructureUnspellable, StructureUnspellable],
+    attributes_of_a_dropped_span: "<p>x<code class=\"c\"></code>y</p>" => "xy\n", [AttributeDropped, StructureUnspellable],
+    attributes_of_a_written_span: "<p>x<code class=\"c\"></code></p>" => "x``\n", [AttributeDropped],
+    trailing_whitespace_after_it: "<p><s>x<code></code> </s></p>" => "~x~\n", [StructureUnspellable],
     a_middle_table_cell: "<table><tr><td><code></code></td><td>b</td></tr></table>" => "| | b |\n", [StructureUnspellable],
 }
 

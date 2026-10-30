@@ -36,7 +36,8 @@ fn the_mid_word_form_reads_as_text_and_strong() {
 fn the_combined_token_takes_the_outer_word_boundaries() {
     for (source, expected) in [
         ("a /*y*/b", "<p>a /<strong>y</strong>/b</p>"),
-        ("_/*y*/", "<p>_/<strong>y</strong>/</p>"),
+        // An open `_` does not guard the token it stands before (carve#3973 X1).
+        ("_/*y*/", "<p>_<strong><em>y</em></strong></p>"),
         ("//*y*/", "<p>//<strong>y</strong>/</p>"),
         (
             "Run src/*test*/fixtures now",

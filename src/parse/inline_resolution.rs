@@ -1752,12 +1752,32 @@ pub(in crate::parse) fn emphasis_run_at(
     run
 }
 
-const MAX_GUARD_DEPTH: usize = 16;
-
-thread_local! {
-    static GUARD_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-    // Set while a walk asks whether it closes without its own guard's demotion.
-    static OWN_GUARD_KEPT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+/// Whether the `_` or `/` before the opener at `at` is an open entry where
+/// that opener stands, so it does not guard it (carve#3973 X1). At `from` it is
+/// the walk's own opener.
+fn guard_stands(bytes: &[u8], at: usize, from: usize, delim: u8) -> bool {
+    if at == from {
+        return true;
+    }
+    let Some(guard) = at.checked_sub(1) else {
+        return false;
+    };
+    let d = bytes[guard];
+    let before = guard.checked_sub(1).map(|b| bytes[b]);
+    if d == delim || OpenKinds::is_open(d) || before == Some(d) || before == Some(b'\\') {
+        return false;
+    }
+    if before.is_some_and(|b| b.is_ascii_alphanumeric())
+        || bytes.get(at).map_or(true, |&b| is_carve_ws(b))
+    {
+        return false;
+    }
+    if (before == Some(b'_') || (before == Some(b'/') && matches!(d, b'/' | b'_')))
+        && !guard_stands(bytes, guard, from, delim)
+    {
+        return false;
+    }
+    true
 }
 
 /// Whether the bare delimiter at `at` opens: 0 no, 1 yes, 2 only if the `_`
@@ -1807,23 +1827,9 @@ pub(in crate::parse) fn find_emphasis_close(
     failed: Option<&[bool]>,
     visited: &mut Vec<usize>,
 ) -> Option<usize> {
-    let mut in_block = None;
-    find_emphasis_close_walk(
-        bytes,
-        from,
-        delim,
-        memo,
-        bounds,
-        failed,
-        visited,
-        &mut in_block,
-    )
-    .or(in_block)
+    find_emphasis_close_walk(bytes, from, delim, memo, bounds, failed, visited)
 }
 
-/// A guard's first closer may sit in the block of the pair it guards. Past the
-/// block is tried first; only when nothing closes there does the guard close in
-/// it, which leaves the block text. `in_block` reports that closer.
 #[allow(clippy::too_many_arguments)]
 fn find_emphasis_close_walk(
     bytes: &[u8],
@@ -1833,7 +1839,6 @@ fn find_emphasis_close_walk(
     bounds: &InlineBounds<'_>,
     failed: Option<&[bool]>,
     visited: &mut Vec<usize>,
-    in_block: &mut Option<usize>,
 ) -> Option<usize> {
     // The run the OPENER sits in, read at the byte before `from`: the
     // delimiter, or a `*` of the combined token. `from` itself may be a `]`.
@@ -1851,7 +1856,6 @@ fn find_emphasis_close_walk(
     let mut guarded_at = None;
     // The last opener of each other kind the walk has passed.
     let mut last_opener: [Option<usize>; 5] = [None; 5];
-    let mut own_guard_opens: Option<bool> = None;
     let mut j = from;
     while j < bytes.len() {
         if opener_end.is_some_and(|end| j > end) {
@@ -1889,56 +1893,16 @@ fn find_emphasis_close_walk(
                     if d == ch {
                         return false;
                     }
-                    let state = bare_opener_state(bytes, open);
-                    if state != 1 && open != from {
+                    if bare_opener_state(bytes, open) != 1
+                        && !guard_stands(bytes, open, from, delim)
+                    {
                         return false;
                     }
-                    let crossed = cached_find_emphasis_close(bytes, open + 1, d, memo, bounds)
-                        .is_some_and(|outer| outer > j && outer < close);
-                    crossed
-                        && (state == 1
-                            || open != from
-                            || *own_guard_opens.get_or_insert_with(|| {
-                                if OWN_GUARD_KEPT.with(std::cell::Cell::get) {
-                                    return false;
-                                }
-                                OWN_GUARD_KEPT.with(|kept| kept.set(true));
-                                let mut seen = Vec::new();
-                                let mut block = None;
-                                let closes = find_emphasis_close_walk(
-                                    bytes, from, delim, memo, bounds, None, &mut seen, &mut block,
-                                )
-                                .or(block)
-                                .is_some();
-                                OWN_GUARD_KEPT.with(|kept| kept.set(false));
-                                closes
-                            }))
+                    cached_find_emphasis_close(bytes, open + 1, d, memo, bounds)
+                        .is_some_and(|outer| outer > j && outer < close)
                 })
             });
             if let Some((close, end)) = pair {
-                // Once the guard closes nowhere else its opener is blocked, and a
-                // later opener of the pair's kind takes the closer and the block.
-                let taken = || {
-                    (j + 1..close).any(|at| {
-                        bytes[at] == ch
-                            && bounds
-                                .braced_closers(bytes)
-                                .bare_attributes(bytes, at)
-                                .is_some_and(|(other, _)| other == close)
-                    })
-                };
-                if guarded
-                    && j == from
-                    && bytes[j - 1] == delim
-                    && (delim == b'_' || ch == b'_')
-                    && !taken()
-                {
-                    *in_block = (close + 2..end).find(|&at| {
-                        bytes[at] == delim
-                            && !is_carve_ws(bytes[at - 1])
-                            && !bytes.get(at + 1).is_some_and(|b| b.is_ascii_alphanumeric())
-                    });
-                }
                 attached.insert(close + 1, end);
             }
             // Only an attribute block behind the next opener makes the guard's
@@ -1958,17 +1922,8 @@ fn find_emphasis_close_walk(
                     .braced_closers(bytes)
                     .bare_attributes_at_start(bytes, j + 1)
                     .is_some()
-                && GUARD_DEPTH.with(|depth| depth.get() < MAX_GUARD_DEPTH)
             {
-                GUARD_DEPTH.with(|depth| depth.set(depth.get() + 1));
-                // A guard that closes inside the pair drops the pair's opener.
-                let pair_close = bounds
-                    .braced_closers(bytes)
-                    .bare_attributes_at_start(bytes, j + 1)
-                    .map(|(close, _)| close);
-                let opens = cached_find_emphasis_close(bytes, j + 1, ch, memo, bounds)
-                    .is_some_and(|close| pair_close.map_or(true, |pair| close > pair));
-                GUARD_DEPTH.with(|depth| depth.set(depth.get() - 1));
+                let opens = guard_stands(bytes, j + 1, from, delim);
                 if opens && j == start {
                     start = j + 1;
                 } else if opens {
@@ -2363,7 +2318,8 @@ pub(in crate::parse) fn braced_inline_scan(
     } else {
         bounds.braced_closers(bytes).close(bytes, open, delim)?
     };
-    if close == content && OpenKinds::bit(delim) == 0 {
+    // An empty group `{XX}` forms no span (CARVE-P3-014).
+    if close == content {
         return None;
     }
     Some(
