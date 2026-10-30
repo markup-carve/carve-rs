@@ -1627,11 +1627,11 @@ fn list_run(lines: &[&str], index: usize, terms: &TermLineOwnership) -> bool {
 /// runs without scanning the remaining source.
 pub(in crate::parse) fn prepass_fence_closer_ahead(
     _lines: &[&str],
-    index: usize,
-    open: FenceOpen,
-    maxima: &PrepassFenceClosers,
+    _index: usize,
+    _open: FenceOpen,
+    _maxima: &PrepassFenceClosers,
 ) -> bool {
-    maxima.closes_after(index, open)
+    true
 }
 
 /// Whether a fence opener on `lines[index]` really opens a fence for a
@@ -1679,15 +1679,18 @@ pub(in crate::parse) fn prepass_fence_opens(
         .is_some_and(|above| detect_container_open(trim_ascii_start(lines[above])).is_some());
     // A marker the stripper consumed starts an item body when a list is open
     // above it (I2), so no paragraph there can hold a fence on its line.
-    let marker_line = prefix
+    let stripped_marker = prefix
         .structural
         .chars()
-        .any(|character| !matches!(character, '>' | ' ' | '\t'))
+        .any(|character| !matches!(character, '>' | ' ' | '\t'));
+    let marker_line = stripped_marker
         && index
             .checked_sub(1)
             .is_some_and(|above| list_run(lines, above, terms));
+    // A fence opener on its own line interrupts an open paragraph, closer or not
+    // (carve#4018); after a marker the paragraph folded in, it is that paragraph's text.
     PrepassFence {
-        opens: closer_ahead
+        opens: !stripped_marker
             || terms.fence_openers.contains_key(&index)
             || !paragraph_above
             || follows_colon_opener

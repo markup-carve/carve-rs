@@ -34,7 +34,7 @@ fn a_closer_below_the_column_does_not_bring_the_item_back() {
 fn payload_then_a_comment_then_a_closer() {
     assert_eq!(
         carve::to_html("- a\n\n  ```\n  p\n%% c\n  q\n  ```\n"),
-        "<ul>\n  <li>a\n    <pre><code>p\n</code></pre>\n  </li>\n</ul>\n<p>q\n<code></code></p>"
+        "<ul>\n  <li>a\n    <pre><code>p\n</code></pre>\n  </li>\n</ul>\n<p>q</p>\n<pre><code></code></pre>"
     );
 }
 

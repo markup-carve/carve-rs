@@ -40,7 +40,7 @@ fn a_fence_on_the_marker_line_with_a_below_column_body_closes_the_definition() {
     let out = html(":: t\n:  ```\nbody\n```\n");
     assert_eq!(
         out,
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code></code></pre>\n  </dd>\n</dl>\n<p>body\n<code></code></p>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code></code></pre>\n  </dd>\n</dl>\n<p>body</p>\n<pre><code></code></pre>"
     );
     assert_eq!(out, definition_of(&html("- ```\nbody\n```\n")));
 }
@@ -50,7 +50,10 @@ fn a_fence_on_the_marker_line_with_a_below_column_body_closes_the_definition() {
 #[test]
 fn a_tilde_fence_answers_the_same_way() {
     let out = html(":: t\n:  ~~~\nbody\n~~~\n");
-    assert!(out.ends_with("<p>body\n~~~</p>"), "{out}");
+    assert!(
+        out.ends_with("<p>body</p>\n<pre><code></code></pre>"),
+        "{out}"
+    );
     assert_eq!(out, definition_of(&html("- ~~~\nbody\n~~~\n")));
 }
 
@@ -63,7 +66,7 @@ fn a_collected_line_at_the_column_does_not_reopen_the_fold() {
     let out = html(":: t\n:  ```\n   a\nbody\n```\n");
     assert_eq!(
         out,
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code>a\n</code></pre>\n  </dd>\n</dl>\n<p>body\n<code></code></p>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code>a\n</code></pre>\n  </dd>\n</dl>\n<p>body</p>\n<pre><code></code></pre>"
     );
     assert_eq!(out, definition_of(&html("- ```\n  a\nbody\n```\n")));
 }
@@ -76,7 +79,7 @@ fn a_fence_opened_on_a_continuation_line_closes_the_definition_too() {
     let out = html(":: t\n:  a\n   ```\n   b\nbody\n   ```\n");
     assert_eq!(
         out,
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>a</p>\n    <pre><code>b\n</code></pre>\n  </dd>\n</dl>\n<p>body\n<code></code></p>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>a</p>\n    <pre><code>b\n</code></pre>\n  </dd>\n</dl>\n<p>body</p>\n<pre><code></code></pre>"
     );
 }
 
@@ -158,17 +161,17 @@ fn control_a_below_column_marker_is_classified_in_the_surviving_list() {
     let out = html(":: t\n:  ```\n:  d\n```\n");
     assert_eq!(
         out,
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code></code></pre>\n  </dd>\n  <dd>d\n<code></code></dd>\n</dl>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code></code></pre>\n  </dd>\n  <dd>d</dd>\n</dl>\n<pre><code></code></pre>"
     );
     assert_eq!(
         html("- ```\n- d\n```\n"),
-        "<ul>\n  <li>\n    <pre><code></code></pre>\n  </li>\n  <li>d\n<code></code></li>\n</ul>"
+        "<ul>\n  <li>\n    <pre><code></code></pre>\n  </li>\n  <li>d</li>\n</ul>\n<pre><code></code></pre>"
     );
 
     // A TERM marker there opens the next entry, for the same reason.
     assert_eq!(
         html(":: t\n:  ```\n:: u\n:  d\n```\n"),
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code></code></pre>\n  </dd>\n  <dt>u</dt>\n  <dd>d\n<code></code></dd>\n</dl>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code></code></pre>\n  </dd>\n  <dt>u</dt>\n  <dd>d</dd>\n</dl>\n<pre><code></code></pre>"
     );
 }
 
@@ -179,6 +182,6 @@ fn control_a_below_column_marker_is_classified_in_the_surviving_list() {
 fn control_the_block_quote_spelling_is_unchanged() {
     assert_eq!(
         html("> ```\nbody\n```\n"),
-        "<blockquote>\n  <pre><code></code></pre>\n</blockquote>\n<p>body\n<code></code></p>"
+        "<blockquote>\n  <pre><code></code></pre>\n</blockquote>\n<p>body</p>\n<pre><code></code></pre>"
     );
 }

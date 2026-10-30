@@ -11,36 +11,7 @@
 //! three codepoints were being charged against the line's column. carve-js and
 //! carve-php both start the span at the backtick.
 
-use carve::ast::{BlockNode, InlineNode, Pos};
-
-fn description_inlines(source: &str) -> Vec<InlineNode> {
-    let options = carve::Options {
-        positions: true,
-        ..Default::default()
-    };
-    let doc = carve::parse_with_options(source, &options);
-    let BlockNode::DefinitionList(list) = &doc.children[0] else {
-        panic!("the fixture did not parse as a definition list");
-    };
-    match &list.items[0].definitions[0].children[0] {
-        BlockNode::Paragraph(paragraph) => paragraph.children.clone(),
-        other => panic!("expected a paragraph, got {other:?}"),
-    }
-}
-
-fn soft_break_pos(node: &InlineNode) -> Pos {
-    let InlineNode::SoftBreak(node) = node else {
-        panic!("expected a soft break, got {node:?}");
-    };
-    node.pos.clone().expect("a soft break must be placed")
-}
-
-fn code_pos(node: &InlineNode) -> Pos {
-    let InlineNode::Code(node) = node else {
-        panic!("expected a code span, got {node:?}");
-    };
-    node.pos.clone().expect("a code span must be placed")
-}
+use carve::ast::{BlockNode, Pos};
 
 fn slice(source: &str, pos: &Pos) -> String {
     source
@@ -50,44 +21,36 @@ fn slice(source: &str, pos: &Pos) -> String {
         .collect()
 }
 
-/// Corpus 367, row 2: the fence has no closer, so it stays inline text.
+/// Corpus 367, row 2: the fence opens with no closer (carve#4018), and its block
+/// starts at the backtick run, not at the three spaces in front of it.
 #[test]
 fn an_unterminated_fence_opens_its_span_at_the_backtick() {
     let source = ":: t\n:  a\n   ```\ntail\n";
-    let inlines = description_inlines(source);
-
-    let brk = soft_break_pos(&inlines[1]);
-    assert_eq!(
-        (brk.start_offset, brk.end_offset),
-        (9, 13),
-        "the break carries the indentation the code span used to take"
-    );
-
-    let code = code_pos(&inlines[2]);
-    assert_eq!(
-        (code.start_offset, code.end_offset),
-        (13, 21),
-        "the span opens at the backtick run, not at the three spaces in front of it"
-    );
-    assert_eq!(slice(source, &code), "```\ntail");
+    let code = description_code_block_pos(source);
+    assert_eq!((code.start_offset, code.end_offset), (13, 16));
     assert_eq!((code.start_line, code.start_column), (3, 4));
-
-    let InlineNode::Code(node) = &inlines[2] else {
-        unreachable!("already matched above");
-    };
-    assert_eq!(node.value, "\ntail");
 }
 
 /// Corpus 450, row 3: a longer body, the same opening.
 #[test]
 fn the_span_opens_at_the_backtick_below_a_longer_description() {
     let source = ":: term\n:  definition\n   ```\n   c\ntail\n";
-    let inlines = description_inlines(source);
+    let code = description_code_block_pos(source);
+    assert_eq!((code.start_offset, code.end_offset), (25, 33));
+    assert_eq!(slice(source, &code), "```\n   c");
+}
 
-    let brk = soft_break_pos(&inlines[1]);
-    assert_eq!((brk.start_offset, brk.end_offset), (21, 25));
-
-    let code = code_pos(&inlines[2]);
-    assert_eq!((code.start_offset, code.end_offset), (25, 38));
-    assert_eq!(slice(source, &code), "```\n   c\ntail");
+fn description_code_block_pos(source: &str) -> Pos {
+    let options = carve::Options {
+        positions: true,
+        ..Default::default()
+    };
+    let doc = carve::parse_with_options(source, &options);
+    let BlockNode::DefinitionList(list) = &doc.children[0] else {
+        panic!("the fixture did not parse as a definition list");
+    };
+    match &list.items[0].definitions[0].children[1] {
+        BlockNode::CodeBlock(code) => code.pos.clone().expect("a code block must be placed"),
+        other => panic!("expected a code block, got {other:?}"),
+    }
 }

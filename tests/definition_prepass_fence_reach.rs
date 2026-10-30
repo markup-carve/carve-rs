@@ -18,7 +18,7 @@ fn a_comment_above_an_unterminated_fence_keeps_collecting() {
 fn a_backtick_run_after_a_paragraph_collects_the_footnote() {
     assert_eq!(
         carve::to_html("t\n```\n[^f]: t ~\n"),
-        "<p>t\n<code></code></p>"
+        "<p>t</p>\n<pre><code>[^f]: t ~\n</code></pre>"
     );
 }
 
@@ -26,13 +26,16 @@ fn a_backtick_run_after_a_paragraph_collects_the_footnote() {
 fn another_opener_after_a_paragraph_collects_the_footnote() {
     assert_eq!(
         carve::to_html(")\n```\n[^f]: : |\n"),
-        "<p>)\n<code></code></p>"
+        "<p>)</p>\n<pre><code>[^f]: : |\n</code></pre>"
     );
 }
 
 #[test]
 fn a_tilde_run_after_a_paragraph_collects_the_footnote() {
-    assert_eq!(carve::to_html("]\n~~~\n\n[^f]: )\n"), "<p>]\n~~~</p>");
+    assert_eq!(
+        carve::to_html("]\n~~~\n\n[^f]: )\n"),
+        "<p>]</p>\n<pre><code>\n[^f]: )\n</code></pre>"
+    );
 }
 
 #[test]

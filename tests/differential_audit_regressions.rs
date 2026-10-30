@@ -48,7 +48,10 @@ fn a_fence_opener_accepts_a_tab_at_the_end_of_its_line() {
     assert!(carve::to_html("~~~\t\n").contains("<pre><code>"));
     // Unchanged: a tab in front of the info string is the separator, so the
     // backtick run is an ordinary inline verbatim run.
-    assert!(!carve::to_html("```\tphp\nx\n```\n").contains("<pre><code>"));
+    assert_eq!(
+        carve::to_html("```\tphp\nx\n```\n"),
+        "<p><code>\tphp\nx</code></p>\n<pre><code></code></pre>"
+    );
 }
 
 #[test]
@@ -60,7 +63,7 @@ fn a_lazy_ordered_marker_does_not_expose_a_reference_definition() {
 fn an_unclosed_fence_in_a_paragraph_does_not_hide_a_later_definition() {
     assert_eq!(
         carve::to_html(":\n```\n[A]: b\n"),
-        "<p>:\n<code></code></p>"
+        "<p>:</p>\n<pre><code>[A]: b\n</code></pre>"
     );
 }
 

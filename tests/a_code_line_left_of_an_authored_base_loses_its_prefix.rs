@@ -30,6 +30,6 @@ fn a_list_item_line_left_of_the_opener_loses_its_prefix() {
 fn a_matching_run_left_of_the_opener_closes_after_losing_its_prefix() {
     assert_eq!(
         compact("- x\n\n     ```\n   ```\n     b\n     ```\n"),
-        "<ul>|<li>x|<pre><code></code></pre>|b|<code></code>|</li>|</ul>"
+        "<ul>|<li>x|<pre><code></code></pre>|b|<pre><code></code></pre>|</li>|</ul>"
     );
 }

@@ -21,7 +21,7 @@ fn a_nested_lead_fence_does_not_own_a_flush_left_body_or_closer() {
     assert_eq!(
         flat("- - ``` x\ncode\n```\n"),
         "<ul> <li> <ul> <li> \
-         <pre><code class=\"language-x\"></code></pre> </li> </ul> </li> </ul> <p>code <code></code></p>",
+         <pre><code class=\"language-x\"></code></pre> </li> </ul> </li> </ul> <p>code</p> <pre><code></code></pre>",
     );
 }
 
@@ -30,7 +30,7 @@ fn a_below_column_body_is_outside_the_fence() {
     assert_eq!(
         flat("- - ``` x\n code\n ```\n"),
         "<ul> <li> <ul> <li> \
-         <pre><code class=\"language-x\"></code></pre> </li> </ul> </li> </ul> <p>code <code></code></p>",
+         <pre><code class=\"language-x\"></code></pre> </li> </ul> </li> </ul> <p>code</p> <pre><code></code></pre>",
     );
 }
 
@@ -39,7 +39,7 @@ fn a_three_deep_ladder_releases_the_body_from_the_innermost_item() {
     assert_eq!(
         flat("- - - ``` x\ncode\n```\n"),
         "<ul> <li> <ul> <li> <ul> <li> \
-         <pre><code class=\"language-x\"></code></pre> </li> </ul> </li> </ul> </li> </ul> <p>code <code></code></p>",
+         <pre><code class=\"language-x\"></code></pre> </li> </ul> </li> </ul> </li> </ul> <p>code</p> <pre><code></code></pre>",
     );
 }
 
@@ -69,7 +69,7 @@ fn a_padded_quote_keeps_the_outer_paragraph_claim() {
 fn a_quoted_item_fence_requires_marked_body_lines() {
     assert_eq!(
         flat("> - ``` x\ncode\n```\n"),
-        "<blockquote> <ul> <li> <pre><code class=\"language-x\"></code></pre> </li> </ul> </blockquote> <p>code <code></code></p>",
+        "<blockquote> <ul> <li> <pre><code class=\"language-x\"></code></pre> </li> </ul> </blockquote> <p>code</p> <pre><code></code></pre>",
     );
 }
 
@@ -78,7 +78,7 @@ fn an_ordered_ladder_releases_the_body() {
     assert_eq!(
         flat("1. 1. ``` x\ncode\n```\n"),
         "<ol> <li> <ol> <li> \
-         <pre><code class=\"language-x\"></code></pre> </li> </ol> </li> </ol> <p>code <code></code></p>",
+         <pre><code class=\"language-x\"></code></pre> </li> </ol> </li> </ol> <p>code</p> <pre><code></code></pre>",
     );
 }
 
@@ -87,7 +87,7 @@ fn a_tilde_fence_answers_the_same_way() {
     assert_eq!(
         flat("- - ~~~ x\ncode\n~~~\n"),
         "<ul> <li> <ul> <li> \
-         <pre><code class=\"language-x\"></code></pre> </li> </ul> </li> </ul> <p>code ~~~</p>",
+         <pre><code class=\"language-x\"></code></pre> </li> </ul> </li> </ul> <p>code</p> <pre><code></code></pre>",
     );
 }
 
@@ -95,7 +95,7 @@ fn a_tilde_fence_answers_the_same_way() {
 fn a_fence_with_no_info_string_releases_a_below_column_body() {
     assert_eq!(
         flat("- - ```\ncode\n```\n"),
-        "<ul> <li> <ul> <li> <pre><code></code></pre> </li> </ul> </li> </ul> <p>code <code></code></p>",
+        "<ul> <li> <ul> <li> <pre><code></code></pre> </li> </ul> </li> </ul> <p>code</p> <pre><code></code></pre>",
     );
 }
 
@@ -123,7 +123,7 @@ fn a_trailing_marker_is_text_in_the_document_paragraph() {
         flat("- - ``` x\ncode\n```\n- lazy\n"),
         "<ul> <li> <ul> <li> \
          <pre><code class=\"language-x\"></code></pre> </li> </ul> </li> </ul> \
-         <p>code <code> - lazy</code></p>",
+         <p>code</p> <pre><code>- lazy </code></pre>",
     );
 }
 
@@ -172,7 +172,7 @@ fn a_single_level_lead_fence_is_unchanged() {
     assert_eq!(
         flat("- ``` x\ncode\n```\n"),
         "<ul> <li> <pre><code class=\"language-x\"></code></pre> </li> </ul> \
-         <p>code <code></code></p>",
+         <p>code</p> <pre><code></code></pre>",
     );
 }
 

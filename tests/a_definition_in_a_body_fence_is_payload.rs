@@ -33,7 +33,7 @@ fn an_unclosed_fence_after_a_note_paragraph_is_text() {
 fn a_below_column_line_ends_an_item_fence_before_its_closer() {
     assert_eq!(
         to_html("- term\n  ```\n  code\n[d]: note\npayload\n  ```\nafter\n\n[a][d]\n"),
-        "<ul>\n  <li>term\n    <pre><code>code\n</code></pre>\n  </li>\n</ul>\n<p>payload\n<code>\nafter</code></p>\n<p><a href=\"note\">a</a></p>"
+        "<ul>\n  <li>term\n    <pre><code>code\n</code></pre>\n  </li>\n</ul>\n<p>payload</p>\n<pre><code>after\n\n[a][d]\n</code></pre>"
     );
 }
 

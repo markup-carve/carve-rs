@@ -49,6 +49,6 @@ fn a_comment_beside_two_paragraphs_keeps_the_expanded_quote() {
 fn a_quoted_comment_before_an_unclosed_fence_in_a_container() {
     assert_eq!(
         to_html("::: note\n> para\n> %% c\n```\ncode\n::::\n:::\nafter *b*\n"),
-        "<aside class=\"admonition note\" aria-label=\"Note\">\n  <blockquote><p>para</p></blockquote>\n  <pre><code>code\n::::\n</code></pre>\n</aside>\n<p>after <strong>b</strong></p>"
+        "<aside class=\"admonition note\" aria-label=\"Note\">\n  <blockquote><p>para</p></blockquote>\n  <pre><code>code\n::::\n:::\nafter *b*\n</code></pre>\n</aside>"
     );
 }

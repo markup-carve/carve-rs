@@ -65,11 +65,11 @@ fn closed_blocks_keep_the_seven_corpus_lists_tight() {
         ),
         (
             "556-a-closed-block-leaves-no-frame-for-the-line-below-2",
-            "- a\n  <code></code>\n  ***\n  ```\n  code\n  ```\n\nafter\n",
+            "- a\n  ```\n\n  ---\n  ~~~\n  code\n  ~~~\n  ```\n\nafter\n",
         ),
         (
             "556-a-closed-block-leaves-no-frame-for-the-line-below-3",
-            "- a\n  <code></code>\n  ```\n  code\n  ```\n  more\n  after\n",
+            "- a\n  ```\n\n  ~~~\n  code\n  ~~~\n  more\n  ```\n\nafter\n",
         ),
         (
             "75-list-nesting-and-looseness-6",

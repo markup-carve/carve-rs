@@ -55,6 +55,6 @@ fn a_quote_marker_past_the_note_column_continues_the_note() {
 fn an_unclosed_fence_line_folds_into_a_quoted_term() {
     assert_eq!(
         html("> :: t\n```\n"),
-        "<blockquote><dl><dt>t <code></code></dt></dl></blockquote>"
+        "<blockquote><dl><dt>t</dt></dl></blockquote><pre><code></code></pre>"
     );
 }

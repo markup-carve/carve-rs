@@ -100,7 +100,7 @@ fn a_tab_before_content_does_not_close_a_fence() {
 fn an_opener_with_a_tab_before_its_info_string_still_refuses() {
     assert_eq!(
         to_html("```\tphp\nx\n```\n"),
-        "<p><code>\tphp\nx\n</code></p>",
+        "<p><code>\tphp\nx</code></p>\n<pre><code></code></pre>",
         "the opener half of the ruling is unchanged"
     );
 }

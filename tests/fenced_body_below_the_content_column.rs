@@ -38,7 +38,7 @@ fn a_below_column_line_closes_the_item_and_leaves_the_code_block_empty() {
     // Corpus 276 row 2, one column in.
     assert_eq!(
         squash(&to_html("- ```\n x\n ```\n")),
-        "<ul> <li> <pre><code></code></pre> </li> </ul> <p>x <code></code></p>"
+        "<ul> <li> <pre><code></code></pre> </li> </ul> <p>x</p> <pre><code></code></pre>"
     );
 }
 
@@ -48,7 +48,7 @@ fn the_ordered_marker_column_is_the_items_own() {
     // for the same reason - the column is read off the marker, not fixed at 2.
     assert_eq!(
         squash(&to_html("1. ```\n x\n ```\n")),
-        "<ol> <li> <pre><code></code></pre> </li> </ol> <p>x <code></code></p>"
+        "<ol> <li> <pre><code></code></pre> </li> </ol> <p>x</p> <pre><code></code></pre>"
     );
 }
 
@@ -59,13 +59,13 @@ fn the_guard_is_on_the_open_fence_not_on_the_marker_line() {
     // answers this row and the marker-line one together.
     assert_eq!(
         squash(&to_html("- ```\n  x\n y\n  ```\n")),
-        "<ul> <li> <pre><code>x </code></pre> </li> </ul> <p>y <code></code></p>"
+        "<ul> <li> <pre><code>x </code></pre> </li> </ul> <p>y</p> <pre><code></code></pre>"
     );
     // Row 7: the fence is opened on a continuation line. Its later closer is
     // considered before the below-column line ends the item.
     assert_eq!(
         squash(&to_html("- a\n  ```\n  b\n y\n  ```\n")),
-        "<ul> <li>a <pre><code>b </code></pre> </li> </ul> <p>y <code></code></p>"
+        "<ul> <li>a <pre><code>b </code></pre> </li> </ul> <p>y</p> <pre><code></code></pre>"
     );
 }
 
@@ -75,7 +75,7 @@ fn a_closer_below_the_content_column_is_not_this_fences_closer() {
     // inline fence-shaped run already folded into the item.
     assert_eq!(
         squash(&to_html("- a\n  ```\n  b\n ```\n")),
-        "<ul> <li>a <code> b </code></li> </ul>"
+        "<ul> <li>a <pre><code>b </code></pre> </li> </ul> <pre><code></code></pre>"
     );
 }
 
@@ -121,23 +121,23 @@ fn a_below_column_marker_is_a_below_column_line() {
     // Reading the marker first nested it inside the item the open fence closes.
     assert_eq!(
         squash(&to_html("- ```\n - b\n ```\n")),
-        "<ul> <li> <pre><code></code></pre> </li> <li>b <code></code></li> </ul>"
+        "<ul> <li> <pre><code></code></pre> </li> <li>b</li> </ul> <pre><code></code></pre>"
     );
     assert_eq!(
         squash(&to_html("- ```\n 1. b\n ```\n")),
         "<ul> <li> <pre><code></code></pre> </li> </ul> \
-         <ol> <li>b <code></code></li> </ol>"
+         <ol> <li>b</li> </ol> <pre><code></code></pre>"
     );
     assert_eq!(
         squash(&to_html("- a\n  ```\n  c\n - b\n  ```\n")),
-        "<ul> <li>a <code> c</code></li> <li>b <code></code></li> </ul>"
+        "<ul> <li>a <pre><code>c </code></pre> </li> <li>b</li> </ul> <pre><code></code></pre>"
     );
     // A SIBLING marker at the base column ends the item too, and the list it
     // belongs to carries on - the same answer the item collector's own
     // sibling-marker break has always given.
     assert_eq!(
         squash(&to_html("- ```\n- b\n ```\n")),
-        "<ul> <li> <pre><code></code></pre> </li> <li>b <code></code></li> </ul>"
+        "<ul> <li> <pre><code></code></pre> </li> <li>b</li> </ul> <pre><code></code></pre>"
     );
 }
 
@@ -151,11 +151,11 @@ fn the_collectors_follow_a_fence_the_marker_line_did_not_open() {
     assert_eq!(
         squash(&to_html("- # h\n  ```\n  b\n y\n  ```\n")),
         "<ul> <li> <h1 id=\"h\">h</h1> <pre><code>b </code></pre> </li> </ul> \
-         <p>y <code></code></p>"
+         <p>y</p> <pre><code></code></pre>"
     );
     assert_eq!(
         squash(&to_html("- a\n\n  ```\n  b\n y\n  ```\n")),
-        "<ul> <li>a <pre><code>b </code></pre> </li> </ul> <p>y <code></code></p>"
+        "<ul> <li>a <pre><code>b </code></pre> </li> </ul> <p>y</p> <pre><code></code></pre>"
     );
     // And they follow CLOSERS: the item's first fence closes, a second one
     // opens, and it is the second that carries the item to the below-column
@@ -163,7 +163,7 @@ fn the_collectors_follow_a_fence_the_marker_line_did_not_open() {
     assert_eq!(
         squash(&to_html("- ```\n  x\n  ```\n  ```\n  z\n y\n  ```\n")),
         "<ul> <li> <pre><code>x </code></pre> <pre><code>z </code></pre> </li> </ul> \
-         <p>y <code></code></p>"
+         <p>y</p> <pre><code></code></pre>"
     );
 }
 
@@ -185,7 +185,7 @@ fn a_sibling_item_carries_none_of_the_previous_items_fence() {
     // corpus 367).
     assert_eq!(
         squash(&to_html("- ```\n  x\n- b\n  ```\n  q\n y\n")),
-        "<ul> <li> <pre><code>x </code></pre> </li> <li>b <code> q y</code></li> </ul>"
+        "<ul> <li> <pre><code>x </code></pre> </li> <li>b <pre><code>q </code></pre> </li> </ul> <p>y</p>"
     );
 }
 

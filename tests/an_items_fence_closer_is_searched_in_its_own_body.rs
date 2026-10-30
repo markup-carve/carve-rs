@@ -26,42 +26,42 @@ fn a_closer_outside_the_items_body_does_not_open_the_fence() {
     let mut moved = Vec::new();
     row(
         "- a\n  ```\n  b\n y\n   ```\n",
-        "<ul>\n  <li>a\n<code>\nb\ny\n</code></li>\n</ul>",
+        "<ul>\n  <li>a\n    <pre><code>b\n</code></pre>\n  </li>\n</ul>\n<p>y</p>\n<pre><code></code></pre>",
         &mut moved,
     );
     row(
         "1. a\n   ```\n   b\n y\n    ```\n",
-        "<ol>\n  <li>a\n<code>\nb\ny\n</code></li>\n</ol>",
+        "<ol>\n  <li>a\n    <pre><code>b\n</code></pre>\n  </li>\n</ol>\n<p>y</p>\n<pre><code></code></pre>",
         &mut moved,
     );
     row(
         "- a\n  ```\n  b\n y\n\nz\n  ```\n",
-        "<ul>\n  <li>a\n<code>\nb\ny</code></li>\n</ul>\n<p>z\n<code></code></p>",
+        "<ul>\n  <li>a\n    <pre><code>b\n</code></pre>\n  </li>\n</ul>\n<p>y</p>\n<p>z</p>\n<pre><code></code></pre>",
         &mut moved,
     );
     row(
         "1. a\n   ```\n   b\n y\n\nz\n   ```\n",
-        "<ol>\n  <li>a\n<code>\nb\ny</code></li>\n</ol>\n<p>z\n<code></code></p>",
+        "<ol>\n  <li>a\n    <pre><code>b\n</code></pre>\n  </li>\n</ol>\n<p>y</p>\n<p>z</p>\n<pre><code></code></pre>",
         &mut moved,
     );
     row(
         "- a\n  ```\n  b\n y\n- q\n  ```\n",
-        "<ul>\n  <li>a\n<code>\nb\ny</code></li>\n  <li>q\n<code></code></li>\n</ul>",
+        "<ul>\n  <li>a\n    <pre><code>b\n</code></pre>\n  </li>\n</ul>\n<p>y\n- q</p>\n<pre><code></code></pre>",
         &mut moved,
     );
     row(
         ":: t\n: a\n  ```\n  b\n y\n   ```\n",
-        "<dl>\n  <dt>t</dt>\n  <dd>a\n<code>\nb\ny\n</code></dd>\n</dl>",
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>a</p>\n    <pre><code>b\n</code></pre>\n  </dd>\n</dl>\n<p>y</p>\n<pre><code></code></pre>",
         &mut moved,
     );
     row(
         ":: t\n: a\n  ```\n  b\n y\n\nz\n  ```\n",
-        "<dl>\n  <dt>t</dt>\n  <dd>a\n<code>\nb\ny</code></dd>\n</dl>\n<p>z\n<code></code></p>",
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>a</p>\n    <pre><code>b\n</code></pre>\n  </dd>\n</dl>\n<p>y</p>\n<p>z</p>\n<pre><code></code></pre>",
         &mut moved,
     );
     row(
         ":: t\n: a\n  ~~~\n  b\n y\n\nz\n  ~~~\n",
-        "<dl>\n  <dt>t</dt>\n  <dd>a\n~~~\nb\ny</dd>\n</dl>\n<p>z\n~~~</p>",
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>a</p>\n    <pre><code>b\n</code></pre>\n  </dd>\n</dl>\n<p>y</p>\n<p>z</p>\n<pre><code></code></pre>",
         &mut moved,
     );
     assert!(moved.is_empty(), "rows moved:\n{}", moved.join("\n"));

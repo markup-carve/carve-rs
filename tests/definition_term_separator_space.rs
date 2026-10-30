@@ -180,8 +180,12 @@ fn a_code_opener_past_the_container_column_stays_term_text() {
     for fence in ["```", "~~~", "``` rust", "```=html"] {
         let source = format!(":: t\n  {fence}\n");
         let doc = carve::parse(&source);
-        assert_eq!(doc.children.len(), 1, "{source:?}: {doc:?}");
-        assert!(!html(&source).contains("<pre>"), "{source:?}");
+        assert_eq!(doc.children.len(), 2, "{source:?}: {doc:?}");
+        assert_eq!(
+            html(&source).contains("<pre>"),
+            !fence.contains('='),
+            "{source:?}"
+        );
     }
 }
 
@@ -199,7 +203,10 @@ fn an_unclosed_fence_keeps_folding_into_an_ordinary_paragraph() {
     for source in ["t\n```", "t\n~~~"] {
         let doc = carve::parse(source);
         assert!(
-            matches!(doc.children.as_slice(), [BlockNode::Paragraph(_)]),
+            matches!(
+                doc.children.as_slice(),
+                [BlockNode::Paragraph(_), BlockNode::CodeBlock(_)]
+            ),
             "{source:?}: {doc:?}"
         );
     }
@@ -251,7 +258,7 @@ fn inline_term_continuations_do_not_expose_a_later_fences_definitions() {
 fn fences_past_a_hosted_terms_column_preserve_the_writer_roundtrip() {
     for source in [":: t\n  ~~~\n", "- :: t\n    ~~~\n", "> :: t\n>   ~~~\n"] {
         let expected = html(source);
-        assert!(!expected.contains("<pre>"), "{source:?}: {expected}");
+        assert!(expected.contains("<pre>"), "{source:?}: {expected}");
         let canonical = carve::to_carve(source);
         assert_eq!(html(&canonical), expected, "{source:?}: {canonical:?}");
         assert_eq!(carve::to_carve(&canonical), canonical, "{source:?}");
@@ -389,8 +396,12 @@ fn a_later_closer_does_not_extend_a_term_fence_past_its_host() {
 
 #[test]
 fn an_earlier_folded_or_host_ended_fence_does_not_hide_a_later_term() {
+    let source = "p\n~~~\n\n:: t\n```\n[r]: /u\n[^a]: note\n";
+    assert_eq!(
+        html(source),
+        "<p>p</p>\n<pre><code>\n:: t\n```\n[r]: /u\n[^a]: note\n</code></pre>"
+    );
     for source in [
-        "p\n~~~\n\n:: t\n```\n[r]: /u\n[^a]: note\n",
         "- a\n\n  ~~~\n\n:: t\n```\n[r]: /u\n[^a]: note\n",
         ":: a\n:  ```\n   code\n   ```\n\n:: t\n```\n[r]: /u\n[^a]: note\n",
         "- ```\n  code\n  ```\n\n:: t\n```\n[r]: /u\n[^a]: note\n",
@@ -411,7 +422,7 @@ fn intervening_blocks_end_term_ownership_before_a_later_paragraph_fence() {
         let source = format!(":: t\n{block}\np\n```\n[r]: /u\n");
         let doc = carve::parse(&source);
         assert!(
-            doc.children.iter().any(
+            !doc.children.iter().any(
                 |node| matches!(node, BlockNode::LinkReferenceDefinition(def) if def.label == "r")
             ),
             "{source:?}: {doc:?}"
@@ -524,8 +535,8 @@ fn indented_term_text_does_not_own_a_fence_past_a_paragraph_break() {
 #[test]
 fn folded_list_marker_terms_do_not_own_a_later_fence() {
     for (above, prefix, owns_fence) in [
-        ("p\n", "", false),
-        ("> p\n", "> ", false),
+        ("p\n", "", true),
+        ("> p\n", "> ", true),
         ("- p\n", "  ", true),
     ] {
         let source = format!("{above}{prefix}- :: t\n{prefix}  ```\n{prefix}\n{prefix}  - a\n{prefix}    [^a]: note\n\nsee [^a]\n");
@@ -640,7 +651,7 @@ fn nonparagraph_item_blocks_release_a_following_root_paragraph() {
             let source = format!("{prefix}- :: a\n{body}{prefix}p\n{prefix}- :: t\n{prefix}  ```\n{prefix}\n{prefix}  - a\n{prefix}    [^a]: note\n\nsee [^a]\n");
             let output = html(&source);
             assert!(
-                output.contains("role=\"doc-noteref\""),
+                !output.contains("role=\"doc-noteref\""),
                 "{source:?}: {output}"
             );
         }
@@ -681,8 +692,8 @@ fn successive_term_fences_do_not_repeat_the_list_prefix_probe() {
 fn folded_generic_fence_does_not_admit_a_following_marker_term() {
     let source = "p\n- ```\n  x\n  ```\n- :: t\n  ~~~\n\n  - a\n    [^a]: note\n\nsee [^a]\n";
     let output = html(source);
-    assert!(output.contains("role=\"doc-noteref\""), "{output}");
-    assert!(!output.contains("<pre>"), "{output}");
+    assert!(!output.contains("role=\"doc-noteref\""), "{output}");
+    assert!(output.contains("<pre>"), "{output}");
 }
 
 #[test]
@@ -746,7 +757,7 @@ fn a_marker_between_item_columns_does_not_reuse_a_proved_term_host() {
 fn a_bare_blank_releases_a_proved_quote_term_host() {
     let source = "> - :: a\n>   ```\n>   c\n>   ```\n\n>   p\n> - :: t\n>   ```\n>\n>   - y\n>     [^a]: note\n\nsee [^a]\n";
     let output = html(source);
-    assert!(output.contains("role=\"doc-noteref\""), "{output}");
+    assert!(!output.contains("role=\"doc-noteref\""), "{output}");
 }
 
 #[test]
@@ -761,7 +772,7 @@ fn an_outer_list_marker_does_not_prove_a_host_inside_its_quote() {
         let source = format!("{lead}- > :: t\n  > ```\n  > c\n  > ```\n  > p\n  > - :: u\n  >   ```\n  >\n  >   - y\n  >     [^a]: note\n\nsee [^a]\n");
         let output = html(&source);
         assert!(
-            output.contains("role=\"doc-noteref\""),
+            !output.contains("role=\"doc-noteref\""),
             "{source:?}: {output}"
         );
     }
@@ -771,21 +782,21 @@ fn an_outer_list_marker_does_not_prove_a_host_inside_its_quote() {
 fn an_unowned_fence_scan_releases_a_host_after_a_dedent() {
     let source = "- :: a\n  ```\n  c\n  ```\n\n  ~~~\np\n~~~\n- :: t\n  ```\n\n  - y\n    [^a]: note\n\nsee [^a]\n";
     let output = html(source);
-    assert!(output.contains("role=\"doc-noteref\""), "{output}");
+    assert!(!output.contains("role=\"doc-noteref\""), "{output}");
 }
 
 #[test]
 fn a_bare_blank_during_an_unowned_fence_scan_releases_its_quote_host() {
     let source = "> - :: a\n>   ```\n>   c\n>   ```\n>\n>   ~~~\n\n>   p\n>   ~~~\n> - :: t\n>   ```\n>\n>   - y\n>     [^a]: note\n\nsee [^a]\n";
     let output = html(source);
-    assert!(output.contains("role=\"doc-noteref\""), "{output}");
+    assert!(!output.contains("role=\"doc-noteref\""), "{output}");
 }
 
 #[test]
 fn a_different_quote_at_the_same_depth_releases_a_proved_term_host() {
     let source = "- > - :: a\n  >   ```\n  >   c\n  >   ```\n>   p\n> - :: t\n>   ```\n>\n>   - y\n>     [^a]: note\n\nsee [^a]\n";
     let output = html(source);
-    assert!(output.contains("role=\"doc-noteref\""), "{output}");
+    assert!(!output.contains("role=\"doc-noteref\""), "{output}");
 }
 
 #[test]
@@ -800,14 +811,14 @@ fn a_band_marker_inside_a_nested_item_does_not_reuse_its_outer_host() {
 fn a_prepass_only_list_column_cannot_prove_an_outer_item_host() {
     let source = "p\n- x\n\n  - :: a\n    ```\n    c\n    ```\n  q\n  - :: t\n    ```\n\n    - y\n      [^a]: note\n\nsee [^a]\n";
     let output = html(source);
-    assert!(output.contains("role=\"doc-noteref\""), "{output}");
+    assert!(!output.contains("role=\"doc-noteref\""), "{output}");
 }
 
 #[test]
 fn sibling_marker_width_changes_update_the_proved_content_column() {
     let source = "- :: a\n  ```\n  c\n  ```\n1. :: t\n   ~~~\n   c\n   ~~~\n  p\n- :: u\n  ```\n\n  - y\n    [^a]: note\n\nsee [^a]\n";
     let output = html(source);
-    assert!(output.contains("role=\"doc-noteref\""), "{output}");
+    assert!(!output.contains("role=\"doc-noteref\""), "{output}");
 }
 
 #[test]
@@ -816,7 +827,7 @@ fn an_expired_outer_item_cannot_prove_a_later_nested_term_host() {
         let source = format!("- x\n{first_block}p\n\n  - :: a\n    ```\n    c\n    ```\n  q\n  - :: t\n    ```\n\n    - y\n      [^a]: note\n\nsee [^a]\n");
         let output = html(&source);
         assert!(
-            output.contains("role=\"doc-noteref\""),
+            !output.contains("role=\"doc-noteref\""),
             "{source:?}: {output}"
         );
     }
@@ -826,7 +837,7 @@ fn an_expired_outer_item_cannot_prove_a_later_nested_term_host() {
 fn a_marker_left_of_a_proved_item_releases_its_term_host() {
     let source = "  - :: a\n    ```\n    c\n    ```\n1. q\n  - :: t\n    ```\n\n    - y\n      [^a]: note\n\nsee [^a]\n";
     let output = html(source);
-    assert!(output.contains("role=\"doc-noteref\""), "{output}");
+    assert!(!output.contains("role=\"doc-noteref\""), "{output}");
 }
 
 #[test]
@@ -897,11 +908,10 @@ fn a_folded_marker_fence_with_a_flush_closer_cannot_hide_later_definitions() {
                 };
                 let doc = carve::parse(&source);
                 let output = carve::render_html(&doc).unwrap();
-                assert!(!output.contains(definition), "{source:?}: {output}");
-                if definition.starts_with("[^") {
-                    assert_eq!(doc.footnote_defs.len(), 1, "{source:?}: {output}");
-                    assert!(output.contains("role=\"doc-noteref\""), "{output}");
-                }
+                // The flush-left run opens a fence with no closer, which holds the
+                // definition as payload (carve#4018).
+                assert!(output.contains(definition), "{source:?}: {output}");
+                assert!(doc.footnote_defs.is_empty(), "{source:?}: {output}");
             }
         }
     }

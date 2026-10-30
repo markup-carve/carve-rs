@@ -92,11 +92,11 @@ fn three_percent_comment_does_not_hide_nested_colon() {
 #[test]
 fn definition_interrupts_unclosed_code_in_list_paragraph() {
     let html = carve::to_html("- x\n```\n  [r]: l\n");
-    assert!(html.contains("<code></code>"), "{html}");
-    assert!(!html.contains("[r]: l"), "{html}");
+    assert!(!html.contains("<code></code>"), "{html}");
+    assert!(html.contains("[r]: l"), "{html}");
 
     let control = carve::to_html("- x\n```\n  plain\n");
-    assert!(control.contains("plain</code>"), "{control}");
+    assert!(control.contains("plain\n</code>"), "{control}");
 }
 
 #[test]

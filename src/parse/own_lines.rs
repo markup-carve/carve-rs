@@ -376,8 +376,6 @@ struct Walk<'a> {
     frames: Vec<Frame>,
     reach: usize,
     runs: Option<Runs>,
-    /// `widest_from` tables per (fence char, column).
-    by_column: std::collections::HashMap<(u8, usize), Vec<usize>>,
     /// Decision trace records (carve `docs/decision-trace.md`); `None` on a parse.
     trace: Option<Vec<TraceRecord>>,
     /// 1-based line of `lines[0]`, past any frontmatter.
@@ -501,7 +499,6 @@ fn walk_traced(
         frames: vec![Frame::new(Kind::Doc)],
         reach: 0,
         runs: None,
-        by_column: std::collections::HashMap::new(),
         trace,
         first_line,
     };
@@ -628,29 +625,6 @@ impl<'a> Walk<'a> {
         if let Some(trace) = self.trace.as_mut() {
             trace.push(record);
         }
-    }
-
-    /// The widest closer run of `ch` at or after line `from`, counting only
-    /// closers written at `col` or deeper.
-    fn widest_from(&mut self, ch: u8, col: usize, from: usize) -> usize {
-        let lines = &self.lines;
-        let widest = self.by_column.entry((ch, col)).or_insert_with(|| {
-            let mut widest = vec![0; lines.len() + 1];
-            for j in (0..lines.len()).rev() {
-                widest[j] = widest[j + 1];
-                let (m_col, rest) = quoted_measure(lines[j]);
-                if m_col < col {
-                    continue;
-                }
-                if let Some((c, n)) = pure_fence(rest) {
-                    if c == ch {
-                        widest[j] = widest[j].max(n);
-                    }
-                }
-            }
-            widest
-        });
-        widest.get(from).copied().unwrap_or(0)
     }
 
     /// Whether line `next` holds a block at `col` under `depth` quote levels.
@@ -1124,17 +1098,11 @@ impl<'a> Walk<'a> {
                 return Form::Colon(colons, interrupts);
             }
         }
-        if let Some(open) = detect_fence_open(rest) {
-            let _ = open;
+        if detect_fence_open(rest).is_some() {
+            // An opener interrupts with or without a closer (carve#4018).
             let ch = rest.as_bytes()[0];
             let len = rest.bytes().take_while(|&b| b == ch).count();
-            // A closer below the owner's column never matches (CARVE-P0-014).
-            let owner_col = self.frames[owner].col;
-            let reachable = self.widest_from(ch, owner_col, at + 1) >= len;
-            if owner_para && !reachable {
-                return Form::Text;
-            }
-            return Form::Fence(Closer::Fence(ch, len), reachable, false);
+            return Form::Fence(Closer::Fence(ch, len), true, false);
         }
         if let Some(run) = comment_run(rest) {
             let lines = &self.lines;
@@ -1218,6 +1186,12 @@ pub(crate) fn restore_authored_columns(pos: &mut Pos) {
         pos.start_column = authored_column(&edits, pos.start_line, pos.start_column);
         pos.end_column = authored_column(&edits, pos.end_line, pos.end_column);
     });
+}
+
+/// The authored 0-based column of 0-based `column` on 1-based `line` of the
+/// walked source.
+pub(crate) fn authored_line_column(line: usize, column: usize) -> usize {
+    ACTIVE_EDITS.with(|cell| authored_column(&cell.borrow(), line, column + 1) - 1)
 }
 
 /// Map a 1-based `column` on 1-based `line` of the walked source to the

@@ -238,7 +238,7 @@ fn stacked_quote_plus_readings_shared_by_the_spec_model_and_carve_js() {
         ),
         (
             "- > > +\n    ```\nx\n```\n",
-            "<ul><li><blockquote><blockquote><pre><code>x</code></pre></blockquote></blockquote></li></ul>",
+            "<ul><li><blockquote><blockquote><p>+</p></blockquote></blockquote><pre><code></code></pre></li></ul><p>x</p><pre><code></code></pre>",
         ),
         (
             "- a\n  > - > +\n# h\n",

@@ -2,12 +2,12 @@
   {
     "id": "claim-control-1-inline-unclosed",
     "source": "> - prose\n>   ```\nlazy\n",
-    "html": "<blockquote><ul><li>prose\n<code>\nlazy</code></li></ul></blockquote>"
+    "html": "<blockquote><ul><li>prose\n      <pre><code></code></pre></li></ul></blockquote><p>lazy</p>"
   },
   {
     "id": "claim-control-1-inline-blank",
     "source": "> - prose\n>   ```\n> \nlazy\n",
-    "html": "<blockquote><ul><li>prose\n<code></code></li></ul></blockquote><p>lazy</p>"
+    "html": "<blockquote><ul><li>prose\n      <pre><code></code></pre></li></ul></blockquote><p>lazy</p>"
   },
   {
     "id": "claim-control-1-closed-code",
@@ -22,12 +22,12 @@
   {
     "id": "claim-control-2-inline-unclosed",
     "source": "> > - prose\n> >   ```\nlazy\n",
-    "html": "<blockquote><blockquote><ul><li>prose\n<code>\nlazy</code></li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li>prose\n        <pre><code></code></pre></li></ul></blockquote></blockquote><p>lazy</p>"
   },
   {
     "id": "claim-control-2-inline-blank",
     "source": "> > - prose\n> >   ```\n> > \nlazy\n",
-    "html": "<blockquote><blockquote><ul><li>prose\n<code></code></li></ul></blockquote></blockquote><p>lazy</p>"
+    "html": "<blockquote><blockquote><ul><li>prose\n        <pre><code></code></pre></li></ul></blockquote></blockquote><p>lazy</p>"
   },
   {
     "id": "claim-control-2-closed-code",
@@ -82,21 +82,21 @@
   {
     "id": "later-sibling-code-1-```",
     "source": "> - a\n>     ::: |\n>     ```\n>   :::\n> - sibling\n>   ```\n>   para\nlazy\n",
-    "html": "<blockquote><ul><li>a\n      <div class=\"line-block\"><p><code></code></p></div></li><li>sibling\n<code>\npara\nlazy</code></li></ul></blockquote>"
+    "html": "<blockquote><ul><li>a\n      <div class=\"line-block\"><p><code></code></p></div></li><li>sibling\n      <pre><code>para\n</code></pre></li></ul></blockquote><p>lazy</p>"
   },
   {
     "id": "later-sibling-code-1-~~~",
     "source": "> - a\n>     ::: |\n>     ~~~\n>   :::\n> - sibling\n>   ~~~\n>   para\nlazy\n",
-    "html": "<blockquote><ul><li>a\n      <div class=\"line-block\"><p>~~~</p></div></li><li>sibling\n~~~\npara\nlazy</li></ul></blockquote>"
+    "html": "<blockquote><ul><li>a\n      <div class=\"line-block\"><p>~~~</p></div></li><li>sibling\n      <pre><code>para\n</code></pre></li></ul></blockquote><p>lazy</p>"
   },
   {
     "id": "later-sibling-code-2-```",
     "source": "> > - a\n> >     ::: |\n> >     ```\n> >   :::\n> > - sibling\n> >   ```\n> >   para\nlazy\n",
-    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"line-block\"><p><code></code></p></div></li><li>sibling\n<code>\npara\nlazy</code></li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"line-block\"><p><code></code></p></div></li><li>sibling\n        <pre><code>para\n</code></pre></li></ul></blockquote></blockquote><p>lazy</p>"
   },
   {
     "id": "later-sibling-code-2-~~~",
     "source": "> > - a\n> >     ::: |\n> >     ~~~\n> >   :::\n> > - sibling\n> >   ~~~\n> >   para\nlazy\n",
-    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"line-block\"><p>~~~</p></div></li><li>sibling\n~~~\npara\nlazy</li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"line-block\"><p>~~~</p></div></li><li>sibling\n        <pre><code>para\n</code></pre></li></ul></blockquote></blockquote><p>lazy</p>"
   }
 ]

@@ -2,9 +2,9 @@
   {
     "id": "2606-0",
     "source": "- outer\n  - para\n    ```\n    code\n\n  # h\n    ```\n",
-    "html": "<ul>\n  <li>outer\n    <ul>\n      <li>para\n<code>\ncode</code></li>\n    </ul>\n    <h1 id=\"h\">h</h1>\n    <pre><code></code></pre>\n  </li>\n</ul>",
-    "carve": "- outer\n  - para\n    `\n    code`\n  # h\n  ```\n  ```\n",
-    "markdown": "- outer\n  - para\n    <code><!---->&#10;<!---->code</code>\n  # h\n  ```\n  ```\n"
+    "html": "<ul>\n  <li>outer\n    <ul>\n      <li>para\n        <pre><code>code\n\n</code></pre>\n      </li>\n    </ul>\n    <h1 id=\"h\">h</h1>\n    <pre><code></code></pre>\n  </li>\n</ul>",
+    "carve": "- outer\n  - para\n    ```\n    code\n\n    ```\n  # h\n  ```\n  ```\n",
+    "markdown": "- outer\n  - para\n    ```\n    code\n\n    ```\n  # h\n  ```\n  ```\n"
   },
   {
     "id": "2606-1",

@@ -10,7 +10,7 @@
 fn list_item_keeps_the_lazy_line_after_an_unterminated_fence() {
     assert_eq!(
         carve::to_html("- q\n  ```\ntail\n"),
-        "<ul>\n  <li>q\n<code>\ntail</code></li>\n</ul>"
+        "<ul>\n  <li>q\n    <pre><code></code></pre>\n  </li>\n</ul>\n<p>tail</p>"
     );
 }
 
@@ -18,6 +18,6 @@ fn list_item_keeps_the_lazy_line_after_an_unterminated_fence() {
 fn definition_keeps_the_lazy_line_after_an_unterminated_fence() {
     assert_eq!(
         carve::to_html(":: t\n:  a\n   ```\ntail\n"),
-        "<dl>\n  <dt>t</dt>\n  <dd>a\n<code>\ntail</code></dd>\n</dl>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>a</p>\n    <pre><code></code></pre>\n  </dd>\n</dl>\n<p>tail</p>"
     );
 }

@@ -73,8 +73,21 @@ pub fn count_declared_pairs(source: &str) -> Result<usize, &'static str> {
 pub fn expected_corpus_size() -> usize {
     let examples = spec_root().join("resources/examples");
     let mut count = 0;
-    for page in ["core.md", "extensions.md", "edge-cases.md"] {
-        let path = examples.join(page);
+    let mut pages = vec![examples.join("core.md"), examples.join("extensions.md")];
+    // The spec stores each edge-case section in its own file since carve#4132.
+    let edge_cases = examples.join("edge-cases");
+    if edge_cases.is_dir() {
+        let mut sections: Vec<_> = std::fs::read_dir(&edge_cases)
+            .unwrap_or_else(|error| panic!("read {}: {error}", edge_cases.display()))
+            .map(|entry| entry.expect("edge-case entry").path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "md"))
+            .collect();
+        sections.sort();
+        pages.extend(sections);
+    } else {
+        pages.push(examples.join("edge-cases.md"));
+    }
+    for path in pages {
         let source = std::fs::read_to_string(&path)
             .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
         count += count_declared_pairs(&source)

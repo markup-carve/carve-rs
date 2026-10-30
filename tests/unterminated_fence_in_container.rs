@@ -26,7 +26,7 @@ fn unterminated_fence_does_not_swallow_the_div_closer() {
 
     assert_eq!(
         html,
-        "<aside class=\"admonition note\" aria-label=\"Note\"> <pre><code>x </code></pre> </aside> <p>after</p>"
+        "<aside class=\"admonition note\" aria-label=\"Note\"> <pre><code>x ::: after </code></pre> </aside>"
     );
 }
 
@@ -41,7 +41,7 @@ fn unterminated_fence_after_a_blockquote_does_not_invent_a_div() {
         "invented a div with no source: {html}"
     );
     assert!(
-        html.ends_with("</aside> <p>after</p>"),
+        html.ends_with("<pre><code>::: after </code></pre> </aside>"),
         "`after` was written outside the aside: {html}"
     );
 }

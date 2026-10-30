@@ -43,7 +43,7 @@ fn check(data: &str, count: usize) {
 fn unclosed_code_fence_vectors() {
     check(
         include_str!("fixtures/lint-rule-vectors/unclosed-code-fence.json"),
-        16,
+        20,
     );
 }
 

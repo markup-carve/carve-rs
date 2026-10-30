@@ -2,7 +2,7 @@
   {
     "name": "3001 unterminated backtick",
     "source": ":: term\n: detail\n  ```\n  code\npayload\n ```\nafter\n",
-    "html": "<dl>\n  <dt>term</dt>\n  <dd>detail\n<code>\ncode\npayload\n</code>\nafter</dd>\n</dl>",
+    "html": "<dl>\n  <dt>term</dt>\n  <dd>\n    <p>detail</p>\n    <pre><code>code\n</code></pre>\n  </dd>\n</dl>\n<p>payload</p>\n<pre><code>after\n</code></pre>",
     "ast": {
       "type": "document",
       "children": [
@@ -27,26 +27,29 @@
                     {
                       "type": "text",
                       "value": "detail"
-                    },
-                    {
-                      "type": "soft_break"
-                    },
-                    {
-                      "type": "code",
-                      "value": "\ncode\npayload\n"
-                    },
-                    {
-                      "type": "soft_break"
-                    },
-                    {
-                      "type": "text",
-                      "value": "after"
                     }
                   ]
+                },
+                {
+                  "type": "code_block",
+                  "content": "code\n"
                 }
               ]
             }
           ]
+        },
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "text",
+              "value": "payload"
+            }
+          ]
+        },
+        {
+          "type": "code_block",
+          "content": "after\n"
         }
       ]
     }
@@ -54,7 +57,7 @@
   {
     "name": "3001 unterminated tilde",
     "source": ":: term\n: detail\n  ~~~\n  code\npayload\n ~~~\nafter\n",
-    "html": "<dl>\n  <dt>term</dt>\n  <dd>detail\n~~~\ncode\npayload\n~~~\nafter</dd>\n</dl>",
+    "html": "<dl>\n  <dt>term</dt>\n  <dd>\n    <p>detail</p>\n    <pre><code>code\n</code></pre>\n  </dd>\n</dl>\n<p>payload</p>\n<pre><code>after\n</code></pre>",
     "ast": {
       "type": "document",
       "children": [
@@ -79,47 +82,29 @@
                     {
                       "type": "text",
                       "value": "detail"
-                    },
-                    {
-                      "type": "soft_break"
-                    },
-                    {
-                      "type": "text",
-                      "value": "~~~"
-                    },
-                    {
-                      "type": "soft_break"
-                    },
-                    {
-                      "type": "text",
-                      "value": "code"
-                    },
-                    {
-                      "type": "soft_break"
-                    },
-                    {
-                      "type": "text",
-                      "value": "payload"
-                    },
-                    {
-                      "type": "soft_break"
-                    },
-                    {
-                      "type": "text",
-                      "value": "~~~"
-                    },
-                    {
-                      "type": "soft_break"
-                    },
-                    {
-                      "type": "text",
-                      "value": "after"
                     }
                   ]
+                },
+                {
+                  "type": "code_block",
+                  "content": "code\n"
                 }
               ]
             }
           ]
+        },
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "text",
+              "value": "payload"
+            }
+          ]
+        },
+        {
+          "type": "code_block",
+          "content": "after\n"
         }
       ]
     }
@@ -237,7 +222,7 @@
   {
     "name": "3001 quote-bound closer",
     "source": ":: term\n: detail\n  ```\n  code\n> payload\n  ```\nafter\n",
-    "html": "<dl>\n  <dt>term</dt>\n  <dd>detail\n<code>\ncode</code></dd>\n</dl>\n<blockquote><p>payload\n<code>\nafter</code></p></blockquote>",
+    "html": "<dl>\n  <dt>term</dt>\n  <dd>\n    <p>detail</p>\n    <pre><code>code\n</code></pre>\n  </dd>\n</dl>\n<blockquote><p>payload</p></blockquote>\n<pre><code>after\n</code></pre>",
     "ast": {
       "type": "document",
       "children": [
@@ -262,15 +247,12 @@
                     {
                       "type": "text",
                       "value": "detail"
-                    },
-                    {
-                      "type": "soft_break"
-                    },
-                    {
-                      "type": "code",
-                      "value": "\ncode"
                     }
                   ]
+                },
+                {
+                  "type": "code_block",
+                  "content": "code\n"
                 }
               ]
             }
@@ -285,17 +267,14 @@
                 {
                   "type": "text",
                   "value": "payload"
-                },
-                {
-                  "type": "soft_break"
-                },
-                {
-                  "type": "code",
-                  "value": "\nafter"
                 }
               ]
             }
           ]
+        },
+        {
+          "type": "code_block",
+          "content": "after\n"
         }
       ]
     }
@@ -303,7 +282,7 @@
   {
     "name": "3001 quote-plus-bound closer",
     "source": ":: term\n: body\n  ```\n> +\n  ```\nnext\n",
-    "html": "<dl>\n  <dt>term</dt>\n  <dd>body\n<code></code></dd>\n</dl>\n<blockquote><p>+\n<code>\nnext</code></p></blockquote>",
+    "html": "<dl>\n  <dt>term</dt>\n  <dd>\n    <p>body</p>\n    <pre><code></code></pre>\n  </dd>\n</dl>\n<blockquote><p>+</p></blockquote>\n<pre><code>next\n</code></pre>",
     "ast": {
       "type": "document",
       "children": [
@@ -328,15 +307,12 @@
                     {
                       "type": "text",
                       "value": "body"
-                    },
-                    {
-                      "type": "soft_break"
-                    },
-                    {
-                      "type": "code",
-                      "value": ""
                     }
                   ]
+                },
+                {
+                  "type": "code_block",
+                  "content": ""
                 }
               ]
             }
@@ -351,17 +327,14 @@
                 {
                   "type": "text",
                   "value": "+"
-                },
-                {
-                  "type": "soft_break"
-                },
-                {
-                  "type": "code",
-                  "value": "\nnext"
                 }
               ]
             }
           ]
+        },
+        {
+          "type": "code_block",
+          "content": "next\n"
         }
       ]
     }
@@ -369,7 +342,7 @@
   {
     "name": "3001 spaced quote-plus-bound closer",
     "source": ":: term\n: body\n  ```\n>   +\n  ```\nnext\n",
-    "html": "<dl>\n  <dt>term</dt>\n  <dd>body\n<code></code></dd>\n</dl>\n<blockquote><p>+\n<code>\nnext</code></p></blockquote>",
+    "html": "<dl>\n  <dt>term</dt>\n  <dd>\n    <p>body</p>\n    <pre><code></code></pre>\n  </dd>\n</dl>\n<blockquote><p>+</p></blockquote>\n<pre><code>next\n</code></pre>",
     "ast": {
       "type": "document",
       "children": [
@@ -394,15 +367,12 @@
                     {
                       "type": "text",
                       "value": "body"
-                    },
-                    {
-                      "type": "soft_break"
-                    },
-                    {
-                      "type": "code",
-                      "value": ""
                     }
                   ]
+                },
+                {
+                  "type": "code_block",
+                  "content": ""
                 }
               ]
             }
@@ -417,17 +387,14 @@
                 {
                   "type": "text",
                   "value": "+"
-                },
-                {
-                  "type": "soft_break"
-                },
-                {
-                  "type": "code",
-                  "value": "\nnext"
                 }
               ]
             }
           ]
+        },
+        {
+          "type": "code_block",
+          "content": "next\n"
         }
       ]
     }

@@ -1699,8 +1699,11 @@ mod shared_colon_work_tests {
                         },
                     );
                     // Rule A (carve#3885): an indented fence after `after` opens at
-                    // the document level, so every repetition is a code block.
-                    assert_eq!(html.matches("<pre>").count(), count);
+                    // the document level, so every repetition is a code block. With
+                    // `after` retained in the item, the item's unclosed `~~~` holds
+                    // every repetition (carve#4018).
+                    let blocks = if retained { 1 } else { count };
+                    assert_eq!(html.matches("<pre>").count(), blocks);
                     assert_eq!(html.matches("after").count(), count);
                     assert!(
                         source_map::MAPPED_SOURCE_SCAN_BYTES.with(Cell::get) <= source.len() * 64,
@@ -2588,82 +2591,6 @@ mod single_line_open_paragraph_probes {
                     "{prefix}{terminal}"
                 );
             }
-        }
-    }
-}
-
-#[cfg(test)]
-mod hosted_inline_fence_lookup_work {
-    use super::*;
-    #[test]
-    fn indexed_closers_match_scans_at_each_authorized_column() {
-        for level in [0, 1, 2] {
-            let prefix = "> ".repeat(level);
-            let mut body = LineBuffer::default();
-            for text in [
-                "``` info",
-                "  ```",
-                "    ````",
-                "~~~",
-                "    ~~~~~",
-                "``` bad",
-                " L tail",
-                "``````",
-            ] {
-                body.push_at(format!("{prefix}{text}"), None, None);
-            }
-            for from in 0..body.lines.len() {
-                for column in [0, 2, 4] {
-                    for alternate in [None, Some(0), Some(2)] {
-                        for marker in ["```", "````", "~~~~"] {
-                            let open = detect_fence_open(marker).unwrap();
-                            let scanned = closer_ahead(&body.lines, from, level, |text| {
-                                let seen = indent_columns(text);
-                                (seen == column || alternate == Some(seen))
-                                    && is_fence_close(trim_ascii_start(text), open)
-                            });
-                            assert_eq!(
-                                indexed_code_closes(
-                                    &body.lines,
-                                    from,
-                                    level,
-                                    column,
-                                    alternate,
-                                    open,
-                                    &mut LiteralCodeLookup::default()
-                                ),
-                                scanned
-                            );
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn repeated_unclosed_openers_share_one_index() {
-        for count in [256, 4096] {
-            let mut body = LineBuffer::default();
-            for _ in 0..count {
-                body.push_at("    ``` language".to_owned(), None, None);
-            }
-            let mut lookup = LiteralCodeLookup::default();
-            let open = detect_fence_open("``` language").unwrap();
-            LITERAL_CODE_LINES.with(|work| work.set(0));
-            for from in 0..count {
-                assert!(!indexed_code_closes(
-                    &body.lines,
-                    from,
-                    0,
-                    4,
-                    None,
-                    open,
-                    &mut lookup
-                ));
-            }
-            assert!(LITERAL_CODE_LINES.with(Cell::get) > 0);
-            assert!(LITERAL_CODE_LINES.with(Cell::get) <= count);
         }
     }
 }

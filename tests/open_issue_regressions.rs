@@ -98,7 +98,7 @@ fn the_writer_keeps_a_comment_bounded_by_a_forced_span() {
 fn a_fence_closer_must_be_at_the_items_content_column() {
     let source = "- a\n  ```\n  b\n y\n ```\n";
     let html = to_html(source);
-    assert_eq!(html, "<ul>\n  <li>a\n<code>\nb\ny\n</code></li>\n</ul>");
+    assert_eq!(html, "<ul>\n  <li>a\n    <pre><code>b\n</code></pre>\n  </li>\n</ul>\n<p>y</p>\n<pre><code></code></pre>");
 }
 
 #[test]
@@ -110,7 +110,7 @@ fn a_fence_closer_past_a_below_column_line_still_opens_the_block() {
         "fence stayed inline: {html}"
     );
     assert!(
-        html.ends_with("<p>y\n<code></code></p>"),
+        html.ends_with("<p>y</p>\n<pre><code></code></pre>"),
         "wrong tail: {html}"
     );
 }
@@ -121,7 +121,7 @@ fn an_item_fence_is_not_reinterpreted_after_a_blockquote() {
     let html = to_html(source);
     assert_eq!(
         html,
-        "<ul>\n  <li>\n    <blockquote><p>q</p></blockquote>\n    <pre><code>b\n</code></pre>\n  </li>\n</ul>\n<p>y\n<code></code></p>"
+        "<ul>\n  <li>\n    <blockquote><p>q</p></blockquote>\n    <pre><code>b\n</code></pre>\n  </li>\n</ul>\n<p>y</p>\n<pre><code></code></pre>"
     );
 }
 
@@ -130,7 +130,7 @@ fn an_unclosed_flush_fence_stays_in_the_definition_paragraph() {
     let html = to_html(":: t\n: a\n```\n");
     assert_eq!(
         html,
-        "<dl>\n  <dt>t</dt>\n  <dd>a\n<code></code></dd>\n</dl>"
+        "<dl>\n  <dt>t</dt>\n  <dd>a</dd>\n</dl>\n<pre><code></code></pre>"
     );
 }
 
@@ -139,7 +139,7 @@ fn a_definition_fence_uses_a_closer_past_a_below_column_line() {
     let source = ":: t\n: a\n  ```\n  b\n y\n  ```\n";
     assert_eq!(
         to_html(source),
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>a</p>\n    <pre><code>b\n</code></pre>\n  </dd>\n</dl>\n<p>y\n<code></code></p>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>a</p>\n    <pre><code>b\n</code></pre>\n  </dd>\n</dl>\n<p>y</p>\n<pre><code></code></pre>"
     );
 }
 

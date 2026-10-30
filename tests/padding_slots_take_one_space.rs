@@ -82,7 +82,7 @@ fn a_code_fence_opener_takes_exactly_one_space() {
     // paragraph.
     assert_eq!(
         to_html("```  php\nx = 1\n```\n").trim(),
-        "<p><code>  php\nx = 1\n</code></p>"
+        "<p><code>  php\nx = 1</code></p>\n<pre><code></code></pre>"
     );
 }
 

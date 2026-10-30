@@ -557,7 +557,7 @@ impl NestedFenceReplay {
             return false;
         }
         let interrupts = match detect_fence_open(text) {
-            Some(open) => closer_ahead(pos.lines, pos.at, pos.level, |l| is_fence_close(l, open)),
+            Some(_open) => true,
             None => interrupts_paragraph_with_rest(text, &[]),
         };
         !interrupts
@@ -584,21 +584,9 @@ impl NestedFenceReplay {
                 .hosts
                 .last()
                 .is_some_and(|&(_, floor, _)| column < floor)
-                && detect_fence_open(trimmed).is_some_and(|open| {
-                    indexed_code_closes(
-                        pos.lines,
-                        pos.at,
-                        pos.level,
-                        column,
-                        None,
-                        open,
-                        &mut self.literal_code_lookup,
-                    )
-                }))
+                && detect_fence_open(trimmed).is_some())
             && !match detect_fence_open(text) {
-                Some(open) => closer_ahead(pos.lines, pos.at, pos.level, |line| {
-                    is_fence_close(line, open)
-                }),
+                Some(_open) => true,
                 None => interrupts_paragraph_with_rest(text, &[]),
             }
     }
@@ -667,30 +655,13 @@ impl NestedFenceReplay {
             return;
         }
         // The host holds the fence whether the opener sits AT its
-        // content column or past it. A fence after an open paragraph
-        // still needs a closer ahead (section 10). Inside a colon
-        // paragraph it must reach the opener's authored column.
-        if line.block_start
-            || !here.para
-            || indexed_code_closes(
-                pos.lines,
-                pos.at,
-                pos.level,
-                line.col,
-                here.colons.is_empty().then_some(line.floor),
-                open,
-                &mut self.literal_code_lookup,
-            )
-        {
-            self.fence_count += 1;
-            here.fence_ordinal = self.fence_count;
-            here.host_fence = Some((open, line.floor, line.col, false));
-            here.para = false;
-            here.colon_absorption = false;
-            here.by_fence = true;
-            return;
-        }
-        here.para = true;
+        // content column or past it, closer or not (carve#4018).
+        self.fence_count += 1;
+        here.fence_ordinal = self.fence_count;
+        here.host_fence = Some((open, line.floor, line.col, false));
+        here.para = false;
+        here.colon_absorption = false;
+        here.by_fence = true;
     }
 
     fn replay_unhosted(
@@ -702,28 +673,13 @@ impl NestedFenceReplay {
     ) {
         let here = &mut self.chain[pos.level];
         if let Some(open) = detect_fence_open(text) {
-            // At block start a fence opens with or without a closer; after
-            // a paragraph it needs one (§10), or it is inline verbatim.
-            if !here.para
-                || indexed_code_closes(
-                    pos.lines,
-                    pos.at,
-                    pos.level,
-                    0,
-                    None,
-                    open,
-                    &mut self.literal_code_lookup,
-                )
-            {
-                self.fence_count += 1;
-                here.fence_ordinal = self.fence_count;
-                here.fence = Some(open);
-                here.para = false;
-                here.colon_absorption = false;
-                here.by_fence = true;
-                return;
-            }
-            here.para = true;
+            // A fence opens with or without a closer (carve#4018).
+            self.fence_count += 1;
+            here.fence_ordinal = self.fence_count;
+            here.fence = Some(open);
+            here.para = false;
+            here.colon_absorption = false;
+            here.by_fence = true;
             return;
         }
         here.replay_text(pos, text, after_comment, absorption_text);
@@ -1283,36 +1239,6 @@ impl LiteralCodeIndex {
             .get(&open.fence_char)?
             .next(from, open.fence_len)
     }
-
-    fn next(&self, from: usize, column: usize, open: FenceOpen) -> Option<usize> {
-        self.columns
-            .get(&(open.fence_char, column))?
-            .next(from, open.fence_len)
-    }
-}
-
-pub(in crate::parse) fn indexed_code_closes(
-    lines: &[SourceLine],
-    from: usize,
-    level: usize,
-    column: usize,
-    alternate_column: Option<usize>,
-    open: FenceOpen,
-    lookup: &mut LiteralCodeLookup,
-) -> bool {
-    let index = lookup.indices.entry(level).or_default();
-    index.refresh(lines, level, from);
-    let closer = index
-        .next(from, column, open)
-        .into_iter()
-        .chain(alternate_column.and_then(|column| index.next(from, column, open)))
-        .min();
-    closer.is_some_and(|close| {
-        index
-            .boundaries
-            .get(index.boundaries.partition_point(|&at| at <= from))
-            .map_or(true, |&end| close < end)
-    })
 }
 
 pub(in crate::parse) fn literal_code_closes_cursor(
@@ -1999,42 +1925,8 @@ impl<'a> QuoteBody<'a> {
             );
             cur.pos += 1;
         }
-        self.keep_unclosed_fence_line(cur, attached_start, end, strip_follower_marker);
         self.inner.push_synthetic_blank();
         self.para_open = ParaOpen::Closed;
-    }
-
-    // An unclosed fence the `+` attached keeps an empty last line, as the spec
-    // model and carve-js read it, unless the document ends on its last line
-    // (carve#3421).
-    fn keep_unclosed_fence_line(
-        &mut self,
-        cur: &LineCursor<'_>,
-        attached_start: usize,
-        end: usize,
-        strip_follower_marker: bool,
-    ) {
-        // Lines kept with a nested quote's marker carry it on the empty line too.
-        let nested_marker = attached_start < end
-            && !strip_follower_marker
-            && strip_blockquote_prefix(cur.lines.at(attached_start)).is_some();
-        let attached_text = |at: usize| {
-            let line = cur.lines.at(at);
-            trim_ascii_start(if strip_follower_marker || nested_marker {
-                strip_blockquote_prefix(line).unwrap_or(line)
-            } else {
-                line
-            })
-        };
-        if attached_start < end
-            && !crate::parse::is_unterminated_source_line(cur.source_line(end - 1))
-            && detect_fence_open(attached_text(attached_start)).is_some_and(|open| {
-                !(attached_start + 1..end).any(|at| is_fence_close(attached_text(at), open))
-            })
-        {
-            let empty = if nested_marker { ">" } else { "" };
-            self.inner.push_at(empty.to_string(), None, None);
-        }
     }
 
     fn read_quoted_line(
@@ -2155,7 +2047,7 @@ impl<'a> QuoteBody<'a> {
         } else {
             // After an open paragraph a fence interrupts only with a
             // matching closer ahead (§10); else it is inline verbatim.
-            let has_closer = self.fence_closers.contains(cur.lines, cur.pos, open);
+            let has_closer = true || self.fence_closers.contains(cur.lines, cur.pos, open);
             if has_closer {
                 self.opaque_tail = true;
                 self.fence_count += 1;
@@ -2465,9 +2357,19 @@ impl<'a> QuoteBody<'a> {
             }
             // `inner` always holds the quote's first content line, so a
             // leading blank separates the attached block from it.
+            // A trailing blank inside a fence left open would become its payload.
+            let open_fence = attached.lines.first().and_then(|first| {
+                detect_fence_open(trim_ascii_start(&first.text)).filter(|&open| {
+                    !attached.lines[1..]
+                        .iter()
+                        .any(|line| is_fence_close(trim_ascii_start(&line.text), open))
+                })
+            });
             self.inner.push_synthetic_blank();
             self.inner.lines.extend(attached.lines);
-            self.inner.push_synthetic_blank();
+            if open_fence.is_none() {
+                self.inner.push_synthetic_blank();
+            }
             self.para_open = ParaOpen::Closed;
             self.table = TableRun::default();
             self.last_nested = false;

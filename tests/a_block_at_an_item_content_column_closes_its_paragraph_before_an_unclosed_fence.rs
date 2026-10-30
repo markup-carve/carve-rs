@@ -4,7 +4,9 @@
 
 const ENDS_AT_CLOSER: &str =
     "  <pre><code>code\n::::\n</code></pre>\n</aside>\n<p>after <strong>b</strong></p>";
-const RUNS_ON: &str = "<p>after <strong>b</strong></p>\n    </div>";
+const RUNS_ON: &str =
+    "more\n    </li>\n  </ul>\n  <pre><code>code\n::::\n:::\nafter *b*\n</code></pre>\n</aside>";
+const RUNS_TO_END: &str = "  <pre><code>code\n::::\n:::\nafter *b*\n</code></pre>\n</aside>";
 
 const CLOSING: &[(&str, &[&str])] = &[
     ("link definition", &["- para", "  [r]: /u"]),
@@ -35,17 +37,17 @@ const OPEN: &[(&str, &[&str], &str)] = &[
     (
         "definition below the column",
         &["- para", " [r]: /u"],
-        ENDS_AT_CLOSER,
+        RUNS_TO_END,
     ),
     (
         "definition below the column of an item with trailing spaces",
         &["- para  ", " [r]: /u"],
-        ENDS_AT_CLOSER,
+        RUNS_TO_END,
     ),
     (
         "table row below the column",
         &["10. para", "   | t |"],
-        ENDS_AT_CLOSER,
+        RUNS_TO_END,
     ),
     (
         "item prose after a table row",

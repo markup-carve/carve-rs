@@ -481,9 +481,22 @@ fn collect_parser_events(
                 marker,
                 end_line,
             } => {
-                if !fences.contains(&(pos.start_line, pos.start_column)) {
+                // A top-level opener is read from a dedented line, so take its
+                // column from the code block the parse placed there.
+                let column = if fences.contains(&(pos.start_line, pos.start_column)) {
+                    pos.start_column
+                } else if pos.start_column == 1 {
+                    let indented = lines
+                        .get(pos.start_line.saturating_sub(1))
+                        .map_or(0, |line| line.len() - line.trim_start_matches(' ').len());
+                    if indented > 0 && fences.contains(&(pos.start_line, indented + 1)) {
+                        indented + 1
+                    } else {
+                        continue;
+                    }
+                } else {
                     continue;
-                }
+                };
                 let ending = if *end_line > lines.len()
                     || (*end_line == lines.len() && lines.last() == Some(&""))
                 {
@@ -496,7 +509,7 @@ fn collect_parser_events(
                 } else {
                     format!("it ends at the end of its container on line {end_line}")
                 };
-                (pos.start_line, pos.start_column, "unclosed-code-fence", format!("The {marker} fence opened here has no closing fence; {ending}. Add a closing {marker} where the code should stop."), marker.len())
+                (pos.start_line, column, "unclosed-code-fence", format!("The {marker} fence opened here has no closing fence; {ending}. Add a closing {marker} where the code should stop."), marker.len())
             }
             LintEvent::Marker {
                 line,

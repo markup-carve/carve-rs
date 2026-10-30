@@ -39,14 +39,14 @@ fn folded_fence_text_before_a_blank_leaves_two_item_paragraphs() {
         let after_letter = format!("- o\n  {run}\nx\n\n  t\n");
         let first = carve::to_html(&before_closer);
         let second = carve::to_html(&after_letter);
-        assert!(first.contains("<li><p>h"), "{run}: {first}");
-        assert!(first.contains("<p>b"), "{run}: {first}");
-        assert!(second.contains("<li><p>o"), "{run}: {second}");
+        assert!(first.contains("<li>h"), "{run}: {first}");
+        assert!(first.contains("<pre><code>\nb"), "{run}: {first}");
+        assert!(second.contains("<li>o"), "{run}: {second}");
         assert!(second.contains("<p>t"), "{run}: {second}");
         if run == "```" {
             assert_eq!(
                 second.trim_end(),
-                "<ul>\n  <li><p>o\n<code>\nx</code></p>\n    <p>t</p>\n  </li>\n</ul>"
+                "<ul>\n  <li>o\n    <pre><code></code></pre>\n  </li>\n</ul>\n<p>x</p>\n<p>t</p>"
             );
         }
     }
@@ -55,11 +55,11 @@ fn folded_fence_text_before_a_blank_leaves_two_item_paragraphs() {
 #[test]
 fn unclosed_folded_fence_without_a_later_closer_still_leaves_two_paragraphs() {
     let html = carve::to_html("- h\n  ```\n\n  b\n");
-    assert!(html.contains("<li><p>h"), "{html}");
-    assert!(html.contains("<p>b"), "{html}");
+    assert!(html.contains("<li>h"), "{html}");
+    assert!(html.contains("<pre><code>\nb"), "{html}");
     assert_eq!(
         carve::to_html("- h\n  ```\n\n  b\n```\n").trim_end(),
-        "<ul>\n  <li><p>h\n<code></code></p>\n    <p>b\n<code></code></p>\n  </li>\n</ul>"
+        "<ul>\n  <li>h\n    <pre><code>\nb\n</code></pre>\n  </li>\n</ul>\n<pre><code></code></pre>"
     );
 }
 
@@ -67,10 +67,10 @@ fn unclosed_folded_fence_without_a_later_closer_still_leaves_two_paragraphs() {
 fn folded_fence_canonical_neighbors_keep_their_ownership() {
     assert_eq!(
         carve::to_html("- o\n  ```\n```\n\n  t\n"),
-        "<ul>\n  <li><p>o\n<code>\n</code></p>\n    <p>t</p>\n  </li>\n</ul>"
+        "<ul>\n  <li>o\n    <pre><code></code></pre>\n  </li>\n</ul>\n<pre><code>\n  t\n</code></pre>"
     );
     assert_eq!(
         carve::to_html("- o\n  - h\n    ```\n```\n"),
-        "<ul>\n  <li>o\n    <ul>\n      <li>h\n<code>\n</code></li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>o\n    <ul>\n      <li>h\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code></code></pre>"
     );
 }

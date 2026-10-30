@@ -1,67 +1,67 @@
 {
  "o4c0t2": {
   "source": "- outer\n  - head\n    ```\n    a\n```\n\n  tail\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n  tail\n</code></pre>"
  },
  "o4c0t2-2blank": {
   "source": "- outer\n  - head\n    ```\n    a\n```\n\n\n  tail\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n\n  tail\n</code></pre>"
  },
  "o4c0t4": {
   "source": "- outer\n  - head\n    ```\n    a\n```\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n    tail\n</code></pre>"
  },
  "o4c0t4-2blank": {
   "source": "- outer\n  - head\n    ```\n    a\n```\n\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n\n    tail\n</code></pre>"
  },
  "o4c1t2": {
   "source": "- outer\n  - head\n    ```\n    a\n ```\n\n  tail\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n tail\n</code></pre>"
  },
  "o4c1t2-2blank": {
   "source": "- outer\n  - head\n    ```\n    a\n ```\n\n\n  tail\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n\n tail\n</code></pre>"
  },
  "o4c1t4": {
   "source": "- outer\n  - head\n    ```\n    a\n ```\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n   tail\n</code></pre>"
  },
  "o4c1t4-2blank": {
   "source": "- outer\n  - head\n    ```\n    a\n ```\n\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n\n   tail\n</code></pre>"
  },
  "o4c2t2": {
   "source": "- outer\n  - head\n    ```\n    a\n  ```\n\n  tail\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>"
  },
  "o4c2t2-2blank": {
   "source": "- outer\n  - head\n    ```\n    a\n  ```\n\n\n  tail\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n\ntail\n</code></pre>\n  </li>\n</ul>"
  },
  "o4c2t4": {
   "source": "- outer\n  - head\n    ```\n    a\n  ```\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n  tail\n</code></pre>\n  </li>\n</ul>"
  },
  "o4c2t4-2blank": {
   "source": "- outer\n  - head\n    ```\n    a\n  ```\n\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n\n  tail\n</code></pre>\n  </li>\n</ul>"
  },
  "o4c3t2": {
   "source": "- outer\n  - head\n    ```\n    a\n   ```\n\n  tail\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>"
  },
  "o4c3t2-2blank": {
   "source": "- outer\n  - head\n    ```\n    a\n   ```\n\n\n  tail\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n\ntail\n</code></pre>\n  </li>\n</ul>"
  },
  "o4c3t4": {
   "source": "- outer\n  - head\n    ```\n    a\n   ```\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n tail\n</code></pre>\n  </li>\n</ul>"
  },
  "o4c3t4-2blank": {
   "source": "- outer\n  - head\n    ```\n    a\n   ```\n\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n\n tail\n</code></pre>\n  </li>\n</ul>"
  },
  "o4c4t2": {
   "source": "- outer\n  - head\n    ```\n    a\n    ```\n\n  tail\n",
@@ -81,67 +81,67 @@
  },
  "o5c0t2": {
   "source": "- outer\n  - head\n     ```\n     a\n```\n\n  tail\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n  tail\n</code></pre>"
  },
  "o5c0t2-2blank": {
   "source": "- outer\n  - head\n     ```\n     a\n```\n\n\n  tail\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n\n  tail\n</code></pre>"
  },
  "o5c0t4": {
   "source": "- outer\n  - head\n     ```\n     a\n```\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n    tail\n</code></pre>"
  },
  "o5c0t4-2blank": {
   "source": "- outer\n  - head\n     ```\n     a\n```\n\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n\n    tail\n</code></pre>"
  },
  "o5c1t2": {
   "source": "- outer\n  - head\n     ```\n     a\n ```\n\n  tail\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n tail\n</code></pre>"
  },
  "o5c1t2-2blank": {
   "source": "- outer\n  - head\n     ```\n     a\n ```\n\n\n  tail\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n\n tail\n</code></pre>"
  },
  "o5c1t4": {
   "source": "- outer\n  - head\n     ```\n     a\n ```\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n   tail\n</code></pre>"
  },
  "o5c1t4-2blank": {
   "source": "- outer\n  - head\n     ```\n     a\n ```\n\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n\n   tail\n</code></pre>"
  },
  "o5c2t2": {
   "source": "- outer\n  - head\n     ```\n     a\n  ```\n\n  tail\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>"
  },
  "o5c2t2-2blank": {
   "source": "- outer\n  - head\n     ```\n     a\n  ```\n\n\n  tail\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n\ntail\n</code></pre>\n  </li>\n</ul>"
  },
  "o5c2t4": {
   "source": "- outer\n  - head\n     ```\n     a\n  ```\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n  tail\n</code></pre>\n  </li>\n</ul>"
  },
  "o5c2t4-2blank": {
   "source": "- outer\n  - head\n     ```\n     a\n  ```\n\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n\n  tail\n</code></pre>\n  </li>\n</ul>"
  },
  "o5c3t2": {
   "source": "- outer\n  - head\n     ```\n     a\n   ```\n\n  tail\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>"
  },
  "o5c3t2-2blank": {
   "source": "- outer\n  - head\n     ```\n     a\n   ```\n\n\n  tail\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n\ntail\n</code></pre>\n  </li>\n</ul>"
  },
  "o5c3t4": {
   "source": "- outer\n  - head\n     ```\n     a\n   ```\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n tail\n</code></pre>\n  </li>\n</ul>"
  },
  "o5c3t4-2blank": {
   "source": "- outer\n  - head\n     ```\n     a\n   ```\n\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n\n tail\n</code></pre>\n  </li>\n</ul>"
  },
  "o5c4t2": {
   "source": "- outer\n  - head\n     ```\n     a\n    ```\n\n  tail\n",
@@ -161,67 +161,67 @@
  },
  "o6c0t2": {
   "source": "- outer\n  - head\n      ```\n      a\n```\n\n  tail\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n  tail\n</code></pre>"
  },
  "o6c0t2-2blank": {
   "source": "- outer\n  - head\n      ```\n      a\n```\n\n\n  tail\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n\n  tail\n</code></pre>"
  },
  "o6c0t4": {
   "source": "- outer\n  - head\n      ```\n      a\n```\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n    tail\n</code></pre>"
  },
  "o6c0t4-2blank": {
   "source": "- outer\n  - head\n      ```\n      a\n```\n\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n\n    tail\n</code></pre>"
  },
  "o6c1t2": {
   "source": "- outer\n  - head\n      ```\n      a\n ```\n\n  tail\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n tail\n</code></pre>"
  },
  "o6c1t2-2blank": {
   "source": "- outer\n  - head\n      ```\n      a\n ```\n\n\n  tail\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n\n tail\n</code></pre>"
  },
  "o6c1t4": {
   "source": "- outer\n  - head\n      ```\n      a\n ```\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n   tail\n</code></pre>"
  },
  "o6c1t4-2blank": {
   "source": "- outer\n  - head\n      ```\n      a\n ```\n\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n\n   tail\n</code></pre>"
  },
  "o6c2t2": {
   "source": "- outer\n  - head\n      ```\n      a\n  ```\n\n  tail\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>"
  },
  "o6c2t2-2blank": {
   "source": "- outer\n  - head\n      ```\n      a\n  ```\n\n\n  tail\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n\ntail\n</code></pre>\n  </li>\n</ul>"
  },
  "o6c2t4": {
   "source": "- outer\n  - head\n      ```\n      a\n  ```\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n  tail\n</code></pre>\n  </li>\n</ul>"
  },
  "o6c2t4-2blank": {
   "source": "- outer\n  - head\n      ```\n      a\n  ```\n\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n\n  tail\n</code></pre>\n  </li>\n</ul>"
  },
  "o6c3t2": {
   "source": "- outer\n  - head\n      ```\n      a\n   ```\n\n  tail\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>"
  },
  "o6c3t2-2blank": {
   "source": "- outer\n  - head\n      ```\n      a\n   ```\n\n\n  tail\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n\ntail\n</code></pre>\n  </li>\n</ul>"
  },
  "o6c3t4": {
   "source": "- outer\n  - head\n      ```\n      a\n   ```\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n tail\n</code></pre>\n  </li>\n</ul>"
  },
  "o6c3t4-2blank": {
   "source": "- outer\n  - head\n      ```\n      a\n   ```\n\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n\n tail\n</code></pre>\n  </li>\n</ul>"
  },
  "o6c4t2": {
   "source": "- outer\n  - head\n      ```\n      a\n    ```\n\n  tail\n",
@@ -241,99 +241,99 @@
  },
  "tilde-c0t4": {
   "source": "- outer\n  - head\n     ~~~\n     a\n~~~\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n~~~\na\n~~~</p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n    tail\n</code></pre>"
  },
  "ordered-c0t5": {
   "source": "1. outer\n   - head\n      ```\n      a\n```\n\n     tail\n",
-  "html": "<ol>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ol>"
+  "html": "<ol>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ol>\n<pre><code>\n     tail\n</code></pre>"
  },
  "quote-c0t4": {
   "source": "> - outer\n>   - head\n>      ```\n>      a\n>```\n>\n>     tail\n",
-  "html": "<blockquote>\n  <ul>\n    <li>outer\n      <ul>\n        <li><p>head\n<code>\na\n&gt;</code></p>\n          <p>tail</p>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>"
+  "html": "<blockquote>\n  <ul>\n    <li>outer\n      <ul>\n        <li>head\n          <pre><code>a\n</code></pre>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<p>&gt;<code></code></p>\n<blockquote><p>tail</p></blockquote>"
  },
  "more-c0t4": {
   "source": "- outer\n  - head\n     ```\n     a\n```\n\n    tail\n\n    more\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n        <p>more</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n    tail\n\n    more\n</code></pre>"
  },
  "tilde-c1t4": {
   "source": "- outer\n  - head\n     ~~~\n     a\n ~~~\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n~~~\na\n~~~</p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n   tail\n</code></pre>"
  },
  "ordered-c1t5": {
   "source": "1. outer\n   - head\n      ```\n      a\n ```\n\n     tail\n",
-  "html": "<ol>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ol>"
+  "html": "<ol>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ol>\n<pre><code>\n    tail\n</code></pre>"
  },
  "quote-c1t4": {
   "source": "> - outer\n>   - head\n>      ```\n>      a\n> ```\n>\n>     tail\n",
-  "html": "<blockquote>\n  <ul>\n    <li>outer\n      <ul>\n        <li><p>head\n<code>\na\n</code></p>\n          <p>tail</p>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>"
+  "html": "<blockquote>\n  <ul>\n    <li>outer\n      <ul>\n        <li>head\n          <pre><code>a\n</code></pre>\n        </li>\n      </ul>\n    </li>\n  </ul>\n  <pre><code>\n    tail\n</code></pre>\n</blockquote>"
  },
  "more-c1t4": {
   "source": "- outer\n  - head\n     ```\n     a\n ```\n\n    tail\n\n    more\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n        <p>more</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n   tail\n\n   more\n</code></pre>"
  },
  "tilde-c2t4": {
   "source": "- outer\n  - head\n     ~~~\n     a\n  ~~~\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n~~~\na\n~~~</p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n  tail\n</code></pre>\n  </li>\n</ul>"
  },
  "ordered-c2t5": {
   "source": "1. outer\n   - head\n      ```\n      a\n  ```\n\n     tail\n",
-  "html": "<ol>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ol>"
+  "html": "<ol>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ol>\n<pre><code>\n   tail\n</code></pre>"
  },
  "quote-c2t4": {
   "source": "> - outer\n>   - head\n>      ```\n>      a\n>  ```\n>\n>     tail\n",
-  "html": "<blockquote>\n  <ul>\n    <li>outer\n      <ul>\n        <li><p>head\n<code>\na\n</code></p>\n          <p>tail</p>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>"
+  "html": "<blockquote>\n  <ul>\n    <li>outer\n      <ul>\n        <li>head\n          <pre><code>a\n</code></pre>\n        </li>\n      </ul>\n    </li>\n  </ul>\n  <pre><code>\n   tail\n</code></pre>\n</blockquote>"
  },
  "more-c2t4": {
   "source": "- outer\n  - head\n     ```\n     a\n  ```\n\n    tail\n\n    more\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n        <p>more</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n  tail\n\n  more\n</code></pre>\n  </li>\n</ul>"
  },
  "tilde-c3t4": {
   "source": "- outer\n  - head\n     ~~~\n     a\n   ~~~\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n~~~\na\n~~~</p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n tail\n</code></pre>\n  </li>\n</ul>"
  },
  "ordered-c3t5": {
   "source": "1. outer\n   - head\n      ```\n      a\n   ```\n\n     tail\n",
-  "html": "<ol>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ol>"
+  "html": "<ol>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n  tail\n</code></pre>\n  </li>\n</ol>"
  },
  "quote-c3t4": {
   "source": "> - outer\n>   - head\n>      ```\n>      a\n>   ```\n>\n>     tail\n",
-  "html": "<blockquote>\n  <ul>\n    <li>outer\n      <ul>\n        <li><p>head\n<code>\na\n</code></p>\n          <p>tail</p>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>"
+  "html": "<blockquote>\n  <ul>\n    <li>outer\n      <ul>\n        <li>head\n          <pre><code>a\n</code></pre>\n        </li>\n      </ul>\n      <pre><code>\n  tail\n</code></pre>\n    </li>\n  </ul>\n</blockquote>"
  },
  "more-c3t4": {
   "source": "- outer\n  - head\n     ```\n     a\n   ```\n\n    tail\n\n    more\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n</code></p>\n        <p>tail</p>\n        <p>more</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n tail\n\n more\n</code></pre>\n  </li>\n</ul>"
  },
  "long": {
   "source": "- outer\n  - head\n     ````\n     a\n  ````\n\n  tail\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>"
  },
  "shortCloser": {
   "source": "- outer\n  - head\n     ````\n     a\n  ```\n\n  tail\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n```</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>"
  },
  "shortCloserT4": {
   "source": "- outer\n  - head\n     ````\n     a\n  ```\n\n    tail\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li><p>head\n<code>\na\n```</code></p>\n        <p>tail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n  tail\n</code></pre>\n  </li>\n</ul>"
  },
  "quoteA": {
   "source": "> - outer\n>   - head\n>      ```\n>      a\n>   ```\n>\n>   tail\n",
-  "html": "<blockquote>\n  <ul>\n    <li><p>outer</p>\n      <ul>\n        <li>head\n<code>\na\n</code></li>\n      </ul>\n      <p>tail</p>\n    </li>\n  </ul>\n</blockquote>"
+  "html": "<blockquote>\n  <ul>\n    <li>outer\n      <ul>\n        <li>head\n          <pre><code>a\n</code></pre>\n        </li>\n      </ul>\n      <pre><code>\ntail\n</code></pre>\n    </li>\n  </ul>\n</blockquote>"
  },
  "orderedA": {
   "source": "1. outer\n   - head\n      ```\n      a\n   ```\n\n   tail\n",
-  "html": "<ol>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ol>"
+  "html": "<ol>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ol>"
  },
  "siblingA": {
   "source": "- outer\n  - head\n     ```\n     a\n  ```\n- next\n",
-  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n  </li>\n  <li>next</li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code></code></pre>\n  </li>\n  <li>next</li>\n</ul>"
  },
  "twoBlank": {
   "source": "- outer\n  - head\n     ```\n     a\n  ```\n\n  tail\n\n  more\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n    <p>more</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n\nmore\n</code></pre>\n  </li>\n</ul>"
  },
  "twoLineChild": {
   "source": "- outer\n  - head\n    more\n    ```\n    a\n   ```\n\n  tail\n",
-  "html": "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\nmore\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"
+  "html": "<ul>\n  <li>outer\n    <ul>\n      <li>head\nmore\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>"
  },
  "plainLazy": {
   "source": "- outer\n  - head\n  lazy\n\n    tail\n",

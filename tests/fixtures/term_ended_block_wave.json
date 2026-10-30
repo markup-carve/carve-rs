@@ -632,11 +632,11 @@
   {
     "id": "malformed-126",
     "source": "- :: term\n  :::bad\n   ```\n   code\nafter\n",
-    "html": "<ul><li><dl><dt>term\n:::bad\n <code>\n code\nafter</code></dt></dl></li></ul>"
+    "html": "<ul><li><dl><dt>term\n:::bad</dt></dl><pre><code>code\n</code></pre></li></ul><p>after</p>"
   },
   {
     "id": "malformed-127",
     "source": "- :: term\n  ``` bad?\n   ```\n   code\nafter\n",
-    "html": "<ul><li><dl><dt>term\n<code>bad?\n</code>\n code\nafter</dt></dl></li></ul>"
+    "html": "<ul><li><dl><dt>term\n<code> bad?</code></dt></dl><pre><code>code\n</code></pre></li></ul><p>after</p>"
   }
 ]

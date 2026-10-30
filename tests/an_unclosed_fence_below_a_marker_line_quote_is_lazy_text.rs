@@ -13,15 +13,15 @@ fn the_fence_line_folds_into_the_quoted_paragraph() {
     for (source, expected) in [
         (
             "- - > x\n   ```\nx\n```\n",
-            "<ul><li><ul><li><blockquote><p>x<code>x</code></p></blockquote></li></ul></li></ul>",
+            "<ul><li><ul><li><blockquote><p>x</p></blockquote></li></ul><pre><code></code></pre></li></ul><p>x</p><pre><code></code></pre>",
         ),
         (
             "- - > +\n   ```\nx\n```\n",
-            "<ul><li><ul><li><blockquote><p>+<code>x</code></p></blockquote></li></ul></li></ul>",
+            "<ul><li><ul><li><blockquote><p>+</p></blockquote></li></ul><pre><code></code></pre></li></ul><p>x</p><pre><code></code></pre>",
         ),
         (
             "- 1. > +\n    ```\nx\n```\n",
-            "<ul><li><ol><li><blockquote><p>+<code>x</code></p></blockquote></li></ol></li></ul>",
+            "<ul><li><ol><li><blockquote><p>+</p></blockquote></li></ol><pre><code></code></pre></li></ul><p>x</p><pre><code></code></pre>",
         ),
     ] {
         assert_eq!(flat(source), expected, "{source:?}");
@@ -41,7 +41,7 @@ fn a_fence_below_an_indented_quote_plus_and_a_nested_item_quote() {
     for (source, expected) in [
         (
             "- a\n  > +\n  ```\nx\n```\n",
-            "<ul><li>a<blockquote><pre><code>x```</code></pre></blockquote></li></ul>",
+            "<ul><li>a<blockquote><pre><code></code></pre></blockquote></li></ul><p>x</p><pre><code></code></pre>",
         ),
         (
             "- a\n  > +\n  ```\n  x\n  ```\n",
@@ -49,11 +49,11 @@ fn a_fence_below_an_indented_quote_plus_and_a_nested_item_quote() {
         ),
         (
             "- a\n  - > +\n   ```\nx\n```\n",
-            "<ul><li>a<ul><li><blockquote><p>+<code>x</code></p></blockquote></li></ul></li></ul>",
+            "<ul><li>a<ul><li><blockquote><p>+</p></blockquote></li></ul><pre><code></code></pre></li></ul><p>x</p><pre><code></code></pre>",
         ),
         (
             "- - > +\n    ```\nx\n```\n",
-            "<ul><li><ul><li><blockquote><pre><code>x</code></pre></blockquote></li></ul></li></ul>",
+            "<ul><li><ul><li><blockquote><pre><code></code></pre></blockquote></li></ul></li></ul><p>x</p><pre><code></code></pre>",
         ),
     ] {
         assert_eq!(flat(source), expected, "{source:?}");

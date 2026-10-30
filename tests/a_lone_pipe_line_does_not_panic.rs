@@ -37,7 +37,7 @@ fn a_lone_pipe_followed_by_other_blocks_renders() {
     );
     assert_eq!(to_html("|\n- x\n"), "<p>|\n- x</p>");
     assert_eq!(to_html("|\nx\n"), "<p>|\nx</p>");
-    assert_eq!(to_html("|\n```\n"), "<p>|\n<code></code></p>");
+    assert_eq!(to_html("|\n```\n"), "<p>|</p>\n<pre><code></code></pre>");
 }
 
 /// CONTROLS. Each of these already answered correctly, and each is a neighbor of

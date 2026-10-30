@@ -74,7 +74,7 @@ fn a_caption_below_the_column_folds_into_the_body() {
 fn a_fence_folds_into_the_body() {
     assert_html(
         &format!("{BODY}``` c\n"),
-        "<dl><dt>t</dt><dd>d\n<code> c</code></dd></dl>",
+        "<dl><dt>t</dt><dd>d</dd></dl><pre><code class=\"language-c\"></code></pre>",
     );
 }
 
@@ -83,7 +83,7 @@ fn a_fence_folds_into_the_body() {
 fn a_bare_fence_folds_into_the_body_too() {
     assert_html(
         &format!("{BODY}```\n"),
-        "<dl><dt>t</dt><dd>d\n<code></code></dd></dl>",
+        "<dl><dt>t</dt><dd>d</dd></dl><pre><code></code></pre>",
     );
 }
 
