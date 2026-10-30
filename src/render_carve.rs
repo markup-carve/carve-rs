@@ -78,7 +78,7 @@ struct CarveContext {
     /// because the walk is the same in every pass.
     escape_unit: usize,
     /// Definitions written on a description line, keyed by that line.
-    definitions_by_line: HashMap<usize, DefinitionAtLine>,
+    definitions_by_line: HashMap<usize, Vec<DefinitionAtLine>>,
     /// The lines a description has already written back.
     ///
     /// PER PASS, because `render_carve_once` renders the document up to three
@@ -522,7 +522,7 @@ fn emptied_marker_lines_at(
 ///
 /// "Those lines" is both cases: an emptied description's own line, and a line
 /// inside an item's gap. A definition on either belongs back on it.
-fn definitions_by_description_line(doc: &Document) -> HashMap<usize, DefinitionAtLine> {
+fn definitions_by_description_line(doc: &Document) -> HashMap<usize, Vec<DefinitionAtLine>> {
     let mut lines = HashSet::new();
     emptied_marker_lines(&doc.children, &mut lines, last_region_marker_line(doc));
     let mut out = HashMap::new();
@@ -537,25 +537,41 @@ fn definitions_by_description_line(doc: &Document) -> HashMap<usize, DefinitionA
                     // collide: two definitions on one line is not a shape the
                     // parser produces.
                     out.entry(pos.start_line)
-                        .or_insert_with(|| DefinitionAtLine::Link(Box::new(def.clone())));
+                        .or_insert_with(|| vec![DefinitionAtLine::Link(Box::new(def.clone()))]);
                 }
             }
         }
     }
     // A footnote definition is not in `children` - it hangs off the document in
-    // its own map - so its line is the line its body starts on, which is the
-    // definition line by production. That is the line
-    // `footnote_defs_in_source_order` orders by, too.
-    for (label, blocks) in &doc.footnote_defs {
-        let Some(line) = blocks.first().and_then(block_pos).map(|pos| pos.start_line) else {
-            continue;
-        };
-        if lines.contains(&line) {
-            out.entry(line)
-                .or_insert_with(|| DefinitionAtLine::Footnote(label.clone(), blocks.clone()));
+    // its own map - so its line is its label's line. `[^c]: [^d]: x` puts two
+    // notes on one line, and both go back there in source order.
+    let mut notes: Vec<_> = doc
+        .footnote_defs
+        .iter()
+        .filter_map(|(label, blocks)| {
+            let (line, column) = footnote_def_line(doc, label, blocks)?;
+            lines
+                .contains(&line)
+                .then_some((line, column, label, blocks))
+        })
+        .collect();
+    notes.sort_by_key(|&(line, column, ..)| (line, column));
+    for (line, _, label, blocks) in notes {
+        let entry = out.entry(line).or_default();
+        if !entry.iter().any(|d| matches!(d, DefinitionAtLine::Link(_))) {
+            entry.push(DefinitionAtLine::Footnote(label.clone(), blocks.clone()));
         }
     }
     out
+}
+
+/// The line and column a footnote definition's label was written at, or its
+/// body's first line when the parser recorded no label position.
+fn footnote_def_line(doc: &Document, label: &str, blocks: &[BlockNode]) -> Option<(usize, usize)> {
+    doc.footnote_def_pos
+        .get(label)
+        .or_else(|| blocks.first().and_then(block_pos))
+        .map(|pos| (pos.start_line, pos.start_column))
 }
 
 /// Render, and fall back to a break spelling that cannot be read as frontmatter
@@ -746,10 +762,8 @@ fn render_with_escapes_once(
                 ctx.after_caption_host = false;
                 // Unless a definition list already wrote it where the author put
                 // it (markup-carve/carve#805).
-                let text = if blocks
-                    .first()
-                    .and_then(block_pos)
-                    .is_some_and(|pos| ctx.written_in_place.contains(&pos.start_line))
+                let text = if footnote_def_line(doc, label, blocks)
+                    .is_some_and(|(line, _)| ctx.written_in_place.contains(&line))
                 {
                     String::new()
                 } else {
@@ -1861,30 +1875,29 @@ fn definition_in_gap(
 ) -> Option<String> {
     let from = block_pos(before)?.end_line;
     let to = block_pos(after)?.start_line;
-    let (line, definition) = ((from + 1)..to).find_map(|line| {
-        ctx.definitions_by_line
-            .get(&line)
-            .filter(|_| !ctx.written_in_place.contains(&line))
-            .cloned()
-            .map(|definition| (line, definition))
-    })?;
-    // MARKED AFTER RENDERING, not before. `render_block` returns an empty
-    // string for a definition already marked written, so marking it first made
-    // the gap render nothing and the document-level pass skip it too - the
-    // definition disappeared from the document entirely.
-    let written = match definition {
-        DefinitionAtLine::Link(def) => {
-            render_block(session, &BlockNode::LinkReferenceDefinition(*def), ctx)
-        }
-        DefinitionAtLine::Footnote(label, blocks) => {
-            render_footnote_def_source(session, &label, &blocks, ctx)
-        }
+    let pending: Vec<usize> = ((from + 1)..to)
+        .filter(|line| {
+            !ctx.written_in_place.contains(line) && ctx.definitions_by_line.contains_key(line)
+        })
+        .collect();
+    // A link definition goes back alone. Every note in the gap goes back, in
+    // source order, so `[^c]: [^d]: x` keeps both notes and their order.
+    let link_line = pending.iter().copied().find(|line| {
+        ctx.definitions_by_line[line]
+            .iter()
+            .any(|d| matches!(d, DefinitionAtLine::Link(_)))
+    });
+    let lines = match link_line {
+        Some(line) => vec![line],
+        None => pending,
     };
-    if written.is_empty() {
-        return None;
+    let mut parts = Vec::new();
+    for line in lines {
+        if let Some(written) = definition_at_line(session, line, ctx) {
+            parts.push(written);
+        }
     }
-    ctx.written_in_place.insert(line);
-    Some(written)
+    (!parts.is_empty()).then(|| parts.join("\n"))
 }
 
 /// Write the hoisted definition whose authored source line is `line`.
@@ -1901,20 +1914,24 @@ fn definition_at_line(
     if ctx.written_in_place.contains(&line) {
         return None;
     }
-    let definition = ctx.definitions_by_line.get(&line)?.clone();
-    let written = match definition {
-        DefinitionAtLine::Link(def) => {
-            render_block(session, &BlockNode::LinkReferenceDefinition(*def), ctx)
-        }
-        DefinitionAtLine::Footnote(label, blocks) => {
-            render_footnote_def_source(session, &label, &blocks, ctx)
-        }
-    };
+    let definitions = ctx.definitions_by_line.get(&line)?.clone();
+    let written: Vec<String> = definitions
+        .into_iter()
+        .map(|definition| match definition {
+            DefinitionAtLine::Link(def) => {
+                render_block(session, &BlockNode::LinkReferenceDefinition(*def), ctx)
+            }
+            DefinitionAtLine::Footnote(label, blocks) => {
+                render_footnote_def_source(session, &label, &blocks, ctx)
+            }
+        })
+        .filter(|written| !written.is_empty())
+        .collect();
     if written.is_empty() {
         return None;
     }
     ctx.written_in_place.insert(line);
-    Some(written)
+    Some(written.join("\n"))
 }
 
 /// Sentinel marking a line to be written at the ITEM's marker column.
