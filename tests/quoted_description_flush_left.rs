@@ -15,7 +15,7 @@ fn flush_left_descriptions_below_a_quote_match_the_checker() {
         ),
         (
             "> - :: t\n  : a\n: b\n",
-            "<blockquote>\n  <ul>\n    <li>\n      <dl>\n        <dt>t\n: a</dt>\n      </dl>\n    </li>\n  </ul>\n</blockquote>\n<p>: b</p>",
+            "<blockquote>\n  <ul>\n    <li>\n      <dl>\n        <dt>t</dt>\n      </dl>\n    </li>\n  </ul>\n</blockquote>\n<p>: a\n: b</p>",
         ),
         (
             "> :: t\n> : a\n> : b\n",

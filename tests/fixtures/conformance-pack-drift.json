@@ -35,7 +35,6 @@
       "ticket": "markup-carve/carve-rs#3534",
       "cause": "untriaged day-one drift in the lazy family",
       "cases": [
-        "lazy-152051755b0d",
         "lazy-27c92f4153c2",
         "lazy-409aff3004af",
         "lazy-5d96f214fe7c",
@@ -168,16 +167,16 @@
         "lazy-dc0e3940e686",
         "lazy-f60632f36c87",
         "lazy-fbd48cd0e8d7",
-        "ownership-2d7726aea29e",
         "ownership-5c23f3ce4ed2",
         "ownership-8ee51def382e",
         "ownership-bd5caf2c0c4d",
         "ownership-f93c4ff64ea3",
-        "plus-01e20a4e5649",
-        "plus-a6620a1e6b53",
         "roundtrip-0c1279f7ce48",
-        "roundtrip-c2a2864425dc",
-        "roundtrip-d27a8c0b8e38"
+        "roundtrip-d27a8c0b8e38",
+        "lazy-353dc1c74791",
+        "lazy-7753aedc9422",
+        "plus-2bca1c74608b",
+        "plus-a0f7cf7091d8"
       ]
     }
   ]

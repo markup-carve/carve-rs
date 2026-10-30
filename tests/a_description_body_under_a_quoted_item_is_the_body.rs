@@ -1,6 +1,5 @@
 //! A marked description reaches a term in a quoted item. An unmarked lazy
-//! `:` has no column inside the quote and folds into the open term as text
-//! (CARVE-P2-028, markup-carve/carve#3451).
+//! `:` has no column inside the quote, so it leaves the term (carve#4300).
 //!
 //! THREE STATES ARE EXCLUDED, and each has its own row below. A description
 //! body already OPEN takes the line as its own lazy continuation rather than a
@@ -54,7 +53,7 @@ fn assert_html(src: &str, expected: &str) {
 fn the_reported_document_reads_the_body() {
     assert_html(
         "> - :: t\n    :  a\ntail\n",
-        "<blockquote><ul><li><dl><dt>t : a tail</dt></dl></li></ul></blockquote>",
+        "<blockquote><ul><li><dl><dt>t</dt></dl></li></ul></blockquote><p>: a tail</p>",
     );
 }
 
@@ -82,7 +81,7 @@ fn a_line_carrying_its_own_marker_answers_the_same_way() {
 fn a_deeper_quote_answers_the_same_way() {
     assert_html(
         "> > - :: t\n      :  a\ntail\n",
-        "<blockquote><blockquote><ul><li><dl><dt>t : a tail</dt></dl></li></ul></blockquote></blockquote>",
+        "<blockquote><blockquote><ul><li><dl><dt>t</dt></dl></li></ul></blockquote></blockquote><p>: a tail</p>",
     );
 }
 
@@ -91,7 +90,7 @@ fn a_deeper_quote_answers_the_same_way() {
 fn a_wide_separator_answers_the_same_way() {
     assert_html(
         "> - :: t\n    :   a\ntail\n",
-        "<blockquote><ul><li><dl><dt>t : a tail</dt></dl></li></ul></blockquote>",
+        "<blockquote><ul><li><dl><dt>t</dt></dl></li></ul></blockquote><p>: a tail</p>",
     );
 }
 

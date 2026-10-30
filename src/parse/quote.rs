@@ -2119,14 +2119,19 @@ impl<'a> QuoteBody<'a> {
         options: &Options<'_>,
         line: &str,
     ) -> bool {
-        // A following marker that owns a block stays the attachment point.
-        // The earlier `+` can still continue the open quote paragraph.
-        if cur.lines.line(cur.pos + 1).is_some_and(is_plus_marker)
+        let holds_next = cur.lines.line(cur.pos + 1).is_some_and(is_plus_marker)
             && cur.lines.line(cur.pos + 2).is_some()
             && cur
                 .continuation_decision(cur.pos + 1)
-                .is_some_and(|decision| decision.owner == Some(continuation_marker::Kind::Quote))
-        {
+                .is_some_and(|decision| decision.owner == Some(continuation_marker::Kind::Quote));
+        // A `+` the next `+` follows hands that one the quote's next block (carve#4438).
+        if holds_next && is_plus_marker(line) {
+            self.opaque_tail = false;
+            cur.consume();
+            return true;
+        }
+        // The earlier line can still continue the open quote paragraph.
+        if holds_next {
             return false;
         }
         if !(trim_ascii(line) == "+"

@@ -15,7 +15,7 @@ fn check(source: &str, expected: &str) {
 
 #[test]
 fn exact_html() {
-    check("> 1. :: t\n   : para", "<blockquote>\n  <ol>\n    <li>\n      <dl>\n        <dt>t\n: para</dt>\n      </dl>\n    </li>\n  </ol>\n</blockquote>\n");
-    check("> - :: term\n  : definition", "<blockquote>\n  <ul>\n    <li>\n      <dl>\n        <dt>term\n: definition</dt>\n      </dl>\n    </li>\n  </ul>\n</blockquote>\n");
+    check("> 1. :: t\n   : para", "<blockquote>\n  <ol>\n    <li>\n      <dl>\n        <dt>t</dt>\n      </dl>\n    </li>\n  </ol>\n</blockquote>\n<p>: para</p>\n");
+    check("> - :: term\n  : definition", "<blockquote>\n  <ul>\n    <li>\n      <dl>\n        <dt>term</dt>\n      </dl>\n    </li>\n  </ul>\n</blockquote>\n<p>: definition</p>\n");
     check("> - :: t\n: d", "<blockquote>\n  <ul>\n    <li>\n      <dl>\n        <dt>t</dt>\n      </dl>\n    </li>\n  </ul>\n</blockquote>\n<p>: d</p>");
 }

@@ -1761,18 +1761,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         if reached_wrapped_attribute_tail(stream) {
             return None;
         }
-        if detect_fence_open(lead.inner_lead).is_some()
-            && cur.pos > 0
-            && innermost_marker_column(lead.content).is_some_and(|column| {
-                let prior = cur.lines.at(cur.pos - 1);
-                column > 0
-                    && indent_columns(prior) >= content_col + column
-                    && line_starts_paragraph(trim_ascii_start(prior))
-                    && trim_ascii(prior) != "+"
-            })
-        {
-            return None;
-        }
         if !nested_ends_with_open_paragraph_masked(
             stream,
             last_consumed_line_below_column(cur, nested_content_col),
