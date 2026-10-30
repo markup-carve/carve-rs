@@ -2241,6 +2241,22 @@ pub(in crate::parse) fn opens_a_link(
 }
 
 /// The spans of the literal directives in `bytes`, in order.
+/// A copy with the backticks inside literal directives replaced: such a token
+/// opens and closes no span (CARVE-P6-001). Offsets stay the same.
+pub(in crate::parse) fn mask_literal_directive_backticks(bytes: &[u8]) -> Vec<u8> {
+    let mut masked = bytes.to_vec();
+    if bytes.contains(&b'`') {
+        for (open, end) in literal_directive_regions(bytes) {
+            for byte in &mut masked[open..end] {
+                if *byte == b'`' {
+                    *byte = b'x';
+                }
+            }
+        }
+    }
+    masked
+}
+
 fn literal_directive_regions(bytes: &[u8]) -> Vec<(usize, usize)> {
     let mut regions = Vec::new();
     let Ok(text) = std::str::from_utf8(bytes) else {

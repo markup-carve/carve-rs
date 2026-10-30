@@ -812,6 +812,9 @@ pub(in crate::parse) fn compute_bracket_runs(
     bytes: &[u8],
     footnote_refs: bool,
 ) -> (Vec<usize>, Vec<usize>) {
+    // A backtick in a literal directive opens and closes no span (CARVE-P6-001).
+    let masked = mask_literal_directive_backticks(bytes);
+    let bytes = masked.as_slice();
     let mut matches = vec![NO_BRACKET_MATCH; bytes.len()];
     // For each position, the `[` of the INNERMOST bracket run holding it, or
     // `NO_BRACKET_MATCH` outside every run. Filled by the same pass that pairs
