@@ -843,6 +843,78 @@ mod root_fence_owner_tests {
 #[cfg(test)]
 mod continuation_owner_tests {
     use super::*;
+    use crate::{BlockMatch, CarveExtension, MatcherContext};
+
+    struct Observer(RefCell<Vec<(usize, String)>>);
+
+    impl CarveExtension for Observer {
+        fn name(&self) -> &'static str {
+            "continuation-paragraph-observer"
+        }
+
+        fn match_block(
+            &self,
+            lines: &[&str],
+            start: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<BlockMatch> {
+            self.0.borrow_mut().push((start, lines[start].to_owned()));
+            None
+        }
+    }
+
+    #[test]
+    fn document_continuation_paragraph_is_event_owned() {
+        for source in ["Alpha\n+\nBeta\n", "Alpha\n+\nBeta\n\nGamma\n"] {
+            for (positions, source_lines) in
+                [(false, false), (true, false), (false, true), (true, true)]
+            {
+                let observer = Observer(RefCell::new(Vec::new()));
+                let options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines)
+                    .with_extension(&observer);
+                STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+                let ((actual, admitted), diagnostics) = collecting_lint_events(|| {
+                    parse_document_with_options(source, &options).unwrap()
+                });
+                assert!(admitted);
+                assert_eq!(STANDARD_PARAGRAPH_ENTRIES.with(Cell::get), 0, "{source:?}");
+                let callbacks = observer.0.into_inner();
+                let expected_observer = Observer(RefCell::new(Vec::new()));
+                let expected_options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines)
+                    .with_extension(&expected_observer);
+                let (expected, expected_diagnostics) = {
+                    let _standard = StandardEventRootGuard::install();
+                    collecting_lint_events(|| parse_with_options(source, &expected_options))
+                };
+                assert_eq!((actual, diagnostics), (expected, expected_diagnostics));
+                assert_eq!(callbacks, expected_observer.0.into_inner());
+            }
+        }
+    }
+
+    #[test]
+    fn document_continuation_after_deep_body_uses_default_stack() {
+        let mut source = "::: note\n".repeat(150);
+        source.push_str("inside\n");
+        source.push_str(&":::\n".repeat(150));
+        source.push_str("\nAlpha\n+\nBeta\n");
+        let options = Options::default()
+            .with_positions(true)
+            .with_source_lines(true);
+        STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+        let (actual, admitted) = parse_document_with_options(&source, &options).unwrap();
+        assert!(admitted);
+        assert_eq!(STANDARD_PARAGRAPH_ENTRIES.with(Cell::get), 0);
+        let expected = {
+            let _standard = StandardEventRootGuard::install();
+            parse_with_options(&source, &options)
+        };
+        assert_eq!(actual, expected);
+    }
 
     #[test]
     fn non_marker_plus_keeps_direct_document_parity() {
@@ -2742,6 +2814,24 @@ fn collect_event_paragraph<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
                 {
                     break;
                 }
+            }
+        }
+        if !lines.is_empty() && is_plus_marker(next) {
+            let marker_at = cur.pos;
+            let safe_follower = cur.lines.line(marker_at + 1).is_some_and(|follower| {
+                !follower.starts_with([' ', '\t'])
+                    && follower.bytes().all(|byte| byte.is_ascii_alphabetic())
+                    && cur.lines.line(marker_at + 2).map_or(true, is_blank_line)
+            });
+            let document_marker = cur.at_document_level
+                && cur
+                    .source_line(marker_at)
+                    .and_then(continuation_marker::decision)
+                    .is_some_and(|decision| decision.unclaimed && decision.refusal.is_some());
+            if lines.len() == 1 && safe_follower && document_marker {
+                lines.push(trim_ascii_end(trim_ascii_start(next)));
+                cur.consume();
+                continue;
             }
         }
         if event_paragraph_needs_reader(
