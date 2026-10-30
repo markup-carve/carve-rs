@@ -39,6 +39,7 @@ pub(crate) use own_lines::{
     authored_line_column, own_lines, walk_body, walk_moves_lines, EditsGuard,
 };
 mod table;
+pub(crate) use table::table_run_open_after;
 #[cfg(test)]
 #[path = "parse/tests.rs"]
 mod tests;
@@ -270,6 +271,10 @@ fn is_collected_definition_placeholder(line: &str) -> bool {
 
 fn is_quoted_definition_placeholder(line: &str) -> bool {
     strip_blockquote_prefix(trim_ascii_start(line)).is_some_and(is_definition_placeholder)
+}
+
+pub(crate) fn written_line_is_list_marker(line: &str) -> bool {
+    is_list_marker(line)
 }
 
 fn list_marker_since_blank(lines: &[&str]) -> Vec<bool> {

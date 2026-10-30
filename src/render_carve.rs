@@ -197,7 +197,7 @@ pub fn render_carve_with_options(
             .collect();
     let source_watch = crate::render_carve_error::SourceSpellWatch::new();
     let watch = crate::render_depth::RenderDepthWatch::new();
-    let output = protect_leading_bom(render_carve_unguarded(session, doc));
+    let output = protect_leading_bom(render_reading_back_marker_lines(session, doc));
     if let Some(error) = source_watch.error() {
         return Err(error);
     }
@@ -373,6 +373,28 @@ fn protect_leading_bom(out: String) -> String {
 /// with unslotted heading ids ignored, without cloning the document.
 pub(crate) fn redundant_heading_ids(doc: &Document) -> std::collections::BTreeSet<String> {
     crate::document_ids::redundant_heading_ids(doc)
+}
+
+/// A code value's list-marker line in a quoted item takes the lazy spelling when
+/// the prefixed one reads as a marker. Only the parser can tell (CARVE-P11-078).
+fn render_reading_back_marker_lines(session: &RenderSession, doc: &Document) -> String {
+    let first = render_carve_unguarded(session, doc);
+    if !session.quoted_marker_lines.with(|c| c.get()) {
+        return first;
+    }
+    let reads_back = |source: &str| {
+        comparable_tree(source).is_some_and(|tree| tree == comparable_document(doc.clone()))
+    };
+    if reads_back(&first) {
+        return first;
+    }
+    session.lazy_marker_lines.with(|c| c.set(true));
+    let lazy = render_carve_unguarded(session, doc);
+    if reads_back(&lazy) {
+        lazy
+    } else {
+        first
+    }
 }
 
 fn render_carve_unguarded(session: &RenderSession, doc: &Document) -> String {
@@ -4790,7 +4812,7 @@ fn guard_code_lines(
     // A list marker on a continuation line does not interrupt a paragraph, so
     // it stays bare unless the line would end an item, description or term.
     let marker = if ctx.in_term || ctx.item_paragraph {
-        MARKER.get_or_init(|| regex::Regex::new(r"^(?:>(?: |$)|:{3,}(?:[ \t]*$|[ \t]+)|\[[^\]\n]+\]:[ \t]|[-*] +|(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-z]|[A-Z])[.)] +)").unwrap())
+        MARKER.get_or_init(|| regex::Regex::new(r"^(?:>(?: |$)|:{3,}(?:[ \t]*$|[ \t]+)|\[[^\]\n]+\]:[ \t]|[-*] +|\. +|(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-z]|[A-Z])[.)] +)").unwrap())
     } else {
         BLOCK_MARKER.get_or_init(|| {
             regex::Regex::new(r"^(?:>(?: |$)|:{3,}(?:[ \t]*$|[ \t]+)|\[[^\]\n]+\]:[ \t])").unwrap()
@@ -5507,6 +5529,14 @@ fn restore_verbatim(session: &RenderSession, text: &str) -> String {
             if let Some((prefix, rest)) = line.split_once(code_line.as_str()) {
                 if prefix.chars().all(|ch| matches!(ch, ' ' | '\t' | '>')) {
                     let guarded = if let Some(last_quote) = prefix.rfind('>') {
+                        // One column below the content column can still read a
+                        // sibling marker; a lazy line cannot (CARVE-P11-078).
+                        if crate::parse::written_line_is_list_marker(rest) {
+                            session.quoted_marker_lines.with(|c| c.set(true));
+                            if session.lazy_marker_lines.with(|c| c.get()) {
+                                return rest.to_owned();
+                            }
+                        }
                         format!("{}  ", &prefix[..=last_quote])
                     } else {
                         " ".to_owned()
