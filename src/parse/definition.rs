@@ -421,7 +421,7 @@ pub(in crate::parse) fn parse_definition_list(
                     Some(decision)
                         if decision.owner == Some(continuation_marker::Kind::Description) =>
                     {
-                        attached_block_lines_classified(
+                        attached_block_past_invisible(
                             lines,
                             cur.pos,
                             &mut cur.comment_closer_last_index,
@@ -1130,7 +1130,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         cur.consume();
         let mut attached = LineBuffer::default();
         let cursor_lines = cur.lines;
-        let end = attached_block_lines_classified(
+        let end = attached_block_past_invisible(
             cursor_lines,
             cur.pos,
             &mut cur.comment_closer_last_index,

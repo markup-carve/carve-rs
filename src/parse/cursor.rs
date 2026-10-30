@@ -129,6 +129,21 @@ impl<'a> CursorLines<'a> {
             .then_some(end - base + usize::from(closed))
     }
 
+    /// Whether the colon fence opening at `start` closes, where this view knows.
+    pub(in crate::parse) fn colon_closes(self, start: usize) -> Option<bool> {
+        if !reuse_colon_views() {
+            return None;
+        }
+        let Self::Colon {
+            source, view, base, ..
+        } = self
+        else {
+            return None;
+        };
+        let &(end, closed) = view.source.boundaries.get(base + start)?.as_ref()?;
+        (end <= base + source.len()).then_some(closed && end < base + source.len())
+    }
+
     pub(in crate::parse) fn code_after(
         self,
         start: usize,

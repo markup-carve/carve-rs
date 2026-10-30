@@ -24,7 +24,6 @@
         "fences-5e87d36367a5",
         "fences-77de8e162288",
         "fences-97b499ad9a5e",
-        "fences-c122b842ba25",
         "fences-e6b042364968",
         "fences-e727fbef63d9",
         "fences-ee4a1e36de97",
@@ -61,7 +60,6 @@
         "notes-47da77f91f9b",
         "notes-4dc51b5608ab",
         "notes-5078f8dc86e9",
-        "notes-68b5a5674da9",
         "notes-6db864f6ba22",
         "notes-7758bc8d539d",
         "notes-8394e9e3db4f",
@@ -72,12 +70,10 @@
         "notes-c0e4dadcf339",
         "notes-ce4e197bb78b",
         "notes-d2500c45a956",
-        "notes-dd130b0b59c1",
         "notes-e065114c465d",
         "notes-ee421f59e501",
         "notes-f7a4d0c570a4",
-        "notes-fc2e2bb31a32",
-        "notes-ffd53f488294"
+        "notes-fc2e2bb31a32"
       ]
     },
     {
@@ -104,7 +100,6 @@
       "cause": "untriaged day-one drift in the roundtrip family",
       "cases": [
         "roundtrip-50e7fa11ce58",
-        "roundtrip-7439f84f3de0",
         "roundtrip-cf313303938e"
       ]
     },
@@ -145,9 +140,7 @@
       "ticket": "markup-carve/carve-rs#3535",
       "cause": "pin move to carve 8d8bd4a9: rulings on inline, attribute and layout shapes this engine has not reached",
       "cases": [
-        "attributes-4db504145296",
         "fences-0a0fa885eb41",
-        "fences-53415847bc3e",
         "fences-6bb4b2c08642",
         "fences-957709fb7e0e",
         "fences-e0910c8dd446",

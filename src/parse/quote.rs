@@ -2176,9 +2176,12 @@ impl<'a> QuoteBody<'a> {
             },
         );
         while attach_end > cur.pos
-            && cursor_lines
-                .line(attach_end - 1)
-                .is_some_and(is_line_comment_any_column)
+            && cursor_lines.line(attach_end - 1).is_some_and(|last| {
+                is_line_comment_any_column(last)
+                    || (!last.starts_with([' ', '\t'])
+                        && (parse_link_def_line(last).is_some()
+                            || parse_footnote_def_line(last).is_some()))
+            })
             && cursor_lines.line(attach_end).is_some_and(|next| {
                 !is_blank_line(next) && !(trim_ascii(next) == "+" && indent_columns(next) == 0)
             })

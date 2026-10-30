@@ -899,18 +899,13 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         {
             return i;
         }
-        let attached_list = is_list_marker(lines[i]);
-        let end = attached_block_lines_classified(
+        let end = attached_block_past_invisible(
             CursorLines::Slice(lines),
             i,
             &mut self.comment_closers,
             &mut self.closer_index,
             self.options,
-            &mut |line, _| {
-                is_blank_line(line)
-                    || is_plus_marker(line)
-                    || (!attached_list && indent_columns(line) == 0 && is_list_marker(line))
-            },
+            &mut |line, _| is_blank_line(line) || is_plus_marker(line),
         );
         if end > i {
             note.lines[0].clear();
@@ -1286,15 +1281,13 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         *i += 1;
         let mut attached: Vec<String> = Vec::new();
         let attached_start = *i;
-        let end = attached_block_lines_classified(
+        let end = attached_block_past_invisible(
             CursorLines::Slice(lines),
             *i,
             &mut self.comment_closers,
             &mut self.closer_index,
             self.options,
-            &mut |a, _| {
-                is_blank_line(a) || is_plus_marker(a) || parse_footnote_def_line(a).is_some()
-            },
+            &mut |a, _| is_blank_line(a) || is_plus_marker(a),
         );
         while *i < end {
             attached.push(slice_columns(lines[*i], column, true));

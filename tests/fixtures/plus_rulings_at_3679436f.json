@@ -1,0 +1,98 @@
+[
+  {
+    "source": "> +\n>\n",
+    "html": "<blockquote><p>+</p></blockquote>"
+  },
+  {
+    "source": "> a\n>\n+\n>\n",
+    "html": "<blockquote><p>a</p></blockquote>\n<p>+</p>\n<blockquote>\n\n</blockquote>"
+  },
+  {
+    "source": ":: t\n: > 1. +\n>   x\n",
+    "html": "<dl>\n  <dt>t</dt>\n  <dd>\n    <blockquote>\n      <ol>\n        <li>+</li>\n      </ol>\n    </blockquote>\n  </dd>\n</dl>\n<blockquote><p>x</p></blockquote>"
+  },
+  {
+    "source": "> q\n+\n+\ntail\n",
+    "html": "<blockquote>\n  <p>q</p>\n  <p>tail</p>\n</blockquote>"
+  },
+  {
+    "source": "> > q\n> +\n> +\n> tail\n",
+    "html": "<blockquote>\n  <blockquote>\n    <p>q</p>\n    <p>tail</p>\n  </blockquote>\n</blockquote>"
+  },
+  {
+    "source": "- a\n+\n{x}\n- c\n",
+    "html": "<ul>\n  <li>a\n+</li>\n</ul>\n<ul x=\"\">\n  <li>c</li>\n</ul>"
+  },
+  {
+    "source": "- +\n{x}\n- c\n",
+    "html": "<ul>\n  <li>+</li>\n</ul>\n<ul x=\"\">\n  <li>c</li>\n</ul>"
+  },
+  {
+    "source": ":: t\n: +\n{x}\n: b\n",
+    "html": "<dl>\n  <dt>t</dt>\n  <dd>+</dd>\n</dl>\n<p x=\"\">: b</p>"
+  },
+  {
+    "source": "- a\n+\n{x}\n  - c\n",
+    "html": "<ul>\n  <li>a\n+</li>\n</ul>\n<ul x=\"\">\n  <li>c</li>\n</ul>"
+  },
+  {
+    "source": "> - a\n> +\n> {x}\n>   - c\n",
+    "html": "<blockquote>\n  <ul>\n    <li>a\n+</li>\n  </ul>\n  <ul x=\"\">\n    <li>c</li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "source": "> - :: t\n - x\n",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <dl>\n        <dt>t</dt>\n      </dl>\n    </li>\n  </ul>\n</blockquote>\n<ul>\n  <li>x</li>\n</ul>"
+  },
+  {
+    "source": "> - :: t\n  : a\n: b\n",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <dl>\n        <dt>t</dt>\n      </dl>\n    </li>\n  </ul>\n</blockquote>\n<p>: a\n: b</p>"
+  },
+  {
+    "source": "> :: t\n - x\n",
+    "html": "<blockquote>\n  <dl>\n    <dt>t</dt>\n  </dl>\n</blockquote>\n<ul>\n  <li>x</li>\n</ul>"
+  },
+  {
+    "source": "- - - ```\n    q\ntail\n",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>\n            <pre><code></code></pre>\n          </li>\n        </ul>\n        q\ntail\n      </li>\n    </ul>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- - - ```\n      x\n    +\ntail\n",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>\n            <pre><code>x\n</code></pre>\n          </li>\n        </ul>\n        +\ntail\n      </li>\n    </ul>\n  </li>\n</ul>"
+  },
+  {
+    "source": "> | a |\n> + b |\ntail\n",
+    "html": "<blockquote>\n  <table>\n    <tbody>\n      <tr><td>a b</td></tr>\n    </tbody>\n  </table>\n</blockquote>\n<p>tail</p>"
+  },
+  {
+    "source": "- a\n+\nz\n  > q\n- c\n",
+    "html": "<ul>\n  <li>a\n    z\n    <blockquote><p>q</p></blockquote>\n  </li>\n  <li>c</li>\n</ul>"
+  },
+  {
+    "source": "- a\n+\nz\n  # h\n",
+    "html": "<ul>\n  <li>a\n    z\n    <h1 id=\"h\">h</h1>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n+\n{.x}}\n  - q\n",
+    "html": "<ul>\n  <li>a\n    {.x}}\n    <ul>\n      <li>q</li>\n    </ul>\n  </li>\n</ul>"
+  },
+  {
+    "source": "[^a]: +\n[^1]: a\n```\nx\n```\n\nsee[^a]\n",
+    "html": "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <pre><code>x\n</code></pre>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
+  },
+  {
+    "source": "[^a]: +\nflush\n- [ ] > q\n\nsee[^a]\n",
+    "html": "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>flush\n- [ ] &gt; q<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
+  },
+  {
+    "source": "- x\n+\n::: f\nhi\n\n- c\n",
+    "html": "<ul>\n  <li><p>x</p>\n    <div class=\"f\">\n      <p>hi</p>\n    </div>\n  </li>\n  <li><p>c</p></li>\n</ul>"
+  },
+  {
+    "source": "- x\n+\n::: f\nhi\n:::\n\n- c\n",
+    "html": "<ul>\n  <li><p>x</p>\n    <div class=\"f\">\n      <p>hi</p>\n    </div>\n  </li>\n  <li><p>c</p></li>\n</ul>"
+  },
+  {
+    "source": "- a\n+\n::: f\nhi\n  :::\n\ntail\n",
+    "html": "<ul>\n  <li>a\n    <div class=\"f\">\n      <p>hi</p>\n    </div>\n  </li>\n</ul>\n<p>tail</p>"
+  }
+]
