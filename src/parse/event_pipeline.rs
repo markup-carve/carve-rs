@@ -1209,6 +1209,87 @@ mod positioned_simple_paragraph_tests {
 }
 
 #[cfg(all(test, feature = "experimental-event-parser-options"))]
+mod positioned_mixed_paragraph_tests {
+    use super::*;
+    use crate::{BlockMatch, CarveExtension, MatcherContext};
+
+    struct Observer(RefCell<Vec<usize>>);
+
+    impl CarveExtension for Observer {
+        fn name(&self) -> &'static str {
+            "positioned-paragraph-observer"
+        }
+
+        fn match_block(
+            &self,
+            _: &[&str],
+            start: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<BlockMatch> {
+            self.0.borrow_mut().push(start);
+            None
+        }
+    }
+
+    #[test]
+    fn mixed_root_paragraphs_keep_positions_and_source_lines() {
+        for (name, source) in [
+            (
+                "mixed",
+                "{.lead}\nAlpha *emphasis*\nBeta [link](url)\n\n# Tail\n",
+            ),
+            (
+                "colon",
+                "::: note\nAlpha *emphasis*\nBeta [link](url)\n:::\n",
+            ),
+            (
+                "definition",
+                ":: term\n:  Alpha *emphasis*\n   Beta [link](url)\n",
+            ),
+        ] {
+            for positions in [false, true] {
+                for source_lines in [false, true] {
+                    let event_observer = Observer(RefCell::new(Vec::new()));
+                    let standard_observer = Observer(RefCell::new(Vec::new()));
+                    let options = Options::default()
+                        .with_positions(positions)
+                        .with_source_lines(source_lines)
+                        .with_extension(&event_observer);
+                    STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+                    let (actual, diagnostics) = collecting_lint_events(|| {
+                        parse_document_with_options(source, &options).unwrap().0
+                    });
+                    let entries = STANDARD_PARAGRAPH_ENTRIES.with(Cell::get);
+                    let (expected, expected_diagnostics) = {
+                        let _standard = StandardEventRootGuard::install();
+                        let standard_options = Options::default()
+                            .with_positions(positions)
+                            .with_source_lines(source_lines)
+                            .with_extension(&standard_observer);
+                        collecting_lint_events(|| parse_with_options(source, &standard_options))
+                    };
+                    assert_eq!(
+                        actual, expected,
+                        "{source:?}, positions={positions}, source_lines={source_lines}"
+                    );
+                    assert_eq!(diagnostics, expected_diagnostics);
+                    assert_eq!(
+                        event_observer.0.into_inner(),
+                        standard_observer.0.into_inner()
+                    );
+                    if name != "definition" {
+                        assert_eq!(
+                            entries, 0,
+                            "{source:?}, positions={positions}, source_lines={source_lines}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(all(test, feature = "experimental-event-parser-options"))]
 mod event_level_resume_tests {
     use super::*;
     use crate::{BlockMatch, CarveExtension, MatcherContext};
@@ -1983,12 +2064,8 @@ fn part_opens_with_block(part: &LineBuffer) -> bool {
         .is_some_and(|byte| *byte == b'>' || byte.is_ascii_alphanumeric())
 }
 
-fn use_standard_event_paragraph(
-    options: &Options<'_>,
-    recording_extents: bool,
-    defer_pending: bool,
-) -> bool {
-    options.positions || recording_extents || defer_pending
+fn use_standard_event_paragraph(recording_extents: bool, defer_pending: bool) -> bool {
+    recording_extents || defer_pending
 }
 
 fn event_owned_plain_paragraph(cur: &LineCursor<'_>, options: &Options<'_>) -> bool {
@@ -3072,7 +3149,7 @@ fn run_event_level<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
             continue;
         }
         let standard_paragraph =
-            use_standard_event_paragraph(options, extents.is_some(), state.defer_pending);
+            use_standard_event_paragraph(extents.is_some(), state.defer_pending);
         let simple_colon_paragraph = standard_paragraph
             && state.defer_pending
             && extents.is_none()
