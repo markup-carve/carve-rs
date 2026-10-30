@@ -218,6 +218,7 @@ struct IndentedNote<'a> {
 
 /// The quote / list / description host a container-hosted note sits in.
 struct NoteHost {
+    description_host: bool,
     quote_indents: Vec<usize>,
     quote_depth: usize,
     prefix_cols: usize,
@@ -807,7 +808,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             } else {
                 stripped.structural.len()
             };
-            i = self.collect_hosted_body(&mut note, i, raw_def_line, &def, structural_len);
+            i = self.collect_hosted_body(
+                &mut note,
+                i,
+                raw_def_line,
+                &def,
+                structural_len,
+                stripped.description,
+            );
         }
         // ONLY FOR THE DEFINITION THIS POSITION DESCRIBES. The first
         // definition for a label wins, both here and in `defs` below, so a
@@ -1525,6 +1533,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         raw_def_line: &'a str,
         def: &DefinitionLine<'a>,
         structural_len: usize,
+        description_host: bool,
     ) -> usize {
         let (quote_indents, inside) = note_quote_host(raw_def_line, structural_len);
         let prefix_cols = inside.chars().count() - def.def_line.chars().count();
@@ -1535,6 +1544,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             note_floor: prefix_cols + footnote_body_floor(def.def_line),
             marker_note: detect_list_marker_full(inside)
                 .is_some_and(|marker| parse_footnote_def_line(marker.content).is_some()),
+            description_host,
         };
         let mut i = self.attach_quoted_plus_block(&host, note, i, raw_def_line);
         let source = self.source;
@@ -1690,6 +1700,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             // §10 I2: a marker continues a hosting list only from inside the
             // note's quotes; elsewhere it is text under the note's paragraph.
             && !(inside.is_some() && host.prefix_cols > 0 && is_list_marker(rest))
+            // The next entry of the hosting list stays out of the note.
+            && !(host.description_host
+                && (rest.starts_with(":: ") || strip_definition_marker(rest).is_some()))
             && !opens_code_fence(rest)
             && (walk.lazy_open || note_paragraph_open(note, rest, self.options));
         if !lazy {

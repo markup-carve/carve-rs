@@ -2774,10 +2774,10 @@ fn item_chunk_tree_looseness(
                 && lines
                     .get(start)
                     .is_some_and(|line| trim_ascii_start(line).starts_with('+')));
-        let search_start = if lines
-            .get(previous_end..start)
-            .is_some_and(|span| span.iter().any(|line| is_definition_placeholder(line)))
-        {
+        let search_start = if lines.get(previous_end..start).is_some_and(|span| {
+            span.iter()
+                .any(|line| is_definition_placeholder(line) || gap_attribute_line(line))
+        }) {
             previous_start
         } else {
             previous_end
@@ -2786,7 +2786,9 @@ fn item_chunk_tree_looseness(
             .rev()
             .find(|&line| {
                 !lines.get(line).is_some_and(|text| {
-                    is_definition_placeholder(text) || is_line_comment_any_column(text)
+                    is_definition_placeholder(text)
+                        || is_line_comment_any_column(text)
+                        || gap_attribute_line(text)
                 })
             })
             .is_some_and(|line| {
@@ -2804,6 +2806,13 @@ fn item_chunk_tree_looseness(
         previous_child = Some(child);
     }
     false
+}
+
+/// A gap between two blocks holds no block, so a brace line there is an
+/// attribute run, which renders nothing (PART 9 §17 L1b).
+fn gap_attribute_line(line: &str) -> bool {
+    let line = trim_ascii(line);
+    line.starts_with('{') || line.ends_with('}')
 }
 
 fn trailing_payload_blank_count(mut block: &BlockNode) -> usize {

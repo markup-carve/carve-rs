@@ -61,6 +61,9 @@ struct CarveContext {
     /// The blocks being written sit at a list item's or a description's
     /// content column; cleared for anything nested deeper.
     at_item_content_column: bool,
+    /// Columns a sub-list on a task item's marker line sits past the item's
+    /// content column, so its continuation lines stay in the sub-item.
+    marker_line_shift: usize,
     /// The paragraph being written sits at that column, so a list marker on a
     /// continuation line below it would end the item (CARVE-P11-007).
     item_paragraph: bool,
@@ -694,6 +697,7 @@ fn render_with_escapes_once(
         in_caption: false,
         in_term: false,
         at_item_content_column: false,
+        marker_line_shift: 0,
         item_paragraph: false,
         in_footnote_body: false,
         footnote_guard_types: Vec::new(),
@@ -1572,6 +1576,7 @@ fn region_marker_adjacent(previous: &BlockNode, block: &BlockNode, rendered: &st
         | BlockNode::Table(_)
         | BlockNode::Div(_)
         | BlockNode::Admonition(_)
+        | BlockNode::List(_)
         | BlockNode::LinkReferenceDefinition(_) => true,
         BlockNode::BlockQuote(quote) => quote.fenced,
         _ => false,
@@ -2233,11 +2238,44 @@ fn render_block(session: &RenderSession, node: &BlockNode, ctx: &mut CarveContex
         &mut ctx.item_paragraph,
         at_item && matches!(node, BlockNode::Paragraph(_)),
     );
-    let out = render_block_body(session, node, ctx);
+    let shift = std::mem::take(&mut ctx.marker_line_shift);
+    let mut out = render_block_body(session, node, ctx);
+    if let BlockNode::List(list) = node {
+        let attributed = list.items.first().is_some_and(|item| item.attrs.is_some());
+        // The reader measures a fence on that marker line from the task item's
+        // column, so its payload and closer stay there.
+        let opens_fence = out
+            .split('\n')
+            .next()
+            .and_then(|line| line.rsplit(' ').next())
+            .is_some_and(|last| last.starts_with("```") || last.starts_with("~~~"));
+        if shift > 0 && !attributed && !opens_fence && !out.starts_with('{') {
+            out = shift_continuation_lines(session, &out, shift);
+        }
+    }
     ctx.item_paragraph = item_paragraph;
     ctx.at_item_content_column = at_item;
     ctx.escape_unit = previous;
     out
+}
+
+fn shift_continuation_lines(session: &RenderSession, rendered: &str, shift: usize) -> String {
+    let marker = marker_column(session);
+    let blank = verbatim_blank(session);
+    let padding = " ".repeat(shift);
+    rendered
+        .split('\n')
+        .enumerate()
+        .map(|(index, line)| {
+            if index == 0 || line.is_empty() || line == *blank || line.starts_with(marker.as_str())
+            {
+                line.to_string()
+            } else {
+                format!("{padding}{line}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn at_item_content_column<T>(

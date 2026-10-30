@@ -347,12 +347,18 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
         let inserted_before_item = session.inserted.with(std::cell::Cell::get);
         let seen_before_item = session.seen.with(std::cell::Cell::get);
         let mut relative_boundaries = Vec::new();
+        let task_box_shift = if item.checked.is_some() && item_attrs.is_empty() {
+            "[ ] ".len()
+        } else {
+            0
+        };
         let mut content = if item.children.is_empty() {
             item.pos
                 .as_ref()
                 .and_then(|pos| definition_at_line(session, pos.start_line, ctx))
                 .unwrap_or_default()
         } else {
+            ctx.marker_line_shift = task_box_shift;
             at_item_content_column(ctx, |ctx| {
                 render_item_blocks(
                     session,
@@ -430,6 +436,7 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
                 session.inserted.with(|cell| cell.set(inserted_before_item));
                 session.seen.with(|cell| cell.set(seen_before_item));
                 let mut unused_boundaries = Vec::new();
+                ctx.marker_line_shift = task_box_shift;
                 content = at_item_content_column(ctx, |ctx| {
                     render_item_blocks(
                         session,

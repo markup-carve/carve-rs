@@ -1874,6 +1874,16 @@ fn bare_opener_state(bytes: &[u8], at: usize) -> u8 {
     }
 }
 
+/// A `/*` that could open the combined token, whether or not it forms.
+pub(in crate::parse) fn combined_shape_at(bytes: &[u8], at: usize) -> bool {
+    bytes[at] == b'/'
+        && bytes.get(at + 1) == Some(&b'*')
+        && bytes.get(at + 2).is_some_and(|&next| !is_carve_ws(next))
+        && !at
+            .checked_sub(1)
+            .is_some_and(|prev| bytes[prev].is_ascii_alphanumeric())
+}
+
 /// Whether `pos` sits in a bracket run of this inline run. A kind open
 /// outside the run is not reachable inside it for E3 (carve#3897).
 pub(in crate::parse) fn in_bracket_run(
@@ -1936,10 +1946,14 @@ fn find_emphasis_close_walk(
         .clone();
     let mut literal = 0;
     let mut j = from;
+    // The `*` of a `/*` split under an open `/`: its `*/` lost the `/` to that span.
+    let splits_shape = delim == b'*' && OpenKinds::is_open(b'/');
+    let mut shape_seen = splits_shape && from >= 2 && bytes[from - 2] == b'/';
     while j < bytes.len() {
         if opener_end.is_some_and(|end| j > end) {
             return None;
         }
+        shape_seen |= combined_shape_at(bytes, j);
         // A literal directive's tokens open nothing, though the walk's own
         // closer still breaks it (CARVE-P6-001, CARVE-P9-043).
         while literals.get(literal).is_some_and(|&(_, end)| end <= j) {
@@ -2014,7 +2028,13 @@ fn find_emphasis_close_walk(
                     .bare_attributes_at_start(bytes, j + 1)
                     .is_some()
             {
-                let opens = guard_stands(bytes, j + 1, from, delim);
+                // E3: while an earlier entry of this kind is still open, this
+                // one is not pushed, so it guards (carve#4021).
+                let held = last_opener[emphasis_delim_index(ch)].is_some_and(|open| {
+                    cached_find_emphasis_close(bytes, open + 1, ch, memo, bounds)
+                        .map_or(true, |close| close > j)
+                });
+                let opens = !held && guard_stands(bytes, j + 1, from, delim);
                 if opens && j == start {
                     start = j + 1;
                 } else if opens {
@@ -2124,6 +2144,20 @@ fn find_emphasis_close_walk(
             && (j == run.map_or(0, |open| open + 1) || matches!(bytes[j - 1], b' ' | b'\n'))
         {
             let run_close = run.map(|open| bounds.matches[open]);
+            // A comment in a `/*` ... `*/` shape ends at that `*/`, whether or
+            // not the token forms, so it never changes the pairing (carve#4042).
+            if shape_seen && delim != COMBINED_CLOSER && j > 0 && bytes[j - 1] == b' ' {
+                let end = trailing_comment_end(bytes, j + 2, run_close).unwrap_or(bytes.len());
+                let last = bytes.len() - 1;
+                let close =
+                    find_seq(&bytes[..end], j + 2, b"*/")
+                        .or((splits_shape && end == bytes.len() && bytes[last] == b'*')
+                            .then_some(last));
+                if let Some(close) = close {
+                    j = close;
+                    continue;
+                }
+            }
             if (delim == COMBINED_CLOSER || OpenKinds::in_combined())
                 && j > 0
                 && bytes[j - 1] == b' '

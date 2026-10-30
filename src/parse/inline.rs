@@ -510,6 +510,8 @@ pub(in crate::parse) fn parse_inline_context_with_pairs(
         emphasis_no_close: EmphasisMemo::default(),
         open_entry_at: None,
         open_entry_kinds: 0,
+        combined_shape_seen: false,
+        combined_shape_scanned: 0,
         attribute_target: None,
         attribute_slots: None,
         sink: InlineSink {
@@ -741,6 +743,8 @@ struct InlineRun<'a, 'o> {
     // (carve#3973 X1).
     open_entry_at: Option<usize>,
     open_entry_kinds: u16,
+    combined_shape_seen: bool,
+    combined_shape_scanned: usize,
     attribute_target: Option<usize>,
     attribute_slots: Option<HashSet<AttrSlot>>,
     sink: InlineSink<'a>,
@@ -978,6 +982,15 @@ impl InlineRun<'_, '_> {
     /// (`text %% comment`). A bracket run open here is the host: the marker
     /// needs no separator at its start, and takes nothing past its closer.
     /// An emphasis span's content is not a host: a `%%` opening it is text.
+    /// Whether a `/*` shape stands before `i`, token or not (carve#4042).
+    fn shape_before(&mut self, i: usize) -> bool {
+        while !self.combined_shape_seen && self.combined_shape_scanned < i {
+            self.combined_shape_seen = combined_shape_at(self.bytes, self.combined_shape_scanned);
+            self.combined_shape_scanned += 1;
+        }
+        self.combined_shape_seen
+    }
+
     fn trailing_comment(&mut self, i: usize) -> Option<usize> {
         let bytes = self.bytes;
         let comment_run = self.bounds.bracket_run_at(i);
@@ -1005,7 +1018,7 @@ impl InlineRun<'_, '_> {
             comment_run.map(|open| self.bounds.matches[open]),
         )
         .unwrap_or(bytes.len());
-        if OpenKinds::in_combined() && i > 0 && bytes[i - 1] == b' ' {
+        if i > 0 && bytes[i - 1] == b' ' && (OpenKinds::in_combined() || self.shape_before(i)) {
             end = find_seq(&bytes[..end], i + 2, b"*/").unwrap_or(end);
         }
         // The comment renders to nothing, but it is PUBLISHED: PART 12 has a
