@@ -781,6 +781,17 @@ pub(in crate::parse) fn split_table_cells_ranged(content: &str) -> RowSplit {
 /// `seed_len` / `open_run_at` seed the scanner with a verbatim run left OPEN by
 /// the row this line CONTINUES (carve#1293), and with the WIDTH that run was
 /// opened at.
+/// The verbatim run still open after a written row's cells, with the column it
+/// opened in, for the writer's own read of a continuation line.
+pub(crate) fn table_run_open_after(
+    content: &str,
+    seed_len: Option<usize>,
+    open_run_at: usize,
+) -> (Option<usize>, usize) {
+    let split = split_table_cells_seeded(content, seed_len, open_run_at);
+    (split.open_len, split.open_run_at)
+}
+
 pub(in crate::parse) fn split_table_cells_seeded(
     content: &str,
     seed_len: Option<usize>,

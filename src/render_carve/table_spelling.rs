@@ -225,8 +225,23 @@ pub(super) fn render_table(
         let attrs = render_attrs(&row.attrs);
         row_slots.push((rows.len(), cells.clone(), '|', attrs.clone()));
         rows.push(render_table_row(&cells, &attrs));
+        let mut run = crate::parse::table_run_open_after(&cells.join("|"), None, 0);
         for line in &continuations[row_index] {
-            row_slots.push((rows.len(), line.clone(), '+', String::new()));
+            // CARVE-P2-019: a pipe inside a run that stays open is run content,
+            // so an empty slot past it would read back as text (CARVE-P11-002).
+            let last = line
+                .iter()
+                .rposition(|slot| !slot.trim().is_empty())
+                .unwrap_or(0);
+            let written =
+                crate::parse::table_run_open_after(&line[..=last].join("|"), run.0, run.1);
+            let line = if written.0.is_some() {
+                &line[..=last]
+            } else {
+                &line[..]
+            };
+            run = written;
+            row_slots.push((rows.len(), line.to_vec(), '+', String::new()));
             rows.push(format!("+{}|", line.join("|")));
         }
     }

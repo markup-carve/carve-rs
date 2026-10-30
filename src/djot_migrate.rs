@@ -102,11 +102,11 @@ fn djot_to_carve_prepared_with_quotes(
     skip_heading_targets: bool,
 ) -> String {
     if nul_shielded || !stripped_definitions.source.contains('\0') {
-        return convert_djot_document(
+        return end_note_tasks_before_text(convert_djot_document(
             stripped_definitions,
             omit_quote_delimiters,
             skip_heading_targets,
-        );
+        ));
     }
     let token = "\0U\0";
     let pattern = cached_regex!(r"\x00DJOTNOTEATTR\x00([0-9]+)\x00").unwrap();
@@ -131,8 +131,57 @@ fn djot_to_carve_prepared_with_quotes(
         losses: stripped_definitions.losses.clone(),
         comments: stripped_definitions.comments.clone(),
     };
-    convert_djot_document(&protected, omit_quote_delimiters, skip_heading_targets)
-        .replace(token, "\0")
+    end_note_tasks_before_text(convert_djot_document(
+        &protected,
+        omit_quote_delimiters,
+        skip_heading_targets,
+    ))
+    .replace(token, "\0")
+}
+
+/// Carve's `+` on an empty task in a note takes the next block, and in Djot that
+/// line is outside the note, so a blank line has to end the note first.
+fn end_note_tasks_before_text(carve: String) -> String {
+    let empty_note_task =
+        cached_regex!(r"^([> \t]*)\[\^[^\]\n]+\]:[ \t]+.*\[[^\]\n]\] \+$").unwrap();
+    if !carve.contains("] +\n") {
+        return carve;
+    }
+    let lines: Vec<&str> = carve.split('\n').collect();
+    let mut out = String::with_capacity(carve.len());
+    let mut fence: Option<(u8, usize)> = None;
+    for (index, line) in lines.iter().enumerate() {
+        out.push_str(line);
+        if index + 1 < lines.len() {
+            out.push('\n');
+        }
+        let content = line.trim_start_matches(['>', ' ', '\t']);
+        let run = content
+            .bytes()
+            .take_while(|&b| b == b'`' || b == b'~')
+            .count();
+        if run >= 3 {
+            let ch = content.as_bytes()[0];
+            match fence {
+                Some((open, len)) if open == ch && run >= len => fence = None,
+                None => fence = Some((ch, run)),
+                _ => {}
+            }
+            continue;
+        }
+        if fence.is_none() {
+            if let (Some(caps), Some(next)) = (empty_note_task.captures(line), lines.get(index + 1))
+            {
+                let prefix = &caps[1];
+                let depth = prefix.bytes().filter(|&b| b == b'>').count();
+                if empty_task_ends_before_text(next, depth, prefix.len() + 1) {
+                    out.push_str(prefix.trim_end());
+                    out.push('\n');
+                }
+            }
+        }
+    }
+    out
 }
 
 fn mask_djot_reference_definitions<'a>(source: &str, mask: &'a str) -> std::borrow::Cow<'a, str> {

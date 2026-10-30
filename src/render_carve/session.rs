@@ -33,6 +33,8 @@ pub(super) struct RenderSession {
     pub(super) crossref_targets: Slot<RefCell<BTreeSet<String>>>,
     pub(super) redundant_ids: Slot<RefCell<BTreeSet<String>>>,
     pub(super) hyphen_breaks_are_unsafe: Slot<Cell<bool>>,
+    pub(super) quoted_marker_lines: Slot<Cell<bool>>,
+    pub(super) lazy_marker_lines: Slot<Cell<bool>>,
     pub(super) sentinels: Slot<RefCell<[Rc<String>; SENTINEL_COUNT]>>,
     pub(super) inserted: Slot<Cell<[usize; SENTINEL_COUNT]>>,
     pub(super) seen: Slot<Cell<[usize; SENTINEL_COUNT]>>,
@@ -58,6 +60,8 @@ impl RenderSession {
             crossref_targets: Slot(RefCell::new(BTreeSet::new())),
             redundant_ids: Slot(RefCell::new(BTreeSet::new())),
             hyphen_breaks_are_unsafe: Slot(Cell::new(false)),
+            quoted_marker_lines: Slot(Cell::new(false)),
+            lazy_marker_lines: Slot(Cell::new(false)),
             sentinels: Slot(RefCell::new(
                 SENTINEL_DEFAULTS.map(|marker| Rc::new(marker.to_string())),
             )),
