@@ -358,11 +358,12 @@ flush
             r####"<blockquote>
   <ul>
     <li>a
-<code>
-x
-flush</code></li>
+      <pre><code>x
+</code></pre>
+    </li>
   </ul>
-</blockquote>"####,
+</blockquote>
+<p>flush</p>"####,
         ),
     ];
     for (name, source, expected) in cases {

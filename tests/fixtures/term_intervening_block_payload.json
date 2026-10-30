@@ -2,137 +2,137 @@
   {
     "id": "term-boundary-0",
     "source": "- :: term\n  > quote\n  ```\n  code\nafter\n",
-    "html": "<ul><li><dl><dt>term</dt></dl><blockquote><p>quote\n<code>\ncode\nafter</code></p></blockquote></li></ul>"
+    "html": "<ul><li><dl><dt>term</dt></dl><blockquote><p>quote</p></blockquote><pre><code>code\n</code></pre></li></ul><p>after</p>"
   },
   {
     "id": "term-boundary-1",
     "source": "- :: term\n  > quote\n  ``` rust\n  code\nafter\n",
-    "html": "<ul><li><dl><dt>term</dt></dl><blockquote><p>quote\n<code> rust\ncode\nafter</code></p></blockquote></li></ul>"
+    "html": "<ul><li><dl><dt>term</dt></dl><blockquote><p>quote</p></blockquote><pre><code class=\"language-rust\">code\n</code></pre></li></ul><p>after</p>"
   },
   {
     "id": "term-boundary-2",
     "source": "- :: term\n  > quote\n  ~~~\n  code\nafter\n",
-    "html": "<ul><li><dl><dt>term</dt></dl><blockquote><p>quote\n~~~\ncode\nafter</p></blockquote></li></ul>"
+    "html": "<ul><li><dl><dt>term</dt></dl><blockquote><p>quote</p></blockquote><pre><code>code\n</code></pre></li></ul><p>after</p>"
   },
   {
     "id": "term-boundary-3",
     "source": "- :: term\n  :: other\n  : desc\n  ```\n  code\nafter\n",
-    "html": "<ul><li><dl><dt>term</dt><dt>other</dt><dd>desc\n<code>\ncode\nafter</code></dd></dl></li></ul>"
+    "html": "<ul><li><dl><dt>term</dt><dt>other</dt><dd>desc</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>"
   },
   {
     "id": "term-boundary-4",
     "source": "- :: term\n  :: other\n  : desc\n  ``` rust\n  code\nafter\n",
-    "html": "<ul><li><dl><dt>term</dt><dt>other</dt><dd>desc\n<code> rust\ncode\nafter</code></dd></dl></li></ul>"
+    "html": "<ul><li><dl><dt>term</dt><dt>other</dt><dd>desc</dd></dl><pre><code class=\"language-rust\">code\n</code></pre></li></ul><p>after</p>"
   },
   {
     "id": "term-boundary-5",
     "source": "- :: term\n  :: other\n  : desc\n  ~~~\n  code\nafter\n",
-    "html": "<ul><li><dl><dt>term</dt><dt>other</dt><dd>desc\n~~~\ncode\nafter</dd></dl></li></ul>"
+    "html": "<ul><li><dl><dt>term</dt><dt>other</dt><dd>desc</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>"
   },
   {
     "id": "term-boundary-6",
     "source": "- :: term\n  - child\n  ```\n  code\nafter\n",
-    "html": "<ul><li><dl><dt>term</dt></dl><ul><li>child\n<code>\ncode\nafter</code></li></ul></li></ul>"
+    "html": "<ul><li><dl><dt>term</dt></dl><ul><li>child</li></ul><pre><code>code\n</code></pre></li></ul><p>after</p>"
   },
   {
     "id": "term-boundary-7",
     "source": "- :: term\n  - child\n  ``` rust\n  code\nafter\n",
-    "html": "<ul><li><dl><dt>term</dt></dl><ul><li>child\n<code> rust\ncode\nafter</code></li></ul></li></ul>"
+    "html": "<ul><li><dl><dt>term</dt></dl><ul><li>child</li></ul><pre><code class=\"language-rust\">code\n</code></pre></li></ul><p>after</p>"
   },
   {
     "id": "term-boundary-8",
     "source": "- :: term\n  - child\n  ~~~\n  code\nafter\n",
-    "html": "<ul><li><dl><dt>term</dt></dl><ul><li>child\n~~~\ncode\nafter</li></ul></li></ul>"
+    "html": "<ul><li><dl><dt>term</dt></dl><ul><li>child</li></ul><pre><code>code\n</code></pre></li></ul><p>after</p>"
   },
   {
     "id": "term-boundary-9",
     "source": "> - :: term\n>   > quote\n>   ```\n>   code\n> after\n",
-    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><blockquote><p>quote\n<code>\ncode\nafter</code></p></blockquote></li></ul></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><blockquote><p>quote</p></blockquote><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>"
   },
   {
     "id": "term-boundary-10",
     "source": "> - :: term\n>   > quote\n>   ``` rust\n>   code\n> after\n",
-    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><blockquote><p>quote\n<code> rust\ncode\nafter</code></p></blockquote></li></ul></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><blockquote><p>quote</p></blockquote><pre><code class=\"language-rust\">code\n</code></pre></li></ul><p>after</p></blockquote>"
   },
   {
     "id": "term-boundary-11",
     "source": "> - :: term\n>   > quote\n>   ~~~\n>   code\n> after\n",
-    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><blockquote><p>quote\n~~~\ncode\nafter</p></blockquote></li></ul></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><blockquote><p>quote</p></blockquote><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>"
   },
   {
     "id": "term-boundary-12",
     "source": "> - :: term\n>   :: other\n>   : desc\n>   ```\n>   code\n> after\n",
-    "html": "<blockquote><ul><li><dl><dt>term</dt><dt>other</dt><dd>desc\n<code>\ncode\nafter</code></dd></dl></li></ul></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dt>other</dt><dd>desc</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>"
   },
   {
     "id": "term-boundary-13",
     "source": "> - :: term\n>   :: other\n>   : desc\n>   ``` rust\n>   code\n> after\n",
-    "html": "<blockquote><ul><li><dl><dt>term</dt><dt>other</dt><dd>desc\n<code> rust\ncode\nafter</code></dd></dl></li></ul></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dt>other</dt><dd>desc</dd></dl><pre><code class=\"language-rust\">code\n</code></pre></li></ul><p>after</p></blockquote>"
   },
   {
     "id": "term-boundary-14",
     "source": "> - :: term\n>   :: other\n>   : desc\n>   ~~~\n>   code\n> after\n",
-    "html": "<blockquote><ul><li><dl><dt>term</dt><dt>other</dt><dd>desc\n~~~\ncode\nafter</dd></dl></li></ul></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dt>other</dt><dd>desc</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>"
   },
   {
     "id": "term-boundary-15",
     "source": "> - :: term\n>   - child\n>   ```\n>   code\n> after\n",
-    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><ul><li>child\n<code>\ncode\nafter</code></li></ul></li></ul></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><ul><li>child</li></ul><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>"
   },
   {
     "id": "term-boundary-16",
     "source": "> - :: term\n>   - child\n>   ``` rust\n>   code\n> after\n",
-    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><ul><li>child\n<code> rust\ncode\nafter</code></li></ul></li></ul></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><ul><li>child</li></ul><pre><code class=\"language-rust\">code\n</code></pre></li></ul><p>after</p></blockquote>"
   },
   {
     "id": "term-boundary-17",
     "source": "> - :: term\n>   - child\n>   ~~~\n>   code\n> after\n",
-    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><ul><li>child\n~~~\ncode\nafter</li></ul></li></ul></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><ul><li>child</li></ul><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>"
   },
   {
     "id": "term-boundary-18",
     "source": "> > - :: term\n> >   > quote\n> >   ```\n> >   code\n> > after\n",
-    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl><blockquote><p>quote\n<code>\ncode\nafter</code></p></blockquote></li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl><blockquote><p>quote</p></blockquote><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>"
   },
   {
     "id": "term-boundary-19",
     "source": "> > - :: term\n> >   > quote\n> >   ``` rust\n> >   code\n> > after\n",
-    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl><blockquote><p>quote\n<code> rust\ncode\nafter</code></p></blockquote></li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl><blockquote><p>quote</p></blockquote><pre><code class=\"language-rust\">code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>"
   },
   {
     "id": "term-boundary-20",
     "source": "> > - :: term\n> >   > quote\n> >   ~~~\n> >   code\n> > after\n",
-    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl><blockquote><p>quote\n~~~\ncode\nafter</p></blockquote></li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl><blockquote><p>quote</p></blockquote><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>"
   },
   {
     "id": "term-boundary-21",
     "source": "> > - :: term\n> >   :: other\n> >   : desc\n> >   ```\n> >   code\n> > after\n",
-    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dt>other</dt><dd>desc\n<code>\ncode\nafter</code></dd></dl></li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dt>other</dt><dd>desc</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>"
   },
   {
     "id": "term-boundary-22",
     "source": "> > - :: term\n> >   :: other\n> >   : desc\n> >   ``` rust\n> >   code\n> > after\n",
-    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dt>other</dt><dd>desc\n<code> rust\ncode\nafter</code></dd></dl></li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dt>other</dt><dd>desc</dd></dl><pre><code class=\"language-rust\">code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>"
   },
   {
     "id": "term-boundary-23",
     "source": "> > - :: term\n> >   :: other\n> >   : desc\n> >   ~~~\n> >   code\n> > after\n",
-    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dt>other</dt><dd>desc\n~~~\ncode\nafter</dd></dl></li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dt>other</dt><dd>desc</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>"
   },
   {
     "id": "term-boundary-24",
     "source": "> > - :: term\n> >   - child\n> >   ```\n> >   code\n> > after\n",
-    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl><ul><li>child\n<code>\ncode\nafter</code></li></ul></li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl><ul><li>child</li></ul><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>"
   },
   {
     "id": "term-boundary-25",
     "source": "> > - :: term\n> >   - child\n> >   ``` rust\n> >   code\n> > after\n",
-    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl><ul><li>child\n<code> rust\ncode\nafter</code></li></ul></li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl><ul><li>child</li></ul><pre><code class=\"language-rust\">code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>"
   },
   {
     "id": "term-boundary-26",
     "source": "> > - :: term\n> >   - child\n> >   ~~~\n> >   code\n> > after\n",
-    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl><ul><li>child\n~~~\ncode\nafter</li></ul></li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl><ul><li>child</li></ul><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>"
   },
   {
     "id": "final-static-review-0",

@@ -12,12 +12,12 @@
   {
     "id": 2,
     "source": ":: t\n: ::: d\n  :: t\n  : - ```\n  ```\n  :::\n",
-    "html": "<dl>\n  <dt>t</dt>\n  <dd>\n    <div class=\"d\">\n      <dl>\n        <dt>t</dt>\n        <dd>\n          <ul>\n            <li>\n              <pre><code></code></pre>\n            </li>\n          </ul>\n        </dd>\n      </dl>\n      <pre><code></code></pre>\n    </div>\n  </dd>\n</dl>"
+    "html": "<dl>\n  <dt>t</dt>\n  <dd>\n    <div class=\"d\">\n      <dl>\n        <dt>t</dt>\n        <dd>\n          <ul>\n            <li>\n              <pre><code></code></pre>\n            </li>\n          </ul>\n        </dd>\n      </dl>\n      <pre><code>:::\n</code></pre>\n    </div>\n  </dd>\n</dl>"
   },
   {
     "id": 3,
     "source": ":: t\n: plain\n  : - ```\n  ```\n",
-    "html": "<dl>\n  <dt>t</dt>\n  <dd>plain\n: - <code>\n</code></dd>\n</dl>"
+    "html": "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>plain\n: - <code></code></p>\n    <pre><code></code></pre>\n  </dd>\n</dl>"
   },
   {
     "id": 4,

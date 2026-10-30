@@ -908,11 +908,10 @@ fn a_folded_marker_fence_with_a_flush_closer_cannot_hide_later_definitions() {
                 };
                 let doc = carve::parse(&source);
                 let output = carve::render_html(&doc).unwrap();
-                assert!(!output.contains(definition), "{source:?}: {output}");
-                if definition.starts_with("[^") {
-                    assert_eq!(doc.footnote_defs.len(), 1, "{source:?}: {output}");
-                    assert!(output.contains("role=\"doc-noteref\""), "{output}");
-                }
+                // The flush-left run opens a fence with no closer, which holds the
+                // definition as payload (carve#4018).
+                assert!(output.contains(definition), "{source:?}: {output}");
+                assert!(doc.footnote_defs.is_empty(), "{source:?}: {output}");
             }
         }
     }

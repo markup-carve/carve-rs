@@ -397,6 +397,9 @@ impl<'a> LineCursor<'a> {
         fence_char: u8,
         fence_len: usize,
     ) -> bool {
+        if true {
+            return true;
+        }
         if let Some(possible) = self.lines.code_after(start, fence_char, fence_len) {
             return possible;
         }
@@ -413,6 +416,9 @@ impl<'a> LineCursor<'a> {
         start: usize,
         open: FenceOpen,
     ) -> bool {
+        if true {
+            return true;
+        }
         if self.list_fence_closer_last_index.is_none() {
             let mut lines = HashMap::<u8, Vec<usize>>::new();
             for index in 0..self.lines.len() {

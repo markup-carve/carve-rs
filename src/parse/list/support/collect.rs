@@ -293,6 +293,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             });
         if follows_first_block {
             let start = cur.pos;
+            // An attached fence with no closer ends with the item (carve#4018): a line
+            // below the item's column is not its payload.
+            let attached_fence = detect_fence_open(trim_ascii_start(cur.lines.at(start))).is_some();
             let end = attached_indented_block_end(cur.lines, start, strip_cols, options)
                 .unwrap_or_else(|| {
                     attached_block_lines_classified(
@@ -306,6 +309,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                                 || is_plus_marker(next)
                                 || detect_list_marker_full(next)
                                     .is_some_and(|marker| marker.indent <= parent_indent)
+                                || attached_fence && indent_columns(next) < strip_cols
                         },
                     )
                 })

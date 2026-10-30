@@ -9,7 +9,7 @@
   },
   {
     "source": "- - ```\n  +\n%% c\ntail",
-    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <pre><code></code></pre>\n      </li>\n    </ul>\n    +\n    tail\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <pre><code></code></pre>\n      </li>\n    </ul>\n    +\n  </li>\n</ul>\n<p>tail</p>"
   },
   {
     "source": "- - ```\n\n\n  +\ntail\n",
@@ -25,7 +25,7 @@
   },
   {
     "source": "- - ```\n\n  +\n~~~\ny\n",
-    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <pre><code>\n</code></pre>\n      </li>\n    </ul>\n    <p>+\n~~~\ny</p>\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <pre><code>\n</code></pre>\n      </li>\n    </ul>\n    <p>+</p>\n  </li>\n</ul>\n<pre><code>y\n</code></pre>"
   },
   {
     "source": "- 1. ```\n\n\n  +\ntail\n",

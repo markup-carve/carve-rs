@@ -51,17 +51,17 @@ fn a_closer_outside_the_items_body_does_not_open_the_fence() {
     );
     row(
         ":: t\n: a\n  ```\n  b\n y\n   ```\n",
-        "<dl>\n  <dt>t</dt>\n  <dd>a\n<code>\nb\ny\n</code></dd>\n</dl>",
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>a</p>\n    <pre><code>b\n</code></pre>\n  </dd>\n</dl>\n<p>y</p>\n<pre><code></code></pre>",
         &mut moved,
     );
     row(
         ":: t\n: a\n  ```\n  b\n y\n\nz\n  ```\n",
-        "<dl>\n  <dt>t</dt>\n  <dd>a\n<code>\nb\ny</code></dd>\n</dl>\n<p>z\n<code></code></p>",
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>a</p>\n    <pre><code>b\n</code></pre>\n  </dd>\n</dl>\n<p>y</p>\n<p>z</p>\n<pre><code></code></pre>",
         &mut moved,
     );
     row(
         ":: t\n: a\n  ~~~\n  b\n y\n\nz\n  ~~~\n",
-        "<dl>\n  <dt>t</dt>\n  <dd>a\n~~~\nb\ny</dd>\n</dl>\n<p>z\n~~~</p>",
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>a</p>\n    <pre><code>b\n</code></pre>\n  </dd>\n</dl>\n<p>y</p>\n<p>z</p>\n<pre><code></code></pre>",
         &mut moved,
     );
     assert!(moved.is_empty(), "rows moved:\n{}", moved.join("\n"));

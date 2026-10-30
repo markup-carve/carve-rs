@@ -76,7 +76,7 @@ fn a_fence_opened_on_a_continuation_line_closes_the_definition_too() {
     let out = html(":: t\n:  a\n   ```\n   b\nbody\n   ```\n");
     assert_eq!(
         out,
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>a</p>\n    <pre><code>b\n</code></pre>\n  </dd>\n</dl>\n<p>body\n<code></code></p>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>a</p>\n    <pre><code>b\n</code></pre>\n  </dd>\n</dl>\n<p>body</p>\n<pre><code></code></pre>"
     );
 }
 

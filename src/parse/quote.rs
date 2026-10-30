@@ -665,30 +665,13 @@ impl NestedFenceReplay {
             return;
         }
         // The host holds the fence whether the opener sits AT its
-        // content column or past it. A fence after an open paragraph
-        // still needs a closer ahead (section 10). Inside a colon
-        // paragraph it must reach the opener's authored column.
-        if line.block_start
-            || !here.para
-            || indexed_code_closes(
-                pos.lines,
-                pos.at,
-                pos.level,
-                line.col,
-                here.colons.is_empty().then_some(line.floor),
-                open,
-                &mut self.literal_code_lookup,
-            )
-        {
-            self.fence_count += 1;
-            here.fence_ordinal = self.fence_count;
-            here.host_fence = Some((open, line.floor, line.col, false));
-            here.para = false;
-            here.colon_absorption = false;
-            here.by_fence = true;
-            return;
-        }
-        here.para = true;
+        // content column or past it, closer or not (carve#4018).
+        self.fence_count += 1;
+        here.fence_ordinal = self.fence_count;
+        here.host_fence = Some((open, line.floor, line.col, false));
+        here.para = false;
+        here.colon_absorption = false;
+        here.by_fence = true;
     }
 
     fn replay_unhosted(
@@ -700,28 +683,13 @@ impl NestedFenceReplay {
     ) {
         let here = &mut self.chain[pos.level];
         if let Some(open) = detect_fence_open(text) {
-            // At block start a fence opens with or without a closer; after
-            // a paragraph it needs one (§10), or it is inline verbatim.
-            if !here.para
-                || indexed_code_closes(
-                    pos.lines,
-                    pos.at,
-                    pos.level,
-                    0,
-                    None,
-                    open,
-                    &mut self.literal_code_lookup,
-                )
-            {
-                self.fence_count += 1;
-                here.fence_ordinal = self.fence_count;
-                here.fence = Some(open);
-                here.para = false;
-                here.colon_absorption = false;
-                here.by_fence = true;
-                return;
-            }
-            here.para = true;
+            // A fence opens with or without a closer (carve#4018).
+            self.fence_count += 1;
+            here.fence_ordinal = self.fence_count;
+            here.fence = Some(open);
+            here.para = false;
+            here.colon_absorption = false;
+            here.by_fence = true;
             return;
         }
         here.replay_text(pos, text, after_comment, absorption_text);
@@ -2463,9 +2431,19 @@ impl<'a> QuoteBody<'a> {
             }
             // `inner` always holds the quote's first content line, so a
             // leading blank separates the attached block from it.
+            // A trailing blank inside a fence left open would become its payload.
+            let open_fence = attached.lines.first().and_then(|first| {
+                detect_fence_open(trim_ascii_start(&first.text)).filter(|&open| {
+                    !attached.lines[1..]
+                        .iter()
+                        .any(|line| is_fence_close(trim_ascii_start(&line.text), open))
+                })
+            });
             self.inner.push_synthetic_blank();
             self.inner.lines.extend(attached.lines);
-            self.inner.push_synthetic_blank();
+            if open_fence.is_none() {
+                self.inner.push_synthetic_blank();
+            }
             self.para_open = ParaOpen::Closed;
             self.table = TableRun::default();
             self.last_nested = false;

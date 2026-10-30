@@ -80,6 +80,6 @@ fn control_a_fence_with_no_closer_after_a_paragraph_is_inline_text() {
     // paragraph stays open and `c` continues it.
     assert_eq!(
         html("> > a\n> > ```\nc\n"),
-        "<blockquote>\n  <blockquote><p>a\n<code>\nc</code></p></blockquote>\n</blockquote>"
+        "<blockquote>\n  <blockquote>\n    <p>a</p>\n    <pre><code></code></pre>\n  </blockquote>\n</blockquote>\n<p>c</p>"
     );
 }

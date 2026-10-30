@@ -139,7 +139,7 @@ fn a_definition_fence_uses_a_closer_past_a_below_column_line() {
     let source = ":: t\n: a\n  ```\n  b\n y\n  ```\n";
     assert_eq!(
         to_html(source),
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>a</p>\n    <pre><code>b\n</code></pre>\n  </dd>\n</dl>\n<p>y\n<code></code></p>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>a</p>\n    <pre><code>b\n</code></pre>\n  </dd>\n</dl>\n<p>y</p>\n<pre><code></code></pre>"
     );
 }
 

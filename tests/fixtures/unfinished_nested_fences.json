@@ -2,12 +2,12 @@
   {
     "id": "455-an-unterminated-fence-on-a-nested-lead-in-a-description-body-owns-its-body-2",
     "source": ":: t\n: - ~~~ x\ncode\n~~~\n",
-    "html": "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>\n        <pre><code class=\"language-x\"></code></pre>\n      </li>\n    </ul>\n  </dd>\n</dl>\n<p>code\n~~~</p>"
+    "html": "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>\n        <pre><code class=\"language-x\"></code></pre>\n      </li>\n    </ul>\n  </dd>\n</dl>\n<p>code</p>\n<pre><code></code></pre>"
   },
   {
     "id": "455-an-unterminated-fence-on-a-nested-lead-in-a-description-body-owns-its-body-3",
     "source": ":: t\n: - ```\ncode\n```\n",
-    "html": "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </dd>\n</dl>\n<p>code\n<code></code></p>"
+    "html": "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </dd>\n</dl>\n<p>code</p>\n<pre><code></code></pre>"
   },
   {
     "id": "455-an-unterminated-fence-on-a-nested-lead-in-a-description-body-owns-its-body-4",
@@ -17,7 +17,7 @@
   {
     "id": "455-an-unterminated-fence-on-a-nested-lead-in-a-description-body-owns-its-body",
     "source": ":: t\n: - ``` x\ncode\n```\n",
-    "html": "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>\n        <pre><code class=\"language-x\"></code></pre>\n      </li>\n    </ul>\n  </dd>\n</dl>\n<p>code\n<code></code></p>"
+    "html": "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>\n        <pre><code class=\"language-x\"></code></pre>\n      </li>\n    </ul>\n  </dd>\n</dl>\n<p>code</p>\n<pre><code></code></pre>"
   },
   {
     "id": "553-a-below-column-line-continues-a-paragraph-only-where-one-is-open-29",

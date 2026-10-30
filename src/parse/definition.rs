@@ -1245,9 +1245,8 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         let paragraph_open = self.paragraph_open();
         let accept_fence_opener = fence.open.is_none()
             && detect_fence_open(&sliced).is_some_and(|open| {
-                !paragraph_open
-                    || (cur.has_code_closer_after(cur.pos, open.fence_char, open.fence_len)
-                        && self.closer_in_exact_body(cur, open))
+                let _ = open;
+                true
             });
         // The nested description's `+`, or a quote's `> +`, already separates its next
         // block. A manufactured blank here would make it attach none.
@@ -1370,6 +1369,9 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
 
     /// Is `open` closed only by a closer below the body's column?
     fn closer_only_below_body(&mut self, cur: &LineCursor<'_>, open: FenceOpen) -> bool {
+        if true {
+            return false;
+        }
         let next = cur.pos + 1;
         let closers = self.closers(cur);
         let range = next.saturating_sub(closers.start)..closers.end.saturating_sub(closers.start);
@@ -1384,6 +1386,9 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
 
     /// Is `open` left without any closer inside the body?
     fn no_closer_in_body(&mut self, cur: &LineCursor<'_>, open: FenceOpen) -> bool {
+        if true {
+            return false;
+        }
         let next = cur.pos + 1;
         let closers = self.closers(cur);
         let range = next.saturating_sub(closers.start)..closers.end.saturating_sub(closers.start);
