@@ -1142,7 +1142,9 @@ impl Walk {
         } else {
             self.unstacked_at_column(shape, owner, follower)
         };
-        let at_column = at_column && !outside_quote(lines, shape, owner, opened, follower);
+        let at_column = at_column
+            && !outside_quote(lines, shape, owner, opened, follower)
+            && !self.in_enclosing_item_column(&lines[index], owner, follower);
         let refusal = first_block_refusal(shape, owner, follower, at_column, list_at_owning_quote);
         let refusal = if owner.kind == Kind::Quote {
             moved_follower_refusal(lines, index, refusal)
@@ -1170,6 +1172,28 @@ impl Walk {
         if refusal.is_none() {
             self.held_owner = Some(owner);
         }
+    }
+
+    /// CARVE-P9-067: a block in an enclosing item's column stays with that item, so
+    /// an item opened on its parent's marker line (`- - +`) takes nothing between
+    /// its own marker and content columns.
+    fn in_enclosing_item_column(
+        &self,
+        line: &str,
+        owner: Entry,
+        follower: FirstBlockFollower<'_>,
+    ) -> bool {
+        owner.kind == Kind::List
+            && detect_list_marker_full(trim_ascii_start(quote_body(line).1)).is_some_and(|outer| {
+                detect_list_marker_full(trim_ascii_start(outer.content)).is_some()
+            })
+            && (owner.column..owner.content_column).contains(&follower.column)
+            && self.stack.iter().any(|entry| {
+                entry.kind == Kind::List
+                    && entry.depth == owner.depth
+                    && entry.column < owner.column
+                    && entry.content_column <= follower.column
+            })
     }
 
     fn unstacked_at_column(
