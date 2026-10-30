@@ -222,9 +222,11 @@ mod standard_reader_probe_tests {
                     parse_document_with_options(source, &options).unwrap()
                 });
                 assert!(admitted, "{source:?}");
-                if !positions && !source_lines {
-                    assert_eq!(STANDARD_PARAGRAPH_ENTRIES.with(Cell::get), 0, "{source:?}");
-                }
+                assert_eq!(
+                    STANDARD_PARAGRAPH_ENTRIES.with(Cell::get),
+                    0,
+                    "{source:?}, positions={positions}, source_lines={source_lines}"
+                );
                 let (expected, standard_diagnostics) = {
                     let _standard = StandardEventRootGuard::install();
                     collecting_lint_events(|| parse_with_options(source, &options))
@@ -260,6 +262,27 @@ mod standard_reader_probe_tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn mapped_colon_paragraph_keeps_authored_columns() {
+        let source = MappedSource::new_line_at(
+            "::: note\nalpha beta\ngamma?\n:::\n".to_owned(),
+            Some(17),
+            Some(5),
+        );
+        let options = Options::default()
+            .with_positions(true)
+            .with_source_lines(true);
+        STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+        let (actual, diagnostics) =
+            collecting_lint_events(|| parse_mapped_source(&source, &options));
+        assert_eq!(STANDARD_PARAGRAPH_ENTRIES.with(Cell::get), 0);
+        let (expected, standard_diagnostics) = {
+            let _standard = StandardEventRootGuard::install();
+            collecting_lint_events(|| parse_mapped_source(&source, &options))
+        };
+        assert_eq!((actual, diagnostics), (expected, standard_diagnostics));
     }
 }
 
@@ -1656,7 +1679,9 @@ fn use_standard_event_paragraph(
 }
 
 fn event_owned_plain_paragraph(cur: &LineCursor<'_>, options: &Options<'_>) -> bool {
-    if options.positions || options.source_lines || !options.extensions.is_empty() {
+    if !options.extensions.is_empty()
+        || ((options.positions || options.source_lines) && cur.colon_view.is_none())
+    {
         return false;
     }
     let mut count = 0;
@@ -2606,15 +2631,19 @@ fn run_event_level<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
             emit!(_block_source_line, parse_paragraph(cur, options));
             continue;
         }
-        if (use_standard_event_paragraph(options, extents.is_some(), state.defer_pending)
-            && !(state.defer_pending
-                && extents.is_none()
-                && event_owned_plain_paragraph(cur, options)))
+        let standard_paragraph =
+            use_standard_event_paragraph(options, extents.is_some(), state.defer_pending);
+        let simple_colon_paragraph = standard_paragraph
+            && state.defer_pending
+            && extents.is_none()
+            && event_owned_plain_paragraph(cur, options);
+        if (standard_paragraph && !simple_colon_paragraph)
             || crate::includes::code_include_line(line).is_some()
         {
             emit!(_block_source_line, parse_paragraph(cur, options));
             continue;
         }
+        let paragraph_start = cur.pos;
         let joined = match collect_event_paragraph::<DEFINITIONS, ABBREVIATIONS>(
             cur,
             invalid_brace_line,
@@ -2628,14 +2657,24 @@ fn run_event_level<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
                 continue 'blocks;
             }
         };
+        let children = if options.positions {
+            let anchors = joined
+                .split('\n')
+                .enumerate()
+                .map(|(offset, line)| inline_anchor_for_line(cur, paragraph_start + offset, line))
+                .collect();
+            parse_inline_lines_with_anchor(&joined, options, anchors)
+        } else {
+            parse_event_inlines(&joined, options)
+        };
         emit!(
             _block_source_line,
             BlockNode::Paragraph(Paragraph {
                 attrs: None,
-                children: parse_event_inlines(&joined, options),
+                children,
                 at_content_column: !line.starts_with([' ', '\t']),
                 block_image: false,
-                pos: None,
+                pos: span_of(cur, paragraph_start, cur.pos, options),
             })
         );
     }
