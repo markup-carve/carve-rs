@@ -58,9 +58,9 @@ fn heading_after_marker_line_comment_opens_as_child() {
 }
 
 #[test]
-fn indented_plus_after_table_is_text() {
+fn indented_plus_after_table_continues_it() {
     let html = carve::to_html("| a |\n  + |\n");
-    assert!(html.contains("</table>\n<p>+ |</p>"), "{html}");
+    assert!(!html.contains("<p>+ |</p>"), "{html}");
 
     let at_column = carve::to_html("| a |\n+ |\n");
     assert!(!at_column.contains("<p>+ |</p>"), "{at_column}");

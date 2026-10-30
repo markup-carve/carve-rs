@@ -97,7 +97,7 @@ pub(in crate::parse) fn parse_table(cur: &mut LineCursor, options: &Options<'_>)
         let mut conts: Vec<(&str, Option<(usize, isize)>)> = Vec::new();
         let mut last_cont_at = None;
         while let Some(next) = cur.peek() {
-            if next.starts_with([' ', '\t']) || !is_table_continuation(next) {
+            if !is_table_continuation(next) {
                 break;
             }
             let cont_at = cur.pos;
@@ -241,7 +241,7 @@ impl TableRun {
             }
             return false;
         }
-        if self.takes_continuations && flush && is_table_continuation(line) {
+        if self.takes_continuations && is_table_continuation(line) {
             return true;
         }
         let depth = self.depth;
@@ -257,10 +257,7 @@ pub(in crate::parse) fn is_table_continuation(line: &str) -> bool {
     // standard row it has no `row_attributes` slot, so a trailing `|{.x}` does
     // NOT stand in for the closing pipe.
     let trimmed = trim_ascii(line);
-    if trimmed.len() < 2 || !trimmed.starts_with('+') || !trimmed.ends_with('|') {
-        return false;
-    }
-    trimmed != "+|"
+    trimmed.len() >= 2 && trimmed.starts_with('+') && trimmed.ends_with('|')
 }
 
 /// A GFM delimiter cell: an optional leading colon, one or more dashes, an
