@@ -19,17 +19,20 @@ fn a_description_keeps_its_attributed_paragraph() {
         ":: T\n: q\n",
         &carve::Options::new().with_source_lines(true),
     );
-    assert!(stamped.contains("<dd data-source-line=\"2\">q</dd>"), "{stamped}");
-    assert_eq!(
-        html(":: T\n: q"),
-        "<dl>\n  <dt>T</dt>\n  <dd>q</dd>\n</dl>"
+    assert!(
+        stamped.contains("<dd data-source-line=\"2\">q</dd>"),
+        "{stamped}"
     );
+    assert_eq!(html(":: T\n: q"), "<dl>\n  <dt>T</dt>\n  <dd>q</dd>\n</dl>");
 }
 
 #[test]
 fn a_symbol_counts_toward_a_caption_label_key_and_a_comment_does_not() {
     let rendered = html("||\n^ Fig #: a\n\n||\n^ Fig :smile: #: b\n\n||\n^ Fig {#c#} #: c");
-    assert!(rendered.contains("<caption>Fig 1: a</caption>"), "{rendered}");
+    assert!(
+        rendered.contains("<caption>Fig 1: a</caption>"),
+        "{rendered}"
+    );
     assert!(
         rendered.contains("<caption>Fig :smile: 1: b</caption>"),
         "{rendered}"
