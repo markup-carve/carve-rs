@@ -1390,6 +1390,7 @@ mod event_colon_body {
     #[test]
     fn extension_callbacks_keep_order_through_event_colon_bodies() {
         for source in [
+            "::: note\nfirst line\nsecond line\n\n@@@\n\n::: box\ninner line\ninner continuation\n:::\n\nouter sibling\n:::\n\nafter sibling\n",
             "::: note\n@@@\ntext with *em*\n:::\n",
             "::: note\n{.c}\n@@@\n:::\n",
             "::: note\n@@@\n::: box\n@@@\nx\n:::\n@@@\n:::\n",
@@ -1399,6 +1400,147 @@ mod event_colon_body {
             "::: note\n@@@\n:::\n\n@@@\n\n::: box\n@@@\n:::\n",
         ] {
             assert_colon_parity(source, true);
+        }
+    }
+
+    #[test]
+    fn plain_colon_paragraphs_keep_observer_and_consumer_order() {
+        use crate::{BlockMatch, CarveExtension, InlineMatch, MatcherContext};
+
+        struct Hook<'a> {
+            name: &'static str,
+            consume: bool,
+            log: &'a RefCell<Vec<String>>,
+        }
+        impl CarveExtension for Hook<'_> {
+            fn name(&self) -> &'static str {
+                self.name
+            }
+            fn match_block(
+                &self,
+                lines: &[&str],
+                start: usize,
+                _: &MatcherContext<'_>,
+            ) -> Option<BlockMatch> {
+                let line = *lines.get(start)?;
+                self.log.borrow_mut().push(format!("{}:{line}", self.name));
+                (self.consume && line == "@@@").then(|| BlockMatch {
+                    node: BlockNode::Paragraph(Paragraph {
+                        children: vec![InlineNode::text("claimed".to_string())],
+                        ..Default::default()
+                    }),
+                    lines_consumed: 1,
+                })
+            }
+            fn match_inline(
+                &self,
+                text: &str,
+                pos: usize,
+                _: &MatcherContext<'_>,
+            ) -> Option<InlineMatch> {
+                if pos == 0 && text.starts_with("first line") {
+                    self.log
+                        .borrow_mut()
+                        .push(format!("{}:inline:first line", self.name));
+                }
+                None
+            }
+        }
+
+        let source = "::: note\nfirst line\nsecond line\n\n@@@\n\n::: box\ninner line\ninner continuation\n:::\n\nouter sibling\n:::\n\nafter sibling\n";
+        for positions in [false, true] {
+            for source_lines in [false, true] {
+                let run = |standard: bool| {
+                    let log = RefCell::new(Vec::new());
+                    let observer = Hook {
+                        name: "observe",
+                        consume: false,
+                        log: &log,
+                    };
+                    let consumer = Hook {
+                        name: "consume",
+                        consume: true,
+                        log: &log,
+                    };
+                    let options = Options::default()
+                        .with_positions(positions)
+                        .with_source_lines(source_lines)
+                        .with_extension(&observer)
+                        .with_extension(&consumer);
+                    let document = if standard {
+                        let _standard_root = StandardEventRootGuard::install();
+                        let _standard_nested = StandardNestedReaderGuard::install();
+                        parse_with_options_mode_and_index(source, &options, ParseMode::Html).0
+                    } else {
+                        parse_with_options_mode_and_index(source, &options, ParseMode::Html).0
+                    };
+                    (document, log.into_inner())
+                };
+                let expected = run(true);
+                let actual = run(false);
+                assert_eq!(
+                    actual, expected,
+                    "positions={positions} source_lines={source_lines}"
+                );
+                for line in [
+                    "first line",
+                    "@@@",
+                    "inner line",
+                    "outer sibling",
+                    "after sibling",
+                ] {
+                    for name in ["observe", "consume"] {
+                        assert_eq!(
+                            actual
+                                .1
+                                .iter()
+                                .filter(|entry| *entry == &format!("{name}:{line}"))
+                                .count(),
+                            1,
+                            "{name}:{line}"
+                        );
+                    }
+                }
+                let first = actual
+                    .1
+                    .iter()
+                    .position(|entry| entry == "observe:first line")
+                    .unwrap();
+                let first_inline = actual
+                    .1
+                    .iter()
+                    .position(|entry| entry == "observe:inline:first line")
+                    .unwrap();
+                let claimed = actual
+                    .1
+                    .iter()
+                    .position(|entry| entry == "consume:@@@")
+                    .unwrap();
+                let inner = actual
+                    .1
+                    .iter()
+                    .position(|entry| entry == "observe:inner line")
+                    .unwrap();
+                let sibling = actual
+                    .1
+                    .iter()
+                    .position(|entry| entry == "observe:outer sibling")
+                    .unwrap();
+                let after = actual
+                    .1
+                    .iter()
+                    .position(|entry| entry == "observe:after sibling")
+                    .unwrap();
+                assert!(
+                    after < first
+                        && first < first_inline
+                        && first_inline < claimed
+                        && claimed < sibling
+                        && sibling < inner,
+                    "{:?}",
+                    actual.1
+                );
+            }
         }
     }
 

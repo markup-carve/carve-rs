@@ -1679,9 +1679,7 @@ fn use_standard_event_paragraph(
 }
 
 fn event_owned_plain_paragraph(cur: &LineCursor<'_>, options: &Options<'_>) -> bool {
-    if !options.extensions.is_empty()
-        || ((options.positions || options.source_lines) && cur.colon_view.is_none())
-    {
+    if (options.positions || options.source_lines) && cur.colon_view.is_none() {
         return false;
     }
     let mut count = 0;
