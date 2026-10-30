@@ -6397,6 +6397,14 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     let source = normalized.as_deref().unwrap_or(source);
     // Rule A: read the walked text, as the standard root does.
     let owned = own_lines(source);
+    if source.contains('\x0c')
+        && source.contains(['`', '~'])
+        && owned
+            .as_ref()
+            .is_some_and(|walk| walk.moves_fence_line(source))
+    {
+        return None;
+    }
     let _owned_edits = EditsGuard::install(owned.as_ref());
     let source = owned.as_ref().map_or(source, |o| o.source.as_str());
     if has_deep_quote_chain(source) {

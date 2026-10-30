@@ -451,6 +451,25 @@ pub(crate) struct OwnedSource {
     edits: Vec<LineEdit>,
 }
 
+impl OwnedSource {
+    pub(crate) fn moves_fence_line(&self, source: &str) -> bool {
+        let mut edits = self.edits.iter().peekable();
+        for (index, line) in source.lines().enumerate() {
+            let line_number = index + 1;
+            while edits.peek().is_some_and(|edit| edit.line < line_number) {
+                edits.next();
+            }
+            if edits.peek().is_some_and(|edit| edit.line == line_number) {
+                let content = trim_ascii_start(line);
+                if content.starts_with("```") || content.starts_with("~~~") {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+}
+
 #[derive(Clone, Copy)]
 struct LineEdit {
     line: usize,
