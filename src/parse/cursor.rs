@@ -469,7 +469,7 @@ pub(in crate::parse) struct OwnedMappedCursorFrame {
 
 #[allow(dead_code)]
 impl OwnedMappedCursorFrame {
-    pub(in crate::parse) fn new(source: MappedSource, cursor: &mut LineCursor<'_>) -> Self {
+    pub(in crate::parse) fn from_source(source: MappedSource, state: LineCursorOwnedState) -> Self {
         let base = source.source.as_ptr() as usize;
         let line_spans = source
             .source
@@ -482,8 +482,12 @@ impl OwnedMappedCursorFrame {
         Self {
             source,
             line_spans,
-            state: Some(cursor.take_state()),
+            state: Some(state),
         }
+    }
+
+    pub(in crate::parse) fn new(source: MappedSource, cursor: &mut LineCursor<'_>) -> Self {
+        Self::from_source(source, cursor.take_state())
     }
 
     pub(in crate::parse) fn with_cursor<R>(

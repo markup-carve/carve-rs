@@ -884,6 +884,252 @@ mod event_level_resume_tests {
         };
         assert_eq!(run(true), run(false));
     }
+
+    #[test]
+    fn mapped_task_requests_body_before_next_description_callback() {
+        let source = ":: term\n:  first\n:  second\n\n# Later\n";
+        let run = |task: bool| {
+            let observer = Observer(RefCell::new(Vec::new()));
+            let options = Options::default().with_extension(&observer);
+            let blocks = if task {
+                let mut task = MappedEventTask::new(
+                    MappedSource::new_line_at(source.to_owned(), None, None),
+                    &options,
+                )
+                .expect("task depth");
+                let first = task.poll(&options);
+                assert!(observer
+                    .0
+                    .borrow()
+                    .iter()
+                    .all(|(_, line)| { !line.contains("second") && !line.contains("Later") }));
+                let mut result = first;
+                loop {
+                    match result {
+                        TaskPoll::NeedBody(body) => {
+                            let children = parse_mapped_source(&body, &options);
+                            result = task.resume_with_children(children, &options);
+                        }
+                        TaskPoll::Done(blocks) => break blocks,
+                    }
+                }
+            } else {
+                let lines: Vec<_> = source.lines().collect();
+                let mut cursor = LineCursor::new_with_cols(&lines, None, None);
+                let mut pending = Vec::new();
+                let mut blocks =
+                    crate::parse::block::parse_blocks(&mut cursor, &options, &mut pending);
+                resolve_pending_bodies(&mut blocks, pending, &options);
+                blocks
+            };
+            (format!("{blocks:?}"), observer.0.into_inner())
+        };
+        assert_eq!(run(true), run(false));
+    }
+
+    #[test]
+    fn mapped_task_plain_body_finishes_without_request() {
+        let source = "Plain paragraph\n\n# Heading\n";
+        let options = Options::default();
+        let mut task = MappedEventTask::new(
+            MappedSource::new_line_at(source.to_owned(), None, None),
+            &options,
+        )
+        .expect("task depth");
+        let TaskPoll::Done(blocks) = task.poll(&options) else {
+            panic!("plain body requested children");
+        };
+        assert_eq!(
+            format!("{blocks:?}"),
+            format!(
+                "{:?}",
+                parse_mapped_source(
+                    &MappedSource::new_line_at(source.to_owned(), None, None),
+                    &options,
+                )
+            )
+        );
+    }
+
+    #[test]
+    fn mapped_task_matches_blank_separated_nested_definition_body() {
+        fn parse_task(source: MappedSource, options: &Options<'_>) -> Vec<BlockNode> {
+            let mut task = MappedEventTask::new(source, options).expect("task depth");
+            let mut result = task.poll(options);
+            loop {
+                result = match result {
+                    TaskPoll::NeedBody(body) => {
+                        let children = {
+                            let _depth = DepthScope::set(task.depth);
+                            let _group = FigureGroupScope::set(task.in_group);
+                            parse_task(body, options)
+                        };
+                        task.resume_with_children(children, options)
+                    }
+                    TaskPoll::Done(blocks) => return blocks,
+                };
+            }
+        }
+        let source = ":: t1\n: d1\n\n  :: t2\n  : d2\n\n    :: t3\n    : d3\n";
+        let observer = Observer(RefCell::new(Vec::new()));
+        let options = Options::default()
+            .with_positions(true)
+            .with_source_lines(true)
+            .with_extension(&observer);
+        let parent = MappedSource::new_line_at(source.to_owned(), None, None);
+        let lines: Vec<_> = parent.source.lines().collect();
+        let mut cursor =
+            LineCursor::new_with_cols(&lines, Some(&parent.line_map), Some(&parent.col_map));
+        cursor.reached = Some(&parent.reached);
+        let mut scan = DefinitionListScan::new(&cursor);
+        let mapped = loop {
+            match scan.step(&mut cursor, &options) {
+                StepResult::NeedBody(request) => break request.body,
+                StepResult::Continue => {}
+                StepResult::Done => panic!("missing body"),
+            }
+        };
+        let expected = {
+            let _standard = crate::parse::StandardNestedReaderGuard::install();
+            parse_mapped_source(&mapped, &options)
+        };
+        let expected_callbacks = observer.0.replace(Vec::new());
+        let actual = parse_task(mapped, &options);
+        assert_eq!(format!("{actual:?}"), format!("{expected:?}"));
+        assert_eq!(
+            observer.0.borrow().as_slice(),
+            expected_callbacks.as_slice()
+        );
+    }
+
+    #[test]
+    fn mapped_task_matches_tailed_definition_chain() {
+        fn parse_task(source: MappedSource, options: &Options<'_>) -> Vec<BlockNode> {
+            let Some(mut task) = MappedEventTask::new(source.clone(), options) else {
+                return parse_mapped_source(&source, options);
+            };
+            let mut result = task.poll(options);
+            loop {
+                result = match result {
+                    TaskPoll::NeedBody(body) => {
+                        let _depth = DepthScope::set(task.depth);
+                        let _group = FigureGroupScope::set(task.in_group);
+                        let children = parse_task(body, options);
+                        task.resume_with_children(children, options)
+                    }
+                    TaskPoll::Done(blocks) => return blocks,
+                };
+            }
+        }
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for depth in [2, 4, 8, 12, 64, 120, 199, 200, 205, 260] {
+                    let mut source = String::new();
+                    for level in 0..depth {
+                        let lead = "  ".repeat(level);
+                        source.push_str(&format!("{lead}:: t{level}\n{lead}: d{level}\n\n"));
+                    }
+                    for level in (0..depth).rev() {
+                        source.push_str(&format!("{}after{level}\n\n", "  ".repeat(level)));
+                    }
+                    let root = MappedSource::new_line_at(source, None, None);
+                    let observer = Observer(RefCell::new(Vec::new()));
+                    let options = Options::default()
+                        .with_positions(true)
+                        .with_source_lines(true)
+                        .with_extension(&observer);
+                    let lines: Vec<_> = root.source.lines().collect();
+                    let mut cursor = LineCursor::new_with_cols(
+                        &lines,
+                        Some(&root.line_map),
+                        Some(&root.col_map),
+                    );
+                    cursor.reached = Some(&root.reached);
+                    let mut scan = DefinitionListScan::new(&cursor);
+                    let mapped = loop {
+                        match scan.step(&mut cursor, &options) {
+                            StepResult::NeedBody(request) => break request.body,
+                            StepResult::Continue => {}
+                            StepResult::Done => panic!("missing body"),
+                        }
+                    };
+                    let expected = {
+                        let _standard = crate::parse::StandardNestedReaderGuard::install();
+                        parse_mapped_source(&mapped, &options)
+                    };
+                    let expected_callbacks = observer.0.replace(Vec::new());
+                    let actual = parse_task(mapped.clone(), &options);
+                    assert_eq!(
+                        observer.0.borrow().as_slice(),
+                        expected_callbacks.as_slice(),
+                        "depth={depth}: callbacks"
+                    );
+                    assert_eq!(
+                        format!("{actual:?}"),
+                        format!("{expected:?}"),
+                        "depth={depth}"
+                    );
+                    observer.0.borrow_mut().clear();
+                    let public = parse_mapped_source(&mapped, &options);
+                    assert_eq!(
+                        format!("{public:?}"),
+                        format!("{expected:?}"),
+                        "depth={depth}: public AST"
+                    );
+                    assert_eq!(
+                        observer.0.borrow().as_slice(),
+                        expected_callbacks.as_slice(),
+                        "depth={depth}: public callbacks"
+                    );
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn mapped_task_restores_nested_context_and_positioned_state() {
+        let source = ":: term\n:  first\n:  second\n\n# Later\n";
+        let options = Options::default()
+            .with_positions(true)
+            .with_source_lines(true);
+        let outer_depth = NESTING_DEPTH.with(Cell::get);
+        let _depth = DepthScope::set(7);
+        let _group = FigureGroupScope::set(true);
+        let mut task = MappedEventTask::new(
+            MappedSource::new_line_at(source.to_owned(), Some(12), Some(3)),
+            &options,
+        )
+        .expect("task depth");
+        assert_eq!(task.depth, 8);
+        assert!(task.in_group);
+        let expected = parse_mapped_source(
+            &MappedSource::new_line_at(source.to_owned(), Some(12), Some(3)),
+            &options,
+        );
+        drop(_group);
+        drop(_depth);
+        assert_eq!(NESTING_DEPTH.with(Cell::get), outer_depth);
+        let mut result = task.poll(&options);
+        loop {
+            result = match result {
+                TaskPoll::NeedBody(body) => {
+                    let _depth = DepthScope::set(task.depth);
+                    let _group = FigureGroupScope::set(task.in_group);
+                    let children = parse_mapped_source(&body, &options);
+                    task.resume_with_children(children, &options)
+                }
+                TaskPoll::Done(blocks) => {
+                    assert_eq!(format!("{blocks:?}"), format!("{expected:?}"));
+                    break;
+                }
+            };
+            assert_eq!(NESTING_DEPTH.with(Cell::get), outer_depth);
+            assert!(!IN_FIGURE_GROUP.with(Cell::get));
+        }
+    }
 }
 
 /// Stream simple top-level blocks as events while handing list and definition
@@ -1585,6 +1831,202 @@ struct DefinitionContinuation {
     state: EventLevelState,
 }
 
+#[allow(dead_code)]
+enum TaskPoll {
+    NeedBody(MappedSource),
+    Done(Vec<BlockNode>),
+}
+
+#[allow(dead_code)]
+struct MappedEventTask {
+    frame: OwnedMappedCursorFrame,
+    depth: usize,
+    in_group: bool,
+    state: Option<EventLevelState>,
+    continuation: Option<Box<DefinitionContinuation>>,
+    pending: Vec<PendingBody>,
+}
+
+#[allow(dead_code)]
+impl MappedEventTask {
+    fn new(source: MappedSource, options: &Options<'_>) -> Option<Self> {
+        let depth = NESTING_DEPTH.with(Cell::get).checked_add(1)?;
+        if depth > MAX_NESTING_DEPTH {
+            return None;
+        }
+        let lines: Vec<_> = source.source.lines().collect();
+        let mut cursor = LineCursor::new_with_cols(
+            &lines,
+            Some(&source.line_map),
+            source
+                .col_map
+                .iter()
+                .any(Option::is_some)
+                .then_some(source.col_map.as_slice()),
+        );
+        cursor.reached = Some(&source.reached);
+        cursor.marker_tail = source.marker_tail;
+        cursor.in_quoted_body = source.in_quoted_body;
+        cursor.sublists_carry_authored_base =
+            options.positions && source.sublists_carry_authored_base;
+        cursor.drain_follows = false;
+        let state = EventLevelState::new(&cursor, true, false);
+        let cursor_state = cursor.take_state();
+        drop(cursor);
+        drop(lines);
+        let frame = OwnedMappedCursorFrame::from_source(source, cursor_state);
+        Some(Self {
+            frame,
+            depth,
+            in_group: IN_FIGURE_GROUP.with(Cell::get),
+            state: Some(state),
+            continuation: None,
+            pending: Vec::new(),
+        })
+    }
+
+    fn poll(&mut self, options: &Options<'_>) -> TaskPoll {
+        let _depth = DepthScope::set(self.depth);
+        let _group = FigureGroupScope::set(self.in_group);
+        assert!(
+            self.continuation.is_none(),
+            "resume the requested body before polling"
+        );
+        let state = self.state.as_mut().expect("completed mapped event task");
+        let result = self
+            .frame
+            .with_cursor(|cursor, source| {
+                run_event_level::<true, false>(
+                    &[],
+                    options,
+                    Some(&source.line_map),
+                    cursor,
+                    state,
+                    None,
+                    Some(&mut self.pending),
+                    true,
+                    None,
+                )
+            })
+            .expect("mapped event level declined");
+        self.handle_result(result, options)
+    }
+
+    fn resume_with_children(
+        &mut self,
+        children: Vec<BlockNode>,
+        options: &Options<'_>,
+    ) -> TaskPoll {
+        let _depth = DepthScope::set(self.depth);
+        let _group = FigureGroupScope::set(self.in_group);
+        let mut continuation = self.continuation.take().expect("no requested body");
+        let result = self.frame.with_cursor(|cursor, source| {
+            cursor.restore_state(continuation.cursor);
+            let state = self.state.as_mut().expect("completed mapped event task");
+            *state = continuation.state;
+            continuation.scan.fill_body(children, cursor, options);
+            loop {
+                match continuation.scan.step(cursor, options) {
+                    StepResult::Continue => {}
+                    StepResult::NeedBody(request) => {
+                        continuation.request = request;
+                        continuation.cursor = cursor.take_state();
+                        continuation.state =
+                            std::mem::replace(state, EventLevelState::new(cursor, true, false));
+                        return EventLevelRun::NeedDefinitionBody(continuation);
+                    }
+                    StepResult::Done => break,
+                }
+            }
+            let node = continuation.scan.finish(cursor, options);
+            if options.positions {
+                state.block_start_indices.push(continuation.start);
+            }
+            #[cfg(feature = "experimental-event-parser-options")]
+            if options.source_lines {
+                state.source_lines.push(continuation.source_line);
+            }
+            debug_assert_eq!(state.out.len(), continuation.index);
+            state.out.push(node);
+            run_event_level::<true, false>(
+                &[],
+                options,
+                Some(&source.line_map),
+                cursor,
+                state,
+                None,
+                Some(&mut self.pending),
+                true,
+                None,
+            )
+            .expect("mapped event level declined")
+        });
+        self.handle_result(result, options)
+    }
+
+    fn handle_result(&mut self, result: EventLevelRun, options: &Options<'_>) -> TaskPoll {
+        match result {
+            EventLevelRun::NeedDefinitionBody(mut continuation) => {
+                let body = std::mem::replace(
+                    &mut continuation.request.body,
+                    MappedSource::new_line_at(String::new(), None, None),
+                );
+                self.continuation = Some(continuation);
+                TaskPoll::NeedBody(body)
+            }
+            EventLevelRun::Done(mut blocks) => {
+                resolve_pending_bodies(&mut blocks, std::mem::take(&mut self.pending), options);
+                self.state = None;
+                TaskPoll::Done(blocks)
+            }
+            EventLevelRun::Yield => unreachable!("mapped task has no stop boundary"),
+        }
+    }
+}
+
+fn collect_event_paragraph<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
+    cur: &mut LineCursor<'_>,
+    invalid_brace_line: bool,
+    root_indented_text: bool,
+) -> Option<String> {
+    let start = cur.pos;
+    let mut lines = Vec::new();
+    while let Some(next) = cur.peek() {
+        if DEFINITIONS && is_definition_placeholder(next) {
+            break;
+        }
+        if ABBREVIATIONS && !lines.is_empty() && detect_abbreviation_def(next).is_some() {
+            break;
+        }
+        if is_blank_line(next) || detect_heading(next).is_some() {
+            break;
+        }
+        if !lines.is_empty() {
+            if let Some(open) = detect_fence_open(next) {
+                if cur
+                    .lines
+                    .range(cur.pos + 1..cur.lines.len())
+                    .any(|line| is_fence_close(line, open))
+                {
+                    break;
+                }
+            }
+        }
+        if event_paragraph_needs_reader(
+            next,
+            !lines.is_empty(),
+            invalid_brace_line,
+            root_indented_text,
+        ) {
+            cur.pos = start;
+            return None;
+        }
+        lines.push(trim_ascii_end(trim_ascii_start(next)));
+        cur.consume();
+    }
+    Some(lines.join("\n"))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_event_level<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
     lines: &[&str],
@@ -1996,51 +2438,19 @@ fn run_event_level<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
             emit!(_block_source_line, parse_paragraph(cur, options));
             continue;
         }
-        let paragraph_start = cur.pos;
-        let mut paragraph_lines = Vec::new();
-        while let Some(next) = cur.peek() {
-            if DEFINITIONS && is_definition_placeholder(next) {
-                break;
-            }
-            if ABBREVIATIONS
-                && !paragraph_lines.is_empty()
-                && detect_abbreviation_def(next).is_some()
-            {
-                break;
-            }
-            if is_blank_line(next) || detect_heading(next).is_some() {
-                break;
-            }
-            if !paragraph_lines.is_empty() {
-                if let Some(open) = detect_fence_open(next) {
-                    if cur
-                        .lines
-                        .range(cur.pos + 1..cur.lines.len())
-                        .any(|line| is_fence_close(line, open))
-                    {
-                        break;
-                    }
-                }
-            }
-            if event_paragraph_needs_reader(
-                next,
-                !paragraph_lines.is_empty(),
-                invalid_brace_line,
-                root_indented_text,
-            ) {
-                if !state.at_document_level && !state.defer_pending {
-                    return None;
-                }
-                // Deferred fragments may already have called extensions. Parse
-                // this paragraph here so a fallback cannot call them twice.
-                cur.pos = paragraph_start;
+        let joined = match collect_event_paragraph::<DEFINITIONS, ABBREVIATIONS>(
+            cur,
+            invalid_brace_line,
+            root_indented_text,
+        ) {
+            Some(joined) => joined,
+            None if !state.at_document_level && !state.defer_pending => return None,
+            None => {
+                // A deferred fragment may already have called extensions.
                 emit!(_block_source_line, parse_paragraph(cur, options));
                 continue 'blocks;
             }
-            paragraph_lines.push(trim_ascii_end(trim_ascii_start(next)));
-            cur.consume();
-        }
-        let joined = paragraph_lines.join("\n");
+        };
         emit!(
             _block_source_line,
             BlockNode::Paragraph(Paragraph {

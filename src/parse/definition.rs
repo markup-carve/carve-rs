@@ -306,7 +306,7 @@ pub(in crate::parse) enum StepResult {
 
 /// Collected description at the point where parsing may later be suspended.
 pub(in crate::parse) struct BodyRequest {
-    body: MappedSource,
+    pub(in crate::parse) body: MappedSource,
     item: usize,
     description: usize,
 }
