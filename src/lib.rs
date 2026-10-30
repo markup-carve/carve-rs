@@ -384,11 +384,14 @@ pub fn to_markdown_with_report(
     checked_options: CheckedRenderOptions,
 ) -> Result<RenderResult<String>, RenderLossError> {
     render_loss::checked(RenderTarget::Markdown, checked_options, || {
-        let (doc, unattached) = parse::collecting_unattached_block_attrs(|| {
-            parse_with_options(source, &Options::default().with_positions(true))
+        let ((doc, unattached), block_runs) = parse::collecting_promoted_image_block_runs(|| {
+            parse::collecting_unattached_block_attrs(|| {
+                parse_with_options(source, &Options::default().with_positions(true))
+            })
         });
         let rendered = render_markdown(&doc).expect("the parse cap sits below the render ceiling");
         render_loss::collect_markdown_unattached(unattached);
+        render_loss::collect_markdown_promoted_image_runs(block_runs);
         rendered
     })
 }
@@ -722,12 +725,15 @@ pub fn try_to_markdown_with_options(
     source: &str,
     options: &Options<'_>,
 ) -> Result<String, ProfileViolationError> {
-    let (doc, unattached) = parse::collecting_unattached_block_attrs(|| {
-        prepare_doc(source, options, Mode::Interactive, false)
+    let ((doc, unattached), block_runs) = parse::collecting_promoted_image_block_runs(|| {
+        parse::collecting_unattached_block_attrs(|| {
+            prepare_doc(source, options, Mode::Interactive, false)
+        })
     });
     let rendered = render_markdown_with_options(&doc?, options)
         .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it");
     render_loss::collect_markdown_unattached(unattached);
+    render_loss::collect_markdown_promoted_image_runs(block_runs);
     Ok(rendered)
 }
 
