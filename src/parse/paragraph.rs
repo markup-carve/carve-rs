@@ -57,6 +57,8 @@ fn reference_image_line(line: &str) -> bool {
 }
 
 pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
+    #[cfg(test)]
+    STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(count.get() + 1));
     let span_start = cur.pos;
     let refused_plus = cur
         .peek()

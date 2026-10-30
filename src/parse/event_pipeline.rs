@@ -112,6 +112,158 @@ thread_local! {
 mod event_diagnostic_parity_tests;
 
 #[cfg(test)]
+mod standard_reader_probe_tests {
+    use super::*;
+    use crate::{BlockMatch, CarveExtension, MatcherContext};
+
+    struct Observer(RefCell<Vec<(usize, String)>>);
+
+    impl CarveExtension for Observer {
+        fn name(&self) -> &'static str {
+            "single-paragraph-observer"
+        }
+
+        fn match_block(
+            &self,
+            lines: &[&str],
+            start: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<BlockMatch> {
+            self.0.borrow_mut().push((start, lines[start].to_owned()));
+            None
+        }
+    }
+
+    #[test]
+    fn nested_mapped_plain_paragraphs_match_standard_reader() {
+        for wrapper in [
+            "::: note\n{body}\n:::\n",
+            "> {body}\n",
+            "- {body}\n",
+            "term\n: {body}\n",
+        ] {
+            for body in [
+                "alpha",
+                "alpha beta",
+                "alpha!",
+                "alpha, beta.\ngamma?",
+                "alpha\n\nbeta",
+                "alpha\n:: definition",
+                "alpha\n::: container",
+                "alpha\n> quote",
+                "alpha\n- item",
+                "alpha\n1. item",
+                "alpha\n``` fence",
+                "alpha\n# heading",
+                "alpha\n!include file",
+                "alpha\n+",
+                "alpha\n: separator",
+                "alpha\n---",
+                "alpha\n alpha",
+                "alpha\n\talpha",
+                "alpha\n!!!",
+            ] {
+                let source = wrapper.replace("{body}", body);
+                let options = Options::default();
+                STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+                let ((actual, admitted), diagnostics) = collecting_lint_events(|| {
+                    parse_document_with_options(&source, &options).unwrap()
+                });
+                assert!(admitted, "{source:?}");
+                let expected_entries = STANDARD_PARAGRAPH_ENTRIES.with(Cell::get);
+                let (expected, standard_diagnostics) = {
+                    let _standard = StandardEventRootGuard::install();
+                    collecting_lint_events(|| parse_with_options(&source, &options))
+                };
+                assert_eq!(
+                    (actual, diagnostics),
+                    (expected, standard_diagnostics),
+                    "{source:?}"
+                );
+                if body == "alpha" && wrapper.starts_with(":::") {
+                    assert_eq!(expected_entries, 0, "{source:?}");
+                }
+
+                let observer = Observer(RefCell::new(Vec::new()));
+                let event_options = Options::default().with_extension(&observer);
+                let (event_doc, _) = parse_document_with_options(&source, &event_options).unwrap();
+                let event_callbacks = observer.0.into_inner();
+                let observer = Observer(RefCell::new(Vec::new()));
+                let standard_options = Options::default().with_extension(&observer);
+                let standard_doc = {
+                    let _standard = StandardEventRootGuard::install();
+                    parse_with_options(&source, &standard_options)
+                };
+                assert_eq!(event_doc, standard_doc, "{source:?}");
+                assert_eq!(event_callbacks, observer.0.into_inner(), "{source:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn plain_colon_body_owns_paragraph_with_strict_parity() {
+        for source in [
+            "::: note\nalpha\n:::\n",
+            "::: note\nalpha beta\n:::\n",
+            "::: note\nalpha!\n:::\n",
+            "::: note\nalpha, beta.\ngamma?\n:::\n",
+            "::: note\nalpha\n\nbeta\n:::\n",
+        ] {
+            for (positions, source_lines) in
+                [(false, false), (true, false), (false, true), (true, true)]
+            {
+                let options = Options {
+                    positions,
+                    source_lines,
+                    ..Options::default()
+                };
+                STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+                let ((actual, admitted), event_diagnostics) = collecting_lint_events(|| {
+                    parse_document_with_options(source, &options).unwrap()
+                });
+                assert!(admitted, "{source:?}");
+                if !positions && !source_lines {
+                    assert_eq!(STANDARD_PARAGRAPH_ENTRIES.with(Cell::get), 0, "{source:?}");
+                }
+                let (expected, standard_diagnostics) = {
+                    let _standard = StandardEventRootGuard::install();
+                    collecting_lint_events(|| parse_with_options(source, &options))
+                };
+                assert_eq!(event_diagnostics, standard_diagnostics, "{source:?}");
+                assert_eq!(
+                    actual, expected,
+                    "{source:?}, positions={positions}, source_lines={source_lines}"
+                );
+
+                let event_observer = Observer(RefCell::new(Vec::new()));
+                let event_options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines)
+                    .with_extension(&event_observer);
+                let (event_doc, admitted) =
+                    parse_document_with_options(source, &event_options).unwrap();
+                assert!(admitted, "{source:?}");
+                let standard_observer = Observer(RefCell::new(Vec::new()));
+                let standard_options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines)
+                    .with_extension(&standard_observer);
+                let standard_doc = {
+                    let _standard = StandardEventRootGuard::install();
+                    parse_with_options(source, &standard_options)
+                };
+                assert_eq!(event_doc, standard_doc, "{source:?}");
+                assert_eq!(
+                    event_observer.0.into_inner(),
+                    standard_observer.0.into_inner(),
+                    "{source:?}"
+                );
+            }
+        }
+    }
+}
+
+#[cfg(test)]
 mod mixed_definition_owner_tests {
     use super::*;
 
@@ -1503,6 +1655,28 @@ fn use_standard_event_paragraph(
     options.positions || recording_extents || defer_pending
 }
 
+fn event_owned_plain_paragraph(cur: &LineCursor<'_>, options: &Options<'_>) -> bool {
+    if options.positions || options.source_lines || !options.extensions.is_empty() {
+        return false;
+    }
+    let mut count = 0;
+    for line in cur.lines.range(cur.pos..cur.lines.len()) {
+        if is_blank_line(line) {
+            break;
+        }
+        if !line.as_bytes()[0].is_ascii_alphabetic()
+            || !line.bytes().all(|byte| {
+                byte.is_ascii_alphabetic()
+                    || matches!(byte, b' ' | b'.' | b',' | b'!' | b'?' | b';' | b':')
+            })
+        {
+            return false;
+        }
+        count += 1;
+    }
+    count != 0
+}
+
 fn refused_root_plus_at(cur: &LineCursor<'_>, line: &str) -> bool {
     trim_ascii(line) == "+"
         && cur
@@ -2432,7 +2606,10 @@ fn run_event_level<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
             emit!(_block_source_line, parse_paragraph(cur, options));
             continue;
         }
-        if use_standard_event_paragraph(options, extents.is_some(), state.defer_pending)
+        if (use_standard_event_paragraph(options, extents.is_some(), state.defer_pending)
+            && !(state.defer_pending
+                && extents.is_none()
+                && event_owned_plain_paragraph(cur, options)))
             || crate::includes::code_include_line(line).is_some()
         {
             emit!(_block_source_line, parse_paragraph(cur, options));

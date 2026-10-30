@@ -1621,6 +1621,11 @@ fn parse_mapped_source_at_level_into_recording(
     )
 }
 
+#[cfg(test)]
+thread_local! {
+    static STANDARD_PARAGRAPH_ENTRIES: Cell<usize> = const { Cell::new(0) };
+}
+
 #[inline(never)]
 #[allow(clippy::too_many_arguments)]
 fn parse_unpositioned_mapped_source(
