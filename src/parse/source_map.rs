@@ -112,6 +112,7 @@ impl LineBuffer {
             reached.clear();
         }
         MappedSource {
+            owner: MappedBodyOwner::Document,
             col_map,
             source,
             line_map,
@@ -127,8 +128,21 @@ impl LineBuffer {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum MappedBodyOwner {
+    #[default]
+    Document,
+    Definition,
+    Footnote,
+    ListItem,
+    #[allow(dead_code)]
+    Colon,
+    Quote,
+}
+
 #[derive(Clone)]
 pub(super) struct MappedSource {
+    pub(super) owner: MappedBodyOwner,
     pub(super) in_quoted_body: bool,
     pub(super) source: String,
     pub(super) line_map: Vec<Option<usize>>,
@@ -183,6 +197,7 @@ impl MappedSource {
         stripped: Option<isize>,
     ) -> Self {
         MappedSource {
+            owner: MappedBodyOwner::Document,
             source: line,
             line_map: source_line.into_iter().map(Some).collect(),
             col_map: vec![stripped],
@@ -343,6 +358,7 @@ pub(super) fn remap_source(source: String, original: &MappedSource) -> MappedSou
     let source_line_count = source.lines().count();
     if source_line_count <= original.line_map.len() {
         return MappedSource {
+            owner: original.owner,
             source,
             line_map: original.line_map[..source_line_count].to_vec(),
             col_map: original.col_map[..source_line_count.min(original.col_map.len())].to_vec(),
@@ -362,6 +378,7 @@ pub(super) fn remap_source(source: String, original: &MappedSource) -> MappedSou
         };
     }
     MappedSource {
+        owner: MappedBodyOwner::Document,
         line_map: (1..=source_line_count).map(Some).collect(),
         // Top-level source: nothing has been stripped, so every column in this
         // text is a column in the document.

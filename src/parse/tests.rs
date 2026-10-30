@@ -2,6 +2,168 @@ use super::*;
 
 #[cfg(feature = "experimental-event-parser-options")]
 #[test]
+fn event_level_state_preserves_metadata_extensions_and_deep_bodies() {
+    use crate::{BlockMatch, CarveExtension, MatcherContext};
+
+    struct Observer(RefCell<Vec<String>>);
+
+    impl CarveExtension for Observer {
+        fn name(&self) -> &'static str {
+            "event-level-state-parity"
+        }
+
+        fn match_block(
+            &self,
+            lines: &[&str],
+            start: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<BlockMatch> {
+            self.0.borrow_mut().push(lines[start].to_owned());
+            None
+        }
+    }
+
+    let mut source = String::from("{#intro}\n# Heading\n\n");
+    for _ in 0..18 {
+        source.push_str("::: note\n");
+    }
+    source.push_str("- item\n  > quoted\n  > text\n\nparagraph\n");
+    for _ in 0..18 {
+        source.push_str(":::\n");
+    }
+    source.push_str("\n## Tail\nlast\n");
+
+    for positions in [false, true] {
+        for source_lines in [false, true] {
+            let run = |event| {
+                let observer = Observer(RefCell::new(Vec::new()));
+                let options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines)
+                    .with_extension(&observer);
+                let document = if event {
+                    let (document, _, used) = event_pipeline::parse_document_with_mode(
+                        &source,
+                        &options,
+                        ParseMode::Html,
+                    )
+                    .expect("event parser accepted source");
+                    assert!(used);
+                    document
+                } else {
+                    let _standard_nested = StandardNestedReaderGuard::install();
+                    parse_with_options_mode_and_index(&source, &options, ParseMode::Html).0
+                };
+                (document, observer.0.into_inner())
+            };
+            assert_eq!(run(true), run(false), "{positions}; {source_lines}");
+        }
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn matcher_context_event_fragment_matches_standard_reentry() {
+    use crate::{BlockMatch, CarveExtension, InlineMatch, MatcherContext};
+
+    struct Hook<'a> {
+        fragment: &'a str,
+        event: bool,
+        positions: bool,
+        source_lines: bool,
+        trace: RefCell<Vec<String>>,
+        nested: RefCell<Option<Vec<BlockNode>>>,
+    }
+
+    impl CarveExtension for Hook<'_> {
+        fn name(&self) -> &'static str {
+            "reentry-parity"
+        }
+
+        fn match_block(
+            &self,
+            lines: &[&str],
+            start: usize,
+            ctx: &MatcherContext<'_>,
+        ) -> Option<BlockMatch> {
+            let line = *lines.get(start)?;
+            self.trace.borrow_mut().push(format!("block:{line}"));
+            if line == "reenter" {
+                let blocks = if self.event {
+                    ctx.parse_blocks(self.fragment)
+                } else {
+                    parse_blocks_with_options(
+                        self.fragment,
+                        &Options::default()
+                            .with_positions(self.positions)
+                            .with_source_lines(self.source_lines)
+                            .with_extension(self),
+                    )
+                };
+                *self.nested.borrow_mut() = Some(blocks);
+            }
+            None
+        }
+
+        fn match_inline(
+            &self,
+            text: &str,
+            pos: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<InlineMatch> {
+            self.trace
+                .borrow_mut()
+                .push(format!("inline:{pos}:{}", &text[pos..]));
+            None
+        }
+    }
+
+    for (fragment, positions, source_lines) in [
+        ("inner\n\n- child\n", false, false),
+        ("inner\n+\n", false, false),
+        ("inner\n+\n", true, false),
+        ("inner\n+\n", true, true),
+        ("inner\n", true, false),
+        ("inner\n", false, true),
+        ("outer\n\n- child\n  nested\n", false, true),
+        ("inner\n+\n", false, true),
+        ("first\nsecond\n+\nlast", true, true),
+    ] {
+        let run = |event| {
+            event_pipeline::LADDER_TAIL_EVENT_PARSES.with(|count| count.set(0));
+            let hook = Hook {
+                fragment,
+                event,
+                positions,
+                source_lines,
+                trace: RefCell::new(Vec::new()),
+                nested: RefCell::new(None),
+            };
+            let options = Options::default()
+                .with_positions(positions)
+                .with_source_lines(source_lines)
+                .with_extension(&hook);
+            let document = {
+                let _standard_root = StandardEventRootGuard::install();
+                let _standard_nested = (!event).then(StandardNestedReaderGuard::install);
+                parse_with_options("reenter\n\nafter\n", &options)
+            };
+            let nested = hook.nested.borrow_mut().take().unwrap();
+            let trace = hook.trace.into_inner();
+            let event_parses = event_pipeline::LADDER_TAIL_EVENT_PARSES.with(Cell::get);
+            assert_eq!(event_parses > 0, event);
+            (document, nested, trace)
+        };
+        assert_eq!(
+            run(true),
+            run(false),
+            "{fragment:?}; {positions}; {source_lines}"
+        );
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
 fn event_owned_pipeline_matches_public_modes() {
     let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     let mut admitted = 0;
@@ -11,10 +173,6 @@ fn event_owned_pipeline_matches_public_modes() {
             continue;
         }
         let source = std::fs::read_to_string(&path).unwrap();
-        // Rule A: the event route declines a document the ownership walk rewrites.
-        if walk_moves_lines(&normalize_source(&source)) {
-            continue;
-        }
         for positions in [false, true] {
             for source_lines in [false, true] {
                 let options = Options::default()
@@ -88,6 +246,7 @@ fn nested_event_cursor_keeps_unpositioned_authored_base_parity() {
     ] {
         let lines = body.lines().count();
         let mapped = MappedSource {
+            owner: source_map::MappedBodyOwner::Document,
             source: body.to_string(),
             line_map: (1..=lines).map(Some).collect(),
             col_map: Vec::new(),
@@ -136,24 +295,565 @@ fn nested_event_cursor_fits_a_two_megabyte_stack_for_sixty_quotes() {
 
 #[cfg(feature = "experimental-event-parser-options")]
 #[test]
-fn deeper_quote_chains_decline_before_using_the_event_stack() {
+fn deeper_quote_chains_own_or_decline_on_a_small_stack() {
     let chain = format!("{}text\n", "> ".repeat(120));
-    for source in [
-        chain.clone(),
-        format!("\u{feff}{chain}"),
-        format!("prefix\r{chain}"),
+    for (source, owned) in [
+        (chain.clone(), true),
+        (format!("\u{feff}{chain}"), true),
+        (format!("prefix\r{chain}"), true),
+        (format!("> head\n{chain}"), true),
+        (format!("> head\nlazy\n{chain}"), true),
+        // Item and definition bodies parse their quotes eagerly.
+        (format!("- item\n  {chain}"), false),
+        (format!(":: term\n: desc\n  {chain}"), false),
+        // Colon bodies and footnotes keep their own readers.
+        (format!("::: note\n{chain}:::\n"), false),
+        (format!("[^n]: head\n    {chain}\nUse [^n].\n"), false),
     ] {
         std::thread::Builder::new()
             .stack_size(2 * 1024 * 1024)
             .spawn(move || {
-                let expected = parse_with_options(&source, &Options::default());
+                let expected = {
+                    let _standard_root = StandardEventRootGuard::install();
+                    let _standard_nested = StandardNestedReaderGuard::install();
+                    parse_with_options(&source, &Options::default())
+                };
                 let (actual, used) =
                     parse_experimental_event_blocks_with_options(&source, &Options::default());
-                assert!(!used);
-                assert_eq!(actual, expected);
+                assert_eq!(used, owned, "{source:?}");
+                assert_eq!(actual, expected, "{source:?}");
                 let (base_actual, base_used) = parse_experimental_event_blocks(&source);
-                assert!(!base_used);
-                assert_eq!(base_actual, expected);
+                assert_eq!(base_used, owned, "{source:?}");
+                assert_eq!(base_actual, expected, "{source:?}");
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+mod deep_quote_worklist {
+    use super::*;
+    use crate::{BlockMatch, CarveExtension, InlineMatch, MatcherContext};
+
+    const DEPTHS: [usize; 5] = [64, 120, 199, 200, 260];
+
+    #[derive(Default)]
+    pub(super) struct Log {
+        pub(super) blocks: RefCell<Vec<String>>,
+        pub(super) inlines: RefCell<Vec<(usize, String)>>,
+    }
+
+    impl CarveExtension for Log {
+        fn name(&self) -> &'static str {
+            "deep-quote-order"
+        }
+
+        fn match_block(
+            &self,
+            lines: &[&str],
+            start: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<BlockMatch> {
+            self.blocks.borrow_mut().push(lines.get(start)?.to_string());
+            None
+        }
+
+        fn match_inline(
+            &self,
+            text: &str,
+            pos: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<InlineMatch> {
+            let prefix = text.get(pos..).unwrap_or("").chars().take(8).collect();
+            self.inlines.borrow_mut().push((pos, prefix));
+            None
+        }
+    }
+
+    fn quote(depth: usize) -> String {
+        "> ".repeat(depth)
+    }
+
+    /// A marker run with no content, which `strip_blockquote_prefix` reads
+    /// to an empty body.
+    fn bare(depth: usize) -> String {
+        format!("{}>", "> ".repeat(depth - 1))
+    }
+
+    fn staircase(depth: usize) -> String {
+        (1..=depth)
+            .rev()
+            .map(|level| format!("{}line\n{}\n", quote(level), bare(level)))
+            .collect()
+    }
+
+    /// `levels` lines, each one level shallower than the last and the first
+    /// `top - 1` deep, after a quote `depth` deep. As a caption, or a dangling
+    /// attribute when the parse order is observed, each line keeps one quote
+    /// eager, each inside the one before. With `top == levels` the eager
+    /// quotes are the outermost ones, above the whole deep chain.
+    fn eager_ladder(depth: usize, top: usize, levels: usize, line: &str) -> String {
+        let mut source = format!("{}text\n", quote(depth));
+        for step in 1..=levels {
+            source.push_str(&format!("{}{line}\n", quote(top - step)));
+        }
+        source
+    }
+
+    /// `(label, source, owned_when_observed, owned_unobserved)` for eager
+    /// ladders at the budget and one past it, at both ends of the chain.
+    fn eager_ladders(depth: usize) -> Vec<(String, String, bool, bool)> {
+        let budget = event_pipeline::DEEP_QUOTE_EAGER_BUDGET;
+        let mut ladders = Vec::new();
+        for (line, captioned) in [("^ caption", true), ("{.k}", false)] {
+            for levels in [budget, budget + 1] {
+                // "under direct": the eager quotes sit right below the
+                // levels the direct quote helpers parse, the deepest stacking
+                // of the two that admission allows.
+                for (end, top) in [
+                    ("inner", depth),
+                    ("outer", levels),
+                    (
+                        "under direct",
+                        event_pipeline::DIRECT_QUOTE_DEPTH_LIMIT + levels,
+                    ),
+                ] {
+                    let within = levels <= budget;
+                    ladders.push((
+                        format!("{line} ladder; levels={levels}; {end}"),
+                        eager_ladder(depth, top, levels, line),
+                        within,
+                        within || !captioned,
+                    ));
+                }
+            }
+        }
+        ladders
+    }
+
+    /// `(label, source, owned_when_observed)`. Every shape is owned when
+    /// nothing observes the parse order.
+    fn shapes(depth: usize) -> Vec<(String, String, bool)> {
+        let q = quote(depth);
+        let fixed = [
+            ("plain", format!("{q}text\n"), true),
+            ("unterminated", format!("{q}text"), true),
+            ("lazy", format!("{q}text\nlazy line\nmore lazy\n"), true),
+            ("root caption", format!("{q}text\n\n^ caption\n"), true),
+            (
+                "inner caption",
+                format!("{q}text\n{}^ inner\n", quote(depth - 1)),
+                true,
+            ),
+            ("emphasis leaf", format!("{q}*text* and _more_\n"), true),
+            ("list leaf", format!("{q}- one\n{q}- two\n"), true),
+            ("fence leaf", format!("{q}```\n{q}code\n{q}```\n"), true),
+            (
+                "attributes",
+                format!("{q}{{.k}}\n{q}text\n{}\n{q}{{.dangling}}\n", bare(depth)),
+                true,
+            ),
+            ("heading tail", format!("{q}text\n\n# after\n"), true),
+            (
+                "siblings",
+                format!("{q}deep\n{}\n{}tail\n", bare(2), quote(2)),
+                true,
+            ),
+            // One shallower line per level keeps every level eager when the
+            // parse order is observed, so that shape declines.
+            ("staircase", staircase(depth), false),
+        ];
+        let fixed = fixed
+            .into_iter()
+            .map(|(label, source, owned)| (label.to_string(), source, owned));
+        // A caption ladder past the budget declines even unobserved.
+        let ladders = eager_ladders(depth)
+            .into_iter()
+            .filter(|ladder| ladder.3)
+            .map(|(label, source, owned, _)| (label, source, owned));
+        fixed.chain(ladders).collect()
+    }
+
+    /// Item and definition bodies that host the deep chain. Their quotes
+    /// parse eagerly, outside the deferral and the eager budget, so admission
+    /// declines them before any callback runs.
+    fn item_hosted(depth: usize) -> Vec<(&'static str, String)> {
+        let q = quote(depth);
+        // `>   ` puts each deeper level at the content column of the item
+        // above it, so the chain alternates quote, item, quote, item.
+        let alternation = (0..depth)
+            .map(|level| {
+                let indent = ">   ".repeat(level);
+                format!("{indent}> - a\n{indent}>\n")
+            })
+            .collect();
+        vec![
+            ("quote/list alternation", alternation),
+            ("list hosts chain", format!("- item\n  {q}text\n")),
+            ("ordered hosts chain", format!("> 1. item\n>    {q}text\n")),
+            (
+                "definition hosts chain",
+                format!(":: term\n: desc\n  {q}text\n"),
+            ),
+        ]
+    }
+
+    /// With `collect`, the diagnostics collectors are installed, which makes
+    /// the parse order observable just as an extension does.
+    pub(super) fn check(
+        label: &str,
+        source: &str,
+        options: &Options<'_>,
+        mode: ParseMode,
+        collect: bool,
+        owned: bool,
+    ) {
+        let run = |parse: &dyn Fn() -> Option<Document>| {
+            if collect {
+                let ((document, unattached), events) =
+                    collecting_lint_events(|| collecting_unattached_block_attrs(parse));
+                (document, unattached, events)
+            } else {
+                (parse(), Vec::new(), Vec::new())
+            }
+        };
+        let (expected, expected_unattached, expected_events) = run(&|| {
+            let _standard_root = StandardEventRootGuard::install();
+            let _standard_nested = StandardNestedReaderGuard::install();
+            Some(parse_with_options_mode_and_index(source, options, mode).0)
+        });
+        let used = std::cell::Cell::new(false);
+        let (actual, actual_unattached, actual_events) = run(&|| {
+            let (document, _, admitted) =
+                event_pipeline::parse_document_with_mode(source, options, mode)?;
+            used.set(admitted);
+            Some(document)
+        });
+        let Some(actual) = actual else {
+            assert!(!owned, "{label}: declined");
+            return;
+        };
+        assert!(owned, "{label}: expected a decline");
+        assert!(used.get(), "{label}");
+        assert_eq!(actual, expected.unwrap(), "{label}: ast");
+        assert_eq!(
+            actual_unattached, expected_unattached,
+            "{label}: unattached attributes"
+        );
+        assert_eq!(actual_events, expected_events, "{label}: lint events");
+    }
+
+    #[test]
+    fn deep_quote_shapes_match_standard_across_modes_and_options() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for depth in DEPTHS {
+                    for (shape, source, owned_observed) in shapes(depth) {
+                        for positions in [false, true] {
+                            for source_lines in [false, true] {
+                                let options = Options::default()
+                                    .with_positions(positions)
+                                    .with_source_lines(source_lines);
+                                for mode in
+                                    [ParseMode::Html, ParseMode::HtmlFacade, ParseMode::Carve]
+                                {
+                                    for collect in [false, true] {
+                                        let label = format!(
+                                            "depth={depth}; shape={shape}; positions={positions}; \
+                                             source_lines={source_lines}; mode={}; \
+                                             collect={collect}",
+                                            mode as u8
+                                        );
+                                        let owned = !collect || owned_observed;
+                                        check(&label, &source, &options, mode, collect, owned);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn deep_quote_shapes_keep_extension_callback_order() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for depth in DEPTHS {
+                    for (shape, source, owned) in shapes(depth) {
+                        for positions in [false, true] {
+                            for mode in [ParseMode::Html, ParseMode::HtmlFacade, ParseMode::Carve] {
+                                let label = format!(
+                                    "depth={depth}; shape={shape}; positions={positions}; mode={}",
+                                    mode as u8
+                                );
+                                let baseline = Log::default();
+                                let candidate = Log::default();
+                                let baseline_options = Options::default()
+                                    .with_positions(positions)
+                                    .with_extension(&baseline);
+                                let candidate_options = Options::default()
+                                    .with_positions(positions)
+                                    .with_extension(&candidate);
+                                let expected = {
+                                    let _standard_root = StandardEventRootGuard::install();
+                                    let _standard_nested = StandardNestedReaderGuard::install();
+                                    parse_with_options_mode_and_index(
+                                        &source,
+                                        &baseline_options,
+                                        mode,
+                                    )
+                                    .0
+                                };
+                                let event = event_pipeline::parse_document_with_mode(
+                                    &source,
+                                    &candidate_options,
+                                    mode,
+                                );
+                                let Some((actual, _, used)) = event else {
+                                    assert!(!owned, "{label}: declined");
+                                    assert!(candidate.blocks.borrow().is_empty(), "{label}");
+                                    assert!(candidate.inlines.borrow().is_empty(), "{label}");
+                                    continue;
+                                };
+                                assert!(owned, "{label}: expected a decline");
+                                assert!(used, "{label}");
+                                assert_eq!(actual, expected, "{label}: ast");
+                                assert_eq!(
+                                    *candidate.blocks.borrow(),
+                                    *baseline.blocks.borrow(),
+                                    "{label}: block callbacks"
+                                );
+                                assert_eq!(
+                                    *candidate.inlines.borrow(),
+                                    *baseline.inlines.borrow(),
+                                    "{label}: inline callbacks"
+                                );
+                            }
+                        }
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn deep_quote_item_bodies_decline_before_callbacks() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for depth in DEPTHS {
+                    let q = quote(depth);
+                    // Lists that host no deeper line stay owned.
+                    let near_misses = [
+                        ("list leaf", format!("{q}- one\n{q}- two\n")),
+                        ("list after chain", format!("{q}text\n> - after\n")),
+                    ];
+                    let declined = item_hosted(depth).into_iter().map(|(label, source)| {
+                        assert!(
+                            !event_pipeline::deep_quote_chain_owned(&source, &Options::default()),
+                            "depth={depth}; shape={label}: admitted"
+                        );
+                        (label, source, false)
+                    });
+                    let owned = near_misses
+                        .into_iter()
+                        .map(|(label, source)| (label, source, true));
+                    for (shape, source, owned) in declined.chain(owned) {
+                        for positions in [false, true] {
+                            let options = Options::default().with_positions(positions);
+                            for mode in [ParseMode::Html, ParseMode::HtmlFacade, ParseMode::Carve] {
+                                for collect in [false, true] {
+                                    let label = format!(
+                                        "depth={depth}; shape={shape}; positions={positions}; \
+                                         mode={}; collect={collect}",
+                                        mode as u8
+                                    );
+                                    check(&label, &source, &options, mode, collect, owned);
+                                }
+                                let log = Log::default();
+                                let observed = Options::default()
+                                    .with_positions(positions)
+                                    .with_extension(&log);
+                                let event = event_pipeline::parse_document_with_mode(
+                                    &source, &observed, mode,
+                                );
+                                assert_eq!(event.is_some(), owned, "depth={depth}; shape={shape}");
+                                if !owned {
+                                    assert!(log.blocks.borrow().is_empty(), "{shape}");
+                                    assert!(log.inlines.borrow().is_empty(), "{shape}");
+                                }
+                            }
+                        }
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// The event route must decline item-hosted chains on the release stack.
+    /// Only the event route runs here: the standard reader is not safe on
+    /// this stack at these depths, and admission is asserted first so a
+    /// regression fails as an assertion rather than an overflow.
+    #[test]
+    fn deep_quote_item_bodies_decline_on_the_release_stack() {
+        let stack = if cfg!(debug_assertions) {
+            4 * 1024 * 1024
+        } else {
+            512 * 1024
+        };
+        std::thread::Builder::new()
+            .stack_size(stack)
+            .spawn(|| {
+                for depth in [200, 260] {
+                    for (shape, source) in item_hosted(depth) {
+                        for positions in [false, true] {
+                            for observed in [false, true] {
+                                let label = format!(
+                                    "depth={depth}; shape={shape}; positions={positions}; \
+                                     observed={observed}"
+                                );
+                                let log = Log::default();
+                                let mut options = Options::default().with_positions(positions);
+                                if observed {
+                                    options = options.with_extension(&log);
+                                }
+                                assert!(
+                                    !event_pipeline::deep_quote_chain_owned(&source, &options),
+                                    "{label}: admitted"
+                                );
+                                let event = event_pipeline::parse_document_with_mode(
+                                    &source,
+                                    &options,
+                                    ParseMode::Html,
+                                );
+                                assert!(event.is_none(), "{label}: owned");
+                                assert!(log.blocks.borrow().is_empty(), "{label}");
+                                assert!(log.inlines.borrow().is_empty(), "{label}");
+                            }
+                        }
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// Each eager quote holds an event frame while its body and worklist run.
+    /// Admission keeps that chain short, so no quoted body runs out of frames
+    /// and drops the levels under it onto the recursive standard reader.
+    #[test]
+    fn deep_quote_eager_levels_keep_event_frames_on_the_release_stack() {
+        let stack = if cfg!(debug_assertions) {
+            4 * 1024 * 1024
+        } else {
+            512 * 1024
+        };
+        std::thread::Builder::new()
+            .stack_size(stack)
+            .spawn(|| {
+                for depth in [200, 260] {
+                    let mut cases = eager_ladders(depth);
+                    cases.push(("staircase".into(), staircase(depth), false, true));
+                    for (shape, source, owned_observed, owned_unobserved) in cases {
+                        for positions in [false, true] {
+                            for observer in ["none", "extension", "collectors"] {
+                                let label = format!(
+                                    "depth={depth}; shape={shape}; positions={positions}; \
+                                     observer={observer}"
+                                );
+                                let log = Log::default();
+                                let mut options = Options::default().with_positions(positions);
+                                if observer == "extension" {
+                                    options = options.with_extension(&log);
+                                }
+                                let parse = || {
+                                    event_pipeline::parse_document_with_mode(
+                                        &source,
+                                        &options,
+                                        ParseMode::Html,
+                                    )
+                                };
+                                event_pipeline::PEAK_EVENT_FRAMES.with(|peak| peak.set(0));
+                                let parsed = if observer == "collectors" {
+                                    let ((parsed, _), _) = collecting_lint_events(|| {
+                                        collecting_unattached_block_attrs(parse)
+                                    });
+                                    parsed
+                                } else {
+                                    parse()
+                                };
+                                let owned = if observer == "none" {
+                                    owned_unobserved
+                                } else {
+                                    owned_observed
+                                };
+                                let Some((document, _, used)) = parsed else {
+                                    assert!(!owned, "{label}: declined");
+                                    assert!(log.blocks.borrow().is_empty(), "{label}");
+                                    assert!(log.inlines.borrow().is_empty(), "{label}");
+                                    continue;
+                                };
+                                assert!(owned, "{label}: expected a decline");
+                                assert!(used, "{label}");
+                                let peak = event_pipeline::PEAK_EVENT_FRAMES.with(Cell::get);
+                                assert!(
+                                    peak < event_pipeline::EVENT_FRAME_LIMIT,
+                                    "{label}: {peak} event frames"
+                                );
+                                std::mem::forget(document);
+                            }
+                        }
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// The event route alone, on the stack a release embedder may give it.
+    /// Debug frames are several times larger, so a debug run only checks the
+    /// route on a stack no larger than the release floor times eight.
+    #[test]
+    fn deep_quote_event_route_fits_the_release_stack_floor() {
+        let stack = if cfg!(debug_assertions) {
+            4 * 1024 * 1024
+        } else {
+            512 * 1024
+        };
+        std::thread::Builder::new()
+            .stack_size(stack)
+            .spawn(|| {
+                for depth in [199, 200, 260] {
+                    for (shape, source, _) in shapes(depth) {
+                        for positions in [false, true] {
+                            let options = Options::default().with_positions(positions);
+                            let (document, _, used) = event_pipeline::parse_document_with_mode(
+                                &source,
+                                &options,
+                                ParseMode::Html,
+                            )
+                            .unwrap_or_else(|| panic!("depth={depth}; shape={shape}: declined"));
+                            assert!(used, "depth={depth}; shape={shape}");
+                            // Drop glue recurses once per level; this test is
+                            // about the parser's stack, not teardown.
+                            std::mem::forget(document);
+                        }
+                    }
+                }
             })
             .unwrap()
             .join()
@@ -214,10 +914,6 @@ fn event_owned_modes_preserve_extension_callbacks() {
             continue;
         }
         let source = std::fs::read_to_string(&path).unwrap();
-        // Rule A: the event route declines a document the ownership walk rewrites.
-        if walk_moves_lines(&normalize_source(&source)) {
-            continue;
-        }
         for mode in [ParseMode::Html, ParseMode::HtmlFacade, ParseMode::Carve] {
             for positions in [false, true] {
                 let baseline = Hook::default();
@@ -260,6 +956,2064 @@ fn event_owned_modes_preserve_extension_callbacks() {
         }
     }
     event_pipeline::NESTED_EXTENSION_EVENT_PARSES.with(|count| assert!(count.get() > 0));
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+mod event_ladder_tail {
+    use super::*;
+    use crate::{BlockMatch, CarveExtension, InlineMatch, MatcherContext};
+
+    /// Logs every callback and claims `@@@`, so a tail that reaches the
+    /// extension at a different point shows up as a different log.
+    #[derive(Default)]
+    pub(super) struct LadderHook {
+        blocks: RefCell<Vec<String>>,
+        inlines: RefCell<Vec<(usize, String)>>,
+        after: Cell<usize>,
+    }
+
+    impl CarveExtension for LadderHook {
+        fn name(&self) -> &'static str {
+            "event-ladder-tail"
+        }
+
+        fn match_block(
+            &self,
+            lines: &[&str],
+            start: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<BlockMatch> {
+            let line = *lines.get(start)?;
+            self.blocks.borrow_mut().push(line.to_string());
+            (line == "@@@").then(|| BlockMatch {
+                node: BlockNode::Paragraph(Paragraph {
+                    children: vec![InlineNode::text("custom".to_string())],
+                    ..Default::default()
+                }),
+                lines_consumed: 1,
+            })
+        }
+
+        fn match_inline(
+            &self,
+            text: &str,
+            pos: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<InlineMatch> {
+            let prefix = text.get(pos..).unwrap_or("").chars().take(8).collect();
+            self.inlines.borrow_mut().push((pos, prefix));
+            None
+        }
+
+        fn after_parse(&self, doc: Document) -> Document {
+            self.after.set(self.after.get() + 1);
+            doc
+        }
+    }
+
+    pub(super) fn assert_same_callbacks(actual: &LadderHook, expected: &LadderHook, what: &str) {
+        assert_eq!(*actual.blocks.borrow(), *expected.blocks.borrow(), "{what}");
+        assert_eq!(
+            *actual.inlines.borrow(),
+            *expected.inlines.borrow(),
+            "{what}"
+        );
+        assert_eq!(actual.after.get(), expected.after.get(), "{what}");
+    }
+
+    pub(super) fn hooked(hook: &LadderHook, positions: bool, source_lines: bool) -> Options<'_> {
+        Options::default()
+            .with_positions(positions)
+            .with_source_lines(source_lines)
+            .with_extension(hook)
+    }
+
+    fn ladder_tail_event_parses() -> usize {
+        event_pipeline::LADDER_TAIL_EVENT_PARSES.with(Cell::get)
+    }
+
+    #[test]
+    fn positioned_drained_fragments_match_standard_ast_and_callbacks() {
+        for source in [
+            "@@@\n\ntext beta",
+            "- first\n  - @@@\n    second beta\n\n> quoted beta",
+            "> - @@@\n>   continuation beta\n> - next",
+            "# Heading beta\n\nnext beta",
+            "first beta\nsecond beta\n\n@@@",
+            "::: note\n@@@\n# heading beta\nmore beta",
+        ] {
+            for source_lines in [false, true] {
+                let what = format!("{source:?}; source_lines={source_lines}");
+                let baseline = LadderHook::default();
+                let expected = {
+                    let _standard_nested = StandardNestedReaderGuard::install();
+                    parse_fragment_with_events(source, &hooked(&baseline, true, source_lines))
+                };
+                let candidate = LadderHook::default();
+                let before = ladder_tail_event_parses();
+                let actual =
+                    parse_fragment_with_events(source, &hooked(&candidate, true, source_lines));
+                assert!(ladder_tail_event_parses() > before, "{what}");
+                assert_eq!(actual, expected, "{what}");
+                assert_same_callbacks(&candidate, &baseline, &what);
+            }
+        }
+    }
+
+    #[test]
+    fn positioned_drained_fragment_admits_local_plus() {
+        for source in ["text\n+", "text +\n", "- item\n  +"] {
+            for source_lines in [false, true] {
+                let hook = LadderHook::default();
+                let options = hooked(&hook, true, source_lines);
+                let baseline = LadderHook::default();
+                let expected = {
+                    let _standard = StandardNestedReaderGuard::install();
+                    parse_fragment_with_events(source, &hooked(&baseline, true, source_lines))
+                };
+                let actual = event_pipeline::parse_drained_fragment(source, &options)
+                    .expect("local plus fragment admitted");
+                assert_eq!(actual, expected, "{source:?}");
+                assert_same_callbacks(&hook, &baseline, source);
+            }
+        }
+    }
+
+    #[test]
+    fn classified_plus_fragment_declines_before_callbacks() {
+        let source = "first\n+\nlast";
+        let _classifier = continuation_marker::Guard::install(source);
+        let hook = LadderHook::default();
+        let options = hooked(&hook, true, true);
+        assert!(event_pipeline::parse_drained_fragment(source, &options).is_none());
+        assert!(hook.blocks.borrow().is_empty());
+        assert!(hook.inlines.borrow().is_empty());
+    }
+
+    fn unpositioned_body(body: &str) -> MappedSource {
+        let lines = body.lines().count();
+        MappedSource {
+            owner: source_map::MappedBodyOwner::Document,
+            source: body.to_string(),
+            line_map: (1..=lines).map(Some).collect(),
+            col_map: Vec::new(),
+            reached: vec![true; lines],
+            opaque_blank_lines: Vec::new(),
+            discarded_outer_blank: false,
+            outer_plus_after_blank: false,
+            item_marker_at_start: false,
+            marker_tail: None,
+            in_quoted_body: false,
+            sublists_carry_authored_base: false,
+        }
+    }
+
+    /// A nested EOF-closed ladder never offers its opener lines to an
+    /// extension and resolves its whole tail before the caller resumes. The
+    /// event cursor owns the tail now, and must keep both properties.
+    #[test]
+    fn nested_ladder_tail_is_event_owned_with_standard_callback_order() {
+        for body in [
+            "::: note\n::: box\ntext",
+            "::: note\n@@@\ntext",
+            "::: note\n{.c}\n@@@\npara",
+            "::: note\n:: term\n: def",
+            "::: box\n:: sub",
+            "::: note\n::: box\n- a\n- ::: inner\n  ::: deeper\n  @@@\n  tail\n- b",
+            "::: note\n# H\n> q\n```\ncode\n```\ntext",
+            "::: note\n::: box\n- a\n\n  - b\n\n    c\nafter",
+            "::: figure\n::: note\n![a](b)\n^ caption",
+            "::: note\n\n\n",
+        ] {
+            let mapped = unpositioned_body(body);
+            let baseline = LadderHook::default();
+            let expected = {
+                let _standard_nested = StandardNestedReaderGuard::install();
+                let before = ladder_tail_event_parses();
+                let blocks =
+                    parse_mapped_source(&mapped, &Options::default().with_extension(&baseline));
+                assert_eq!(ladder_tail_event_parses(), before, "{body:?}");
+                blocks
+            };
+            let candidate = LadderHook::default();
+            let before = ladder_tail_event_parses();
+            let actual =
+                parse_mapped_source(&mapped, &Options::default().with_extension(&candidate));
+            let openers: Vec<&str> = body
+                .lines()
+                .take_while(|line| detect_container_open(line).is_some())
+                .collect();
+            if body
+                .lines()
+                .skip(openers.len())
+                .any(|line| !is_blank_line(line))
+            {
+                assert!(
+                    ladder_tail_event_parses() > before,
+                    "{body:?} tail not event-owned"
+                );
+            }
+            assert_eq!(actual, expected, "{body:?}");
+            assert_same_callbacks(&candidate, &baseline, body);
+            assert!(
+                candidate
+                    .blocks
+                    .borrow()
+                    .iter()
+                    .all(|line| !openers.contains(&line.as_str())),
+                "{body:?}: a ladder opener reached the extension"
+            );
+        }
+    }
+
+    /// A tail past the event frame limit, or deep on the native stack, uses
+    /// the standard reader before any extension callback fires; a deep tail
+    /// in a worklist body stays event owned. All keep the standard AST.
+    #[test]
+    fn ladder_tail_respects_frame_gate() {
+        let limit = event_pipeline::EVENT_FRAME_LIMIT;
+        for (body, depth, base, frames, event_owned) in [
+            ("::: note\n@@@\ntext\n{.dangling}", 0, 0, 0, true),
+            ("::: note\n{.c}\n@@@\ntext\n{.dangling}", 150, 0, 0, false),
+            ("::: note\n{.c}\n@@@\ntext\n{.dangling}", 150, 150, 0, true),
+            ("::: note\n{.c}\n@@@\ntext\n{.dangling}", 0, 0, limit, false),
+        ] {
+            let _depth = DepthScope::set(depth);
+            let _base = WorklistBase::set(base, 0);
+            let _frames = event_pipeline::hold_event_frames(frames);
+            let mapped = unpositioned_body(body);
+            let baseline = LadderHook::default();
+            let expected = {
+                let _standard_nested = StandardNestedReaderGuard::install();
+                let options = Options::default().with_extension(&baseline);
+                parse_mapped_source(&mapped, &options)
+            };
+            let candidate = LadderHook::default();
+            let options = Options::default().with_extension(&candidate);
+            let before = ladder_tail_event_parses();
+            let actual = parse_mapped_source(&mapped, &options);
+            assert_eq!(ladder_tail_event_parses() > before, event_owned, "{body:?}");
+            assert_eq!(actual, expected, "{body:?}");
+            assert_same_callbacks(&candidate, &baseline, body);
+        }
+        assert_eq!(WORKLIST_BASE.with(Cell::get), 0);
+    }
+
+    /// Each ladder tail opens a list whose item body is another ladder, so the
+    /// eager tail parse recurses once per level.
+    #[test]
+    fn alternating_list_ladders_fit_a_two_megabyte_stack() {
+        let source: String = (0..60)
+            .map(|level| format!("{}- ::: n{level}\n", "  ".repeat(level)))
+            .chain(std::iter::once(format!("{}@@@\n", "  ".repeat(60))))
+            .collect();
+        std::thread::Builder::new()
+            .stack_size(2 * 1024 * 1024)
+            .spawn(move || {
+                let baseline = LadderHook::default();
+                let expected = {
+                    let _standard_root = StandardEventRootGuard::install();
+                    let _standard_nested = StandardNestedReaderGuard::install();
+                    let options = hooked(&baseline, false, false);
+                    parse_with_options_mode_and_index(&source, &options, ParseMode::Html).0
+                };
+                let candidate = LadderHook::default();
+                let options = hooked(&candidate, false, false);
+                let before = ladder_tail_event_parses();
+                let actual =
+                    parse_with_options_mode_and_index(&source, &options, ParseMode::Html).0;
+                assert!(ladder_tail_event_parses() > before, "tails not event-owned");
+                assert_eq!(actual, expected);
+                assert_same_callbacks(&candidate, &baseline, "alternating ladders");
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// Corpus 620 and 692 regressed when the event reader took ladder bodies
+    /// ahead of the ladder; every public mode must keep the standard order.
+    #[test]
+    fn ladder_documents_keep_callback_order_in_every_mode() {
+        for source in [
+            "- a\n  ::: box\n  :: sub\n: def\n",
+            ">  ::: |\n :::\n",
+            "- - ::: |\n  :::\n  para\ntail\n",
+            "- ::: note\n  ::: box\n  @@@\n  text\n- tail\n",
+            "> ::: note\n> @@@\n> text\n",
+            "- ::: note\n  - ::: box\n    @@@\n  tail\n",
+            "1. ::: note\n   :: t\n   : d\n\nafter\n",
+            "- ::: note\n  ::: box\n  text",
+        ] {
+            for (label, mode) in [
+                ("html", ParseMode::Html),
+                ("facade", ParseMode::HtmlFacade),
+                ("carve", ParseMode::Carve),
+            ] {
+                for positions in [false, true] {
+                    for source_lines in [false, true] {
+                        let what = format!("{source:?} {label} {positions} {source_lines}");
+                        let baseline = LadderHook::default();
+                        let expected = {
+                            let _standard_root = StandardEventRootGuard::install();
+                            let _standard_nested = StandardNestedReaderGuard::install();
+                            let options = hooked(&baseline, positions, source_lines);
+                            parse_with_options_mode_and_index(source, &options, mode).0
+                        };
+                        let candidate = LadderHook::default();
+                        let options = hooked(&candidate, positions, source_lines);
+                        let actual = parse_with_options_mode_and_index(source, &options, mode).0;
+                        assert_eq!(actual, expected, "{what}");
+                        assert_same_callbacks(&candidate, &baseline, &what);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+mod event_colon_body {
+    use super::event_ladder_tail::{assert_same_callbacks, hooked, LadderHook};
+    use super::*;
+
+    fn colon_body_event_parses() -> usize {
+        event_pipeline::COLON_BODY_EVENT_PARSES.with(Cell::get)
+    }
+
+    type Observed = ((Document, Vec<Pos>), Vec<LintEvent>);
+
+    fn observe(
+        source: &str,
+        mode: ParseMode,
+        positions: bool,
+        source_lines: bool,
+        hook: &LadderHook,
+    ) -> Observed {
+        let options = hooked(hook, positions, source_lines);
+        collecting_lint_events(|| {
+            collecting_unattached_block_attrs(|| {
+                parse_with_options_mode_and_index(source, &options, mode).0
+            })
+        })
+    }
+
+    /// Compare one source against the fully standard reader in every public
+    /// mode, with the root on the event reader and on the standard one.
+    /// `owned` says whether some colon body must reach the event cursor.
+    fn assert_colon_parity(source: &str, owned: bool) {
+        for (label, mode) in [
+            ("html", ParseMode::Html),
+            ("facade", ParseMode::HtmlFacade),
+            ("carve", ParseMode::Carve),
+        ] {
+            for positions in [false, true] {
+                for source_lines in [false, true] {
+                    let baseline = LadderHook::default();
+                    let expected = {
+                        let _standard_root = StandardEventRootGuard::install();
+                        let _standard_nested = StandardNestedReaderGuard::install();
+                        let before = colon_body_event_parses();
+                        let observed = observe(source, mode, positions, source_lines, &baseline);
+                        assert_eq!(colon_body_event_parses(), before, "{source:?} baseline");
+                        observed
+                    };
+                    for standard_root in [true, false] {
+                        let what = format!(
+                            "{source:?} {label} {positions} {source_lines} {standard_root}"
+                        );
+                        let candidate = LadderHook::default();
+                        let before = colon_body_event_parses();
+                        let actual = {
+                            let _standard_root =
+                                standard_root.then(StandardEventRootGuard::install);
+                            observe(source, mode, positions, source_lines, &candidate)
+                        };
+                        assert_eq!(colon_body_event_parses() > before, owned, "{what} owner");
+                        assert_eq!(actual.0 .0, expected.0 .0, "{what} ast");
+                        assert_eq!(actual.0 .1, expected.0 .1, "{what} unattached attrs");
+                        assert_eq!(actual.1, expected.1, "{what} lint events");
+                        assert_same_callbacks(&candidate, &baseline, &what);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn closed_colon_bodies_are_event_owned_in_every_mode() {
+        for source in [
+            "::: note\npara\n:::\n",
+            "::: note\n# H\n\n***\n\ntext\n:::\n",
+            "::: note\n{.c #i}\npara\n\n{k=v}\n# H\n:::\nafter\n",
+            "::: note\n{.a}\n%% c\n{.b}\npara\n:::\n",
+            "::: note\npara\n\n{.dangling}\n:::\n",
+            "::: note\n%%%\nhidden\n%%%\ntext\n:::\n",
+            "::: note\n```rust \"Title\"\nfn main() {}\n```\n^ cap\n:::\n",
+            "::: note\n{table}\n``` csv\na,b\n1,2\n```\n:::\n",
+            "::: note\n| a | b |\n| 1 | 2 |\n:::\n",
+            "::: note\n:: term\n: def\n\n:: other\n: more\n:::\n",
+            "::: note\n> q\n> more\n\nafter\n:::\n",
+            "::: note\n![a](a.png)\n^ caption\n\n![b](b.png)\n\ntext\n:::\n",
+            "::: note\n$$`x^2`\n^ eq\n:::\n",
+            "::: note\n::: |\nline one\n  line two\n:::\n::: \\\nhard\nbreaks\n:::\n::: >\nquoted\n:::\n:::\n",
+            "::: warning Title *here*\nbody\n:::\n",
+        ] {
+            assert_colon_parity(source, true);
+        }
+    }
+
+    #[test]
+    fn nested_colon_and_list_bodies_keep_the_standard_ast() {
+        for source in [
+            "::: note\n::: box\ninner\n:::\nouter\n:::\n",
+            "::: a\n::: b\n::: c\ndeep *text*\n:::\n:::\n:::\n",
+            "::: note\n- a\n- b\n\n  c\n- d\n:::\n",
+            "::: note\n- a\n  - b\n    - c\n\n      para\n1. one\n2. two\n:::\n",
+            "::: note\n- [ ] task\n- [x] done\n:::\n",
+            "::: note\n- a\n\n  ::: box\n  inner\n  :::\n- b\n:::\n",
+            "- item\n\n  ::: note\n  - x\n  - y\n  :::\n",
+            "- item\n\n  ::: note\n  > quoted\n  :: term\n  : def\n  :::\n",
+            "- item\n\n  ::: note\n  text\n    > q\n    : def\n  :::\n",
+            "- ::: note\n  text\n  :::\n- tail\n",
+            "- ::: note\n    > q\n  :::\n- tail\n",
+            "> ::: note\n> quoted body\n> :::\n",
+            "::: figure\n![a](a.png)\n^ one\n\n![b](b.png)\n^ two\n:::\n^ group\n",
+            "::: figure\n::: figure\n![a](a.png)\n:::\n:::\n",
+            "[^n]: note\n\n    ::: box\n    body\n    :::\n\ntext[^n]\n",
+            "::: note\n{.outer}\n::: box\n{.inner}\npara\n:::\n:::\n",
+        ] {
+            assert_colon_parity(source, true);
+        }
+    }
+
+    /// `@@@` is claimed by the hook, so a body that offers a line in a
+    /// different order, twice, or not at all shows up in the log.
+    #[test]
+    fn extension_callbacks_keep_order_through_event_colon_bodies() {
+        for source in [
+            "::: note\nfirst line\nsecond line\n\n@@@\n\n::: box\ninner line\ninner continuation\n:::\n\nouter sibling\n:::\n\nafter sibling\n",
+            "::: note\n@@@\ntext with *em*\n:::\n",
+            "::: note\n{.c}\n@@@\n:::\n",
+            "::: note\n@@@\n::: box\n@@@\nx\n:::\n@@@\n:::\n",
+            "::: note\n- a\n- @@@\n\n  @@@\n:::\n",
+            "- a\n\n  ::: note\n  @@@\n  > @@@\n  :::\n",
+            "::: note\n> @@@\n\n:: @@@\n: @@@\n:::\n",
+            "::: note\n@@@\n:::\n\n@@@\n\n::: box\n@@@\n:::\n",
+        ] {
+            assert_colon_parity(source, true);
+        }
+    }
+
+    #[test]
+    fn plain_colon_paragraphs_keep_observer_and_consumer_order() {
+        use crate::{BlockMatch, CarveExtension, InlineMatch, MatcherContext};
+
+        struct Hook<'a> {
+            name: &'static str,
+            consume: bool,
+            log: &'a RefCell<Vec<String>>,
+        }
+        impl CarveExtension for Hook<'_> {
+            fn name(&self) -> &'static str {
+                self.name
+            }
+            fn match_block(
+                &self,
+                lines: &[&str],
+                start: usize,
+                _: &MatcherContext<'_>,
+            ) -> Option<BlockMatch> {
+                let line = *lines.get(start)?;
+                self.log.borrow_mut().push(format!("{}:{line}", self.name));
+                (self.consume && line == "@@@").then(|| BlockMatch {
+                    node: BlockNode::Paragraph(Paragraph {
+                        children: vec![InlineNode::text("claimed".to_string())],
+                        ..Default::default()
+                    }),
+                    lines_consumed: 1,
+                })
+            }
+            fn match_inline(
+                &self,
+                text: &str,
+                pos: usize,
+                _: &MatcherContext<'_>,
+            ) -> Option<InlineMatch> {
+                if pos == 0 && text.starts_with("first line") {
+                    self.log
+                        .borrow_mut()
+                        .push(format!("{}:inline:first line", self.name));
+                }
+                None
+            }
+        }
+
+        let source = "::: note\nfirst line\nsecond line\n\n@@@\n\n::: box\ninner line\ninner continuation\n:::\n\nouter sibling\n:::\n\nafter sibling\n";
+        for positions in [false, true] {
+            for source_lines in [false, true] {
+                let run = |standard: bool| {
+                    let log = RefCell::new(Vec::new());
+                    let observer = Hook {
+                        name: "observe",
+                        consume: false,
+                        log: &log,
+                    };
+                    let consumer = Hook {
+                        name: "consume",
+                        consume: true,
+                        log: &log,
+                    };
+                    let options = Options::default()
+                        .with_positions(positions)
+                        .with_source_lines(source_lines)
+                        .with_extension(&observer)
+                        .with_extension(&consumer);
+                    let document = if standard {
+                        let _standard_root = StandardEventRootGuard::install();
+                        let _standard_nested = StandardNestedReaderGuard::install();
+                        parse_with_options_mode_and_index(source, &options, ParseMode::Html).0
+                    } else {
+                        parse_with_options_mode_and_index(source, &options, ParseMode::Html).0
+                    };
+                    (document, log.into_inner())
+                };
+                let expected = run(true);
+                let actual = run(false);
+                assert_eq!(
+                    actual, expected,
+                    "positions={positions} source_lines={source_lines}"
+                );
+                for line in [
+                    "first line",
+                    "@@@",
+                    "inner line",
+                    "outer sibling",
+                    "after sibling",
+                ] {
+                    for name in ["observe", "consume"] {
+                        assert_eq!(
+                            actual
+                                .1
+                                .iter()
+                                .filter(|entry| *entry == &format!("{name}:{line}"))
+                                .count(),
+                            1,
+                            "{name}:{line}"
+                        );
+                    }
+                }
+                let first = actual
+                    .1
+                    .iter()
+                    .position(|entry| entry == "observe:first line")
+                    .unwrap();
+                let first_inline = actual
+                    .1
+                    .iter()
+                    .position(|entry| entry == "observe:inline:first line")
+                    .unwrap();
+                let claimed = actual
+                    .1
+                    .iter()
+                    .position(|entry| entry == "consume:@@@")
+                    .unwrap();
+                let inner = actual
+                    .1
+                    .iter()
+                    .position(|entry| entry == "observe:inner line")
+                    .unwrap();
+                let sibling = actual
+                    .1
+                    .iter()
+                    .position(|entry| entry == "observe:outer sibling")
+                    .unwrap();
+                let after = actual
+                    .1
+                    .iter()
+                    .position(|entry| entry == "observe:after sibling")
+                    .unwrap();
+                assert!(
+                    after < first
+                        && first < first_inline
+                        && first_inline < claimed
+                        && claimed < sibling
+                        && sibling < inner,
+                    "{:?}",
+                    actual.1
+                );
+            }
+        }
+    }
+
+    /// A `+` line reaches the extension hook through `parse_block` on both
+    /// routes, so the callback log keeps the standard order.
+    #[test]
+    fn plus_lines_in_colon_bodies_keep_callback_order() {
+        for source in [
+            "::: note\n- a\n+\n  @@@\n:::\n",
+            "::: note\n@@@ +\nmore\n:::\n",
+            "::: note\n- a\n+\n@@@\n\n+\n@@@\n:::\n",
+        ] {
+            assert_colon_parity(source, true);
+        }
+    }
+
+    /// Colon bodies ask `+` for its decision through the colon geometry, so
+    /// accepted, refused and orphan markers match the standard reader.
+    #[test]
+    fn continuation_markers_in_colon_bodies_are_event_owned() {
+        for source in [
+            "::: note\n- a\n+\n```\ncode\n```\n:::\n",
+            "::: note\npara\n\n+\n:::\n",
+            "::: note\n+\npara\n:::\n",
+            "::: note\n- a\n\n+\nb\n:::\n",
+            "::: note\n- a\n +\nb\n:::\n",
+            "::: note\n- a\n+\n- b\n:::\n",
+            "::: note\n- a\n+\n:::\n",
+            "::: note\n1. one\n+\n> q\n:::\n",
+            "::: note\n:: t\n: d\n+\n  more\n:::\n",
+            "::: note\n> a\n+\nb\n:::\n",
+            "::: a\n::: b\n- x\n+\ny\n:::\n:::\n",
+            "::: note\n- a\n+\n::: box\ninner\n:::\n:::\n",
+            "- ::: note\n  - a\n  +\n  b\n  :::\n",
+            "> ::: note\n> - a\n> +\n> b\n> :::\n",
+            "::: note\n{.c}\n- a\n+\n{.d}\npara\n:::\n",
+            "::: note\n- a\n+\n{.dangling}\n:::\n",
+            "::: note\ntext +\nmore\n:::\n",
+            "::: note\r\n- a\r\n+\r\nmore\r\n:::\r\n",
+        ] {
+            assert_colon_parity(source, true);
+        }
+    }
+
+    /// Bodies deep in the worklist stay on the event cursor; past the global
+    /// nesting cap both readers degrade the same way.
+    #[test]
+    fn colon_depth_caps_match_the_standard_reader() {
+        let nest = |levels: usize| -> String {
+            let mut out = String::new();
+            for level in 0..levels {
+                out.push_str(&format!("::: n{level}\n"));
+            }
+            out.push_str("@@@\ndeep\n");
+            for _ in 0..levels {
+                out.push_str(":::\n");
+            }
+            out
+        };
+        for levels in [event_pipeline::EVENT_FRAME_LIMIT + 2, MAX_NESTING_DEPTH + 5] {
+            let source = nest(levels);
+            std::thread::Builder::new()
+                .stack_size(2 * 1024 * 1024)
+                .spawn(move || assert_colon_parity(&source, true))
+                .unwrap()
+                .join()
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn colon_bodies_at_the_event_frame_limit_decline() {
+        let _frames = event_pipeline::hold_event_frames(event_pipeline::EVENT_FRAME_LIMIT);
+        let baseline = LadderHook::default();
+        let expected = {
+            let _standard_root = StandardEventRootGuard::install();
+            let _standard_nested = StandardNestedReaderGuard::install();
+            observe(
+                "::: note\n@@@\n:::\n",
+                ParseMode::Html,
+                false,
+                false,
+                &baseline,
+            )
+        };
+        let candidate = LadderHook::default();
+        let before = colon_body_event_parses();
+        let actual = {
+            let _standard_root = StandardEventRootGuard::install();
+            observe(
+                "::: note\n@@@\n:::\n",
+                ParseMode::Html,
+                false,
+                false,
+                &candidate,
+            )
+        };
+        assert_eq!(colon_body_event_parses(), before);
+        assert_eq!(actual.0 .0, expected.0 .0);
+        assert_same_callbacks(&candidate, &baseline, "depth limit");
+    }
+}
+
+/// List, colon, definition and quote mixes whose depth rides the worklist.
+/// Their bodies stay on the event cursor through `MAX_NESTING_DEPTH` while
+/// the native event frames stay within `EVENT_FRAME_LIMIT`.
+#[cfg(feature = "experimental-event-parser-options")]
+mod deep_worklist_owner {
+    use super::deep_quote_worklist::{check, Log};
+    use super::*;
+
+    /// Deep standard parses dominate the runtime, so only this depth runs
+    /// every shape through the full matrix.
+    const SHALLOW_DEPTH: usize = 8;
+
+    /// Strength-2 covering rows over `(mode, positions, source_lines,
+    /// collect)`. At `MAX_NESTING_DEPTH` shape `s` takes row `s`, so the six
+    /// rows run there once each.
+    const PAIRWISE: [(ParseMode, bool, bool, bool); 6] = [
+        (ParseMode::Html, false, false, false),
+        (ParseMode::Html, true, true, true),
+        (ParseMode::HtmlFacade, false, true, false),
+        (ParseMode::HtmlFacade, true, false, true),
+        (ParseMode::Carve, false, false, true),
+        (ParseMode::Carve, true, true, false),
+    ];
+
+    /// `(depth, shape, PAIRWISE row)`: one standard comparison for each
+    /// remaining depth.
+    const DEEP_CELLS: [(usize, &str, usize); 8] = [
+        (64, "list siblings", 0),
+        (120, "quoted list", 2),
+        (199, "list", 4),
+        (260, "colon/list", 1),
+        (199, "definition chain", 0),
+        (260, "definition chain", 2),
+        (199, "definition chain", 3),
+        (260, "definition chain", 4),
+    ];
+
+    /// `(depth, shape, CALLBACK_ROWS row)` for the deep callback comparisons.
+    /// Observed, the definition chain's final bodies ride the worklist.
+    const DEEP_CALLBACK_CELLS: [(usize, &str, usize); 3] = [
+        (199, "colon/list", 1),
+        (199, "definition chain", 2),
+        (260, "definition chain", 5),
+    ];
+
+    /// `(mode, positions)` rows for the callback test, indexed like `PAIRWISE`.
+    const CALLBACK_ROWS: [(ParseMode, bool); 6] = [
+        (ParseMode::Html, false),
+        (ParseMode::HtmlFacade, true),
+        (ParseMode::Carve, false),
+        (ParseMode::Html, true),
+        (ParseMode::HtmlFacade, false),
+        (ParseMode::Carve, true),
+    ];
+
+    fn full_matrix() -> Vec<(ParseMode, bool, bool, bool)> {
+        let mut rows = Vec::new();
+        for mode in [ParseMode::Html, ParseMode::HtmlFacade, ParseMode::Carve] {
+            for positions in [false, true] {
+                for source_lines in [false, true] {
+                    for collect in [false, true] {
+                        rows.push((mode, positions, source_lines, collect));
+                    }
+                }
+            }
+        }
+        rows
+    }
+
+    fn indent(level: usize) -> String {
+        "  ".repeat(level)
+    }
+
+    /// A paragraph, a quote, a definition list and a figure group at `lead`.
+    fn leaf(lead: &str) -> String {
+        format!(
+            "{lead}deep *leaf*\n\n{lead}> quoted\n\n{lead}:: term\n{lead}:  desc\n\n\
+             {lead}::: figure\n{lead}![a](b)\n{lead}^ caption\n{lead}:::\n"
+        )
+    }
+
+    /// Inside a container, so no root direct reader takes the whole shape.
+    fn wrapped(body: String) -> String {
+        format!("::: wrap\n{body}:::\n")
+    }
+
+    /// `(label, source)`; every shape but the last nests on the worklist.
+    fn shapes(depth: usize) -> Vec<(&'static str, String)> {
+        let list: String = (0..depth)
+            .map(|level| format!("{}- l{level}\n", indent(level)))
+            .chain([leaf(&indent(depth))])
+            .collect();
+        let colon = (0..depth)
+            .map(|level| format!("::: n{level}\n"))
+            .chain([leaf("")])
+            .chain((0..depth).map(|_| ":::\n".to_string()))
+            .collect();
+        // Even levels open a container inside the item above them.
+        let alternating = (0..depth)
+            .map(|level| {
+                let lead = indent(level / 2);
+                if level % 2 == 0 {
+                    format!("{lead}::: n{level}\n")
+                } else {
+                    format!("{lead}- l{level}\n")
+                }
+            })
+            .chain([leaf(&indent(depth / 2))])
+            .collect();
+        let siblings = (0..depth)
+            .map(|level| {
+                let lead = indent(level);
+                format!(
+                    "{lead}- l{level}\n\n{lead}  > q{level}\n\n{lead}  :: t{level}\n\
+                     {lead}  :  d{level}\n\n"
+                )
+            })
+            .collect();
+        let quoted = list.lines().map(|line| format!("> {line}\n")).collect();
+        // Every description body is final, so it rides the worklist observed
+        // or not (`tailed_definition_chain` is the eager counterpart).
+        let definitions = (0..depth)
+            .map(|level| {
+                let lead = indent(level);
+                format!("{lead}:: t{level}\n{lead}: d{level}\n\n")
+            })
+            .chain([leaf(&indent(depth))])
+            .collect();
+        vec![
+            ("list", wrapped(list)),
+            ("colon", colon),
+            ("colon/list", wrapped(alternating)),
+            ("list siblings", wrapped(siblings)),
+            ("quoted list", wrapped(quoted)),
+            ("definition chain", definitions),
+        ]
+    }
+
+    fn worklist_shapes(depth: usize) -> impl Iterator<Item = (&'static str, String)> {
+        shapes(depth)
+            .into_iter()
+            .filter(|(shape, _)| *shape != "definition chain")
+    }
+
+    fn shape(depth: usize, name: &str) -> String {
+        shapes(depth)
+            .into_iter()
+            .find(|(shape, _)| *shape == name)
+            .unwrap_or_else(|| panic!("unknown shape {name}"))
+            .1
+    }
+
+    fn check_row(
+        depth: usize,
+        shape: &str,
+        source: &str,
+        (mode, positions, source_lines, collect): (ParseMode, bool, bool, bool),
+    ) {
+        let options = Options::default()
+            .with_positions(positions)
+            .with_source_lines(source_lines);
+        let label = format!(
+            "depth={depth}; shape={shape}; positions={positions}; \
+             source_lines={source_lines}; mode={}; collect={collect}",
+            mode as u8
+        );
+        check(&label, source, &options, mode, collect, true);
+    }
+
+    #[test]
+    fn shallow_worklist_shapes_match_standard_across_the_full_matrix() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for (shape, source) in shapes(SHALLOW_DEPTH) {
+                    for row in full_matrix() {
+                        check_row(SHALLOW_DEPTH, shape, &source, row);
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn multiple_items_and_descriptions_keep_their_worklist_slots() {
+        let source =
+            ":: first\n: alpha\n: beta\n  - nested\n:: second\n: gamma\n: delta\n  > quote\n";
+        for row in full_matrix() {
+            check_row(2, "multiple definitions", source, row);
+        }
+    }
+
+    /// Root lists whose last description body has only blank lines after it,
+    /// with the number of bodies an observed parse leaves on the worklist. A
+    /// final body popped off the worklist defers its own final body too.
+    const FINAL_BODY_CASES: [(&str, &str, usize); 7] = [
+        ("single final body", ":: t\n: d\n  - one\n  - two\n", 1),
+        (
+            "earlier description eager",
+            ":: t\n: alpha\n: beta\n  > quote\n\n",
+            1,
+        ),
+        (
+            "several items",
+            ":: a\n: one\n  - x\n:: b\n: two\n  ::: note\n  inner\n  :::\n",
+            1,
+        ),
+        (
+            "earlier list and nested list",
+            "- before\n  - deeper\n\n:: t\n: d *x*\n  :: inner\n  : body\n\n",
+            2,
+        ),
+        ("dangling attribute in body", ":: t\n: d\n\n  {.k}\n", 1),
+        (
+            "nested final body",
+            ":: t\n: d\n\n  :: u\n  : e\n    - x\n",
+            2,
+        ),
+        (
+            "nested body with a tail",
+            ":: t\n: d\n\n  :: u\n  : e\n    - x\n\n  after *p*\n",
+            1,
+        ),
+    ];
+
+    /// Anything after the last body, or a level other than the root or a
+    /// worklist description body, keeps every observed body eager.
+    const EAGER_BODY_CASES: [(&str, &str); 5] = [
+        ("paragraph tail", ":: t\n: d\n  - x\n\nafter *para*\n"),
+        ("attribute tail", ":: t\n: d\n  - x\n\n{.k}\n"),
+        ("caption tail", ":: t\n: d\n  - x\n\n^ caption\n"),
+        ("sibling tail", ":: t\n: d\n  - x\n\n> quote\n"),
+        ("nested level", "::: wrap\n:: t\n: d\n  - x\n:::\n"),
+    ];
+
+    fn observed_definition_deferrals(label: &str, source: &str) -> usize {
+        let log = Log::default();
+        let options = Options::default().with_extension(&log);
+        event_pipeline::OBSERVED_DEFINITION_DEFERRALS.with(|count| count.set(0));
+        let (_, _, used) =
+            event_pipeline::parse_document_with_mode(source, &options, ParseMode::Html)
+                .unwrap_or_else(|| panic!("{label}: declined"));
+        assert!(used, "{label}");
+        event_pipeline::OBSERVED_DEFINITION_DEFERRALS.with(Cell::get)
+    }
+
+    #[test]
+    fn observed_final_definition_bodies_ride_the_worklist() {
+        for (label, source, deferred) in FINAL_BODY_CASES {
+            assert_eq!(
+                observed_definition_deferrals(label, source),
+                deferred,
+                "{label}: deferred bodies"
+            );
+            for row in full_matrix() {
+                check_row(1, label, source, row);
+            }
+            for row in 0..CALLBACK_ROWS.len() {
+                check_callbacks(1, label, source, row);
+            }
+        }
+    }
+
+    #[test]
+    fn observed_definition_bodies_with_a_tail_stay_eager() {
+        for (label, source) in EAGER_BODY_CASES {
+            assert_eq!(
+                observed_definition_deferrals(label, source),
+                0,
+                "{label}: deferred bodies"
+            );
+            for row in full_matrix() {
+                check_row(1, label, source, row);
+            }
+            for row in 0..CALLBACK_ROWS.len() {
+                check_callbacks(1, label, source, row);
+            }
+        }
+    }
+
+    #[test]
+    fn non_final_observed_descriptions_preserve_exact_ast_and_callback_order() {
+        // The first body must finish before the second description is read;
+        // both must finish before the later root block is read.
+        let source = ":: term\n: first *one*\n  - nested *two*\n: second *three*\n  > quoted *four*\n\n# root *five*\n";
+        assert_eq!(
+            observed_definition_deferrals("non-final observed descriptions", source),
+            0
+        );
+        for row in full_matrix() {
+            check_row(1, "non-final observed descriptions", source, row);
+        }
+        for row in 0..CALLBACK_ROWS.len() {
+            check_callbacks(1, "non-final observed descriptions", source, row);
+        }
+    }
+
+    #[test]
+    fn definition_scan_keeps_terms_descriptions_and_item_boundaries() {
+        let source = ":: first *term*\n:: second term\n: first *body*\n\n: second body\n\n:: next term\n: next body\n\n# after\n";
+        for row in full_matrix() {
+            check_row(1, "definition scan boundaries", source, row);
+        }
+        for row in 0..CALLBACK_ROWS.len() {
+            check_callbacks(1, "definition scan boundaries", source, row);
+        }
+    }
+
+    /// Every shape at `MAX_NESTING_DEPTH` on its own `PAIRWISE` row, then
+    /// `DEEP_CELLS` for the other deep depths.
+    #[test]
+    fn deep_worklist_shapes_match_standard_on_a_covering_set() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for (s, (shape, source)) in shapes(MAX_NESTING_DEPTH).into_iter().enumerate() {
+                    check_row(MAX_NESTING_DEPTH, shape, &source, PAIRWISE[s]);
+                }
+                for (depth, name, row) in DEEP_CELLS {
+                    check_row(depth, name, &shape(depth, name), PAIRWISE[row]);
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// The old logical gate never admitted a body at depth 8 or deeper.
+    #[test]
+    fn deep_worklist_bodies_reach_the_event_cursor() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for depth in [64, 120, 199, 200, 260] {
+                    let floor = depth.min(MAX_NESTING_DEPTH - 8) / 2;
+                    for (shape, source) in worklist_shapes(depth) {
+                        event_pipeline::PEAK_EVENT_DEPTH.with(|peak| peak.set(0));
+                        let (document, _, used) = event_pipeline::parse_document_with_mode(
+                            &source,
+                            &Options::default(),
+                            ParseMode::Html,
+                        )
+                        .unwrap_or_else(|| panic!("depth={depth}; shape={shape}: declined"));
+                        assert!(used, "depth={depth}; shape={shape}");
+                        let peak = event_pipeline::PEAK_EVENT_DEPTH.with(Cell::get);
+                        assert!(peak >= floor, "depth={depth}; shape={shape}: peak {peak}");
+                        std::mem::forget(document);
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    fn check_callbacks(depth: usize, shape: &str, source: &str, row: usize) {
+        let (mode, positions) = CALLBACK_ROWS[row];
+        let label = format!(
+            "depth={depth}; shape={shape}; positions={positions}; mode={}",
+            mode as u8
+        );
+        let baseline = Log::default();
+        let candidate = Log::default();
+        let expected = {
+            let _standard_root = StandardEventRootGuard::install();
+            let _standard_nested = StandardNestedReaderGuard::install();
+            let options = Options::default()
+                .with_positions(positions)
+                .with_extension(&baseline);
+            parse_with_options_mode_and_index(source, &options, mode).0
+        };
+        let options = Options::default()
+            .with_positions(positions)
+            .with_extension(&candidate);
+        let (actual, _, used) = event_pipeline::parse_document_with_mode(source, &options, mode)
+            .unwrap_or_else(|| panic!("{label}: declined"));
+        assert!(used, "{label}");
+        assert_eq!(actual, expected, "{label}: ast");
+        assert_eq!(
+            *candidate.blocks.borrow(),
+            *baseline.blocks.borrow(),
+            "{label}: block callbacks"
+        );
+        assert_eq!(
+            *candidate.inlines.borrow(),
+            *baseline.inlines.borrow(),
+            "{label}: inline callbacks"
+        );
+    }
+
+    /// Every shape on every `CALLBACK_ROWS` row at `SHALLOW_DEPTH`, then
+    /// `DEEP_CALLBACK_CELLS`.
+    #[test]
+    fn deep_worklist_shapes_keep_extension_callback_order() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for (shape, source) in shapes(SHALLOW_DEPTH) {
+                    for row in 0..CALLBACK_ROWS.len() {
+                        check_callbacks(SHALLOW_DEPTH, shape, &source, row);
+                    }
+                }
+                for (depth, name, row) in DEEP_CALLBACK_CELLS {
+                    check_callbacks(depth, name, &shape(depth, name), row);
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// Only the event route runs here, as in the deep quote release tests.
+    /// The definition chain has its own floor tests,
+    /// `unobserved_definition_chains_fit_the_release_stack_floor` and
+    /// `observed_definition_chains_fit_the_release_stack_floor`.
+    /// Each shape runs observed and unobserved at every depth; positions
+    /// alternate so each of those pairs sees both values across the depths.
+    /// Debug builds skip it; the `stack-floor-release` CI job runs it.
+    #[test]
+    #[cfg_attr(debug_assertions, ignore = "release stack floor; run with --release")]
+    fn deep_worklist_shapes_fit_the_release_stack_floor() {
+        let stack = if cfg!(debug_assertions) {
+            4 * 1024 * 1024
+        } else {
+            512 * 1024
+        };
+        std::thread::Builder::new()
+            .stack_size(stack)
+            .spawn(|| {
+                for (d, depth) in [199, 200, 260].into_iter().enumerate() {
+                    for (s, (shape, source)) in worklist_shapes(depth).enumerate() {
+                        for observed in [false, true] {
+                            let positions = (d + s + usize::from(observed)) % 2 == 1;
+                            let label = format!(
+                                "depth={depth}; shape={shape}; positions={positions}; \
+                                 observed={observed}"
+                            );
+                            let log = Log::default();
+                            let mut options = Options::default().with_positions(positions);
+                            if observed {
+                                options = options.with_extension(&log);
+                            }
+                            let (document, _, used) = event_pipeline::parse_document_with_mode(
+                                &source,
+                                &options,
+                                ParseMode::Html,
+                            )
+                            .unwrap_or_else(|| panic!("{label}: declined"));
+                            assert!(used, "{label}");
+                            std::mem::forget(document);
+                        }
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    const WORKLIST_DEPTH: usize = 150;
+
+    /// `levels` definition entries from `lead`, each in the description body
+    /// of the one before.
+    fn definition_chain(lead: &str, levels: usize) -> String {
+        (0..levels)
+            .map(|level| {
+                let lead = format!("{lead}{}", indent(level));
+                format!("{lead}:: t{level}\n{lead}: d{level}\n\n")
+            })
+            .collect()
+    }
+
+    /// `definition_chain` with a paragraph after each nested list, so no
+    /// description body is final and an observed parse keeps each one eager.
+    fn tailed_definition_chain(lead: &str, levels: usize) -> String {
+        let mut source = definition_chain(lead, levels);
+        for level in (0..levels).rev() {
+            source.push_str(&format!("{lead}{}after{level}\n\n", indent(level)));
+        }
+        source
+    }
+
+    /// An eager definition chain over stack the frame count does not see.
+    struct StackedChain {
+        label: String,
+        source: String,
+        /// Lowest logical depth some event frame must reach.
+        min_depth: usize,
+        /// The chain outlasts the budget, so it must take event frames up to
+        /// the last admitted level.
+        fills: bool,
+        direct_quotes: usize,
+    }
+
+    /// Chains whose stack under the eager part is bounded: the direct quote
+    /// helper levels, or a worklist body restored deep.
+    fn stacked_eager_chains() -> Vec<StackedChain> {
+        let limit = event_pipeline::EVENT_FRAME_LIMIT;
+        let direct = event_pipeline::DIRECT_QUOTE_DEPTH_LIMIT - 1;
+        let prefix = "> ".repeat(direct);
+        let quoted = tailed_definition_chain("", limit)
+            .lines()
+            .map(|line| {
+                if line.is_empty() {
+                    format!("{}\n", prefix.trim_end())
+                } else {
+                    format!("{prefix}{line}\n")
+                }
+            })
+            .collect();
+        let list: String = (0..WORKLIST_DEPTH)
+            .map(|level| format!("{}- l{level}\n", indent(level)))
+            .collect();
+        let worklist = wrapped(format!(
+            "{list}\n{}",
+            definition_chain(&indent(WORKLIST_DEPTH), limit)
+        ));
+        vec![
+            // The direct levels hold native frames, so the chain on top of
+            // them reads on the standard reader.
+            StackedChain {
+                label: "direct quotes over definitions".to_string(),
+                source: quoted,
+                min_depth: 0,
+                fills: false,
+                direct_quotes: direct,
+            },
+            StackedChain {
+                label: "worklist body over definitions".to_string(),
+                source: worklist,
+                min_depth: WORKLIST_DEPTH,
+                fills: true,
+                direct_quotes: 0,
+            },
+        ]
+    }
+
+    /// Root chains that go on past the budget on the standard reader, whose
+    /// own recursion sets the stack these need. Observed, the tails keep
+    /// every body eager.
+    fn root_definition_chains() -> Vec<StackedChain> {
+        [MAX_NESTING_DEPTH - 1, MAX_NESTING_DEPTH]
+            .into_iter()
+            .map(|depth| StackedChain {
+                label: format!("root tailed definitions; depth={depth}"),
+                source: tailed_definition_chain("", depth),
+                min_depth: 0,
+                fills: true,
+                direct_quotes: 0,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn stacked_eager_chains_match_standard() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for chain in stacked_eager_chains()
+                    .into_iter()
+                    .chain(root_definition_chains())
+                {
+                    // Collecting keeps the bodies eager; without it they
+                    // ride the worklist.
+                    for collect in [false, true] {
+                        let label = format!("{}; collect={collect}", chain.label);
+                        check(
+                            &label,
+                            &chain.source,
+                            &Options::default(),
+                            ParseMode::Html,
+                            collect,
+                            true,
+                        );
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// The event route alone on a `stack`-byte thread. No unquoted body takes
+    /// an event frame `EVENT_FRAME_LIMIT` or more levels above the worklist
+    /// base, so an eager chain spends its frames near the top of the stack.
+    /// The collector makes the parse order observed, and every chain here has
+    /// a tail after each body, which keeps the bodies eager.
+    fn check_frame_budget(stack: usize, chains: Vec<StackedChain>) {
+        let limit = event_pipeline::EVENT_FRAME_LIMIT;
+        std::thread::Builder::new()
+            .stack_size(stack)
+            .spawn(move || {
+                for chain in chains {
+                    let label = &chain.label;
+                    event_pipeline::PEAK_EVENT_FRAMES.with(|peak| peak.set(0));
+                    event_pipeline::PEAK_EVENT_DEPTH.with(|peak| peak.set(0));
+                    event_pipeline::PEAK_UNQUOTED_STACKED_DEPTH.with(|peak| peak.set(0));
+                    event_pipeline::DIRECT_QUOTE_PARSES.with(|count| count.set(0));
+                    let (document, _, used) = collecting_unattached_block_attrs(|| {
+                        event_pipeline::parse_document_with_mode(
+                            &chain.source,
+                            &Options::default(),
+                            ParseMode::Html,
+                        )
+                    })
+                    .0
+                    .unwrap_or_else(|| panic!("{label}: declined"));
+                    assert!(used, "{label}");
+                    let frames = event_pipeline::PEAK_EVENT_FRAMES.with(Cell::get);
+                    assert!(frames <= limit, "{label}: {frames} frames");
+                    let stacked = event_pipeline::PEAK_UNQUOTED_STACKED_DEPTH.with(Cell::get);
+                    assert!(stacked < limit, "{label}: stacked {stacked}");
+                    if chain.fills {
+                        assert!(frames > 0, "{label}: no event frame");
+                        assert_eq!(stacked, limit - 1, "{label}: stacked");
+                    }
+                    let depth = event_pipeline::PEAK_EVENT_DEPTH.with(Cell::get);
+                    assert!(depth >= chain.min_depth, "{label}: event depth {depth}");
+                    let quotes = event_pipeline::DIRECT_QUOTE_PARSES.with(Cell::get);
+                    assert_eq!(quotes, chain.direct_quotes, "{label}: direct quotes");
+                    assert_eq!(WORKLIST_BASE.with(Cell::get), 0, "{label}: base leak");
+                    std::mem::forget(document);
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// As in `deep_worklist_shapes_fit_the_release_stack_floor`.
+    #[test]
+    fn stacked_eager_chains_fit_the_release_stack_floor() {
+        let stack = if cfg!(debug_assertions) {
+            4 * 1024 * 1024
+        } else {
+            512 * 1024
+        };
+        check_frame_budget(stack, stacked_eager_chains());
+    }
+
+    /// A root chain at the cap recurses on the standard reader past the
+    /// budget, so 512 KiB is not a floor the event route can owe it; the
+    /// standard reader's own 2 MiB release budget is (`MAX_NESTING_DEPTH`).
+    #[test]
+    fn root_definition_chains_keep_the_frame_budget() {
+        let stack = if cfg!(debug_assertions) {
+            4 * 1024 * 1024
+        } else {
+            2 * 1024 * 1024
+        };
+        check_frame_budget(stack, root_definition_chains());
+    }
+
+    /// Unobserved, each description body waits on the worklist, so the chain
+    /// stays on the event cursor without an event frame per level.
+    fn check_unobserved_definition_chain(depth: usize, positions: bool) {
+        let label = format!("depth={depth}; positions={positions}");
+        event_pipeline::PEAK_EVENT_FRAMES.with(|peak| peak.set(0));
+        event_pipeline::PEAK_EVENT_DEPTH.with(|peak| peak.set(0));
+        let (document, _, used) = event_pipeline::parse_document_with_mode(
+            &shape(depth, "definition chain"),
+            &Options::default().with_positions(positions),
+            ParseMode::Html,
+        )
+        .unwrap_or_else(|| panic!("{label}: declined"));
+        assert!(used, "{label}");
+        let frames = event_pipeline::PEAK_EVENT_FRAMES.with(Cell::get);
+        assert!(
+            frames < event_pipeline::EVENT_FRAME_LIMIT,
+            "{label}: {frames} frames"
+        );
+        let floor = depth.min(MAX_NESTING_DEPTH - 8) / 2;
+        let peak = event_pipeline::PEAK_EVENT_DEPTH.with(Cell::get);
+        assert!(peak >= floor, "{label}: event depth {peak}");
+        assert_eq!(WORKLIST_BASE.with(Cell::get), 0, "{label}: base leak");
+        std::mem::forget(document);
+    }
+
+    #[test]
+    fn unobserved_definition_chains_reach_the_event_cursor() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for (d, depth) in [SHALLOW_DEPTH, 64, 120, 199, 200, 260]
+                    .into_iter()
+                    .enumerate()
+                {
+                    check_unobserved_definition_chain(depth, d % 2 == 1);
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// As in `deep_worklist_shapes_fit_the_release_stack_floor`.
+    #[test]
+    #[cfg_attr(debug_assertions, ignore = "release stack floor; run with --release")]
+    fn unobserved_definition_chains_fit_the_release_stack_floor() {
+        let stack = if cfg!(debug_assertions) {
+            4 * 1024 * 1024
+        } else {
+            512 * 1024
+        };
+        std::thread::Builder::new()
+            .stack_size(stack)
+            .spawn(|| {
+                for depth in [199, 200, 260] {
+                    for positions in [false, true] {
+                        check_unobserved_definition_chain(depth, positions);
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// Observed by an extension or a collector, each final description body
+    /// still waits on the worklist, so the chain needs no event frame per
+    /// level.
+    fn check_observed_definition_chain(depth: usize, positions: bool, collect: bool) {
+        let label = format!("depth={depth}; positions={positions}; collect={collect}");
+        let source = shape(depth, "definition chain");
+        let log = Log::default();
+        let mut options = Options::default().with_positions(positions);
+        if !collect {
+            options = options.with_extension(&log);
+        }
+        event_pipeline::PEAK_EVENT_FRAMES.with(|peak| peak.set(0));
+        event_pipeline::PEAK_EVENT_DEPTH.with(|peak| peak.set(0));
+        event_pipeline::OBSERVED_DEFINITION_DEFERRALS.with(|count| count.set(0));
+        let parse = || event_pipeline::parse_document_with_mode(&source, &options, ParseMode::Html);
+        let parsed = if collect {
+            collecting_unattached_block_attrs(parse).0
+        } else {
+            parse()
+        };
+        let (document, _, used) = parsed.unwrap_or_else(|| panic!("{label}: declined"));
+        assert!(used, "{label}");
+        let frames = event_pipeline::PEAK_EVENT_FRAMES.with(Cell::get);
+        assert!(
+            frames < event_pipeline::EVENT_FRAME_LIMIT,
+            "{label}: {frames} frames"
+        );
+        let floor = depth.min(MAX_NESTING_DEPTH - 8) / 2;
+        let peak = event_pipeline::PEAK_EVENT_DEPTH.with(Cell::get);
+        assert!(peak >= floor, "{label}: event depth {peak}");
+        let deferred = event_pipeline::OBSERVED_DEFINITION_DEFERRALS.with(Cell::get);
+        assert!(deferred >= floor, "{label}: {deferred} deferred bodies");
+        assert_eq!(WORKLIST_BASE.with(Cell::get), 0, "{label}: base leak");
+        std::mem::forget(document);
+    }
+
+    #[test]
+    fn observed_definition_chains_reach_the_event_cursor() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for (d, depth) in [SHALLOW_DEPTH, 64, 120, 199, 200, 205, 260]
+                    .into_iter()
+                    .enumerate()
+                {
+                    for collect in [false, true] {
+                        check_observed_definition_chain(depth, d % 2 == 1, collect);
+                    }
+                }
+                // Tails keep every body eager, with the same callbacks.
+                for (depth, row) in [(SHALLOW_DEPTH, 0), (64, 3), (199, 4)] {
+                    let source = tailed_definition_chain("", depth);
+                    check_callbacks(depth, "tailed definition chain", &source, row);
+                    let deferred = {
+                        let log = Log::default();
+                        let options = Options::default().with_extension(&log);
+                        event_pipeline::OBSERVED_DEFINITION_DEFERRALS.with(|count| count.set(0));
+                        let (document, _, _) = event_pipeline::parse_document_with_mode(
+                            &source,
+                            &options,
+                            ParseMode::Html,
+                        )
+                        .expect("tailed chain");
+                        std::mem::forget(document);
+                        event_pipeline::OBSERVED_DEFINITION_DEFERRALS.with(Cell::get)
+                    };
+                    assert_eq!(deferred, 0, "depth={depth}: tailed chain deferred");
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// As in `deep_worklist_shapes_fit_the_release_stack_floor`.
+    #[test]
+    #[cfg_attr(debug_assertions, ignore = "release stack floor; run with --release")]
+    fn observed_definition_chains_fit_the_release_stack_floor() {
+        let stack = if cfg!(debug_assertions) {
+            4 * 1024 * 1024
+        } else {
+            512 * 1024
+        };
+        std::thread::Builder::new()
+            .stack_size(stack)
+            .spawn(|| {
+                for (d, depth) in [199, 200, 260].into_iter().enumerate() {
+                    for collect in [false, true] {
+                        check_observed_definition_chain(
+                            depth,
+                            (d + usize::from(collect)) % 2 == 1,
+                            collect,
+                        );
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// `levels` items, each hosting an open `::: n` whose description body
+    /// holds the next level. Every entry takes the marker-hosted arm.
+    fn marker_definition_chain(levels: usize) -> String {
+        let lead = |level: usize| "    ".repeat(level);
+        wrapped(
+            (0..levels)
+                .map(|level| {
+                    let lead = lead(level);
+                    format!(
+                        "{lead}- l{level}\n{lead}  ::: n{level}\n{lead}  :: t{level}\n\
+                         {lead}  : d{level}\n\n"
+                    )
+                })
+                .chain([leaf(&lead(levels))])
+                .collect(),
+        )
+    }
+
+    /// Item, colon and description bodies: at least three levels each.
+    fn marker_chain_levels(depth: usize) -> usize {
+        depth.div_ceil(3)
+    }
+
+    /// Several items and descriptions in one marker-hosted body, and a loose
+    /// and a tight list around a multi-paragraph description.
+    const MARKER_HOSTED_CASES: [(&str, &str); 4] = [
+        (
+            "marker-hosted multiple definitions",
+            "::: wrap\n- a\n  ::: note\n  :: first\n  : alpha\n  : beta\n    - nested\n\
+             \x20 :: second\n  : gamma\n  : delta\n    > quote\n  :::\n:::\n",
+        ),
+        (
+            "marker-hosted indented term",
+            "::: wrap\n- a\n  ::: box\n   :: sub\n   : one\n   : two\n:::\n",
+        ),
+        (
+            "marker-hosted tight item",
+            "::: wrap\n- a\n  ::: note\n  :: t\n  : p1\n\n    p2\n  :::\n- b\n:::\n",
+        ),
+        (
+            "marker-hosted loose item",
+            "::: wrap\n- a\n  ::: note\n  :: t\n  : p1\n\n    p2\n  :::\n\n- b\n:::\n",
+        ),
+    ];
+
+    fn marker_hosted_definition_lists(label: &str, source: &str, options: &Options<'_>) -> usize {
+        event_pipeline::MARKER_HOSTED_DEFINITION_LISTS.with(|count| count.set(0));
+        let (document, _, used) =
+            event_pipeline::parse_document_with_mode(source, options, ParseMode::Html)
+                .unwrap_or_else(|| panic!("{label}: declined"));
+        assert!(used, "{label}");
+        std::mem::forget(document);
+        event_pipeline::MARKER_HOSTED_DEFINITION_LISTS.with(Cell::get)
+    }
+
+    #[test]
+    fn marker_hosted_definitions_match_standard() {
+        let chain = marker_definition_chain(SHALLOW_DEPTH);
+        let cases = MARKER_HOSTED_CASES
+            .into_iter()
+            .map(|(label, source)| (label, source.to_string()))
+            .chain([("marker definition chain", chain)]);
+        for (label, source) in cases {
+            let lists = marker_hosted_definition_lists(label, &source, &Options::default());
+            assert!(lists > 0, "{label}: marker-hosted arm not reached");
+            for row in full_matrix() {
+                check_row(1, label, &source, row);
+            }
+            for row in 0..CALLBACK_ROWS.len() {
+                check_callbacks(1, label, &source, row);
+            }
+            // A colon cursor never drains on the spot.
+            assert_eq!(
+                observed_definition_deferrals(label, &source),
+                0,
+                "{label}: deferred bodies"
+            );
+        }
+    }
+
+    /// `(label, source, deferred)`: quotes the marker-hosted arm opens.
+    /// `Some(deferred)` pins whether an unobserved parse defers a body there;
+    /// `None` only compares against the standard reader.
+    const MARKER_HOSTED_QUOTE_CASES: [(&str, &str, Option<bool>); 13] = [
+        (
+            "marker quote",
+            "::: wrap\n- a\n  ::: n\n  > q *x*\n  > - i\n  :::\n:::\n",
+            Some(true),
+        ),
+        (
+            "marker quote nested quote",
+            "::: wrap\n- a\n  ::: n\n  > q\n  > > inner\n  > > - i\n  :::\n:::\n",
+            Some(true),
+        ),
+        (
+            "marker quote hosting a marker quote",
+            "::: wrap\n- a\n  ::: n\n  > - b\n  >   ::: m\n  >   > deep *x*\n  >   :::\n\
+             \x20 :::\n:::\n",
+            Some(true),
+        ),
+        (
+            "marker quote caption",
+            "::: wrap\n- a\n  ::: n\n  > q\n  ^ cap\n  :::\n:::\n",
+            Some(true),
+        ),
+        (
+            "marker quote structural caption",
+            "::: wrap\n- a\n  ::: n\n  >\n\n  ^ cap\n  :::\n:::\n",
+            Some(false),
+        ),
+        (
+            "marker quote sibling",
+            "::: wrap\n- a\n  ::: n\n  > q\n\n  after *x*\n  > r\n  :::\n- b\n:::\n",
+            Some(true),
+        ),
+        (
+            "marker quote plus",
+            "::: wrap\n- a\n  ::: n\n  > > +\n  >   deep\n  :::\n:::\n",
+            None,
+        ),
+        (
+            "marker quote attrs",
+            "::: wrap\n- a\n  ::: n\n  {.k}\n  > q\n  :::\n:::\n",
+            Some(true),
+        ),
+        (
+            "marker quote eof fence",
+            "- a\n  ::: n\n  > ```\n  > code\n\n\n",
+            None,
+        ),
+        (
+            "marker quote figure group",
+            "::: wrap\n- a\n  ::: figure\n  > q\n  ^ cap\n  :::\n:::\n",
+            None,
+        ),
+        (
+            "marker quote in a description",
+            "::: wrap\n:: t\n:  d\n   ::: n\n   > q\n   > - i\n   :::\n:::\n",
+            None,
+        ),
+        (
+            "marker quote in a footnote",
+            "x[^f]\n\n[^f]: note\n\n    ::: n\n    > q\n    :::\n",
+            None,
+        ),
+        (
+            "marker quote tab and lazy",
+            "::: wrap\n- a\n\t::: n\n\t> q\n\tlazy\n  > r\n  lazy too\n  :::\n:::\n",
+            None,
+        ),
+    ];
+
+    fn marker_hosted_quote_deferrals(label: &str, source: &str, options: &Options<'_>) -> usize {
+        event_pipeline::MARKER_HOSTED_QUOTE_DEFERRALS.with(|count| count.set(0));
+        let (document, _, used) =
+            event_pipeline::parse_document_with_mode(source, options, ParseMode::Html)
+                .unwrap_or_else(|| panic!("{label}: declined"));
+        assert!(used, "{label}");
+        std::mem::forget(document);
+        event_pipeline::MARKER_HOSTED_QUOTE_DEFERRALS.with(Cell::get)
+    }
+
+    #[test]
+    fn marker_hosted_quotes_match_standard() {
+        let log = Log::default();
+        let observed = Options::default().with_extension(&log);
+        for (label, source, deferred) in MARKER_HOSTED_QUOTE_CASES {
+            for positions in [false, true] {
+                let options = Options::default().with_positions(positions);
+                let count = marker_hosted_quote_deferrals(label, source, &options);
+                if let Some(deferred) = deferred {
+                    assert_eq!(count > 0, deferred, "{label}: {count} deferrals");
+                }
+            }
+            assert_eq!(
+                marker_hosted_quote_deferrals(label, source, &observed),
+                0,
+                "{label}: observed deferral"
+            );
+            for row in full_matrix() {
+                check_row(1, label, source, row);
+            }
+            for row in 0..CALLBACK_ROWS.len() {
+                check_callbacks(1, label, source, row);
+            }
+        }
+    }
+
+    /// Unobserved, each marker-hosted description body waits on the worklist,
+    /// so the chain reads deep on the event cursor without an event frame per
+    /// level.
+    fn check_marker_definition_chain(depth: usize, positions: bool) {
+        let label = format!("marker chain; depth={depth}; positions={positions}");
+        let levels = marker_chain_levels(depth);
+        let source = marker_definition_chain(levels);
+        event_pipeline::PEAK_EVENT_FRAMES.with(|peak| peak.set(0));
+        event_pipeline::PEAK_EVENT_DEPTH.with(|peak| peak.set(0));
+        let lists = marker_hosted_definition_lists(
+            &label,
+            &source,
+            &Options::default().with_positions(positions),
+        );
+        assert!(
+            lists >= levels.min(MAX_NESTING_DEPTH / 8),
+            "{label}: {lists} marker-hosted lists"
+        );
+        let frames = event_pipeline::PEAK_EVENT_FRAMES.with(Cell::get);
+        assert!(
+            frames < event_pipeline::EVENT_FRAME_LIMIT,
+            "{label}: {frames} frames"
+        );
+        let floor = levels.min(MAX_NESTING_DEPTH / 3) / 2;
+        let peak = event_pipeline::PEAK_EVENT_DEPTH.with(Cell::get);
+        assert!(peak >= floor, "{label}: event depth {peak}");
+        assert_eq!(WORKLIST_BASE.with(Cell::get), 0, "{label}: base leak");
+    }
+
+    #[test]
+    fn deep_marker_definition_chains_match_standard() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for (d, depth) in [SHALLOW_DEPTH, 64, 199, 200, 260].into_iter().enumerate() {
+                    check_marker_definition_chain(depth, d % 2 == 1);
+                    let source = marker_definition_chain(marker_chain_levels(depth));
+                    check_row(depth, "marker definition chain", &source, PAIRWISE[d]);
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// As in `deep_worklist_shapes_fit_the_release_stack_floor`.
+    #[test]
+    #[cfg_attr(debug_assertions, ignore = "release stack floor; run with --release")]
+    fn unobserved_marker_definition_chains_fit_the_release_stack_floor() {
+        let stack = if cfg!(debug_assertions) {
+            4 * 1024 * 1024
+        } else {
+            512 * 1024
+        };
+        std::thread::Builder::new()
+            .stack_size(stack)
+            .spawn(|| {
+                for depth in [199, 200, 260] {
+                    for positions in [false, true] {
+                        check_marker_definition_chain(depth, positions);
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// `levels` levels of three nested items, the innermost hosting an open
+    /// `::: n` whose quote holds the next level, so the quote on the
+    /// marker-hosted arm comes every [`QUOTE_CHAIN_LEVEL`] levels. A line with
+    /// 64 quote markers declines the whole document (`has_deep_quote_chain`),
+    /// so one quote per level would end the chain at 64 levels.
+    fn marker_quote_chain(levels: usize) -> String {
+        let lead = |level: usize| "      > ".repeat(level);
+        let body: String = (0..levels)
+            .map(|level| {
+                let lead = lead(level);
+                format!(
+                    "{lead}- l{level}\n{lead}  - m{level}\n{lead}    - o{level}\n\
+                     {lead}      ::: n{level}\n{lead}      > q{level}\n{lead}      >\n"
+                )
+            })
+            .collect();
+        wrapped(format!("{body}{}deep *leaf*\n", lead(levels)))
+    }
+
+    /// Three items, colon and quote.
+    const QUOTE_CHAIN_LEVEL: usize = 5;
+
+    /// The levels that, with the wrapping container, nest at most `depth` deep.
+    fn marker_quote_chain_levels(depth: usize) -> usize {
+        (depth.saturating_sub(1) / QUOTE_CHAIN_LEVEL).max(1)
+    }
+
+    /// Unobserved, each marker-hosted quote body waits on the worklist, so the
+    /// chain reads deep on the event cursor without an event frame per level.
+    fn check_marker_quote_chain(depth: usize, positions: bool) {
+        let label = format!("marker quote chain; depth={depth}; positions={positions}");
+        let levels = marker_quote_chain_levels(depth);
+        let source = marker_quote_chain(levels);
+        event_pipeline::PEAK_EVENT_FRAMES.with(|peak| peak.set(0));
+        event_pipeline::PEAK_EVENT_DEPTH.with(|peak| peak.set(0));
+        event_pipeline::EVENT_FRAME_REFUSALS.with(|count| count.set(0));
+        let deferrals = marker_hosted_quote_deferrals(
+            &label,
+            &source,
+            &Options::default().with_positions(positions),
+        );
+        assert!(
+            deferrals >= levels.min(MAX_NESTING_DEPTH / 8),
+            "{label}: {deferrals} deferrals"
+        );
+        let frames = event_pipeline::PEAK_EVENT_FRAMES.with(Cell::get);
+        assert!(
+            frames < event_pipeline::EVENT_FRAME_LIMIT,
+            "{label}: {frames} frames"
+        );
+        let nesting = QUOTE_CHAIN_LEVEL * levels + 1;
+        let floor = nesting.min(MAX_NESTING_DEPTH - 8) / 2;
+        let peak = event_pipeline::PEAK_EVENT_DEPTH.with(Cell::get);
+        assert!(peak >= floor, "{label}: event depth {peak}");
+        // Below the cap no level may fall back to the standard reader.
+        if nesting < MAX_NESTING_DEPTH {
+            let refusals = event_pipeline::EVENT_FRAME_REFUSALS.with(Cell::get);
+            assert_eq!(refusals, 0, "{label}: refused event frames");
+        }
+        assert_eq!(WORKLIST_BASE.with(Cell::get), 0, "{label}: base leak");
+    }
+
+    #[test]
+    fn deep_marker_quote_chains_match_standard() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for (d, depth) in [SHALLOW_DEPTH, 64, 194, 199].into_iter().enumerate() {
+                    check_marker_quote_chain(depth, d % 2 == 1);
+                    let source = marker_quote_chain(marker_quote_chain_levels(depth));
+                    check_row(depth, "marker quote chain", &source, PAIRWISE[d]);
+                    if depth == SHALLOW_DEPTH {
+                        for row in 0..CALLBACK_ROWS.len() {
+                            check_callbacks(depth, "marker quote chain", &source, row);
+                        }
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// As in `deep_worklist_shapes_fit_the_release_stack_floor`.
+    #[test]
+    #[cfg_attr(debug_assertions, ignore = "release stack floor; run with --release")]
+    fn unobserved_marker_quote_chains_fit_the_release_stack_floor() {
+        let stack = if cfg!(debug_assertions) {
+            4 * 1024 * 1024
+        } else {
+            512 * 1024
+        };
+        std::thread::Builder::new()
+            .stack_size(stack)
+            .spawn(|| {
+                for depth in [194, 199] {
+                    for positions in [false, true] {
+                        check_marker_quote_chain(depth, positions);
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// `(label, source, deferred)`: quotes the ordinary arm opens in a colon
+    /// body. `Some(deferred)` pins whether an unobserved parse defers a body
+    /// there; `None` only compares against the standard reader.
+    const COLON_QUOTE_CASES: [(&str, &str, Option<bool>); 13] = [
+        ("colon quote", "::: n\n> q *x*\n> - i\n:::\n", Some(true)),
+        (
+            "colon quote nested quote",
+            "::: n\n> q\n> > inner\n> > - i\n:::\n",
+            Some(true),
+        ),
+        (
+            "colon quote hosting a colon quote",
+            "::: n\n> q\n> ::: m\n> > deep *x*\n> :::\n:::\n",
+            Some(true),
+        ),
+        (
+            "colon quote caption",
+            "::: n\n> q\n^ cap\n:::\n",
+            Some(true),
+        ),
+        (
+            "colon quote structural caption",
+            "::: n\n>\n\n^ cap\n:::\n",
+            Some(false),
+        ),
+        (
+            "colon quote styled caption",
+            "::: n\n> *x*\n^ cap\n:::\n",
+            Some(false),
+        ),
+        (
+            "colon quote sibling",
+            "::: n\n> q\n\nafter *x*\n> r\n:::\n",
+            Some(true),
+        ),
+        ("colon quote plus", "::: n\n> > +\n>   deep\n:::\n", None),
+        ("colon quote attrs", "::: n\n{.k}\n> q\n:::\n", Some(true)),
+        ("colon quote eof fence", "::: n\n> ```\n> code\n\n\n", None),
+        (
+            "colon quote figure group",
+            "::: figure\n> q\n^ cap\n:::\n",
+            None,
+        ),
+        (
+            "colon quote in a quote",
+            "> ::: n\n> > q *x*\n> > - i\n> :::\n",
+            Some(true),
+        ),
+        ("colon quote lazy", "::: n\n> q\nlazy\n> r\n:::\n", None),
+    ];
+
+    fn colon_quote_deferrals(label: &str, source: &str, options: &Options<'_>) -> usize {
+        event_pipeline::COLON_QUOTE_DEFERRALS.with(|count| count.set(0));
+        let (document, _, used) =
+            event_pipeline::parse_document_with_mode(source, options, ParseMode::Html)
+                .unwrap_or_else(|| panic!("{label}: declined"));
+        assert!(used, "{label}");
+        std::mem::forget(document);
+        event_pipeline::COLON_QUOTE_DEFERRALS.with(Cell::get)
+    }
+
+    #[test]
+    fn colon_quotes_match_standard() {
+        let log = Log::default();
+        let observed = Options::default().with_extension(&log);
+        for (label, source, deferred) in COLON_QUOTE_CASES {
+            for positions in [false, true] {
+                for source_lines in [false, true] {
+                    let options = Options::default()
+                        .with_positions(positions)
+                        .with_source_lines(source_lines);
+                    let count = colon_quote_deferrals(label, source, &options);
+                    if let Some(deferred) = deferred {
+                        assert_eq!(count > 0, deferred, "{label}: {count} deferrals");
+                    }
+                }
+            }
+            assert_eq!(
+                colon_quote_deferrals(label, source, &observed),
+                0,
+                "{label}: observed deferral"
+            );
+            for row in full_matrix() {
+                check_row(1, label, source, row);
+            }
+            for row in 0..CALLBACK_ROWS.len() {
+                check_callbacks(1, label, source, row);
+            }
+        }
+        assert_eq!(
+            colon_quote_deferrals("root quote", "> q\n> - i\n", &Options::default()),
+            0,
+        );
+    }
+
+    /// `levels` EOF-closed colon containers, each holding a quote that holds
+    /// the next. The wrapper also closes at EOF.
+    /// Every level adds one quote marker, and a line with 64 of them declines
+    /// the document (`has_deep_quote_chain`), so the chain stops short of it.
+    fn colon_quote_chain(levels: usize) -> String {
+        let body: String = (0..levels)
+            .map(|level| {
+                let lead = "> ".repeat(level);
+                format!("{lead}::: n{level}\n{lead}> q{level}\n{lead}>\n")
+            })
+            .collect();
+        wrapped(format!("{body}{}deep *leaf*\n", "> ".repeat(levels)))
+    }
+
+    /// Colon and quote.
+    const COLON_QUOTE_CHAIN_LEVEL: usize = 2;
+
+    fn colon_quote_chain_levels(depth: usize) -> usize {
+        (depth.saturating_sub(1) / COLON_QUOTE_CHAIN_LEVEL).clamp(1, 63)
+    }
+
+    /// Unobserved, each colon body's quote waits on the worklist, so the chain
+    /// reads deep on the event cursor without an event frame per level.
+    fn check_colon_quote_chain(depth: usize, positions: bool) {
+        let label = format!("colon quote chain; depth={depth}; positions={positions}");
+        let levels = colon_quote_chain_levels(depth);
+        let source = colon_quote_chain(levels);
+        event_pipeline::PEAK_EVENT_FRAMES.with(|peak| peak.set(0));
+        event_pipeline::PEAK_EVENT_DEPTH.with(|peak| peak.set(0));
+        event_pipeline::EVENT_FRAME_REFUSALS.with(|count| count.set(0));
+        let deferrals = colon_quote_deferrals(
+            &label,
+            &source,
+            &Options::default().with_positions(positions),
+        );
+        assert!(deferrals >= levels, "{label}: {deferrals} deferrals");
+        let frames = event_pipeline::PEAK_EVENT_FRAMES.with(Cell::get);
+        assert!(
+            frames < event_pipeline::EVENT_FRAME_LIMIT,
+            "{label}: {frames} frames"
+        );
+        let nesting = COLON_QUOTE_CHAIN_LEVEL * levels + 1;
+        let peak = event_pipeline::PEAK_EVENT_DEPTH.with(Cell::get);
+        assert!(peak >= nesting / 2, "{label}: event depth {peak}");
+        let refusals = event_pipeline::EVENT_FRAME_REFUSALS.with(Cell::get);
+        assert_eq!(refusals, 0, "{label}: refused event frames");
+        assert_eq!(WORKLIST_BASE.with(Cell::get), 0, "{label}: base leak");
+    }
+
+    #[test]
+    fn deep_colon_quote_chains_match_standard() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for (d, depth) in [SHALLOW_DEPTH, 64, 127].into_iter().enumerate() {
+                    check_colon_quote_chain(depth, d % 2 == 1);
+                    let source = colon_quote_chain(colon_quote_chain_levels(depth));
+                    check_row(depth, "colon quote chain", &source, PAIRWISE[d]);
+                    if depth == SHALLOW_DEPTH {
+                        for row in 0..CALLBACK_ROWS.len() {
+                            check_callbacks(depth, "colon quote chain", &source, row);
+                        }
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// As in `deep_worklist_shapes_fit_the_release_stack_floor`.
+    #[test]
+    #[cfg_attr(debug_assertions, ignore = "release stack floor; run with --release")]
+    fn unobserved_colon_quote_chains_fit_the_release_stack_floor() {
+        let stack = if cfg!(debug_assertions) {
+            4 * 1024 * 1024
+        } else {
+            512 * 1024
+        };
+        std::thread::Builder::new()
+            .stack_size(stack)
+            .spawn(|| {
+                for positions in [false, true] {
+                    check_colon_quote_chain(127, positions);
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
 }
 
 #[cfg(feature = "experimental-event-parser-options")]
@@ -307,10 +3061,6 @@ fn event_owned_facade_corpus_render_index_matches() {
             continue;
         }
         let source = std::fs::read_to_string(&path).unwrap();
-        // Rule A: the event route declines a document the ownership walk rewrites.
-        if walk_moves_lines(&normalize_source(&source)) {
-            continue;
-        }
         for positions in [false, true] {
             for source_lines in [false, true] {
                 let options = Options::default()
@@ -3040,4 +5790,356 @@ fn verse_spacing_does_not_enter_a_link_destination() {
 
     let linked = crate::to_html("::: |\n[a](/u \"t\")\n");
     assert!(linked.contains("<a href=\"/u\""), "{linked}");
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+mod event_root_rule_a {
+    use super::*;
+    use crate::{BlockMatch, CarveExtension, InlineMatch, MatcherContext};
+
+    #[derive(Default)]
+    struct Hook {
+        blocks: RefCell<Vec<String>>,
+        inlines: RefCell<Vec<(usize, String)>>,
+        after: Cell<usize>,
+    }
+
+    impl CarveExtension for Hook {
+        fn name(&self) -> &'static str {
+            "event-root-rule-a"
+        }
+
+        fn match_block(
+            &self,
+            lines: &[&str],
+            start: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<BlockMatch> {
+            self.blocks.borrow_mut().push(lines.get(start)?.to_string());
+            None
+        }
+
+        fn match_inline(
+            &self,
+            text: &str,
+            pos: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<InlineMatch> {
+            let prefix = text.get(pos..).unwrap_or("").chars().take(8).collect();
+            self.inlines.borrow_mut().push((pos, prefix));
+            None
+        }
+
+        fn after_parse(&self, doc: Document) -> Document {
+            self.after.set(self.after.get() + 1);
+            doc
+        }
+    }
+
+    /// Past-column openers under each host, at one to four columns past the
+    /// host's content column and through a tab.
+    fn walked_sources() -> Vec<String> {
+        let openers = [
+            "> q\n",
+            "- x\n",
+            "```\ncode\n```\n",
+            "::: note\nx\n:::\n",
+            ":: t\n:  d\n",
+            "%%%\nc\n%%%\n",
+            "a\n+\nb\n",
+        ];
+        // (header, continuation prefix, closer)
+        let hosts = [
+            ("- item\n", "  ", ""),
+            ("> quote\n", "> ", ""),
+            (":: term\n:  desc\n", "   ", ""),
+            ("::: note\n", "", ":::\n"),
+        ];
+        let mut sources = Vec::new();
+        for opener in openers {
+            for (header, prefix, closer) in hosts {
+                for extra in [" ", "  ", "   ", "    ", "\t"] {
+                    for blank in ["", "\n"] {
+                        let mut source = header.to_string();
+                        if !blank.is_empty() {
+                            source.push_str(prefix.trim_end());
+                            source.push('\n');
+                        }
+                        for line in opener.lines() {
+                            source.push_str(&format!("{prefix}{extra}{line}\n"));
+                        }
+                        source.push_str(closer);
+                        source.push_str("\ntail\n");
+                        sources.push(source);
+                    }
+                }
+            }
+        }
+        sources
+    }
+
+    fn assert_matches_standard(source: &str) -> bool {
+        let mut used_any = false;
+        for (mode_index, mode) in [ParseMode::Html, ParseMode::HtmlFacade, ParseMode::Carve]
+            .into_iter()
+            .enumerate()
+        {
+            for positions in [false, true] {
+                for source_lines in [false, true] {
+                    let plain = Options::default()
+                        .with_positions(positions)
+                        .with_source_lines(source_lines);
+                    let expected = {
+                        let _standard_root = StandardEventRootGuard::install();
+                        let _standard_nested = StandardNestedReaderGuard::install();
+                        parse_with_options_mode_and_index(source, &plain, mode).0
+                    };
+                    let label = format!(
+                        "mode={mode_index} positions={positions} source_lines={source_lines} \
+                         source={source:?}"
+                    );
+                    // The nested footnote body may still decline when positioned.
+                    let Some((actual, _, used)) =
+                        event_pipeline::parse_document_with_mode(source, &plain, mode)
+                    else {
+                        assert!(
+                            positions && source.contains("[^n]: head"),
+                            "declined: {label}"
+                        );
+                        continue;
+                    };
+                    assert_eq!(actual, expected, "{label}");
+                    assert!(used, "not event-owned: {label}");
+                    used_any |= used;
+
+                    let baseline = Hook::default();
+                    let baseline_options = Options::default()
+                        .with_positions(positions)
+                        .with_source_lines(source_lines)
+                        .with_extension(&baseline);
+                    let expected = {
+                        let _standard_root = StandardEventRootGuard::install();
+                        let _standard_nested = StandardNestedReaderGuard::install();
+                        parse_with_options_mode_and_index(source, &baseline_options, mode).0
+                    };
+                    let candidate = Hook::default();
+                    let candidate_options = Options::default()
+                        .with_positions(positions)
+                        .with_source_lines(source_lines)
+                        .with_extension(&candidate);
+                    let (actual, _, _) =
+                        event_pipeline::parse_document_with_mode(source, &candidate_options, mode)
+                            .unwrap_or_else(|| panic!("declined with extension: {label}"));
+                    assert_eq!(actual, expected, "extension: {label}");
+                    assert_eq!(
+                        *candidate.blocks.borrow(),
+                        *baseline.blocks.borrow(),
+                        "{label}"
+                    );
+                    assert_eq!(
+                        *candidate.inlines.borrow(),
+                        *baseline.inlines.borrow(),
+                        "{label}"
+                    );
+                    assert_eq!(candidate.after.get(), 1, "{label}");
+                    assert_eq!(baseline.after.get(), 1, "{label}");
+                }
+            }
+        }
+        used_any
+    }
+
+    #[test]
+    fn walked_documents_match_standard_root() {
+        let mut walked = 0;
+        let mut used = 0;
+        for source in walked_sources() {
+            if !walk_moves_lines(&normalize_source(&source)) {
+                continue;
+            }
+            walked += 1;
+            if assert_matches_standard(&source) {
+                used += 1;
+            }
+        }
+        assert!(walked > 0, "no generated source moved under rule A");
+        assert_eq!(used, walked, "some walked shapes were not event-owned");
+    }
+
+    #[test]
+    fn walked_frontmatter_footnotes_bom_and_crlf_match_standard_root() {
+        let rows = [
+            "---\ntitle: t\n---\n- item\n\n     - child\n".to_string(),
+            "- item\n\n     - child [^n]\n\n[^n]: note\n".to_string(),
+            "[^n]: head\n\n    - item\n\n         - child\n\nUse [^n].\n".to_string(),
+            "- item\n\n     - child\n\n[r]: /target\n\n[link][r]\n".to_string(),
+            "\u{feff}- item\n\n     - child\n".to_string(),
+            "- item\r\n\r\n     - child\r\n".to_string(),
+            "\u{feff}- item\r\n\r\n     > quote\r\n".to_string(),
+        ];
+        for source in rows {
+            assert!(
+                walk_moves_lines(&normalize_source(&source)),
+                "row does not exercise rule A: {source:?}"
+            );
+            assert!(
+                assert_matches_standard(&source),
+                "not event-owned: {source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn walked_child_span_keeps_its_authored_column() {
+        let source = "- item\n\n     - child\n";
+        assert!(walk_moves_lines(source));
+        let options = Options::default().with_positions(true);
+        let (document, _, used) =
+            event_pipeline::parse_document_with_mode(source, &options, ParseMode::Html)
+                .expect("event root admits a walked document");
+        assert!(used);
+        let BlockNode::List(outer) = &document.children[0] else {
+            panic!("{:?}", document.children);
+        };
+        let inner = outer.items[0]
+            .children
+            .iter()
+            .find_map(|block| match block {
+                BlockNode::List(list) => Some(list),
+                _ => None,
+            })
+            .expect("the moved marker opens a sublist");
+        let pos = inner.items[0].pos.as_ref().expect("positioned item");
+        assert_eq!((pos.start_line, pos.start_column), (3, 6));
+        assert_eq!(pos.start_offset, source.find("- child").unwrap());
+    }
+}
+
+/// `probe_blocks` takes the event route only when nothing observes parse
+/// order and the fragment carries no positions; every event-owned probe is
+/// checked against the fully standard reader while the oracle is on.
+#[cfg(feature = "experimental-event-parser-options")]
+mod event_probe_oracle {
+    use super::*;
+
+    struct OracleGuard(bool);
+
+    impl OracleGuard {
+        fn install() -> Self {
+            Self(probe_oracle::ENABLED.with(|on| on.replace(true)))
+        }
+    }
+
+    impl Drop for OracleGuard {
+        fn drop(&mut self) {
+            probe_oracle::ENABLED.with(|on| on.set(self.0));
+        }
+    }
+
+    fn event_probes() -> usize {
+        probe_oracle::PROBE_EVENT_PARSES.with(Cell::get)
+    }
+
+    fn standard_html(source: &str, options: &Options<'_>) -> Document {
+        let _standard_root = StandardEventRootGuard::install();
+        let _standard_nested = StandardNestedReaderGuard::install();
+        parse_with_options_mode_and_index(source, options, ParseMode::Html).0
+    }
+
+    const PROBED: &str = "- a\n  > b\n  c\nlazy\n";
+
+    #[test]
+    fn unobserved_probe_is_event_owned_and_matches_standard() {
+        let _oracle = OracleGuard::install();
+        let options = Options::default();
+        let before = event_probes();
+        let actual = parse_with_options_mode_and_index(PROBED, &options, ParseMode::Html).0;
+        assert!(event_probes() > before, "no event-owned probe");
+        assert_eq!(actual, standard_html(PROBED, &options));
+    }
+
+    #[test]
+    fn positioned_or_observed_probe_falls_back() {
+        let _oracle = OracleGuard::install();
+        let hook = event_ladder_tail::LadderHook::default();
+        let baseline = event_ladder_tail::LadderHook::default();
+        for (options, expected_options) in [
+            (
+                Options::default().with_positions(true),
+                Options::default().with_positions(true),
+            ),
+            (
+                Options::default().with_source_lines(true),
+                Options::default().with_source_lines(true),
+            ),
+            (
+                event_ladder_tail::hooked(&hook, false, false),
+                event_ladder_tail::hooked(&baseline, false, false),
+            ),
+        ] {
+            let before = event_probes();
+            let actual = parse_with_options_mode_and_index(PROBED, &options, ParseMode::Html).0;
+            assert_eq!(
+                event_probes(),
+                before,
+                "observed probe took the event route"
+            );
+            assert_eq!(actual, standard_html(PROBED, &expected_options));
+        }
+        event_ladder_tail::assert_same_callbacks(&hook, &baseline, PROBED);
+        let _continuation = continuation_marker::Guard::install("a\n+\nb");
+        let before = event_probes();
+        let joined = probe_blocks("a\n+\nb", &Options::default());
+        assert_eq!(event_probes(), before, "a `+` line must decline");
+        let standard = {
+            let _standard_nested = StandardNestedReaderGuard::install();
+            probe_blocks("a\n+\nb", &Options::default())
+        };
+        assert_eq!(joined, standard);
+
+        let source = ":  dangling\n\ntext\n";
+        let options = Options::default().with_positions(true);
+        let before = event_probes();
+        let actual = collecting_lint_events(|| {
+            collecting_unattached_block_attrs(|| probe_blocks(source, &options))
+        });
+        assert_eq!(
+            event_probes(),
+            before,
+            "diagnostic collector took event route"
+        );
+        let expected = {
+            let _standard_nested = StandardNestedReaderGuard::install();
+            collecting_lint_events(|| {
+                collecting_unattached_block_attrs(|| probe_blocks(source, &options))
+            })
+        };
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn corpus_probes_match_standard_reader() {
+        let _oracle = OracleGuard::install();
+        let corpus =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+        let before = event_probes();
+        for entry in std::fs::read_dir(corpus).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension() != Some(std::ffi::OsStr::new("crv")) {
+                continue;
+            }
+            let source = std::fs::read_to_string(&path).unwrap();
+            let options = Options::default();
+            let actual = parse_with_options_mode_and_index(&source, &options, ParseMode::Html).0;
+            assert_eq!(
+                actual,
+                standard_html(&source, &options),
+                "{}",
+                path.display()
+            );
+        }
+        let probes = event_probes() - before;
+        eprintln!("event-owned probes checked: {probes}");
+        assert!(probes > 0);
+    }
 }

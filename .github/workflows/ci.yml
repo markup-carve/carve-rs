@@ -267,6 +267,9 @@ jobs:
         with:
           tool: cargo-nextest
       - run: cargo nextest run --locked --release --test suite -E 'test(/^stack_floor_attribution::/)'
+      # The event worklist floor tests assert 512 KiB only in release; the
+      # worklist one is ignored in debug.
+      - run: cargo nextest run --locked --release --lib -E 'test(/^parse::tests::deep_worklist_owner::.*_fit_the_release_stack_floor$/)'
 
   event-parser:
     name: Experimental event parser parity

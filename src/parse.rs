@@ -428,6 +428,16 @@ pub(crate) fn collecting_unattached_block_attrs<T>(f: impl FnOnce() -> T) -> (T,
     (out, collected.unwrap_or_default())
 }
 
+/// Whether anything records the ORDER in which block bodies are parsed:
+/// extension callbacks, the parser diagnostics, or the verse recorder.
+#[cfg(feature = "experimental-event-parser")]
+fn parse_order_observed(options: &Options<'_>) -> bool {
+    !options.extensions.is_empty()
+        || UNATTACHED_BLOCK_ATTRS.with(|slot| slot.borrow().is_some())
+        || LINT_EVENTS.with(|slot| slot.borrow().is_some())
+        || definition_regions::recording()
+}
+
 /// Record one dangling attribute run, if anybody is collecting.
 fn note_unattached_block_attrs(pos: Option<Pos>) {
     if probing() {
@@ -541,7 +551,57 @@ pub(crate) fn parse_container_label_inlines(label: &str, options: &Options<'_>) 
 /// the fragment, so it is suppressed - see [`PROBING`].
 fn probe_blocks(source: &str, options: &Options<'_>) -> Vec<BlockNode> {
     let _probing = ProbeGuard::enter();
+    #[cfg(feature = "experimental-event-parser-options")]
+    if let Some(blocks) = probe_blocks_with_events(source, options) {
+        return blocks;
+    }
     parse_blocks_with_options(source, options)
+}
+
+/// The event route for [`probe_blocks`]. Only taken when nothing observes
+/// parse order: the event cursor offers extensions their lines at a different
+/// point than `parse_block`, and probes do not suppress lint events.
+#[cfg(feature = "experimental-event-parser-options")]
+#[cold]
+#[inline(never)]
+fn probe_blocks_with_events(source: &str, options: &Options<'_>) -> Option<Vec<BlockNode>> {
+    if options.positions
+        || options.source_lines
+        || parse_order_observed(options)
+        || !nested_event_allowed()
+    {
+        return None;
+    }
+    let _recording = definition_regions::RecordingPause::enter();
+    let _source_ending = SourceEndingGuard::fragment();
+    let blocks = event_pipeline::parse_drained_fragment(source, options)?;
+    #[cfg(test)]
+    probe_oracle::check(source, options, &blocks);
+    Some(blocks)
+}
+
+#[cfg(all(test, feature = "experimental-event-parser-options"))]
+mod probe_oracle {
+    use super::*;
+
+    thread_local! {
+        pub(super) static PROBE_EVENT_PARSES: Cell<usize> = const { Cell::new(0) };
+        pub(super) static ENABLED: Cell<bool> = const { Cell::new(false) };
+    }
+
+    /// Count an event-owned probe and, while the oracle is on, compare it with
+    /// the fully standard reader.
+    pub(super) fn check(source: &str, options: &Options<'_>, blocks: &[BlockNode]) {
+        PROBE_EVENT_PARSES.with(|count| count.set(count.get() + 1));
+        if !ENABLED.with(Cell::get) {
+            return;
+        }
+        let expected = {
+            let _standard_nested = StandardNestedReaderGuard::install();
+            parse_blocks_with_options(source, options)
+        };
+        assert_eq!(blocks, expected.as_slice(), "probe diverged: {source:?}");
+    }
 }
 
 /// [`probe_blocks`] for a fragment that stands at the DOCUMENT level.
@@ -832,6 +892,7 @@ fn parse_with_options_mode_and_index(
             let body_line_count = body.lines().count();
             (
                 MappedSource {
+                    owner: source_map::MappedBodyOwner::Document,
                     source: body.to_owned(),
                     line_map: (body_start_line..body_start_line + body_line_count)
                         .map(Some)
@@ -1437,6 +1498,37 @@ fn parse_quoted_mapped_source(source: &MappedSource, options: &Options<'_>) -> V
     })
 }
 
+/// [`parse_quoted_mapped_source`] for the worklist. Each part's own bodies
+/// join `pending`, shifted past the blocks of the parts before it.
+#[cfg(feature = "experimental-event-parser")]
+fn parse_quote_parts_into(
+    parts: Vec<LineBuffer>,
+    options: &Options<'_>,
+    pending: &mut Vec<PendingBody>,
+) -> Vec<BlockNode> {
+    let mut children = Vec::new();
+    for part in parts {
+        let mut source = part.into_source();
+        source.owner = source_map::MappedBodyOwner::Quote;
+        let mut part_pending = Vec::new();
+        let blocks = parse_mapped_source_at_level_into(
+            &source,
+            options,
+            false,
+            false,
+            true,
+            &mut part_pending,
+        );
+        let offset = children.len();
+        pending.extend(part_pending.into_iter().map(|mut body| {
+            body.index += offset;
+            body
+        }));
+        children.extend(blocks);
+    }
+    children
+}
+
 fn parse_mapped_source_at_document_level(
     source: &MappedSource,
     options: &Options<'_>,
@@ -1471,9 +1563,27 @@ fn parse_mapped_source_at_level_into(
         in_quoted_body,
         pending,
         None,
+        false,
     )
 }
 
+/// A description body popped off the worklist. The drain resumes the moment
+/// this returns, so the level may leave its own final body pending as well
+/// (`LineCursor::drain_follows`).
+#[cfg(feature = "experimental-event-parser")]
+fn parse_definition_body_into(
+    source: &MappedSource,
+    options: &Options<'_>,
+    pending: &mut Vec<PendingBody>,
+) -> Vec<BlockNode> {
+    parse_mapped_source_at_level_into_recording(
+        source, options, false, false, false, pending, None, true,
+    )
+}
+
+/// `drain_follows`: the caller resolves `pending` right after this returns,
+/// with no scan, probe or callback in between.
+#[allow(clippy::too_many_arguments)]
 fn parse_mapped_source_at_level_into_recording(
     source: &MappedSource,
     options: &Options<'_>,
@@ -1482,6 +1592,7 @@ fn parse_mapped_source_at_level_into_recording(
     in_quoted_body: bool,
     pending: &mut Vec<PendingBody>,
     extents: Option<&mut Vec<(usize, usize)>>,
+    drain_follows: bool,
 ) -> Vec<BlockNode> {
     if !options.source_lines
         && !options.positions
@@ -1497,6 +1608,7 @@ fn parse_mapped_source_at_level_into_recording(
             in_quoted_body,
             pending,
             extents,
+            drain_follows,
         );
     }
     parse_positioned_mapped_source(
@@ -1507,10 +1619,18 @@ fn parse_mapped_source_at_level_into_recording(
         in_quoted_body,
         pending,
         extents,
+        drain_follows,
     )
 }
 
+#[cfg(test)]
+thread_local! {
+    static STANDARD_PARAGRAPH_ENTRIES: Cell<usize> = const { Cell::new(0) };
+    static STANDARD_DEFINITION_PARAGRAPH_ENTRIES: Cell<usize> = const { Cell::new(0) };
+}
+
 #[inline(never)]
+#[allow(clippy::too_many_arguments)]
 fn parse_unpositioned_mapped_source(
     source: &MappedSource,
     options: &Options<'_>,
@@ -1519,15 +1639,19 @@ fn parse_unpositioned_mapped_source(
     in_quoted_body: bool,
     pending: &mut Vec<PendingBody>,
     extents: Option<&mut Vec<(usize, usize)>>,
+    drain_follows: bool,
 ) -> Vec<BlockNode> {
     #[cfg(feature = "experimental-event-parser-options")]
     let mut extents = extents;
-    // The ladder parses its tail eagerly, before the parent's pending bodies,
-    // and extension callbacks observe that order. Take it ahead of the event
-    // reader, which would defer the tail onto the worklist.
+    // The ladder never offers its opener lines to extensions and parses its
+    // tail eagerly, before the parent's pending bodies; callbacks observe both.
+    // Take it ahead of the event reader, which would ask about every opener,
+    // and let the event cursor own the tail at the same eager point.
     #[cfg(feature = "experimental-event-parser-options")]
     if !at_document_level && !options.extensions.is_empty() {
-        if let Some(blocks) = parse_eof_closed_colon_ladder(source, options) {
+        if let Some(blocks) =
+            parse_eof_closed_colon_ladder_with(source, options, parse_fragment_with_events)
+        {
             if let Some(extents) = extents {
                 extents.extend(blocks.iter().map(|_| (0, source.source.lines().count())));
             }
@@ -1547,6 +1671,7 @@ fn parse_unpositioned_mapped_source(
             extents.as_deref_mut(),
             pending,
             false,
+            drain_follows,
         ) {
             return blocks;
         }
@@ -1569,6 +1694,7 @@ fn parse_unpositioned_mapped_source(
             in_quoted_body,
             pending,
             extents,
+            drain_follows,
         );
     }
     parse_blocks_with_options_at_level_into_reached_recording(
@@ -1659,6 +1785,7 @@ impl Drop for StandardNestedReaderGuard {
 }
 
 #[inline(never)]
+#[allow(clippy::too_many_arguments)]
 fn parse_positioned_mapped_source(
     source: &MappedSource,
     options: &Options<'_>,
@@ -1667,7 +1794,10 @@ fn parse_positioned_mapped_source(
     in_quoted_body: bool,
     pending: &mut Vec<PendingBody>,
     extents: Option<&mut Vec<(usize, usize)>>,
+    drain_follows: bool,
 ) -> Vec<BlockNode> {
+    #[cfg(not(feature = "experimental-event-parser-options"))]
+    let _ = drain_follows;
     #[cfg(feature = "experimental-event-parser-options")]
     let mut extents = extents;
     #[cfg(feature = "experimental-event-parser-options")]
@@ -1684,6 +1814,7 @@ fn parse_positioned_mapped_source(
             extents.is_some().then_some(&mut event_extents),
             pending,
             true,
+            drain_follows,
         ) {
             if let Some(extents) = extents.as_deref_mut() {
                 extents.extend(event_extents);
@@ -1728,6 +1859,10 @@ fn parse_positioned_mapped_source_standard(
     cursor.at_document_level = at_document_level;
     cursor.in_item_body = in_item_body;
     cursor.in_quoted_body = in_quoted_body || source.in_quoted_body;
+    #[cfg(test)]
+    {
+        cursor.mapped_owner = source.owner;
+    }
     cursor.reached = Some(source.reached.as_slice());
     cursor.sublists_carry_authored_base = source.sublists_carry_authored_base;
     cursor.marker_tail = source.marker_tail;
@@ -1741,10 +1876,34 @@ fn parse_positioned_mapped_source_standard(
     blocks
 }
 
-#[inline(never)]
+/// Parse a fragment through the event cursor and drain its bodies before
+/// returning, as `parse_blocks_with_options` does.
+#[cfg(feature = "experimental-event-parser-options")]
+pub(crate) fn parse_fragment_with_events(source: &str, options: &Options<'_>) -> Vec<BlockNode> {
+    let _recording = definition_regions::RecordingPause::enter();
+    let _source_ending = SourceEndingGuard::fragment();
+    if nested_event_allowed() {
+        if let Some(blocks) = event_pipeline::parse_drained_fragment(source, options) {
+            #[cfg(test)]
+            event_pipeline::LADDER_TAIL_EVENT_PARSES.with(|count| count.set(count.get() + 1));
+            return blocks;
+        }
+    }
+    parse_blocks_with_options_at_level(source, options, false)
+}
+
 fn parse_eof_closed_colon_ladder(
     source: &MappedSource,
     options: &Options<'_>,
+) -> Option<Vec<BlockNode>> {
+    parse_eof_closed_colon_ladder_with(source, options, parse_blocks_with_options)
+}
+
+#[inline(never)]
+fn parse_eof_closed_colon_ladder_with(
+    source: &MappedSource,
+    options: &Options<'_>,
+    parse_tail: fn(&str, &Options<'_>) -> Vec<BlockNode>,
 ) -> Option<Vec<BlockNode>> {
     // This fast path can only match when the document starts with a flush-left
     // colon-container opener. Avoid allocating a line index and scanning every
@@ -1806,7 +1965,7 @@ fn parse_eof_closed_colon_ladder(
             flattened_paragraphs(tail, None, options)
         } else {
             let tail_source = joined_source(tail);
-            parse_blocks_with_options(&tail_source, options)
+            parse_tail(&tail_source, options)
         }
     };
 
@@ -2030,6 +2189,14 @@ fn parse_colon_view(
         );
         cursor.colon_view = Some(&view);
         return parse_blocks(&mut cursor, options, pending);
+    }
+    #[cfg(feature = "experimental-event-parser-options")]
+    if nested_event_allowed() {
+        if let Some(blocks) =
+            event_pipeline::parse_colon_body(&view, lines, source, options, pending)
+        {
+            return blocks;
+        }
     }
     // A colon body read without source lines cannot ask a `+` for its decision,
     // so the plain path is only taken when there is none to ask.
@@ -2399,6 +2566,37 @@ enum Body {
     /// APPENDED to the item rather than assigned to it, and the worklist is
     /// what puts them back in source order (see [`resolve_pending_bodies`]).
     Item(ItemBody),
+    /// A quote's collected body. The event cursor defers one only where doing
+    /// so cannot reorder anything observable (see `quote_body_deferrable`).
+    #[cfg(feature = "experimental-event-parser")]
+    Quote(QuoteBodyPending),
+    /// A definition description's collected body. Deferred only where the
+    /// parse order is unobserved; nothing reads a description's children
+    /// before the worklist fills them.
+    #[cfg(feature = "experimental-event-parser")]
+    Definition(DefinitionBodyPending),
+}
+
+/// A description body collected by the event cursor but not yet parsed.
+#[cfg(feature = "experimental-event-parser")]
+struct DefinitionBodyPending {
+    item: usize,
+    description: usize,
+    source: MappedSource,
+    /// `NESTING_DEPTH` at the definition list, as for [`ContainerBody`].
+    depth: usize,
+    in_group: bool,
+}
+
+/// A quote body collected by the event cursor but not yet parsed.
+#[cfg(feature = "experimental-event-parser")]
+struct QuoteBodyPending {
+    parts: Vec<LineBuffer>,
+    /// `NESTING_DEPTH` at the quote, as for [`ContainerBody`].
+    depth: usize,
+    in_group: bool,
+    /// `nested_plus_quote_anchor` at the quote, applied once the children exist.
+    plus_anchor: Option<(usize, usize)>,
 }
 
 /// A list item's content chunk, collected but not yet parsed.
@@ -2512,6 +2710,46 @@ impl Drop for DepthScope {
     }
 }
 
+#[cfg(feature = "experimental-event-parser-options")]
+thread_local! {
+    // Logical levels no native frame stands under: a worklist body restores
+    // a depth its own stack never descended. Signed, because a body restored
+    // shallower than the stack under its drain must not hide those levels.
+    // Plain initializer for the same MSRV reason as `NESTING_DEPTH`.
+    #[allow(clippy::missing_const_for_thread_local)]
+    static WORKLIST_BASE: Cell<isize> = Cell::new(0);
+}
+
+/// Logical levels above [`WORKLIST_BASE`], the ones holding native frames.
+#[cfg(feature = "experimental-event-parser-options")]
+fn stacked_depth() -> usize {
+    let depth = NESTING_DEPTH.with(Cell::get) as isize;
+    usize::try_from(depth - WORKLIST_BASE.with(Cell::get)).unwrap_or(0)
+}
+
+/// Set [`WORKLIST_BASE`] for one worklist body and restore it on drop.
+#[cfg(feature = "experimental-event-parser-options")]
+struct WorklistBase(isize);
+
+#[cfg(feature = "experimental-event-parser-options")]
+impl WorklistBase {
+    /// `restored` is the depth the body reinstates; `stacked` is
+    /// [`stacked_depth`] where the drain began, so the levels already on the
+    /// native stack under the drain keep counting inside the body.
+    fn set(restored: usize, stacked: usize) -> WorklistBase {
+        let base = restored as isize - stacked as isize;
+        WorklistBase(WORKLIST_BASE.with(|cell| cell.replace(base)))
+    }
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+impl Drop for WorklistBase {
+    fn drop(&mut self) {
+        let previous = self.0;
+        WORKLIST_BASE.with(|base| base.set(previous));
+    }
+}
+
 /// [`FigureGroupGuard`] for a value that is not always `true` - the worklist
 /// reinstates what the opener saw rather than entering a group.
 struct FigureGroupScope(bool);
@@ -2546,6 +2784,12 @@ struct ResolvedBody {
     loose_inside_chunk: bool,
     /// Recheck the gap after nested list bodies have filled their hollow nodes.
     layout: Option<ItemLayout>,
+    /// `Some` for a deferred quote body, carrying its `plus_anchor`.
+    #[cfg(feature = "experimental-event-parser")]
+    quote: Option<Option<(usize, usize)>>,
+    /// `Some((item, description))` for a deferred description body.
+    #[cfg(feature = "experimental-event-parser")]
+    definition: Option<(usize, usize)>,
 }
 
 struct ItemLayout {
@@ -2580,6 +2824,57 @@ fn trailing_verbatim_pos(mut block: &BlockNode) -> Option<&Pos> {
             _ => return None,
         };
     }
+}
+
+/// Fill in the children of a quote the event cursor emitted hollow.
+#[cfg(feature = "experimental-event-parser")]
+fn fill_quote_children(
+    node: &mut BlockNode,
+    mut children: Vec<BlockNode>,
+    plus_anchor: Option<(usize, usize)>,
+) {
+    if let Some(anchor) = plus_anchor {
+        anchor_nested_plus_quote(&mut children, anchor);
+    }
+    match node {
+        BlockNode::BlockQuote(quote) => quote.children = children,
+        BlockNode::Figure(figure) => match &mut *figure.target {
+            FigureTarget::BlockQuote(quote) => quote.children = children,
+            _ => debug_assert!(false, "a pending quote body lost its quote"),
+        },
+        _ => debug_assert!(false, "a pending quote body lost its quote"),
+    }
+}
+
+/// Fill in one description `parse_definition_list_with` emitted hollow, and
+/// widen its span to the last placed child as the eager parse does.
+#[cfg(feature = "experimental-event-parser")]
+fn fill_definition_children(
+    node: &mut BlockNode,
+    (item, description): (usize, usize),
+    children: Vec<BlockNode>,
+) {
+    let BlockNode::DefinitionList(list) = node else {
+        debug_assert!(false, "a pending description lost its definition list");
+        return;
+    };
+    let Some(target) = list
+        .items
+        .get_mut(item)
+        .and_then(|entry| entry.definitions.get_mut(description))
+    else {
+        debug_assert!(false, "a pending description pointed past its list");
+        return;
+    };
+    if let (Some(pos), Some(last)) = (
+        target.pos.as_mut(),
+        children.iter().rev().find_map(crate::ast_json::block_pos),
+    ) {
+        pos.end_line = last.end_line;
+        pos.end_column = last.end_column;
+        pos.end_offset = last.end_offset;
+    }
+    target.children = children;
 }
 
 /// Fill in the children of a node [`open_container`] emitted hollow.
@@ -2687,6 +2982,7 @@ fn parse_item_body_into(
                 false,
                 nested,
                 Some(&mut extents),
+                false,
             );
             if !suppress_tree_looseness {
                 if drop_empty_paragraphs {
@@ -2968,6 +3264,7 @@ fn parse_item_chunk(
             false,
             carried,
             Some(&mut extents),
+            false,
         );
         let loose = item_chunk_tree_looseness(
             &source.source,
@@ -2986,6 +3283,7 @@ fn parse_item_chunk(
         false,
         carried,
         Some(&mut extents),
+        false,
     );
     let loose = item_chunk_tree_looseness(
         &source.source,

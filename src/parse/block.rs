@@ -166,8 +166,26 @@ pub(in crate::parse) fn resolve_pending_bodies(
     let mut links: Vec<ResolvedBody> = Vec::new();
     let mut work: Vec<(usize, PendingBody)> =
         pending.into_iter().map(|body| (0usize, body)).collect();
+    // Levels on the native stack under this drain; every body below runs on
+    // top of them, whatever depth it restores.
+    #[cfg(feature = "experimental-event-parser-options")]
+    let stacked = stacked_depth();
     while let Some((slot, entry)) = work.pop() {
         let mut nested = Vec::new();
+        #[cfg(feature = "experimental-event-parser-options")]
+        let _base = WorklistBase::set(
+            match &entry.body {
+                Body::Colon(body) => body.depth,
+                Body::Item(body) => body.depth,
+                Body::Quote(body) => body.depth,
+                Body::Definition(body) => body.depth,
+            },
+            stacked,
+        );
+        #[cfg(feature = "experimental-event-parser")]
+        let mut quote = None;
+        #[cfg(feature = "experimental-event-parser")]
+        let mut definition = None;
         let (children, item, loose_inside_chunk, layout) = match entry.body {
             Body::Colon(body) => {
                 // The body parses under the state its OPENER stood in, not the
@@ -186,6 +204,30 @@ pub(in crate::parse) fn resolve_pending_bodies(
                 let (children, loose, layout) = parse_item_body_into(body, options, &mut nested);
                 (children, Some(target), loose, layout)
             }
+            #[cfg(feature = "experimental-event-parser")]
+            Body::Quote(body) => {
+                let _depth = DepthScope::set(body.depth);
+                let _group = FigureGroupScope::set(body.in_group);
+                quote = Some(body.plus_anchor);
+                (
+                    parse_quote_parts_into(body.parts, options, &mut nested),
+                    None,
+                    false,
+                    None,
+                )
+            }
+            #[cfg(feature = "experimental-event-parser")]
+            Body::Definition(body) => {
+                let _depth = DepthScope::set(body.depth);
+                let _group = FigureGroupScope::set(body.in_group);
+                definition = Some((body.item, body.description));
+                (
+                    parse_definition_body_into(&body.source, options, &mut nested),
+                    None,
+                    false,
+                    None,
+                )
+            }
         };
         let child_slot = arena.len();
         arena.push(children);
@@ -196,6 +238,10 @@ pub(in crate::parse) fn resolve_pending_bodies(
             child_slot,
             loose_inside_chunk,
             layout,
+            #[cfg(feature = "experimental-event-parser")]
+            quote,
+            #[cfg(feature = "experimental-event-parser")]
+            definition,
         });
         work.extend(nested.into_iter().map(|body| (child_slot, body)));
     }
@@ -219,6 +265,16 @@ pub(in crate::parse) fn resolve_pending_bodies(
             }
         }
         let node = &mut arena[link.slot][link.index];
+        #[cfg(feature = "experimental-event-parser")]
+        if let Some(plus_anchor) = link.quote {
+            fill_quote_children(node, children, plus_anchor);
+            continue;
+        }
+        #[cfg(feature = "experimental-event-parser")]
+        if let Some(target) = link.definition {
+            fill_definition_children(node, target, children);
+            continue;
+        }
         match link.item {
             None => fill_container_children(node, children),
             Some((item, widen_list)) => {

@@ -31,7 +31,7 @@ pub(super) fn detect_block_image(line: &str) -> Option<Image> {
     Some(img)
 }
 
-fn reference_image_line(line: &str) -> bool {
+pub(super) fn reference_image_line(line: &str) -> bool {
     if !line.starts_with("![") {
         return false;
     }
@@ -57,6 +57,12 @@ fn reference_image_line(line: &str) -> bool {
 }
 
 pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
+    #[cfg(test)]
+    STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(count.get() + 1));
+    #[cfg(test)]
+    if !probing() && cur.mapped_owner == source_map::MappedBodyOwner::Definition {
+        STANDARD_DEFINITION_PARAGRAPH_ENTRIES.with(|count| count.set(count.get() + 1));
+    }
     let span_start = cur.pos;
     let refused_plus = cur
         .peek()
@@ -224,7 +230,7 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
 
 /// `q` / `+` / `- s`: no open container claims a document-level `+`, which lint
 /// reports when a block follows it and not before paragraph text (carve#3421).
-fn report_unclaimed_document_plus(cur: &mut LineCursor<'_>, line: &str) {
+pub(super) fn report_unclaimed_document_plus(cur: &mut LineCursor<'_>, line: &str) {
     if !cur.at_document_level
         || cur.colon_view.is_some()
         || !line.starts_with('+')

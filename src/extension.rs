@@ -10,7 +10,11 @@ use std::collections::HashMap;
 
 use crate::ast::{Attrs, BlockNode, Document, ExtensionCarrier, InlineExtension, InlineNode};
 use crate::escape::{escape_attr, escape_text};
-use crate::parse::{parse_blocks_with_options, parse_matcher_inlines};
+#[cfg(not(feature = "experimental-event-parser-options"))]
+use crate::parse::parse_blocks_with_options;
+#[cfg(feature = "experimental-event-parser-options")]
+use crate::parse::parse_fragment_with_events;
+use crate::parse::parse_matcher_inlines;
 use crate::profile::Profile;
 
 /// Render mode - a render OPTION, not document syntax. See the
@@ -905,6 +909,9 @@ impl<'a> MatcherContext<'a> {
 
     /// Parse blocks with the active options.
     pub fn parse_blocks(&self, source: &str) -> Vec<BlockNode> {
+        #[cfg(feature = "experimental-event-parser-options")]
+        return parse_fragment_with_events(source, self.options);
+        #[cfg(not(feature = "experimental-event-parser-options"))]
         parse_blocks_with_options(source, self.options)
     }
 }

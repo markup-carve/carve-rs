@@ -1,13 +1,111 @@
 use super::*;
 
 const MIXED_QUOTE_DEPTH_LIMIT: usize = 32;
-// The mapped event frame is larger than the standard block frame on the stack.
+// The direct quote helpers recurse through `parse_mixed_blocks` per level.
+pub(super) const DIRECT_QUOTE_DEPTH_LIMIT: usize = 8;
+// Event frames that may sit on the native stack at once. The mapped event
+// frame is larger than the standard block frame; logical depth is capped
+// separately by `MAX_NESTING_DEPTH`, exactly as on the standard reader.
 #[cfg(feature = "experimental-event-parser-options")]
-const NESTED_EVENT_DEPTH_LIMIT: usize = 8;
+pub(super) const EVENT_FRAME_LIMIT: usize = 8;
+// Lines that may keep one quote level eager; see `deep_quote_chain_owned`.
+// The count bounds the eager quotes on any one chain, and each holds one event
+// frame, so a deep chain peaks at budget + 1 frames. Exhausting them would hand
+// the remaining ~190 levels to the recursive standard reader on top. Those
+// frames can sit under `DIRECT_QUOTE_DEPTH_LIMIT` direct helper levels, which
+// the count does not see; the release-stack tests run that stacking.
+#[cfg(feature = "experimental-event-parser-options")]
+pub(super) const DEEP_QUOTE_EAGER_BUDGET: usize = 3;
+#[cfg(feature = "experimental-event-parser-options")]
+const _: () = assert!(2 * (DEEP_QUOTE_EAGER_BUDGET + 1) <= EVENT_FRAME_LIMIT);
+
+// Event frames on the native stack. A worklist body restores the logical depth
+// it was collected at, so that depth no longer measures the stack under it.
+#[cfg(feature = "experimental-event-parser-options")]
+thread_local! {
+    static EVENT_FRAMES: Cell<usize> = const { Cell::new(0) };
+}
+
+#[cfg(all(feature = "experimental-event-parser-options", test))]
+thread_local! {
+    pub(super) static PEAK_EVENT_FRAMES: Cell<usize> = const { Cell::new(0) };
+    // The deepest logical level an event frame was entered at.
+    pub(super) static PEAK_EVENT_DEPTH: Cell<usize> = const { Cell::new(0) };
+    // The highest `stacked_depth` an unquoted body was admitted at.
+    pub(super) static PEAK_UNQUOTED_STACKED_DEPTH: Cell<usize> = const { Cell::new(0) };
+    pub(super) static EVENT_FRAME_REFUSALS: Cell<usize> = const { Cell::new(0) };
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+pub(super) struct EventFrame;
+
+#[cfg(feature = "experimental-event-parser-options")]
+impl EventFrame {
+    fn enter() -> Self {
+        EVENT_FRAMES.with(|frames| frames.set(frames.get() + 1));
+        #[cfg(test)]
+        {
+            PEAK_EVENT_FRAMES.with(|peak| peak.set(peak.get().max(EVENT_FRAMES.with(Cell::get))));
+            let depth = NESTING_DEPTH.with(Cell::get);
+            PEAK_EVENT_DEPTH.with(|peak| peak.set(peak.get().max(depth)));
+        }
+        EventFrame
+    }
+}
+
+/// Occupy `count` event frames, as an eager chain above the caller would.
+#[cfg(all(feature = "experimental-event-parser-options", test))]
+pub(super) fn hold_event_frames(count: usize) -> Vec<EventFrame> {
+    (0..count).map(|_| EventFrame::enter()).collect()
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+impl Drop for EventFrame {
+    fn drop(&mut self) {
+        EVENT_FRAMES.with(|frames| frames.set(frames.get().saturating_sub(1)));
+    }
+}
+
+/// May a nested body take an event frame here? Asked before the cursor reads
+/// a line, so a refusal cannot repeat an extension callback.
+///
+/// `EVENT_FRAME_LIMIT` bounds the event frames on the native stack. An
+/// unquoted body is also held to `EVENT_FRAME_LIMIT` levels above
+/// `WORKLIST_BASE`: at the root that is the old logical gate, so an eager
+/// chain (a definition body, a `::: quote` block, a ladder tail, a drain)
+/// takes event frames only near the top and never on top of a deep standard
+/// recursion. A body popped from the worklist restores its depth over a base
+/// that discounts the levels with no frame under them, so it reads on the
+/// event cursor however deep it sits. A quoted body keeps the frame count
+/// alone, as before; its deep chains are bounded by `DEEP_QUOTE_EAGER_BUDGET`.
+/// The direct quote helpers stay gated by logical depth.
+#[cfg(feature = "experimental-event-parser-options")]
+fn event_frame_admitted(quoted: bool) -> bool {
+    let admitted = EVENT_FRAMES.with(Cell::get) < EVENT_FRAME_LIMIT
+        && NESTING_DEPTH.with(Cell::get) < MAX_NESTING_DEPTH
+        && (quoted || stacked_depth() < EVENT_FRAME_LIMIT);
+    #[cfg(test)]
+    if admitted && !quoted {
+        PEAK_UNQUOTED_STACKED_DEPTH.with(|peak| peak.set(peak.get().max(stacked_depth())));
+    }
+    #[cfg(test)]
+    if !admitted {
+        EVENT_FRAME_REFUSALS.with(|count| count.set(count.get() + 1));
+    }
+    admitted
+}
 
 #[cfg(test)]
 thread_local! {
     pub(super) static NESTED_EXTENSION_EVENT_PARSES: Cell<usize> = const { Cell::new(0) };
+    pub(super) static LADDER_TAIL_EVENT_PARSES: Cell<usize> = const { Cell::new(0) };
+    pub(super) static COLON_BODY_EVENT_PARSES: Cell<usize> = const { Cell::new(0) };
+    pub(super) static DIRECT_QUOTE_PARSES: Cell<usize> = const { Cell::new(0) };
+    pub(super) static OBSERVED_DEFINITION_DEFERRALS: Cell<usize> = const { Cell::new(0) };
+    pub(super) static MARKER_HOSTED_DEFINITION_LISTS: Cell<usize> = const { Cell::new(0) };
+    pub(super) static MARKER_HOSTED_QUOTE_DEFERRALS: Cell<usize> = const { Cell::new(0) };
+    pub(super) static COLON_QUOTE_DEFERRALS: Cell<usize> = const { Cell::new(0) };
+    pub(super) static DEFINITION_PARAGRAPH_COLLECTIONS: Cell<usize> = const { Cell::new(0) };
 }
 
 #[cfg(test)]
@@ -15,8 +113,725 @@ thread_local! {
 mod event_diagnostic_parity_tests;
 
 #[cfg(test)]
+mod standard_reader_probe_tests {
+    use super::*;
+    use crate::{BlockMatch, CarveExtension, MatcherContext};
+
+    struct Observer(RefCell<Vec<(usize, String)>>);
+
+    impl CarveExtension for Observer {
+        fn name(&self) -> &'static str {
+            "single-paragraph-observer"
+        }
+
+        fn match_block(
+            &self,
+            lines: &[&str],
+            start: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<BlockMatch> {
+            self.0.borrow_mut().push((start, lines[start].to_owned()));
+            None
+        }
+    }
+
+    #[test]
+    fn reference_captions_in_colon_bodies_match_standard_reader() {
+        for body in [
+            "![a][r]\n^ *cap*\n",
+            "![a][r]\n^ *cap*\n\n",
+            "![a][r]\n^ *cap*\n\nnext\n",
+            "![a][r]\n^ *cap*\nnext\n",
+            "![a][r]\n\n^ *cap*\n",
+        ] {
+            for resolved in [false, true] {
+                let source = format!(
+                    "::: box\n{body}:::\n{}",
+                    if resolved { "\n[r]: /u\n" } else { "" }
+                );
+                for (positions, source_lines) in
+                    [(false, false), (true, false), (false, true), (true, true)]
+                {
+                    let observer = Observer(RefCell::new(Vec::new()));
+                    let options = Options::default()
+                        .with_positions(positions)
+                        .with_source_lines(source_lines)
+                        .with_extension(&observer);
+                    STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+                    STANDARD_DEFINITION_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+                    let ((actual, admitted), diagnostics) = collecting_lint_events(|| {
+                        parse_document_with_options(&source, &options).unwrap()
+                    });
+                    assert!(admitted, "{source:?}");
+                    let entries = STANDARD_PARAGRAPH_ENTRIES.with(Cell::get);
+                    let callbacks = observer.0.into_inner();
+                    let standard_observer = Observer(RefCell::new(Vec::new()));
+                    let standard_options = Options::default()
+                        .with_positions(positions)
+                        .with_source_lines(source_lines)
+                        .with_extension(&standard_observer);
+                    let (expected, standard_diagnostics) = {
+                        let _standard = StandardEventRootGuard::install();
+                        collecting_lint_events(|| parse_with_options(&source, &standard_options))
+                    };
+                    assert_eq!(
+                        (actual, diagnostics),
+                        (expected, standard_diagnostics),
+                        "{source:?}"
+                    );
+                    assert_eq!(callbacks, standard_observer.0.into_inner(), "{source:?}");
+                    if body == "![a][r]\n^ *cap*\n\n" {
+                        assert_eq!(entries, 0, "{source:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn reference_caption_in_deep_colon_body_uses_event_reader() {
+        let mut source = "::: box\n".repeat(150);
+        source.push_str("![a][r]\n^ *cap*\n\n");
+        source.push_str(&":::\n".repeat(150));
+        source.push_str("\n[r]: /u\n");
+        for positions in [false, true] {
+            let options = Options::default()
+                .with_positions(positions)
+                .with_source_lines(true);
+            STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+            let (actual, admitted) = parse_document_with_options(&source, &options).unwrap();
+            assert!(admitted);
+            assert_eq!(STANDARD_PARAGRAPH_ENTRIES.with(Cell::get), 0);
+            let expected = {
+                let _standard = StandardEventRootGuard::install();
+                parse_with_options(&source, &options)
+            };
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn blank_image_captions_match_standard_reader_without_paragraph_entry() {
+        for image in ["![a](/u)", "![a][r]"] {
+            for resolved in [false, true] {
+                for tail in ["", "\n", "\nnext\n", "\n\nnext\n"] {
+                    let source = format!(
+                        "::: box\n{image}\n\n^ *cap*\n{tail}:::\n{}",
+                        if resolved { "\n[r]: /u\n" } else { "" }
+                    );
+                    for (positions, source_lines) in
+                        [(false, false), (true, false), (false, true), (true, true)]
+                    {
+                        let observer = Observer(RefCell::new(Vec::new()));
+                        let options = Options::default()
+                            .with_positions(positions)
+                            .with_source_lines(source_lines)
+                            .with_extension(&observer);
+                        STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+                        let ((actual, admitted), diagnostics) = collecting_lint_events(|| {
+                            parse_document_with_options(&source, &options).unwrap()
+                        });
+                        assert!(admitted, "{source:?}");
+                        let entries = STANDARD_PARAGRAPH_ENTRIES.with(Cell::get);
+                        let callbacks = observer.0.into_inner();
+                        let standard_observer = Observer(RefCell::new(Vec::new()));
+                        let standard_options = Options::default()
+                            .with_positions(positions)
+                            .with_source_lines(source_lines)
+                            .with_extension(&standard_observer);
+                        let (expected, standard_diagnostics) = {
+                            let _standard = StandardEventRootGuard::install();
+                            collecting_lint_events(|| {
+                                parse_with_options(&source, &standard_options)
+                            })
+                        };
+                        assert_eq!(
+                            (actual, diagnostics),
+                            (expected, standard_diagnostics),
+                            "{source:?}"
+                        );
+                        assert_eq!(callbacks, standard_observer.0.into_inner(), "{source:?}");
+                        if tail.starts_with('\n') {
+                            assert_eq!(entries, 0, "{source:?}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn blank_image_caption_in_deep_colon_body_uses_default_stack() {
+        let mut source = "::: box\n".repeat(150);
+        source.push_str("![a](/u)\n\n^ cap\n\n");
+        source.push_str(&":::\n".repeat(150));
+        STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+        let (actual, admitted) = parse_document_with_options(&source, &Options::default()).unwrap();
+        assert!(admitted);
+        assert_eq!(STANDARD_PARAGRAPH_ENTRIES.with(Cell::get), 0);
+        let expected = {
+            let _standard = StandardEventRootGuard::install();
+            parse_with_options(&source, &Options::default())
+        };
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn nested_mapped_plain_paragraphs_match_standard_reader() {
+        for wrapper in [
+            "::: note\n{body}\n:::\n",
+            "> {body}\n",
+            "- {body}\n",
+            "term\n: {body}\n",
+        ] {
+            for body in [
+                "alpha",
+                "alpha beta",
+                "alpha!",
+                "alpha, beta.\ngamma?",
+                "alpha\n\nbeta",
+                "alpha\n:: definition",
+                "alpha\n::: container",
+                "alpha\n> quote",
+                "alpha\n- item",
+                "alpha\n1. item",
+                "alpha\n``` fence",
+                "alpha\n# heading",
+                "alpha\n!include file",
+                "alpha\n+",
+                "alpha\n: separator",
+                "alpha\n---",
+                "alpha\n alpha",
+                "alpha\n\talpha",
+                "alpha\n!!!",
+            ] {
+                let source = wrapper.replace("{body}", body);
+                let options = Options::default();
+                STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+                let ((actual, admitted), diagnostics) = collecting_lint_events(|| {
+                    parse_document_with_options(&source, &options).unwrap()
+                });
+                assert!(admitted, "{source:?}");
+                let expected_entries = STANDARD_PARAGRAPH_ENTRIES.with(Cell::get);
+                let (expected, standard_diagnostics) = {
+                    let _standard = StandardEventRootGuard::install();
+                    collecting_lint_events(|| parse_with_options(&source, &options))
+                };
+                assert_eq!(
+                    (actual, diagnostics),
+                    (expected, standard_diagnostics),
+                    "{source:?}"
+                );
+                if body == "alpha" && wrapper.starts_with(":::") {
+                    assert_eq!(expected_entries, 0, "{source:?}");
+                }
+
+                let observer = Observer(RefCell::new(Vec::new()));
+                let event_options = Options::default().with_extension(&observer);
+                let (event_doc, _) = parse_document_with_options(&source, &event_options).unwrap();
+                let event_callbacks = observer.0.into_inner();
+                let observer = Observer(RefCell::new(Vec::new()));
+                let standard_options = Options::default().with_extension(&observer);
+                let standard_doc = {
+                    let _standard = StandardEventRootGuard::install();
+                    parse_with_options(&source, &standard_options)
+                };
+                assert_eq!(event_doc, standard_doc, "{source:?}");
+                assert_eq!(event_callbacks, observer.0.into_inner(), "{source:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn plain_colon_body_owns_paragraph_with_strict_parity() {
+        for source in [
+            "::: note\nalpha\n:::\n",
+            "::: note\nalpha beta\n:::\n",
+            "::: note\nalpha!\n:::\n",
+            "::: note\nalpha, beta.\ngamma?\n:::\n",
+            "::: note\nalpha\n\nbeta\n:::\n",
+            "::: note\nalpha *bold* and _italic_\n:::\n",
+            "::: note\ncafé κόσμος\n:::\n",
+            "::: note\nalpha [link](https://example.org/a)\n:::\n",
+            "::: note\nalpha ![alt](image.png)\n:::\n",
+            "::: note\nalpha \\*literal\\*\n:::\n",
+            "::: note\nalpha *bold*\nbeta [link](https://example.org)\n:::\n",
+        ] {
+            for (positions, source_lines) in
+                [(false, false), (true, false), (false, true), (true, true)]
+            {
+                let options = Options {
+                    positions,
+                    source_lines,
+                    ..Options::default()
+                };
+                STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+                let ((actual, admitted), event_diagnostics) = collecting_lint_events(|| {
+                    parse_document_with_options(source, &options).unwrap()
+                });
+                assert!(admitted, "{source:?}");
+                assert_eq!(
+                    STANDARD_PARAGRAPH_ENTRIES.with(Cell::get),
+                    0,
+                    "{source:?}, positions={positions}, source_lines={source_lines}"
+                );
+                let (expected, standard_diagnostics) = {
+                    let _standard = StandardEventRootGuard::install();
+                    collecting_lint_events(|| parse_with_options(source, &options))
+                };
+                assert_eq!(event_diagnostics, standard_diagnostics, "{source:?}");
+                assert_eq!(
+                    actual, expected,
+                    "{source:?}, positions={positions}, source_lines={source_lines}"
+                );
+
+                let event_observer = Observer(RefCell::new(Vec::new()));
+                let event_options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines)
+                    .with_extension(&event_observer);
+                let (event_doc, admitted) =
+                    parse_document_with_options(source, &event_options).unwrap();
+                assert!(admitted, "{source:?}");
+                let standard_observer = Observer(RefCell::new(Vec::new()));
+                let standard_options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines)
+                    .with_extension(&standard_observer);
+                let standard_doc = {
+                    let _standard = StandardEventRootGuard::install();
+                    parse_with_options(source, &standard_options)
+                };
+                assert_eq!(event_doc, standard_doc, "{source:?}");
+                let event_callbacks = event_observer.0.into_inner();
+                let expected_calls = if source.contains("\n\nbeta") { 2 } else { 1 };
+                assert_eq!(
+                    event_callbacks.len(),
+                    expected_calls,
+                    "{source:?}: {event_callbacks:?}"
+                );
+                assert_eq!(
+                    event_callbacks,
+                    standard_observer.0.into_inner(),
+                    "{source:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn mapped_colon_paragraph_keeps_authored_columns() {
+        let source = MappedSource::new_line_at(
+            "::: note\nalpha beta\ngamma?\n:::\n".to_owned(),
+            Some(17),
+            Some(5),
+        );
+        let options = Options::default()
+            .with_positions(true)
+            .with_source_lines(true);
+        STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+        let (actual, diagnostics) =
+            collecting_lint_events(|| parse_mapped_source(&source, &options));
+        assert_eq!(STANDARD_PARAGRAPH_ENTRIES.with(Cell::get), 0);
+        let (expected, standard_diagnostics) = {
+            let _standard = StandardEventRootGuard::install();
+            collecting_lint_events(|| parse_mapped_source(&source, &options))
+        };
+        assert_eq!((actual, diagnostics), (expected, standard_diagnostics));
+    }
+
+    #[test]
+    fn long_plain_colon_paragraph_stays_event_owned() {
+        let source = format!("::: note\n{}\n:::\n", "alpha beta.\n".repeat(40));
+        for (positions, source_lines) in
+            [(false, false), (true, false), (false, true), (true, true)]
+        {
+            let event_observer = Observer(RefCell::new(Vec::new()));
+            let options = Options::default()
+                .with_positions(positions)
+                .with_source_lines(source_lines)
+                .with_extension(&event_observer);
+            STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+            let ((actual, admitted), diagnostics) =
+                collecting_lint_events(|| parse_document_with_options(&source, &options).unwrap());
+            assert!(admitted);
+            assert_eq!(STANDARD_PARAGRAPH_ENTRIES.with(Cell::get), 0);
+            let callbacks = event_observer.0.into_inner();
+            assert_eq!(callbacks.len(), 1);
+
+            let standard_observer = Observer(RefCell::new(Vec::new()));
+            let options = Options::default()
+                .with_positions(positions)
+                .with_source_lines(source_lines)
+                .with_extension(&standard_observer);
+            let (expected, standard_diagnostics) = {
+                let _standard = StandardEventRootGuard::install();
+                collecting_lint_events(|| parse_with_options(&source, &options))
+            };
+            assert_eq!((actual, diagnostics), (expected, standard_diagnostics));
+            assert_eq!(callbacks, standard_observer.0.into_inner());
+        }
+    }
+
+    #[test]
+    fn long_complex_colon_paragraphs_have_event_ownership() {
+        for body in [
+            "alpha *bold*\nbeta [link](/u)\ngamma `code`\ndelta _em_\nepsilon \\*literal\\*",
+            "alpha *bold*\nbeta [link](/u)\ngamma `code`\ndelta _em_\nepsilon /path",
+        ] {
+            for positions in [false, true] {
+                for source_lines in [false, true] {
+                    let source = format!("::: note\n{body}\n:::\n");
+                    let options = Options::default()
+                        .with_positions(positions)
+                        .with_source_lines(source_lines);
+                    STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+                    let ((actual, admitted), diagnostics) = collecting_lint_events(|| {
+                        parse_document_with_options(&source, &options).unwrap()
+                    });
+                    assert!(admitted);
+                    assert_eq!(STANDARD_PARAGRAPH_ENTRIES.with(Cell::get), 0, "{source:?}");
+                    let (expected, expected_diagnostics) = {
+                        let _standard = StandardEventRootGuard::install();
+                        collecting_lint_events(|| parse_with_options(&source, &options))
+                    };
+                    assert_eq!(
+                        (actual, diagnostics),
+                        (expected, expected_diagnostics),
+                        "{source:?}"
+                    );
+                    let event_observer = Observer(RefCell::new(Vec::new()));
+                    let event_options = Options::default()
+                        .with_positions(positions)
+                        .with_source_lines(source_lines)
+                        .with_extension(&event_observer);
+                    let (actual, admitted) =
+                        parse_document_with_options(&source, &event_options).unwrap();
+                    assert!(admitted);
+                    let standard_observer = Observer(RefCell::new(Vec::new()));
+                    let standard_options = Options::default()
+                        .with_positions(positions)
+                        .with_source_lines(source_lines)
+                        .with_extension(&standard_observer);
+                    let expected = {
+                        let _standard = StandardEventRootGuard::install();
+                        parse_with_options(&source, &standard_options)
+                    };
+                    assert_eq!(actual, expected, "{source:?}");
+                    assert_eq!(
+                        event_observer.0.into_inner(),
+                        standard_observer.0.into_inner(),
+                        "{source:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn deep_long_complex_colon_paragraph_uses_default_stack() {
+        let mut source = "::: note\n".repeat(150);
+        source.push_str("alpha *bold*\nbeta [link](/u)\ngamma `code`\ndelta _em_\nepsilon /path\n");
+        source.push_str(&":::\n".repeat(150));
+        let options = Options::default()
+            .with_positions(true)
+            .with_source_lines(true);
+        STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+        let (actual, admitted) = parse_document_with_options(&source, &options).unwrap();
+        assert!(admitted);
+        assert_eq!(STANDARD_PARAGRAPH_ENTRIES.with(Cell::get), 0);
+        let expected = {
+            let _standard = StandardEventRootGuard::install();
+            parse_with_options(&source, &options)
+        };
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn colon_paragraph_preflight_refuses_attributes_and_images() {
+        for source in [
+            "::: note\nalpha{#id}\nbeta\n:::\n",
+            "::: note\nalpha ![alt](image.png){#id}\n:::\n",
+        ] {
+            for (positions, source_lines) in [(false, false), (true, true)] {
+                let observer = Observer(RefCell::new(Vec::new()));
+                let options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines)
+                    .with_extension(&observer);
+                STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+                let ((actual, admitted), diagnostics) = collecting_lint_events(|| {
+                    parse_document_with_options(source, &options).unwrap()
+                });
+                assert!(admitted, "{source:?}");
+                assert_eq!(STANDARD_PARAGRAPH_ENTRIES.with(Cell::get), 1, "{source:?}");
+                let callbacks = observer.0.into_inner();
+                assert_eq!(callbacks.len(), 1, "{source:?}: {callbacks:?}");
+                let observer = Observer(RefCell::new(Vec::new()));
+                let options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines)
+                    .with_extension(&observer);
+                let (expected, standard_diagnostics) = {
+                    let _standard = StandardEventRootGuard::install();
+                    collecting_lint_events(|| parse_with_options(source, &options))
+                };
+                assert_eq!(
+                    (actual, diagnostics),
+                    (expected, standard_diagnostics),
+                    "{source:?}"
+                );
+                assert_eq!(callbacks, observer.0.into_inner(), "{source:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn standalone_attrs_after_colon_paragraph_match_standard_reader() {
+        for source in [
+            "::: outer\n::: inner\nalpha\n{#id}\n# sibling\n:::\n:::\n",
+            "::: outer\n::: inner\nalpha\n{.class}\n# sibling\n:::\n:::\n",
+            "::: outer\n::: inner\nalpha\n{#id}{.class}\n# sibling\n:::\n:::\n",
+            "::: outer\n::: inner\nalpha\n{#id}\n{.class}\n# sibling\n:::\n:::\n",
+            "::: outer\n::: inner\nalpha\n\n{.class}\n# sibling\n:::\n:::\n",
+        ] {
+            for (positions, source_lines) in
+                [(false, false), (true, false), (false, true), (true, true)]
+            {
+                let observer = Observer(RefCell::new(Vec::new()));
+                let options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines)
+                    .with_extension(&observer);
+                STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+                let ((actual, admitted), diagnostics) = collecting_lint_events(|| {
+                    parse_document_with_options(source, &options).unwrap()
+                });
+                assert!(admitted, "{source:?}");
+                assert_eq!(STANDARD_PARAGRAPH_ENTRIES.with(Cell::get), 0, "{source:?}");
+                let callbacks = observer.0.into_inner();
+                let observer = Observer(RefCell::new(Vec::new()));
+                let options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines)
+                    .with_extension(&observer);
+                let (expected, standard_diagnostics) = {
+                    let _standard = StandardEventRootGuard::install();
+                    collecting_lint_events(|| parse_with_options(source, &options))
+                };
+                assert_eq!(
+                    (actual, diagnostics),
+                    (expected, standard_diagnostics),
+                    "{source:?}"
+                );
+                assert_eq!(callbacks, observer.0.into_inner(), "{source:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn attached_id_colon_paragraph_matches_standard_reader() {
+        for source in [
+            "::: note\nalpha{#id}\n:::\n",
+            "::: note\nalpha beta{#two-2}\n:::\n",
+            "::: note\nalpha{#id}\n\n:::\n",
+        ] {
+            for (positions, source_lines) in
+                [(false, false), (true, false), (false, true), (true, true)]
+            {
+                let observer = Observer(RefCell::new(Vec::new()));
+                let options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines)
+                    .with_extension(&observer);
+                STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+                let ((actual, admitted), diagnostics) = collecting_lint_events(|| {
+                    parse_document_with_options(source, &options).unwrap()
+                });
+                assert!(admitted, "{source:?}");
+                assert_eq!(STANDARD_PARAGRAPH_ENTRIES.with(Cell::get), 0, "{source:?}");
+                let callbacks = observer.0.into_inner();
+                let standard_observer = Observer(RefCell::new(Vec::new()));
+                let options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines)
+                    .with_extension(&standard_observer);
+                let (expected, standard_diagnostics) = {
+                    let _standard = StandardEventRootGuard::install();
+                    collecting_lint_events(|| parse_with_options(source, &options))
+                };
+                assert_eq!((actual, diagnostics), (expected, standard_diagnostics));
+                assert_eq!(callbacks, standard_observer.0.into_inner());
+            }
+        }
+    }
+}
+
+#[cfg(test)]
 mod mixed_definition_owner_tests {
     use super::*;
+    use crate::{BlockMatch, CarveExtension, MatcherContext};
+
+    struct Observer(RefCell<Vec<(usize, String)>>);
+
+    impl CarveExtension for Observer {
+        fn name(&self) -> &'static str {
+            "definition-paragraph-observer"
+        }
+
+        fn match_block(
+            &self,
+            lines: &[&str],
+            start: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<BlockMatch> {
+            self.0.borrow_mut().push((start, lines[start].to_owned()));
+            None
+        }
+    }
+
+    #[test]
+    fn definition_paragraph_collector_matches_standard() {
+        let mut collected_any = false;
+        for source in [
+            ":: t\n: para\n^ cap\n",
+            ":: term\n:  Alpha *emphasis*\n\n# tail\n",
+            ":: term\n:  alpha\n   beta\n\n# tail\n",
+            ":: term\n:  alpha\n   ![alt](image.png)\n\n# tail\n",
+            ":: term\n:  alpha\n   beta\n   gamma\n\n# tail\n",
+            ":: term\n:  alpha\n   beta\n\n   gamma\n   delta\n\n# tail\n",
+            ":: term\n:  Alpha *emphasis*\n   Beta [link](url)\n\n# tail\n",
+            ":: term\n:  alpha\n    beta\n   gamma\n\n# tail\n",
+            ":: term\n:  alpha\n   beta\n   - sibling\n\n# tail\n",
+            ":: term\n:  ![alt](image.png)\n\n   ^ caption\n\n# tail\n",
+            ":: term\n:  +\n   tail\n\n# tail\n",
+        ] {
+            for positions in [false, true] {
+                for source_lines in [false, true] {
+                    for with_extension in [false, true] {
+                        let observer = Observer(RefCell::new(Vec::new()));
+                        let mut options = Options::default()
+                            .with_positions(positions)
+                            .with_source_lines(source_lines);
+                        if with_extension {
+                            options = options.with_extension(&observer);
+                        }
+                        STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+                        STANDARD_DEFINITION_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+                        DEFINITION_PARAGRAPH_COLLECTIONS.with(|count| count.set(0));
+                        let ((actual, admitted), diagnostics) = collecting_lint_events(|| {
+                            parse_document_with_options(source, &options).unwrap()
+                        });
+                        assert!(admitted);
+                        let collected = DEFINITION_PARAGRAPH_COLLECTIONS.with(Cell::get);
+                        collected_any |= collected > 0;
+                        assert_eq!(
+                            STANDARD_DEFINITION_PARAGRAPH_ENTRIES.with(Cell::get),
+                            0,
+                            "old definition paragraph reader entered for {source:?}"
+                        );
+                        let callbacks = observer.0.into_inner();
+                        let standard_observer = Observer(RefCell::new(Vec::new()));
+                        let mut standard_options = Options::default()
+                            .with_positions(positions)
+                            .with_source_lines(source_lines);
+                        if with_extension {
+                            standard_options = standard_options.with_extension(&standard_observer);
+                        }
+                        let (expected, expected_diagnostics) = {
+                            let _standard = StandardEventRootGuard::install();
+                            collecting_lint_events(|| parse_with_options(source, &standard_options))
+                        };
+                        assert_eq!(
+                            (actual, diagnostics),
+                            (expected, expected_diagnostics),
+                            "{source:?}"
+                        );
+                        assert_eq!(callbacks, standard_observer.0.into_inner(), "{source:?}");
+                    }
+                }
+            }
+        }
+        assert!(collected_any);
+    }
+
+    #[test]
+    fn definition_paragraph_state_survives_a_yield() {
+        STANDARD_DEFINITION_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+        DEFINITION_PARAGRAPH_COLLECTIONS.with(|count| count.set(0));
+        let lines = ["alpha", "beta"];
+        let line_map = [Some(1), Some(2)];
+        let col_map = [Some(0), Some(0)];
+        let options = Options::default().with_positions(true);
+        let mut cur = LineCursor::new_with_cols(&lines, Some(&line_map), Some(&col_map));
+        cur.mapped_owner = source_map::MappedBodyOwner::Definition;
+        let mut state = EventLevelState::new(&cur, true, false);
+        let mut paragraph = DefinitionParagraphTask::Dispatch;
+        assert!(matches!(
+            run_event_level_owned::<true, false, true>(
+                &lines,
+                &options,
+                Some(&line_map),
+                &mut cur,
+                &mut state,
+                &mut paragraph,
+                None,
+                None,
+                false,
+                Some(1)
+            ),
+            Some(EventLevelRun::Yield)
+        ));
+        assert_eq!(cur.pos, 1);
+        assert_eq!(
+            match &paragraph {
+                DefinitionParagraphTask::Collect(state) => Some(state.indices.as_slice()),
+                DefinitionParagraphTask::Dispatch => None,
+            },
+            Some([0].as_slice())
+        );
+        let result = run_event_level_owned::<true, false, true>(
+            &lines,
+            &options,
+            Some(&line_map),
+            &mut cur,
+            &mut state,
+            &mut paragraph,
+            None,
+            None,
+            false,
+            None,
+        );
+        let Some(EventLevelRun::Done(blocks)) = result else {
+            panic!("paragraph did not finish")
+        };
+        assert_eq!(cur.pos, 2);
+        assert_eq!(blocks.len(), 1);
+        assert!(matches!(paragraph, DefinitionParagraphTask::Dispatch));
+        assert_eq!(DEFINITION_PARAGRAPH_COLLECTIONS.with(Cell::get), 1);
+        assert_eq!(STANDARD_DEFINITION_PARAGRAPH_ENTRIES.with(Cell::get), 0);
+        let mut standard_cur = LineCursor::new_with_cols(&lines, Some(&line_map), Some(&col_map));
+        standard_cur.mapped_owner = source_map::MappedBodyOwner::Definition;
+        let expected = parse_paragraph(&mut standard_cur, &options);
+        assert_eq!(format!("{:?}", blocks[0]), format!("{expected:?}"));
+        assert_eq!(standard_cur.pos, cur.pos);
+    }
+
+    #[test]
+    fn mapped_owner_prevents_footnote_admission() {
+        let lines = ["alpha", "beta"];
+        let line_map = [Some(1), Some(2)];
+        let mut cur = LineCursor::new_with_cols(&lines, Some(&line_map), None);
+        cur.sublists_carry_authored_base = true;
+        assert!(!starts_definition_event_paragraph(
+            &cur,
+            source_map::MappedBodyOwner::Footnote
+        ));
+        assert!(starts_definition_event_paragraph(
+            &cur,
+            source_map::MappedBodyOwner::Definition
+        ));
+    }
 
     #[test]
     fn keeps_following_root_blocks_and_declines_continuations() {
@@ -192,6 +1007,78 @@ mod root_fence_owner_tests {
 #[cfg(test)]
 mod continuation_owner_tests {
     use super::*;
+    use crate::{BlockMatch, CarveExtension, MatcherContext};
+
+    struct Observer(RefCell<Vec<(usize, String)>>);
+
+    impl CarveExtension for Observer {
+        fn name(&self) -> &'static str {
+            "continuation-paragraph-observer"
+        }
+
+        fn match_block(
+            &self,
+            lines: &[&str],
+            start: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<BlockMatch> {
+            self.0.borrow_mut().push((start, lines[start].to_owned()));
+            None
+        }
+    }
+
+    #[test]
+    fn document_continuation_paragraph_is_event_owned() {
+        for source in ["Alpha\n+\nBeta\n", "Alpha\n+\nBeta\n\nGamma\n"] {
+            for (positions, source_lines) in
+                [(false, false), (true, false), (false, true), (true, true)]
+            {
+                let observer = Observer(RefCell::new(Vec::new()));
+                let options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines)
+                    .with_extension(&observer);
+                STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+                let ((actual, admitted), diagnostics) = collecting_lint_events(|| {
+                    parse_document_with_options(source, &options).unwrap()
+                });
+                assert!(admitted);
+                assert_eq!(STANDARD_PARAGRAPH_ENTRIES.with(Cell::get), 0, "{source:?}");
+                let callbacks = observer.0.into_inner();
+                let expected_observer = Observer(RefCell::new(Vec::new()));
+                let expected_options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines)
+                    .with_extension(&expected_observer);
+                let (expected, expected_diagnostics) = {
+                    let _standard = StandardEventRootGuard::install();
+                    collecting_lint_events(|| parse_with_options(source, &expected_options))
+                };
+                assert_eq!((actual, diagnostics), (expected, expected_diagnostics));
+                assert_eq!(callbacks, expected_observer.0.into_inner());
+            }
+        }
+    }
+
+    #[test]
+    fn document_continuation_after_deep_body_uses_default_stack() {
+        let mut source = "::: note\n".repeat(150);
+        source.push_str("inside\n");
+        source.push_str(&":::\n".repeat(150));
+        source.push_str("\nAlpha\n+\nBeta\n");
+        let options = Options::default()
+            .with_positions(true)
+            .with_source_lines(true);
+        STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+        let (actual, admitted) = parse_document_with_options(&source, &options).unwrap();
+        assert!(admitted);
+        assert_eq!(STANDARD_PARAGRAPH_ENTRIES.with(Cell::get), 0);
+        let expected = {
+            let _standard = StandardEventRootGuard::install();
+            parse_with_options(&source, &options)
+        };
+        assert_eq!(actual, expected);
+    }
 
     #[test]
     fn non_marker_plus_keeps_direct_document_parity() {
@@ -390,14 +1277,14 @@ mod continuation_owner_tests {
     }
 }
 
-enum Event<'a> {
+pub(super) enum Event<'a> {
     Heading(usize, u8, &'a str),
     Paragraph(usize, &'a [&'a str]),
 }
 
-struct Events<'a> {
-    lines: &'a [&'a str],
-    next: usize,
+pub(super) struct Events<'a> {
+    pub(super) lines: &'a [&'a str],
+    pub(super) next: usize,
 }
 
 impl<'a> Iterator for Events<'a> {
@@ -495,6 +1382,33 @@ fn parse_blocks_mapped(
 }
 
 #[cfg(feature = "experimental-event-parser-options")]
+fn parse_positioned_event_paragraph(
+    cur: &mut LineCursor<'_>,
+    lines: &[&str],
+    options: &Options<'_>,
+) -> BlockNode {
+    let start = cur.pos;
+    let trimmed: Vec<&str> = lines
+        .iter()
+        .map(|line| trim_ascii_end(trim_ascii_start(line)))
+        .collect();
+    let joined = trimmed.join("\n");
+    let anchors = trimmed
+        .iter()
+        .enumerate()
+        .map(|(offset, line)| inline_anchor_for_line(cur, start + offset, line))
+        .collect();
+    cur.pos += lines.len();
+    BlockNode::Paragraph(Paragraph {
+        attrs: None,
+        children: parse_inline_lines_with_anchor(&joined, options, anchors),
+        at_content_column: true,
+        block_image: false,
+        pos: span_of(cur, start, cur.pos, options),
+    })
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
 fn parse_positioned_simple_blocks(
     lines: &[&str],
     options: &Options<'_>,
@@ -519,7 +1433,7 @@ fn parse_positioned_simple_blocks(
             }
             Event::Paragraph(start, paragraph_lines) => {
                 cur.pos = start;
-                let node = parse_paragraph(&mut cur, options);
+                let node = parse_positioned_event_paragraph(&mut cur, paragraph_lines, options);
                 (start, start + paragraph_lines.len(), node)
             }
         };
@@ -532,6 +1446,561 @@ fn parse_positioned_simple_blocks(
         out.push(node);
     }
     Some(out)
+}
+
+#[cfg(all(test, feature = "experimental-event-parser-options"))]
+mod positioned_simple_paragraph_tests {
+    use super::*;
+
+    #[test]
+    fn event_paragraph_matches_standard_blocks_and_diagnostics() {
+        for source in [
+            "alpha",
+            "alpha\n",
+            "alpha\nbeta",
+            "alpha\nbeta\n",
+            "alpha\n\nbeta\n",
+            "# head\nalpha\nbeta\n## next\nend",
+            "alpha *emphasis* and `code`\nbeta [link](url)\n",
+            "alpha [broken](\nbeta\n",
+            "alpha\n# heading\nlast\n",
+        ] {
+            let lines: Vec<&str> = source.lines().collect();
+            let line_map: Vec<Option<usize>> = (1..=lines.len()).map(Some).collect();
+            for source_lines in [false, true] {
+                let options = Options::default()
+                    .with_positions(true)
+                    .with_source_lines(source_lines);
+                let actual = collecting_lint_events(|| {
+                    parse_positioned_simple_blocks(&lines, &options, &line_map)
+                        .expect("simple source admitted")
+                });
+                let expected = collecting_lint_events(|| {
+                    let cols = vec![Some(0); lines.len()];
+                    let mut cur = LineCursor::new_with_cols(&lines, Some(&line_map), Some(&cols));
+                    cur.at_document_level = true;
+                    let mut blocks = Vec::new();
+                    for event in (Events {
+                        lines: &lines,
+                        next: 0,
+                    }) {
+                        let (start, mut node) = match event {
+                            Event::Heading(start, level, text) => {
+                                cur.pos = start;
+                                (start, *parse_heading_block(&mut cur, level, text, &options))
+                            }
+                            Event::Paragraph(start, _) => {
+                                cur.pos = start;
+                                (start, parse_paragraph(&mut cur, &options))
+                            }
+                        };
+                        if source_lines {
+                            stamp_source_line(&mut node, line_map[start].unwrap());
+                        }
+                        blocks.push(node);
+                    }
+                    blocks
+                });
+                assert_eq!(
+                    actual, expected,
+                    "source={source:?} source_lines={source_lines}"
+                );
+            }
+        }
+    }
+}
+
+#[cfg(all(test, feature = "experimental-event-parser-options"))]
+mod positioned_mixed_paragraph_tests {
+    use super::*;
+    use crate::{BlockMatch, CarveExtension, MatcherContext};
+
+    struct Observer(RefCell<Vec<usize>>);
+
+    impl CarveExtension for Observer {
+        fn name(&self) -> &'static str {
+            "positioned-paragraph-observer"
+        }
+
+        fn match_block(
+            &self,
+            _: &[&str],
+            start: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<BlockMatch> {
+            self.0.borrow_mut().push(start);
+            None
+        }
+    }
+
+    #[test]
+    fn mixed_root_paragraphs_keep_positions_and_source_lines() {
+        for (name, source) in [
+            (
+                "mixed",
+                "{.lead}\nAlpha *emphasis*\nBeta [link](url)\n\n# Tail\n",
+            ),
+            (
+                "colon",
+                "::: note\nAlpha *emphasis*\nBeta [link](url)\n:::\n",
+            ),
+            (
+                "definition",
+                ":: term\n:  Alpha *emphasis*\n   Beta [link](url)\n",
+            ),
+        ] {
+            for positions in [false, true] {
+                for source_lines in [false, true] {
+                    let event_observer = Observer(RefCell::new(Vec::new()));
+                    let standard_observer = Observer(RefCell::new(Vec::new()));
+                    let options = Options::default()
+                        .with_positions(positions)
+                        .with_source_lines(source_lines)
+                        .with_extension(&event_observer);
+                    STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+                    let (actual, diagnostics) = collecting_lint_events(|| {
+                        parse_document_with_options(source, &options).unwrap().0
+                    });
+                    let entries = STANDARD_PARAGRAPH_ENTRIES.with(Cell::get);
+                    let (expected, expected_diagnostics) = {
+                        let _standard = StandardEventRootGuard::install();
+                        let standard_options = Options::default()
+                            .with_positions(positions)
+                            .with_source_lines(source_lines)
+                            .with_extension(&standard_observer);
+                        collecting_lint_events(|| parse_with_options(source, &standard_options))
+                    };
+                    assert_eq!(
+                        actual, expected,
+                        "{source:?}, positions={positions}, source_lines={source_lines}"
+                    );
+                    assert_eq!(diagnostics, expected_diagnostics);
+                    assert_eq!(
+                        event_observer.0.into_inner(),
+                        standard_observer.0.into_inner()
+                    );
+                    if name != "definition" {
+                        assert_eq!(
+                            entries, 0,
+                            "{source:?}, positions={positions}, source_lines={source_lines}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(all(test, feature = "experimental-event-parser-options"))]
+mod event_level_resume_tests {
+    use super::*;
+    use crate::{BlockMatch, CarveExtension, MatcherContext};
+
+    struct Observer(RefCell<Vec<(usize, String)>>);
+
+    impl CarveExtension for Observer {
+        fn name(&self) -> &'static str {
+            "resume-observer"
+        }
+
+        fn match_block(
+            &self,
+            lines: &[&str],
+            start: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<BlockMatch> {
+            self.0.borrow_mut().push((start, lines[start].to_owned()));
+            None
+        }
+    }
+
+    #[test]
+    fn resumed_level_matches_uninterrupted_blocks_and_callbacks() {
+        let source = "{#first}\n# Heading\n\n::: note\nbody\n:::\n\n{.tail}\n## Tail\nparagraph\n";
+        let lines: Vec<&str> = source.lines().collect();
+        let line_map: Vec<Option<usize>> = (1..=lines.len()).map(Some).collect();
+        let cols = vec![Some(0); lines.len()];
+        let boundary = 7;
+
+        for positions in [false, true] {
+            for source_lines in [false, true] {
+                let run = |split| {
+                    let observer = Observer(RefCell::new(Vec::new()));
+                    let options = Options::default()
+                        .with_positions(positions)
+                        .with_source_lines(source_lines)
+                        .with_extension(&observer);
+                    let mut cur = LineCursor::new_with_cols(&lines, Some(&line_map), Some(&cols));
+                    cur.at_document_level = true;
+                    let mut state = EventLevelState::new(&cur, false, true);
+                    let (blocks, events) = collecting_lint_events(|| {
+                        if split {
+                            assert!(matches!(
+                                run_event_level::<true, false>(
+                                    &lines,
+                                    &options,
+                                    Some(&line_map),
+                                    &mut cur,
+                                    &mut state,
+                                    None,
+                                    None,
+                                    true,
+                                    Some(boundary),
+                                ),
+                                Some(EventLevelRun::Yield)
+                            ));
+                            assert_eq!(cur.pos, boundary);
+                        }
+                        match run_event_level::<true, false>(
+                            &lines,
+                            &options,
+                            Some(&line_map),
+                            &mut cur,
+                            &mut state,
+                            None,
+                            None,
+                            true,
+                            None,
+                        ) {
+                            Some(EventLevelRun::Done(blocks)) => blocks,
+                            _ => panic!("event level did not finish"),
+                        }
+                    });
+                    (blocks, events, observer.0.into_inner())
+                };
+                assert_eq!(
+                    run(true),
+                    run(false),
+                    "positions={positions} source_lines={source_lines}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn observed_definition_yields_before_later_description() {
+        let source = ":: term\n:  first\n:  second\n\n# Later\n";
+        let lines: Vec<&str> = source.lines().collect();
+        let run = |manual: bool| {
+            let observer = Observer(RefCell::new(Vec::new()));
+            let options = Options::default().with_extension(&observer);
+            let mut cur = LineCursor::new_with_cols(&lines, None, None);
+            cur.at_document_level = true;
+            let mut pending = Vec::new();
+            let mut blocks = if manual {
+                let mut state = EventLevelState::new(&cur, true, false);
+                let Some(EventLevelRun::NeedDefinitionBody(mut continuation)) =
+                    run_event_level::<true, false>(
+                        &lines,
+                        &options,
+                        None,
+                        &mut cur,
+                        &mut state,
+                        None,
+                        Some(&mut pending),
+                        true,
+                        None,
+                    )
+                else {
+                    panic!("expected definition body yield");
+                };
+                cur.restore_state(continuation.cursor);
+                assert_eq!(cur.pos, 2);
+                assert!(observer
+                    .0
+                    .borrow()
+                    .iter()
+                    .all(|(_, line)| !line.contains("second") && !line.contains("Later")));
+                state = continuation.state;
+                let children = parse_definition_description(
+                    continuation.request,
+                    &cur,
+                    &options,
+                    &mut None,
+                    false,
+                );
+                continuation.scan.fill_body(children, &cur, &options);
+                loop {
+                    match continuation.scan.step(&mut cur, &options) {
+                        StepResult::Continue => {}
+                        StepResult::NeedBody(request) => {
+                            let children = parse_definition_description(
+                                request, &cur, &options, &mut None, false,
+                            );
+                            continuation.scan.fill_body(children, &cur, &options);
+                        }
+                        StepResult::Done => break,
+                    }
+                }
+                state.out.push(continuation.scan.finish(&cur, &options));
+                match run_event_level::<true, false>(
+                    &lines,
+                    &options,
+                    None,
+                    &mut cur,
+                    &mut state,
+                    None,
+                    Some(&mut pending),
+                    true,
+                    None,
+                ) {
+                    Some(EventLevelRun::Done(blocks)) => blocks,
+                    _ => panic!("resumed level did not finish"),
+                }
+            } else {
+                crate::parse::block::parse_blocks(&mut cur, &options, &mut pending)
+            };
+            resolve_pending_bodies(&mut blocks, pending, &options);
+            (blocks, observer.0.into_inner())
+        };
+        assert_eq!(run(true), run(false));
+    }
+
+    #[test]
+    fn mapped_task_requests_body_before_next_description_callback() {
+        let source = ":: term\n:  first\n:  second\n\n# Later\n";
+        let run = |task: bool| {
+            let observer = Observer(RefCell::new(Vec::new()));
+            let options = Options::default().with_extension(&observer);
+            let blocks = if task {
+                let mut task = MappedEventTask::new(
+                    MappedSource::new_line_at(source.to_owned(), None, None),
+                    &options,
+                )
+                .expect("task depth");
+                let first = task.poll(&options);
+                assert!(observer
+                    .0
+                    .borrow()
+                    .iter()
+                    .all(|(_, line)| { !line.contains("second") && !line.contains("Later") }));
+                let mut result = first;
+                loop {
+                    match result {
+                        TaskPoll::NeedBody(body) => {
+                            let children = parse_mapped_source(&body, &options);
+                            result = task.resume_with_children(children, &options);
+                        }
+                        TaskPoll::Done(blocks) => break blocks,
+                    }
+                }
+            } else {
+                let lines: Vec<_> = source.lines().collect();
+                let mut cursor = LineCursor::new_with_cols(&lines, None, None);
+                let mut pending = Vec::new();
+                let mut blocks =
+                    crate::parse::block::parse_blocks(&mut cursor, &options, &mut pending);
+                resolve_pending_bodies(&mut blocks, pending, &options);
+                blocks
+            };
+            (format!("{blocks:?}"), observer.0.into_inner())
+        };
+        assert_eq!(run(true), run(false));
+    }
+
+    #[test]
+    fn mapped_task_plain_body_finishes_without_request() {
+        let source = "Plain paragraph\n\n# Heading\n";
+        let options = Options::default();
+        let mut task = MappedEventTask::new(
+            MappedSource::new_line_at(source.to_owned(), None, None),
+            &options,
+        )
+        .expect("task depth");
+        let TaskPoll::Done(blocks) = task.poll(&options) else {
+            panic!("plain body requested children");
+        };
+        assert_eq!(
+            format!("{blocks:?}"),
+            format!(
+                "{:?}",
+                parse_mapped_source(
+                    &MappedSource::new_line_at(source.to_owned(), None, None),
+                    &options,
+                )
+            )
+        );
+    }
+
+    #[test]
+    fn mapped_task_matches_blank_separated_nested_definition_body() {
+        fn parse_task(source: MappedSource, options: &Options<'_>) -> Vec<BlockNode> {
+            let mut task = MappedEventTask::new(source, options).expect("task depth");
+            let mut result = task.poll(options);
+            loop {
+                result = match result {
+                    TaskPoll::NeedBody(body) => {
+                        let children = {
+                            let _depth = DepthScope::set(task.depth);
+                            let _group = FigureGroupScope::set(task.in_group);
+                            parse_task(body, options)
+                        };
+                        task.resume_with_children(children, options)
+                    }
+                    TaskPoll::Done(blocks) => return blocks,
+                };
+            }
+        }
+        let source = ":: t1\n: d1\n\n  :: t2\n  : d2\n\n    :: t3\n    : d3\n";
+        let observer = Observer(RefCell::new(Vec::new()));
+        let options = Options::default()
+            .with_positions(true)
+            .with_source_lines(true)
+            .with_extension(&observer);
+        let parent = MappedSource::new_line_at(source.to_owned(), None, None);
+        let lines: Vec<_> = parent.source.lines().collect();
+        let mut cursor =
+            LineCursor::new_with_cols(&lines, Some(&parent.line_map), Some(&parent.col_map));
+        cursor.reached = Some(&parent.reached);
+        let mut scan = DefinitionListScan::new(&cursor);
+        let mapped = loop {
+            match scan.step(&mut cursor, &options) {
+                StepResult::NeedBody(request) => break request.body,
+                StepResult::Continue => {}
+                StepResult::Done => panic!("missing body"),
+            }
+        };
+        let expected = {
+            let _standard = crate::parse::StandardNestedReaderGuard::install();
+            parse_mapped_source(&mapped, &options)
+        };
+        let expected_callbacks = observer.0.replace(Vec::new());
+        let actual = parse_task(mapped, &options);
+        assert_eq!(format!("{actual:?}"), format!("{expected:?}"));
+        assert_eq!(
+            observer.0.borrow().as_slice(),
+            expected_callbacks.as_slice()
+        );
+    }
+
+    #[test]
+    fn mapped_task_matches_tailed_definition_chain() {
+        fn parse_task(source: MappedSource, options: &Options<'_>) -> Vec<BlockNode> {
+            let Some(mut task) = MappedEventTask::new(source.clone(), options) else {
+                return parse_mapped_source(&source, options);
+            };
+            let mut result = task.poll(options);
+            loop {
+                result = match result {
+                    TaskPoll::NeedBody(body) => {
+                        let _depth = DepthScope::set(task.depth);
+                        let _group = FigureGroupScope::set(task.in_group);
+                        let children = parse_task(body, options);
+                        task.resume_with_children(children, options)
+                    }
+                    TaskPoll::Done(blocks) => return blocks,
+                };
+            }
+        }
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| {
+                for depth in [2, 4, 8, 12, 64, 120, 199, 200, 205, 260] {
+                    let mut source = String::new();
+                    for level in 0..depth {
+                        let lead = "  ".repeat(level);
+                        source.push_str(&format!("{lead}:: t{level}\n{lead}: d{level}\n\n"));
+                    }
+                    for level in (0..depth).rev() {
+                        source.push_str(&format!("{}after{level}\n\n", "  ".repeat(level)));
+                    }
+                    let root = MappedSource::new_line_at(source, None, None);
+                    let observer = Observer(RefCell::new(Vec::new()));
+                    let options = Options::default()
+                        .with_positions(true)
+                        .with_source_lines(true)
+                        .with_extension(&observer);
+                    let lines: Vec<_> = root.source.lines().collect();
+                    let mut cursor = LineCursor::new_with_cols(
+                        &lines,
+                        Some(&root.line_map),
+                        Some(&root.col_map),
+                    );
+                    cursor.reached = Some(&root.reached);
+                    let mut scan = DefinitionListScan::new(&cursor);
+                    let mapped = loop {
+                        match scan.step(&mut cursor, &options) {
+                            StepResult::NeedBody(request) => break request.body,
+                            StepResult::Continue => {}
+                            StepResult::Done => panic!("missing body"),
+                        }
+                    };
+                    let expected = {
+                        let _standard = crate::parse::StandardNestedReaderGuard::install();
+                        parse_mapped_source(&mapped, &options)
+                    };
+                    let expected_callbacks = observer.0.replace(Vec::new());
+                    let actual = parse_task(mapped.clone(), &options);
+                    assert_eq!(
+                        observer.0.borrow().as_slice(),
+                        expected_callbacks.as_slice(),
+                        "depth={depth}: callbacks"
+                    );
+                    assert_eq!(
+                        format!("{actual:?}"),
+                        format!("{expected:?}"),
+                        "depth={depth}"
+                    );
+                    observer.0.borrow_mut().clear();
+                    let public = parse_mapped_source(&mapped, &options);
+                    assert_eq!(
+                        format!("{public:?}"),
+                        format!("{expected:?}"),
+                        "depth={depth}: public AST"
+                    );
+                    assert_eq!(
+                        observer.0.borrow().as_slice(),
+                        expected_callbacks.as_slice(),
+                        "depth={depth}: public callbacks"
+                    );
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn mapped_task_restores_nested_context_and_positioned_state() {
+        let source = ":: term\n:  first\n:  second\n\n# Later\n";
+        let options = Options::default()
+            .with_positions(true)
+            .with_source_lines(true);
+        let outer_depth = NESTING_DEPTH.with(Cell::get);
+        let _depth = DepthScope::set(7);
+        let _group = FigureGroupScope::set(true);
+        let mut task = MappedEventTask::new(
+            MappedSource::new_line_at(source.to_owned(), Some(12), Some(3)),
+            &options,
+        )
+        .expect("task depth");
+        assert_eq!(task.depth, 8);
+        assert!(task.in_group);
+        let expected = parse_mapped_source(
+            &MappedSource::new_line_at(source.to_owned(), Some(12), Some(3)),
+            &options,
+        );
+        drop(_group);
+        drop(_depth);
+        assert_eq!(NESTING_DEPTH.with(Cell::get), outer_depth);
+        let mut result = task.poll(&options);
+        loop {
+            result = match result {
+                TaskPoll::NeedBody(body) => {
+                    let _depth = DepthScope::set(task.depth);
+                    let _group = FigureGroupScope::set(task.in_group);
+                    let children = parse_mapped_source(&body, &options);
+                    task.resume_with_children(children, &options)
+                }
+                TaskPoll::Done(blocks) => {
+                    assert_eq!(format!("{blocks:?}"), format!("{expected:?}"));
+                    break;
+                }
+            };
+            assert_eq!(NESTING_DEPTH.with(Cell::get), outer_depth);
+            assert!(!IN_FIGURE_GROUP.with(Cell::get));
+        }
+    }
 }
 
 /// Stream simple top-level blocks as events while handing list and definition
@@ -554,10 +2023,12 @@ pub(super) fn parse_nested_mapped_blocks(
     extents: Option<&mut Vec<(usize, usize)>>,
     pending: &mut Vec<PendingBody>,
     positioned: bool,
+    drain_follows: bool,
 ) -> Option<Vec<BlockNode>> {
-    if NESTING_DEPTH.with(Cell::get) >= NESTED_EVENT_DEPTH_LIMIT {
+    if !event_frame_admitted(scope.in_quoted_body) {
         return None;
     }
+    let _frame = EventFrame::enter();
     let _depth = DepthGuard::enter()?;
     let lines: Vec<&str> = source.source.lines().collect();
     let mut cur = LineCursor::new_with_cols(
@@ -572,21 +2043,38 @@ pub(super) fn parse_nested_mapped_blocks(
     cur.at_document_level = scope.at_document_level;
     cur.in_item_body = scope.in_item_body;
     cur.in_quoted_body = scope.in_quoted_body || source.in_quoted_body;
+    #[cfg(test)]
+    {
+        cur.mapped_owner = source.owner;
+    }
     cur.reached = Some(source.reached.as_slice());
     cur.sublists_carry_authored_base = positioned && source.sublists_carry_authored_base;
     cur.marker_tail = source.marker_tail;
+    cur.drain_follows = drain_follows;
     let mut observed = Vec::new();
     let record_extents = extents.is_some();
     let mut nested_pending = Vec::new();
-    let blocks = parse_mixed_blocks_cursor::<true, false>(
-        &lines,
-        options,
-        Some(&source.line_map),
-        scope.at_document_level,
-        cur,
-        record_extents.then_some(&mut observed),
-        Some(&mut nested_pending),
-    )?;
+    let blocks = if source.owner == source_map::MappedBodyOwner::Definition {
+        parse_mixed_blocks_cursor::<true, false, true>(
+            &lines,
+            options,
+            Some(&source.line_map),
+            cur,
+            record_extents.then_some(&mut observed),
+            Some(&mut nested_pending),
+            scope.in_quoted_body,
+        )
+    } else {
+        parse_mixed_blocks_cursor::<true, false, false>(
+            &lines,
+            options,
+            Some(&source.line_map),
+            cur,
+            record_extents.then_some(&mut observed),
+            Some(&mut nested_pending),
+            scope.in_quoted_body,
+        )
+    }?;
     #[cfg(test)]
     if !options.extensions.is_empty() {
         NESTED_EXTENSION_EVENT_PARSES.with(|count| count.set(count.get() + 1));
@@ -595,6 +2083,111 @@ pub(super) fn parse_nested_mapped_blocks(
         extents.extend(observed);
     }
     pending.extend(nested_pending);
+    Some(blocks)
+}
+
+/// The event counterpart of `parse_blocks_with_options` for a nested fragment
+/// whose bodies must resolve before the caller resumes. Declines only before
+/// the cursor reads a line, so no extension callback can run twice.
+#[cfg(feature = "experimental-event-parser-options")]
+#[inline(never)]
+pub(super) fn parse_drained_fragment(
+    source: &str,
+    options: &Options<'_>,
+) -> Option<Vec<BlockNode>> {
+    if !event_frame_admitted(false) {
+        return None;
+    }
+    let lines: Vec<&str> = source.lines().collect();
+    if continuation_marker::active()
+        && lines.iter().copied().any(|line| {
+            let line = trim_ascii(line);
+            line == "+" || line.ends_with(" +")
+        })
+    {
+        return None;
+    }
+    let want_lines = options.source_lines
+        || options.positions
+        || needs_source_ending_map()
+        || needs_quote_marker_line_map(source);
+    let line_map: Vec<Option<usize>> = if want_lines {
+        (1..=lines.len()).map(Some).collect()
+    } else {
+        Vec::new()
+    };
+    let line_map = want_lines.then_some(line_map.as_slice());
+    let col_map = options.positions.then(|| vec![Some(0); lines.len()]);
+    let mut pending = Vec::new();
+    // The drain below runs on top of this frame, so it stays counted; each
+    // ladder level under it is one more eager fragment.
+    let _frame = EventFrame::enter();
+    // The standard reader drains after its depth guard drops; each body
+    // restores the depth it recorded when it was collected.
+    let mut blocks = {
+        let _depth = DepthGuard::enter()?;
+        let mut cur = LineCursor::new_with_cols(&lines, line_map, col_map.as_deref());
+        cur.reached = Some(&[]);
+        parse_mixed_blocks_cursor::<true, false, false>(
+            &lines,
+            options,
+            line_map,
+            cur,
+            None,
+            Some(&mut pending),
+            false,
+        )?
+    };
+    resolve_pending_bodies(&mut blocks, pending, options);
+    Some(blocks)
+}
+
+/// The event counterpart of `parse_blocks` for a colon container body. Reads
+/// the shared view in place, with the cursor `parse_colon_view` would build,
+/// and leaves nested bodies on the caller's worklist.
+#[cfg(feature = "experimental-event-parser-options")]
+#[inline(never)]
+pub(super) fn parse_colon_body<'a>(
+    view: &'a ColonView,
+    lines: CursorLines<'a>,
+    source: &'a [SourceLine],
+    options: &Options<'_>,
+    pending: &mut Vec<PendingBody>,
+) -> Option<Vec<BlockNode>> {
+    if !event_frame_admitted(false) {
+        return None;
+    }
+    let _frame = EventFrame::enter();
+    let _depth = DepthGuard::enter()?;
+    let mut cur = if options.source_lines
+        || options.positions
+        || needs_source_ending_map()
+        || continuation_marker::active()
+    {
+        let mut cur =
+            LineCursor::from_lines(lines, Some(&[]), options.positions.then_some([].as_slice()));
+        cur.colon_geometry = Some(source);
+        cur
+    } else {
+        LineCursor::from_lines(lines, None, None)
+    };
+    cur.colon_view = Some(view);
+    #[cfg(test)]
+    {
+        cur.mapped_owner = source_map::MappedBodyOwner::Colon;
+    }
+    let blocks = parse_mixed_blocks_cursor::<true, false, false>(
+        &[],
+        options,
+        None,
+        cur,
+        None,
+        Some(pending),
+        false,
+    )
+    .expect("a deferring event cursor never declines");
+    #[cfg(test)]
+    COLON_BODY_EVENT_PARSES.with(|count| count.set(count.get() + 1));
     Some(blocks)
 }
 
@@ -618,8 +2211,130 @@ fn direct_definition_allowed(direct_owner: bool, options: &Options<'_>) -> bool 
     direct_owner && !options.source_lines && !options.positions && options.extensions.is_empty()
 }
 
+/// A marker-hosted colon body opens a quote or a definition entry below its
+/// own column too, ahead of every arm that would claim the line.
+#[inline(always)]
+fn parse_marker_hosted_opener(
+    cur: &mut LineCursor<'_>,
+    options: &Options<'_>,
+    line: &str,
+    index: usize,
+    pending: &mut Vec<PendingBody>,
+    drains_here: bool,
+) -> Option<BlockNode> {
+    if !cur.colon_view.is_some_and(|view| view.marker_hosted) {
+        return None;
+    }
+    let line = trim_ascii_start(line);
+    // A colon cursor never drains on the spot, so observed bodies stay eager.
+    if is_definition_list_start(line) {
+        #[cfg(test)]
+        MARKER_HOSTED_DEFINITION_LISTS.with(|count| count.set(count.get() + 1));
+        return Some(parse_definition_list_deferring(
+            cur,
+            options,
+            index,
+            pending,
+            drains_here,
+        ));
+    }
+    if strip_blockquote_prefix(line).is_some() {
+        return Some(parse_marker_hosted_quote(cur, options, index, pending));
+    }
+    None
+}
+
+/// The quote at `index` in a marker-hosted colon body. Unobserved, its body
+/// waits on the worklist; observed, it parses here.
+#[inline(never)]
+fn parse_marker_hosted_quote(
+    cur: &mut LineCursor<'_>,
+    options: &Options<'_>,
+    index: usize,
+    pending: &mut Vec<PendingBody>,
+) -> BlockNode {
+    let (span_start, parts, _) = collect_blockquote_body(cur, options);
+    if parse_order_observed(options) || !quote_body_deferrable(cur, options, &parts) {
+        return *parse_collected_blockquote(cur, options, span_start, parts);
+    }
+    #[cfg(test)]
+    MARKER_HOSTED_QUOTE_DEFERRALS.with(|count| count.set(count.get() + 1));
+    let body = QuoteBodyPending {
+        plus_anchor: nested_plus_quote_anchor(cur, options, span_start),
+        parts,
+        depth: NESTING_DEPTH.with(Cell::get),
+        in_group: IN_FIGURE_GROUP.with(Cell::get),
+    };
+    let node = finish_blockquote_shell(cur, options, span_start, Vec::new(), true);
+    pending.push(PendingBody {
+        index,
+        body: Body::Quote(body),
+    });
+    *node
+}
+
+#[inline]
+fn quote_deferred_in_level(
+    cur: &LineCursor<'_>,
+    options: &Options<'_>,
+    parts: &[LineBuffer],
+    defer_quotes: bool,
+) -> bool {
+    (defer_quotes || (cur.colon_view.is_some() && !parse_order_observed(options)))
+        && quote_body_deferrable(cur, options, parts)
+}
+
+#[cfg(test)]
+fn count_colon_quote_deferral(cur: &LineCursor<'_>) {
+    if cur.colon_view.is_some() {
+        COLON_QUOTE_DEFERRALS.with(|count| count.set(count.get() + 1));
+    }
+}
+
+/// The definition list at `index` in the level's output. Unobserved, its
+/// description bodies wait on the worklist; observed, callbacks must see each
+/// body before what follows it, so they parse here. The one exception is a
+/// body with only blank lines after it in a level whose pending bodies are
+/// resolved right after it (`drains_here`: a locally draining level or a
+/// worklist description body, see `LineCursor::drain_follows`). Nothing observable
+/// runs before that drain, and the body is the last entry, so it pops first,
+/// where it would have run.
+#[inline(never)]
+fn parse_definition_list_deferring(
+    cur: &mut LineCursor<'_>,
+    options: &Options<'_>,
+    index: usize,
+    pending: &mut Vec<PendingBody>,
+    drains_here: bool,
+) -> BlockNode {
+    let observed = parse_order_observed(options);
+    if observed && !drains_here {
+        return parse_definition_list(cur, options);
+    }
+    let depth = NESTING_DEPTH.with(Cell::get);
+    let in_group = IN_FIGURE_GROUP.with(Cell::get);
+    let mut defer = |item: usize, description: usize, source: MappedSource| {
+        #[cfg(test)]
+        if observed {
+            OBSERVED_DEFINITION_DEFERRALS.with(|count| count.set(count.get() + 1));
+        }
+        pending.push(PendingBody {
+            index,
+            body: Body::Definition(DefinitionBodyPending {
+                item,
+                description,
+                source,
+                depth,
+                in_group,
+            }),
+        });
+    };
+    parse_definition_list_with(cur, options, Some(&mut defer), observed)
+}
+
 fn direct_quote_allowed(direct_owner: bool, options: &Options<'_>, line: &str) -> bool {
     direct_owner
+        && NESTING_DEPTH.with(Cell::get) < DIRECT_QUOTE_DEPTH_LIMIT
         && !options.source_lines
         && !options.positions
         && options.extensions.is_empty()
@@ -627,12 +2342,146 @@ fn direct_quote_allowed(direct_owner: bool, options: &Options<'_>, line: &str) -
         && !line.contains("![")
 }
 
-fn use_standard_event_paragraph(
+/// May the worklist parse this collected quote body after the rest of the
+/// level? Only when the hollow node answers every question asked before the
+/// body is filled, and nothing observable moves across the deferral.
+fn quote_body_deferrable(
+    cur: &LineCursor<'_>,
     options: &Options<'_>,
-    recording_extents: bool,
-    defer_pending: bool,
+    parts: &[LineBuffer],
 ) -> bool {
-    options.positions || recording_extents || defer_pending
+    // `finish_blockquote` asks whether the body is empty only to take a caption.
+    let after_blank_reaches =
+        cur.peek().is_some_and(is_blank_line) && cur.carried_reach(cur.pos + 1) == Some(true);
+    let caption_blocked = cur.carried_reach(cur.pos) == Some(false) && !after_blank_reaches;
+    let caption_follows = !caption_blocked && caption_slot_follows(cur);
+    if parse_order_observed(options) {
+        // The eager body would run before anything after the quote, so the
+        // level must end in silence: no caption, one part, blank lines only.
+        return !caption_follows
+            && parts.len() == 1
+            && (cur.pos..cur.lines.len()).all(|at| is_blank_line(cur.lines.at(at)));
+    }
+    !caption_follows || parts.iter().any(part_opens_with_block)
+}
+
+/// The lookahead of `consume_caption`, without consuming.
+fn caption_slot_follows(cur: &LineCursor<'_>) -> bool {
+    let mut at = cur.pos;
+    if cur.lines.line(at).is_some_and(is_blank_line) {
+        at += 1;
+    }
+    cur.lines
+        .line(at)
+        .is_some_and(|line| caption_content(line).is_some())
+}
+
+/// A part whose first line opens a quote, a paragraph or a list yields a block.
+fn part_opens_with_block(part: &LineBuffer) -> bool {
+    part.lines
+        .iter()
+        .map(|line| line.text.as_str())
+        .find(|line| !is_blank_line(line))
+        .and_then(|line| line.as_bytes().first())
+        .is_some_and(|byte| *byte == b'>' || byte.is_ascii_alphanumeric())
+}
+
+fn use_standard_event_paragraph(recording_extents: bool, defer_pending: bool) -> bool {
+    recording_extents || defer_pending
+}
+
+fn event_owned_plain_paragraph(cur: &LineCursor<'_>, options: &Options<'_>) -> bool {
+    if (options.positions || options.source_lines) && cur.colon_view.is_none() {
+        return false;
+    }
+    let mut count = 0;
+    let mut bytes = 0;
+    let mut complex = false;
+    const COMPLEX_LINE_LIMIT: usize = 32;
+    const COMPLEX_BYTE_LIMIT: usize = 4096;
+    for line in cur.lines.range(cur.pos..cur.lines.len()) {
+        if is_blank_line(line) {
+            break;
+        }
+        if count != 0
+            && line.len() <= 256
+            && !line.starts_with([' ', '\t'])
+            && parse_standalone_attrs(line).is_some()
+        {
+            break;
+        }
+        bytes += line.len();
+        // An attached ID on a single, otherwise plain line is handled by the
+        // inline parser. Keep the next line out of this fast path so a block
+        // attribute or caption still gets the standard paragraph boundary.
+        if count == 0
+            && attached_plain_id(line)
+            && cur.lines.line(cur.pos + 1).map_or(true, is_blank_line)
+        {
+            return true;
+        }
+        let plain = line.as_bytes()[0].is_ascii_alphabetic()
+            && line.bytes().all(|byte| {
+                byte.is_ascii_alphabetic()
+                    || matches!(byte, b' ' | b'.' | b',' | b'!' | b'?' | b';' | b':')
+            });
+        if !plain {
+            complex = true;
+            if count >= COMPLEX_LINE_LIMIT
+                || bytes > COMPLEX_BYTE_LIMIT
+                || !line.chars().next().is_some_and(char::is_alphabetic)
+                || !line.chars().all(|ch| {
+                    ch.is_alphabetic()
+                        || matches!(
+                            ch,
+                            ' ' | '.'
+                                | ','
+                                | '!'
+                                | '?'
+                                | ';'
+                                | ':'
+                                | '*'
+                                | '_'
+                                | '`'
+                                | '['
+                                | ']'
+                                | '('
+                                | ')'
+                                | '/'
+                                | '-'
+                                | '\\'
+                        )
+                })
+            {
+                return false;
+            }
+        }
+        if complex && (count >= COMPLEX_LINE_LIMIT || bytes > COMPLEX_BYTE_LIMIT) {
+            return false;
+        }
+        count += 1;
+    }
+    count != 0
+}
+
+fn attached_plain_id(line: &str) -> bool {
+    if line.len() > 256 {
+        return false;
+    }
+    let Some((host, id)) = line
+        .strip_suffix('}')
+        .and_then(|line| line.split_once("{#"))
+    else {
+        return false;
+    };
+    !host.is_empty()
+        && host
+            .bytes()
+            .all(|byte| byte.is_ascii_alphabetic() || byte == b' ')
+        && !id.is_empty()
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
 }
 
 fn refused_root_plus_at(cur: &LineCursor<'_>, line: &str) -> bool {
@@ -783,14 +2632,8 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
     let col_map = options.positions.then(|| vec![Some(0); lines.len()]);
     let mut cur = LineCursor::new_with_cols(lines, line_map, col_map.as_deref());
     cur.at_document_level = at_document_level;
-    parse_mixed_blocks_cursor::<DEFINITIONS, ABBREVIATIONS>(
-        lines,
-        options,
-        line_map,
-        at_document_level,
-        cur,
-        None,
-        None,
+    parse_mixed_blocks_cursor::<DEFINITIONS, ABBREVIATIONS, false>(
+        lines, options, line_map, cur, None, None, true,
     )
 }
 
@@ -803,14 +2646,14 @@ fn parse_mixed_blocks_with_root_columns<const DEFINITIONS: bool, const ABBREVIAT
     let col_map = vec![Some(0); lines.len()];
     let mut cur = LineCursor::new_with_cols(lines, Some(line_map), Some(&col_map));
     cur.at_document_level = true;
-    parse_mixed_blocks_cursor::<DEFINITIONS, ABBREVIATIONS>(
+    parse_mixed_blocks_cursor::<DEFINITIONS, ABBREVIATIONS, false>(
         lines,
         options,
         Some(line_map),
-        true,
         cur,
         None,
         None,
+        true,
     )
 }
 
@@ -830,43 +2673,933 @@ fn parse_custom_mixed_blocks<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
     }
 }
 
-fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
+struct EventLevelState {
+    out: Vec<BlockNode>,
+    block_start_indices: Vec<usize>,
+    pending_bodies: Vec<PendingBody>,
+    #[cfg(feature = "experimental-event-parser-options")]
+    source_lines: Vec<Option<usize>>,
+    leading_attrs: Vec<(usize, Attrs, Option<Pos>)>,
+    current_block_start: Cell<usize>,
+    at_document_level: bool,
+    defer_pending: bool,
+    drain_follows: bool,
+    direct_owner: bool,
+}
+
+impl EventLevelState {
+    fn new(cur: &LineCursor<'_>, defer_pending: bool, direct_owner: bool) -> Self {
+        Self {
+            out: Vec::new(),
+            block_start_indices: Vec::new(),
+            pending_bodies: Vec::new(),
+            #[cfg(feature = "experimental-event-parser-options")]
+            source_lines: Vec::new(),
+            leading_attrs: Vec::new(),
+            current_block_start: Cell::new(0),
+            at_document_level: cur.at_document_level,
+            defer_pending,
+            drain_follows: !defer_pending || cur.drain_follows,
+            direct_owner,
+        }
+    }
+}
+
+fn parse_mixed_blocks_cursor<
+    const DEFINITIONS: bool,
+    const ABBREVIATIONS: bool,
+    const DEFINITION_OWNER: bool,
+>(
     lines: &[&str],
     options: &Options<'_>,
     line_map: Option<&[Option<usize>]>,
-    at_document_level: bool,
     mut cur: LineCursor<'_>,
     mut extents: Option<&mut Vec<(usize, usize)>>,
-    pending_out: Option<&mut Vec<PendingBody>>,
+    mut pending_out: Option<&mut Vec<PendingBody>>,
+    // The caller fills hollow quotes before reading their children. An
+    // unobserved colon body may defer quotes even when this argument is false.
+    defer_quotes: bool,
 ) -> Option<Vec<BlockNode>> {
     let defer_pending = pending_out.is_some();
     let direct_owner = !defer_pending && extents.is_none();
-    let mut out = Vec::new();
-    let mut block_start_indices = Vec::new();
-    let mut pending_bodies = Vec::new();
-    let current_block_start = std::cell::Cell::new(0usize);
+    // Only the direct owner reads `lines`; everything else reads the cursor,
+    // so a deferring caller may pass an empty slice instead of materializing.
+    debug_assert!(!direct_owner || lines.len() == cur.lines.len());
+    // Snapshot the cursor flag: nested paragraph probes may change it.
+    let mut state = EventLevelState::new(&cur, defer_pending, direct_owner);
+    let mut paragraph = DefinitionParagraphTask::Dispatch;
+    let mut result = run_event_level_for_cursor::<DEFINITIONS, ABBREVIATIONS, DEFINITION_OWNER>(
+        lines,
+        options,
+        line_map,
+        &mut cur,
+        &mut state,
+        &mut paragraph,
+        extents.as_deref_mut(),
+        pending_out.as_deref_mut(),
+        defer_quotes,
+        None,
+    )?;
+    loop {
+        match result {
+            EventLevelRun::Done(out) => return Some(out),
+            EventLevelRun::NeedParagraph { .. } => unreachable!("owner handles paragraph"),
+            EventLevelRun::Yield => unreachable!("the wrapper does not request a boundary"),
+            EventLevelRun::NeedDefinitionBody(mut continuation) => {
+                cur.restore_state(continuation.cursor);
+                state = continuation.state;
+                let children = parse_definition_description(
+                    continuation.request,
+                    &cur,
+                    options,
+                    &mut None,
+                    false,
+                );
+                continuation.scan.fill_body(children, &cur, options);
+                loop {
+                    match continuation.scan.step(&mut cur, options) {
+                        StepResult::Continue => {}
+                        StepResult::NeedBody(request) => {
+                            continuation.request = request;
+                            continuation.cursor = cur.take_state();
+                            continuation.state = std::mem::replace(
+                                &mut state,
+                                EventLevelState::new(&cur, false, false),
+                            );
+                            result = EventLevelRun::NeedDefinitionBody(continuation);
+                            break;
+                        }
+                        StepResult::Done => {
+                            let node = continuation.scan.finish(&cur, options);
+                            if let Some(extents) = extents.as_deref_mut() {
+                                extents.push((continuation.start, cur.pos));
+                            }
+                            if options.positions {
+                                state.block_start_indices.push(continuation.start);
+                            }
+                            #[cfg(feature = "experimental-event-parser-options")]
+                            if options.source_lines {
+                                state.source_lines.push(continuation.source_line);
+                            }
+                            debug_assert_eq!(state.out.len(), continuation.index);
+                            state.out.push(node);
+                            result = run_event_level_for_cursor::<
+                                DEFINITIONS,
+                                ABBREVIATIONS,
+                                DEFINITION_OWNER,
+                            >(
+                                lines,
+                                options,
+                                line_map,
+                                &mut cur,
+                                &mut state,
+                                &mut paragraph,
+                                extents.as_deref_mut(),
+                                pending_out.as_deref_mut(),
+                                defer_quotes,
+                                None,
+                            )?;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+enum EventLevelRun {
+    Done(Vec<BlockNode>),
+    Yield,
+    NeedParagraph { start: usize },
+    NeedDefinitionBody(Box<DefinitionContinuation>),
+}
+
+struct DefinitionContinuation {
+    scan: DefinitionListScan,
+    request: BodyRequest,
+    start: usize,
+    source_line: Option<usize>,
+    index: usize,
+    cursor: LineCursorOwnedState,
+    state: EventLevelState,
+}
+
+#[allow(dead_code)]
+enum TaskPoll {
+    NeedBody(MappedSource),
+    Done(Vec<BlockNode>),
+}
+
+#[allow(dead_code)]
+struct MappedEventTask {
+    frame: OwnedMappedCursorFrame,
+    depth: usize,
+    in_group: bool,
+    state: Option<EventLevelState>,
+    paragraph: DefinitionParagraphTask,
+    continuation: Option<Box<DefinitionContinuation>>,
+    pending: Vec<PendingBody>,
+}
+
+#[allow(dead_code)]
+impl MappedEventTask {
+    fn new(source: MappedSource, options: &Options<'_>) -> Option<Self> {
+        let depth = NESTING_DEPTH.with(Cell::get).checked_add(1)?;
+        if depth > MAX_NESTING_DEPTH {
+            return None;
+        }
+        let lines: Vec<_> = source.source.lines().collect();
+        let mut cursor = LineCursor::new_with_cols(
+            &lines,
+            Some(&source.line_map),
+            source
+                .col_map
+                .iter()
+                .any(Option::is_some)
+                .then_some(source.col_map.as_slice()),
+        );
+        cursor.reached = Some(&source.reached);
+        cursor.marker_tail = source.marker_tail;
+        cursor.in_quoted_body = source.in_quoted_body;
+        #[cfg(test)]
+        {
+            cursor.mapped_owner = source.owner;
+        }
+        cursor.sublists_carry_authored_base =
+            options.positions && source.sublists_carry_authored_base;
+        cursor.drain_follows = false;
+        let state = EventLevelState::new(&cursor, true, false);
+        let cursor_state = cursor.take_state();
+        drop(cursor);
+        drop(lines);
+        let frame = OwnedMappedCursorFrame::from_source(source, cursor_state);
+        Some(Self {
+            frame,
+            depth,
+            in_group: IN_FIGURE_GROUP.with(Cell::get),
+            state: Some(state),
+            paragraph: DefinitionParagraphTask::Dispatch,
+            continuation: None,
+            pending: Vec::new(),
+        })
+    }
+
+    fn poll(&mut self, options: &Options<'_>) -> TaskPoll {
+        let _depth = DepthScope::set(self.depth);
+        let _group = FigureGroupScope::set(self.in_group);
+        assert!(
+            self.continuation.is_none(),
+            "resume the requested body before polling"
+        );
+        let state = self.state.as_mut().expect("completed mapped event task");
+        let result = self
+            .frame
+            .with_cursor(|cursor, source| {
+                run_event_level_by_owner::<true, false>(
+                    &[],
+                    options,
+                    Some(&source.line_map),
+                    source.owner,
+                    cursor,
+                    state,
+                    &mut self.paragraph,
+                    None,
+                    Some(&mut self.pending),
+                    true,
+                    None,
+                )
+            })
+            .expect("mapped event level declined");
+        self.handle_result(result, options)
+    }
+
+    fn resume_with_children(
+        &mut self,
+        children: Vec<BlockNode>,
+        options: &Options<'_>,
+    ) -> TaskPoll {
+        let _depth = DepthScope::set(self.depth);
+        let _group = FigureGroupScope::set(self.in_group);
+        let mut continuation = self.continuation.take().expect("no requested body");
+        let result = self.frame.with_cursor(|cursor, source| {
+            cursor.restore_state(continuation.cursor);
+            let state = self.state.as_mut().expect("completed mapped event task");
+            *state = continuation.state;
+            continuation.scan.fill_body(children, cursor, options);
+            loop {
+                match continuation.scan.step(cursor, options) {
+                    StepResult::Continue => {}
+                    StepResult::NeedBody(request) => {
+                        continuation.request = request;
+                        continuation.cursor = cursor.take_state();
+                        continuation.state =
+                            std::mem::replace(state, EventLevelState::new(cursor, true, false));
+                        return EventLevelRun::NeedDefinitionBody(continuation);
+                    }
+                    StepResult::Done => break,
+                }
+            }
+            let node = continuation.scan.finish(cursor, options);
+            if options.positions {
+                state.block_start_indices.push(continuation.start);
+            }
+            #[cfg(feature = "experimental-event-parser-options")]
+            if options.source_lines {
+                state.source_lines.push(continuation.source_line);
+            }
+            debug_assert_eq!(state.out.len(), continuation.index);
+            state.out.push(node);
+            run_event_level_by_owner::<true, false>(
+                &[],
+                options,
+                Some(&source.line_map),
+                source.owner,
+                cursor,
+                state,
+                &mut self.paragraph,
+                None,
+                Some(&mut self.pending),
+                true,
+                None,
+            )
+            .expect("mapped event level declined")
+        });
+        self.handle_result(result, options)
+    }
+
+    fn handle_result(&mut self, result: EventLevelRun, options: &Options<'_>) -> TaskPoll {
+        match result {
+            EventLevelRun::NeedDefinitionBody(mut continuation) => {
+                let body = std::mem::replace(
+                    &mut continuation.request.body,
+                    MappedSource::new_line_at(String::new(), None, None),
+                );
+                self.continuation = Some(continuation);
+                TaskPoll::NeedBody(body)
+            }
+            EventLevelRun::Done(mut blocks) => {
+                resolve_pending_bodies(&mut blocks, std::mem::take(&mut self.pending), options);
+                self.state = None;
+                TaskPoll::Done(blocks)
+            }
+            EventLevelRun::NeedParagraph { .. } => unreachable!("owner handles paragraph"),
+            EventLevelRun::Yield => unreachable!("mapped task has no stop boundary"),
+        }
+    }
+}
+
+fn collect_event_paragraph<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
+    cur: &mut LineCursor<'_>,
+    invalid_brace_line: bool,
+    root_indented_text: bool,
+) -> Option<String> {
+    let start = cur.pos;
+    let mut lines = Vec::new();
+    while let Some(next) = cur.peek() {
+        if DEFINITIONS && is_definition_placeholder(next) {
+            break;
+        }
+        if ABBREVIATIONS && !lines.is_empty() && detect_abbreviation_def(next).is_some() {
+            break;
+        }
+        if is_blank_line(next) || detect_heading(next).is_some() {
+            break;
+        }
+        if !lines.is_empty()
+            && next.len() <= 256
+            && !next.starts_with([' ', '\t'])
+            && parse_standalone_attrs(next).is_some()
+        {
+            break;
+        }
+        if !lines.is_empty() {
+            if let Some(open) = detect_fence_open(next) {
+                if cur
+                    .lines
+                    .range(cur.pos + 1..cur.lines.len())
+                    .any(|line| is_fence_close(line, open))
+                {
+                    break;
+                }
+            }
+        }
+        if !lines.is_empty() && is_plus_marker(next) {
+            let marker_at = cur.pos;
+            let safe_follower = cur.lines.line(marker_at + 1).is_some_and(|follower| {
+                !follower.starts_with([' ', '\t'])
+                    && follower.bytes().all(|byte| byte.is_ascii_alphabetic())
+                    && cur.lines.line(marker_at + 2).map_or(true, is_blank_line)
+            });
+            let document_marker = cur.at_document_level
+                && cur
+                    .source_line(marker_at)
+                    .and_then(continuation_marker::decision)
+                    .is_some_and(|decision| decision.unclaimed && decision.refusal.is_some());
+            if lines.len() == 1 && safe_follower && document_marker {
+                lines.push(trim_ascii_end(trim_ascii_start(next)));
+                cur.consume();
+                continue;
+            }
+        }
+        if event_paragraph_needs_reader(
+            next,
+            !lines.is_empty(),
+            invalid_brace_line,
+            root_indented_text,
+        ) {
+            cur.pos = start;
+            return None;
+        }
+        lines.push(trim_ascii_end(trim_ascii_start(next)));
+        cur.consume();
+    }
+    Some(lines.join("\n"))
+}
+
+// Keep inline parsing out of the recursive event frame's native stack.
+#[inline(never)]
+fn collect_reference_caption(cur: &mut LineCursor<'_>, options: &Options<'_>) -> Option<BlockNode> {
+    let line = cur.peek()?;
+    if !reference_caption_shape(cur, line) {
+        return None;
+    }
+    let start = cur.pos;
+    let first = trim_ascii_end(trim_ascii_start(line));
+    let second = trim_ascii_end(cur.lines.line(start + 1).unwrap());
+    let joined = format!("{first}\n{second}");
+    cur.consume();
+    cur.consume();
+    let children = if options.positions {
+        parse_inline_lines_with_anchor(
+            &joined,
+            options,
+            vec![
+                inline_anchor_for_line(cur, start, first),
+                inline_anchor_for_line(cur, start + 1, second),
+            ],
+        )
+    } else {
+        parse_inline_with_options(&joined, options)
+    };
+    Some(BlockNode::Paragraph(Paragraph {
+        attrs: None,
+        children,
+        at_content_column: true,
+        block_image: false,
+        pos: span_of(cur, start, cur.pos, options),
+    }))
+}
+
+#[inline(never)]
+fn reference_caption_shape(cur: &LineCursor<'_>, line: &str) -> bool {
+    !(line.starts_with([' ', '\t'])
+        || !reference_image_line(line)
+        || !cur
+            .lines
+            .line(cur.pos + 1)
+            .is_some_and(|next| !next.starts_with([' ', '\t']) && caption_content(next).is_some())
+        || !cur.lines.line(cur.pos + 2).map_or(true, is_blank_line))
+}
+
+#[inline(never)]
+fn parse_event_or_standard_paragraph(cur: &mut LineCursor<'_>, options: &Options<'_>) -> BlockNode {
+    collect_reference_caption(cur, options)
+        .or_else(|| collect_blank_image_caption(cur, options))
+        .unwrap_or_else(|| parse_paragraph(cur, options))
+}
+
+struct EventParagraphState {
+    start: usize,
+    indices: Vec<usize>,
+    anchors: Vec<Option<(usize, isize)>>,
+    text: Vec<String>,
+    at_content_column: bool,
+    image_lead: bool,
+    caption_pending: bool,
+    refused_plus: bool,
+    suppress_colon_interrupt: bool,
+    continuation: Option<continuation_marker::Decision>,
+}
+
+// The mapped owner keeps this task between calls to the recursive block reader.
+// A paragraph can therefore yield without retaining that reader's stack frame.
+enum DefinitionParagraphTask {
+    Dispatch,
+    Collect(Box<EventParagraphState>),
+}
+
+enum EventParagraphStep {
+    Accept,
+    SkipBlank,
+    Boundary,
+}
+
+impl EventParagraphState {
+    fn new(cur: &LineCursor<'_>) -> Self {
+        let start = cur.pos;
+        Self {
+            start,
+            indices: Vec::new(),
+            anchors: Vec::new(),
+            text: Vec::new(),
+            at_content_column: cur
+                .peek()
+                .is_some_and(|line| !line.starts_with([' ', '\t'])),
+            image_lead: cur
+                .peek()
+                .is_some_and(|line| detect_block_image(trim_ascii_start(line)).is_some()),
+            caption_pending: false,
+            refused_plus: cur
+                .peek()
+                .is_some_and(|line| is_plus_marker(trim_ascii_start(line)))
+                && cur.continuation_decision(start).is_some_and(|decision| {
+                    decision.refusal.is_some()
+                        && decision.owner != Some(continuation_marker::Kind::Footnote)
+                        && !decision.after_quote_blank
+                }),
+            suppress_colon_interrupt: false,
+            continuation: cur.continuation_decision(start),
+        }
+    }
+
+    fn classify(&self, cur: &mut LineCursor<'_>) -> EventParagraphStep {
+        let Some(line) = cur.peek() else {
+            return EventParagraphStep::Boundary;
+        };
+        if is_blank_line(line) {
+            if self.caption_pending
+                && cur
+                    .lines
+                    .line(cur.pos + 1)
+                    .is_some_and(|next| caption_content(next).is_some())
+            {
+                return EventParagraphStep::SkipBlank;
+            }
+            return EventParagraphStep::Boundary;
+        }
+        if self.indices.is_empty() {
+            return EventParagraphStep::Accept;
+        }
+        let same_column = cur
+            .source_line(self.start)
+            .zip(cur.source_line(cur.pos))
+            .map(|(first, next)| {
+                continuation_marker::document_column(first)
+                    == continuation_marker::document_column(next)
+            })
+            .unwrap_or(true);
+        let interrupted = (!self.refused_plus || !is_list_marker(line) || same_column)
+            && interrupts_paragraph(cur, line);
+        let sibling = self.refused_plus
+            && self.indices.len() == 1
+            && cur.lines.at(self.start).starts_with('+')
+            && self.continuation.is_some_and(|decision| {
+                (decision.owner.is_some()
+                    || cur.source_line(self.start).is_some_and(|source_line| {
+                        continuation_marker::preceding_nested_list_marker(
+                            source_line,
+                            decision.quote_depth == 0,
+                        )
+                    }))
+                    && decision.sibling_interrupt
+            })
+            && is_list_marker(line)
+            && indent_columns(line) == 0
+            && same_column;
+        if (interrupted
+            || sibling
+            || (cur.colon_view.is_some_and(|view| view.marker_hosted)
+                && strip_blockquote_prefix(trim_ascii_start(line)).is_some()))
+            && !(self.suppress_colon_interrupt && is_suppressed_colon_fence_line(line))
+        {
+            EventParagraphStep::Boundary
+        } else {
+            EventParagraphStep::Accept
+        }
+    }
+
+    fn accept(&mut self, cur: &mut LineCursor<'_>) {
+        let index = cur.pos;
+        let line_owned = cur.peek().expect("classified line").to_owned();
+        report_unclaimed_document_plus(cur, &line_owned);
+        let line = trim_ascii_end(trim_ascii_start(&line_owned));
+        self.anchors.push(inline_anchor_for_line(cur, index, line));
+        self.indices.push(index);
+        self.text.push(line.to_owned());
+        self.suppress_colon_interrupt |= is_invalid_colon_fence_opener_text(line);
+        self.caption_pending = self.image_lead && self.indices.len() == 1;
+        cur.consume();
+    }
+}
+
+#[inline(never)]
+fn finish_event_paragraph(
+    paragraph: EventParagraphState,
+    cur: &LineCursor<'_>,
+    options: &Options<'_>,
+) -> Box<BlockNode> {
+    let at_content_column = paragraph.at_content_column
+        && !paragraph
+            .text
+            .iter()
+            .skip(1)
+            .any(|line| line.starts_with(LAZY) && caption_content(strip_lazy(line)).is_some());
+    let joined = paragraph
+        .text
+        .iter()
+        .map(|line| strip_lazy(line))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let children = if options.positions {
+        parse_inline_lines_with_anchor(&joined, options, paragraph.anchors)
+    } else {
+        parse_inline_with_options(&joined, options)
+    };
+    Box::new(BlockNode::Paragraph(Paragraph {
+        attrs: None,
+        children,
+        at_content_column,
+        block_image: false,
+        pos: span_of(cur, paragraph.start, cur.pos, options),
+    }))
+}
+
+#[inline(never)]
+fn starts_definition_event_paragraph(
+    cur: &LineCursor<'_>,
+    owner: source_map::MappedBodyOwner,
+) -> bool {
+    if owner != source_map::MappedBodyOwner::Definition
+        || cur.in_item_body
+        || cur.colon_view.is_some()
+    {
+        return false;
+    }
+    let Some(first) = cur.peek() else {
+        return false;
+    };
+    may_start_plain_paragraph(first)
+        && !reference_image_line(first)
+        && crate::includes::code_include_line(first).is_none()
+}
+
+#[inline(never)]
+fn advance_definition_event_paragraph(
+    cur: &mut LineCursor<'_>,
+    paragraph: &mut EventParagraphState,
+    stop_at: Option<usize>,
+) -> bool {
+    while !stop_at.is_some_and(|at| cur.pos >= at) {
+        match paragraph.classify(cur) {
+            EventParagraphStep::Accept => paragraph.accept(cur),
+            EventParagraphStep::SkipBlank => {
+                paragraph.caption_pending = false;
+                cur.consume();
+            }
+            EventParagraphStep::Boundary => break,
+        }
+    }
+    if stop_at.is_some_and(|at| cur.pos >= at) {
+        return false;
+    }
+    true
+}
+
+#[cold]
+#[allow(clippy::too_many_arguments)]
+fn run_event_level_owned<
+    const DEFINITIONS: bool,
+    const ABBREVIATIONS: bool,
+    const DEFINITION_OWNER: bool,
+>(
+    lines: &[&str],
+    options: &Options<'_>,
+    line_map: Option<&[Option<usize>]>,
+    cur: &mut LineCursor<'_>,
+    state: &mut EventLevelState,
+    paragraph: &mut DefinitionParagraphTask,
+    mut extents: Option<&mut Vec<(usize, usize)>>,
+    mut pending_out: Option<&mut Vec<PendingBody>>,
+    defer_quotes: bool,
+    stop_at: Option<usize>,
+) -> Option<EventLevelRun> {
+    loop {
+        if let DefinitionParagraphTask::Collect(paragraph_state) = paragraph {
+            if !advance_definition_event_paragraph(cur, paragraph_state, stop_at) {
+                return Some(EventLevelRun::Yield);
+            }
+            let DefinitionParagraphTask::Collect(paragraph_state) =
+                std::mem::replace(paragraph, DefinitionParagraphTask::Dispatch)
+            else {
+                unreachable!("paragraph task changed while collecting")
+            };
+            let start = paragraph_state.start;
+            let source_line = cur.source_line(start);
+            #[cfg(test)]
+            if !probing() {
+                DEFINITION_PARAGRAPH_COLLECTIONS.with(|count| count.set(count.get() + 1));
+            }
+            let node = finish_event_paragraph(*paragraph_state, cur, options);
+            emit_boxed_event_paragraph(
+                state,
+                node,
+                start,
+                cur.pos,
+                source_line,
+                options,
+                extents.as_deref_mut(),
+            );
+        }
+        let result = run_event_level_inner::<DEFINITIONS, ABBREVIATIONS, DEFINITION_OWNER>(
+            lines,
+            options,
+            line_map,
+            cur,
+            state,
+            extents.as_deref_mut(),
+            pending_out.as_deref_mut(),
+            defer_quotes,
+            stop_at,
+        )?;
+        match result {
+            EventLevelRun::NeedParagraph { start, .. } => {
+                debug_assert_eq!(cur.pos, start);
+                *paragraph =
+                    DefinitionParagraphTask::Collect(Box::new(EventParagraphState::new(cur)));
+            }
+            other => return Some(other),
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+#[inline(always)]
+fn run_event_level_for_cursor<
+    const DEFINITIONS: bool,
+    const ABBREVIATIONS: bool,
+    const DEFINITION_OWNER: bool,
+>(
+    lines: &[&str],
+    options: &Options<'_>,
+    line_map: Option<&[Option<usize>]>,
+    cur: &mut LineCursor<'_>,
+    state: &mut EventLevelState,
+    paragraph: &mut DefinitionParagraphTask,
+    extents: Option<&mut Vec<(usize, usize)>>,
+    pending_out: Option<&mut Vec<PendingBody>>,
+    defer_quotes: bool,
+    stop_at: Option<usize>,
+) -> Option<EventLevelRun> {
+    if DEFINITION_OWNER {
+        run_event_level_owned::<DEFINITIONS, ABBREVIATIONS, true>(
+            lines,
+            options,
+            line_map,
+            cur,
+            state,
+            paragraph,
+            extents,
+            pending_out,
+            defer_quotes,
+            stop_at,
+        )
+    } else {
+        debug_assert!(matches!(paragraph, DefinitionParagraphTask::Dispatch));
+        run_event_level_inner::<DEFINITIONS, ABBREVIATIONS, false>(
+            lines,
+            options,
+            line_map,
+            cur,
+            state,
+            extents,
+            pending_out,
+            defer_quotes,
+            stop_at,
+        )
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+#[inline(never)]
+fn run_event_level_by_owner<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
+    lines: &[&str],
+    options: &Options<'_>,
+    line_map: Option<&[Option<usize>]>,
+    owner: source_map::MappedBodyOwner,
+    cur: &mut LineCursor<'_>,
+    state: &mut EventLevelState,
+    paragraph: &mut DefinitionParagraphTask,
+    extents: Option<&mut Vec<(usize, usize)>>,
+    pending_out: Option<&mut Vec<PendingBody>>,
+    defer_quotes: bool,
+    stop_at: Option<usize>,
+) -> Option<EventLevelRun> {
+    if owner == source_map::MappedBodyOwner::Definition {
+        run_event_level_owned::<DEFINITIONS, ABBREVIATIONS, true>(
+            lines,
+            options,
+            line_map,
+            cur,
+            state,
+            paragraph,
+            extents,
+            pending_out,
+            defer_quotes,
+            stop_at,
+        )
+    } else {
+        debug_assert!(matches!(paragraph, DefinitionParagraphTask::Dispatch));
+        run_event_level_inner::<DEFINITIONS, ABBREVIATIONS, false>(
+            lines,
+            options,
+            line_map,
+            cur,
+            state,
+            extents,
+            pending_out,
+            defer_quotes,
+            stop_at,
+        )
+    }
+}
+
+#[inline(never)]
+fn emit_boxed_event_paragraph(
+    state: &mut EventLevelState,
+    node: Box<BlockNode>,
+    start: usize,
+    end: usize,
+    source_line: Option<usize>,
+    options: &Options<'_>,
+    extents: Option<&mut Vec<(usize, usize)>>,
+) {
+    if let Some(extents) = extents {
+        extents.push((start, end));
+    }
+    if options.positions {
+        state.block_start_indices.push(start);
+    }
     #[cfg(feature = "experimental-event-parser-options")]
-    let mut source_lines = Vec::new();
+    if options.source_lines {
+        state.source_lines.push(source_line);
+    }
+    #[cfg(not(feature = "experimental-event-parser-options"))]
+    let _ = source_line;
+    state.out.push(*node);
+}
+
+#[inline(never)]
+fn collect_blank_image_caption(
+    cur: &mut LineCursor<'_>,
+    options: &Options<'_>,
+) -> Option<BlockNode> {
+    let start = cur.pos;
+    let image = cur.peek()?;
+    if !image.starts_with("![")
+        || (detect_block_image(image).is_none() && !reference_image_line(image))
+        || !cur.lines.line(start + 1).is_some_and(is_blank_line)
+    {
+        return None;
+    }
+    let caption = cur.lines.line(start + 2)?;
+    if caption_content(caption).is_none() || !cur.lines.line(start + 3).map_or(true, is_blank_line)
+    {
+        return None;
+    }
+    let image = trim_ascii_end(image);
+    let caption = trim_ascii_end(trim_ascii_start(caption));
+    let joined = format!("{image}\n{caption}");
+    cur.consume();
+    cur.consume();
+    cur.consume();
+    let children = if options.positions {
+        parse_inline_lines_with_anchor(
+            &joined,
+            options,
+            vec![
+                inline_anchor_for_line(cur, start, image),
+                inline_anchor_for_line(cur, start + 2, caption),
+            ],
+        )
+    } else {
+        parse_inline_with_options(&joined, options)
+    };
+    Some(BlockNode::Paragraph(Paragraph {
+        attrs: None,
+        children,
+        at_content_column: true,
+        block_image: false,
+        pos: span_of(cur, start, cur.pos, options),
+    }))
+}
+
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+fn run_event_level<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
+    lines: &[&str],
+    options: &Options<'_>,
+    line_map: Option<&[Option<usize>]>,
+    cur: &mut LineCursor<'_>,
+    state: &mut EventLevelState,
+    extents: Option<&mut Vec<(usize, usize)>>,
+    pending_out: Option<&mut Vec<PendingBody>>,
+    defer_quotes: bool,
+    stop_at: Option<usize>,
+) -> Option<EventLevelRun> {
+    run_event_level_inner::<DEFINITIONS, ABBREVIATIONS, false>(
+        lines,
+        options,
+        line_map,
+        cur,
+        state,
+        extents,
+        pending_out,
+        defer_quotes,
+        stop_at,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_event_level_inner<
+    const DEFINITIONS: bool,
+    const ABBREVIATIONS: bool,
+    const DEFINITION_OWNER: bool,
+>(
+    lines: &[&str],
+    options: &Options<'_>,
+    line_map: Option<&[Option<usize>]>,
+    cur: &mut LineCursor<'_>,
+    state: &mut EventLevelState,
+    mut extents: Option<&mut Vec<(usize, usize)>>,
+    pending_out: Option<&mut Vec<PendingBody>>,
+    defer_quotes: bool,
+    stop_at: Option<usize>,
+) -> Option<EventLevelRun> {
     macro_rules! emit {
         ($line:expr, $node:expr) => {{
             let node = $node;
             if let Some(extents) = extents.as_deref_mut() {
-                extents.push((current_block_start.get(), cur.pos));
+                extents.push((state.current_block_start.get(), cur.pos));
             }
             if options.positions {
-                block_start_indices.push(current_block_start.get());
+                state
+                    .block_start_indices
+                    .push(state.current_block_start.get());
             }
             #[cfg(feature = "experimental-event-parser-options")]
             if options.source_lines {
-                source_lines.push($line);
+                state.source_lines.push($line);
             }
-            out.push(node);
+            state.out.push(node);
         }};
     }
-    let mut leading_attrs: Vec<(usize, Attrs, Option<Pos>)> = Vec::new();
     'blocks: while cur.peek().is_some() {
+        if stop_at.is_some_and(|at| cur.pos >= at) {
+            return Some(EventLevelRun::Yield);
+        }
         if options.positions || extents.is_some() {
-            current_block_start.set(cur.pos);
+            state.current_block_start.set(cur.pos);
         }
         let _block_source_line = cur.source_line(cur.pos);
         if DEFINITIONS && cur.peek().is_some_and(is_definition_placeholder) {
@@ -875,9 +3608,9 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
         }
         let invalid_brace_line = if cur.peek().is_some_and(|line| line.starts_with('{')) {
             let at = cur.pos;
-            if let Some(attrs) = parse_standalone_attrs_block(&mut cur) {
-                let pos = span_of(&cur, at, cur.pos, options);
-                leading_attrs.push((out.len(), attrs, pos));
+            if let Some(attrs) = parse_standalone_attrs_block(cur) {
+                let pos = span_of(cur, at, cur.pos, options);
+                state.leading_attrs.push((state.out.len(), attrs, pos));
                 continue;
             }
             true
@@ -889,7 +3622,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             cur.consume();
             continue;
         }
-        match take_comment_block(&mut cur, options) {
+        match take_comment_block(cur, options) {
             CommentBlock::NotAComment => {}
             CommentBlock::Consumed(None) => continue,
             CommentBlock::Consumed(Some(node)) => {
@@ -902,7 +3635,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             if let Some(mut definition) = detect_abbreviation_def(line) {
                 let at = cur.pos;
                 cur.consume();
-                definition.pos = span_of(&cur, at, cur.pos, options);
+                definition.pos = span_of(cur, at, cur.pos, options);
                 emit!(_block_source_line, BlockNode::AbbreviationDef(definition));
                 continue;
             }
@@ -910,12 +3643,13 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
         if let Some((level, text)) = detect_heading(line) {
             emit!(
                 _block_source_line,
-                *parse_heading_block(&mut cur, level, text, options)
+                *parse_heading_block(cur, level, text, options)
             );
             continue;
         }
         if line.starts_with(' ') && is_list_marker(trim_ascii_start(line)) {
-            if let Some(read) = direct_owner
+            if let Some(read) = state
+                .direct_owner
                 .then(|| direct_root_list_read(lines, cur.pos, options, line_map, true))
                 .flatten()
             {
@@ -923,18 +3657,21 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                 emit!(_block_source_line, BlockNode::List(read.list));
             } else {
                 let mut item_bodies = Vec::new();
-                let list = parse_list(&mut cur, options, &mut item_bodies);
-                let index = out.len();
+                let list = parse_list(cur, options, &mut item_bodies);
+                let index = state.out.len();
                 emit!(_block_source_line, *list);
-                pending_bodies.extend(item_bodies.into_iter().map(|body| PendingBody {
-                    index,
-                    body: Body::Item(body),
-                }));
+                state
+                    .pending_bodies
+                    .extend(item_bodies.into_iter().map(|body| PendingBody {
+                        index,
+                        body: Body::Item(body),
+                    }));
             }
             continue;
         }
         if is_list_marker(line) && !line.starts_with([' ', '\t']) {
-            let direct = direct_owner
+            let direct = state
+                .direct_owner
                 .then(|| direct_root_list_read(lines, cur.pos, options, line_map, false))
                 .flatten();
             if let Some(read) = direct {
@@ -942,18 +3679,31 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                 emit!(_block_source_line, BlockNode::List(read.list));
             } else {
                 let mut item_bodies = Vec::new();
-                let list = parse_list(&mut cur, options, &mut item_bodies);
-                let index = out.len();
+                let list = parse_list(cur, options, &mut item_bodies);
+                let index = state.out.len();
                 emit!(_block_source_line, *list);
-                pending_bodies.extend(item_bodies.into_iter().map(|body| PendingBody {
-                    index,
-                    body: Body::Item(body),
-                }));
+                state
+                    .pending_bodies
+                    .extend(item_bodies.into_iter().map(|body| PendingBody {
+                        index,
+                        body: Body::Item(body),
+                    }));
             }
             continue;
         }
+        if let Some(node) = parse_marker_hosted_opener(
+            cur,
+            options,
+            line,
+            state.out.len(),
+            &mut state.pending_bodies,
+            state.drain_follows,
+        ) {
+            emit!(_block_source_line, node);
+            continue;
+        }
         if is_definition_list_start(line) {
-            let direct = if direct_definition_allowed(direct_owner, options) {
+            let direct = if direct_definition_allowed(state.direct_owner, options) {
                 parse_simple_definition_list_prefix(lines, cur.pos, options, false)
             } else {
                 None
@@ -961,13 +3711,47 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             if let Some((list, end)) = direct {
                 cur.pos = end;
                 emit!(_block_source_line, BlockNode::DefinitionList(list));
+            } else if parse_order_observed(options) && !state.drain_follows {
+                let mut scan = DefinitionListScan::new(cur);
+                loop {
+                    match scan.step(cur, options) {
+                        StepResult::Continue => {}
+                        StepResult::NeedBody(request) => {
+                            return Some(EventLevelRun::NeedDefinitionBody(Box::new(
+                                DefinitionContinuation {
+                                    scan,
+                                    request,
+                                    start: state.current_block_start.get(),
+                                    source_line: _block_source_line,
+                                    index: state.out.len(),
+                                    cursor: cur.take_state(),
+                                    state: std::mem::replace(
+                                        state,
+                                        EventLevelState::new(cur, false, false),
+                                    ),
+                                },
+                            )));
+                        }
+                        StepResult::Done => break,
+                    }
+                }
+                emit!(_block_source_line, scan.finish(cur, options));
             } else {
-                emit!(_block_source_line, parse_definition_list(&mut cur, options));
+                emit!(
+                    _block_source_line,
+                    parse_definition_list_deferring(
+                        cur,
+                        options,
+                        state.out.len(),
+                        &mut state.pending_bodies,
+                        state.drain_follows,
+                    )
+                );
             }
             continue;
         }
         if strip_blockquote_prefix(line).is_some() {
-            let direct = if direct_quote_allowed(direct_owner, options, line) {
+            let direct = if direct_quote_allowed(state.direct_owner, options, line) {
                 parse_simple_quote(lines, cur.pos, options)
                     .or_else(|| parse_marked_quote(lines, cur.pos, options))
                     .or_else(|| parse_simple_lazy_quote(lines, cur.pos, options))
@@ -975,24 +3759,49 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                 None
             };
             if let Some((quote, end)) = direct {
+                #[cfg(test)]
+                DIRECT_QUOTE_PARSES.with(|count| count.set(count.get() + 1));
                 cur.pos = end;
                 emit!(_block_source_line, BlockNode::BlockQuote(quote));
+                continue;
+            }
+            let (span_start, parts, _) = collect_blockquote_body(cur, options);
+            if quote_deferred_in_level(cur, options, &parts, defer_quotes) {
+                #[cfg(test)]
+                count_colon_quote_deferral(cur);
+                let body = QuoteBodyPending {
+                    plus_anchor: nested_plus_quote_anchor(cur, options, span_start),
+                    parts,
+                    depth: NESTING_DEPTH.with(Cell::get),
+                    in_group: IN_FIGURE_GROUP.with(Cell::get),
+                };
+                let node = finish_blockquote_shell(cur, options, span_start, Vec::new(), true);
+                let index = state.out.len();
+                emit!(_block_source_line, *node);
+                state.pending_bodies.push(PendingBody {
+                    index,
+                    body: Body::Quote(body),
+                });
             } else {
-                emit!(_block_source_line, *parse_blockquote(&mut cur, options));
+                emit!(
+                    _block_source_line,
+                    *parse_collected_blockquote(cur, options, span_start, parts)
+                );
             }
             continue;
         }
         if let Some(fence) = detect_fence_open(line) {
-            let mut block = if let Some((block, end)) = direct_owner
+            let mut block = if let Some((block, end)) = state
+                .direct_owner
                 .then(|| parse_direct_root_code_fence(lines, cur.pos, fence, options))
                 .flatten()
             {
                 cur.pos = end;
                 block
             } else {
-                *parse_fenced_block(&mut cur, fence, options)
+                *parse_fenced_block(cur, fence, options)
             };
-            let has_leading_attrs = has_pending_leading_attrs(&leading_attrs, &out);
+            let has_leading_attrs = has_pending_leading_attrs(&state.leading_attrs, &state.out);
             if !has_leading_attrs {
                 resolve_code_title(&mut block);
             }
@@ -1006,22 +3815,22 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                 _block_source_line,
                 BlockNode::ThematicBreak(ThematicBreak {
                     marker: (marker != '-').then_some(marker),
-                    pos: span_of(&cur, at, cur.pos, options),
+                    pos: span_of(cur, at, cur.pos, options),
                     ..Default::default()
                 })
             );
             continue;
         }
         if !line.starts_with([' ', '\t']) && is_table_start(line) {
-            emit!(_block_source_line, parse_table(&mut cur, options));
+            emit!(_block_source_line, parse_table(cur, options));
             continue;
         }
         if let Some(mut image) = detect_block_image(line) {
-            if image_is_block(&mut cur) {
+            if image_is_block(cur) {
                 let image_at = cur.pos;
                 cur.consume();
-                image.pos = span_of(&cur, image_at, image_at + 1, options);
-                if let Some(caption) = consume_caption(&mut cur, options) {
+                image.pos = span_of(cur, image_at, image_at + 1, options);
+                if let Some(caption) = consume_caption(cur, options) {
                     emit!(
                         _block_source_line,
                         BlockNode::Figure(Figure {
@@ -1030,7 +3839,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                             rendered_target: None,
                             caption,
                             short_caption: None,
-                            pos: span_of(&cur, image_at, cur.pos, options),
+                            pos: span_of(cur, image_at, cur.pos, options),
                         })
                     );
                 } else {
@@ -1041,7 +3850,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                             children: vec![InlineNode::Image(image)],
                             at_content_column: true,
                             block_image: true,
-                            pos: span_of(&cur, image_at, image_at + 1, options),
+                            pos: span_of(cur, image_at, image_at + 1, options),
                         })
                     );
                 }
@@ -1050,25 +3859,22 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
         }
         if line.starts_with(":::") {
             if detect_line_block_open(line).is_some() {
-                emit!(_block_source_line, parse_line_block(&mut cur, options));
+                emit!(_block_source_line, parse_line_block(cur, options));
                 continue;
             }
             if detect_hardbreaks_block_open(line).is_some() {
-                emit!(
-                    _block_source_line,
-                    parse_hardbreaks_block(&mut cur, options)
-                );
+                emit!(_block_source_line, parse_hardbreaks_block(cur, options));
                 continue;
             }
             if detect_quote_block_open(line).is_some() {
-                emit!(_block_source_line, parse_quote_block(&mut cur, options));
+                emit!(_block_source_line, parse_quote_block(cur, options));
                 continue;
             }
             if detect_container_open(line).is_some() {
-                let (node, body) = open_container(&mut cur, options);
-                let index = out.len();
+                let (node, body) = open_container(cur, options);
+                let index = state.out.len();
                 emit!(_block_source_line, *node);
-                pending_bodies.push(PendingBody {
+                state.pending_bodies.push(PendingBody {
                     index,
                     body: Body::Colon(body),
                 });
@@ -1086,16 +3892,16 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             false
         };
         let late_list_like =
-            is_late_list_like_line(&cur, line, invalid_brace_line, root_indented_text);
+            is_late_list_like_line(cur, line, invalid_brace_line, root_indented_text);
         let late_image_like =
             trim_ascii_start(line).starts_with("![") && detect_block_image(line).is_some();
-        let has_leading_attrs = has_pending_leading_attrs(&leading_attrs, &out);
+        let has_leading_attrs = has_pending_leading_attrs(&state.leading_attrs, &state.out);
         if !late_list_like && !late_image_like {
-            if let Some(mut block) = try_extension_block(&mut cur, options) {
+            if let Some(mut block) = try_extension_block(cur, options) {
                 finish_unattributed_block(
                     &mut block,
-                    &cur,
-                    current_block_start.get(),
+                    cur,
+                    state.current_block_start.get(),
                     options,
                     has_leading_attrs,
                 );
@@ -1105,120 +3911,154 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
         }
         if late_image_like {
             let mut item_bodies = Vec::new();
-            let mut block = parse_block(&mut cur, options, &mut item_bodies)
+            let mut block = parse_block(cur, options, &mut item_bodies)
                 .expect("image-like line is not a consumed comment");
             finish_unattributed_block(
                 &mut block,
-                &cur,
-                current_block_start.get(),
+                cur,
+                state.current_block_start.get(),
                 options,
                 has_leading_attrs,
             );
-            let index = out.len();
+            let index = state.out.len();
             emit!(_block_source_line, *block);
-            pending_bodies.extend(item_bodies.into_iter().map(|body| PendingBody {
-                index,
-                body: Body::Item(body),
-            }));
+            state
+                .pending_bodies
+                .extend(item_bodies.into_iter().map(|body| PendingBody {
+                    index,
+                    body: Body::Item(body),
+                }));
             continue;
         }
         if line.starts_with("![")
-            && lines
-                .get(cur.pos + 1)
-                .is_some_and(|next| is_blank_line(next))
-            && lines
-                .get(cur.pos + 2)
+            && cur.lines.line(cur.pos + 1).is_some_and(is_blank_line)
+            && cur
+                .lines
+                .line(cur.pos + 2)
                 .is_some_and(|next| caption_content(next).is_some())
         {
-            emit!(_block_source_line, parse_paragraph(&mut cur, options));
+            emit!(
+                _block_source_line,
+                parse_event_or_standard_paragraph(cur, options)
+            );
             continue;
         }
         if !may_start_plain_paragraph(line) && !invalid_brace_line && !root_indented_text {
             if !late_list_like && trim_ascii_start(line).starts_with("$$`") {
-                if let Some(equation) = parse_equation_block(&mut cur, options) {
+                if let Some(equation) = parse_equation_block(cur, options) {
                     emit!(_block_source_line, equation);
                     continue;
                 }
             }
             if late_list_like {
-                let (mut node, item_bodies) = read_local_list_like_line(&mut cur, options);
+                let (mut node, item_bodies) = read_local_list_like_line(cur, options);
                 finish_unattributed_block(
                     &mut node,
-                    &cur,
-                    current_block_start.get(),
+                    cur,
+                    state.current_block_start.get(),
                     options,
                     has_leading_attrs,
                 );
-                let index = out.len();
+                let index = state.out.len();
                 emit!(_block_source_line, node);
-                pending_bodies.extend(item_bodies.into_iter().map(|body| PendingBody {
-                    index,
-                    body: Body::Item(body),
-                }));
+                state
+                    .pending_bodies
+                    .extend(item_bodies.into_iter().map(|body| PendingBody {
+                        index,
+                        body: Body::Item(body),
+                    }));
                 continue;
             }
-            emit!(_block_source_line, parse_paragraph(&mut cur, options));
+            emit!(_block_source_line, parse_paragraph(cur, options));
             continue;
         }
-        if use_standard_event_paragraph(options, extents.is_some(), defer_pending)
+        if DEFINITION_OWNER
+            && starts_definition_event_paragraph(cur, source_map::MappedBodyOwner::Definition)
+        {
+            return Some(EventLevelRun::NeedParagraph { start: cur.pos });
+        }
+        let standard_paragraph =
+            use_standard_event_paragraph(extents.is_some(), state.defer_pending);
+        let simple_colon_paragraph = standard_paragraph
+            && state.defer_pending
+            && extents.is_none()
+            && event_owned_plain_paragraph(cur, options);
+        if reference_caption_shape(cur, line)
+            || (standard_paragraph && !simple_colon_paragraph)
             || crate::includes::code_include_line(line).is_some()
         {
-            emit!(_block_source_line, parse_paragraph(&mut cur, options));
+            emit!(
+                _block_source_line,
+                parse_event_or_standard_paragraph(cur, options)
+            );
             continue;
         }
         let paragraph_start = cur.pos;
-        let mut paragraph_lines = Vec::new();
-        while let Some(next) = cur.peek() {
-            if DEFINITIONS && is_definition_placeholder(next) {
-                break;
-            }
-            if ABBREVIATIONS
-                && !paragraph_lines.is_empty()
-                && detect_abbreviation_def(next).is_some()
-            {
-                break;
-            }
-            if is_blank_line(next) || detect_heading(next).is_some() {
-                break;
-            }
-            if !paragraph_lines.is_empty() {
-                if let Some(open) = detect_fence_open(next) {
-                    if lines[cur.pos + 1..]
-                        .iter()
-                        .any(|line| is_fence_close(line, open))
-                    {
-                        break;
-                    }
-                }
-            }
-            if event_paragraph_needs_reader(
-                next,
-                !paragraph_lines.is_empty(),
-                invalid_brace_line,
-                root_indented_text,
-            ) {
-                if !at_document_level {
-                    return None;
-                }
-                cur.pos = paragraph_start;
-                emit!(_block_source_line, parse_paragraph(&mut cur, options));
+        let joined = match collect_event_paragraph::<DEFINITIONS, ABBREVIATIONS>(
+            cur,
+            invalid_brace_line,
+            root_indented_text,
+        ) {
+            Some(joined) => joined,
+            None if !state.at_document_level && !state.defer_pending => return None,
+            None => {
+                // A deferred fragment may already have called extensions.
+                emit!(_block_source_line, parse_paragraph(cur, options));
                 continue 'blocks;
             }
-            paragraph_lines.push(trim_ascii_end(trim_ascii_start(next)));
-            cur.consume();
-        }
-        let joined = paragraph_lines.join("\n");
+        };
+        let children = if options.positions {
+            let anchors = joined
+                .split('\n')
+                .enumerate()
+                .map(|(offset, line)| inline_anchor_for_line(cur, paragraph_start + offset, line))
+                .collect();
+            parse_inline_lines_with_anchor(&joined, options, anchors)
+        } else {
+            parse_event_inlines(&joined, options)
+        };
         emit!(
             _block_source_line,
             BlockNode::Paragraph(Paragraph {
                 attrs: None,
-                children: parse_event_inlines(&joined, options),
+                children,
                 at_content_column: !line.starts_with([' ', '\t']),
                 block_image: false,
-                pos: None,
+                pos: span_of(cur, paragraph_start, cur.pos, options),
             })
         );
     }
+    let mut out = std::mem::take(&mut state.out);
+    let block_start_indices = std::mem::take(&mut state.block_start_indices);
+    let pending_bodies = std::mem::take(&mut state.pending_bodies);
+    #[cfg(feature = "experimental-event-parser-options")]
+    let source_lines = std::mem::take(&mut state.source_lines);
+    let leading_attrs = std::mem::take(&mut state.leading_attrs);
+    apply_event_level_leading_attrs(&mut out, leading_attrs, cur, &block_start_indices, options);
+    if let Some(pending_out) = pending_out {
+        pending_out.extend(pending_bodies);
+    } else {
+        resolve_pending_bodies(&mut out, pending_bodies, options);
+    }
+    #[cfg(feature = "experimental-event-parser-options")]
+    if options.source_lines {
+        for (node, line) in out.iter_mut().zip(source_lines) {
+            if let Some(line) = line {
+                stamp_source_line(node, line);
+            }
+        }
+    }
+    Some(EventLevelRun::Done(out))
+}
+
+#[inline(never)]
+fn apply_event_level_leading_attrs(
+    out: &mut [BlockNode],
+    leading_attrs: Vec<(usize, Attrs, Option<Pos>)>,
+    cur: &LineCursor<'_>,
+    block_start_indices: &[usize],
+    options: &Options<'_>,
+) {
     if !leading_attrs.is_empty() {
         let mut next_visible = vec![None; out.len() + 1];
         for index in (0..out.len()).rev() {
@@ -1245,7 +4085,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                     apply_event_leading_attrs(
                         &mut out[index],
                         attrs,
-                        &cur,
+                        cur,
                         block_start_indices.get(index).copied().unwrap_or(0),
                         options,
                     );
@@ -1259,27 +4099,13 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             apply_event_leading_attrs(
                 &mut out[index],
                 attrs,
-                &cur,
+                cur,
                 block_start_indices.get(index).copied().unwrap_or(0),
                 options,
             );
         }
         note_unattached_block_attrs(dangling_pos);
     }
-    if let Some(pending_out) = pending_out {
-        pending_out.extend(pending_bodies);
-    } else {
-        resolve_pending_bodies(&mut out, pending_bodies, options);
-    }
-    #[cfg(feature = "experimental-event-parser-options")]
-    if options.source_lines {
-        for (node, line) in out.iter_mut().zip(source_lines) {
-            if let Some(line) = line {
-                stamp_source_line(node, line);
-            }
-        }
-    }
-    Some(out)
 }
 
 #[cold]
@@ -3561,6 +6387,7 @@ fn has_fence_candidate_without_final_newline(source: &str) -> bool {
 }
 
 pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
+    let original_source = source;
     let source_len = source.len();
     let normalized = if needs_event_normalization(source) {
         Some(normalize_source(source))
@@ -3568,16 +6395,42 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         None
     };
     let source = normalized.as_deref().unwrap_or(source);
-    // Rule A moves past-column openers before the block readers see them; the
-    // event route reads lines in place, so it only takes documents the walk
-    // leaves alone.
-    if has_deep_quote_chain(source) || walk_moves_lines(source) {
+    // Rule A: read the walked text, as the standard root does.
+    let owned = own_lines(source);
+    if source.contains('\x0c')
+        && source.contains(['`', '~'])
+        && owned
+            .as_ref()
+            .is_some_and(|walk| walk.moves_fence_line(source))
+    {
         return None;
     }
-    if has_marker_description_comment_risk(source) {
+    let _owned_edits = EditsGuard::install(owned.as_ref());
+    let source = owned.as_ref().map_or(source, |o| o.source.as_str());
+    if has_deep_quote_chain(source) {
+        // Only the option-aware route parses quote bodies on the worklist.
         #[cfg(feature = "experimental-event-parser-options")]
-        return parse_document_with_custom_options(source, &Options::default(), ParseMode::Html)
-            .map(|(document, _, admitted)| (document, admitted));
+        return parse_document_with_custom_options(
+            original_source,
+            &Options::default(),
+            ParseMode::Html,
+        )
+        .map(|(document, _, admitted)| (document, admitted));
+        #[cfg(not(feature = "experimental-event-parser-options"))]
+        {
+            let _ = original_source;
+            return None;
+        }
+    }
+    if has_marker_description_comment_risk(source) {
+        // The authored text: the options root walks it again.
+        #[cfg(feature = "experimental-event-parser-options")]
+        return parse_document_with_custom_options(
+            original_source,
+            &Options::default(),
+            ParseMode::Html,
+        )
+        .map(|(document, _, admitted)| (document, admitted));
         #[cfg(not(feature = "experimental-event-parser-options"))]
         return None;
     }
@@ -3688,6 +6541,7 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         let line_count = body.lines().count();
         let joined = joined_source(&body.lines().collect::<Vec<_>>());
         let mapped = MappedSource {
+            owner: source_map::MappedBodyOwner::Document,
             source: joined,
             line_map: (body_start_line..body_start_line + line_count)
                 .map(Some)
@@ -3900,6 +6754,79 @@ fn has_deep_quote_chain(source: &str) -> bool {
     })
 }
 
+/// Whether a document with a deep quote chain keeps its quote levels on the
+/// worklist. A quote level stays eager, one native frame chain per level, only
+/// where `quote_body_deferrable` refuses it, and every refusal needs a line of
+/// its own: a caption, or, when the parse order is observed, the first line
+/// after the quote's last marked line, which is shallower than that line. A
+/// `+` line may split the parts of every quote around it, so it counts once
+/// per level. A quote marker after other text on its line (`- > >`) or a
+/// colon body is not proven here, so those decline. So does any line deeper
+/// than an earlier line that may open a list item or definition body: such a
+/// body parses its quotes eagerly, outside the deferral and this budget.
+#[cfg(feature = "experimental-event-parser-options")]
+pub(super) fn deep_quote_chain_owned(source: &str, options: &Options<'_>) -> bool {
+    // Footnote bodies parse on their own route.
+    if source.contains("[^") {
+        return false;
+    }
+    let observed = parse_order_observed(options);
+    let mut eager = 0usize;
+    let mut previous = 0usize;
+    // The shallowest depth at which a line may have opened an item body.
+    let mut item_depth: Option<usize> = None;
+    for line in source.lines() {
+        let mut rest = trim_ascii_start(line);
+        let mut depth = 0usize;
+        while let Some(next) = strip_blockquote_prefix(rest) {
+            rest = trim_ascii_start(next);
+            depth += 1;
+        }
+        if rest.contains('>') || rest.contains(":::") {
+            return false;
+        }
+        // Indentation is trimmed above, so a quote an item body hosts always
+        // counts deeper than the item's own line.
+        if item_depth.is_some_and(|item| depth > item) {
+            return false;
+        }
+        let trimmed = trim_ascii_end(rest);
+        if may_open_item_body(trimmed) {
+            item_depth = Some(item_depth.map_or(depth, |item| item.min(depth)));
+        }
+        if trimmed == "+" || trimmed.ends_with(" +") {
+            eager += depth + 1;
+        } else if caption_content(rest).is_some() || (observed && depth < previous) {
+            eager += 1;
+        }
+        if eager > DEEP_QUOTE_EAGER_BUDGET {
+            return false;
+        }
+        previous = depth;
+    }
+    true
+}
+
+/// Over-approximates every list marker (bullet, decimal, alphabetic, roman,
+/// bare dot) and definition marker (`::`, `:`) that could open a body.
+#[cfg(feature = "experimental-event-parser-options")]
+fn may_open_item_body(line: &str) -> bool {
+    let bytes = line.as_bytes();
+    match bytes.first() {
+        Some(b'-' | b'*' | b'.' | b':') => true,
+        // A bare `+` is the quote continuation marker, counted on its own.
+        Some(b'+') => bytes.len() > 1,
+        Some(byte) if byte.is_ascii_alphanumeric() => {
+            let run = bytes
+                .iter()
+                .take_while(|b| b.is_ascii_alphanumeric())
+                .count();
+            matches!(bytes.get(run), Some(b'.' | b')' | b'{'))
+        }
+        _ => false,
+    }
+}
+
 fn has_marker_description_comment_risk(source: &str) -> bool {
     if !source.contains("%%%") || !source.contains("::") {
         return false;
@@ -3927,7 +6854,12 @@ pub(super) fn parse_document_with_custom_options(
         None
     };
     let source = normalized.as_deref().unwrap_or(source);
-    if has_deep_quote_chain(source) || walk_moves_lines(source) {
+    // Rule A: read the walked text, as the standard root does. The guard maps
+    // walked columns back to the authored lines in the offset pass.
+    let owned = own_lines(source);
+    let _owned_edits = EditsGuard::install(owned.as_ref());
+    let source = owned.as_ref().map_or(source, |o| o.source.as_str());
+    if has_deep_quote_chain(source) && !deep_quote_chain_owned(source, options) {
         return None;
     }
     let may_have_link_defs = source.contains("]:") || !options.extensions.is_empty();
@@ -4091,6 +7023,7 @@ pub(super) fn parse_document_with_custom_options(
             let line_count = body.lines().count();
             let joined = joined_source(&body.lines().collect::<Vec<_>>());
             let mapped = MappedSource {
+                owner: source_map::MappedBodyOwner::Document,
                 source: joined,
                 line_map: (body_start_line..body_start_line + line_count)
                     .map(Some)
@@ -4471,10 +7404,9 @@ mod link_definition_tests {
 mod marker_description_comment_owner_tests {
     use super::*;
 
-    // Rule A (carve#3885) moves a comment written below the item's column, so
-    // the event route declines these and the full parser reads them.
+    // Rule A moves these comments; both roots must read the walked text.
     #[test]
-    fn event_root_declines_comments_the_walk_moves() {
+    fn event_root_owns_comments_the_walk_moves() {
         let body = "1. :: t\n   : para\n  %%%\n  %%%\ntail\n";
         for source in [
             body.to_owned(),
@@ -4482,14 +7414,26 @@ mod marker_description_comment_owner_tests {
             format!("[ref]: /target\n\n{body}"),
             format!("*[abbr]: expansion\n\n{body}"),
         ] {
-            assert!(parse_document(&source).is_none(), "{source:?}");
+            let expected = {
+                let _standard_root = StandardEventRootGuard::install();
+                let _standard_nested = StandardNestedReaderGuard::install();
+                parse_with_options(&source, &Options::default())
+            };
+            let (actual, used) = parse_document(&source).expect("event root");
+            assert!(used, "{source:?}");
+            assert_eq!(actual, expected, "{source:?}");
             for positions in [false, true] {
                 let options = Options::default().with_positions(positions);
-                assert!(
+                let expected = {
+                    let _standard_root = StandardEventRootGuard::install();
+                    let _standard_nested = StandardNestedReaderGuard::install();
+                    parse_with_options(&source, &options)
+                };
+                let (actual, _, used) =
                     parse_document_with_custom_options(&source, &options, ParseMode::Html)
-                        .is_none(),
-                    "positions={positions} source={source:?}"
-                );
+                        .expect("event options root");
+                assert!(used, "positions={positions} source={source:?}");
+                assert_eq!(actual, expected, "positions={positions} source={source:?}");
             }
         }
     }
