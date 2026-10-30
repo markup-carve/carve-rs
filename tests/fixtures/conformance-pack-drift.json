@@ -163,9 +163,6 @@
       "ticket": "markup-carve/carve-rs#3534",
       "cause": "untriaged drift in the lazy family at the e7952c45 pin",
       "cases": [
-        "lazy-4f5eaac61ed4",
-        "lazy-828973d41d13",
-        "lazy-a38a85984127"
       ]
     },
     {
