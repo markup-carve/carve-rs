@@ -338,6 +338,25 @@ fn collect_authoring(
     for item in &scan.items {
         list_item_lines.insert(item.first);
     }
+    // Footnote bodies sit outside `children`; only the folded-marker rule reads their paragraphs.
+    let mut folded_paragraphs = paragraphs.clone();
+    let mut note_blocks: Vec<_> = doc
+        .footnote_defs
+        .values()
+        .flatten()
+        .map(|b| (b, 0))
+        .collect();
+    let mut note_inlines = Vec::new();
+    while let Some((block, depth)) = note_blocks.pop() {
+        if let BlockNode::Paragraph(p) = block {
+            if let Some(pos) = &p.pos {
+                for line in pos.start_line..=pos.end_line {
+                    folded_paragraphs.insert(line, pos.end_line);
+                }
+            }
+        }
+        push_block_children(block, depth, &mut note_blocks, &mut note_inlines);
+    }
     for (&line, &(index, width, count, _)) in &table_rows {
         if index > 0 && count != width {
             let at = rows[line - 1].text.find('|').unwrap_or(0);
@@ -365,6 +384,16 @@ fn collect_authoring(
         let at = row.text.len() - trimmed.len();
         let is_paragraph = paragraphs.contains_key(&line);
         let is_table = table_rows.contains_key(&line);
+        if index > 0
+            && list.is_match(row.text)
+            && !list_item_lines.contains(&line)
+            && folded_paragraphs.contains_key(&line)
+            && folded_paragraphs.get(&(line - 1)) == folded_paragraphs.get(&line)
+            && !list.is_match(rows[index - 1].text)
+            && !rows[index - 1].text.trim().is_empty()
+        {
+            emit(out, rows, line, authored_first_nonspace(row.text), 1, "list-marker-without-blank-line", "This list marker is part of the preceding paragraph; add a blank line before the list.");
+        }
         if is_paragraph {
             if trimmed.starts_with('|') && !trimmed.trim_end_matches([' ', '\t']).ends_with('|') {
                 let previous_table_shaped = index > 0
@@ -378,17 +407,6 @@ fn collect_authoring(
                 if !previous_table_shaped || table_rows.contains_key(&(line - 1)) {
                     emit(out, rows, line, at, 1, "table-shaped-paragraph", "This table-shaped line lacks a closing pipe and renders as paragraph text; close the table row.");
                 }
-            }
-            if index > 0
-                && list.is_match(row.text)
-                && !list_item_lines.contains(&line)
-                && !scan.ignored.contains(&line)
-                && paragraphs.contains_key(&(line - 1))
-                && paragraphs[&line] == paragraphs[&(line - 1)]
-                && !list.is_match(rows[index - 1].text)
-                && !rows[index - 1].text.trim().is_empty()
-            {
-                emit(out, rows, line, authored_first_nonspace(row.text), 1, "list-marker-without-blank-line", "This list marker is part of the preceding paragraph; add a blank line before the list.");
             }
             if index > 0
                 && definition.is_match(&row.text[quote_prefix(row.text).0..])
