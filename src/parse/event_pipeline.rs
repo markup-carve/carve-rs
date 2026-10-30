@@ -708,41 +708,47 @@ mod mixed_definition_owner_tests {
         ] {
             for positions in [false, true] {
                 for source_lines in [false, true] {
-                    let observer = Observer(RefCell::new(Vec::new()));
-                    let options = Options::default()
-                        .with_positions(positions)
-                        .with_source_lines(source_lines)
-                        .with_extension(&observer);
-                    STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
-                    STANDARD_DEFINITION_PARAGRAPH_ENTRIES.with(|count| count.set(0));
-                    DEFINITION_PARAGRAPH_COLLECTIONS.with(|count| count.set(0));
-                    let ((actual, admitted), diagnostics) = collecting_lint_events(|| {
-                        parse_document_with_options(source, &options).unwrap()
-                    });
-                    assert!(admitted);
-                    let collected = DEFINITION_PARAGRAPH_COLLECTIONS.with(Cell::get);
-                    collected_any |= collected > 0;
-                    assert_eq!(
-                        STANDARD_DEFINITION_PARAGRAPH_ENTRIES.with(Cell::get),
-                        0,
-                        "old definition paragraph reader entered for {source:?}"
-                    );
-                    let callbacks = observer.0.into_inner();
-                    let standard_observer = Observer(RefCell::new(Vec::new()));
-                    let standard_options = Options::default()
-                        .with_positions(positions)
-                        .with_source_lines(source_lines)
-                        .with_extension(&standard_observer);
-                    let (expected, expected_diagnostics) = {
-                        let _standard = StandardEventRootGuard::install();
-                        collecting_lint_events(|| parse_with_options(source, &standard_options))
-                    };
-                    assert_eq!(
-                        (actual, diagnostics),
-                        (expected, expected_diagnostics),
-                        "{source:?}"
-                    );
-                    assert_eq!(callbacks, standard_observer.0.into_inner(), "{source:?}");
+                    for with_extension in [false, true] {
+                        let observer = Observer(RefCell::new(Vec::new()));
+                        let mut options = Options::default()
+                            .with_positions(positions)
+                            .with_source_lines(source_lines);
+                        if with_extension {
+                            options = options.with_extension(&observer);
+                        }
+                        STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+                        STANDARD_DEFINITION_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+                        DEFINITION_PARAGRAPH_COLLECTIONS.with(|count| count.set(0));
+                        let ((actual, admitted), diagnostics) = collecting_lint_events(|| {
+                            parse_document_with_options(source, &options).unwrap()
+                        });
+                        assert!(admitted);
+                        let collected = DEFINITION_PARAGRAPH_COLLECTIONS.with(Cell::get);
+                        collected_any |= collected > 0;
+                        assert_eq!(
+                            STANDARD_DEFINITION_PARAGRAPH_ENTRIES.with(Cell::get),
+                            0,
+                            "old definition paragraph reader entered for {source:?}"
+                        );
+                        let callbacks = observer.0.into_inner();
+                        let standard_observer = Observer(RefCell::new(Vec::new()));
+                        let mut standard_options = Options::default()
+                            .with_positions(positions)
+                            .with_source_lines(source_lines);
+                        if with_extension {
+                            standard_options = standard_options.with_extension(&standard_observer);
+                        }
+                        let (expected, expected_diagnostics) = {
+                            let _standard = StandardEventRootGuard::install();
+                            collecting_lint_events(|| parse_with_options(source, &standard_options))
+                        };
+                        assert_eq!(
+                            (actual, diagnostics),
+                            (expected, expected_diagnostics),
+                            "{source:?}"
+                        );
+                        assert_eq!(callbacks, standard_observer.0.into_inner(), "{source:?}");
+                    }
                 }
             }
         }
@@ -3114,7 +3120,6 @@ struct EventParagraphState {
     refused_plus: bool,
     suppress_colon_interrupt: bool,
     continuation: Option<continuation_marker::Decision>,
-    next_boundary: Option<usize>,
 }
 
 // The mapped owner keeps this task between calls to the recursive block reader.
@@ -3155,7 +3160,6 @@ impl EventParagraphState {
                 }),
             suppress_colon_interrupt: false,
             continuation: cur.continuation_decision(start),
-            next_boundary: None,
         }
     }
 
@@ -3299,7 +3303,6 @@ fn advance_definition_event_paragraph(
     if stop_at.is_some_and(|at| cur.pos >= at) {
         return false;
     }
-    paragraph.next_boundary = Some(cur.pos);
     true
 }
 
