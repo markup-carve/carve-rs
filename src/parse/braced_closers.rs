@@ -1,3 +1,4 @@
+use super::inline_resolution::mask_literal_directive_backticks;
 use super::substitution_scanner::SubstitutionScanner;
 use super::{
     delim_brace_slot, find_seq, raw_inline_format_end, read_attrs_at, scanned_autolink_end,
@@ -77,6 +78,8 @@ impl CodeSpanIndex {
 /// positions the scanner visits; bytes inside an opaque span start another scan.
 #[derive(Default)]
 pub(super) struct BracedClosers {
+    /// The text with its literal directives' backticks masked, built once.
+    code_view: Option<Rc<[u8]>>,
     queries: usize,
     last_verbatim_start: Option<usize>,
     opaque: HashMap<usize, usize>,
@@ -235,6 +238,8 @@ impl BracedClosers {
         if bytes.get(open + 1) != Some(&b'~') {
             return None;
         }
+        let view = self.code_view(bytes);
+        let bytes = view.as_ref();
         let pair = self.close(bytes, open, b'~')?;
         if let Some(view) = &self.native_view {
             let arrow = *view.data.arrows.get(&(open + view.offset))?;
@@ -379,8 +384,16 @@ impl BracedClosers {
         self.finish_close(bytes, delim, result)
     }
 
-    fn close_editorial(&mut self, bytes: &[u8], open: usize, delim: u8) -> Option<usize> {
+    fn code_view(&mut self, source: &[u8]) -> Rc<[u8]> {
+        self.code_view
+            .get_or_insert_with(|| mask_literal_directive_backticks(source).into())
+            .clone()
+    }
+
+    fn close_editorial(&mut self, source: &[u8], open: usize, delim: u8) -> Option<usize> {
         self.queries += 1;
+        let view = self.code_view(source);
+        let bytes = view.as_ref();
         let result = if let Some(dense) = &self.dense {
             dense.close(open + 2, delim)
         } else {
@@ -710,6 +723,8 @@ impl BracedClosers {
     }
 
     fn build_emphasis_pairs(&mut self, bytes: &[u8]) {
+        let view = self.code_view(bytes);
+        let bytes = view.as_ref();
         #[cfg(test)]
         NATIVE_PAIR_SCAN_BYTES.with(|work| work.set(work.get() + bytes.len()));
         self.queries = self.queries.max(2);
