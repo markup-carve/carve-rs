@@ -540,7 +540,10 @@ pub(in crate::parse) fn number_caption(
     let label = plain_inlines_parse(&caption[..idx])
         .trim_end_matches(char::is_whitespace)
         .to_string();
-    let next = counts.entry(label.clone()).or_insert(0);
+    let key = caption_label_key(&caption[..idx]);
+    let next = counts
+        .entry(key.trim_end_matches(char::is_whitespace).to_string())
+        .or_insert(0);
     *next += 1;
     let number = *next;
     if let InlineNode::CaptionNumber(caption_number) = &mut caption[idx] {
@@ -1094,6 +1097,16 @@ pub(in crate::parse) fn enforce_no_nesting_inline(
 }
 
 pub(in crate::parse) fn plain_inlines_parse(nodes: &[InlineNode]) -> String {
+    plain_inlines_of(nodes, false)
+}
+
+/// A caption label's bucket key: its plain text with each symbol as the caption
+/// shows it (CARVE-P2-022, markup-carve/carve#4111), unlike a heading id.
+fn caption_label_key(nodes: &[InlineNode]) -> String {
+    plain_inlines_of(nodes, true)
+}
+
+fn plain_inlines_of(nodes: &[InlineNode], symbols: bool) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
@@ -1108,8 +1121,10 @@ pub(in crate::parse) fn plain_inlines_parse(nodes: &[InlineNode]) -> String {
             // `inlineTextLeaf` both carry the same arm.
             InlineNode::EscapedText(e) => out.push_str(&e.value),
             InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
-            InlineNode::Emphasis(e) => out.push_str(&plain_inlines_parse(&e.children)),
-            InlineNode::Span(s) if !s.injected => out.push_str(&plain_inlines_parse(&s.children)),
+            InlineNode::Emphasis(e) => out.push_str(&plain_inlines_of(&e.children, symbols)),
+            InlineNode::Span(s) if !s.injected => {
+                out.push_str(&plain_inlines_of(&s.children, symbols))
+            }
             InlineNode::Code(s) => out.push_str(&s.value),
             // An inline literal renders as visible prose (§27), so it feeds the
             // parse-time cross-reference slug like a code span does.
@@ -1121,15 +1136,15 @@ pub(in crate::parse) fn plain_inlines_parse(nodes: &[InlineNode]) -> String {
             // `id="a-x-b"` while `[a $`x` b][]` still resolved to `a-b`, linking
             // to an anchor no element carried (carve#1283).
             InlineNode::Math(m) => out.push_str(&m.content),
-            InlineNode::Link(l) => out.push_str(&plain_inlines_parse(&l.children)),
+            InlineNode::Link(l) => out.push_str(&plain_inlines_of(&l.children, symbols)),
             InlineNode::AutoLink(a) => out.push_str(&a.text),
             InlineNode::Image(i) => out.push_str(&i.alt),
-            InlineNode::Extension(e) => out.push_str(&plain_inlines_parse(&e.children)),
-            InlineNode::CriticInsert(c) => out.push_str(&plain_inlines_parse(&c.children)),
-            InlineNode::CriticDelete(c) => out.push_str(&plain_inlines_parse(&c.children)),
+            InlineNode::Extension(e) => out.push_str(&plain_inlines_of(&e.children, symbols)),
+            InlineNode::CriticInsert(c) => out.push_str(&plain_inlines_of(&c.children, symbols)),
+            InlineNode::CriticDelete(c) => out.push_str(&plain_inlines_of(&c.children, symbols)),
             InlineNode::CriticSubstitute(c) => {
-                out.push_str(&plain_inlines_parse(&c.old));
-                out.push_str(&plain_inlines_parse(&c.new));
+                out.push_str(&plain_inlines_of(&c.old, symbols));
+                out.push_str(&plain_inlines_of(&c.new, symbols));
             }
             InlineNode::CitationGroup(g) => out.push_str(&g.raw),
             InlineNode::Abbreviation(a) => out.push_str(&a.abbr),
@@ -1140,6 +1155,11 @@ pub(in crate::parse) fn plain_inlines_parse(nodes: &[InlineNode]) -> String {
             InlineNode::Tag(t) => {
                 out.push('#');
                 out.push_str(&t.name);
+            }
+            InlineNode::Symbol(s) if symbols => {
+                out.push(':');
+                out.push_str(&s.name);
+                out.push(':');
             }
             InlineNode::CaptionNumber(n) => {
                 if let Some(number) = n.number {

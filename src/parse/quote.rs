@@ -60,10 +60,11 @@ pub(in crate::parse) fn finish_blockquote(
     // not a captionable host. It holds nothing the caption could be about, and
     // taking one binds the caption across the container change that opened the
     // quote - which is how `| a |` / blank / `>` / blank / `^ cap` captioned an
-    // empty quote nobody wrote the caption under (markup-carve/carve#2892).
+    // empty quote nobody wrote the caption under (markup-carve/carve#2892). A
+    // comment holds nothing either (markup-carve/carve#4220).
     let caption_after_blank_reaches =
         cur.peek().is_some_and(is_blank_line) && cur.carried_reach(cur.pos + 1) == Some(true);
-    let caption = if children.is_empty()
+    let caption = if children.iter().all(crate::ast::publishes_nothing)
         || (cur.carried_reach(cur.pos) == Some(false) && !caption_after_blank_reaches)
     {
         None

@@ -2641,7 +2641,8 @@ fn render_definition_list(
                 // loose list item's single paragraph does (`<li><p>x</p></li>`).
                 // The multi-block path below is what indents, and a description
                 // holding one block is not that shape however it was spelled.
-                if d.loose {
+                // An attributed paragraph keeps its `<p>` too (CARVE-P9-081).
+                if d.loose || has_authored_attrs(&p.attrs) {
                     out.push_str(&format!("<p{}>", render_attrs_for(&p.attrs, "p")));
                     render_inlines(out, &p.children, options, state);
                     out.push_str("</p>");
