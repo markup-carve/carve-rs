@@ -93,11 +93,11 @@ fn a_folded_inline_fence_keeps_payload_literal_and_releases_later_definitions() 
         ("p\n- ```\n  x\n```\n\n[r]: /u\n\nsee [r] and [^a]\n\n:: t\n", "<p>p\n- <code>\nx</code></p>\n<pre><code>\n[r]: /u\n\nsee [r] and [^a]\n\n:: t\n</code></pre>", 0),
         ("p\n- ```\n  [r]: /u\n```\n\nsee [r] and [^a]\n\n:: t\n", "<p>p\n- <code></code></p>\n<pre><code>\nsee [r] and [^a]\n\n:: t\n</code></pre>", 0),
         ("p\n- ```\n  x\n```\n\n[^a]: note\n\nsee [r] and [^a]\n\n:: t\n", "<p>p\n- <code>\nx</code></p>\n<pre><code>\n[^a]: note\n\nsee [r] and [^a]\n\n:: t\n</code></pre>", 0),
-        ("p\n- ```\n  [^a]: note\n```\n\nsee [r] and [^a]\n\n:: t\n", "<p>p\n- <code>\n[^a]: note\n</code></p>\n<p>see [r] and [^a]</p>\n<dl>\n  <dt>t</dt>\n</dl>", 0),
+        ("p\n- ```\n  [^a]: note\n```\n\nsee [r] and [^a]\n\n:: t\n", "<p>p\n- <code></code></p>\n<pre><code>\nsee [r] and [^a]\n\n:: t\n</code></pre>",1),
         ("> p\n> - ```\n>   x\n> ```\n> \n> [r]: /u\n> \n> see [r] and [^a]\n> \n> :: t\n", "<blockquote>\n  <p>p\n- <code>\nx</code></p>\n  <pre><code>\n[r]: /u\n\nsee [r] and [^a]\n\n:: t\n</code></pre>\n</blockquote>", 0),
         ("> p\n> - ```\n>   [r]: /u\n> ```\n> \n> see [r] and [^a]\n> \n> :: t\n", "<blockquote>\n  <p>p\n- <code></code></p>\n  <pre><code>\nsee [r] and [^a]\n\n:: t\n</code></pre>\n</blockquote>", 0),
         ("> p\n> - ```\n>   x\n> ```\n> \n> [^a]: note\n> \n> see [r] and [^a]\n> \n> :: t\n", "<blockquote>\n  <p>p\n- <code>\nx</code></p>\n  <pre><code>\n[^a]: note\n\nsee [r] and [^a]\n\n:: t\n</code></pre>\n</blockquote>", 0),
-        ("> p\n> - ```\n>   [^a]: note\n> ```\n> \n> see [r] and [^a]\n> \n> :: t\n", "<blockquote>\n  <p>p\n- <code>\n[^a]: note\n</code></p>\n  <p>see [r] and [^a]</p>\n  <dl>\n    <dt>t</dt>\n  </dl>\n</blockquote>", 0),
+        ("> p\n> - ```\n>   [^a]: note\n> ```\n> \n> see [r] and [^a]\n> \n> :: t\n", "<blockquote>\n  <p>p\n- <code></code></p>\n  <pre><code>\nsee [r] and [^a]\n\n:: t\n</code></pre>\n</blockquote>",1),
     ];
     for (source, expected, notes) in cases {
         let doc = parse(source);

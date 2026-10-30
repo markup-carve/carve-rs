@@ -84,16 +84,10 @@ fn is_cont_marker_line(line: &str) -> bool {
     trim_ascii(without_blockquote_prefixes(trim_ascii_start(line))) == "+"
 }
 
-/// A code fence opener with a closer on a later line, read inside its quotes.
-fn fence_with_closer(rest: &str, after: &[&str]) -> bool {
-    detect_fence_open(rest).is_some_and(|open| {
-        after.iter().any(|line| {
-            is_fence_close(
-                trim_ascii_start(without_blockquote_prefixes(trim_ascii_start(line))),
-                open,
-            )
-        })
-    })
+/// A code fence opener interrupts a note's paragraph whether or not a closer
+/// follows (carve#4018).
+fn opens_code_fence(rest: &str) -> bool {
+    detect_fence_open(rest).is_some()
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -999,7 +993,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             // §10 I2: under a note's paragraph a marker is text, unless an
             // item hosts the note and the marker may continue that list.
             && (state.flush_def || !is_list_marker(rest))
-            && !fence_with_closer(rest, &self.lines[*i + 1..])
+            && !opens_code_fence(rest)
             && (lazy_open || note_paragraph_open(note, rest, self.options))
         {
             let kept = format!("{LAZY}{}", trim_ascii_start(line));
@@ -1673,7 +1667,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             // §10 I2: a marker continues a hosting list only from inside the
             // note's quotes; elsewhere it is text under the note's paragraph.
             && !(inside.is_some() && host.prefix_cols > 0 && is_list_marker(rest))
-            && !fence_with_closer(rest, &self.lines[*i + 1..])
+            && !opens_code_fence(rest)
             && (walk.lazy_open || note_paragraph_open(note, rest, self.options));
         if !lazy {
             return false;
