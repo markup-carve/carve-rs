@@ -14,7 +14,7 @@ fn the_fence_releases_the_flush_left_body_and_closer() {
     assert_eq!(
         flat(":: t\n: - ``` x\ncode\n```\n"),
         "<dl> <dt>t</dt> <dd> <ul> <li> \
-         <pre><code class=\"language-x\"></code></pre> </li> </ul> </dd> </dl> <p>code <code></code></p>"
+         <pre><code class=\"language-x\"></code></pre> </li> </ul> </dd> </dl> <p>code</p> <pre><code></code></pre>"
     );
 }
 
@@ -23,7 +23,7 @@ fn a_tilde_fence_answers_the_same_way() {
     assert_eq!(
         flat(":: t\n: - ~~~ x\ncode\n~~~\n"),
         "<dl> <dt>t</dt> <dd> <ul> <li> \
-         <pre><code class=\"language-x\"></code></pre> </li> </ul> </dd> </dl> <p>code ~~~</p>"
+         <pre><code class=\"language-x\"></code></pre> </li> </ul> </dd> </dl> <p>code</p> <pre><code></code></pre>"
     );
 }
 
@@ -32,7 +32,7 @@ fn a_fence_with_no_info_string_releases_its_body_too() {
     assert_eq!(
         flat(":: t\n: - ```\ncode\n```\n"),
         "<dl> <dt>t</dt> <dd> <ul> <li> \
-         <pre><code></code></pre> </li> </ul> </dd> </dl> <p>code <code></code></p>"
+         <pre><code></code></pre> </li> </ul> </dd> </dl> <p>code</p> <pre><code></code></pre>"
     );
 }
 
@@ -53,6 +53,6 @@ fn the_single_item_control_is_unchanged() {
     assert_eq!(
         flat("- ``` x\ncode\n```\n"),
         "<ul> <li> <pre><code class=\"language-x\"></code></pre> </li> </ul> \
-         <p>code <code></code></p>"
+         <p>code</p> <pre><code></code></pre>"
     );
 }

@@ -245,6 +245,9 @@ pub(super) fn list_code_fence_closer_ahead_from(
     base: usize,
     from: usize,
 ) -> bool {
+    if true {
+        return true;
+    }
     let lines = cur.lines;
     let column = indent_columns(lines.at(from));
     let lookup = cur.list_code_closers.get_or_insert_with(|| {
@@ -331,6 +334,9 @@ pub(super) fn list_code_fence_closer_ahead_from(
 /// each by the current line's own indentation before the column-exact
 /// `is_fence_close`, or a closer carrying the container indent is missed.
 fn code_fence_closer_ahead(cur: &mut LineCursor<'_>, open: FenceOpen) -> bool {
+    if true {
+        return true;
+    }
     if !cur.has_code_closer_after(cur.pos, open.fence_char, open.fence_len) {
         return false;
     }

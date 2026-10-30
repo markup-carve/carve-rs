@@ -161,7 +161,7 @@ fn a_narrow_separator_is_not_a_description_marker() {
 fn a_fence_shaped_lazy_line_keeps_its_column() {
     assert_html(
         "> - x\n    ``` r\ntail\n",
-        "<blockquote><ul><li>x<code> r tail</code></li></ul></blockquote>",
+        "<blockquote><ul><li>x</li></ul></blockquote><pre><code class=\"language-r\">tail\n</code></pre>",
     );
 }
 

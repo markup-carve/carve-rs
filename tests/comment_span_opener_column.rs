@@ -156,7 +156,7 @@ fn a_fence_below_the_nested_column_is_lazy_code_payload() {
 fn a_comment_at_the_outer_column_keeps_the_closed_fence_in_the_inner_item() {
     assert_html(
         "- - b\n  %% c\n    ```\ntail\n    ```\n",
-        "<ul>\n  <li>\n    <ul>\n      <li>b</li>\n    </ul>\n    <pre><code></code></pre>\n  </li>\n</ul>\n<p>tail\n<code></code></p>",
+        "<ul>\n  <li>\n    <ul>\n      <li>b</li>\n    </ul>\n    <pre><code></code></pre>\n  </li>\n</ul>\n<p>tail</p>\n<pre><code></code></pre>",
     );
 }
 

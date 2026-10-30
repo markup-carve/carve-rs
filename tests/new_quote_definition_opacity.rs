@@ -135,7 +135,7 @@ fn sibling_items_and_blanks_keep_their_real_fence_boundaries() {
 #[test]
 fn inline_closers_restore_paragraphs_without_demoting_real_siblings() {
     let cases = [
-        ("> p\n> - ```\n>   x\n> ```\n> ~~~\n> \n> [r]: /u\n> \n> see [r]\n", "<blockquote>\n  <p>p\n- <code>\nx\n</code>\n~~~</p>\n  <p>see [r]</p>\n</blockquote>"),
+        ("> p\n> - ```\n>   x\n> ```\n> ~~~\n> \n> [r]: /u\n> \n> see [r]\n", "<blockquote>\n  <p>p\n- <code>\nx</code></p>\n  <pre><code>~~~\n\n[r]: /u\n\nsee [r]\n</code></pre>\n</blockquote>"),
         ("> - a\n> - ```\n>   x\n> \n>   ~~~\n>   ```\n>   :: t\n>   ```\n>   [r]: /u\n> \n> [x][r]\n", "<blockquote>\n  <ul>\n    <li>a</li>\n    <li>\n      <pre><code>x\n\n~~~\n</code></pre>\n      <dl>\n        <dt>t</dt>\n      </dl>\n      <pre><code>[r]: /u\n\n</code></pre>\n    </li>\n  </ul>\n  <p>[x][r]</p>\n</blockquote>"),
     ];
     for (source, expected) in cases {
@@ -491,10 +491,10 @@ fn lazy_item_markers_preserve_the_owned_paragraph_witness() {
 #[test]
 fn folded_markers_preserve_frames_and_real_quote_exits() {
     let cases = [
-("frame-preservation-0",":: term\n> ```\nlazy\n> - x\n> ```\n> [r]: /t\n","<dl>\n  <dt>term</dt>\n</dl>\n<blockquote>\n  <pre><code></code></pre>\n</blockquote>\n<p>lazy</p>\n<blockquote>\n  <ul>\n    <li>x\n<code></code></li>\n  </ul>\n</blockquote>"),
+("frame-preservation-0",":: term\n> ```\nlazy\n> - x\n> ```\n> [r]: /t\n","<dl>\n  <dt>term</dt>\n</dl>\n<blockquote>\n  <pre><code></code></pre>\n</blockquote>\n<p>lazy</p>\n<blockquote>\n  <ul>\n    <li>x</li>\n  </ul>\n  <pre><code>[r]: /t\n</code></pre>\n</blockquote>"),
 ("frame-preservation-2","> > - a\n> - b\n> - ```\n> [r]: /t\n> ```\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n- b\n- <code></code></li>\n    </ul>\n  </blockquote>\n  <pre><code></code></pre>\n</blockquote>"),
 ("frame-preservation-3",">   - a\n> - ```\n> [r]: /t\n> ```\n","<blockquote>\n  <ul>\n    <li>a</li>\n    <li>\n      <pre><code></code></pre>\n    </li>\n  </ul>\n  <pre><code></code></pre>\n</blockquote>"),
-("frame-preservation-4","> p\n> ```\n> ```a\n> [r]: /t\n","<blockquote><p>p\n<code>\n</code>a</p></blockquote>"),
+("frame-preservation-4","> p\n> ```\n> ```a\n> [r]: /t\n","<blockquote>\n  <p>p</p>\n  <pre><code>```a\n[r]: /t\n</code></pre>\n</blockquote>"),
 ];
     for (name, source, expected) in cases {
         assert_eq!(

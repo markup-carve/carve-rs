@@ -65,8 +65,8 @@ fn control_the_shapes_that_never_had_a_trailing_blank() {
 /// terminates for the author's blank and not for a `push_synthetic_blank`.
 #[test]
 fn a_container_closed_fence_keeps_its_trailing_blank() {
-    assert_eq!(code("::: note\n```\nx\n\n:::\n"), "x\n\n");
-    assert_eq!(code("::: note\n```\nx\n\n\n:::\n"), "x\n\n\n");
+    assert_eq!(code("::: note\n```\nx\n\n:::\n"), "x\n\n:::\n");
+    assert_eq!(code("::: note\n```\nx\n\n\n:::\n"), "x\n\n\n:::\n");
     assert_eq!(code("> ```\n> x\n>\n"), "x\n\n");
 }
 

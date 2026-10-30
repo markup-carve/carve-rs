@@ -14,11 +14,11 @@ fn compact(source: &str) -> String {
 fn the_run_and_the_line_after_it_stay_in_the_child() {
     assert_eq!(
         compact("- a\n    - child\n  ~~~\nafter\n"),
-        "<ul>|<li>a|<ul>|<li>child|~~~|after</li>|</ul>|</li>|</ul>"
+        "<ul>|<li>a|<ul>|<li>child</li>|</ul>|<pre><code></code></pre>|</li>|</ul>|<p>after</p>"
     );
     assert_eq!(
         compact("- a\n    - child\n  ```\nafter\n"),
-        "<ul>|<li>a|<ul>|<li>child|<code>|after</code></li>|</ul>|</li>|</ul>"
+        "<ul>|<li>a|<ul>|<li>child</li>|</ul>|<pre><code></code></pre>|</li>|</ul>|<p>after</p>"
     );
 }
 
@@ -26,11 +26,11 @@ fn the_run_and_the_line_after_it_stay_in_the_child() {
 fn the_same_holds_under_an_ordered_parent_and_in_a_quote() {
     assert_eq!(
         compact("1. a\n     - child\n   ~~~\nafter\n"),
-        "<ol>|<li>a|<ul>|<li>child|~~~|after</li>|</ul>|</li>|</ol>"
+        "<ol>|<li>a|<ul>|<li>child</li>|</ul>|<pre><code></code></pre>|</li>|</ol>|<p>after</p>"
     );
     assert_eq!(
         compact("> - a\n>     - child\n>   ~~~\n> after\n"),
-        "<blockquote>|<ul>|<li>a|<ul>|<li>child|~~~|after</li>|</ul>|</li>|</ul>|</blockquote>"
+        "<blockquote>|<ul>|<li>a|<ul>|<li>child</li>|</ul>|<pre><code></code></pre>|</li>|</ul>|<p>after</p>|</blockquote>"
     );
 }
 
@@ -38,7 +38,7 @@ fn the_same_holds_under_an_ordered_parent_and_in_a_quote() {
 fn a_closer_outside_the_item_does_not_close_the_run() {
     assert_eq!(
         compact("- a\n    - child\n  ~~~\nafter\n\n~~~\n"),
-        "<ul>|<li>a|<ul>|<li>child|~~~|after</li>|</ul>|</li>|</ul>|<pre><code></code></pre>"
+        "<ul>|<li>a|<ul>|<li>child</li>|</ul>|<pre><code></code></pre>|</li>|</ul>|<p>after</p>|<pre><code></code></pre>"
     );
 }
 

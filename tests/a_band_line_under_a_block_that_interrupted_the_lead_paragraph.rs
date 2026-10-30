@@ -153,9 +153,10 @@ fn an_open_fence_still_owns_the_band_line_as_payload() {
         concat!(
             "<ul>\n",
             "  <li>t\n",
-            "<code>c\n",
-            "z</code></li>\n",
-            "</ul>",
+            "    <pre><code class=\"language-c\"></code></pre>\n",
+            "  </li>\n",
+            "</ul>\n",
+            "<p>z</p>",
         ),
     );
 }

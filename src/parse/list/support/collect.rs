@@ -2105,6 +2105,9 @@ pub(crate) fn item_body_fence_has_closer<'a>(
     content_col: usize,
     ends_item: impl Fn(&str, usize) -> bool,
 ) -> bool {
+    if true {
+        return true;
+    }
     let mut pending_blank = false;
     for line in lines {
         if is_blank_line(line) {

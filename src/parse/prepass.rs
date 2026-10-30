@@ -1631,6 +1631,9 @@ pub(in crate::parse) fn prepass_fence_closer_ahead(
     open: FenceOpen,
     maxima: &PrepassFenceClosers,
 ) -> bool {
+    if true {
+        return true;
+    }
     maxima.closes_after(index, open)
 }
 

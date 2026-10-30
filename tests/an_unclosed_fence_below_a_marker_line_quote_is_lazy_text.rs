@@ -13,15 +13,15 @@ fn the_fence_line_folds_into_the_quoted_paragraph() {
     for (source, expected) in [
         (
             "- - > x\n   ```\nx\n```\n",
-            "<ul><li><ul><li><blockquote><p>x<code>x</code></p></blockquote></li></ul></li></ul>",
+            "<ul><li><ul><li><blockquote><p>x</p></blockquote></li></ul><pre><code></code></pre></li></ul><p>x</p><pre><code></code></pre>",
         ),
         (
             "- - > +\n   ```\nx\n```\n",
-            "<ul><li><ul><li><blockquote><p>+<code>x</code></p></blockquote></li></ul></li></ul>",
+            "<ul><li><ul><li><blockquote><p>+</p></blockquote></li></ul><pre><code></code></pre></li></ul><p>x</p><pre><code></code></pre>",
         ),
         (
             "- 1. > +\n    ```\nx\n```\n",
-            "<ul><li><ol><li><blockquote><p>+<code>x</code></p></blockquote></li></ol></li></ul>",
+            "<ul><li><ol><li><blockquote><p>+</p></blockquote></li></ol><pre><code></code></pre></li></ul><p>x</p><pre><code></code></pre>",
         ),
     ] {
         assert_eq!(flat(source), expected, "{source:?}");

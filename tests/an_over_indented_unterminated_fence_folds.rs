@@ -25,7 +25,7 @@ fn both_paths(src: &str) -> String {
     facade
 }
 
-const FOLDED: &str = "<ul>\n  <li>x\n<code></code></li>\n</ul>";
+const FOLDED: &str = "<ul>\n  <li>x\n    <pre><code></code></pre>\n  </li>\n</ul>";
 
 #[test]
 fn the_reported_document_folds_the_fence() {
@@ -55,7 +55,7 @@ fn the_tilde_spelling_folds_too() {
     // literal characters rather than as an empty `<code>`.
     assert_eq!(
         both_paths("- x\n   ~~~\n"),
-        "<ul>\n  <li>x\n~~~</li>\n</ul>"
+        "<ul>\n  <li>x\n    <pre><code></code></pre>\n  </li>\n</ul>"
     );
 }
 
@@ -64,7 +64,7 @@ fn an_info_string_folds_with_the_fence() {
     // It reached `class="language-z"` before, off a fence that never opened.
     assert_eq!(
         both_paths("- x\n   ```z\n"),
-        "<ul>\n  <li>x\n<code>z</code></li>\n</ul>"
+        "<ul>\n  <li>x\n    <pre><code class=\"language-z\"></code></pre>\n  </li>\n</ul>"
     );
 }
 
@@ -73,7 +73,7 @@ fn the_line_under_the_fence_folds_into_the_item() {
     // It was swallowed as code content.
     assert_eq!(
         both_paths("- x\n   ```\n   y\n"),
-        "<ul>\n  <li>x\n<code>\ny</code></li>\n</ul>"
+        "<ul>\n  <li>x\n    <pre><code>y\n</code></pre>\n  </li>\n</ul>"
     );
 }
 
@@ -124,10 +124,10 @@ fn every_other_over_indented_opener_still_opens() {
 fn the_fold_holds_inside_a_deeper_item_and_inside_a_quote() {
     assert_eq!(
         both_paths("- - x\n     ```\n"),
-        "<ul>\n  <li>\n    <ul>\n      <li>x\n<code></code></li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>\n    <ul>\n      <li>x\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>"
     );
     assert_eq!(
         both_paths("> - x\n>    ```\n"),
-        "<blockquote>\n  <ul>\n    <li>x\n<code></code></li>\n  </ul>\n</blockquote>"
+        "<blockquote>\n  <ul>\n    <li>x\n      <pre><code></code></pre>\n    </li>\n  </ul>\n</blockquote>"
     );
 }

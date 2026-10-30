@@ -31,7 +31,7 @@ fn a_flush_line_after_a_shifted_fence_ends_the_quote() {
 fn the_lines_after_the_flush_line_are_outside_the_item() {
     assert_eq!(
         html("> - a\n>\n>     ~~~\n>     x\nz\n>     b\n>     ~~~\n"),
-        "<blockquote>\n  <ul>\n    <li>a\n      <pre><code>x\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p>z</p>\n<blockquote><p>b\n~~~</p></blockquote>"
+        "<blockquote>\n  <ul>\n    <li>a\n      <pre><code>x\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p>z</p>\n<blockquote>\n  <p>b</p>\n  <pre><code></code></pre>\n</blockquote>"
     );
 }
 

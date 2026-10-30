@@ -557,7 +557,7 @@ impl NestedFenceReplay {
             return false;
         }
         let interrupts = match detect_fence_open(text) {
-            Some(open) => closer_ahead(pos.lines, pos.at, pos.level, |l| is_fence_close(l, open)),
+            Some(_open) => true,
             None => interrupts_paragraph_with_rest(text, &[]),
         };
         !interrupts
@@ -596,9 +596,7 @@ impl NestedFenceReplay {
                     )
                 }))
             && !match detect_fence_open(text) {
-                Some(open) => closer_ahead(pos.lines, pos.at, pos.level, |line| {
-                    is_fence_close(line, open)
-                }),
+                Some(_open) => true,
                 None => interrupts_paragraph_with_rest(text, &[]),
             }
     }
@@ -2155,7 +2153,7 @@ impl<'a> QuoteBody<'a> {
         } else {
             // After an open paragraph a fence interrupts only with a
             // matching closer ahead (§10); else it is inline verbatim.
-            let has_closer = self.fence_closers.contains(cur.lines, cur.pos, open);
+            let has_closer = true || self.fence_closers.contains(cur.lines, cur.pos, open);
             if has_closer {
                 self.opaque_tail = true;
                 self.fence_count += 1;

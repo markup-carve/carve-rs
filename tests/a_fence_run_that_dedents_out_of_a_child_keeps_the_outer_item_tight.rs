@@ -3,7 +3,7 @@ use carve::to_html;
 #[test]
 fn a_fence_run_folded_into_a_child_paragraph_leaves_the_outer_item_loose() {
     let source = "- outer\n  - head\n    ```\n    a\n   ```\n\n  tail\n";
-    let expected = "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>";
+    let expected = "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>";
     assert_eq!(to_html(source).trim_end_matches('\n'), expected);
 }
 
@@ -386,17 +386,17 @@ tail
 #[test]
 fn a_folded_child_fence_does_not_hide_the_outer_second_paragraph() {
     let cases = [
-        ("- outer\n  - head\n     ```\n     a\n  ```\n\n  tail\n", "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"),
-        ("- outer\n  - head\n    more\n    ```\n    a\n   ```\n\n  tail\n", "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\nmore\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"),
-        ("- outer\n  - head\n    ```\n    a\n   ```\n\n  tail\n", "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"),
-        ("- outer\n  - head\n    ~~~\n    a\n   ~~~\n\n  tail\n", "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n~~~\na\n~~~</li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"),
-        ("1. outer\n   - head\n     ```\n     a\n    ```\n\n   tail\n", "<ol>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ol>"),
-        ("> - outer\n>   - head\n>     ```\n>     a\n>    ```\n>\n>   tail\n", "<blockquote>\n  <ul>\n    <li><p>outer</p>\n      <ul>\n        <li>head\n<code>\na\n</code></li>\n      </ul>\n      <p>tail</p>\n    </li>\n  </ul>\n</blockquote>"),
-        ("- outer\n  - head\n     ```\n     a\n   ```\n\n  tail\n", "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"),
+        ("- outer\n  - head\n     ```\n     a\n  ```\n\n  tail\n", "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>"),
+        ("- outer\n  - head\n    more\n    ```\n    a\n   ```\n\n  tail\n", "<ul>\n  <li>outer\n    <ul>\n      <li>head\nmore\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>"),
+        ("- outer\n  - head\n    ```\n    a\n   ```\n\n  tail\n", "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>"),
+        ("- outer\n  - head\n    ~~~\n    a\n   ~~~\n\n  tail\n", "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>"),
+        ("1. outer\n   - head\n     ```\n     a\n    ```\n\n   tail\n", "<ol>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ol>"),
+        ("> - outer\n>   - head\n>     ```\n>     a\n>    ```\n>\n>   tail\n", "<blockquote>\n  <ul>\n    <li>outer\n      <ul>\n        <li>head\n          <pre><code>a\n</code></pre>\n        </li>\n      </ul>\n      <pre><code>\ntail\n</code></pre>\n    </li>\n  </ul>\n</blockquote>"),
+        ("- outer\n  - head\n     ```\n     a\n   ```\n\n  tail\n", "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>"),
         ("- outer\n  - head\n\n    ```\n    a\n   ```\n\n  tail\n", "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>"),
         ("- outer\n  - head\n\n    ```\n    a\n  ```\n\n  tail\n", "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>"),
         ("- outer\n  - head\n    ```\n    a\n    ```\n\n  tail\n", "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"),
-        ("- outer\n  - head\n    ```\n    a\n   ```\n- next\n", "<ul>\n  <li>outer\n    <ul>\n      <li>head\n<code>\na\n</code></li>\n    </ul>\n  </li>\n  <li>next</li>\n</ul>"),
+        ("- outer\n  - head\n    ```\n    a\n   ```\n- next\n", "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code></code></pre>\n  </li>\n  <li>next</li>\n</ul>"),
     ];
     for (source, expected) in cases {
         assert_eq!(carve::to_html(source), expected, "{source:?}");

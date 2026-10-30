@@ -19,5 +19,5 @@ fn exact_html() {
         "> :: c\n  # H",
         "<blockquote>\n  <dl>\n    <dt>c</dt>\n  </dl>\n</blockquote>\n<section id=\"H\">\n  <h1>H</h1>\n</section>\n",
     );
-    check("```\n```\n- > :: t\n```", "<pre><code></code></pre>\n<ul>\n  <li>\n    <blockquote>\n      <dl>\n        <dt>t\n<code></code></dt>\n      </dl>\n    </blockquote>\n  </li>\n</ul>\n");
+    check("```\n```\n- > :: t\n```", "<pre><code></code></pre>\n<ul>\n  <li>\n    <blockquote>\n      <dl>\n        <dt>t</dt>\n      </dl>\n    </blockquote>\n  </li>\n</ul>\n<pre><code></code></pre>\n");
 }

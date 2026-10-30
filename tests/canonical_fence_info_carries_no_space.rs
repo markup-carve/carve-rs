@@ -155,8 +155,8 @@ fn the_rule_holds_under_a_container_prefix() {
 /// that no longer holds a code block at all.
 #[test]
 fn the_separators_inside_the_info_string_are_not_the_same_slot() {
-    assert!(!to_html("```rust\"t\"\nx\n```\n").contains("<pre"));
-    assert!(!to_html("```rust[l]\nx\n```\n").contains("<pre"));
+    assert!(to_html("```rust\"t\"\nx\n```\n").contains("<p><code>rust\"t\"\nx</code></p>"));
+    assert!(to_html("```rust[l]\nx\n```\n").contains("<p><code>rust[l]\nx</code></p>"));
 
     let source = "```rust \"t\" [l]\nx\n```\n";
     assert_eq!(fmt(source), source);

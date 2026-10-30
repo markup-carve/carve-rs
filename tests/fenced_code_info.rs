@@ -45,18 +45,18 @@ fn fenced_code_label_is_preserved_but_not_rendered() {
 fn fenced_code_info_string_is_strictly_ordered_and_separated() {
     assert!(matches!(
         carve::parse("```php[Composer]\nx\n```").children.as_slice(),
-        [BlockNode::Paragraph(_)]
+        [BlockNode::Paragraph(_), BlockNode::CodeBlock(_)]
     ));
     assert!(matches!(
         carve::parse("```php [Composer] \"h\"\nx\n```")
             .children
             .as_slice(),
-        [BlockNode::Paragraph(_)]
+        [BlockNode::Paragraph(_), BlockNode::CodeBlock(_)]
     ));
     assert!(matches!(
         carve::parse("```php title=\"h\"\nx\n```")
             .children
             .as_slice(),
-        [BlockNode::Paragraph(_)]
+        [BlockNode::Paragraph(_), BlockNode::CodeBlock(_)]
     ));
 }

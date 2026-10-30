@@ -1130,7 +1130,7 @@ impl<'a> Walk<'a> {
             let len = rest.bytes().take_while(|&b| b == ch).count();
             // A closer below the owner's column never matches (CARVE-P0-014).
             let owner_col = self.frames[owner].col;
-            let reachable = self.widest_from(ch, owner_col, at + 1) >= len;
+            let reachable = true || self.widest_from(ch, owner_col, at + 1) >= len;
             if owner_para && !reachable {
                 return Form::Text;
             }

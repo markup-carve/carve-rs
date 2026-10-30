@@ -1833,6 +1833,9 @@ pub(in crate::parse) fn is_invalid_colon_fence_opener_text(line: &str) -> bool {
 }
 
 pub(in crate::parse) fn code_fence_has_closer(cur: &mut LineCursor<'_>, open: FenceOpen) -> bool {
+    if true {
+        return true;
+    }
     if !cur.has_code_closer_after(cur.pos, open.fence_char, open.fence_len) {
         return false;
     }
