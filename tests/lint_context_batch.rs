@@ -68,6 +68,31 @@ fn invalid_separator_padding_is_a_near_miss() {
 }
 
 #[test]
+fn a_marker_folded_into_a_note_paragraph_is_reported() {
+    for (source, at) in [
+        (":: t\n:  [^f]: note\n     - nested\n   tail\n", (3, 6)),
+        (". d\n   [^n]: e\n     - a\n", (3, 6)),
+        ("- > para\n  > [^f]: n\n  >   - sub\ntail[^f]\n", (3, 7)),
+        ("[^n]: d\n  - para\n    [r]: /u\nx\n\n[r][] [^n]\n", (2, 3)),
+    ] {
+        assert_eq!(
+            findings(source, "list-marker-without-blank-line"),
+            vec![at],
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn a_list_separated_in_a_note_is_quiet() {
+    assert!(findings(
+        "[^n]: d\n\n  - a\n\nr[^n]\n",
+        "list-marker-without-blank-line"
+    )
+    .is_empty());
+}
+
+#[test]
 fn invisible_lines_release_folded_marker_candidates() {
     for source in [
         "::: note\n- para\n- %% c\n```\ncode\n::::\n:::\nafter *b*\n",
