@@ -458,8 +458,6 @@ pub(in crate::parse) struct LineCursorOwnedState {
     closed_comment_location: Option<(usize, usize)>,
     marker_colon_closed: bool,
     code_closer_last_index: Option<HashMap<u8, Vec<usize>>>,
-    list_fence_closer_last_index: Option<HashMap<u8, Vec<usize>>>,
-    list_code_closers: Option<Box<ListCodeClosers>>,
 }
 
 /// A suspended mapped cursor level. Line spans refer only to `source.source`;
@@ -547,8 +545,6 @@ impl<'a> LineCursor<'a> {
             closed_comment_location: self.closed_comment_location.take(),
             marker_colon_closed: std::mem::take(&mut self.marker_colon_closed),
             code_closer_last_index: self.code_closer_last_index.take(),
-            list_fence_closer_last_index: self.list_fence_closer_last_index.take(),
-            list_code_closers: self.list_code_closers.take(),
         }
     }
 
@@ -581,8 +577,6 @@ impl<'a> LineCursor<'a> {
         self.closed_comment_location = state.closed_comment_location;
         self.marker_colon_closed = state.marker_colon_closed;
         self.code_closer_last_index = state.code_closer_last_index;
-        self.list_fence_closer_last_index = state.list_fence_closer_last_index;
-        self.list_code_closers = state.list_code_closers;
     }
     pub(in crate::parse) fn new_with_cols(
         lines: &'a [&'a str],
@@ -774,7 +768,6 @@ mod owned_state_tests {
         before.closed_comment_location = Some((1, 4));
         before.comment_closer_last_index = Some(HashMap::from([(3, 2)]));
         before.code_closer_last_index = Some(HashMap::from([(b'`', vec![2])]));
-        before.list_fence_closer_last_index = Some(HashMap::from([(b'~', vec![3])]));
         before.block_starts = Some(vec![0]);
         before.block_extents = Some(vec![(0, 1)]);
         before.at_document_level = true;
@@ -796,10 +789,6 @@ mod owned_state_tests {
         assert_eq!(
             resumed.code_closer_last_index.as_ref().unwrap()[&b'`'],
             vec![2]
-        );
-        assert_eq!(
-            resumed.list_fence_closer_last_index.as_ref().unwrap()[&b'~'],
-            vec![3]
         );
         assert_eq!(resumed.block_starts.as_ref().unwrap(), &vec![0]);
         assert_eq!(resumed.block_extents.as_ref().unwrap(), &vec![(0, 1)]);
