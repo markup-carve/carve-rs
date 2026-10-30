@@ -2458,7 +2458,7 @@ fn render_named_container(
     let tag = if canonical { "aside" } else { "div" };
     let (class, rest) = match attrs {
         Some(at) if !at.classes.is_empty() => (
-            append_base_class(&base, &at.classes),
+            merge_base_class(&base, &at.classes),
             render_attrs_after_class_for(at, tag),
         ),
         Some(at) => (base, render_attrs_after_class_for(at, tag)),
@@ -2935,10 +2935,8 @@ pub(crate) fn sanitized_classes(classes: &[String]) -> Vec<std::borrow::Cow<'_, 
     let mut sanitized: Vec<std::borrow::Cow<'_, str>> = Vec::new();
     let mut seen = (classes.len() > 8).then(|| HashSet::with_capacity(classes.len()));
     for entry in classes {
-        // Probe the WHOLE entry. Splitting it into names would bypass the
-        // sanitizer's scheme normalization, letting `java script:alert(1)`
-        // through, and so would deny less than before the class fold
-        // (carve-js#1164).
+        // The parser split `class=V` into tokens (CARVE-P4-007); an AST entry
+        // that still holds a space is probed whole.
         let entry = crate::escape::sanitize_attr_value("class", entry);
         if !entry.is_empty() {
             let unique = if let Some(seen) = &mut seen {
@@ -2963,27 +2961,13 @@ fn write_attr_class(out: &mut String, classes: &[String]) {
     out.push('"');
 }
 
-/// A structural base class, then the author's sanitized entries appended whole.
-/// The base does not join the author's dedup pool, so `{.note}` on `::: note`
-/// opens `class="admonition note note"` - the typed-div merge keeps its type
-/// class ahead of the attribute line rather than merging into it (§15).
-fn append_base_class(base: &str, classes: &[String]) -> String {
-    let mut out = String::from(base);
-    for entry in sanitized_classes(classes) {
-        out.push(' ');
-        out.push_str(&entry);
-    }
-    out
-}
-
-/// The same merge where the base DOES take part in the dedup, as ONE entry: the
-/// block-attribute merge prepends it to the author's list (a figure group), and
-/// carve-js's inline base merge does the same. An entry is never split into
-/// names, so `{class="a  b"}` keeps its run.
+/// A structural base class list, then the author's sanitized classes it does not
+/// already hold: one class list, each value once (CARVE-P4-002).
 fn merge_base_class(base: &str, classes: &[String]) -> String {
     let mut out = String::from(base);
+    let tokens: Vec<&str> = base.split(' ').collect();
     for entry in sanitized_classes(classes) {
-        if entry == base {
+        if tokens.contains(&entry.as_ref()) {
             continue;
         }
         out.push(' ');

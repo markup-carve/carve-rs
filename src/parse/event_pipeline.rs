@@ -4157,6 +4157,8 @@ pub(super) fn parse_document_with_custom_options(
                 source.contains("</#"),
                 false,
             );
+            index.extend_captions(&doc);
+            index.extend_captions(&doc);
             index.extend_titles(caption_titles);
             stamp_generated_heading_ids(&mut doc, options.heading_id_options());
             Some(index)
@@ -4398,6 +4400,7 @@ fn parse_document_with_footnotes_options(
             source.contains("</#"),
             false,
         );
+        index.extend_captions(&doc);
         index.extend_titles(caption_titles);
         stamp_generated_heading_ids(&mut doc, options.heading_id_options());
         Some(index)

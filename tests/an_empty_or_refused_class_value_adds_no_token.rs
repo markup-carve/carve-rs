@@ -33,12 +33,17 @@ fn plain_div_keeps_only_surviving_entries() {
         // Control: a colon alone is allowed.
         (r#"class="a:b""#, r#"<div class="a:b">"#),
         (r#"class="DATA:text/html,x""#, r#"<div class="">"#),
-        // The carve-js#1164 shape: a per-name probe passes this, a per-entry one refuses it.
-        (r#"class="java script:alert(1)""#, r#"<div class="">"#),
-        // The whole entry goes, the neighbour stays.
-        (r#"class="java script:alert(1)" .b"#, r#"<div class="b">"#),
-        // An accepted entry stays WHOLE, which a per-name filter could not do.
-        (r#"class="a  b" .c"#, r#"<div class="a  b c">"#),
+        // Each token is an authored value of its own (carve#4205).
+        (
+            r#"class="java script:alert(1)""#,
+            r#"<div class="java script:alert(1)">"#,
+        ),
+        (
+            r#"class="java script:alert(1)" .b"#,
+            r#"<div class="java script:alert(1) b">"#,
+        ),
+        (r#"class="javascript:x y""#, r#"<div class="y">"#),
+        (r#"class="a  b" .c"#, r#"<div class="a b c">"#),
         // Unchanged by this fix, below: dedup, source order and slot position.
         ("class=a .a", r#"<div class="a">"#),
         ("class=a .b", r#"<div class="a b">"#),

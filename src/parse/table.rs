@@ -26,16 +26,23 @@ pub(in crate::parse) fn is_table_start(line: &str) -> bool {
 /// otherwise the `{` is ordinary content. Returns the parsed attributes and the
 /// line body up to and including the closing pipe (with the block removed).
 pub(in crate::parse) fn split_row_attrs(content: &str) -> (Option<Attrs>, &str) {
-    if let Some(idx) = content.rfind('|') {
-        let bytes = content.as_bytes();
+    // The block's `|{` is the last one outside quotes: a pipe in a quoted value
+    // is part of it, and an earlier `|{` before that is cell content.
+    let bytes = content.as_bytes();
+    let last_close_brace = bytes.iter().rposition(|&b| b == b'}');
+    let mut end = content.len();
+    while let Some(idx) = content[..end].rfind('|') {
         if bytes.get(idx + 1) == Some(&b'{') {
-            let last_close_brace = bytes.iter().rposition(|&b| b == b'}');
             if let Some((attrs, next)) = read_attrs_at(bytes, idx + 1, last_close_brace) {
                 if next == content.len() {
                     return (Some(attrs), &content[..=idx]);
                 }
             }
         }
+        if !content[idx..].contains(['"', '\'']) {
+            break;
+        }
+        end = idx;
     }
     (None, content)
 }

@@ -73,10 +73,21 @@ pub(super) fn render_inlines_stateful(
         return;
     }
     state.inline_depth += 1;
-    for node in nodes {
+    for (index, node) in nodes.iter().enumerate() {
+        if matches!(node, InlineNode::CellWrap(_)) && joins_only_comments(&nodes[index + 1..]) {
+            continue;
+        }
         render_inline_after(out, node, options, state);
     }
     state.inline_depth -= 1;
+}
+
+/// A continuation fragment holding only a comment appends no visible text, so no
+/// joining space goes out for it (PART 9 §5 T6).
+fn joins_only_comments(rest: &[InlineNode]) -> bool {
+    rest.iter()
+        .take_while(|node| !matches!(node, InlineNode::CellWrap(_)))
+        .all(|node| matches!(node, InlineNode::Comment(c) if !c.delimited))
 }
 
 pub(super) const SEMANTIC_SPAN_ORDER: [&str; 3] = ["abbr", "time", "kbd"];
@@ -490,8 +501,8 @@ pub(super) fn render_inline_after(
         InlineNode::CrossRef(c) => {
             // The label is the target's cloned inline NODES, so it still
             // carries what the author typed and renders here exactly as it does
-            // in the heading itself (PART 9R R4). A caption target has no nodes
-            // - its label is LABEL + NUMBER - so that one stays a string.
+            // in the heading itself (PART 9R R4). A numbered caption's label is
+            // its own nodes plus the number.
             let resolved = state.crossref_index.resolve(&c.target).map(|(id, title)| {
                 (
                     id.to_string(),

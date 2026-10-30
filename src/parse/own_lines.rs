@@ -206,12 +206,12 @@ fn quoted_measure(line: &str) -> (usize, &str) {
 
 fn is_heading(rest: &str) -> bool {
     let n = rest.bytes().take_while(|&b| b == b'#').count();
-    (1..=6).contains(&n) && rest[n..].starts_with(' ') && !rest[n..].trim().is_empty()
+    (1..=6).contains(&n) && rest[n..].starts_with(' ') && !is_ws_only(&rest[n..])
 }
 
 fn is_caption(rest: &str) -> bool {
     rest.strip_prefix('^')
-        .is_some_and(|t| t.starts_with(' ') && !t.trim().is_empty())
+        .is_some_and(|t| t.starts_with(' ') && !is_ws_only(t))
 }
 
 fn is_cont_marker(rest: &str) -> bool {
@@ -924,7 +924,8 @@ impl<'a> Walk<'a> {
         );
         {
             let o = &mut self.frames[owner];
-            o.para = false;
+            // A caption folds its following lines like a paragraph (CARVE-P2-021).
+            o.para = matches!(form, Form::Leaf(false));
             o.last = match form {
                 Form::Term => Last::Term,
                 Form::Dd(_) => Last::Dd,
@@ -1134,7 +1135,7 @@ impl<'a> Walk<'a> {
             }
             return Form::Item(width, head, axes);
         }
-        if rest.starts_with(":: ") && !rest[3..].trim().is_empty() {
+        if rest.starts_with(":: ") && !is_ws_only(&rest[3..]) {
             return Form::Term;
         }
         if let Some(tail) = rest.strip_prefix(':') {

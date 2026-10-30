@@ -625,6 +625,73 @@ pub(in crate::parse) fn parse_block(
     Some(boxed_block(cur, options, parse_paragraph))
 }
 
+/// A display-math span over several lines takes a caption too (PART 9 §10 I7):
+/// the paragraph's lines up to the caption must be that one span. Only the first
+/// caret line can decide it, since the text after it folds into the same run.
+fn parse_multiline_equation(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode> {
+    let start = cur.pos;
+    let mut end = start + 1;
+    let caption_at = loop {
+        let line = cur.lines.line(end)?;
+        if is_blank_line(line) {
+            let next = end + 1;
+            cur.lines.line(next).and_then(caption_content)?;
+            break end;
+        }
+        if caption_content(line).is_some() {
+            break end;
+        }
+        cur.pos = end;
+        let interrupts = interrupts_paragraph(cur, line);
+        cur.pos = start;
+        if interrupts {
+            return None;
+        }
+        end += 1;
+    };
+    let lines: Vec<&str> = (start..caption_at)
+        .filter_map(|at| cur.lines.line(at))
+        .map(|line| trim_ascii_end(trim_ascii_start(line)))
+        .collect();
+    let joined = lines
+        .iter()
+        .map(|line| strip_lazy(line))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let inline = if options.positions {
+        let anchors = lines
+            .iter()
+            .enumerate()
+            .map(|(at, line)| inline_anchor_for_line(cur, start + at, line))
+            .collect();
+        parse_inline_lines_with_anchor(&joined, options, anchors)
+    } else {
+        parse_inline_with_options(&joined, options)
+    };
+    if inline.len() != 1 || !matches!(&inline[0], InlineNode::Math(m) if m.display) {
+        return None;
+    }
+    cur.pos = caption_at;
+    let target = FigureTarget::Paragraph(Paragraph {
+        attrs: None,
+        children: inline,
+        pos: span_of(cur, start, caption_at, options),
+        ..Default::default()
+    });
+    let Some(caption) = consume_caption(cur, options) else {
+        cur.pos = start;
+        return None;
+    };
+    Some(BlockNode::Figure(Figure {
+        attrs: None,
+        target: Box::new(target),
+        rendered_target: None,
+        caption,
+        short_caption: None,
+        pos: span_of(cur, start, cur.pos, options),
+    }))
+}
+
 /// Parse a standalone display-math line, wrapping it in a figure when a caption
 /// follows (a numbered equation). Returns `None` when the line is not solely
 /// display math, or when non-blank prose follows with no blank line (so the
@@ -651,7 +718,7 @@ pub(in crate::parse) fn parse_equation_block(
     // fold the math and that text into one paragraph (preserve existing behavior).
     if let Some(next) = cur.lines.line(cur.pos + 1) {
         if !is_blank_line(next) && caption_content(next).is_none() {
-            return None;
+            return parse_multiline_equation(cur, options);
         }
     }
     // Standalone display math: consume the line, then attach a caption if one

@@ -75,10 +75,14 @@ pub(crate) fn crossref_index_for_document(
             false,
         );
     }
-    collect_caption_titles(&doc.children, &mut titles);
+    let mut captions = CaptionIndex {
+        titles: &mut titles,
+        labels: &mut labels,
+    };
+    collect_caption_titles(&doc.children, &mut captions);
     for (label, blocks) in &doc.footnote_defs {
         if used_notes.contains(label) {
-            collect_caption_titles(blocks, &mut titles);
+            collect_caption_titles(blocks, &mut captions);
         }
     }
     crossref_index(titles, labels)
@@ -94,6 +98,7 @@ pub(in crate::parse) fn crossref_index_and_heading_ids_for_document(
     let explicit_ids = crate::document_ids::authored_ids(
         std::iter::once(doc.children.as_slice())
             .chain(doc.footnote_defs.values().map(Vec::as_slice)),
+        Some(doc.footnote_defs.keys().cloned().collect()),
     );
     let (mut index, ids) = heading_index_with_explicit_ids(
         &doc.children,
@@ -103,9 +108,13 @@ pub(in crate::parse) fn crossref_index_and_heading_ids_for_document(
         false,
         &explicit_ids,
     );
-    collect_caption_titles(&doc.children, &mut index.titles);
+    let mut captions = CaptionIndex {
+        titles: &mut index.titles,
+        labels: &mut index.labels,
+    };
+    collect_caption_titles(&doc.children, &mut captions);
     for blocks in doc.footnote_defs.values() {
-        collect_caption_titles(blocks, &mut index.titles);
+        collect_caption_titles(blocks, &mut captions);
     }
     (index, ids)
 }
@@ -397,6 +406,19 @@ pub(crate) struct CrossrefIndex {
 }
 
 impl CrossrefIndex {
+    /// Add a numbered document's caption targets; a heading with the same id
+    /// keeps it.
+    pub(in crate::parse) fn extend_captions(&mut self, doc: &Document) {
+        let mut captions = CaptionIndex {
+            titles: &mut self.titles,
+            labels: &mut self.labels,
+        };
+        collect_caption_titles(&doc.children, &mut captions);
+        for blocks in doc.footnote_defs.values() {
+            collect_caption_titles(blocks, &mut captions);
+        }
+    }
+
     pub(in crate::parse) fn extend_titles(&mut self, titles: BTreeMap<String, String>) {
         for (id, title) in titles {
             self.titles.entry(id).or_insert(title);
@@ -446,10 +468,9 @@ impl CrossrefIndex {
             .map(|(text, _)| text.as_str())
     }
 
-    /// The cloned inline nodes a resolved reference to `id` renders, when the
-    /// target is a HEADING. `None` for a caption id, whose label is
-    /// LABEL + NUMBER rather than any node of the document; the caller falls
-    /// back to `resolve`'s title for that.
+    /// The cloned inline nodes a resolved reference to `id` renders: a heading's
+    /// display nodes, or a numbered caption's LABEL + NUMBER. `None` for an id
+    /// with neither; the caller falls back to `resolve`'s title for that.
     pub(crate) fn label(&self, id: &str) -> Option<CrossrefLabel> {
         self.labels.get(id).cloned()
     }
