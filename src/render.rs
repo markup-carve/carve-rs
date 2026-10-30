@@ -2921,11 +2921,12 @@ pub(crate) use inlines::{
     render_container_label, render_inlines_inside_anchor, render_inlines_with_options,
     semantic_span_order, semantic_value_target, EXTENDED_SEMANTIC_SPAN_ORDER,
 };
-/// Write the ` id="..."` slot.
+/// Write the ` id="..."` slot. A generated slug holds no colon, so only an
+/// authored value can meet the CARVE-P9-054 hardening here.
 #[inline]
 fn write_attr_id(out: &mut String, id: &str) {
     out.push_str(" id=\"");
-    write_escaped_attr(out, id);
+    write_escaped_attr(out, &sanitize_attr_value("id", id));
     out.push('"');
 }
 
@@ -3351,7 +3352,7 @@ pub(crate) fn render_attrs_after_class(attrs: &Attrs) -> String {
     let mut out = String::new();
     if attrs.order.is_empty() {
         if let Some(id) = &attrs.id {
-            out.push_str(&format!(" id=\"{}\"", escape_attr(id)));
+            write_attr_id(&mut out, id);
         }
         for (key, value) in &attrs.key_values {
             if writes_authored_key(key) {
@@ -3368,7 +3369,7 @@ pub(crate) fn render_attrs_after_class(attrs: &Attrs) -> String {
         match slot {
             AttrSlot::Id => {
                 if let Some(id) = &attrs.id {
-                    out.push_str(&format!(" id=\"{}\"", escape_attr(id)));
+                    write_attr_id(&mut out, id);
                 }
             }
             AttrSlot::Class => {}
