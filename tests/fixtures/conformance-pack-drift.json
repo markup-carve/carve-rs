@@ -33,15 +33,6 @@
     },
     {
       "ticket": "markup-carve/carve-rs#3534",
-      "cause": "untriaged day-one drift in the inline family",
-      "cases": [
-        "inline-0add8d3c414e",
-        "inline-285b33e80405",
-        "inline-2d7d1282362c"
-      ]
-    },
-    {
-      "ticket": "markup-carve/carve-rs#3534",
       "cause": "untriaged day-one drift in the lazy family",
       "cases": [
         "lazy-152051755b0d",

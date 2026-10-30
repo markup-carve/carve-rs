@@ -958,6 +958,8 @@ impl BracedClosers {
                 Vec::new()
             }
         });
+        // Per point, the next `*/` that can close a combined token.
+        let mut combined = vec![usize::MAX; points.len()];
         for at in (0..steps.len()).rev() {
             let position = points[at];
             let marker = bytes[position];
@@ -1016,10 +1018,41 @@ impl BracedClosers {
                     _ => bare[slot][at + 1],
                 };
             }
+            combined[at] = match &steps[at] {
+                BracedStep::Boundary | BracedStep::Raw(_) => usize::MAX,
+                BracedStep::LineComment(_, next) | BracedStep::Jump(next) => combined[*next],
+                BracedStep::Scope(_, _) if child_after.is_some() => combined[child_after.unwrap()],
+                _ if marker == b'*'
+                    && next == Some(b'/')
+                    && before.is_some_and(|byte| !matches!(byte, b' ' | b'\t' | b'\r' | b'\n'))
+                    && super::combined_closer_at(bytes, position) =>
+                {
+                    at
+                }
+                _ => combined[at + 1],
+            };
             let bare_slot = delim_brace_slot(marker).filter(|&slot| bare_slots[slot]);
-            let bare_open = bare_slot.filter(|_| unguarded_opener);
+            // A marker that an open entry of its kind holds never opens (R2, R4).
+            let held = bare_kinds
+                .iter()
+                .position(|&d| d == marker)
+                .is_some_and(|k| {
+                    pending_open[k]
+                        .get(at)
+                        .is_some_and(|&open| open != usize::MAX)
+                });
+            let bare_open = bare_slot.filter(|_| unguarded_opener && !held);
+            // A `/*` reads its combined closer first, so nothing bare pairs across it.
+            let combined_close = (marker == b'/'
+                && next == Some(b'*')
+                && bytes
+                    .get(position + 2)
+                    .is_some_and(|byte| !matches!(byte, b' ' | b'\t' | b'\r' | b'\n')))
+            .then(|| combined[index(position + 3)])
+            .filter(|&close| close != usize::MAX)
+            .map(|close| index(points[close] + 1));
             let bare_close = bare_open
-                .map(|slot| bare[slot][at + 1])
+                .map(|slot| combined_close.unwrap_or(bare[slot][at + 1]))
                 .filter(|&close| close != usize::MAX);
             let mut bare_tail = bare_close
                 .and_then(|close| attribute_tails.get(&(points[close] + 1)))
@@ -1045,11 +1078,13 @@ impl BracedClosers {
             if matches!(before, Some(b'/' | b'_')) {
                 let start_close = bare_slot
                     .filter(|_| {
-                        next.is_some_and(|byte| {
-                            !matches!(byte, b' ' | b'\t' | b'\r' | b'\n') && byte != marker
-                        }) && (marker != b'=' || next != Some(b'>'))
+                        !held
+                            && next.is_some_and(|byte| {
+                                !matches!(byte, b' ' | b'\t' | b'\r' | b'\n') && byte != marker
+                            })
+                            && (marker != b'=' || next != Some(b'>'))
                     })
-                    .map(|slot| bare[slot][at + 1])
+                    .map(|slot| combined_close.unwrap_or(bare[slot][at + 1]))
                     .filter(|&close| close != usize::MAX);
                 if let Some(close) = start_close {
                     if let Some(&end) = attribute_tails.get(&(points[close] + 1)) {
