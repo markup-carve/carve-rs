@@ -119,10 +119,7 @@
       "ticket": "markup-carve/carve-rs#3534",
       "cause": "untriaged day-one drift in the plus family",
       "cases": [
-        "plus-7327c454836e",
-        "plus-baa850a0968e",
-        "plus-c3c91f4dbaf7",
-        "plus-f9169e1d2919"
+        "plus-7327c454836e"
       ]
     },
     {

@@ -1252,11 +1252,18 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         };
         let after_blank = self.previous_line_blank();
         if quote_holds_a_paragraph || continuation_has_content {
+            // The collector stopped short of a band line only for a quote that holds no
+            // paragraph; a paragraph written after that quote still takes it lazily.
+            let lazy_column = if quote_holds_a_paragraph {
+                base_indent
+            } else {
+                content_col.saturating_sub(1)
+            };
             fold_lazy_run_and_resume_in_band(
                 self.cur,
                 &mut stream,
                 content_col,
-                (base_indent, base_indent),
+                (lazy_column, base_indent),
                 (false, options),
                 |src, below| {
                     !after_blank

@@ -44,7 +44,11 @@ pub(crate) fn fold_lazy_run_and_resume_in_band(
                 !is_blank_line(&line)
                     && indent <= lazy_column
                     && !(is_list_marker(&line) && indent <= list_base)
-                    && !interrupts_lazy_continuation(cur, &line)
+                    && !if indent == 0 {
+                        interrupts_paragraph_as_container(cur, &line)
+                    } else {
+                        interrupts_lazy_continuation(cur, &line)
+                    }
             })
         };
         if !pending {
