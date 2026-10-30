@@ -102,11 +102,11 @@ fn djot_to_carve_prepared_with_quotes(
     skip_heading_targets: bool,
 ) -> String {
     if nul_shielded || !stripped_definitions.source.contains('\0') {
-        return end_note_tasks_before_text(convert_djot_document(
+        return spell_empty_item_placeholders(end_note_tasks_before_text(convert_djot_document(
             stripped_definitions,
             omit_quote_delimiters,
             skip_heading_targets,
-        ));
+        )));
     }
     let token = "\0U\0";
     let pattern = cached_regex!(r"\x00DJOTNOTEATTR\x00([0-9]+)\x00").unwrap();
@@ -131,20 +131,94 @@ fn djot_to_carve_prepared_with_quotes(
         losses: stripped_definitions.losses.clone(),
         comments: stripped_definitions.comments.clone(),
     };
-    end_note_tasks_before_text(convert_djot_document(
+    spell_empty_item_placeholders(end_note_tasks_before_text(convert_djot_document(
         &protected,
         omit_quote_delimiters,
         skip_heading_targets,
-    ))
+    )))
     .replace(token, "\0")
+}
+
+/// The conversion builds an empty item as `- +`, and a bare `+` is a letter unless
+/// a block stands at its marker column (carve#4396), so the output never keeps it:
+/// a body right below moves up to the marker line, and otherwise the item takes
+/// `{empty}`, or `%%` where `{empty}` would attribute a block below it.
+fn spell_empty_item_placeholders(carve: String) -> String {
+    if !carve.contains('+') {
+        return carve;
+    }
+    let placeholder = cached_regex!(
+        r"^((?:[ \t]*>[ \t]?)*[ \t]*(?:(?:[-*]|(?:\d+|[ivxlcdm]+|[IVXLCDM]+|[A-Za-z])[.)]|\.|:|\[\^[^\]\n]+\]:) +(?:\[[ xX_>/!?-]\] +)?)+)\+[ \t]*$"
+    )
+    .unwrap();
+    let task_box = cached_regex!(r"\[[ xX_>/!?-]\] +$").unwrap();
+    let note_marker = cached_regex!(r"\[\^[^\]\n]+\]: +").unwrap();
+    let fence_line = cached_regex!(r"^(?:[ \t]*>[ \t]?)*[ \t]*(`{3,}|~{3,})").unwrap();
+    let mut lines: Vec<String> = carve.split('\n').map(str::to_owned).collect();
+    let mut moved_up = vec![false; lines.len()];
+    let mut fence: Option<(u8, usize)> = None;
+    for index in 0..lines.len() {
+        let run = fence_line
+            .captures(&lines[index])
+            .map(|caps| (caps[1].as_bytes()[0], caps[1].len()));
+        if let Some((open, width)) = fence {
+            if run.is_some_and(|(ch, len)| ch == open && len >= width) {
+                fence = None;
+            }
+            continue;
+        }
+        fence = run;
+        let Some(prefix) = placeholder
+            .captures(&lines[index])
+            .map(|caps| caps[1].to_owned())
+        else {
+            continue;
+        };
+        // A note's body stands at column 2 whatever its label's width.
+        let content: String = note_marker
+            .replace(&prefix, "  ")
+            .chars()
+            .map(|ch| {
+                if matches!(ch, '>' | ' ' | '\t') {
+                    ch
+                } else {
+                    ' '
+                }
+            })
+            .collect();
+        let moved = lines.get(index + 1).and_then(|next| {
+            let rest = next.strip_prefix(content.as_str())?;
+            (!rest.is_empty() && !rest.starts_with([' ', '\t'])).then(|| rest.to_owned())
+        });
+        if let Some(rest) = moved {
+            // The merged line is read on the next turn: it can open a fence or hold a
+            // placeholder of its own.
+            lines[index + 1] = format!("{prefix}{rest}");
+            moved_up[index] = true;
+            continue;
+        }
+        let box_width = task_box
+            .find(&prefix)
+            .map_or(0, |found| prefix.len() - found.start());
+        let body = &content[..content.len() - box_width];
+        let holds_body = lines[index + 1..]
+            .iter()
+            .find(|line| !line.trim_matches(['>', ' ', '\t']).is_empty())
+            .is_some_and(|line| line.starts_with(body));
+        let spelling = if holds_body { "%%" } else { "{empty}" };
+        lines[index] = format!("{prefix}{spelling}");
+    }
+    let mut kept = moved_up.iter();
+    lines.retain(|_| !*kept.next().unwrap());
+    lines.join("\n")
 }
 
 /// In Djot the line below an empty task in a note is outside the note, so a
 /// blank line ends the note first, as `empty_task_breaks` does for a plain list.
 fn end_note_tasks_before_text(carve: String) -> String {
     let empty_note_task =
-        cached_regex!(r"^([> \t]*)\[\^[^\]\n]+\]:[ \t]+.*\[[^\]\n]\] \{empty\}$").unwrap();
-    if !carve.contains("] {empty}\n") {
+        cached_regex!(r"^([> \t]*)\[\^[^\]\n]+\]:[ \t]+.*\[[^\]\n]\] \+$").unwrap();
+    if !carve.contains("] +\n") {
         return carve;
     }
     let lines: Vec<&str> = carve.split('\n').collect();
@@ -1153,6 +1227,9 @@ fn fold_heading_continuations(source: &str) -> String {
     let task = cached_regex!(r"^\[[ xX]\][ \t]+").unwrap();
     let heading_re = cached_regex!(r"^([ \t]*)(#{1,6})(?:[ \t]+\S|[ \t]*$)").unwrap();
     let quote_prefix = cached_regex!(r"^(?:[ \t]*>(?:[ \t]|$))*").unwrap();
+    let bare_item =
+        cached_regex!(r"^[ \t]*(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)])[ \t]*$")
+            .unwrap();
     let masked = mask_code_and_destinations(source);
     let masks: Vec<_> = masked.split('\n').collect();
     let lines: Vec<_> = source.split('\n').collect();
@@ -1180,16 +1257,18 @@ fn fold_heading_continuations(source: &str) -> String {
             }
         }
         definition_hosts.retain(|held, _| *held <= depth);
-        if depth > 0
-            && column > 0
-            && cached_regex!(r"^:(?:[ \t]|$)")
-                .unwrap()
-                .is_match(&line[at..])
-            && masks[i].as_bytes().get(at) == Some(&b':')
-        {
+        let description = cached_regex!(r"^:(?:[ \t]|$)")
+            .unwrap()
+            .is_match(&line[at..])
+            && masks[i].as_bytes().get(at) == Some(&b':');
+        if depth > 0 && column > 0 && (description || !line[..at].contains("[^")) {
             definition_hosts.insert(depth, column);
         } else if column > 0 {
             definition_hosts.remove(&depth);
+        } else if let Some(bare) = bare_item.captures(&line[at..]).filter(|_| depth > 0) {
+            // A bare marker holds its body at one past the marker; the container
+            // regex above needs a space after it.
+            definition_hosts.insert(depth, bare[0].trim_end().len() + 1);
         }
         if !line.contains('#') {
             result.push(line.to_owned());
@@ -1681,12 +1760,7 @@ impl BlockMarkerScan<'_> {
                 self.empty_task_breaks
                     .insert(index, lines[index][..prefix].trim_end().to_owned());
             }
-            lines[index] = format!(
-                "{}{}{} {{empty}}",
-                &lines[index][..prefix],
-                &rest[..indent],
-                marker
-            );
+            lines[index] = format!("{}{}{} +", &lines[index][..prefix], &rest[..indent], marker);
             retain_items_before(&mut self.item_columns, depth, column);
             self.item_columns.push((depth, column));
             self.boundary = true;
