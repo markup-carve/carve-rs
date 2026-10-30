@@ -334,7 +334,7 @@ mod standard_reader_probe_tests {
     #[test]
     fn colon_paragraph_preflight_refuses_attributes_and_long_runs() {
         for source in [
-            "::: note\nalpha{#id}\n:::\n",
+            "::: note\nalpha{#id}\nbeta\n:::\n",
             "::: note\nalpha *bold*\nbeta\ngamma\ndelta\nepsilon\n:::\n",
             "::: note\nalpha ![alt](image.png){#id}\n:::\n",
         ] {
@@ -367,6 +367,43 @@ mod standard_reader_probe_tests {
                     "{source:?}"
                 );
                 assert_eq!(callbacks, observer.0.into_inner(), "{source:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn attached_id_colon_paragraph_matches_standard_reader() {
+        for source in [
+            "::: note\nalpha{#id}\n:::\n",
+            "::: note\nalpha beta{#two-2}\n:::\n",
+            "::: note\nalpha{#id}\n\n:::\n",
+        ] {
+            for (positions, source_lines) in
+                [(false, false), (true, false), (false, true), (true, true)]
+            {
+                let observer = Observer(RefCell::new(Vec::new()));
+                let options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines)
+                    .with_extension(&observer);
+                STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+                let ((actual, admitted), diagnostics) = collecting_lint_events(|| {
+                    parse_document_with_options(source, &options).unwrap()
+                });
+                assert!(admitted, "{source:?}");
+                assert_eq!(STANDARD_PARAGRAPH_ENTRIES.with(Cell::get), 0, "{source:?}");
+                let callbacks = observer.0.into_inner();
+                let standard_observer = Observer(RefCell::new(Vec::new()));
+                let options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines)
+                    .with_extension(&standard_observer);
+                let (expected, standard_diagnostics) = {
+                    let _standard = StandardEventRootGuard::install();
+                    collecting_lint_events(|| parse_with_options(source, &options))
+                };
+                assert_eq!((actual, diagnostics), (expected, standard_diagnostics));
+                assert_eq!(callbacks, standard_observer.0.into_inner());
             }
         }
     }
@@ -1776,6 +1813,15 @@ fn event_owned_plain_paragraph(cur: &LineCursor<'_>, options: &Options<'_>) -> b
             break;
         }
         bytes += line.len();
+        // An attached ID on a single, otherwise plain line is handled by the
+        // inline parser. Keep the next line out of this fast path so a block
+        // attribute or caption still gets the standard paragraph boundary.
+        if count == 0
+            && attached_plain_id(line)
+            && cur.lines.line(cur.pos + 1).map_or(true, is_blank_line)
+        {
+            return true;
+        }
         let plain = line.as_bytes()[0].is_ascii_alphabetic()
             && line.bytes().all(|byte| {
                 byte.is_ascii_alphabetic()
@@ -1818,6 +1864,26 @@ fn event_owned_plain_paragraph(cur: &LineCursor<'_>, options: &Options<'_>) -> b
         count += 1;
     }
     count != 0
+}
+
+fn attached_plain_id(line: &str) -> bool {
+    if line.len() > 256 {
+        return false;
+    }
+    let Some((host, id)) = line
+        .strip_suffix('}')
+        .and_then(|line| line.split_once("{#"))
+    else {
+        return false;
+    };
+    !host.is_empty()
+        && host
+            .bytes()
+            .all(|byte| byte.is_ascii_alphabetic() || byte == b' ')
+        && !id.is_empty()
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
 }
 
 fn refused_root_plus_at(cur: &LineCursor<'_>, line: &str) -> bool {
