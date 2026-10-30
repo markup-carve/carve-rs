@@ -558,29 +558,50 @@ pub(crate) fn attached_block_end(
             }
         }
         // A colon fence is a self-delimiting block; skip the whole region so a
-        // `+` inside it is content, not the parent's boundary. Unterminated
-        // colon containers close at end of input.
-        if let Some(fence_len) = detect_line_block_open(line) {
-            end = find_colon_fence_end(lines, end, fence_len, true, closer_index, comment_closers);
-            continue;
-        }
-        if let Some(fence_len) = detect_hardbreaks_block_open(line) {
-            end = find_colon_fence_end(lines, end, fence_len, false, closer_index, comment_closers);
-            continue;
-        }
-        if let Some(fence_len) = detect_quote_block_open(line) {
-            end = find_colon_fence_end(lines, end, fence_len, false, closer_index, comment_closers);
-            continue;
-        }
-        if let Some(open) = detect_container_open(line) {
-            end = find_colon_fence_end(
-                lines,
-                end,
-                open.fence_len,
-                false,
-                closer_index,
-                comment_closers,
-            );
+        // `+` inside it is content, not the parent's boundary. An unterminated
+        // one ends with the attached block, at its first blank line (§17 L3).
+        let colon = detect_line_block_open(line)
+            .map(|fence_len| (fence_len, true))
+            .or_else(|| detect_hardbreaks_block_open(line).map(|fence_len| (fence_len, false)))
+            .or_else(|| detect_quote_block_open(line).map(|fence_len| (fence_len, false)))
+            .or_else(|| detect_container_open(line).map(|open| (open.fence_len, false)));
+        if let Some((fence_len, literal)) = colon {
+            let opener = end;
+            // Only a later bare run of this width can close it. The index keeps
+            // repeated unclosed openers linear.
+            let may_close = lines.colon_closes(opener).unwrap_or_else(|| {
+                closer_index
+                    .get_or_insert_with(|| build_code_closer_last_index(&lines))
+                    .entry(b':')
+                    .or_insert_with(|| {
+                        let mut last = Vec::new();
+                        for at in 0..lines.len() {
+                            if let Some(width) = exact_colon_fence_len(lines.at(at)) {
+                                if last.len() <= width {
+                                    last.resize(width + 1, 0);
+                                }
+                                last[width] = at;
+                            }
+                        }
+                        last
+                    })
+                    .get(fence_len)
+                    .is_some_and(|&last| last > opener)
+            });
+            end = if may_close {
+                find_colon_fence_end(
+                    lines,
+                    opener,
+                    fence_len,
+                    literal,
+                    closer_index,
+                    comment_closers,
+                )
+            } else {
+                (opener + 1..lines.len())
+                    .find(|&at| is_blank_line(lines.at(at)))
+                    .unwrap_or(lines.len())
+            };
             continue;
         }
         if is_boundary(line, end) {
@@ -605,6 +626,49 @@ pub(crate) fn attached_block_lines_classified(
     }
     let materialized = std::cell::OnceCell::new();
     start + attached_one_block_lines(lines.window(start..end, &materialized), options)
+}
+
+/// One past the block a `+` attached in a host with no marker column: a comment or
+/// a definition is invisible, so the block it leads is attached with it (CARVE-P0-004).
+pub(crate) fn attached_block_past_invisible(
+    lines: CursorLines<'_>,
+    start: usize,
+    comment_closers: &mut Option<HashMap<usize, usize>>,
+    closer_index: &mut Option<HashMap<u8, Vec<usize>>>,
+    options: &Options<'_>,
+    is_boundary: &mut dyn FnMut(&str, usize) -> bool,
+) -> usize {
+    let mut end = attached_block_lines_classified(
+        lines,
+        start,
+        comment_closers,
+        closer_index,
+        options,
+        is_boundary,
+    );
+    while end > start
+        && lines.line(end - 1).is_some_and(|last| {
+            is_line_comment_any_column(last)
+                || (!last.starts_with([' ', '\t'])
+                    && (parse_link_def_line(last).is_some()
+                        || parse_footnote_def_line(last).is_some()))
+        })
+        && lines.line(end).is_some_and(|next| !is_boundary(next, end))
+    {
+        let prior = end;
+        end = attached_block_lines_classified(
+            lines,
+            prior,
+            comment_closers,
+            closer_index,
+            options,
+            is_boundary,
+        );
+        if end == prior {
+            break;
+        }
+    }
+    end
 }
 
 /// One past a colon block attached by a first-block `+` whose opener sits at or
@@ -781,7 +845,13 @@ pub(crate) fn parse_continuation_block(
             &mut sub.comment_closer_last_index,
             &mut sub.code_closer_last_index,
             &mut |line, at| {
-                at > block_start && below_item_definition(line, base_indent, content_col)
+                at > block_start
+                    && (below_item_definition(line, base_indent, content_col)
+                        // A block at the item's column interrupts: the paragraph
+                        // only stands left of it (§17 L3).
+                        || (indent_columns(line) >= content_col
+                            && !is_blank_line(line)
+                            && !line_starts_paragraph(trim_ascii_start(line))))
             },
         );
         sub.lines = CursorLines::Slice(&slice[..paragraph_end]);

@@ -1,7 +1,7 @@
 use carve::to_html;
 
 #[test]
-#[ignore = "carve#4409: a line after a letter below a nested fence, listed on carve-rs#3589"]
+#[ignore = "carve#4409: a line below a marker-line child of a task keeps its column; `- [ ] - ```` over `      +` reads it as payload"]
 fn column_zero_markers_and_indented_plus_below_fences_follow_their_columns() {
     for source in [
         "- ```\n+\n\ntail",

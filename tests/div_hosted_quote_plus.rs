@@ -23,7 +23,7 @@ fn consecutive_plus_stays_in_div_hosted_quote() {
 
         let followed = format!("::: {host}\n> q\n+\n+\nafter\n:::\n");
         let html = to_html(&followed);
-        assert!(html.contains("<p>q\n+</p>"), "{followed:?}: {html}");
+        assert!(html.contains("<p>q</p>"), "{followed:?}: {html}");
         assert!(html.contains("<p>after</p>"), "{followed:?}: {html}");
     }
 }

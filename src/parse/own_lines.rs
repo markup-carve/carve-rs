@@ -89,6 +89,8 @@ struct Frame {
     plus: Option<usize>,
     /// A fence that fills a description's `+`: it closes back into that list.
     fills_dd: bool,
+    /// The line of this frame's table row, for the continuation row below it.
+    table_line: Option<usize>,
 }
 
 impl Frame {
@@ -116,6 +118,7 @@ impl Frame {
             doc_marker: 0,
             plus: None,
             fills_dd: false,
+            table_line: None,
         }
     }
 }
@@ -262,6 +265,23 @@ fn strip_quote_levels(line: &str, depth: usize) -> Option<&str> {
         rest = &rest[len + quote_marker(&rest[len..])?..];
     }
     Some(rest)
+}
+
+fn trim_ws_start(rest: &str) -> &str {
+    rest.trim_start_matches([' ', '\t'])
+}
+
+fn is_sibling_of(kind: Kind, text: &str) -> bool {
+    match kind {
+        Kind::Item => detect_list_marker_full(text).is_some(),
+        Kind::Dd => {
+            (text.starts_with(":: ") && !text[3..].trim().is_empty())
+                || text
+                    .strip_prefix(':')
+                    .is_some_and(|t| t.starts_with(' ') && !t.trim().is_empty())
+        }
+        _ => false,
+    }
 }
 
 fn is_cont_marker(rest: &str) -> bool {
@@ -728,11 +748,7 @@ impl<'a> Walk<'a> {
     /// The one attach rule (PART 9 §17 L3, carve#4409): the host gives its marker
     /// column and the quote frames around it the prefixes the next line must carry.
     fn plus_attaches(&self, host: usize, at: usize, column: usize) -> Result<(), Refusal> {
-        let depth = self.frames[1..host]
-            .iter()
-            .filter(|f| f.kind == Kind::Quote)
-            .count();
-        self.attaches_at(self.frames[host].kind, at, column, depth)
+        self.attaches_at(self.frames[host].kind, at, column, host)
     }
 
     fn attaches_at(
@@ -740,7 +756,7 @@ impl<'a> Walk<'a> {
         kind: Kind,
         at: usize,
         column: usize,
-        depth: usize,
+        host: usize,
     ) -> Result<(), Refusal> {
         let Some(line) = self.lines.get(at + 1) else {
             return Err(Refusal::Document);
@@ -748,22 +764,18 @@ impl<'a> Walk<'a> {
         if at + 2 == self.lines.len() && line.is_empty() {
             return Err(Refusal::Document);
         }
-        let mut rest = *line;
-        for _ in 0..depth {
-            let (_, len) = indent_cols(rest);
-            let Some(n) = quote_marker(&rest[len..]) else {
-                return Err(if is_blank_line(line) {
-                    Refusal::Blank
-                } else {
-                    Refusal::Left
-                });
-            };
-            rest = &rest[len + n..];
-        }
+        let Some(rest) = self.through_quotes(line, host) else {
+            return Err(if is_blank_line(line) {
+                Refusal::Blank
+            } else {
+                Refusal::Left
+            });
+        };
         let (_, len) = indent_cols(rest);
         let rest = &rest[len..];
         let text = rest.trim_end_matches([' ', '\t', '\r']);
-        if text.is_empty() {
+        // A line of nothing but quote markers is blank at its own level.
+        if text.chars().all(|ch| matches!(ch, '>' | ' ' | '\t')) {
             return Err(Refusal::Blank);
         }
         let col = doc_column(line, rest);
@@ -780,20 +792,67 @@ impl<'a> Walk<'a> {
         }) {
             return Err(Refusal::WrongColumn);
         }
-        match kind {
-            Kind::Item if detect_list_marker_full(text).is_some() => Err(Refusal::Sibling),
-            Kind::Dd if text.starts_with(":: ") && !text[3..].trim().is_empty() => {
-                Err(Refusal::Sibling)
-            }
-            Kind::Dd
-                if text
-                    .strip_prefix(':')
-                    .is_some_and(|t| t.starts_with(' ') && !t.trim().is_empty()) =>
-            {
-                Err(Refusal::Sibling)
-            }
-            _ => Ok(()),
+        if !matches!(kind, Kind::Item | Kind::Dd) {
+            return Ok(());
         }
+        // An attribute run moves nothing, so the sibling test reads the block it
+        // leads as well (carve#4278).
+        if is_sibling_of(kind, text)
+            || self
+                .line_after_run(at + 1, host)
+                .is_some_and(|led| is_sibling_of(kind, led))
+        {
+            return Err(Refusal::Sibling);
+        }
+        Ok(())
+    }
+
+    /// The first line past the attribute and invisible lines from `from`, or
+    /// nothing when they hold no attribute line.
+    fn line_after_run(&self, from: usize, host: usize) -> Option<&'a str> {
+        let view = |k: usize| -> &'a str {
+            trim_ws_start(self.through_quotes(self.lines[k], host).unwrap_or(""))
+        };
+        let mut run = false;
+        let mut k = from;
+        while k < self.lines.len() {
+            let rest = view(k);
+            let attr = rest
+                .starts_with('{')
+                .then(|| standalone_attrs_block_len_iter((k..self.lines.len()).map(view)));
+            if let Some(Some(len)) = attr {
+                run = true;
+                k += len;
+            } else if rest.starts_with("%%")
+                || parse_link_def_line(rest).is_some()
+                || parse_footnote_def_line(rest).is_some()
+                || detect_abbreviation_def(rest).is_some()
+            {
+                k += 1;
+            } else {
+                return run.then(|| rest.trim_end_matches([' ', '\t', '\r']));
+            }
+        }
+        None
+    }
+
+    /// The line behind the quotes around frame `host`.
+    fn through_quotes(&self, line: &'a str, host: usize) -> Option<&'a str> {
+        let mut rest = line;
+        // A `>` left of a frame holding that quote has ended the frame, so it is
+        // not that quote's prefix.
+        let mut floor = 0;
+        for frame in &self.frames[1..host] {
+            if frame.kind != Kind::Quote {
+                floor = frame.col;
+                continue;
+            }
+            let (col, len) = indent_cols(rest);
+            let n = quote_marker(&rest[len..]).filter(|_| col >= floor)?;
+            rest = &rest[len + n..];
+            floor = 0;
+        }
+        Some(rest)
     }
 
     /// A marker no container claims names the list item it stands above, if any.
@@ -1070,9 +1129,25 @@ impl<'a> Walk<'a> {
         }
         let form = self.classify(c.rest, reached, at);
         let top_para = self.frames.last().expect("frame").para;
+        // PART 0 [B-term-keep]: past a missed quote or note a marker leaves a term,
+        // and past a quote a separator too (carve#4300).
+        let term_refuses = self.frames.last().expect("frame").last == Last::Term && {
+            let missed_frames = &self.frames[reached + 1..];
+            if detect_list_marker_full(c.rest).is_some() {
+                missed_frames
+                    .iter()
+                    .any(|f| matches!(f.kind, Kind::Quote | Kind::Note))
+            } else {
+                c.rest
+                    .strip_prefix(':')
+                    .is_some_and(|t| t.starts_with(' ') && !t.trim().is_empty())
+                    && missed_frames.iter().any(|f| f.kind == Kind::Quote)
+            }
+        };
         if missed
             && !c.rest.is_empty()
             && top_para
+            && !term_refuses
             && !form.interrupts()
             && !matches!(form, Form::Dd(_))
             && !matches!(&form, Form::Item(_, _, axes)
@@ -1291,6 +1366,9 @@ impl<'a> Walk<'a> {
             let o = &mut self.frames[owner];
             // A caption folds its following lines like a paragraph (CARVE-P2-021).
             o.para = matches!(form, Form::Leaf(false));
+            o.table_line = matches!(form, Form::Leaf(true))
+                .then_some(at)
+                .filter(|_| is_table_start(c.rest) || is_table_continuation(c.rest));
             o.last = match form {
                 Form::Term => Last::Term,
                 Form::Dd(_) => Last::Dd,
@@ -1488,13 +1566,14 @@ impl<'a> Walk<'a> {
             .iter()
             .filter(|f| f.kind == Kind::Quote)
             .count();
+        let host = reached + 1;
         let mut tail = rest;
         while let Some(marker) = detect_list_marker_full(tail) {
             let (_, len) = indent_cols(marker.content);
             let inner = &marker.content[len..];
             if is_cont_marker(inner) {
                 let column = doc_column(line, tail);
-                match self.attaches_at(Kind::Item, at, column, depth) {
+                match self.attaches_at(Kind::Item, at, column, host) {
                     Ok(()) => self.accepted.push((
                         self.first_line + at,
                         continuation_marker::Decision {
@@ -1571,6 +1650,15 @@ impl<'a> Walk<'a> {
             }
         }
         if rest.starts_with("%%") {
+            return Form::Leaf(true);
+        }
+        // T6: a continuation row right under a row of the owner's table is that
+        // table's line (carve#4161).
+        if self.frames[owner]
+            .table_line
+            .is_some_and(|line| line + 1 == at)
+            && is_table_continuation(rest)
+        {
             return Form::Leaf(true);
         }
         if rest.starts_with("[^") && parse_footnote_def_line(rest).is_some() {

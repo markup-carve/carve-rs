@@ -24,7 +24,6 @@
         "fences-5e87d36367a5",
         "fences-77de8e162288",
         "fences-97b499ad9a5e",
-        "fences-c122b842ba25",
         "fences-e6b042364968",
         "fences-e727fbef63d9",
         "fences-ee4a1e36de97",
@@ -35,7 +34,6 @@
       "ticket": "markup-carve/carve-rs#3534",
       "cause": "untriaged day-one drift in the lazy family",
       "cases": [
-        "lazy-152051755b0d",
         "lazy-27c92f4153c2",
         "lazy-409aff3004af",
         "lazy-5d96f214fe7c",
@@ -62,7 +60,6 @@
         "notes-47da77f91f9b",
         "notes-4dc51b5608ab",
         "notes-5078f8dc86e9",
-        "notes-68b5a5674da9",
         "notes-6db864f6ba22",
         "notes-7758bc8d539d",
         "notes-8394e9e3db4f",
@@ -73,12 +70,10 @@
         "notes-c0e4dadcf339",
         "notes-ce4e197bb78b",
         "notes-d2500c45a956",
-        "notes-dd130b0b59c1",
         "notes-e065114c465d",
         "notes-ee421f59e501",
         "notes-f7a4d0c570a4",
-        "notes-fc2e2bb31a32",
-        "notes-ffd53f488294"
+        "notes-fc2e2bb31a32"
       ]
     },
     {
@@ -105,7 +100,6 @@
       "cause": "untriaged day-one drift in the roundtrip family",
       "cases": [
         "roundtrip-50e7fa11ce58",
-        "roundtrip-7439f84f3de0",
         "roundtrip-cf313303938e"
       ]
     },
@@ -146,9 +140,7 @@
       "ticket": "markup-carve/carve-rs#3535",
       "cause": "pin move to carve 8d8bd4a9: rulings on inline, attribute and layout shapes this engine has not reached",
       "cases": [
-        "attributes-4db504145296",
         "fences-0a0fa885eb41",
-        "fences-53415847bc3e",
         "fences-6bb4b2c08642",
         "fences-957709fb7e0e",
         "fences-e0910c8dd446",
@@ -168,16 +160,16 @@
         "lazy-dc0e3940e686",
         "lazy-f60632f36c87",
         "lazy-fbd48cd0e8d7",
-        "ownership-2d7726aea29e",
         "ownership-5c23f3ce4ed2",
         "ownership-8ee51def382e",
         "ownership-bd5caf2c0c4d",
         "ownership-f93c4ff64ea3",
-        "plus-01e20a4e5649",
-        "plus-a6620a1e6b53",
         "roundtrip-0c1279f7ce48",
-        "roundtrip-c2a2864425dc",
-        "roundtrip-d27a8c0b8e38"
+        "roundtrip-d27a8c0b8e38",
+        "lazy-353dc1c74791",
+        "lazy-7753aedc9422",
+        "plus-2bca1c74608b",
+        "plus-a0f7cf7091d8"
       ]
     }
   ]

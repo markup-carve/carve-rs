@@ -229,14 +229,7 @@ struct AheadOfPin {
 // `]` where the fixture escapes the `[`. Both spellings conform, so the entry
 // died to a canonical-form decision rather than to a fix: the fixture is the
 // cross-engine contract for importer output, and this engine now writes it.
-const AHEAD_OF_PIN: &[AheadOfPin] = &[AheadOfPin {
-    fixture: "list-table-for-block-cells",
-    reason: "the fixture still writes an empty cell's item `- +`; PART 11 writes `- {empty}`",
-    carve: Some(
-        "{.steps header-rows=1}\n::: list-table \"Setup /steps/\"\n- - Step\n  - What\n  - Note\n- - 1\n\n  - Install the tool.\n\n    ```\n    npm install carve\n    ```\n\n  -{.hint} Once per machine\n- - ^\n  - - Check the version\n    - Read the help\n  -{header} Optional\n- - 2\n  - Run it\\\n    on a file\n  - <\n- - 3\n  - \\^\n  - {empty}\n:::\n",
-    ),
-    ast: None,
-}];
+const AHEAD_OF_PIN: &[AheadOfPin] = &[];
 
 /// The two fields that record WHERE a node was written rather than what it is.
 ///

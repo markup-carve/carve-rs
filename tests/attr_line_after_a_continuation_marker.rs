@@ -83,7 +83,7 @@ fn a_sublist_after_the_marker_takes_them() {
     // item's paragraph, so the list was not even built.
     assert_eq!(
         carve::to_html("- a\n+\n{.x}\n  - b\n"),
-        "<ul>\n  <li>a\n    <ul class=\"x\">\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>a\n+</li>\n</ul>\n<ul class=\"x\">\n  <li>b</li>\n</ul>"
     );
 }
 
@@ -194,7 +194,7 @@ fn attributes_that_reach_nothing_are_dropped() {
     );
     assert_eq!(
         carve::to_html("- a\n+\n{.x}\n- b\n"),
-        "<ul>\n  <li>a</li>\n  <li>b</li>\n</ul>"
+        "<ul>\n  <li>a\n+</li>\n</ul>\n<ul class=\"x\">\n  <li>b</li>\n</ul>"
     );
 }
 

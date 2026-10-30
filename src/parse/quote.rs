@@ -2119,14 +2119,19 @@ impl<'a> QuoteBody<'a> {
         options: &Options<'_>,
         line: &str,
     ) -> bool {
-        // A following marker that owns a block stays the attachment point.
-        // The earlier `+` can still continue the open quote paragraph.
-        if cur.lines.line(cur.pos + 1).is_some_and(is_plus_marker)
+        let holds_next = cur.lines.line(cur.pos + 1).is_some_and(is_plus_marker)
             && cur.lines.line(cur.pos + 2).is_some()
             && cur
                 .continuation_decision(cur.pos + 1)
-                .is_some_and(|decision| decision.owner == Some(continuation_marker::Kind::Quote))
-        {
+                .is_some_and(|decision| decision.owner == Some(continuation_marker::Kind::Quote));
+        // A `+` the next `+` follows hands that one the quote's next block (carve#4438).
+        if holds_next && is_plus_marker(line) {
+            self.opaque_tail = false;
+            cur.consume();
+            return true;
+        }
+        // The earlier line can still continue the open quote paragraph.
+        if holds_next {
             return false;
         }
         if !(trim_ascii(line) == "+"
@@ -2171,9 +2176,12 @@ impl<'a> QuoteBody<'a> {
             },
         );
         while attach_end > cur.pos
-            && cursor_lines
-                .line(attach_end - 1)
-                .is_some_and(is_line_comment_any_column)
+            && cursor_lines.line(attach_end - 1).is_some_and(|last| {
+                is_line_comment_any_column(last)
+                    || (!last.starts_with([' ', '\t'])
+                        && (parse_link_def_line(last).is_some()
+                            || parse_footnote_def_line(last).is_some()))
+            })
             && cursor_lines.line(attach_end).is_some_and(|next| {
                 !is_blank_line(next) && !(trim_ascii(next) == "+" && indent_columns(next) == 0)
             })

@@ -36,6 +36,6 @@ fn an_item_description_attaches_unless_the_quoted_term_folds_it() {
     let html = to_html("> - :: term\n  : body\n");
     assert_eq!(
         html,
-        "<blockquote>\n  <ul>\n    <li>\n      <dl>\n        <dt>term\n: body</dt>\n      </dl>\n    </li>\n  </ul>\n</blockquote>"
+        "<blockquote>\n  <ul>\n    <li>\n      <dl>\n        <dt>term</dt>\n      </dl>\n    </li>\n  </ul>\n</blockquote>\n<p>: body</p>"
     );
 }
