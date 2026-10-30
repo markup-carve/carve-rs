@@ -222,7 +222,7 @@ pub(super) fn render_table(
                 "a table row with no cells has no Carve source spelling",
             );
         }
-        let attrs = render_attrs(&row.attrs);
+        let attrs = render_row_attrs(&row.attrs);
         row_slots.push((rows.len(), cells.clone(), '|', attrs.clone()));
         rows.push(render_table_row(&cells, &attrs));
         let mut run = crate::parse::table_run_open_after(&cells.join("|"), None, 0);

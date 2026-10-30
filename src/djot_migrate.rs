@@ -139,12 +139,12 @@ fn djot_to_carve_prepared_with_quotes(
     .replace(token, "\0")
 }
 
-/// Carve's `+` on an empty task in a note takes the next block, and in Djot that
-/// line is outside the note, so a blank line has to end the note first.
+/// In Djot the line below an empty task in a note is outside the note, so a
+/// blank line ends the note first, as `empty_task_breaks` does for a plain list.
 fn end_note_tasks_before_text(carve: String) -> String {
     let empty_note_task =
-        cached_regex!(r"^([> \t]*)\[\^[^\]\n]+\]:[ \t]+.*\[[^\]\n]\] \+$").unwrap();
-    if !carve.contains("] +\n") {
+        cached_regex!(r"^([> \t]*)\[\^[^\]\n]+\]:[ \t]+.*\[[^\]\n]\] \{empty\}$").unwrap();
+    if !carve.contains("] {empty}\n") {
         return carve;
     }
     let lines: Vec<&str> = carve.split('\n').collect();

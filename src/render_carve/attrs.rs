@@ -43,6 +43,29 @@ pub(super) fn render_inline_attrs(attrs: &Option<Attrs>, ctx: &mut CarveContext)
     rendered
 }
 
+/// A row's block sits past the closing `|`, outside the cell cut, so a pipe in
+/// a quoted value needs no escape there (PART 11 §2).
+pub(super) fn render_row_attrs(attrs: &Option<Attrs>) -> String {
+    let rendered = render_attrs(attrs);
+    let mut out = String::with_capacity(rendered.len());
+    let mut chars = rendered.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            match chars.next() {
+                Some('|') => out.push('|'),
+                Some(next) => {
+                    out.push(ch);
+                    out.push(next);
+                }
+                None => out.push(ch),
+            }
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
 pub(super) fn render_attrs_with_markers(
     attrs: &Option<Attrs>,
     markers: &[char],
