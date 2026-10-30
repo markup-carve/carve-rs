@@ -758,8 +758,6 @@ struct DefinitionBodyCollector<'s, 'o> {
     retained_below_comment: bool,
     retained_comment_column: usize,
     retained_fence: Option<(FenceOpen, bool)>,
-    past_body_closers: Option<DefinitionBodyCloserIndex>,
-    unopened_past_fence: Option<FenceOpen>,
     // Seeded from the marker line's own content: does the body's LEAD open a
     // code fence NESTED past a list marker? Its verbatim body is the flush-left
     // lines below, which cannot close it - but an INDENTED closer written at or
@@ -844,8 +842,6 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             retained_below_comment: false,
             retained_comment_column: 0,
             retained_fence: None,
-            past_body_closers: None,
-            unopened_past_fence: None,
             nested_lead_fence,
         }
     }
@@ -922,7 +918,6 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             self.retained_below_comment = false;
             self.paragraph_column = None;
             self.paragraph_marker_column = None;
-            self.unopened_past_fence = None;
         }
         if !blank && fence.open.is_none() {
             while self
@@ -933,7 +928,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
                 self.item_content_columns.pop();
             }
         }
-        let opens_descendant_here = self.track_paragraph_owner(cur, fence, line, column);
+        let opens_descendant_here = self.track_paragraph_owner(fence, line, column);
         if !opens_descendant_here
             && !blank
             && !is_line_comment_any_column(line)
@@ -1013,7 +1008,6 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
     /// last paragraph sits in. True when this line opens a descendant.
     fn track_paragraph_owner(
         &mut self,
-        cur: &LineCursor<'_>,
         fence: &DefinitionBodyFence,
         line: &str,
         column: usize,
@@ -1027,8 +1021,6 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         }
         let local = trim_ascii_start(line);
         let content_column = self.content_column;
-        let unclosed_fence =
-            detect_fence_open(local).is_some_and(|open| self.no_closer_in_body(cur, open));
         let below_owner =
             self.paragraph_column.is_some_and(|owner| column < owner) && column >= content_column;
         if below_owner && is_reference_definition(local) {
@@ -1039,8 +1031,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
                 || !self.paragraph_owner_is_item
                 || self.marker_line_sibling_columns.contains(&column)
                 || is_definition_list_start(local))
-            && (is_list_marker(local)
-                || (!unclosed_fence && item_block_opener_with_invisible_arms(local, true)))
+            && (is_list_marker(local) || item_block_opener_with_invisible_arms(local, true))
         {
             self.adopt_paragraph_owner(local, column);
             true
@@ -1053,7 +1044,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             self.paragraph_column.is_some()
         } else {
             if self.paragraph_column.is_some_and(|owner| column >= owner)
-                && ((!unclosed_fence && item_block_opener_with_invisible_arms(local, true))
+                && (item_block_opener_with_invisible_arms(local, true)
                     || is_line_comment_any_column(line))
             {
                 self.end_descendant_block();
@@ -1243,11 +1234,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             }
         }
         let paragraph_open = self.paragraph_open();
-        let accept_fence_opener = fence.open.is_none()
-            && detect_fence_open(&sliced).is_some_and(|open| {
-                let _ = open;
-                true
-            });
+        let accept_fence_opener = fence.open.is_none() && detect_fence_open(&sliced).is_some();
         // The nested description's `+`, or a quote's `> +`, already separates its next
         // block. A manufactured blank here would make it attach none.
         if accept_fence_opener
@@ -1269,22 +1256,6 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             // `definition_description` around it to its last placed
             // child (markup-carve/carve-rs#1833).
             self.push(String::new(), None, None, true);
-        }
-        let past_body_fence_without_closer = paragraph_open
-            && fence.open.is_none()
-            && self.nested_lead_fence.is_none()
-            && self.descendant_marker_fence.is_none()
-            && detect_fence_open(&sliced).is_none()
-            && detect_fence_open(trim_ascii_start(&sliced))
-                .is_some_and(|open| self.closer_only_below_body(cur, open));
-        if past_body_fence_without_closer {
-            self.unopened_past_fence = detect_fence_open(trim_ascii_start(&sliced));
-            sliced = format!("{LAZY}{}", trim_ascii_start(&sliced));
-        } else if !accept_fence_opener
-            && fence.open.is_none()
-            && detect_fence_open(&sliced).is_some()
-        {
-            sliced.insert_str(0, LAZY);
         }
         // A tab can leave more synthetic spaces than consumed source
         // characters. Keep that signed difference for the later rebase.
@@ -1347,43 +1318,6 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
                     .last()
                     .is_some_and(|line| !is_blank_line(line)),
             }
-    }
-
-    fn closers(&mut self, cur: &LineCursor<'_>) -> &DefinitionBodyCloserIndex {
-        let content_column = self.content_column;
-        self.past_body_closers
-            .get_or_insert_with(|| definition_body_closer_index(cur, cur.pos + 1, content_column))
-    }
-
-    /// Is `open` closed only by a closer below the body's column?
-    fn closer_only_below_body(&mut self, cur: &LineCursor<'_>, open: FenceOpen) -> bool {
-        if true {
-            return false;
-        }
-        let next = cur.pos + 1;
-        let closers = self.closers(cur);
-        let range = next.saturating_sub(closers.start)..closers.end.saturating_sub(closers.start);
-        next < closers.end
-            && !closers
-                .in_body
-                .code_in(range.clone(), open.fence_char, open.fence_len)
-            && closers
-                .below_body
-                .code_in(range, open.fence_char, open.fence_len)
-    }
-
-    /// Is `open` left without any closer inside the body?
-    fn no_closer_in_body(&mut self, cur: &LineCursor<'_>, open: FenceOpen) -> bool {
-        if true {
-            return false;
-        }
-        let next = cur.pos + 1;
-        let closers = self.closers(cur);
-        let range = next.saturating_sub(closers.start)..closers.end.saturating_sub(closers.start);
-        next >= closers.end
-            || !closers
-                .in_body
-                .code_in(range, open.fence_char, open.fence_len)
     }
 
     /// Advance the nested lead fence and the nested description state past a
@@ -1567,11 +1501,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         // the one that ejected them: the interrupt test below never got the
         // line.
         let opener = trim_ascii_start(line);
-        let closes_unopened_past_fence = self
-            .unopened_past_fence
-            .is_some_and(|open| is_fence_close(opener, open));
-        let fold_below_column_opener =
-            self.folds_below_column_opener(cur, opener, indent, closes_unopened_past_fence);
+        let fold_below_column_opener = self.folds_below_column_opener(opener, indent);
         if self.opener_ends_body(cur, line, indent, fold_below_column_opener) {
             return BodyStep::Stop;
         }
@@ -1597,7 +1527,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         // Fences and captions retain their separate boundary rules.
         if !below_the_column
             && cur.at_document_level
-            && fence_interrupts_body(cur, &owned, self.content_column)
+            && detect_fence_open(&owned).is_some()
             && !self.retained_below_comment
         {
             return BodyStep::Stop;
@@ -1654,9 +1584,6 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         } else {
             cur.source_col(cur.pos)
         };
-        if closes_unopened_past_fence {
-            self.unopened_past_fence = None;
-        }
         self.push(keep, cur.source_line(cur.pos), kept_col, false);
         cur.consume();
         BodyStep::Next
@@ -1664,20 +1591,12 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
 
     /// A structural opener in the band below the body's column that still
     /// folds in as text.
-    fn folds_below_column_opener(
-        &mut self,
-        cur: &LineCursor<'_>,
-        opener: &str,
-        indent: usize,
-        closes_unopened_past_fence: bool,
-    ) -> bool {
+    fn folds_below_column_opener(&self, opener: &str, indent: usize) -> bool {
         indent > 0
             && indent < self.content_column
             && (detect_heading(opener).is_some()
                 || thematic_break_marker(opener).is_some()
-                || closes_unopened_past_fence
                 || is_table_start(opener)
-                || detect_fence_open(opener).is_some_and(|open| self.no_closer_in_body(cur, open))
                 || strip_blockquote_prefix(opener).is_some()
                 || caption_content(opener).is_some())
     }
@@ -1780,38 +1699,6 @@ fn authored_below_body(cur: &LineCursor<'_>, indent: usize) -> bool {
     })
 }
 
-/// AN INFO STRING IS NOT AN OPENER (markup-carve/carve#2735). A
-/// flush-left fence line below a body that takes a fold is the
-/// body's content whether or not it carries a language, so the
-/// closer ahead is the only thing that decides. Reading the language
-/// as an opener split the two spellings and pinned the split in
-/// `a_fence_ends_the_body`, which the clause contradicts.
-fn fence_interrupts_body(cur: &LineCursor<'_>, owned: &str, content_column: usize) -> bool {
-    detect_fence_open(owned).is_some_and(|open| {
-        item_body_fence_has_closer(
-            cur.lines.range(cur.pos + 1..cur.lines.len()),
-            open,
-            content_column,
-            |line, indent| {
-                indent < content_column
-                    && (is_definition_placeholder(line)
-                        || is_definition_list_start(strip_lazy(line))
-                        || strip_definition_marker(strip_lazy(line)).is_some())
-            },
-        )
-    })
-}
-
-/// Index closer runs that can reach this description body. Build it once for
-/// the current entry so several fence-shaped paragraph lines do not each scan
-/// the same remaining suffix.
-struct DefinitionBodyCloserIndex {
-    start: usize,
-    end: usize,
-    in_body: ScopedFenceClosers,
-    below_body: ScopedFenceClosers,
-}
-
 /// `> +` (or stacked `> > +`): the quote's first-block marker, whose next block it attaches.
 fn quote_opens_with_plus(line: &str) -> bool {
     let Some(mut rest) = strip_blockquote_prefix(trim_ascii_start(line)) else {
@@ -1821,53 +1708,6 @@ fn quote_opens_with_plus(line: &str) -> bool {
         rest = inner;
     }
     is_plus_marker(rest)
-}
-
-fn definition_body_closer_index(
-    cur: &LineCursor<'_>,
-    start: usize,
-    content_column: usize,
-) -> DefinitionBodyCloserIndex {
-    let mut in_body = Vec::new();
-    let mut below_body = Vec::new();
-    let mut pending_blank = false;
-    for line in cur.lines.range(start..cur.lines.len()) {
-        #[cfg(test)]
-        DEFINITION_PAST_FENCE_SCAN_LINES.with(|work| work.set(work.get() + 1));
-        if is_blank_line(line) {
-            pending_blank = true;
-            in_body.push("");
-            below_body.push("");
-            continue;
-        }
-        let indent = indent_columns(line);
-        if indent < content_column
-            && (pending_blank
-                || is_definition_placeholder(line)
-                || is_definition_list_start(strip_lazy(line))
-                || strip_definition_marker(strip_lazy(line)).is_some()
-                || indent == 0 && strip_blockquote_prefix(line).is_some())
-        {
-            break;
-        }
-        pending_blank = false;
-        in_body.push(if indent >= content_column {
-            trim_ascii_start(line)
-        } else {
-            ""
-        });
-        below_body.push(if indent < content_column {
-            trim_ascii_start(line)
-        } else {
-            ""
-        });
-    }
-    DefinitionBodyCloserIndex {
-        start,
-        end: start + in_body.len(),
-        in_body: ScopedFenceClosers::new(in_body.into_iter()),
-        below_body: ScopedFenceClosers::new(below_body.into_iter()),
-    }
 }
 
 #[cfg(test)]

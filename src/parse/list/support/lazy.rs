@@ -146,70 +146,9 @@ pub(crate) fn collect_trailing_lazy_through_framed(
     let (after_comment, ancestor_quote_column) = lazy_scope;
     let mut buffered = frame_band_lines.then(LineBuffer::default);
     if cur.peek().is_some_and(|line| {
-        matches!(line.as_bytes().first(), Some(b'`' | b'~'))
-            && detect_fence_open(line)
-                .is_some_and(|open| cur.has_list_fence_closer_after(cur.pos, open))
+        matches!(line.as_bytes().first(), Some(b'`' | b'~')) && detect_fence_open(line).is_some()
     }) {
         return false;
-    }
-    // PART 0 X1 lets a retained comment hand the next valid fence to its item.
-    if let Some(line) = cur.peek() {
-        if indent_columns(line) < content_col
-            && detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
-                (indent_columns(line) > 0
-                    || !cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len))
-                    && !item_body_fence_has_closer(
-                        cur.lines.range(cur.pos + 1..cur.lines.len()),
-                        open,
-                        content_col,
-                        |next, _| {
-                            detect_list_marker_full(next)
-                                .is_some_and(|marker| marker.indent <= list_base)
-                        },
-                    )
-            })
-        {
-            let mut trailing = nested.source.lines().rev();
-            let last = trailing.next();
-            let previous = trailing.next();
-            let after_comment = last.is_some_and(is_line_comment_any_column)
-                || last.is_some_and(|close| {
-                    detect_comment_fence_line_any_column(close).is_some_and(|fence| {
-                        previous.into_iter().chain(trailing).any(|open| {
-                            detect_comment_fence_line_any_column(open)
-                                .is_some_and(|candidate| candidate.fence_len == fence.fence_len)
-                        })
-                    })
-                });
-            if after_comment
-                && !matched_comment_before(cur)
-                    .is_some_and(|at| marked_quote_before_comment(cur, at))
-            {
-                nested.push_newline_at(
-                    trim_ascii_start(line).to_owned(),
-                    cur.source_line(cur.pos),
-                    cur.source_col(cur.pos)
-                        .map(|col| col + leading_ws(line) as isize),
-                );
-                cur.consume();
-                while let Some(line) = cur.peek() {
-                    if !is_blank_line(line) && indent_columns(line) < content_col {
-                        break;
-                    }
-                    let (body, consumed, _) = slice_columns_mapped(line, content_col, true);
-                    nested.push_newline_at(
-                        body,
-                        cur.source_line(cur.pos),
-                        cur.source_col(cur.pos).map(|col| col + consumed as isize),
-                    );
-                    cur.consume();
-                }
-                if cur.pos > 0 && is_blank_line(cur.lines.at(cur.pos - 1)) {
-                    nested.push_newline_at(String::new(), None, None);
-                }
-                return true;
-            }
-        }
     }
     while let Some(line) = cur.peek() {
         let indent = indent_columns(line);

@@ -449,7 +449,7 @@ pub(in crate::parse) struct TermFenceHost {
 
 pub(in crate::parse) fn term_folded_lines(
     lines: &[&str],
-    closer_maxima: &PrepassFenceClosers,
+    _closer_maxima: &PrepassFenceClosers,
     options: &Options<'_>,
 ) -> TermLineOwnership {
     let ownership = TermLineOwnership {
@@ -464,7 +464,7 @@ pub(in crate::parse) fn term_folded_lines(
     {
         return ownership;
     }
-    let mut scan = TermScan::new(lines, closer_maxima, options, ownership);
+    let mut scan = TermScan::new(lines, options, ownership);
     while scan.index < lines.len() {
         scan.step();
     }
@@ -572,7 +572,6 @@ struct TermFenceBody {
     owned: bool,
     floor: usize,
     quote_columns: Option<Vec<usize>>,
-    closer_ahead: bool,
 }
 
 impl TermFenceBody {
@@ -586,13 +585,12 @@ impl TermFenceBody {
                             self.floor,
                             self.quote_columns.as_deref().unwrap_or(&[]),
                         ))
-                    || prepass_fence_ends_above(line, self.open, self.closer_ahead))
+                    || prepass_fence_ends_above(line, self.open))
     }
 }
 
 struct TermScan<'a, 'o> {
     lines: &'a [&'a str],
-    closer_maxima: &'a PrepassFenceClosers,
     options: &'a Options<'o>,
     ownership: TermLineOwnership,
     // Lines by the length of their leading `%` run, so finding the closer of a
@@ -611,12 +609,7 @@ struct TermScan<'a, 'o> {
 }
 
 impl<'a, 'o> TermScan<'a, 'o> {
-    fn new(
-        lines: &'a [&'a str],
-        closer_maxima: &'a PrepassFenceClosers,
-        options: &'a Options<'o>,
-        ownership: TermLineOwnership,
-    ) -> Self {
+    fn new(lines: &'a [&'a str], options: &'a Options<'o>, ownership: TermLineOwnership) -> Self {
         let mut comment_runs: HashMap<usize, Vec<usize>> = HashMap::new();
         for (k, raw) in lines.iter().enumerate() {
             let run = comment_fence_width(trim_ascii_start(term_view(raw).0));
@@ -632,7 +625,6 @@ impl<'a, 'o> TermScan<'a, 'o> {
         let budget = probe_budget_for(*prefix_costs.last().unwrap());
         Self {
             lines,
-            closer_maxima,
             options,
             ownership,
             comment_runs,
@@ -970,15 +962,8 @@ impl<'a, 'o> TermScan<'a, 'o> {
             .count()
             + indent_columns(at.fence_line);
         open.quoted = at.quotes > 0;
-        let fence = prepass_fence_opens(
-            lines,
-            index,
-            open,
-            self.closer_maxima,
-            &self.ownership,
-            &self.columns,
-            at.after_term,
-        );
+        let fence =
+            prepass_fence_opens(lines, index, &self.ownership, &self.columns, at.after_term);
         if !fence.opens {
             self.probe.unresolved_code_delimiter = true;
             self.index += 1;
@@ -1027,7 +1012,6 @@ impl<'a, 'o> TermScan<'a, 'o> {
                 .as_ref()
                 .map_or(fence.host_content_col, |(content_col, _)| *content_col),
             quote_columns: term_host.map(|(_, quote_columns)| quote_columns),
-            closer_ahead: fence.closer_ahead,
         };
         if body.quote_columns.is_none() && !fence.quote_columns.is_empty() {
             body.quote_columns = Some(fence.quote_columns);
@@ -1621,19 +1605,6 @@ fn list_run(lines: &[&str], index: usize, terms: &TermLineOwnership) -> bool {
     found
 }
 
-/// Is there a line below `index` that closes `open`?
-///
-/// The suffix maximum rejects absent runs; column buckets answer compatible
-/// runs without scanning the remaining source.
-pub(in crate::parse) fn prepass_fence_closer_ahead(
-    _lines: &[&str],
-    _index: usize,
-    _open: FenceOpen,
-    _maxima: &PrepassFenceClosers,
-) -> bool {
-    true
-}
-
 /// Whether a fence opener on `lines[index]` really opens a fence for a
 /// definition pre-pass, and whether a closer is waiting for it.
 ///
@@ -1645,19 +1616,15 @@ pub(in crate::parse) fn prepass_fence_closer_ahead(
 pub(in crate::parse) fn prepass_fence_opens(
     lines: &[&str],
     index: usize,
-    open: FenceOpen,
-    maxima: &PrepassFenceClosers,
     terms: &TermLineOwnership,
     columns: &ContentColumns,
     after_term: bool,
 ) -> PrepassFence {
-    let closer_ahead = prepass_fence_closer_ahead(lines, index, open, maxima);
     let prefix = strip_container_prefixes_at(lines[index], columns, after_term);
     let quote_columns = term_quote_columns_for(prefix.structural, columns);
     let paragraph_above = prepass_paragraph_open_above(lines, index, &quote_columns, terms);
     let item_paragraph = previous_prepass_paragraph(terms, index);
-    let inline_marker_fence = closer_ahead
-        && !terms.fence_openers.contains_key(&index)
+    let inline_marker_fence = !terms.fence_openers.contains_key(&index)
         && !quote_columns.is_empty()
         && paragraph_above
         && index.checked_sub(1).is_some_and(|above| {
@@ -1711,7 +1678,6 @@ pub(in crate::parse) fn prepass_fence_opens(
                 },
             )
         },
-        closer_ahead,
         inline_marker: inline_marker_fence,
     }
 }
@@ -1720,7 +1686,6 @@ pub(in crate::parse) struct PrepassFence {
     pub(in crate::parse) quote_columns: Vec<usize>,
     pub(in crate::parse) host_content_col: usize,
     pub(in crate::parse) opens: bool,
-    pub(in crate::parse) closer_ahead: bool,
     pub(in crate::parse) inline_marker: bool,
 }
 
@@ -1733,15 +1698,11 @@ pub(in crate::parse) struct PrepassFence {
 /// does not change that: the closer search passes a below-column line and the
 /// line still ends the fence (CARVE-P0-014). A quoted line's raw indent does
 /// not measure the fence's column, so it ends only a fence with no closer.
-pub(in crate::parse) fn prepass_fence_ends_above(
-    line: &str,
-    open: FenceOpen,
-    closer_ahead: bool,
-) -> bool {
+pub(in crate::parse) fn prepass_fence_ends_above(line: &str, open: FenceOpen) -> bool {
     !open.quoted
         && open.content_col > 0
         && !is_blank_line(line)
-        && !(closer_ahead && prepass_line_is_quoted(line))
+        && !prepass_line_is_quoted(line)
         && indent_columns(line) < open.content_col
 }
 
@@ -1852,7 +1813,6 @@ pub(in crate::parse) fn extract_link_defs_with_guard_full(
     let mut inline_marker_paragraph = None;
     let mut term_fence_floor = 0;
     // Whether that fence has a closer, which decides whether a quoted line ends it.
-    let mut fence_closer_ahead = false;
     // A LINE BLOCK's body is inline content (`line_block_line = {whitespace},
     // inline_content, newline`), so a definition-shaped line inside one is text,
     // not a definition. Without this the line was extracted here and never
@@ -1957,7 +1917,7 @@ pub(in crate::parse) fn extract_link_defs_with_guard_full(
                     && ((inline_marker_fence && is_blank_line(without_blockquote_prefixes(line)))
                         || (term_fence_owned
                             && term_fence_ends_above(line, term_fence_floor, &term_fence_columns))
-                        || prepass_fence_ends_above(line, open, fence_closer_ahead))
+                        || prepass_fence_ends_above(line, open))
             {
                 in_fence = None;
             } else {
@@ -2076,8 +2036,6 @@ pub(in crate::parse) fn extract_link_defs_with_guard_full(
             let fence = prepass_fence_opens(
                 &all_lines,
                 line_index,
-                open,
-                &closer_maxima,
                 &folded_into_term,
                 &columns,
                 after_term,
@@ -2106,7 +2064,6 @@ pub(in crate::parse) fn extract_link_defs_with_guard_full(
                     term_fence.map_or(fence.host_content_col, |host| host.content_col)
                 };
                 term_fence_owned = term_fence.is_some() || !term_fence_columns.is_empty();
-                fence_closer_ahead = fence.closer_ahead;
             }
             body.push(std::borrow::Cow::Borrowed(line));
             continue;

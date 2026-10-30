@@ -235,7 +235,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let mut term_code_lazy_tail = false;
     let mut term_code_tail_can_resume = false;
     let mut term_code_closer_checked = false;
-    let mut term_code_start = 0;
     let mut marker_term_paragraph_open = marker_is_definition_term;
     // Track term ownership separately from paragraph retention across deeper comments.
     let mut marker_term_open = marker_is_definition_term;
@@ -290,9 +289,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     // span OPENS - the closer line does not carry the opener's column.
     let mut span_reached_this_frame = comment_fence.is_some();
     let mut closed_comment_span_above = false;
-    let mut folded_code_span = false;
-    let mut folded_code_column = strip_cols;
-    let mut folded_code_paragraph_open = false;
     // A descendant fence may open past this collector's strip column.
     // Preserve that decision before the deferred child loses its lookahead.
     // A marker-line ladder opens descendants before collection begins.
@@ -324,7 +320,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             open.content_col = marker_line_columns.last().copied().unwrap_or(strip_cols);
             open
         });
-    let mut nested_folded_fence = false;
     let mut lead_fence_scan = LeadFenceScan::default();
     let mut nested_blank_run: Option<(usize, usize, bool)> = None;
     run_indented_body!(cur.lines, cur.pos, container, |line, admission| {
@@ -477,8 +472,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && matches!(line.as_bytes().first(), Some(b'`' | b'~'))
             && cur.pos > 0
             && is_line_comment_any_column(cur.lines.at(cur.pos - 1))
-            && detect_fence_open(line)
-                .is_some_and(|open| cur.has_list_fence_closer_after(cur.pos, open))
+            && detect_fence_open(line).is_some()
         {
             break;
         }
@@ -537,7 +531,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                     *kept += 1;
                 }
             }
-            nested_folded_fence = false;
             marker_note_intermediate_quote_open = false;
             nested_paragraph_column = None;
             definition_band_inline_run = None;
@@ -558,7 +551,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             // parsed the same document differently (markup-carve/carve-rs#908).
             // What lies past the opener column is the code line's content
             // (PART 11 §7), so a line of spaces keeps that residue.
-            if fence.is_some() && !folded_code_span {
+            if fence.is_some() {
                 let (residue, consumed, synthetic) = slice_columns_mapped(line, strip_cols, true);
                 opaque_blank_lines.push(lines.len());
                 lines.push(residue);
@@ -600,9 +593,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                     && (indent_columns(cur.lines.at(k)) >= threshold
                         || (comment_fence.is_some() && cur.lines.at(k).starts_with(LAZY)));
                 if !continues {
-                    if folded_code_span {
-                        break;
-                    }
                     // Descendants may own these blanks as fence payload. Copy
                     // them without advancing the outer separator cursor.
                     for at in cur.pos..k {
@@ -816,9 +806,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         }
         if nested_paragraph_column.is_some_and(|owner| indent < owner)
             && indent >= strip_cols
-            && detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
-                list_code_fence_closer_ahead(cur, open, strip_cols, parent_indent)
-            })
+            && detect_fence_open(trim_ascii_start(line)).is_some()
         {
             nested_paragraph_column = None;
         }
@@ -920,17 +908,13 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         // the fence's own verbatim body wherever it sits - a fence's content is
         // not re-scanned (carve#1958). This is how a flush-left body folded into
         // a nested item-lead fence reaches it (carve-rs#1547/#1559).
-        if indent < strip_cols && term_code_lazy_tail && !term_code_closer_checked {
-            if let Some(open) = *fence {
-                term_code_lazy_tail = !list_code_fence_closer_ahead_from(
-                    cur,
-                    open,
-                    strip_cols,
-                    parent_indent,
-                    term_code_start,
-                );
-                term_code_closer_checked = true;
-            }
+        if indent < strip_cols
+            && term_code_lazy_tail
+            && !term_code_closer_checked
+            && fence.is_some()
+        {
+            term_code_lazy_tail = false;
+            term_code_closer_checked = true;
         }
         let fence_owns_flush_left = (line.starts_with(LAZY)
             && (marker_colon.is_some() || !colon_open.is_empty()))
@@ -943,10 +927,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 && !is_list_marker(line)
                 && (is_line_comment_any_column(line)
                     || !interrupts_lazy_continuation_as_container(cur, line)))
-            || (folded_code_span
-                && folded_code_paragraph_open
-                && (!is_list_marker(line) || indent > parent_indent)
-                && !interrupts_lazy_continuation_as_container(cur, line))
             || (!colon_open.is_empty()
                 && indent < strip_cols
                 && !is_list_marker(line)
@@ -1090,26 +1070,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && line_starts_paragraph(line)
             && !item_block_opener(line)
             && !interrupts_lazy_continuation_as_container(cur, line);
-        let retained_item_fence = indent < strip_cols
-            && paragraph_before_comment
-            && !marker_is_definition_term
-            && after_retaining_comment
-            && detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
-                !cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
-                    && !item_body_fence_has_closer(
-                        cur.lines.range(cur.pos + 1..cur.lines.len()),
-                        open,
-                        strip_cols,
-                        |next, _| {
-                            detect_list_marker_full(next)
-                                .is_some_and(|marker| marker.indent <= parent_indent)
-                        },
-                    )
-            });
         if indent <= parent_indent
             && !(plain_nested_lazy && carried_lazy_owner.is_some_and(|owner| indent < owner))
             && !comment_retains_owner
-            && !retained_item_fence
             && !(marker_note_intermediate_quote_open
                 && line_starts_paragraph(line)
                 && !item_block_opener(line))
@@ -1138,7 +1101,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && indent < strip_cols
             && !definition_comment_band
             && !definition_band_inline_closer
-            && !retained_item_fence
             && !comment_fence.is_some_and(|(run, _)| is_comment_fence_close_any_column(line, run))
         {
             break;
@@ -1163,11 +1125,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         if fence.is_some() && indent < strip_cols && !fence_owns_flush_left {
             break;
         }
-        if !colon_open.is_empty()
-            && indent < strip_cols
-            && !fence_owns_flush_left
-            && !retained_item_fence
-        {
+        if !colon_open.is_empty() && indent < strip_cols && !fence_owns_flush_left {
             break;
         }
         if marker_colon_retained_para
@@ -1195,7 +1153,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 .is_some_and(|(at, _)| at + 1 == cur.pos);
             if (after_comment || after_span)
                 && paragraph_before_comment
-                && (!interrupts_lazy_continuation_as_container(cur, line) || retained_item_fence)
+                && !interrupts_lazy_continuation_as_container(cur, line)
             {
                 marker_colon_retained_para = true;
             }
@@ -1204,7 +1162,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && !literal_marker_body
             && !marker_colon_retained_para
             && !fence_owns_flush_left
-            && !retained_item_fence
             && fence.is_none()
             && comment_fence.is_none()
             && indent < strip_cols
@@ -1272,7 +1229,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 }
                 nested_item_columns.fence_seen |= marker.content.contains(['`', '~'])
                     && detect_fence_open(innermost_marker_content(marker.content)).is_some();
-                nested_folded_fence = false;
                 while nested_item_columns
                     .last()
                     .is_some_and(|&(base, _)| base >= marker.indent)
@@ -1292,49 +1248,14 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                     }
                 }
                 if let Some(mut open) = detect_fence_open(trim_ascii_start(line)) {
-                    if let Some(&(base, column)) = nested_item_columns.last() {
-                        if column > strip_cols
-                            && indent >= column
-                            && lines.last().is_some_and(|line| {
-                                line_starts_paragraph(innermost_marker_content(trim_ascii_start(
-                                    line,
-                                )))
-                            })
-                        {
-                            // CARVE-P0-014: only an in-child closer lets this run interrupt its paragraph.
-                            nested_folded_fence = !item_body_fence_has_closer(
-                                cur.lines.range(cur.pos + 1..cur.lines.len()),
-                                open,
-                                column,
-                                |line, _| {
-                                    detect_list_marker_full(line)
-                                        .is_some_and(|marker| marker.indent <= base)
-                                },
-                            );
-                        }
-                    }
-                    if let Some(&(base, column)) = nested_item_columns
+                    if let Some(&(_, column)) = nested_item_columns
                         .iter()
                         .rev()
                         .find(|&&(_, column)| indent == column && column > strip_cols)
                     {
                         let after_blank = lines.last().is_some_and(|line| is_blank_line(line));
-                        let interrupts = !after_blank
-                            && !lead_fence_scan.holds_open(&lines, column)
-                            && cur.has_code_closer_after(
-                                cur.pos + 1,
-                                open.fence_char,
-                                open.fence_len,
-                            )
-                            && item_body_fence_has_closer(
-                                cur.lines.range(cur.pos + 1..cur.lines.len()),
-                                open,
-                                column,
-                                |line, _| {
-                                    detect_list_marker_full(line)
-                                        .is_some_and(|marker| marker.indent <= base)
-                                },
-                            );
+                        let interrupts =
+                            !after_blank && !lead_fence_scan.holds_open(&lines, column);
                         if after_blank || interrupts {
                             if !after_blank {
                                 // Preserve the accepted interruption when collection
@@ -1365,9 +1286,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && comment_fence.is_none()
             && colon_open.is_empty()
             && marker_colon.is_none()
-            && detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
-                list_code_fence_closer_ahead(cur, open, strip_cols, parent_indent)
-            })
+            && detect_fence_open(trim_ascii_start(line)).is_some()
         {
             break;
         }
@@ -1438,24 +1357,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             }
         }
         let in_comment_span = was_in_comment_span || comment_fence.is_some();
-        // A block reached by an ancestor ends the inner fold. A marker
-        // between item columns remains lazy text of the inner item.
-        let at_ancestor_column = indent == strip_cols
-            || nested_item_columns
-                .iter()
-                .any(|&(_, column)| column == indent)
-            || marker_line_columns.contains(&indent);
-        if folded_code_span
-            && indent < folded_code_column
-            && indent >= strip_cols
-            && ((is_list_marker(line) && at_ancestor_column)
-                || (!is_list_marker(line)
-                    && interrupts_lazy_continuation_as_container(cur, trim_ascii_start(line))))
-        {
-            folded_code_span = false;
-            *fence = None;
-        }
-        let lazy_code_line = folded_code_span && indent < folded_code_column;
         // A retained marker below this body's column cannot open a child list.
         let lazy_list_marker =
             !in_comment_span && fence.is_none() && indent < strip_cols && is_list_marker(line);
@@ -1582,11 +1483,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             {
                 indent
             }
-            _ if lazy_code_line
-                || lazy_list_marker
-                || definition_comment_band
-                || definition_band_inline_closer =>
-            {
+            _ if lazy_list_marker || definition_comment_band || definition_band_inline_closer => {
                 indent
             }
             (true, Some(_))
@@ -1657,19 +1554,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         if let Some(owner) = marker_paragraph_owner {
             nested_paragraph_column = Some(owner);
         }
-        // CARVE-P0-015: a below-child run is a lazy fold even when the outer item reaches its column.
-        if nested_folded_fence
-            && fence.is_none()
-            && nested_item_columns
-                .last()
-                .is_some_and(|&(_, column)| indent < column && indent >= strip_cols)
-            && detect_fence_open(trim_ascii_start(line)).is_some()
-        {
-            let trimmed = trim_ascii_start(&sliced);
-            trimmed_after_slice += sliced.len() - trimmed.len();
-            sliced = format!("{LAZY}{trimmed}");
-            nested_folded_fence = false;
-        }
         // The tracker also records folded marker shapes. A `+` reaches an item
         // only when that item's base reaches its parent's content column.
         if nested_paragraph_column.is_some_and(|owner| indent < owner)
@@ -1705,13 +1589,12 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             trimmed_after_slice += sliced.len() - trimmed.len();
             sliced = format!("{LAZY}{trimmed}");
         }
-        if marker_colon_retained_para && indent < strip_cols && !retained_item_fence {
+        if marker_colon_retained_para && indent < strip_cols {
             let trimmed = trim_ascii_start(&sliced);
             trimmed_after_slice += sliced.len() - trimmed.len();
             sliced = trimmed.to_string();
         }
-        if (lazy_code_line
-            || framed_comment_payload
+        if (framed_comment_payload
             || lazy_list_marker
             || below_definition_separator
                 && !separator_at_nested_marker
@@ -1722,7 +1605,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 && detect_fence_open(trim_ascii_start(line)).is_none()
                 && !is_definition_list_start(trim_ascii_start(line))
                 && strip_description_prefix(trim_ascii_start(line)).is_none())
-            || (marker_colon_retained_para && indent < strip_cols && !retained_item_fence))
+            || (marker_colon_retained_para && indent < strip_cols))
             && !sliced.starts_with(LAZY)
         {
             sliced.insert_str(0, LAZY);
@@ -1781,54 +1664,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         };
         let mut frame_lazy_fence = false;
         if !in_comment_span {
-            if fence.is_none()
-                && (after_below_comment
-                    || (marker_is_definition_term
-                        && !marker_term_open
-                        && indent == strip_cols
-                        && ((collected_body_ends_in_a_quote_fold(&lines, &line_map)
-                            && lines.last().is_some_and(|line| {
-                                line_starts_paragraph(innermost_marker_content(
-                                    without_blockquote_prefixes(trim_ascii_start(line)),
-                                ))
-                            }))
-                            || (!closed_code_leaf
-                                && lines.last().is_some_and(|line| {
-                                    line_starts_paragraph(innermost_marker_content(
-                                        trim_ascii_start(line),
-                                    )) || strip_description_prefix(trim_ascii_start(line)).is_some()
-                                })))))
-            {
-                folded_code_column = if at_descendant_column {
-                    indent
-                } else {
-                    strip_cols
-                };
-                folded_code_span = !retained_item_fence
-                    && !(at_descendant_column
-                        && marker_line_columns.contains(&indent)
-                        && cur.closed_comment_location.is_none())
-                    && detect_fence_open(fence_line).is_some_and(|open| {
-                        !cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
-                            || !item_body_fence_has_closer(
-                                cur.lines.range(cur.pos + 1..cur.lines.len()),
-                                open,
-                                folded_code_column,
-                                |line, _| {
-                                    detect_list_marker_full(line)
-                                        .is_some_and(|marker| marker.indent <= parent_indent)
-                                },
-                            )
-                    });
-            }
-            if folded_code_span && indent >= folded_code_column {
-                let mut paragraph_line = innermost_marker_content(fence_line);
-                while let Some(rest) = strip_blockquote_prefix(paragraph_line) {
-                    paragraph_line = rest;
-                }
-                folded_code_paragraph_open = line_starts_paragraph(paragraph_line)
-                    || detect_fence_open(paragraph_line).is_some();
-            }
             let was_in_code = fence.is_some();
             let may_track_code = literal_colon.map_or(true, |(_, column, floor)| {
                 indent >= floor
@@ -1837,68 +1672,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                             literal_code_closes_cursor(cur, floor, column, open)
                         }))
             });
-            // An unclosed run below a descendant's open paragraph is lazy text
-            // there, not a fence of this body (CARVE-P0-014).
-            let descendant_shape = fence.is_none()
-                && indent == strip_cols
-                && nested_item_columns
-                    .last()
-                    .is_some_and(|&(_, column)| indent < column)
-                && cur.pos > 0
-                && line_starts_paragraph(innermost_marker_content(trim_ascii_start(
-                    cur.lines.at(cur.pos - 1),
-                )));
-            // The same below a quote a marker line opens (`- - > x` / `   ```), whose paragraph
-            // takes the unclosed run as lazy text (carve#3421).
-            let marker_quote_shape = fence.is_none()
-                && !descendant_shape
-                && indent > strip_cols
-                && cur.pos > 0
-                && nested_item_columns
-                    .last()
-                    .map(|&(_, column)| column)
-                    .or(marker_line_columns.last().copied())
-                    .is_some_and(|column| indent < column)
-                && {
-                    let mut prior =
-                        innermost_marker_content(trim_ascii_start(cur.lines.at(cur.pos - 1)));
-                    let mut quoted = false;
-                    while let Some(rest) = strip_blockquote_prefix(prior) {
-                        prior = innermost_marker_content(trim_ascii_start(rest));
-                        quoted = true;
-                    }
-                    quoted && line_starts_paragraph(prior)
-                };
-            // A closer at the opener's own column inside this item keeps the fence a fence.
-            let marker_quote_shape = marker_quote_shape
-                && detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
-                    !cur.lines
-                        .range(cur.pos + 1..cur.lines.len())
-                        .take_while(|next| {
-                            is_blank_line(next) || indent_columns(next) >= strip_cols
-                        })
-                        .any(|next| {
-                            indent_columns(next) == indent
-                                && is_fence_close(trim_ascii_start(next), open)
-                        })
-                });
-            let lazy_in_descendant = (descendant_shape || marker_quote_shape)
-                && detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
-                    !cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
-                        || !item_body_fence_has_closer(
-                            cur.lines.range(cur.pos + 1..cur.lines.len()),
-                            open,
-                            strip_cols,
-                            |line, _| {
-                                detect_list_marker_full(line)
-                                    .is_some_and(|marker| marker.indent <= parent_indent)
-                            },
-                        )
-                });
-            frame_lazy_fence = lazy_in_descendant && marker_quote_shape
-                // A quote marker past the column, below a quote whose list `+` refused it,
-                // is no quote of its own: the indented `>` is paragraph text (carve#3421).
-                || indent > strip_cols
+            // A quote marker past the column, below a quote whose list `+` refused it,
+            // is no quote of its own: the indented `>` is paragraph text (carve#3421).
+            frame_lazy_fence = indent > strip_cols
                     && cur.pos > 0
                     && strip_blockquote_prefix(trim_ascii_start(line)).is_some()
                     && trim_ascii_start(cur.lines.at(cur.pos - 1)).starts_with('>')
@@ -1909,12 +1685,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                             && decision.refusal.is_some()
                             && decision.owner == Some(continuation_marker::Kind::List)
                     });
-            if retained_item_fence {
-                let mut open = detect_fence_open(trim_ascii_start(line)).unwrap();
-                open.content_col = strip_cols;
-                *fence = Some(open);
-                marker_colon_retained_para = false;
-            } else if may_track_code && !lazy_in_descendant {
+            if may_track_code {
                 let tracked = if literal_colon.is_some() {
                     trim_ascii_start(fence_line)
                 } else {
@@ -1927,7 +1698,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                     && !marker_definition_has_description
                     && indent == strip_cols;
                 if term_code_lazy_tail {
-                    term_code_start = cur.pos;
                     term_code_closer_checked = false;
                 }
                 marker_term_paragraph_open = false;
@@ -1946,9 +1716,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                         || parse_footnote_def_line(trim_ascii_start(line)).is_some()
                         || parse_link_def_line(trim_ascii_start(line)).is_some()
                         || marker_attribute_end == Some(cur.pos));
-            }
-            if fence.is_none() {
-                folded_code_span = false;
             }
         }
         if !opaque_here {
@@ -2160,20 +1927,6 @@ pub(crate) fn track_collected_colon_fence(
     if let Some(container) = detect_container_open(line) {
         open.push(container.fence_len);
     }
-}
-
-/// §10 I4 for a fence that follows an item's open paragraph: only a closer
-/// written in the item's own body counts. The search stops where the item
-/// ends: at a sibling or outer marker, and at a blank followed by a line below
-/// the content column (carve#1379). A below-column line folds as lazy text, so
-/// the search runs past it, and a closer is read at the content column exactly.
-pub(crate) fn item_body_fence_has_closer<'a>(
-    _lines: impl Iterator<Item = &'a str>,
-    _open: FenceOpen,
-    _content_col: usize,
-    _ends_item: impl Fn(&str, usize) -> bool,
-) -> bool {
-    true
 }
 
 pub(crate) fn track_collected_fence(

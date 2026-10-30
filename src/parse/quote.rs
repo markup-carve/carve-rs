@@ -556,11 +556,7 @@ impl NestedFenceReplay {
         if self.chain.len() <= pos.level + 1 || !deepest_open || is_blank_line(text) {
             return false;
         }
-        let interrupts = match detect_fence_open(text) {
-            Some(_open) => true,
-            None => interrupts_paragraph_with_rest(text, &[]),
-        };
-        !interrupts
+        detect_fence_open(text).is_none() && !interrupts_paragraph_with_rest(text, &[])
     }
 
     // Replay the same handoff before an unquoted line asks whether
@@ -585,10 +581,8 @@ impl NestedFenceReplay {
                 .last()
                 .is_some_and(|&(_, floor, _)| column < floor)
                 && detect_fence_open(trimmed).is_some())
-            && !match detect_fence_open(text) {
-                Some(_open) => true,
-                None => interrupts_paragraph_with_rest(text, &[]),
-            }
+            && detect_fence_open(text).is_none()
+            && !interrupts_paragraph_with_rest(text, &[])
     }
 
     /// Replays a non-blank line against the list and footnote hosts of its
@@ -1363,58 +1357,6 @@ pub(in crate::parse) fn closer_ahead(
     false
 }
 
-#[derive(Default)]
-pub(in crate::parse) struct QuotedFenceClosers {
-    end: usize,
-    backticks: Vec<(usize, usize)>,
-    tildes: Vec<(usize, usize)>,
-}
-
-impl QuotedFenceClosers {
-    fn contains(&mut self, lines: CursorLines<'_>, from: usize, open: FenceOpen) -> bool {
-        if from >= self.end {
-            self.backticks.clear();
-            self.tildes.clear();
-            self.end = from;
-            for (offset, line) in lines.range(from..lines.len()).enumerate() {
-                let index = from + offset;
-                let Some(body) = strip_blockquote_prefix(line) else {
-                    break;
-                };
-                self.end = index + 1;
-                let trimmed = trim_ascii_end(body);
-                let Some(marker @ (b'`' | b'~')) = trimmed.as_bytes().first().copied() else {
-                    continue;
-                };
-                if trimmed.len() >= 3 && trimmed.bytes().all(|byte| byte == marker) {
-                    let entries = if marker == b'`' {
-                        &mut self.backticks
-                    } else {
-                        &mut self.tildes
-                    };
-                    entries.push((index, trimmed.len()));
-                }
-            }
-            for entries in [&mut self.backticks, &mut self.tildes] {
-                let mut maximum = 0;
-                for (_, width) in entries.iter_mut().rev() {
-                    maximum = maximum.max(*width);
-                    *width = maximum;
-                }
-            }
-        }
-        let entries = if open.fence_char == b'`' {
-            &self.backticks
-        } else {
-            &self.tildes
-        };
-        let index = entries.partition_point(|(line, _)| *line < from);
-        entries
-            .get(index)
-            .is_some_and(|(_, width)| *width >= open.fence_len)
-    }
-}
-
 #[inline(never)]
 pub(in crate::parse) fn collect_blockquote_body(
     cur: &mut LineCursor,
@@ -1480,7 +1422,6 @@ struct QuotedLine<'a> {
 /// What [`collect_blockquote_body`] carries from one line of the quote to the
 /// next.
 struct QuoteBody<'a> {
-    fence_closers: QuotedFenceClosers,
     parts: Vec<LineBuffer>,
     span_start: usize,
     inner: LineBuffer,
@@ -1543,7 +1484,6 @@ struct QuoteBody<'a> {
 impl<'a> QuoteBody<'a> {
     fn new(span_start: usize) -> Self {
         Self {
-            fence_closers: QuotedFenceClosers::default(),
             parts: Vec::new(),
             span_start,
             inner: LineBuffer::default(),
@@ -2031,34 +1971,15 @@ impl<'a> QuoteBody<'a> {
 
     fn fence_line(&mut self, cur: &LineCursor<'_>, open: FenceOpen, after_nested: bool) {
         self.table = TableRun::default();
-        // The line above reached a nested quote, so its fence may be
-        // what the paragraph ended on.
-        let fenced_below = if after_nested {
-            self.nested_replay.verdict(&self.inner.lines, cur)
-        } else {
-            None
-        };
-        if !fenced_below.unwrap_or_else(|| self.para_open.get()) {
-            // Fence at block start opens (unterminated renders to end).
-            self.opaque_tail = true;
-            self.fence_count += 1;
-            self.in_fence = Some(open);
-            self.para_open = ParaOpen::Closed;
-        } else {
-            // After an open paragraph a fence interrupts only with a
-            // matching closer ahead (§10); else it is inline verbatim.
-            let has_closer = true || self.fence_closers.contains(cur.lines, cur.pos, open);
-            if has_closer {
-                self.opaque_tail = true;
-                self.fence_count += 1;
-                self.in_fence = Some(open);
-                self.para_open = ParaOpen::Closed;
-            }
-            // No closer: the fence is inline verbatim and the paragraph
-            // (already resolved OPEN by the test above) stays open, so
-            // the absorption survives - as it did when the reset was
-            // written `if !para_open`.
+        // A fence opens closer or not (carve#4018). The nested replay still
+        // advances with the cursor here.
+        if after_nested {
+            let _ = self.nested_replay.verdict(&self.inner.lines, cur);
         }
+        self.opaque_tail = true;
+        self.fence_count += 1;
+        self.in_fence = Some(open);
+        self.para_open = ParaOpen::Closed;
     }
 
     fn ordinary_line(

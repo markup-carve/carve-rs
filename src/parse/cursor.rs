@@ -378,32 +378,6 @@ impl<'a> LineCursor<'a> {
     /// condition (a second opener of the same width after a proven-no-closer
     /// point) is unreachable, because a second line of the same width IS a closer
     /// for the first.
-    /// Whether any line after `start` could close a code fence of this char and
-    /// width. Deliberately OVER-approximate: it ignores indentation, which the
-    /// real closer test does not. A `false` is therefore final and a `true` only
-    /// means "worth scanning", so the caller keeps its exact scan behind this.
-    ///
-    /// Without it the exact scan runs from every opener to the end of the
-    /// document, which is quadratic in the number of unterminated openers - the
-    /// same shape `comment_closer_last_index` was added to remove for `%%%`.
-    /// Code fences never got the equivalent.
-    pub(in crate::parse) fn has_code_closer_after(
-        &mut self,
-        _start: usize,
-        _fence_char: u8,
-        _fence_len: usize,
-    ) -> bool {
-        true
-    }
-
-    pub(in crate::parse) fn has_list_fence_closer_after(
-        &mut self,
-        _start: usize,
-        _open: FenceOpen,
-    ) -> bool {
-        true
-    }
-
     pub(in crate::parse) fn has_comment_closer_after(
         &mut self,
         start: usize,
