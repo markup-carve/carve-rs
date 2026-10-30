@@ -36,7 +36,10 @@ fn a_tab_before_the_info_string_still_opens_nothing() {
     // The row that must NOT move. The separator is a space and nothing else, so
     // the backtick run is an ordinary inline verbatim run reaching the end of
     // the block.
-    assert_eq!(html("```\tphp\nx\n```\n"), "<p><code>\tphp\nx</code></p>\n<pre><code></code></pre>");
+    assert_eq!(
+        html("```\tphp\nx\n```\n"),
+        "<p><code>\tphp\nx</code></p>\n<pre><code></code></pre>"
+    );
 }
 
 #[test]

@@ -760,6 +760,11 @@ impl Walk {
             sibling,
         };
         let refusal = self.marker_refusal(lines, shape, scan, claim, follower);
+        let refusal = if first_block_quote {
+            moved_follower_refusal(lines, index, refusal)
+        } else {
+            refusal
+        };
         if self
             .marker_fence
             .is_some_and(|(fence, _)| marker_column < fence.content_col)
@@ -1139,6 +1144,11 @@ impl Walk {
         };
         let at_column = at_column && !outside_quote(lines, shape, owner, opened, follower);
         let refusal = first_block_refusal(shape, owner, follower, at_column, list_at_owning_quote);
+        let refusal = if owner.kind == Kind::Quote {
+            moved_follower_refusal(lines, index, refusal)
+        } else {
+            refusal
+        };
         // As below an indented quote line: carve-js reports nothing for this `+`.
         if stacked_quote
             && refusal.is_some()
@@ -1243,6 +1253,33 @@ fn outside_quote(
                     && marker != column
                     && Some(marker) != opened.first_quote_marker_column
         })
+}
+
+/// The ownership walk moves a line onto its owner's column, but a quote's
+/// first-block `+` reads its follower at the authored column: column 0 or the
+/// innermost `>` of the `+` line (CARVE-P9-067). A follower the walk moved off
+/// both has left the quote, so the `+` refuses it.
+fn moved_follower_refusal(
+    lines: &[String],
+    index: usize,
+    refusal: Option<Refusal>,
+) -> Option<Refusal> {
+    if refusal.is_some() {
+        return refusal;
+    }
+    let follower = lines
+        .get(index + 1)
+        .filter(|line| quote_body(line).0 == 0)?;
+    let walked = indent_columns(follower);
+    let authored = crate::parse::authored_line_column(index + 2, walked);
+    if authored == walked || authored == 0 {
+        return None;
+    }
+    let plus_line = &lines[index];
+    let innermost = plus_line
+        .rfind('>')
+        .map(|at| crate::parse::authored_line_column(index + 1, column_at(plus_line, at)));
+    (Some(authored) != innermost).then_some(Refusal::Left)
 }
 
 fn first_block_refusal(

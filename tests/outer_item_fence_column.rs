@@ -23,7 +23,7 @@ fn a_fence_at_the_outer_content_column_belongs_to_outer_item() {
 #[test]
 fn a_quoted_plus_does_not_move_the_outer_fence_into_the_inner_item() {
     let source = "- outer\n  - inner\n  ```\n> +\n  ```\nnext\n";
-    let expected = "<ul>\n  <li>outer\n    <ul>\n      <li>inner</li>\n    </ul>\n    <pre><code></code></pre>\n  </li>\n</ul>\n<blockquote><p>+\n<code>\nnext</code></p></blockquote>";
+    let expected = "<ul>\n  <li>outer\n    <ul>\n      <li>inner</li>\n    </ul>\n    <pre><code></code></pre>\n  </li>\n</ul>\n<blockquote><p>+</p></blockquote>\n<pre><code>next\n</code></pre>";
     assert_eq!(html(source), expected);
 }
 

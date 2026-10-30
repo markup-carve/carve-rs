@@ -35,7 +35,9 @@ mod prepass_links;
 mod quote;
 pub use own_lines::decision_trace;
 pub(in crate::parse) use own_lines::restore_authored_columns;
-pub(crate) use own_lines::{own_lines, walk_body, walk_moves_lines, EditsGuard};
+pub(crate) use own_lines::{
+    authored_line_column, own_lines, walk_body, walk_moves_lines, EditsGuard,
+};
 mod table;
 #[cfg(test)]
 #[path = "parse/tests.rs"]
@@ -207,11 +209,6 @@ impl Drop for SourceEndingGuard {
 
 fn needs_source_ending_map() -> bool {
     UNTERMINATED_SOURCE_LINE.with(|slot| slot.get().is_some())
-}
-
-/// Whether `line` is the document's last line and ends without a newline.
-pub(in crate::parse) fn is_unterminated_source_line(line: Option<usize>) -> bool {
-    line.is_some_and(|line| UNTERMINATED_SOURCE_LINE.with(|slot| slot.get() == Some(line)))
 }
 
 /// Two private-use code points `source` does not contain.

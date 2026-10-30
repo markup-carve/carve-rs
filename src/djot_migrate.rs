@@ -4214,11 +4214,78 @@ pub(super) fn fold_djot_references_with_decisions(
         .join("\n")
 }
 
+/// The quote depth of the container markers before a code run on its line.
+fn djot_prefix_quote_depth(prefix: &str) -> usize {
+    let item = cached_regex!(
+        r"^(?:\[\^[^\]\n]+\]:[ \t]*|(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\)|:)[ \t]+)"
+    )
+    .unwrap();
+    let (mut depth, mut at) = (0, 0);
+    while at < prefix.len() {
+        at += prefix[at..].len() - prefix[at..].trim_start_matches([' ', '\t']).len();
+        let content = &prefix[at..];
+        if let Some(rest) = content.strip_prefix('>') {
+            if rest.is_empty() || rest.starts_with([' ', '\t']) {
+                depth += 1;
+                at += 1 + usize::from(!rest.is_empty());
+                continue;
+            }
+        }
+        let Some(marker) = item.find(content) else {
+            break;
+        };
+        at += marker.end();
+        if marker.as_str().starts_with(['-', '*', '+']) {
+            if let Some(task) = cached_regex!(r"^\[[ xX]\][ \t]+")
+                .unwrap()
+                .find(&prefix[at..])
+            {
+                at += task.end();
+            }
+        }
+    }
+    depth
+}
+
+fn strip_djot_quote_prefixes(mut value: &str, depth: usize) -> &str {
+    let prefix = cached_regex!(r"^[ \t]*>(?:[ \t]|$)").unwrap();
+    for _ in 0..depth {
+        let Some(found) = prefix.find(value) else {
+            break;
+        };
+        value = &value[found.end()..];
+    }
+    value
+}
+
+/// A run after nothing but markers opens a Djot code block unless its line
+/// continues a paragraph.
+fn opens_djot_code_block(source: &str, at: usize) -> bool {
+    let line_start = source[..at].rfind('\n').map_or(0, |found| found + 1);
+    if !cached_regex!(r"^(?:[ \t]*(?:>|[-*+](?: \[[ xX]\])?|[0-9]+[.)])(?:[ \t]+|$))*[ \t]*$")
+        .unwrap()
+        .is_match(&source[line_start..at])
+    {
+        return false;
+    }
+    if line_start == 0 {
+        return true;
+    }
+    let previous_start = source[..line_start - 1]
+        .rfind('\n')
+        .map_or(0, |found| found + 1);
+    let previous = cached_regex!(r"^(?:[ \t]*>)*")
+        .unwrap()
+        .replace(&source[previous_start..line_start - 1], "");
+    let previous = previous.trim();
+    previous.is_empty() || previous.ends_with('|')
+}
+
 fn normalize_djot_paragraph_fences(source: &str) -> String {
     let _paragraph_cache = ParagraphCacheScope::new(source);
     let rows = djot_table_rows(source, &mask_djot_inline(source, false));
     let mask = mask_djot_fences(source, None, &rows, true);
-    if !mask.contains("```") {
+    if !mask.contains("```") && !mask.contains("~~~") {
         return source.to_owned();
     }
     let bytes = source.as_bytes();
@@ -4284,7 +4351,40 @@ fn normalize_djot_paragraph_fences(source: &str) -> String {
             } else {
                 std::borrow::Cow::Borrowed(raw_payload)
             };
-            if width >= 3 && heads.contains(&i) {
+            let line_start = source[..i].rfind('\n').map_or(0, |at| at + 1);
+            let depth = djot_prefix_quote_depth(&source[line_start..i]);
+            let value_lines: Vec<&str> = payload
+                .split('\n')
+                .enumerate()
+                .map(|(n, value)| {
+                    if n == 0 {
+                        value
+                    } else {
+                        strip_djot_quote_prefixes(value, depth).trim_start_matches([' ', '\t'])
+                    }
+                })
+                .collect();
+            let ends_on_line_head = payload_end.is_match(&payload);
+            // A value line that is a fence run opens a fence in Carve (carve#4018), so
+            // the span goes out as raw HTML on one line.
+            if closed
+                && value_lines[1..]
+                    .iter()
+                    .any(|value| value.starts_with("```") || value.starts_with("~~~"))
+                && !(width >= 3 && opens_djot_code_block(source, i))
+            {
+                output.push_str(&source[copied..i]);
+                output.push_str("`<code>");
+                for ch in value_lines.join("\n").chars() {
+                    if ch == '\n' || (ch.is_ascii_punctuation()) {
+                        output.push_str(&format!("&#{};", ch as u32));
+                    } else {
+                        output.push(ch);
+                    }
+                }
+                output.push_str("</code>`{=html}");
+                copied = end + width;
+            } else if width >= 3 && heads.contains(&i) {
                 let widths: HashSet<_> =
                     tick_pattern.find_iter(&payload).map(|m| m.len()).collect();
                 let mut native_width = 1;
@@ -4302,8 +4402,17 @@ fn normalize_djot_paragraph_fences(source: &str) -> String {
                     output.push_str(&ticks);
                     output.push_str(&payload);
                     output.push_str(&ticks);
+                    // A closer that starts its line would open a fence (carve#4018).
+                    if native_width >= 3 && ends_on_line_head {
+                        output.push_str("{%%}");
+                    }
                 }
                 copied = end + if closed { width } else { 0 };
+            } else if width >= 3 && closed && ends_on_line_head && !opens_djot_code_block(source, i)
+            {
+                output.push_str(&source[copied..end + width]);
+                output.push_str("{%%}");
+                copied = end + width;
             }
             i = end + if closed { width } else { 0 };
             continue;

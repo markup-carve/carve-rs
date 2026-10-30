@@ -1832,17 +1832,8 @@ pub(in crate::parse) fn is_invalid_colon_fence_opener_text(line: &str) -> bool {
         && detect_quote_block_open(trimmed).is_none()
 }
 
-pub(in crate::parse) fn code_fence_has_closer(cur: &mut LineCursor<'_>, open: FenceOpen) -> bool {
-    if true {
-        return true;
-    }
-    if !cur.has_code_closer_after(cur.pos, open.fence_char, open.fence_len) {
-        return false;
-    }
-    let strip = leading_ws(cur.lines.at(cur.pos));
-    cur.lines
-        .range(cur.pos + 1..cur.lines.len())
-        .any(|l| is_fence_close(&l[leading_ws(l).min(strip)..], open))
+pub(in crate::parse) fn code_fence_has_closer(_cur: &mut LineCursor<'_>, _open: FenceOpen) -> bool {
+    true
 }
 
 #[cfg(test)]

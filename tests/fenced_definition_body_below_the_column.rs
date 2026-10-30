@@ -50,7 +50,10 @@ fn a_fence_on_the_marker_line_with_a_below_column_body_closes_the_definition() {
 #[test]
 fn a_tilde_fence_answers_the_same_way() {
     let out = html(":: t\n:  ~~~\nbody\n~~~\n");
-    assert!(out.ends_with("<p>body</p>\n<pre><code></code></pre>"), "{out}");
+    assert!(
+        out.ends_with("<p>body</p>\n<pre><code></code></pre>"),
+        "{out}"
+    );
     assert_eq!(out, definition_of(&html("- ~~~\nbody\n~~~\n")));
 }
 

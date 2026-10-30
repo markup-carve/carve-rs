@@ -222,13 +222,6 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
     })
 }
 
-#[derive(Default)]
-pub(super) struct ListCodeClosers {
-    columns: HashMap<(u8, usize), LiteralCodeColumn>,
-    markers: LiteralCodeColumn,
-    after_blank: LiteralCodeColumn,
-}
-
 pub(super) fn list_code_fence_closer_ahead(
     cur: &mut LineCursor<'_>,
     open: FenceOpen,
@@ -239,73 +232,13 @@ pub(super) fn list_code_fence_closer_ahead(
 }
 
 pub(super) fn list_code_fence_closer_ahead_from(
-    cur: &mut LineCursor<'_>,
-    open: FenceOpen,
-    floor: usize,
-    base: usize,
-    from: usize,
+    _cur: &mut LineCursor<'_>,
+    _open: FenceOpen,
+    _floor: usize,
+    _base: usize,
+    _from: usize,
 ) -> bool {
-    if true {
-        return true;
-    }
-    let lines = cur.lines;
-    let column = indent_columns(lines.at(from));
-    let lookup = cur.list_code_closers.get_or_insert_with(|| {
-        let mut lookup = ListCodeClosers::default();
-        let mut after_blank = false;
-        for index in 0..lines.len() {
-            let line = lines.at(index);
-            if is_blank_line(line) {
-                after_blank = true;
-
-                continue;
-            }
-            let column = indent_columns(line);
-            if after_blank {
-                lookup.after_blank.push(index, usize::MAX - column);
-                after_blank = false;
-            }
-            if detect_list_marker_full_at(line, column).is_some() {
-                lookup.markers.push(index, usize::MAX - column);
-            }
-            let line = strip_lazy(line);
-            let bytes = trim_ascii_start(line).as_bytes();
-            let Some(&character @ (b'`' | b'~')) = bytes.first() else {
-                continue;
-            };
-            let width = bytes.iter().take_while(|&&byte| byte == character).count();
-            if width >= 3
-                && bytes[width..]
-                    .iter()
-                    .all(|&byte| byte == b' ' || byte == b'\t')
-            {
-                lookup
-                    .columns
-                    .entry((character, column))
-                    .or_default()
-                    .push(index, width);
-            }
-        }
-        Box::new(lookup)
-    });
-    let end = lookup
-        .markers
-        .next(from, usize::MAX - base)
-        .into_iter()
-        .chain(
-            floor
-                .checked_sub(1)
-                .and_then(|column| lookup.after_blank.next(from, usize::MAX - column)),
-        )
-        .min()
-        .unwrap_or(lines.len());
-    [column, floor].into_iter().any(|column| {
-        lookup
-            .columns
-            .get(&(open.fence_char, column))
-            .and_then(|closers| closers.next(from, open.fence_len))
-            .is_some_and(|closer| closer < end)
-    })
+    true
 }
 
 /// Whether `line`, seen while accumulating a paragraph, ends it and starts a
@@ -333,18 +266,8 @@ pub(super) fn list_code_fence_closer_ahead_from(
 /// caller, but the closer probe runs over the RAW remaining lines - so dedent
 /// each by the current line's own indentation before the column-exact
 /// `is_fence_close`, or a closer carrying the container indent is missed.
-fn code_fence_closer_ahead(cur: &mut LineCursor<'_>, open: FenceOpen) -> bool {
-    if true {
-        return true;
-    }
-    if !cur.has_code_closer_after(cur.pos, open.fence_char, open.fence_len) {
-        return false;
-    }
-    let strip = leading_ws(cur.lines.at(cur.pos));
-    cur.lines
-        .range(cur.pos + 1..cur.lines.len())
-        .take_while(|l| is_blank_line(l) || leading_ws(l) >= strip)
-        .any(|l| is_fence_close(&l[leading_ws(l).min(strip)..], open))
+fn code_fence_closer_ahead(_cur: &mut LineCursor<'_>, _open: FenceOpen) -> bool {
+    true
 }
 
 /// `q` / `+` / `- s`: no open container claims a document-level `+`, which lint

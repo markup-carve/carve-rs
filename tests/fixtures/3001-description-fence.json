@@ -322,10 +322,19 @@
           "type": "block_quote",
           "children": [
             {
-              "type": "code_block",
-              "content": "next\n\n"
+              "type": "paragraph",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "+"
+                }
+              ]
             }
           ]
+        },
+        {
+          "type": "code_block",
+          "content": "next\n"
         }
       ]
     }
@@ -333,7 +342,7 @@
   {
     "name": "3001 spaced quote-plus-bound closer",
     "source": ":: term\n: body\n  ```\n>   +\n  ```\nnext\n",
-    "html": "<dl>\n  <dt>term</dt>\n  <dd>body\n<code></code></dd>\n</dl>\n<blockquote><p>+\n<code>\nnext</code></p></blockquote>",
+    "html": "<dl>\n  <dt>term</dt>\n  <dd>\n    <p>body</p>\n    <pre><code></code></pre>\n  </dd>\n</dl>\n<blockquote><p>+</p></blockquote>\n<pre><code>next\n</code></pre>",
     "ast": {
       "type": "document",
       "children": [

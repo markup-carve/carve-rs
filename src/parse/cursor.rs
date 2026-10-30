@@ -255,8 +255,6 @@ pub(in crate::parse) struct LineCursor<'a> {
     /// The last collected item body closed its marker-line colon container.
     pub(in crate::parse) marker_colon_closed: bool,
     pub(in crate::parse) code_closer_last_index: Option<HashMap<u8, Vec<usize>>>,
-    pub(in crate::parse) list_fence_closer_last_index: Option<HashMap<u8, Vec<usize>>>,
-    pub(in crate::parse) list_code_closers: Option<Box<ListCodeClosers>>,
 }
 
 impl<'a> LineCursor<'a> {
@@ -298,8 +296,6 @@ impl<'a> LineCursor<'a> {
             closed_comment_location: None,
             marker_colon_closed: false,
             code_closer_last_index: None,
-            list_fence_closer_last_index: None,
-            list_code_closers: None,
         }
     }
 
@@ -393,68 +389,19 @@ impl<'a> LineCursor<'a> {
     /// Code fences never got the equivalent.
     pub(in crate::parse) fn has_code_closer_after(
         &mut self,
-        start: usize,
-        fence_char: u8,
-        fence_len: usize,
+        _start: usize,
+        _fence_char: u8,
+        _fence_len: usize,
     ) -> bool {
-        if true {
-            return true;
-        }
-        if let Some(possible) = self.lines.code_after(start, fence_char, fence_len) {
-            return possible;
-        }
-        if self.code_closer_last_index.is_none() {
-            self.code_closer_last_index = Some(build_code_closer_last_index(&self.lines));
-        }
-        self.code_closer_last_index
-            .as_ref()
-            .is_some_and(|index| code_closer_exists_after(index, start, fence_char, fence_len))
+        true
     }
 
     pub(in crate::parse) fn has_list_fence_closer_after(
         &mut self,
-        start: usize,
-        open: FenceOpen,
+        _start: usize,
+        _open: FenceOpen,
     ) -> bool {
-        if true {
-            return true;
-        }
-        if self.list_fence_closer_last_index.is_none() {
-            let mut lines = HashMap::<u8, Vec<usize>>::new();
-            for index in 0..self.lines.len() {
-                let line = strip_lazy(self.lines.at(index));
-                if indent_columns(line) != 0 {
-                    continue;
-                }
-                let bytes = line.as_bytes();
-                let Some(&fence_char @ (b'`' | b'~')) = bytes.first() else {
-                    continue;
-                };
-                let run = bytes.iter().take_while(|&&byte| byte == fence_char).count();
-                if !bytes[run..]
-                    .iter()
-                    .all(|&byte| byte == b' ' || byte == b'\t')
-                {
-                    continue;
-                }
-                let by_len = lines.entry(fence_char).or_default();
-                if by_len.len() <= run {
-                    by_len.resize(run + 1, 0);
-                }
-                by_len[run] = index + 1;
-            }
-            for by_len in lines.values_mut() {
-                for len in (0..by_len.len().saturating_sub(1)).rev() {
-                    by_len[len] = by_len[len].max(by_len[len + 1]);
-                }
-            }
-            self.list_fence_closer_last_index = Some(lines);
-        }
-        self.list_fence_closer_last_index
-            .as_ref()
-            .and_then(|lines| lines.get(&open.fence_char))
-            .and_then(|by_len| by_len.get(open.fence_len))
-            .is_some_and(|&last| last > start + 1)
+        true
     }
 
     pub(in crate::parse) fn has_comment_closer_after(

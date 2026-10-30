@@ -1627,14 +1627,11 @@ fn list_run(lines: &[&str], index: usize, terms: &TermLineOwnership) -> bool {
 /// runs without scanning the remaining source.
 pub(in crate::parse) fn prepass_fence_closer_ahead(
     _lines: &[&str],
-    index: usize,
-    open: FenceOpen,
-    maxima: &PrepassFenceClosers,
+    _index: usize,
+    _open: FenceOpen,
+    _maxima: &PrepassFenceClosers,
 ) -> bool {
-    if true {
-        return true;
-    }
-    maxima.closes_after(index, open)
+    true
 }
 
 /// Whether a fence opener on `lines[index]` really opens a fence for a

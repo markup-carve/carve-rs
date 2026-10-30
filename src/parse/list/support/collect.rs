@@ -1245,6 +1245,15 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             if indent < open.content_col {
                 nested_fence = None;
                 nested_item_columns.clear();
+                // The unclosed fence ended with its item, so the blanks before
+                // this line separate blocks of this item (carve#4018).
+                let mut at = lines.len();
+                while at > 0 && is_blank_line(&lines[at - 1]) {
+                    at -= 1;
+                    if opaque_blank_lines.last() == Some(&at) {
+                        opaque_blank_lines.pop();
+                    }
+                }
             } else if indent == open.content_col && is_fence_close(trim_ascii_start(line), open) {
                 nested_fence = None;
             }
@@ -1355,6 +1364,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && fence.is_none()
             && comment_fence.is_none()
             && colon_open.is_empty()
+            && marker_colon.is_none()
             && detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
                 list_code_fence_closer_ahead(cur, open, strip_cols, parent_indent)
             })
@@ -2158,33 +2168,12 @@ pub(crate) fn track_collected_colon_fence(
 /// the content column (carve#1379). A below-column line folds as lazy text, so
 /// the search runs past it, and a closer is read at the content column exactly.
 pub(crate) fn item_body_fence_has_closer<'a>(
-    lines: impl Iterator<Item = &'a str>,
-    open: FenceOpen,
-    content_col: usize,
-    ends_item: impl Fn(&str, usize) -> bool,
+    _lines: impl Iterator<Item = &'a str>,
+    _open: FenceOpen,
+    _content_col: usize,
+    _ends_item: impl Fn(&str, usize) -> bool,
 ) -> bool {
-    if true {
-        return true;
-    }
-    let mut pending_blank = false;
-    for line in lines {
-        if is_blank_line(line) {
-            pending_blank = true;
-            continue;
-        }
-        let indent = indent_columns(line);
-        if ends_item(line, indent) {
-            return false;
-        }
-        if pending_blank && indent < content_col {
-            return false;
-        }
-        pending_blank = false;
-        if indent >= content_col && is_fence_close(&slice_columns(line, content_col, false), open) {
-            return true;
-        }
-    }
-    false
+    true
 }
 
 pub(crate) fn track_collected_fence(

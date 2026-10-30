@@ -1344,6 +1344,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             (self.base_indent, self.content_col, self.options);
         let cur = &mut *self.cur;
         let start = cur.pos;
+        // An attached fence with no closer ends with the item (carve#4018).
+        let attached_fence = detect_fence_open(trim_ascii_start(cur.lines.at(start))).is_some();
         let end = attached_indented_block_end(cur.lines, start, content_col, options)
             .unwrap_or_else(|| {
                 attached_block_lines_classified(
@@ -1354,8 +1356,11 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                     options,
                     &mut |line, at| {
                         at > start
-                            && detect_list_marker_full(line)
+                            && (detect_list_marker_full(line)
                                 .is_some_and(|marker| marker.indent <= base_indent)
+                                || attached_fence
+                                    && !is_blank_line(line)
+                                    && indent_columns(line) < content_col)
                     },
                 )
             });

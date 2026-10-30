@@ -2351,6 +2351,13 @@ mod unified_list_tests {
                 parse_unified_list(&lines, 0, &Options::default()).is_none(),
                 "{source:?}"
             );
+            // A form feed is no blank, so it ends the item and the unclosed fence
+            // with it (carve#4018); the walk then moves the closer, and the event
+            // route declines a document the walk moves.
+            if crate::parse::walk_moves_lines(&source) {
+                assert!(parse_document(&source).is_none(), "{source:?}");
+                continue;
+            }
             let (actual, _) = parse_document(&source).unwrap();
             let expected = parse_with_options(&source, &Options::default());
             assert_eq!(

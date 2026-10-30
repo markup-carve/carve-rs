@@ -32,7 +32,10 @@ fn another_opener_after_a_paragraph_collects_the_footnote() {
 
 #[test]
 fn a_tilde_run_after_a_paragraph_collects_the_footnote() {
-    assert_eq!(carve::to_html("]\n~~~\n\n[^f]: )\n"), "<p>]</p>\n<pre><code>\n[^f]: )\n</code></pre>");
+    assert_eq!(
+        carve::to_html("]\n~~~\n\n[^f]: )\n"),
+        "<p>]</p>\n<pre><code>\n[^f]: )\n</code></pre>"
+    );
 }
 
 #[test]
