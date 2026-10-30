@@ -144,18 +144,6 @@
       ]
     },
     {
-      "ticket": "markup-carve/carve-rs#3526",
-      "cause": "a combined token after an opener that is open where it stands (carve#3947); carve-js passes these",
-      "cases": [
-        "combined-0ce08bf78ffe",
-        "combined-0fca5f817c2f",
-        "combined-6254f930f23b",
-        "combined-c9f4ceb31baf",
-        "combined-ca6dd161d141",
-        "combined-cb097d2fe4e2"
-      ]
-    },
-    {
       "ticket": "markup-carve/carve#4033",
       "cause": "an unclosed fence in a description or footnote body drops its trailing blank run",
       "cases": [

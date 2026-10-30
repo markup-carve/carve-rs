@@ -2080,10 +2080,11 @@ fn find_emphasis_close_walk(
             && bytes.get(j + 1) == Some(&b'/')
             && emphasis_run_at(bounds, &regions, j) == opener_run
         {
-            // A space or tab before a `*/` ends the token unclosed
-            // (`spaceChar ~("*/")`); a line break does not.
-            if matches!(bytes[j - 1], b' ' | b'\t') {
-                return None;
+            // A `*/` after whitespace, a line break included, is content, and
+            // the scan goes on to a later one (`biInner`).
+            if matches!(bytes[j - 1], b' ' | b'\t' | b'\n' | b'\r') {
+                j += 2;
+                continue;
             }
             if combined_closer_at(bytes, j) {
                 return Some(j);

@@ -83,19 +83,21 @@ fn a_comment_in_the_combined_token_stops_before_a_closer() {
     );
 }
 
+/// A `*/` after whitespace closes nothing, so a later one closes the token
+/// (PART 9 §9 THE COMBINED TOKEN, carve#3973 X3).
 #[test]
-fn a_space_before_the_combined_closer_leaves_the_token_unclosed() {
+fn a_space_before_the_combined_closer_passes_it_to_a_later_one() {
     assert_eq!(
         html("/*a */c d*/\n"),
-        "<p><em><strong>a */c d</strong></em></p>"
+        "<p><strong><em>a */c d</em></strong></p>"
     );
 }
 
 #[test]
-fn a_line_break_before_the_combined_closer_closes() {
+fn a_line_break_before_the_combined_closer_passes_it_to_a_later_one() {
     assert_eq!(
         html("/*a\n*/ b*/\n"),
-        "<p><strong><em>a\n</em></strong> b*/</p>"
+        "<p><strong><em>a\n*/ b</em></strong></p>"
     );
 }
 
