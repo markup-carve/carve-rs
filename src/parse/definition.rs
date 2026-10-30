@@ -1355,18 +1355,6 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             .get_or_insert_with(|| definition_body_closer_index(cur, cur.pos + 1, content_column))
     }
 
-    /// Is `open` closed by a closer written exactly at this body's column?
-    fn closer_in_exact_body(&mut self, cur: &LineCursor<'_>, open: FenceOpen) -> bool {
-        let next = cur.pos + 1;
-        let closers = self.closers(cur);
-        next < closers.end
-            && closers.exact_in_body.code_in(
-                next - closers.start..closers.end - closers.start,
-                open.fence_char,
-                open.fence_len,
-            )
-    }
-
     /// Is `open` closed only by a closer below the body's column?
     fn closer_only_below_body(&mut self, cur: &LineCursor<'_>, open: FenceOpen) -> bool {
         if true {
@@ -1821,7 +1809,6 @@ struct DefinitionBodyCloserIndex {
     start: usize,
     end: usize,
     in_body: ScopedFenceClosers,
-    exact_in_body: ScopedFenceClosers,
     below_body: ScopedFenceClosers,
 }
 
@@ -1842,7 +1829,6 @@ fn definition_body_closer_index(
     content_column: usize,
 ) -> DefinitionBodyCloserIndex {
     let mut in_body = Vec::new();
-    let mut exact_in_body = Vec::new();
     let mut below_body = Vec::new();
     let mut pending_blank = false;
     for line in cur.lines.range(start..cur.lines.len()) {
@@ -1851,7 +1837,6 @@ fn definition_body_closer_index(
         if is_blank_line(line) {
             pending_blank = true;
             in_body.push("");
-            exact_in_body.push("");
             below_body.push("");
             continue;
         }
@@ -1871,11 +1856,6 @@ fn definition_body_closer_index(
         } else {
             ""
         });
-        exact_in_body.push(if indent == content_column {
-            trim_ascii_start(line)
-        } else {
-            ""
-        });
         below_body.push(if indent < content_column {
             trim_ascii_start(line)
         } else {
@@ -1886,7 +1866,6 @@ fn definition_body_closer_index(
         start,
         end: start + in_body.len(),
         in_body: ScopedFenceClosers::new(in_body.into_iter()),
-        exact_in_body: ScopedFenceClosers::new(exact_in_body.into_iter()),
         below_body: ScopedFenceClosers::new(below_body.into_iter()),
     }
 }

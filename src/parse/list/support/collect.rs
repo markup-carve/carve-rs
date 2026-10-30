@@ -31,6 +31,58 @@ pub(crate) fn collect_indented_block_mapped_with(
 
 /// Do the collected lines end in a `+`, or in a `+` and the attribute blocks it
 /// carries to its block (carve#1238)? Either way the next line is the block it attaches.
+/// Whether the child item at `column` opened a fence on its marker line that no
+/// later line has closed yet; such a run is that fence's closer, not an opener.
+/// Resumes from where the last call stopped, so each line is read once per child.
+#[derive(Default)]
+struct LeadFenceScan {
+    column: usize,
+    seen: usize,
+    marker: Option<usize>,
+    open: Option<FenceOpen>,
+    scanned: usize,
+}
+
+impl LeadFenceScan {
+    fn holds_open(&mut self, lines: &[String], column: usize) -> bool {
+        if column != self.column || lines.len() < self.seen {
+            *self = Self {
+                column,
+                ..Self::default()
+            };
+        }
+        let from = self.seen;
+        self.seen = lines.len();
+        let marker = lines[from..]
+            .iter()
+            .rposition(|line| {
+                !is_blank_line(line)
+                    && indent_columns(line) < column
+                    && detect_list_marker_full(trim_ascii_start(line)).is_some()
+            })
+            .map(|at| from + at)
+            .or(self.marker);
+        if marker != self.marker {
+            self.marker = marker;
+            self.open = marker.and_then(|at| {
+                detect_list_marker_full(trim_ascii_start(&lines[at]))
+                    .and_then(|item| detect_fence_open(innermost_marker_content(item.content)))
+            });
+            self.scanned = marker.map_or(lines.len(), |at| at + 1);
+        }
+        while let Some(open) = self.open {
+            let Some(line) = lines.get(self.scanned) else {
+                break;
+            };
+            self.scanned += 1;
+            if indent_columns(line) >= column && is_fence_close(trim_ascii_start(line), open) {
+                self.open = None;
+            }
+        }
+        self.open.is_some()
+    }
+}
+
 fn follows_plus_marker(lines: &[String]) -> bool {
     let run_start = lines
         .iter()
@@ -273,6 +325,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             open
         });
     let mut nested_folded_fence = false;
+    let mut lead_fence_scan = LeadFenceScan::default();
     let mut nested_blank_run: Option<(usize, usize, bool)> = None;
     run_indented_body!(cur.lines, cur.pos, container, |line, admission| {
         if admission.blank {
@@ -1258,6 +1311,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                     {
                         let after_blank = lines.last().is_some_and(|line| is_blank_line(line));
                         let interrupts = !after_blank
+                            && !lead_fence_scan.holds_open(&lines, column)
                             && cur.has_code_closer_after(
                                 cur.pos + 1,
                                 open.fence_char,
