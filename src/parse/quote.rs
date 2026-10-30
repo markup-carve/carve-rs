@@ -20,7 +20,8 @@ pub(in crate::parse) fn parse_collected_blockquote(
 ) -> Box<BlockNode> {
     let mut children = Vec::new();
     for part in parts {
-        let source = part.into_source();
+        let mut source = part.into_source();
+        source.owner = source_map::MappedBodyOwner::Quote;
         let blocks = parse_quoted_mapped_source(&source, options);
         drop(source);
         children.extend(blocks);

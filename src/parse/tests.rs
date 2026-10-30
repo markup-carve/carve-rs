@@ -246,6 +246,7 @@ fn nested_event_cursor_keeps_unpositioned_authored_base_parity() {
     ] {
         let lines = body.lines().count();
         let mapped = MappedSource {
+            owner: source_map::MappedBodyOwner::Document,
             source: body.to_string(),
             line_map: (1..=lines).map(Some).collect(),
             col_map: Vec::new(),
@@ -1092,6 +1093,7 @@ mod event_ladder_tail {
     fn unpositioned_body(body: &str) -> MappedSource {
         let lines = body.lines().count();
         MappedSource {
+            owner: source_map::MappedBodyOwner::Document,
             source: body.to_string(),
             line_map: (1..=lines).map(Some).collect(),
             col_map: Vec::new(),

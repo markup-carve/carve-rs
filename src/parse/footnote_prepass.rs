@@ -1815,6 +1815,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         self.definition_keys
             .insert(normalized_label, def.label.to_string());
         let definition_source = MappedSource {
+            owner: source_map::MappedBodyOwner::Footnote,
             col_map: note.col_map,
             source: note.lines.join("\n"),
             line_map: note.line_map,
@@ -1891,6 +1892,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
     fn finish(self) -> FootnoteExtraction {
         (
             MappedSource {
+                owner: source_map::MappedBodyOwner::Document,
                 // The document body's lines are top-level: the footnote-definition
                 // extraction removes whole lines, never a prefix, so nothing has
                 // been stripped from the front of the ones that remain.

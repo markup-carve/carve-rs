@@ -539,6 +539,7 @@ impl DefinitionListScan {
                 // marker rather than at the placing indent (markup-carve/carve#1980,
                 // corpus 461-...-sibling-4).
                 body.sublists_carry_authored_base = true;
+                body.owner = source_map::MappedBodyOwner::Definition;
                 let request = BodyRequest {
                     body,
                     item: self.items.len(),
@@ -971,6 +972,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         debug_assert_eq!(self.col_map.len(), self.lines.len());
         debug_assert_eq!(self.reached.len(), self.lines.len());
         MappedSource {
+            owner: source_map::MappedBodyOwner::Document,
             col_map: self.col_map,
             source: self.lines.join("\n"),
             line_map: self.line_map,
@@ -2145,6 +2147,7 @@ mod scan_tests {
     #[test]
     fn mapped_definition_scan_resumes_from_owned_frame() {
         let source = MappedSource {
+            owner: source_map::MappedBodyOwner::Document,
             source: ":: term\n:  first\n:  second\n# tail".into(),
             line_map: vec![Some(11), Some(12), Some(13), Some(14)],
             col_map: vec![Some(2); 4],

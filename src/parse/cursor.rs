@@ -362,6 +362,8 @@ impl<'a> std::ops::Deref for CursorLines<'a> {
 }
 
 pub(in crate::parse) struct LineCursor<'a> {
+    #[cfg(test)]
+    pub(in crate::parse) mapped_owner: source_map::MappedBodyOwner,
     pub(in crate::parse) colon_view: Option<&'a ColonView>,
     pub(in crate::parse) colon_geometry: Option<&'a [SourceLine]>,
     pub(in crate::parse) marker_tail: Option<MarkerTail>,
@@ -434,6 +436,8 @@ pub(in crate::parse) struct LineCursor<'a> {
 /// this state is suspended.
 #[allow(dead_code)]
 pub(in crate::parse) struct LineCursorOwnedState {
+    #[cfg(test)]
+    mapped_owner: source_map::MappedBodyOwner,
     marker_tail: Option<MarkerTail>,
     pos: usize,
     last_block_start: Option<usize>,
@@ -505,6 +509,10 @@ impl OwnedMappedCursorFrame {
             Some(&self.source.col_map),
         );
         cursor.reached = Some(&self.source.reached);
+        #[cfg(test)]
+        {
+            cursor.mapped_owner = self.source.owner;
+        }
         cursor.restore_state(self.state.take().expect("mapped cursor frame state"));
         let result = f(&mut cursor, &self.source);
         self.state = Some(cursor.take_state());
@@ -517,6 +525,8 @@ impl<'a> LineCursor<'a> {
     #[allow(dead_code)]
     pub(in crate::parse) fn take_state(&mut self) -> LineCursorOwnedState {
         LineCursorOwnedState {
+            #[cfg(test)]
+            mapped_owner: self.mapped_owner,
             marker_tail: self.marker_tail.take(),
             pos: std::mem::take(&mut self.pos),
             last_block_start: self.last_block_start.take(),
@@ -545,6 +555,10 @@ impl<'a> LineCursor<'a> {
     /// Restore progress into a cursor constructed with the same input views.
     #[allow(dead_code)]
     pub(in crate::parse) fn restore_state(&mut self, state: LineCursorOwnedState) {
+        #[cfg(test)]
+        {
+            self.mapped_owner = state.mapped_owner;
+        }
         self.marker_tail = state.marker_tail;
         self.pos = state.pos;
         self.last_block_start = state.last_block_start;
@@ -584,6 +598,8 @@ impl<'a> LineCursor<'a> {
         col_map: Option<&'a [Option<isize>]>,
     ) -> Self {
         LineCursor {
+            #[cfg(test)]
+            mapped_owner: source_map::MappedBodyOwner::Document,
             colon_view: None,
             colon_geometry: None,
             marker_tail: None,

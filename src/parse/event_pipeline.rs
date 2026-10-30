@@ -105,6 +105,7 @@ thread_local! {
     pub(super) static MARKER_HOSTED_DEFINITION_LISTS: Cell<usize> = const { Cell::new(0) };
     pub(super) static MARKER_HOSTED_QUOTE_DEFERRALS: Cell<usize> = const { Cell::new(0) };
     pub(super) static COLON_QUOTE_DEFERRALS: Cell<usize> = const { Cell::new(0) };
+    pub(super) static DEFINITION_PARAGRAPH_COLLECTIONS: Cell<usize> = const { Cell::new(0) };
 }
 
 #[cfg(test)]
@@ -157,6 +158,7 @@ mod standard_reader_probe_tests {
                         .with_source_lines(source_lines)
                         .with_extension(&observer);
                     STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+                    STANDARD_DEFINITION_PARAGRAPH_ENTRIES.with(|count| count.set(0));
                     let ((actual, admitted), diagnostics) = collecting_lint_events(|| {
                         parse_document_with_options(&source, &options).unwrap()
                     });
@@ -668,6 +670,162 @@ mod standard_reader_probe_tests {
 #[cfg(test)]
 mod mixed_definition_owner_tests {
     use super::*;
+    use crate::{BlockMatch, CarveExtension, MatcherContext};
+
+    struct Observer(RefCell<Vec<(usize, String)>>);
+
+    impl CarveExtension for Observer {
+        fn name(&self) -> &'static str {
+            "definition-paragraph-observer"
+        }
+
+        fn match_block(
+            &self,
+            lines: &[&str],
+            start: usize,
+            _: &MatcherContext<'_>,
+        ) -> Option<BlockMatch> {
+            self.0.borrow_mut().push((start, lines[start].to_owned()));
+            None
+        }
+    }
+
+    #[test]
+    fn definition_paragraph_collector_matches_standard() {
+        let mut collected_any = false;
+        for source in [
+            ":: t\n: para\n^ cap\n",
+            ":: term\n:  Alpha *emphasis*\n\n# tail\n",
+            ":: term\n:  alpha\n   beta\n\n# tail\n",
+            ":: term\n:  alpha\n   ![alt](image.png)\n\n# tail\n",
+            ":: term\n:  alpha\n   beta\n   gamma\n\n# tail\n",
+            ":: term\n:  alpha\n   beta\n\n   gamma\n   delta\n\n# tail\n",
+            ":: term\n:  Alpha *emphasis*\n   Beta [link](url)\n\n# tail\n",
+            ":: term\n:  alpha\n    beta\n   gamma\n\n# tail\n",
+            ":: term\n:  alpha\n   beta\n   - sibling\n\n# tail\n",
+            ":: term\n:  ![alt](image.png)\n\n   ^ caption\n\n# tail\n",
+            ":: term\n:  +\n   tail\n\n# tail\n",
+        ] {
+            for positions in [false, true] {
+                for source_lines in [false, true] {
+                    let observer = Observer(RefCell::new(Vec::new()));
+                    let options = Options::default()
+                        .with_positions(positions)
+                        .with_source_lines(source_lines)
+                        .with_extension(&observer);
+                    STANDARD_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+                    STANDARD_DEFINITION_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+                    DEFINITION_PARAGRAPH_COLLECTIONS.with(|count| count.set(0));
+                    let ((actual, admitted), diagnostics) = collecting_lint_events(|| {
+                        parse_document_with_options(source, &options).unwrap()
+                    });
+                    assert!(admitted);
+                    let collected = DEFINITION_PARAGRAPH_COLLECTIONS.with(Cell::get);
+                    collected_any |= collected > 0;
+                    assert_eq!(
+                        STANDARD_DEFINITION_PARAGRAPH_ENTRIES.with(Cell::get),
+                        0,
+                        "old definition paragraph reader entered for {source:?}"
+                    );
+                    let callbacks = observer.0.into_inner();
+                    let standard_observer = Observer(RefCell::new(Vec::new()));
+                    let standard_options = Options::default()
+                        .with_positions(positions)
+                        .with_source_lines(source_lines)
+                        .with_extension(&standard_observer);
+                    let (expected, expected_diagnostics) = {
+                        let _standard = StandardEventRootGuard::install();
+                        collecting_lint_events(|| parse_with_options(source, &standard_options))
+                    };
+                    assert_eq!(
+                        (actual, diagnostics),
+                        (expected, expected_diagnostics),
+                        "{source:?}"
+                    );
+                    assert_eq!(callbacks, standard_observer.0.into_inner(), "{source:?}");
+                }
+            }
+        }
+        assert!(collected_any);
+    }
+
+    #[test]
+    fn definition_paragraph_state_survives_a_yield() {
+        STANDARD_DEFINITION_PARAGRAPH_ENTRIES.with(|count| count.set(0));
+        DEFINITION_PARAGRAPH_COLLECTIONS.with(|count| count.set(0));
+        let lines = ["alpha", "beta"];
+        let line_map = [Some(1), Some(2)];
+        let col_map = [Some(0), Some(0)];
+        let options = Options::default().with_positions(true);
+        let mut cur = LineCursor::new_with_cols(&lines, Some(&line_map), Some(&col_map));
+        cur.mapped_owner = source_map::MappedBodyOwner::Definition;
+        let mut state = EventLevelState::new(&cur, true, false);
+        let mut paragraph = DefinitionParagraphTask::Dispatch;
+        assert!(matches!(
+            run_event_level_owned::<true, false, true>(
+                &lines,
+                &options,
+                Some(&line_map),
+                &mut cur,
+                &mut state,
+                &mut paragraph,
+                None,
+                None,
+                false,
+                Some(1)
+            ),
+            Some(EventLevelRun::Yield)
+        ));
+        assert_eq!(cur.pos, 1);
+        assert_eq!(
+            match &paragraph {
+                DefinitionParagraphTask::Collect(state) => Some(state.indices.as_slice()),
+                DefinitionParagraphTask::Dispatch => None,
+            },
+            Some([0].as_slice())
+        );
+        let result = run_event_level_owned::<true, false, true>(
+            &lines,
+            &options,
+            Some(&line_map),
+            &mut cur,
+            &mut state,
+            &mut paragraph,
+            None,
+            None,
+            false,
+            None,
+        );
+        let Some(EventLevelRun::Done(blocks)) = result else {
+            panic!("paragraph did not finish")
+        };
+        assert_eq!(cur.pos, 2);
+        assert_eq!(blocks.len(), 1);
+        assert!(matches!(paragraph, DefinitionParagraphTask::Dispatch));
+        assert_eq!(DEFINITION_PARAGRAPH_COLLECTIONS.with(Cell::get), 1);
+        assert_eq!(STANDARD_DEFINITION_PARAGRAPH_ENTRIES.with(Cell::get), 0);
+        let mut standard_cur = LineCursor::new_with_cols(&lines, Some(&line_map), Some(&col_map));
+        standard_cur.mapped_owner = source_map::MappedBodyOwner::Definition;
+        let expected = parse_paragraph(&mut standard_cur, &options);
+        assert_eq!(format!("{:?}", blocks[0]), format!("{expected:?}"));
+        assert_eq!(standard_cur.pos, cur.pos);
+    }
+
+    #[test]
+    fn mapped_owner_prevents_footnote_admission() {
+        let lines = ["alpha", "beta"];
+        let line_map = [Some(1), Some(2)];
+        let mut cur = LineCursor::new_with_cols(&lines, Some(&line_map), None);
+        cur.sublists_carry_authored_base = true;
+        assert!(!starts_definition_event_paragraph(
+            &cur,
+            source_map::MappedBodyOwner::Footnote
+        ));
+        assert!(starts_definition_event_paragraph(
+            &cur,
+            source_map::MappedBodyOwner::Definition
+        ));
+    }
 
     #[test]
     fn keeps_following_root_blocks_and_declines_continuations() {
@@ -1879,6 +2037,10 @@ pub(super) fn parse_nested_mapped_blocks(
     cur.at_document_level = scope.at_document_level;
     cur.in_item_body = scope.in_item_body;
     cur.in_quoted_body = scope.in_quoted_body || source.in_quoted_body;
+    #[cfg(test)]
+    {
+        cur.mapped_owner = source.owner;
+    }
     cur.reached = Some(source.reached.as_slice());
     cur.sublists_carry_authored_base = positioned && source.sublists_carry_authored_base;
     cur.marker_tail = source.marker_tail;
@@ -1886,15 +2048,27 @@ pub(super) fn parse_nested_mapped_blocks(
     let mut observed = Vec::new();
     let record_extents = extents.is_some();
     let mut nested_pending = Vec::new();
-    let blocks = parse_mixed_blocks_cursor::<true, false>(
-        &lines,
-        options,
-        Some(&source.line_map),
-        cur,
-        record_extents.then_some(&mut observed),
-        Some(&mut nested_pending),
-        scope.in_quoted_body,
-    )?;
+    let blocks = if source.owner == source_map::MappedBodyOwner::Definition {
+        parse_mixed_blocks_cursor::<true, false, true>(
+            &lines,
+            options,
+            Some(&source.line_map),
+            cur,
+            record_extents.then_some(&mut observed),
+            Some(&mut nested_pending),
+            scope.in_quoted_body,
+        )
+    } else {
+        parse_mixed_blocks_cursor::<true, false, false>(
+            &lines,
+            options,
+            Some(&source.line_map),
+            cur,
+            record_extents.then_some(&mut observed),
+            Some(&mut nested_pending),
+            scope.in_quoted_body,
+        )
+    }?;
     #[cfg(test)]
     if !options.extensions.is_empty() {
         NESTED_EXTENSION_EVENT_PARSES.with(|count| count.set(count.get() + 1));
@@ -1948,7 +2122,7 @@ pub(super) fn parse_drained_fragment(
         let _depth = DepthGuard::enter()?;
         let mut cur = LineCursor::new_with_cols(&lines, line_map, col_map.as_deref());
         cur.reached = Some(&[]);
-        parse_mixed_blocks_cursor::<true, false>(
+        parse_mixed_blocks_cursor::<true, false, false>(
             &lines,
             options,
             line_map,
@@ -1992,7 +2166,11 @@ pub(super) fn parse_colon_body<'a>(
         LineCursor::from_lines(lines, None, None)
     };
     cur.colon_view = Some(view);
-    let blocks = parse_mixed_blocks_cursor::<true, false>(
+    #[cfg(test)]
+    {
+        cur.mapped_owner = source_map::MappedBodyOwner::Colon;
+    }
+    let blocks = parse_mixed_blocks_cursor::<true, false, false>(
         &[],
         options,
         None,
@@ -2448,7 +2626,7 @@ fn parse_mixed_blocks_mapped<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
     let col_map = options.positions.then(|| vec![Some(0); lines.len()]);
     let mut cur = LineCursor::new_with_cols(lines, line_map, col_map.as_deref());
     cur.at_document_level = at_document_level;
-    parse_mixed_blocks_cursor::<DEFINITIONS, ABBREVIATIONS>(
+    parse_mixed_blocks_cursor::<DEFINITIONS, ABBREVIATIONS, false>(
         lines, options, line_map, cur, None, None, true,
     )
 }
@@ -2462,7 +2640,7 @@ fn parse_mixed_blocks_with_root_columns<const DEFINITIONS: bool, const ABBREVIAT
     let col_map = vec![Some(0); lines.len()];
     let mut cur = LineCursor::new_with_cols(lines, Some(line_map), Some(&col_map));
     cur.at_document_level = true;
-    parse_mixed_blocks_cursor::<DEFINITIONS, ABBREVIATIONS>(
+    parse_mixed_blocks_cursor::<DEFINITIONS, ABBREVIATIONS, false>(
         lines,
         options,
         Some(line_map),
@@ -2521,7 +2699,11 @@ impl EventLevelState {
     }
 }
 
-fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
+fn parse_mixed_blocks_cursor<
+    const DEFINITIONS: bool,
+    const ABBREVIATIONS: bool,
+    const DEFINITION_OWNER: bool,
+>(
     lines: &[&str],
     options: &Options<'_>,
     line_map: Option<&[Option<usize>]>,
@@ -2539,12 +2721,14 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
     debug_assert!(!direct_owner || lines.len() == cur.lines.len());
     // Snapshot the cursor flag: nested paragraph probes may change it.
     let mut state = EventLevelState::new(&cur, defer_pending, direct_owner);
-    let mut result = run_event_level::<DEFINITIONS, ABBREVIATIONS>(
+    let mut paragraph = DefinitionParagraphTask::Dispatch;
+    let mut result = run_event_level_for_cursor::<DEFINITIONS, ABBREVIATIONS, DEFINITION_OWNER>(
         lines,
         options,
         line_map,
         &mut cur,
         &mut state,
+        &mut paragraph,
         extents.as_deref_mut(),
         pending_out.as_deref_mut(),
         defer_quotes,
@@ -2553,6 +2737,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
     loop {
         match result {
             EventLevelRun::Done(out) => return Some(out),
+            EventLevelRun::NeedParagraph { .. } => unreachable!("owner handles paragraph"),
             EventLevelRun::Yield => unreachable!("the wrapper does not request a boundary"),
             EventLevelRun::NeedDefinitionBody(mut continuation) => {
                 cur.restore_state(continuation.cursor);
@@ -2592,12 +2777,17 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                             }
                             debug_assert_eq!(state.out.len(), continuation.index);
                             state.out.push(node);
-                            result = run_event_level::<DEFINITIONS, ABBREVIATIONS>(
+                            result = run_event_level_for_cursor::<
+                                DEFINITIONS,
+                                ABBREVIATIONS,
+                                DEFINITION_OWNER,
+                            >(
                                 lines,
                                 options,
                                 line_map,
                                 &mut cur,
                                 &mut state,
+                                &mut paragraph,
                                 extents.as_deref_mut(),
                                 pending_out.as_deref_mut(),
                                 defer_quotes,
@@ -2615,6 +2805,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
 enum EventLevelRun {
     Done(Vec<BlockNode>),
     Yield,
+    NeedParagraph { start: usize },
     NeedDefinitionBody(Box<DefinitionContinuation>),
 }
 
@@ -2640,6 +2831,7 @@ struct MappedEventTask {
     depth: usize,
     in_group: bool,
     state: Option<EventLevelState>,
+    paragraph: DefinitionParagraphTask,
     continuation: Option<Box<DefinitionContinuation>>,
     pending: Vec<PendingBody>,
 }
@@ -2664,6 +2856,10 @@ impl MappedEventTask {
         cursor.reached = Some(&source.reached);
         cursor.marker_tail = source.marker_tail;
         cursor.in_quoted_body = source.in_quoted_body;
+        #[cfg(test)]
+        {
+            cursor.mapped_owner = source.owner;
+        }
         cursor.sublists_carry_authored_base =
             options.positions && source.sublists_carry_authored_base;
         cursor.drain_follows = false;
@@ -2677,6 +2873,7 @@ impl MappedEventTask {
             depth,
             in_group: IN_FIGURE_GROUP.with(Cell::get),
             state: Some(state),
+            paragraph: DefinitionParagraphTask::Dispatch,
             continuation: None,
             pending: Vec::new(),
         })
@@ -2693,12 +2890,14 @@ impl MappedEventTask {
         let result = self
             .frame
             .with_cursor(|cursor, source| {
-                run_event_level::<true, false>(
+                run_event_level_by_owner::<true, false>(
                     &[],
                     options,
                     Some(&source.line_map),
+                    source.owner,
                     cursor,
                     state,
+                    &mut self.paragraph,
                     None,
                     Some(&mut self.pending),
                     true,
@@ -2745,12 +2944,14 @@ impl MappedEventTask {
             }
             debug_assert_eq!(state.out.len(), continuation.index);
             state.out.push(node);
-            run_event_level::<true, false>(
+            run_event_level_by_owner::<true, false>(
                 &[],
                 options,
                 Some(&source.line_map),
+                source.owner,
                 cursor,
                 state,
+                &mut self.paragraph,
                 None,
                 Some(&mut self.pending),
                 true,
@@ -2776,6 +2977,7 @@ impl MappedEventTask {
                 self.state = None;
                 TaskPoll::Done(blocks)
             }
+            EventLevelRun::NeedParagraph { .. } => unreachable!("owner handles paragraph"),
             EventLevelRun::Yield => unreachable!("mapped task has no stop boundary"),
         }
     }
@@ -2901,6 +3103,389 @@ fn parse_event_or_standard_paragraph(cur: &mut LineCursor<'_>, options: &Options
         .unwrap_or_else(|| parse_paragraph(cur, options))
 }
 
+struct EventParagraphState {
+    start: usize,
+    indices: Vec<usize>,
+    anchors: Vec<Option<(usize, isize)>>,
+    text: Vec<String>,
+    at_content_column: bool,
+    image_lead: bool,
+    caption_pending: bool,
+    refused_plus: bool,
+    suppress_colon_interrupt: bool,
+    continuation: Option<continuation_marker::Decision>,
+    next_boundary: Option<usize>,
+}
+
+// The mapped owner keeps this task between calls to the recursive block reader.
+// A paragraph can therefore yield without retaining that reader's stack frame.
+enum DefinitionParagraphTask {
+    Dispatch,
+    Collect(Box<EventParagraphState>),
+}
+
+enum EventParagraphStep {
+    Accept,
+    SkipBlank,
+    Boundary,
+}
+
+impl EventParagraphState {
+    fn new(cur: &LineCursor<'_>) -> Self {
+        let start = cur.pos;
+        Self {
+            start,
+            indices: Vec::new(),
+            anchors: Vec::new(),
+            text: Vec::new(),
+            at_content_column: cur
+                .peek()
+                .is_some_and(|line| !line.starts_with([' ', '\t'])),
+            image_lead: cur
+                .peek()
+                .is_some_and(|line| detect_block_image(trim_ascii_start(line)).is_some()),
+            caption_pending: false,
+            refused_plus: cur
+                .peek()
+                .is_some_and(|line| is_plus_marker(trim_ascii_start(line)))
+                && cur.continuation_decision(start).is_some_and(|decision| {
+                    decision.refusal.is_some()
+                        && decision.owner != Some(continuation_marker::Kind::Footnote)
+                        && !decision.after_quote_blank
+                }),
+            suppress_colon_interrupt: false,
+            continuation: cur.continuation_decision(start),
+            next_boundary: None,
+        }
+    }
+
+    fn classify(&self, cur: &mut LineCursor<'_>) -> EventParagraphStep {
+        let Some(line) = cur.peek() else {
+            return EventParagraphStep::Boundary;
+        };
+        if is_blank_line(line) {
+            if self.caption_pending
+                && cur
+                    .lines
+                    .line(cur.pos + 1)
+                    .is_some_and(|next| caption_content(next).is_some())
+            {
+                return EventParagraphStep::SkipBlank;
+            }
+            return EventParagraphStep::Boundary;
+        }
+        if self.indices.is_empty() {
+            return EventParagraphStep::Accept;
+        }
+        let same_column = cur
+            .source_line(self.start)
+            .zip(cur.source_line(cur.pos))
+            .map(|(first, next)| {
+                continuation_marker::document_column(first)
+                    == continuation_marker::document_column(next)
+            })
+            .unwrap_or(true);
+        let interrupted = (!self.refused_plus || !is_list_marker(line) || same_column)
+            && interrupts_paragraph(cur, line);
+        let sibling = self.refused_plus
+            && self.indices.len() == 1
+            && cur.lines.at(self.start).starts_with('+')
+            && self.continuation.is_some_and(|decision| {
+                (decision.owner.is_some()
+                    || cur.source_line(self.start).is_some_and(|source_line| {
+                        continuation_marker::preceding_nested_list_marker(
+                            source_line,
+                            decision.quote_depth == 0,
+                        )
+                    }))
+                    && decision.sibling_interrupt
+            })
+            && is_list_marker(line)
+            && indent_columns(line) == 0
+            && same_column;
+        if (interrupted
+            || sibling
+            || (cur.colon_view.is_some_and(|view| view.marker_hosted)
+                && strip_blockquote_prefix(trim_ascii_start(line)).is_some()))
+            && !(self.suppress_colon_interrupt && is_suppressed_colon_fence_line(line))
+        {
+            EventParagraphStep::Boundary
+        } else {
+            EventParagraphStep::Accept
+        }
+    }
+
+    fn accept(&mut self, cur: &mut LineCursor<'_>) {
+        let index = cur.pos;
+        let line_owned = cur.peek().expect("classified line").to_owned();
+        report_unclaimed_document_plus(cur, &line_owned);
+        let line = trim_ascii_end(trim_ascii_start(&line_owned));
+        self.anchors.push(inline_anchor_for_line(cur, index, line));
+        self.indices.push(index);
+        self.text.push(line.to_owned());
+        self.suppress_colon_interrupt |= is_invalid_colon_fence_opener_text(line);
+        self.caption_pending = self.image_lead && self.indices.len() == 1;
+        cur.consume();
+    }
+}
+
+#[inline(never)]
+fn finish_event_paragraph(
+    paragraph: EventParagraphState,
+    cur: &LineCursor<'_>,
+    options: &Options<'_>,
+) -> Box<BlockNode> {
+    let at_content_column = paragraph.at_content_column
+        && !paragraph
+            .text
+            .iter()
+            .skip(1)
+            .any(|line| line.starts_with(LAZY) && caption_content(strip_lazy(line)).is_some());
+    let joined = paragraph
+        .text
+        .iter()
+        .map(|line| strip_lazy(line))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let children = if options.positions {
+        parse_inline_lines_with_anchor(&joined, options, paragraph.anchors)
+    } else {
+        parse_inline_with_options(&joined, options)
+    };
+    Box::new(BlockNode::Paragraph(Paragraph {
+        attrs: None,
+        children,
+        at_content_column,
+        block_image: false,
+        pos: span_of(cur, paragraph.start, cur.pos, options),
+    }))
+}
+
+#[inline(never)]
+fn starts_definition_event_paragraph(
+    cur: &LineCursor<'_>,
+    owner: source_map::MappedBodyOwner,
+) -> bool {
+    if owner != source_map::MappedBodyOwner::Definition
+        || cur.in_item_body
+        || cur.colon_view.is_some()
+    {
+        return false;
+    }
+    let Some(first) = cur.peek() else {
+        return false;
+    };
+    may_start_plain_paragraph(first)
+        && !reference_image_line(first)
+        && crate::includes::code_include_line(first).is_none()
+}
+
+#[inline(never)]
+fn advance_definition_event_paragraph(
+    cur: &mut LineCursor<'_>,
+    paragraph: &mut EventParagraphState,
+    stop_at: Option<usize>,
+) -> bool {
+    while !stop_at.is_some_and(|at| cur.pos >= at) {
+        match paragraph.classify(cur) {
+            EventParagraphStep::Accept => paragraph.accept(cur),
+            EventParagraphStep::SkipBlank => {
+                paragraph.caption_pending = false;
+                cur.consume();
+            }
+            EventParagraphStep::Boundary => break,
+        }
+    }
+    if stop_at.is_some_and(|at| cur.pos >= at) {
+        return false;
+    }
+    paragraph.next_boundary = Some(cur.pos);
+    true
+}
+
+#[cold]
+#[allow(clippy::too_many_arguments)]
+fn run_event_level_owned<
+    const DEFINITIONS: bool,
+    const ABBREVIATIONS: bool,
+    const DEFINITION_OWNER: bool,
+>(
+    lines: &[&str],
+    options: &Options<'_>,
+    line_map: Option<&[Option<usize>]>,
+    cur: &mut LineCursor<'_>,
+    state: &mut EventLevelState,
+    paragraph: &mut DefinitionParagraphTask,
+    mut extents: Option<&mut Vec<(usize, usize)>>,
+    mut pending_out: Option<&mut Vec<PendingBody>>,
+    defer_quotes: bool,
+    stop_at: Option<usize>,
+) -> Option<EventLevelRun> {
+    loop {
+        if let DefinitionParagraphTask::Collect(paragraph_state) = paragraph {
+            if !advance_definition_event_paragraph(cur, paragraph_state, stop_at) {
+                return Some(EventLevelRun::Yield);
+            }
+            let DefinitionParagraphTask::Collect(paragraph_state) =
+                std::mem::replace(paragraph, DefinitionParagraphTask::Dispatch)
+            else {
+                unreachable!("paragraph task changed while collecting")
+            };
+            let start = paragraph_state.start;
+            let source_line = cur.source_line(start);
+            #[cfg(test)]
+            if !probing() {
+                DEFINITION_PARAGRAPH_COLLECTIONS.with(|count| count.set(count.get() + 1));
+            }
+            let node = finish_event_paragraph(*paragraph_state, cur, options);
+            emit_boxed_event_paragraph(
+                state,
+                node,
+                start,
+                cur.pos,
+                source_line,
+                options,
+                extents.as_deref_mut(),
+            );
+        }
+        let result = run_event_level_inner::<DEFINITIONS, ABBREVIATIONS, DEFINITION_OWNER>(
+            lines,
+            options,
+            line_map,
+            cur,
+            state,
+            extents.as_deref_mut(),
+            pending_out.as_deref_mut(),
+            defer_quotes,
+            stop_at,
+        )?;
+        match result {
+            EventLevelRun::NeedParagraph { start, .. } => {
+                debug_assert_eq!(cur.pos, start);
+                *paragraph =
+                    DefinitionParagraphTask::Collect(Box::new(EventParagraphState::new(cur)));
+            }
+            other => return Some(other),
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+#[inline(always)]
+fn run_event_level_for_cursor<
+    const DEFINITIONS: bool,
+    const ABBREVIATIONS: bool,
+    const DEFINITION_OWNER: bool,
+>(
+    lines: &[&str],
+    options: &Options<'_>,
+    line_map: Option<&[Option<usize>]>,
+    cur: &mut LineCursor<'_>,
+    state: &mut EventLevelState,
+    paragraph: &mut DefinitionParagraphTask,
+    extents: Option<&mut Vec<(usize, usize)>>,
+    pending_out: Option<&mut Vec<PendingBody>>,
+    defer_quotes: bool,
+    stop_at: Option<usize>,
+) -> Option<EventLevelRun> {
+    if DEFINITION_OWNER {
+        run_event_level_owned::<DEFINITIONS, ABBREVIATIONS, true>(
+            lines,
+            options,
+            line_map,
+            cur,
+            state,
+            paragraph,
+            extents,
+            pending_out,
+            defer_quotes,
+            stop_at,
+        )
+    } else {
+        debug_assert!(matches!(paragraph, DefinitionParagraphTask::Dispatch));
+        run_event_level_inner::<DEFINITIONS, ABBREVIATIONS, false>(
+            lines,
+            options,
+            line_map,
+            cur,
+            state,
+            extents,
+            pending_out,
+            defer_quotes,
+            stop_at,
+        )
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+#[inline(never)]
+fn run_event_level_by_owner<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
+    lines: &[&str],
+    options: &Options<'_>,
+    line_map: Option<&[Option<usize>]>,
+    owner: source_map::MappedBodyOwner,
+    cur: &mut LineCursor<'_>,
+    state: &mut EventLevelState,
+    paragraph: &mut DefinitionParagraphTask,
+    extents: Option<&mut Vec<(usize, usize)>>,
+    pending_out: Option<&mut Vec<PendingBody>>,
+    defer_quotes: bool,
+    stop_at: Option<usize>,
+) -> Option<EventLevelRun> {
+    if owner == source_map::MappedBodyOwner::Definition {
+        run_event_level_owned::<DEFINITIONS, ABBREVIATIONS, true>(
+            lines,
+            options,
+            line_map,
+            cur,
+            state,
+            paragraph,
+            extents,
+            pending_out,
+            defer_quotes,
+            stop_at,
+        )
+    } else {
+        debug_assert!(matches!(paragraph, DefinitionParagraphTask::Dispatch));
+        run_event_level_inner::<DEFINITIONS, ABBREVIATIONS, false>(
+            lines,
+            options,
+            line_map,
+            cur,
+            state,
+            extents,
+            pending_out,
+            defer_quotes,
+            stop_at,
+        )
+    }
+}
+
+#[inline(never)]
+fn emit_boxed_event_paragraph(
+    state: &mut EventLevelState,
+    node: Box<BlockNode>,
+    start: usize,
+    end: usize,
+    source_line: Option<usize>,
+    options: &Options<'_>,
+    extents: Option<&mut Vec<(usize, usize)>>,
+) {
+    if let Some(extents) = extents {
+        extents.push((start, end));
+    }
+    if options.positions {
+        state.block_start_indices.push(start);
+    }
+    #[cfg(feature = "experimental-event-parser-options")]
+    if options.source_lines {
+        state.source_lines.push(source_line);
+    }
+    #[cfg(not(feature = "experimental-event-parser-options"))]
+    let _ = source_line;
+    state.out.push(*node);
+}
+
 #[inline(never)]
 fn collect_blank_image_caption(
     cur: &mut LineCursor<'_>,
@@ -2946,8 +3531,38 @@ fn collect_blank_image_caption(
     }))
 }
 
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 fn run_event_level<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
+    lines: &[&str],
+    options: &Options<'_>,
+    line_map: Option<&[Option<usize>]>,
+    cur: &mut LineCursor<'_>,
+    state: &mut EventLevelState,
+    extents: Option<&mut Vec<(usize, usize)>>,
+    pending_out: Option<&mut Vec<PendingBody>>,
+    defer_quotes: bool,
+    stop_at: Option<usize>,
+) -> Option<EventLevelRun> {
+    run_event_level_inner::<DEFINITIONS, ABBREVIATIONS, false>(
+        lines,
+        options,
+        line_map,
+        cur,
+        state,
+        extents,
+        pending_out,
+        defer_quotes,
+        stop_at,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_event_level_inner<
+    const DEFINITIONS: bool,
+    const ABBREVIATIONS: bool,
+    const DEFINITION_OWNER: bool,
+>(
     lines: &[&str],
     options: &Options<'_>,
     line_map: Option<&[Option<usize>]>,
@@ -3354,6 +3969,11 @@ fn run_event_level<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
             emit!(_block_source_line, parse_paragraph(cur, options));
             continue;
         }
+        if DEFINITION_OWNER
+            && starts_definition_event_paragraph(cur, source_map::MappedBodyOwner::Definition)
+        {
+            return Some(EventLevelRun::NeedParagraph { start: cur.pos });
+        }
         let standard_paragraph =
             use_standard_event_paragraph(extents.is_some(), state.defer_pending);
         let simple_colon_paragraph = standard_paragraph
@@ -3411,6 +4031,31 @@ fn run_event_level<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
     #[cfg(feature = "experimental-event-parser-options")]
     let source_lines = std::mem::take(&mut state.source_lines);
     let leading_attrs = std::mem::take(&mut state.leading_attrs);
+    apply_event_level_leading_attrs(&mut out, leading_attrs, cur, &block_start_indices, options);
+    if let Some(pending_out) = pending_out {
+        pending_out.extend(pending_bodies);
+    } else {
+        resolve_pending_bodies(&mut out, pending_bodies, options);
+    }
+    #[cfg(feature = "experimental-event-parser-options")]
+    if options.source_lines {
+        for (node, line) in out.iter_mut().zip(source_lines) {
+            if let Some(line) = line {
+                stamp_source_line(node, line);
+            }
+        }
+    }
+    Some(EventLevelRun::Done(out))
+}
+
+#[inline(never)]
+fn apply_event_level_leading_attrs(
+    out: &mut [BlockNode],
+    leading_attrs: Vec<(usize, Attrs, Option<Pos>)>,
+    cur: &LineCursor<'_>,
+    block_start_indices: &[usize],
+    options: &Options<'_>,
+) {
     if !leading_attrs.is_empty() {
         let mut next_visible = vec![None; out.len() + 1];
         for index in (0..out.len()).rev() {
@@ -3458,20 +4103,6 @@ fn run_event_level<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
         }
         note_unattached_block_attrs(dangling_pos);
     }
-    if let Some(pending_out) = pending_out {
-        pending_out.extend(pending_bodies);
-    } else {
-        resolve_pending_bodies(&mut out, pending_bodies, options);
-    }
-    #[cfg(feature = "experimental-event-parser-options")]
-    if options.source_lines {
-        for (node, line) in out.iter_mut().zip(source_lines) {
-            if let Some(line) = line {
-                stamp_source_line(node, line);
-            }
-        }
-    }
-    Some(EventLevelRun::Done(out))
 }
 
 #[cold]
@@ -5899,6 +6530,7 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         let line_count = body.lines().count();
         let joined = joined_source(&body.lines().collect::<Vec<_>>());
         let mapped = MappedSource {
+            owner: source_map::MappedBodyOwner::Document,
             source: joined,
             line_map: (body_start_line..body_start_line + line_count)
                 .map(Some)
@@ -6380,6 +7012,7 @@ pub(super) fn parse_document_with_custom_options(
             let line_count = body.lines().count();
             let joined = joined_source(&body.lines().collect::<Vec<_>>());
             let mapped = MappedSource {
+                owner: source_map::MappedBodyOwner::Document,
                 source: joined,
                 line_map: (body_start_line..body_start_line + line_count)
                     .map(Some)

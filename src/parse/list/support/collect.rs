@@ -2099,6 +2099,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     BODY_LINES_COLLECTED.with(|c| c.set(c.get() + lines.len() as u64));
     debug_assert_eq!(reached.len(), lines.len());
     MappedSource {
+        owner: source_map::MappedBodyOwner::ListItem,
         col_map,
         source,
         line_map,

@@ -892,6 +892,7 @@ fn parse_with_options_mode_and_index(
             let body_line_count = body.lines().count();
             (
                 MappedSource {
+                    owner: source_map::MappedBodyOwner::Document,
                     source: body.to_owned(),
                     line_map: (body_start_line..body_start_line + body_line_count)
                         .map(Some)
@@ -1507,7 +1508,8 @@ fn parse_quote_parts_into(
 ) -> Vec<BlockNode> {
     let mut children = Vec::new();
     for part in parts {
-        let source = part.into_source();
+        let mut source = part.into_source();
+        source.owner = source_map::MappedBodyOwner::Quote;
         let mut part_pending = Vec::new();
         let blocks = parse_mapped_source_at_level_into(
             &source,
@@ -1624,6 +1626,7 @@ fn parse_mapped_source_at_level_into_recording(
 #[cfg(test)]
 thread_local! {
     static STANDARD_PARAGRAPH_ENTRIES: Cell<usize> = const { Cell::new(0) };
+    static STANDARD_DEFINITION_PARAGRAPH_ENTRIES: Cell<usize> = const { Cell::new(0) };
 }
 
 #[inline(never)]
@@ -1856,6 +1859,10 @@ fn parse_positioned_mapped_source_standard(
     cursor.at_document_level = at_document_level;
     cursor.in_item_body = in_item_body;
     cursor.in_quoted_body = in_quoted_body || source.in_quoted_body;
+    #[cfg(test)]
+    {
+        cursor.mapped_owner = source.owner;
+    }
     cursor.reached = Some(source.reached.as_slice());
     cursor.sublists_carry_authored_base = source.sublists_carry_authored_base;
     cursor.marker_tail = source.marker_tail;
