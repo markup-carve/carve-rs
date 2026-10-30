@@ -109,7 +109,6 @@ struct PrepassFenceState {
     inline_paragraph: Option<PrepassParagraph>,
     term_floor: usize,
     // Whether that fence has a closer, which decides whether a quoted line ends it.
-    closer_ahead: bool,
 }
 
 impl PrepassFenceState {
@@ -122,7 +121,7 @@ impl PrepassFenceState {
                 && ((self.inline_marker && is_blank_line(without_blockquote_prefixes(line)))
                     || (self.term_owned
                         && term_fence_ends_above(line, self.term_floor, &self.term_columns))
-                    || prepass_fence_ends_above(line, open, self.closer_ahead))
+                    || prepass_fence_ends_above(line, open))
     }
 }
 
@@ -602,8 +601,6 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let fence = prepass_fence_opens(
             self.lines,
             i,
-            open,
-            &self.closer_maxima,
             &self.folded_into_term,
             &self.columns,
             scan.after_term,
@@ -649,7 +646,6 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 inline_marker: fence.inline_marker,
                 inline_paragraph,
                 term_floor,
-                closer_ahead: fence.closer_ahead,
             };
         }
         self.keep_line(i);

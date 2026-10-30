@@ -1310,24 +1310,10 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     /// cannot see that closer. The synthetic boundary preserves the
     /// block decision without moving the closer into the item.
     fn fence_after_quote(&self) -> bool {
-        let (base_indent, content_col) = (self.base_indent, self.content_col);
-        let cur = &*self.cur;
-        cur.peek().is_some_and(|line| {
-            let indent = indent_columns(line);
-            if indent < content_col {
-                return false;
-            }
-            detect_fence_open(&slice_columns(line, content_col, false)).is_some_and(|open| {
-                item_body_fence_has_closer(
-                    cur.lines.range(cur.pos + 1..cur.lines.len()),
-                    open,
-                    content_col,
-                    |line, _| {
-                        detect_list_marker_full(line)
-                            .is_some_and(|marker| marker.indent <= base_indent)
-                    },
-                )
-            })
+        let content_col = self.content_col;
+        self.cur.peek().is_some_and(|line| {
+            indent_columns(line) >= content_col
+                && detect_fence_open(&slice_columns(line, content_col, false)).is_some()
         })
     }
 
@@ -2280,16 +2266,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         next: &str,
         indent: usize,
     ) -> bool {
-        let base_indent = self.base_indent;
-        // A closed run at an ancestor's column interrupts this child.
-        // Its host is the ancestor, so only a closer at a column that
-        // host reaches counts; the child's content column does not
-        // (CARVE-P0-014).
-        if indent == base_indent
-            && detect_fence_open(trim_ascii_start(next)).is_some_and(|open| {
-                list_code_fence_closer_ahead(self.cur, open, base_indent, base_indent)
-            })
-        {
+        // A run at an ancestor's column interrupts this child.
+        if indent == self.base_indent && detect_fence_open(trim_ascii_start(next)).is_some() {
             return false;
         }
         let next_owned = next.to_string();
@@ -2318,7 +2296,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         next: &str,
         indent: usize,
     ) -> bool {
-        let (base_indent, content_col) = (self.base_indent, self.content_col);
         // A recognized block opener may be authored past the canonical
         // content column: that visual column becomes its temporary
         // base, and the continuation collector below rebases the whole
@@ -2329,9 +2306,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             && self
                 .item_unclosed_fence_base
                 .map_or(true, |base| base == indent)
-            && !detect_fence_open(over_indented).is_some_and(|open| {
-                !list_code_fence_closer_ahead(self.cur, open, content_col, base_indent)
-            })
         {
             return false;
         }
@@ -2364,7 +2338,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     /// AT content_column: a block opener interrupts the lead paragraph and
     /// nests as a child block; plain text dedents to the body's column 0.
     fn lead_line_at_column(&mut self, lead: &mut LeadParagraph, next: &str, indent: usize) -> bool {
-        let (base_indent, content_col) = (self.base_indent, self.content_col);
+        let content_col = self.content_col;
         let dedented = slice_columns(next, content_col, false);
         let wrapped_attr_interrupts = if self.cur.pos < lead.attrs_scan_floor {
             false
@@ -2383,19 +2357,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             }
         };
         let fence_open = detect_fence_open(&dedented);
-        let fence_interrupts = fence_open.is_some_and(|open| {
-            item_body_fence_has_closer(
-                self.cur.lines.range(self.cur.pos + 1..self.cur.lines.len()),
-                open,
-                content_col,
-                |line, _| {
-                    detect_list_marker_full(line).is_some_and(|marker| marker.indent <= base_indent)
-                },
-            )
-        });
         let interrupts = (wrapped_attr_interrupts
             || interrupts_paragraph_as_container(self.cur, &dedented)
-            || fence_interrupts)
+            || fence_open.is_some())
             && !(lead.suppress_colon_interrupt && is_suppressed_colon_fence_line(&dedented));
         if interrupts {
             return false;
@@ -2403,23 +2367,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         if let Some(anchors) = &mut lead.anchors {
             anchors.push(inline_anchor_for_line(self.cur, self.cur.pos, &dedented));
         }
-        // A code-fence-shaped line with no closer is inline paragraph text
-        // (§10 I4), not an open fenced body. Do not seed the layout fence
-        // tracker unless a closer is written in this item's own body:
-        // doing so closes the item before the next below-column lazy line
-        // (corpus 367).
-        let rejected_fence_has_closer = fence_open.is_some_and(|open| {
-            self.cur
-                .has_code_closer_after(self.cur.pos + 1, open.fence_char, open.fence_len)
-                && fence_interrupts
-        });
-        if self.item_open_fence.is_some() || fence_open.is_none() || rejected_fence_has_closer {
-            track_collected_fence(&mut self.item_open_fence, &dedented, true, indent);
-        } else {
-            self.item_unopened_fence_span = true;
-            self.item_unclosed_fence_base.get_or_insert(indent);
-            self.item_rejected_fence_owner = true;
-        }
+        track_collected_fence(&mut self.item_open_fence, &dedented, true, indent);
         lead.suppress_colon_interrupt |= is_invalid_colon_fence_opener_text(&dedented);
         lead.lines.push(dedented);
         self.cur.consume();

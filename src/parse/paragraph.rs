@@ -222,54 +222,6 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
     })
 }
 
-pub(super) fn list_code_fence_closer_ahead(
-    cur: &mut LineCursor<'_>,
-    open: FenceOpen,
-    floor: usize,
-    base: usize,
-) -> bool {
-    list_code_fence_closer_ahead_from(cur, open, floor, base, cur.pos)
-}
-
-pub(super) fn list_code_fence_closer_ahead_from(
-    _cur: &mut LineCursor<'_>,
-    _open: FenceOpen,
-    _floor: usize,
-    _base: usize,
-    _from: usize,
-) -> bool {
-    true
-}
-
-/// Whether `line`, seen while accumulating a paragraph, ends it and starts a
-/// new block (grammar §10, post-Markdown default).
-///
-/// A VISIBLE block interrupts an open paragraph with no blank line, at the top
-/// level and nested: heading, thematic break, block quote, bullet/task list, a
-/// valid table row, a fenced code block that has a matching closer ahead, and
-/// a valid flush-left colon-fence block. INVISIBLE constructs
-/// (comments, abbreviation definitions) interrupt too. ORDERED lists do NOT
-/// interrupt, `+` is the continuation marker not a bullet, and a bare image
-/// stays inline.
-/// Whether the fence opened on the cursor's current line has a matching closer
-/// ahead (§10 I4: a fence with no closer never opened).
-///
-/// Paragraph fences at a container's content column use this exact scan.
-/// Over-indented list fences also accept the list's content floor.
-///
-/// The index answers "no closer anywhere ahead" in constant time. The exact
-/// probe still decides, but without that gate it runs from every opener to the
-/// end of the document, so a file of unterminated openers costs O(n^2) - the
-/// shape `comment_closer_last_index` already removed for `%%%`.
-///
-/// The opener has been dedented to its container's content column by the
-/// caller, but the closer probe runs over the RAW remaining lines - so dedent
-/// each by the current line's own indentation before the column-exact
-/// `is_fence_close`, or a closer carrying the container indent is missed.
-fn code_fence_closer_ahead(_cur: &mut LineCursor<'_>, _open: FenceOpen) -> bool {
-    true
-}
-
 /// `q` / `+` / `- s`: no open container claims a document-level `+`, which lint
 /// reports when a block follows it and not before paragraph text (carve#3421).
 fn report_unclaimed_document_plus(cur: &mut LineCursor<'_>, line: &str) {
@@ -305,6 +257,16 @@ fn report_unclaimed_document_plus(cur: &mut LineCursor<'_>, line: &str) {
     }
 }
 
+/// Whether `line`, seen while accumulating a paragraph, ends it and starts a
+/// new block (grammar §10, post-Markdown default).
+///
+/// A VISIBLE block interrupts an open paragraph with no blank line, at the top
+/// level and nested: heading, thematic break, block quote, bullet/task list, a
+/// valid table row, a fenced code block (closer or not, carve#4018), and
+/// a valid flush-left colon-fence block. INVISIBLE constructs
+/// (comments, abbreviation definitions) interrupt too. ORDERED lists do NOT
+/// interrupt, `+` is the continuation marker not a bullet, and a bare image
+/// stays inline.
 pub(super) fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
     // §10 (post-Markdown default): a VISIBLE block interrupts an open paragraph
     // with no blank line. Invisible constructs (comments, abbreviation defs)
@@ -366,19 +328,9 @@ pub(super) fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool
     {
         return true;
     }
-    // Fenced code interrupts only with a matching closer ahead. The
-    // opener `line` has been dedented to its container's content column by the
-    // caller (a list item's lead paragraph dedents by that column), but the
-    // closer probe runs over the RAW remaining lines -- so dedent each by the
-    // same amount before the column-exact `is_fence_close`, or a closer that
-    // carries the container indent is missed and the fence never interrupts.
-    // For a flush (column-0) opener the strip is 0, so top-level fences are
-    // unaffected; a strict opener only matches when `line` is flush, so the
-    // strip comes from the raw current line's own indentation.
-    if let Some(open) = detect_fence_open(line) {
-        if code_fence_closer_ahead(cur, open) {
-            return true;
-        }
+    // A fence opener interrupts closer or not (carve#4018).
+    if detect_fence_open(line).is_some() {
+        return true;
     }
     if is_colon_fence_opener_shape(line) {
         return true;

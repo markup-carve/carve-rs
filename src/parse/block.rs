@@ -1832,10 +1832,6 @@ pub(in crate::parse) fn is_invalid_colon_fence_opener_text(line: &str) -> bool {
         && detect_quote_block_open(trimmed).is_none()
 }
 
-pub(in crate::parse) fn code_fence_has_closer(_cur: &mut LineCursor<'_>, _open: FenceOpen) -> bool {
-    true
-}
-
 #[cfg(test)]
 thread_local! {
     pub(in crate::parse) static COLON_COPIED_BYTES: Cell<usize> = const { Cell::new(0) };
@@ -1888,20 +1884,8 @@ pub(in crate::parse) fn skip_opaque_span_into(
         return false;
     };
     if let Some(open) = detect_fence_open(line) {
-        // A closer is required whether or not a paragraph is open. Only a fence
-        // that closes is opaque here; an unterminated one would otherwise consume
-        // the container's own `:::` as content and run to the end of the
-        // document, dragging every following block inside (carve#515,
-        // carve-rs#458). The caller ends an unterminated one at that closer.
-        //
-        // The comment-fence branch below has always required its closer. This
-        // one asked only when a paragraph was open, so the rule held for a fence
-        // that interrupted prose and lapsed for one that opened a body - which
-        // is why the parameter that carried that state is gone.
-        if code_fence_has_closer(cur, open) {
-            take_opaque_span_into(inner, cur, |candidate| is_fence_close(candidate, open));
-            return true;
-        }
+        take_opaque_span_into(inner, cur, |candidate| is_fence_close(candidate, open));
+        return true;
     }
     if let Some(open) = detect_comment_fence_line(line) {
         if cur.has_comment_closer_after(cur.pos + 1, open.fence_len) {
