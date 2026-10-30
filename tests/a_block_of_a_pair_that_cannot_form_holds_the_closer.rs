@@ -21,7 +21,10 @@ fn a_guard_that_cannot_open_leaves_the_block_text() {
             "{*x _/a/{t=a*} b*}\n",
             "<p><strong>x _<em t=\"a*\">a</em> b</strong></p>",
         ),
-        ("{=x /_a_{t=a=} b=}\n", "<p><mark>x /<u t=\"a=\">a</u> b</mark></p>"),
+        (
+            "{=x /_a_{t=a=} b=}\n",
+            "<p><mark>x /<u t=\"a=\">a</u> b</mark></p>",
+        ),
         ("{_x _*a*{t=a_} b_}\n", "<p><u>x _*a*{t=a</u> b_}</p>"),
         (
             "{/x _*a*{t=a/} [a_] /} e_\n",
