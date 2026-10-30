@@ -58,7 +58,7 @@ fn header_columns_are_counted_over_the_grid_and_a_blank_row_stays() {
     assert_eq!(
         html_to_carve(html, &on()).unwrap().value,
         "{header-rows=1 header-cols=1}\n::: list-table\n- - H\n  - I\n- - R\n  - - a\n\
-- - ^\n  - b\n- - +\n  - +\n:::\n"
+- - ^\n  - b\n- - {empty}\n  - {empty}\n:::\n"
     );
 }
 

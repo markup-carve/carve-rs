@@ -29,9 +29,9 @@ fn column_zero_and_the_unquoted_twin_keep_their_reading() {
     for (source, expected) in [
         (
             "- - > +\nb\n",
-            "<ul><li><ul><li><blockquote><p>b</p></blockquote></li></ul></li></ul>",
+            "<ul><li><ul><li><blockquote><p>+b</p></blockquote></li></ul></li></ul>",
         ),
-        ("- - +\n  b\n", "<ul><li><ul><li></li></ul>b</li></ul>"),
+        ("- - +\n  b\n", "<ul><li><ul><li>b</li></ul></li></ul>"),
     ] {
         assert_eq!(flat(source), expected, "{source:?}");
     }

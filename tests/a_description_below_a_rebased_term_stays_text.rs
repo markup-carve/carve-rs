@@ -27,7 +27,7 @@ fn lazy_lines_below_a_rebased_term_keep_their_existing_reading() {
 
     let source = ":: a\n: b\n    :: t\n    : d\n : zq\n";
     let html = carve::to_html(source);
-    assert!(html.contains("<dd>d\n: zq</dd>"), "{html}");
+    assert!(html.contains("<dd>zq</dd>"), "{html}");
     assert!(!html.contains("&nbsp;L&nbsp;"), "{html}");
 }
 

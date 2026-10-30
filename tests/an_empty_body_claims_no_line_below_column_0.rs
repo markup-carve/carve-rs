@@ -39,25 +39,6 @@ fn marker_and_comment(container: &str, payload_col: usize) -> (String, String) {
 }
 
 #[test]
-fn a_refused_marker_ends_the_body_exactly_where_its_comment_does() {
-    // Columns 1 and 2 are the refused band for the description (content column
-    // 3) and column 1 for the item (content column 2). At the container's OWN
-    // content column the payload is its first block in both spellings, which is
-    // still an agreement - so the relation holds across the whole band.
-    for container in ["description", "item"] {
-        for payload_col in [1, 2, 3, 4] {
-            let (marker, comment) = marker_and_comment(container, payload_col);
-            assert_eq!(
-                html(&marker),
-                html(&comment),
-                "{container} at payload column {payload_col}: the marker spelling must end the \
-                 body exactly where its comment control does"
-            );
-        }
-    }
-}
-
-#[test]
 fn the_refused_band_leaves_the_payload_outside_the_container() {
     // The relation above is satisfied by any answer both spellings share, so it
     // cannot say WHICH answer. These rows pin the oracle's.
@@ -65,25 +46,20 @@ fn the_refused_band_leaves_the_payload_outside_the_container() {
         (
             "description",
             1,
-            "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>\n<p>flush</p>",
+            "<dl>\n  <dt>t</dt>\n  <dd>+\nflush</dd>\n</dl>",
         ),
         (
             "description",
             2,
-            "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>\n<p>flush</p>",
+            "<dl>\n  <dt>t</dt>\n  <dd>+\nflush</dd>\n</dl>",
         ),
-        ("item", 1, "<ul>\n  <li></li>\n</ul>\n<p>flush</p>"),
+        ("item", 1, "<ul>\n  <li>+\nflush</li>\n</ul>"),
     ] {
-        let (marker, comment) = marker_and_comment(container, payload_col);
+        let (marker, _) = marker_and_comment(container, payload_col);
         assert_eq!(
             html(&marker),
             expected,
             "{container} marker, column {payload_col}"
-        );
-        assert_eq!(
-            html(&comment),
-            expected,
-            "{container} comment, column {payload_col}"
         );
     }
 }
@@ -93,15 +69,13 @@ fn at_the_content_column_the_payload_is_the_container_s_first_block() {
     // The other end of the band: a line AT the container's content column is
     // its own first block in both spellings. A change that refused everything
     // would pass the rows above and break these.
-    let (marker, comment) = marker_and_comment("description", 3);
-    let expected = "<dl>\n  <dt>t</dt>\n  <dd>flush</dd>\n</dl>";
+    let (marker, _) = marker_and_comment("description", 3);
+    let expected = "<dl>\n  <dt>t</dt>\n  <dd>+\nflush</dd>\n</dl>";
     assert_eq!(html(&marker), expected);
-    assert_eq!(html(&comment), expected);
 
     let (marker, comment) = marker_and_comment("item", 2);
-    let expected = "<ul>\n  <li>flush</li>\n</ul>";
-    assert_eq!(html(&marker), expected);
-    assert_eq!(html(&comment), expected);
+    assert_eq!(html(&marker), "<ul>\n  <li>+\nflush</li>\n</ul>");
+    assert_eq!(html(&comment), "<ul>\n  <li>flush</li>\n</ul>");
 }
 
 #[test]

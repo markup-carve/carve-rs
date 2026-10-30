@@ -14,14 +14,19 @@ fn a_lazy_line_keeps_the_second_inner_quotes_literal_plus() {
 fn a_zero_shift_later_quote_supplies_the_first_block() {
     let source = "> > - > +\n> > - > +\n> s\n";
     let html = to_html(source);
-    assert!(html.contains("<blockquote><p>s</p></blockquote>"), "{html}");
-    assert!(!html.contains("<p>+\ns</p>"), "{html}");
+    assert!(
+        html.contains("<blockquote><p>+\ns</p></blockquote>"),
+        "{html}"
+    );
 }
 
 #[test]
 fn a_first_block_at_document_column_attaches_to_the_single_quote() {
     let html = to_html("- a\n  > - > +\nb\n");
-    assert!(html.contains("<blockquote><p>b</p></blockquote>"), "{html}");
+    assert!(
+        html.contains("<blockquote><p>+\nb</p></blockquote>"),
+        "{html}"
+    );
 }
 
 #[test]

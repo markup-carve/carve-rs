@@ -2464,7 +2464,7 @@ pub(crate) fn walk_blocks(blocks: &[BlockNode], f: &mut impl FnMut(&BlockNode)) 
     }
 }
 
-fn walk_blocks_mut(blocks: &mut [BlockNode], f: &mut impl FnMut(&mut BlockNode)) {
+pub(crate) fn walk_blocks_mut(blocks: &mut [BlockNode], f: &mut impl FnMut(&mut BlockNode)) {
     for block in blocks {
         f(block);
         match block {

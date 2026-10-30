@@ -395,21 +395,31 @@ pub(in crate::parse) fn parse_definition_list(
             // First-block form (`:  +`, mirroring the list `- +`): when the sole
             // content is a lone `+`, seed the body with the FOLLOWING flush-left
             // block (no `+` literal), with no indentation. `:  \+` stays literal.
-            let mut body = if is_plus_marker(def_trimmed) {
+            let first_block_plus = is_plus_marker(def_trimmed)
+                && cur
+                    .continuation_decision(def_start)
+                    .is_some_and(|decision| {
+                        decision.owner == Some(continuation_marker::Kind::Description)
+                    });
+            let mut body = if first_block_plus {
                 let mut fb = LineBuffer::default();
                 let lines = cur.lines;
+                // Only a synthetic separator can stand between an accepted `+` and its block.
+                while cur.peek().is_some_and(is_blank_line) {
+                    cur.consume();
+                }
+                let attached_list = cur.peek().is_some_and(is_list_marker);
                 let mut boundary = |a: &str, _| {
                     is_blank_line(a)
                         || is_plus_marker(a)
-                        || (indent_columns(a) == 0 && is_list_marker(a))
+                        || (!attached_list && indent_columns(a) == 0 && is_list_marker(a))
                         || strip_lazy(a).strip_prefix(":: ").is_some()
                         || strip_definition_marker(strip_lazy(a)).is_some()
                 };
                 let classified = cur.continuation_decision(def_start);
                 let end = match classified {
                     Some(decision)
-                        if decision.owner == Some(continuation_marker::Kind::Description)
-                            && decision.refusal.is_none() =>
+                        if decision.owner == Some(continuation_marker::Kind::Description) =>
                     {
                         attached_block_lines_classified(
                             lines,
@@ -444,7 +454,7 @@ pub(in crate::parse) fn parse_definition_list(
             // flush-left block, which supplies no indentation for the rule to
             // measure against.
             let mut fence = DefinitionBodyFence {
-                open: if is_plus_marker(def_trimmed) {
+                open: if first_block_plus {
                     None
                 } else {
                     detect_fence_open(def_trimmed)
@@ -1120,22 +1130,15 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         cur.consume();
         let mut attached = LineBuffer::default();
         let cursor_lines = cur.lines;
-        let attached_start = cur.pos;
-        let refused_first_plus = cur
-            .continuation_decision(attached_start)
-            .is_some_and(|decision| decision.refusal.is_some())
-            && cursor_lines
-                .line(attached_start + 1)
-                .map_or(true, is_blank_line);
         let end = attached_block_lines_classified(
             cursor_lines,
             cur.pos,
             &mut cur.comment_closer_last_index,
             &mut cur.code_closer_last_index,
             self.options,
-            &mut |a, at| {
+            &mut |a, _| {
                 is_blank_line(a)
-                    || (is_plus_marker(a) && !(at == attached_start && refused_first_plus))
+                    || is_plus_marker(a)
                     || a.strip_prefix(":: ").is_some()
                     || strip_definition_marker(a).is_some()
             },

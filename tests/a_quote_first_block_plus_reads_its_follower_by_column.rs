@@ -48,7 +48,7 @@ fn a_refused_plus_folds_a_lazy_line_like_a_letter() {
 fn a_list_item_at_the_quote_column_is_not_pulled() {
     assert_eq!(
         flat("- a\n  - > +\n    - b\n"),
-        "<ul><li>a<ul><li><blockquote><p>+-b</p></blockquote></li></ul></li></ul>"
+        "<ul><li>a<ul><li><blockquote><ul><li>b</li></ul></blockquote></li></ul></li></ul>"
     );
 }
 
@@ -88,11 +88,11 @@ fn a_stacked_opener_takes_any_block_at_its_owning_quote_column() {
         ),
         (
             "- > > +\n  > q\n",
-            "<ul><li><blockquote><blockquote><p>+q</p></blockquote></blockquote></li></ul>",
+            "<ul><li><blockquote><blockquote><p>q</p></blockquote></blockquote></li></ul>",
         ),
         (
             "- [ ] > +\n      # h\n",
-            "<ulclass=\"task-list\"><li><inputtype=\"checkbox\"disabled><blockquote><p>+</p></blockquote><h1id=\"h\">h</h1></li></ul>",
+            "<ulclass=\"task-list\"><li><inputtype=\"checkbox\"disabled><blockquote><h1id=\"h\">h</h1></blockquote></li></ul>",
         ),
     ] {
         assert_eq!(flat(source), expected, "{source:?}");

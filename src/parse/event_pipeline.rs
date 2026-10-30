@@ -201,31 +201,11 @@ mod continuation_owner_tests {
             "code `+` inline\n",
             "- item + detail\n",
         ] {
-            let _guard = continuation_marker::Guard::install(source);
+            let _guard = continuation_marker::Guard::install(None);
             assert!(!continuation_marker::active(), "{source:?}");
             let (candidate, used) = parse_document(source).unwrap();
             assert!(used, "{source:?}");
             assert_eq!(candidate, parse_with_options(source, &Options::default()));
-        }
-    }
-
-    #[test]
-    fn owned_list_continuations_match_full_ast() {
-        for source in ["- +\nx\n", "- a\n+\nb\n", "1. - +\npara\n"] {
-            let _guard = continuation_marker::Guard::install(source);
-            let lines: Vec<&str> = source.lines().collect();
-            let line_map: Vec<Option<usize>> = (1..=lines.len()).map(Some).collect();
-            let (_, consumed) =
-                parse_unified_list_mapped(&lines, 0, &Options::default(), Some(&line_map))
-                    .unwrap_or_else(|| panic!("{source:?}"));
-            assert_eq!(consumed, lines.len(), "{source:?}");
-            let (candidate, used) = parse_document(source).unwrap();
-            assert!(used, "{source:?}");
-            assert_eq!(
-                candidate,
-                parse_with_options(source, &Options::default()),
-                "{source:?}"
-            );
         }
     }
 
@@ -246,51 +226,6 @@ mod continuation_owner_tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn list_continuation_owner_matrix_matches_full_document() {
-        let mut direct = 0;
-        let mut checked = 0;
-        for marker in ["-", "1."] {
-            for nested in ["", "- ", "1. "] {
-                for suffix in ["", " ", "\t"] {
-                    for follower in ["x", "# h", "> q", "- x", "```\ncode\n```", "***", "___"] {
-                        for indent in 0..=4 {
-                            let prefix = " ".repeat(indent);
-                            let follower = follower
-                                .lines()
-                                .map(|line| format!("{prefix}{line}\n"))
-                                .collect::<String>();
-                            let source = format!("{marker} {nested}+{suffix}\n{follower}");
-                            let _guard = continuation_marker::Guard::install(&source);
-                            let lines: Vec<&str> = source.lines().collect();
-                            let line_map: Vec<Option<usize>> =
-                                (1..=lines.len()).map(Some).collect();
-                            direct += usize::from(
-                                parse_unified_list_mapped(
-                                    &lines,
-                                    0,
-                                    &Options::default(),
-                                    Some(&line_map),
-                                )
-                                .is_some(),
-                            );
-                            if let Some((candidate, _)) = parse_document(&source) {
-                                assert_eq!(
-                                    candidate,
-                                    parse_with_options(&source, &Options::default()),
-                                    "{source:?}"
-                                );
-                            }
-                            checked += 1;
-                        }
-                    }
-                }
-            }
-        }
-        assert_eq!(checked, 630);
-        assert!(direct > 0);
     }
 
     #[test]
@@ -320,52 +255,6 @@ mod continuation_owner_tests {
     }
 
     #[test]
-    fn repeated_owned_list_continuations_match_full_document() {
-        let source = (0..300)
-            .map(|index| format!("- item {index}\n+\ncontinuation {index}\n\n"))
-            .collect::<String>();
-        let _guard = continuation_marker::Guard::install(&source);
-        let lines: Vec<&str> = source.lines().collect();
-        let line_map: Vec<Option<usize>> = (1..=lines.len()).map(Some).collect();
-        let (_, consumed) =
-            parse_unified_list_mapped(&lines, 0, &Options::default(), Some(&line_map))
-                .expect("shared owner accepts the repeated list");
-        assert!(lines[consumed..].iter().all(|line| is_blank_line(line)));
-        let (candidate, used) = parse_document(&source).unwrap();
-        assert!(used);
-        assert_eq!(candidate, parse_with_options(&source, &Options::default()));
-    }
-
-    #[test]
-    fn owned_list_continuation_marker_events_match_standard() {
-        for source in ["- +\nx\n", "- a\n+\nb\n", "1. - +\npara\n"] {
-            let (_, standard_events) =
-                collecting_lint_events(|| parse_with_options(source, &Options::default()));
-            let (_, event_events) = collecting_lint_events(|| parse_document(source));
-            let markers = |events: Vec<LintEvent>| {
-                events
-                    .into_iter()
-                    .filter_map(|event| match event {
-                        LintEvent::Marker {
-                            line,
-                            column,
-                            host,
-                            reason,
-                            first_block,
-                        } => Some((line, column, host, reason, first_block)),
-                        LintEvent::Fence { .. } => None,
-                    })
-                    .collect::<Vec<_>>()
-            };
-            assert_eq!(
-                markers(event_events),
-                markers(standard_events),
-                "{source:?}"
-            );
-        }
-    }
-
-    #[test]
     fn continuation_followed_by_indented_content_declines_direct_owner() {
         for source in [
             "- +\nx\n  - c\n",
@@ -375,7 +264,7 @@ mod continuation_owner_tests {
             "- - +\nx\n\n    x\n",
             "- a\n+\nb\n  - c\n",
         ] {
-            let _guard = continuation_marker::Guard::install(source);
+            let _guard = continuation_marker::Guard::install(None);
             let lines: Vec<&str> = source.lines().collect();
             let line_map: Vec<Option<usize>> = (1..=lines.len()).map(Some).collect();
             assert!(
@@ -635,24 +524,6 @@ fn use_standard_event_paragraph(
     options.positions || recording_extents || defer_pending
 }
 
-fn refused_root_plus_at(cur: &LineCursor<'_>, line: &str) -> bool {
-    trim_ascii(line) == "+"
-        && cur
-            .source_line(cur.pos)
-            .and_then(continuation_marker::decision)
-            .is_some_and(|decision| decision.refusal.is_some())
-}
-
-fn refused_marker_fence_list_plus(decision: continuation_marker::Decision) -> bool {
-    // The marker belongs outside the list after this fence, even if its next line is blank.
-    decision.owner == Some(continuation_marker::Kind::List)
-        && matches!(
-            decision.refusal,
-            Some(continuation_marker::Refusal::Right | continuation_marker::Refusal::Blank)
-        )
-        && decision.sibling_interrupt
-}
-
 fn direct_root_list_read(
     lines: &[&str],
     start: usize,
@@ -692,31 +563,6 @@ fn direct_root_list_read(
     })
 }
 
-#[cfg(test)]
-mod direct_list_boundary_tests {
-    use super::*;
-
-    #[test]
-    fn later_fenced_plus_does_not_disable_a_direct_list() {
-        let unrelated = ["- a", "", "```diff", "+", "```"];
-        assert!(direct_root_list_read(&unrelated, 0, &Options::default(), None, false).is_some());
-
-        let continuation = ["- a", "", "+", "p"];
-        assert!(
-            direct_root_list_read(&continuation, 0, &Options::default(), None, false).is_none()
-        );
-
-        let marker_fence = "- ```\n+\n  x\n";
-        let _markers = continuation_marker::Guard::install(marker_fence);
-        let lines: Vec<&str> = marker_fence.lines().collect();
-        let line_map: Vec<Option<usize>> = (1..=lines.len()).map(Some).collect();
-        assert!(
-            direct_root_list_read(&lines, 0, &Options::default(), Some(&line_map), false)
-                .is_some_and(|read| read.marker_fence_exit && read.end == 1)
-        );
-    }
-}
-
 fn read_local_list_like_line(
     cur: &mut LineCursor<'_>,
     options: &Options<'_>,
@@ -751,17 +597,12 @@ fn finish_unattributed_block(
     }
 }
 
-fn is_late_list_like_line(
-    cur: &LineCursor<'_>,
-    line: &str,
-    invalid_brace_line: bool,
-    root_indented_text: bool,
-) -> bool {
+fn is_late_list_like_line(line: &str, invalid_brace_line: bool, root_indented_text: bool) -> bool {
     !may_start_plain_paragraph(line)
         && !invalid_brace_line
         && !root_indented_text
         && (is_list_marker(trim_ascii_start(line))
-            || trim_ascii(line) == "+" && !refused_root_plus_at(cur, line)
+            || trim_ascii(line) == "+"
             || line.ends_with(" +"))
 }
 
@@ -1085,8 +926,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
         } else {
             false
         };
-        let late_list_like =
-            is_late_list_like_line(&cur, line, invalid_brace_line, root_indented_text);
+        let late_list_like = is_late_list_like_line(line, invalid_brace_line, root_indented_text);
         let late_image_like =
             trim_ascii_start(line).starts_with("![") && detect_block_image(line).is_some();
         let has_leading_attrs = has_pending_leading_attrs(&leading_attrs, &out);
@@ -1466,36 +1306,6 @@ fn consume_pending_list_continuation<'a>(
     Some(true)
 }
 
-fn start_standalone_list_continuation(
-    frames: &mut [UnifiedListFrame<'_>],
-    indent: usize,
-    decision: Option<continuation_marker::Decision>,
-) -> Option<()> {
-    let frame = frames.last_mut()?;
-    if indent != frame.indent
-        || !decision.is_some_and(|decision| {
-            decision.owner == Some(continuation_marker::Kind::List)
-                && decision.refusal.is_none()
-                && !decision.first_block
-        })
-    {
-        return None;
-    }
-    flush_unified_list_paragraph(frame)?;
-    frame.continuation_indent = Some(indent);
-    Some(())
-}
-
-fn start_marker_line_list_continuation(
-    frames: &mut [UnifiedListFrame<'_>],
-    decision: Option<continuation_marker::Decision>,
-) -> Option<()> {
-    owned_list_first_block(decision).then_some(())?;
-    let follow_indent = frames.first()?.indent;
-    frames.last_mut()?.continuation_indent = Some(follow_indent);
-    Some(())
-}
-
 fn build_unified_list(node: UnifiedListNode<'_>, options: &Options<'_>) -> List {
     let mut list = deep_list_node(node.kind);
     list.tight = node.tight;
@@ -1600,12 +1410,7 @@ fn parse_unified_list_fence(
     Some((read.block, read.end))
 }
 
-fn marker_fence_boundary(
-    frames: &[UnifiedListFrame<'_>],
-    line: &str,
-    line_map: Option<&[Option<usize>]>,
-    pos: usize,
-) -> Option<bool> {
+fn marker_fence_boundary(frames: &[UnifiedListFrame<'_>], line: &str, pos: usize) -> Option<bool> {
     if frames.len() != 1 || frames[0].marker_fence_end != Some(pos) {
         return None;
     }
@@ -1613,8 +1418,7 @@ fn marker_fence_boundary(
     if line.bytes().take_while(|byte| *byte == b' ').count() >= frame.content_indent {
         return None;
     }
-    let decision = list_continuation_decision(line_map, pos);
-    Some(trim_ascii(line) == "+" && decision.is_some_and(refused_marker_fence_list_plus))
+    Some(false)
 }
 
 struct ListFenceRead {
@@ -1709,7 +1513,6 @@ fn advance_unified_list_blank(
     lines: &[&str],
     pos: usize,
     frames: &mut Vec<UnifiedListFrame<'_>>,
-    line_map: Option<&[Option<usize>]>,
 ) -> Option<BlankListStep> {
     let mut after = pos;
     while lines.get(after).is_some_and(|line| is_blank_line(line)) {
@@ -1751,24 +1554,6 @@ fn advance_unified_list_blank(
         return Some(BlankListStep::Continue(after));
     }
     let next_indent = next.bytes().take_while(|byte| *byte == b' ').count();
-    if next_indent == frame.indent
-        && is_plus_marker(&next[next_indent..])
-        && list_continuation_decision(line_map, after).is_some_and(|decision| {
-            decision.owner == Some(continuation_marker::Kind::List)
-                && decision.refusal.is_none()
-                && !decision.first_block
-        })
-    {
-        let blocks = &frame.node.items.last()?.blocks;
-        if (!frame.paragraph.is_empty() && blocks.is_empty())
-            || (frame.paragraph.is_empty()
-                && blocks.len() == 1
-                && matches!(blocks[0], UnifiedListBlock::Paragraph(_)))
-        {
-            frame.node.tight = false;
-        }
-        return Some(BlankListStep::Continue(after));
-    }
     if next_indent == frame.content_indent && unified_list_marker(&next[next_indent..]).is_some() {
         return Some(BlankListStep::Continue(after));
     }
@@ -1927,7 +1712,7 @@ fn parse_unified_list_mapped_with_exit(
     let mut pos = start;
     let mut marker_fence_exit = false;
     while let Some(&line) = lines.get(pos) {
-        if let Some(should_close) = marker_fence_boundary(&frames, line, line_map, pos) {
+        if let Some(should_close) = marker_fence_boundary(&frames, line, pos) {
             if should_close {
                 marker_fence_exit = true;
                 break;
@@ -1966,7 +1751,7 @@ fn parse_unified_list_mapped_with_exit(
             continue;
         }
         if is_blank_line(line) {
-            match advance_unified_list_blank(lines, pos, &mut frames, line_map)? {
+            match advance_unified_list_blank(lines, pos, &mut frames)? {
                 BlankListStep::Continue(after) => {
                     pos = after;
                     continue;
@@ -2000,21 +1785,14 @@ fn parse_unified_list_mapped_with_exit(
             pos += 1;
             continue;
         }
-        let decision = trim_ascii_end(line)
-            .ends_with('+')
-            .then(|| list_continuation_decision(line_map, pos))
-            .flatten();
+        // The walk sends a document with a lone `+` to the full parser.
         if is_plus_marker(&line[indent..]) {
-            start_standalone_list_continuation(&mut frames, indent, decision)?;
-            pos += 1;
-            continue;
+            return None;
         }
-        let marker = unified_list_marker(&line[indent..])
-            .or_else(|| {
-                let marker = strict_list_marker(&line[indent..])?;
-                detect_fence_open(marker.2).map(|_| marker)
-            })
-            .or_else(|| plus_first_block_marker(&line[indent..], decision));
+        let marker = unified_list_marker(&line[indent..]).or_else(|| {
+            let marker = strict_list_marker(&line[indent..])?;
+            detect_fence_open(marker.2).map(|_| marker)
+        });
         if let Some((kind, ordinal, content)) = marker {
             if lower_sibling_after_comment(lines, pos, indent, &frames) {
                 break;
@@ -2120,8 +1898,9 @@ fn parse_unified_list_mapped_with_exit(
                 content = nested_content;
             }
             if is_plus_marker(content) {
-                start_marker_line_list_continuation(&mut frames, decision)?;
-            } else if detect_fence_open(content).is_some() {
+                return None;
+            }
+            if detect_fence_open(content).is_some() {
                 if frames.len() != 1 {
                     return None;
                 }
@@ -2237,18 +2016,6 @@ fn parse_unified_list_mapped_with_exit(
 #[cfg(test)]
 mod unified_list_tests {
     use super::*;
-
-    #[test]
-    fn marker_fence_frame_stops_at_refused_plus() {
-        let source = "- ```\n+\n  x\n";
-        let _markers = continuation_marker::Guard::install(source);
-        let lines: Vec<&str> = source.lines().collect();
-        let line_map: Vec<Option<usize>> = (1..=lines.len()).map(Some).collect();
-        let (list, end) =
-            parse_unified_list_mapped(&lines, 0, &Options::default(), Some(&line_map)).unwrap();
-        assert_eq!(end, 1);
-        assert!(matches!(list.items[0].children[0], BlockNode::CodeBlock(_)));
-    }
 
     #[test]
     fn shared_owner_builds_item_headings() {
@@ -3350,45 +3117,6 @@ fn unified_list_marker(line: &str) -> Option<(SimpleListKind, usize, &str)> {
     (nested && simple_list_content(content)).then_some(marker)
 }
 
-fn list_continuation_decision(
-    line_map: Option<&[Option<usize>]>,
-    pos: usize,
-) -> Option<continuation_marker::Decision> {
-    line_map
-        .and_then(|map| map.get(pos).copied().flatten())
-        .and_then(continuation_marker::decision)
-}
-
-fn plus_first_block_marker(
-    line: &str,
-    decision: Option<continuation_marker::Decision>,
-) -> Option<(SimpleListKind, usize, &str)> {
-    let decision = decision?;
-    if decision.owner != Some(continuation_marker::Kind::List)
-        || decision.refusal.is_some()
-        || !decision.first_block
-    {
-        return None;
-    }
-    let first = strict_list_marker(line)?;
-    let mut content = first.2;
-    while let Some((kind, ordinal, inner)) = strict_list_marker(content) {
-        if kind == SimpleListKind::Ordered && ordinal != 1 {
-            return None;
-        }
-        content = inner;
-    }
-    is_plus_marker(content).then_some(first)
-}
-
-fn owned_list_first_block(decision: Option<continuation_marker::Decision>) -> bool {
-    decision.is_some_and(|decision| {
-        decision.owner == Some(continuation_marker::Kind::List)
-            && decision.refusal.is_none()
-            && decision.first_block
-    })
-}
-
 fn parse_simple_list(lines: &[&str], start: usize, options: &Options<'_>) -> Option<(List, usize)> {
     let (kind, first_number, _) = simple_list_marker(lines.get(start)?)?;
     if kind == SimpleListKind::Ordered && first_number != 1 {
@@ -3591,7 +3319,7 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     }
     let options = Options::default();
     let _placeholders = PlaceholderGuard::install(pick_definition_placeholders(source));
-    let _continuation_markers = continuation_marker::Guard::install(source);
+    let _continuation_markers = continuation_marker::Guard::install(None);
     let _source_ending = if !options.positions && source.ends_with('\n') {
         SourceEndingGuard::fragment()
     } else {
@@ -3751,7 +3479,7 @@ fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Doc
     }
     let options = Options::default();
     let _placeholders = PlaceholderGuard::install(pick_definition_placeholders(source));
-    let _continuation_markers = continuation_marker::Guard::install(source);
+    let _continuation_markers = continuation_marker::Guard::install(None);
     let _source_ending = if !options.positions && source.ends_with('\n') {
         SourceEndingGuard::fragment()
     } else {
@@ -3945,7 +3673,7 @@ pub(super) fn parse_document_with_custom_options(
         }
     }
     let _placeholders = PlaceholderGuard::install(pick_definition_placeholders(source));
-    let _continuation_markers = continuation_marker::Guard::install(source);
+    let _continuation_markers = continuation_marker::Guard::install(None);
     let _source_ending = if !options.positions && source.ends_with('\n') {
         SourceEndingGuard::fragment()
     } else {
@@ -4220,7 +3948,7 @@ fn parse_document_with_footnotes_options(
     }
     let may_have_abbrevs = source.contains("*[");
     let _placeholders = PlaceholderGuard::install(pick_definition_placeholders(source));
-    let _continuation_markers = continuation_marker::Guard::install(source);
+    let _continuation_markers = continuation_marker::Guard::install(None);
     let _source_ending = if !options.positions && source.ends_with('\n') {
         SourceEndingGuard::fragment()
     } else {

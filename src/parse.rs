@@ -35,9 +35,7 @@ mod prepass_links;
 mod quote;
 pub use own_lines::decision_trace;
 pub(in crate::parse) use own_lines::restore_authored_columns;
-pub(crate) use own_lines::{
-    authored_line_column, own_lines, walk_body, walk_moves_lines, EditsGuard,
-};
+pub(crate) use own_lines::{own_lines, walk_body, walk_moves_lines, EditsGuard};
 mod table;
 pub(crate) use table::table_run_open_after;
 #[cfg(test)]
@@ -808,7 +806,7 @@ fn parse_with_options_mode_and_index(
     let source = owned
         .as_ref()
         .map_or(normalized.as_ref(), |o| o.source.as_str());
-    let _continuation_markers = continuation_marker::Guard::install(source);
+    let _continuation_markers = continuation_marker::Guard::install(owned.as_ref());
     let _source_ending = SourceEndingGuard::install(source);
     // PICK THE DEFINITION PLACEHOLDERS FOR THIS DOCUMENT before anything reads
     // them. Every entry point funnels through here, and the guard restores the
@@ -1051,6 +1049,7 @@ fn parse_with_options_mode_and_index(
             }
         }
     }
+    continuation_marker::restore_payloads(&mut doc);
     for ext in &options.extensions {
         doc = ext.after_parse(doc);
     }

@@ -1,8 +1,8 @@
 #[test]
 fn empty_task_items_keep_their_checkboxes() {
     for (source, expected) in [
-        ("- [ ]\n", "- [ ] +\n"),
-        ("- [ ] a\n- [x]\n", "- [ ] a\n- [x] +\n"),
+        ("- [ ]\n", "- [ ] {empty}\n"),
+        ("- [ ] a\n- [x]\n", "- [ ] a\n- [x] {empty}\n"),
         ("- [ ] a\n- [x] b\n", "- [ ] a\n- [x] b\n"),
         ("1. [ ]\n", "1. [ ]\n"),
     ] {
@@ -392,7 +392,7 @@ fn the_plus_bullet_becomes_a_dash() {
 /// A plus inside ordinary text stays literal.
 #[test]
 fn an_empty_plus_item_and_inline_plus_keep_their_roles() {
-    assert_eq!(djot_to_carve("+\n"), "- +\n");
+    assert_eq!(djot_to_carve("+\n"), "- {empty}\n");
     assert_eq!(djot_to_carve("a + b\n"), "a + b\n");
 }
 

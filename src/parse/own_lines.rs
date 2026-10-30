@@ -7,13 +7,14 @@
 //! The walk rewrites the source; [`OwnedSource::authored_column`] maps a
 //! position in the rewritten text back to the authored line.
 
+use super::continuation_marker::Refusal;
 use super::*;
 
 const MAX_NESTING_DEPTH: usize = 200;
 const FOOTNOTE_BODY_COLUMN: usize = 2;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Kind {
+pub(super) enum Kind {
     Doc,
     Quote,
     Item,
@@ -54,6 +55,7 @@ impl Closer {
     }
 }
 
+#[derive(Clone)]
 struct Frame {
     kind: Kind,
     col: usize,
@@ -81,6 +83,12 @@ struct Frame {
     line: usize,
     /// A fence's trace family: `code`, `comment`, or `div` for a line block.
     family: &'static str,
+    /// The marker's column in the whole line, quote prefixes included.
+    doc_marker: usize,
+    /// The 0-based line whose marker-line `+` this frame's marker accepted.
+    plus: Option<usize>,
+    /// A fence that fills a description's `+`: it closes back into that list.
+    fills_dd: bool,
 }
 
 impl Frame {
@@ -105,6 +113,9 @@ impl Frame {
             marker_shift: 0,
             line: 0,
             family: "code",
+            doc_marker: 0,
+            plus: None,
+            fills_dd: false,
         }
     }
 }
@@ -212,6 +223,45 @@ fn is_heading(rest: &str) -> bool {
 fn is_caption(rest: &str) -> bool {
     rest.strip_prefix('^')
         .is_some_and(|t| t.starts_with(' ') && !is_ws_only(t))
+}
+
+/// The column of the suffix `rest` in `line`, quote prefixes included.
+fn doc_column(line: &str, rest: &str) -> usize {
+    let mut col = 0;
+    for ch in line[..line.len() - rest.len()].chars() {
+        col += if ch == '\t' { 4 - col % 4 } else { 1 };
+    }
+    col
+}
+
+/// A character the source does not hold, so a refused `+` stays one letter
+/// through the block readers and comes back before the inline pass. A control
+/// byte keeps every offset on the line; private use is for a source holding them all.
+fn plus_letter(source: &str) -> Option<char> {
+    (0x01u8..0x20)
+        .filter(|byte| !matches!(byte, b'\t' | b'\n' | b'\r'))
+        .find(|byte| !source.as_bytes().contains(byte))
+        .map(char::from)
+        .or_else(|| {
+            let held: std::collections::HashSet<char> = source.chars().collect();
+            ('\u{e000}'..='\u{f8ff}')
+                .chain('\u{f0000}'..='\u{ffffd}')
+                .chain('\u{100000}'..='\u{10fffd}')
+                .find(|c| !held.contains(c))
+        })
+}
+
+fn indent_rest(line: &str) -> &str {
+    &line[indent_cols(line).1..]
+}
+
+fn strip_quote_levels(line: &str, depth: usize) -> Option<&str> {
+    let mut rest = line;
+    for _ in 0..depth {
+        let (_, len) = indent_cols(rest);
+        rest = &rest[len + quote_marker(&rest[len..])?..];
+    }
+    Some(rest)
 }
 
 fn is_cont_marker(rest: &str) -> bool {
@@ -346,7 +396,7 @@ impl TraceRecord {
 /// record per source line from the ownership walk.
 pub fn decision_trace(source: &str) -> String {
     let source = normalize_source(source);
-    let records = walk_traced(source.as_ref(), true, Some(Vec::new()))
+    let records = walk_traced(source.as_ref(), true, true, Some(Vec::new()))
         .1
         .unwrap_or_default();
     let mut out = String::from(
@@ -386,6 +436,22 @@ struct Walk<'a> {
     trace: Option<Vec<TraceRecord>>,
     /// 1-based line of `lines[0]`, past any frontmatter.
     first_line: usize,
+    /// A collector's body holds only `+` lines the document walk accepted.
+    decide: bool,
+    /// The current line's `+` was refused, so it is written as a letter.
+    refuse_line: bool,
+    accepted: Vec<(usize, continuation_marker::Decision)>,
+    refused: Vec<continuation_marker::Refused>,
+    /// The frames at the last accepted `+`, its host's quote depth and marker
+    /// column, and the line its block starts on.
+    attached: Option<AttachedBlock>,
+}
+
+struct AttachedBlock {
+    frames: Vec<Frame>,
+    depth: usize,
+    marker: usize,
+    from: usize,
 }
 
 /// One line being rewritten: `out` is written, `src` remains.
@@ -449,6 +515,10 @@ impl<'s> Cursor<'s> {
 pub(crate) struct OwnedSource {
     pub(crate) source: String,
     edits: Vec<LineEdit>,
+    /// The byte a refused `+` is written as, when the walk refused one.
+    pub(in crate::parse) letter: Option<char>,
+    pub(in crate::parse) accepted: Vec<(usize, continuation_marker::Decision)>,
+    pub(in crate::parse) refused: Vec<continuation_marker::Refused>,
 }
 
 #[derive(Clone, Copy)]
@@ -461,14 +531,14 @@ struct LineEdit {
 /// Run the ownership walk. `None` when it moves no line, which is the common
 /// case and lets every fast path keep reading the source as written.
 fn walk(source: &str) -> Option<OwnedSource> {
-    walk_from(source, true)
+    walk_from(source, true, true)
 }
 
 /// Walk a body a collector cut out, so an opener past the body's column opens
 /// there as it does in a document. Returns the walked body and, per 0-based
 /// line, the leading columns it removed.
 pub(crate) fn walk_body(source: &str) -> Option<(String, Vec<(usize, isize)>)> {
-    let owned = walk_from(source, false)?;
+    let owned = walk_from(source, false, false)?;
     let mut shifts: Vec<(usize, isize)> = Vec::new();
     for edit in &owned.edits {
         match shifts.last_mut() {
@@ -479,13 +549,14 @@ pub(crate) fn walk_body(source: &str) -> Option<(String, Vec<(usize, isize)>)> {
     Some((owned.source, shifts))
 }
 
-fn walk_from(source: &str, frontmatter: bool) -> Option<OwnedSource> {
-    walk_traced(source, frontmatter, None).0
+fn walk_from(source: &str, frontmatter: bool, decide: bool) -> Option<OwnedSource> {
+    walk_traced(source, frontmatter, decide, None).0
 }
 
 fn walk_traced(
     source: &str,
     frontmatter: bool,
+    decide: bool,
     trace: Option<Vec<TraceRecord>>,
 ) -> (Option<OwnedSource>, Option<Vec<TraceRecord>>) {
     let (_, fm, body) = if frontmatter {
@@ -507,6 +578,11 @@ fn walk_traced(
         runs: None,
         trace,
         first_line,
+        decide: decide && source.contains('+'),
+        refuse_line: false,
+        accepted: Vec::new(),
+        refused: Vec::new(),
+        attached: None,
     };
     if let Some(trace) = walk.trace.as_mut() {
         // INPUT: frontmatter lines are read before ownership.
@@ -527,6 +603,8 @@ fn walk_traced(
     result.push_str(prefix);
     let mut edits = Vec::new();
     let mut after_plus = false;
+    let letter = plus_letter(source);
+    let mut wrote_letter = false;
     for at in 0..walk.lines.len() {
         if at > 0 {
             result.push('\n');
@@ -541,18 +619,32 @@ fn walk_traced(
         };
         c.measure();
         walk.line(at, &mut c, &mut after_plus);
+        let written = result.len();
         result.push_str(&c.out);
         result.push_str(c.src);
+        if std::mem::take(&mut walk.refuse_line) {
+            if let (Some(plus), Some(letter)) = (result[written..].rfind('+'), letter) {
+                result.replace_range(
+                    written + plus..written + plus + 1,
+                    letter.encode_utf8(&mut [0; 4]),
+                );
+                wrote_letter = true;
+            }
+        }
         edits.extend(c.edits.into_iter().map(|(at_col, delta)| LineEdit {
             line: first_line + at,
             at: at_col,
             delta,
         }));
     }
-    let owned = (!edits.is_empty()).then_some(OwnedSource {
-        source: result,
-        edits,
-    });
+    let owned =
+        (!edits.is_empty() || !walk.accepted.is_empty() || wrote_letter).then(|| OwnedSource {
+            source: result,
+            edits,
+            letter: letter.filter(|_| wrote_letter),
+            accepted: std::mem::take(&mut walk.accepted),
+            refused: std::mem::take(&mut walk.refused),
+        });
     (owned, walk.trace)
 }
 
@@ -633,23 +725,185 @@ impl<'a> Walk<'a> {
         }
     }
 
-    /// Whether line `next` holds a block at `col` under `depth` quote levels.
-    fn attaches_at(&self, next: usize, col: usize, depth: usize) -> bool {
-        let Some(line) = self.lines.get(next) else {
-            return false;
+    /// The one attach rule (PART 9 §17 L3, carve#4409): the host gives its marker
+    /// column and the quote frames around it the prefixes the next line must carry.
+    fn plus_attaches(&self, host: usize, at: usize, column: usize) -> Result<(), Refusal> {
+        let depth = self.frames[1..host]
+            .iter()
+            .filter(|f| f.kind == Kind::Quote)
+            .count();
+        self.attaches_at(self.frames[host].kind, at, column, depth)
+    }
+
+    fn attaches_at(
+        &self,
+        kind: Kind,
+        at: usize,
+        column: usize,
+        depth: usize,
+    ) -> Result<(), Refusal> {
+        let Some(line) = self.lines.get(at + 1) else {
+            return Err(Refusal::Document);
         };
-        let (mut m_col, len) = indent_cols(line);
-        let mut rest = &line[len..];
-        for _ in 0..depth {
-            let Some(n) = quote_marker(rest) else {
-                return false;
-            };
-            rest = &rest[n..];
-            let (c, len) = indent_cols(rest);
-            m_col = c;
-            rest = &rest[len..];
+        if at + 2 == self.lines.len() && line.is_empty() {
+            return Err(Refusal::Document);
         }
-        !rest.trim().is_empty() && m_col == col
+        let mut rest = *line;
+        for _ in 0..depth {
+            let (_, len) = indent_cols(rest);
+            let Some(n) = quote_marker(&rest[len..]) else {
+                return Err(if is_blank_line(line) {
+                    Refusal::Blank
+                } else {
+                    Refusal::Left
+                });
+            };
+            rest = &rest[len + n..];
+        }
+        let (_, len) = indent_cols(rest);
+        let rest = &rest[len..];
+        let text = rest.trim_end_matches([' ', '\t', '\r']);
+        if text.is_empty() {
+            return Err(Refusal::Blank);
+        }
+        let col = doc_column(line, rest);
+        if col < column {
+            return Err(Refusal::Left);
+        }
+        if col > column {
+            return Err(Refusal::Right);
+        }
+        if colon_closer(text).is_some_and(|run| {
+            self.frames
+                .iter()
+                .any(|f| f.kind == Kind::Colon && f.run == run)
+        }) {
+            return Err(Refusal::WrongColumn);
+        }
+        match kind {
+            Kind::Item if detect_list_marker_full(text).is_some() => Err(Refusal::Sibling),
+            Kind::Dd if text.starts_with(":: ") && !text[3..].trim().is_empty() => {
+                Err(Refusal::Sibling)
+            }
+            Kind::Dd
+                if text
+                    .strip_prefix(':')
+                    .is_some_and(|t| t.starts_with(' ') && !t.trim().is_empty()) =>
+            {
+                Err(Refusal::Sibling)
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// A marker no container claims names the list item it stands above, if any.
+    fn no_host_reason(&self, at: usize, plus: &str) -> Refusal {
+        let line = self.lines[at];
+        let prefix = &line[..line.len() - plus.len()];
+        let sibling = self.lines.get(at + 1).is_some_and(|next| {
+            next.strip_prefix(prefix)
+                .is_some_and(|rest| detect_list_marker_full(rest).is_some())
+        });
+        if sibling {
+            Refusal::Sibling
+        } else {
+            Refusal::WrongColumn
+        }
+    }
+
+    fn note_attached(&mut self, host: usize, from: usize) {
+        let depth = self.frames[1..host]
+            .iter()
+            .filter(|f| f.kind == Kind::Quote)
+            .count();
+        self.attached = Some(AttachedBlock {
+            frames: self.frames[..=host].to_vec(),
+            depth,
+            marker: self.frames[host].marker.map_or(0, |(col, _)| col),
+            from,
+        });
+    }
+
+    /// A `+` right after the one block a `+` attached reaches the same host, whose
+    /// frames the walk closed when it read that block where it stands.
+    fn reopen_attached_host(&mut self, at: usize, src: &str) {
+        let Some(attached) = self.attached.as_ref() else {
+            return;
+        };
+        if !is_cont_marker(quoted_rest(src)) {
+            return;
+        }
+        let Some(rest) = strip_quote_levels(src, attached.depth) else {
+            self.attached = None;
+            return;
+        };
+        if !is_cont_marker(indent_rest(rest)) {
+            self.attached = None;
+            return;
+        }
+        let mut last = at;
+        while attached.frames.last().is_some_and(|f| f.kind == Kind::Item)
+            && last > attached.from
+            && is_blank_line(self.lines[last - 1])
+        {
+            last -= 1;
+        }
+        let own: Option<Vec<String>> = (attached.from..last)
+            .map(|k| {
+                let rest = strip_quote_levels(self.lines[k], attached.depth)?;
+                let (col, len) = indent_cols(rest);
+                Some(" ".repeat(col.saturating_sub(attached.marker)) + &rest[len..])
+            })
+            .collect();
+        let one_block = own.is_some_and(|own| {
+            let refs: Vec<&str> = own.iter().map(String::as_str).collect();
+            !refs.is_empty()
+                && attached_one_block_lines(CursorLines::Slice(&refs), &Options::default())
+                    >= refs.len()
+        });
+        let attached = self.attached.take().expect("checked above");
+        if one_block {
+            self.frames = attached.frames;
+        }
+    }
+
+    fn accept_plus(&mut self, at: usize, host: usize, first_block: bool) {
+        let f = &self.frames[host];
+        let decision = continuation_marker::Decision {
+            owner: continuation_marker::kind_of(f.kind),
+            owner_column: Some(f.doc_marker),
+            first_block,
+            quote_depth: self.frames[1..=host]
+                .iter()
+                .filter(|q| q.kind == Kind::Quote)
+                .count(),
+        };
+        self.accepted.push((self.first_line + at, decision));
+    }
+
+    fn refuse_plus(
+        &mut self,
+        at: usize,
+        column: usize,
+        host: Option<Kind>,
+        reason: Refusal,
+        first_block: bool,
+    ) {
+        self.refuse_line = true;
+        // A `+` no open container claims is reported by the paragraph reader,
+        // and only before a block (carve#3421).
+        if host.is_none() && self.frames.len() == 1 {
+            return;
+        }
+        let quote_depth = self.frames.iter().filter(|f| f.kind == Kind::Quote).count();
+        self.refused.push(continuation_marker::Refused {
+            line: self.first_line + at,
+            column,
+            host: host.and_then(continuation_marker::kind_of),
+            quote_depth,
+            reason,
+            first_block,
+        });
     }
 
     fn top(&mut self) -> &mut Frame {
@@ -661,25 +915,36 @@ impl<'a> Walk<'a> {
         let line = self.first_line + at;
         let mut reached = 0;
         let mut plus = None;
+        let mut refused_by = None;
+        let follows_marker_line = at > 0 && self.top().plus == Some(at - 1);
+        self.reopen_attached_host(at, c.src);
         for k in 1..self.frames.len() {
             let f = &self.frames[k];
             if let Some((marker_col, _)) = f.marker {
-                // A marker body takes only a block at that column (§17 L3, L4).
+                // A lone `+` reaches the marker column of an open marker container.
                 if is_cont_marker(c.rest)
                     && c.col == marker_col
-                    && (f.kind == Kind::Quote
-                        || (c.col < f.col
-                            && self.attaches_at(
-                                at + 1,
-                                marker_col,
-                                self.frames[1..k]
-                                    .iter()
-                                    .filter(|q| q.kind == Kind::Quote)
-                                    .count(),
-                            )))
+                    && (f.kind == Kind::Quote || c.col < f.col)
                 {
-                    plus = Some(k);
-                    break;
+                    let column = doc_column(self.lines[at], c.rest);
+                    // A blank line has closed a note to a `+` at its marker.
+                    match if self.decide
+                        && f.kind == Kind::Note
+                        && at > 0
+                        && is_blank_line(self.lines[at - 1])
+                    {
+                        Err(Refusal::WrongColumn)
+                    } else if self.decide {
+                        self.plus_attaches(k, at, column)
+                    } else {
+                        Ok(())
+                    } {
+                        Ok(()) => {
+                            plus = Some(k);
+                            break;
+                        }
+                        Err(reason) => refused_by = Some((Some(f.kind), reason)),
+                    }
                 }
             }
             if f.kind == Kind::Quote {
@@ -697,7 +962,24 @@ impl<'a> Walk<'a> {
             }
             reached = k;
         }
+        // A lone `+` nothing took is a plain letter and ends nothing (carve#4396).
+        // Payload stays as written.
+        if self.decide
+            && plus.is_none()
+            && is_cont_marker(c.rest)
+            && !(self.frames.last().expect("frame").kind == Kind::Fence
+                && reached == self.frames.len() - 1)
+        {
+            let (host, reason) =
+                refused_by.unwrap_or_else(|| (None, self.no_host_reason(at, c.rest)));
+            let column = doc_column(self.lines[at], c.rest);
+            self.refuse_plus(at, column, host, reason, false);
+        }
         if let Some(k) = plus {
+            if self.decide {
+                self.accept_plus(at, k, false);
+                self.note_attached(k, at + 1);
+            }
             self.frames.truncate(k + 1);
             let f = self.top();
             f.para = false;
@@ -714,7 +996,7 @@ impl<'a> Walk<'a> {
             }
             return;
         }
-        let plus_follower = *after_plus;
+        let plus_follower = *after_plus || follows_marker_line;
         *after_plus = false;
         let missed = reached < self.frames.len() - 1;
         self.reach = reached;
@@ -753,8 +1035,8 @@ impl<'a> Walk<'a> {
                     self.top().span = None;
                 }
             } else if closer.is_some_and(|cl| cl.closes(c.rest, col, open_col)) {
-                self.frames.pop();
-                self.top().last = Last::Block;
+                let fills_dd = self.frames.pop().is_some_and(|f| f.fills_dd);
+                self.top().last = if fills_dd { Last::Dd } else { Last::Block };
             } else if line_block {
                 // A span in a line-block payload pairs past the column too (carve-php#3137).
                 let rest = c.rest;
@@ -792,9 +1074,13 @@ impl<'a> Walk<'a> {
             && !c.rest.is_empty()
             && top_para
             && !form.interrupts()
+            && !matches!(form, Form::Dd(_))
             && !matches!(&form, Form::Item(_, _, axes)
                 if self.frames.get(reached + 1).is_some_and(|f| f.kind == Kind::Item && &f.axes == axes))
         {
+            if self.decide && matches!(form, Form::Item(..)) {
+                self.decide_folded_marker(at, c.rest, reached);
+            }
             let owner = &self.frames[reached];
             let next = &self.frames[reached + 1];
             let limit = if next.kind == Kind::Quote {
@@ -821,6 +1107,37 @@ impl<'a> Walk<'a> {
             }
             return;
         }
+        // A lone `+` at a marker column attaches a paragraph written there, and the
+        // readers keep it in that host (§17 L3).
+        if self.lone_plus_paragraph(at, c, reached, plus_follower, &form) {
+            return;
+        }
+        let lone = plus_follower
+            .then(|| self.frames.get(reached + 1))
+            .flatten();
+        // An attribute run after it leads the `+`'s one block, so the item stays
+        // open for the line after the run (CARVE-P0-008, corpus 325, carve#4278).
+        if let Some((canon, shift)) = lone
+            .filter(|f| {
+                f.kind == Kind::Item
+                    && reached == self.frames.len() - 2
+                    && self.frames[reached].kind != Kind::Dd
+                    && f.marker.is_some_and(|(col, _)| col == c.col)
+                    && c.rest.starts_with('{')
+                    && standalone_attrs_block_len(&[c.rest]) == Some(1)
+                    && self.next_col_reaches(at, reached, f.col)
+            })
+            .map(|f| (f.marker.map_or(0, |(_, canon)| canon), f.marker_shift))
+        {
+            c.lead_in(canon, shift, false);
+            *after_plus = true;
+            return;
+        }
+        let fills_dd = self
+            .frames
+            .get(reached + 1)
+            .is_some_and(|f| f.kind == Kind::Dd && at > 0 && f.plus == Some(at - 1))
+            && reached == self.frames.len() - 2;
         // S5: apply the boundary table to everything else.
         let closed = self.frames.len() - 1 - reached;
         let mut record = tracing.then(|| {
@@ -895,9 +1212,57 @@ impl<'a> Walk<'a> {
                 c.lead_in(canon, shift, matches!(form, Form::Term | Form::Dd(_)));
                 let owner = self.frames.len() - 1;
                 self.apply(owner, col, form, canon, at, c);
+                // A description a `+` filled stays open for a sibling (carve#4408).
+                if fills_dd {
+                    self.frames[owner].last = Last::Dd;
+                    if let Some(f) = self.frames.get_mut(owner + 1) {
+                        f.fills_dd = f.kind == Kind::Fence;
+                    }
+                }
             }
         }
         self.emit_applied(at, record, None);
+    }
+
+    /// The paragraph a lone `+` takes where it is written, when the walk keeps it in that host.
+    fn lone_plus_paragraph(
+        &mut self,
+        at: usize,
+        c: &mut Cursor<'_>,
+        reached: usize,
+        plus_follower: bool,
+        form: &Form,
+    ) -> bool {
+        let lone = plus_follower
+            .then(|| self.frames.get(reached + 1))
+            .flatten();
+        if let Some(lone) = lone.filter(|f| {
+            (f.kind == Kind::Item
+                || (matches!(f.kind, Kind::Dd | Kind::Note) && at > 0 && f.plus == Some(at - 1)))
+                && reached == self.frames.len() - 2
+                && matches!(form, Form::Text)
+                && !c.rest.is_empty()
+                && !is_cont_marker(c.rest)
+        }) {
+            let (canon, shift) = lone
+                .marker
+                .map_or((0, 0), |(_, canon)| (canon, lone.marker_shift));
+            let absorbs = absorbs_colon(c.rest);
+            c.lead_in(canon, shift, false);
+            let f = self.top();
+            f.absorbs = absorbs;
+            f.para = true;
+            f.last = Last::Para;
+            if self.trace.is_some() {
+                let line = self.first_line + at;
+                let mut record =
+                    TraceRecord::new(line, "S5", self.deepest(), Some("CARVE-P0-024"), "text");
+                record.plus = Some(line);
+                self.emit(at, record);
+            }
+            return true;
+        }
+        false
     }
 
     /// Emit an S5 record owned by the frames up to `depth`, or the deepest open one.
@@ -969,6 +1334,7 @@ impl<'a> Walk<'a> {
                 f.marker = Some((col, canon));
                 f.marker_shift = o_shift;
                 f.line = self.first_line + at;
+                f.doc_marker = doc_column(self.lines[at], c.src);
                 self.frames.push(f);
                 let n = quote_marker(c.src).expect("classified as a quote");
                 c.take(n);
@@ -1019,12 +1385,25 @@ impl<'a> Walk<'a> {
         f.shift = self.frames.last().map_or(0, |owner| owner.shift);
         f.marker_shift = f.shift;
         f.line = self.first_line + at;
+        f.doc_marker = doc_column(self.lines[at], c.src);
         self.frames.push(f);
         let head = head.min(c.src.len());
         c.take(head);
         c.measure();
         let at_frame = self.frames.len() - 1;
-        self.content(at_frame, col + head, canon + head, at, c);
+        // The readers set a note's marker-line content at its body column.
+        if kind == Kind::Note {
+            let (f_col, f_canon, m) = (col + width, canon + width, c.col);
+            self.content(
+                at_frame,
+                f_col.saturating_sub(m),
+                f_canon.saturating_sub(m),
+                at,
+                c,
+            );
+        } else {
+            self.content(at_frame, col + head, canon + head, at, c);
+        }
         // The item reader measures a marker-line sub-list past a task box at
         // its source column, and the item's later blocks against that column.
         if kind == Kind::Item
@@ -1045,13 +1424,38 @@ impl<'a> Walk<'a> {
         }
         let form = self.classify(c.rest, frame, at);
         if matches!(form, Form::Text) {
+            let mut taken = false;
+            if self.decide && is_cont_marker(c.rest) {
+                // Past the one space after a `>` the `+` is the quote's text (corpus 646).
+                let quote_text = self.frames[frame].kind == Kind::Quote && c.col > 0;
+                let column = self.frames[frame].doc_marker;
+                match if quote_text {
+                    Err(Refusal::Right)
+                } else {
+                    self.plus_attaches(frame, at, column)
+                } {
+                    Ok(()) => {
+                        taken = true;
+                        self.accept_plus(at, frame, true);
+                        self.note_attached(frame, at + 1);
+                    }
+                    Err(reason) => {
+                        let plus = doc_column(self.lines[at], c.rest);
+                        let host = self.frames[frame].kind;
+                        self.refuse_plus(at, plus, Some(host), reason, true);
+                    }
+                }
+            }
             let col = c.col;
             let absorbs = absorbs_colon(c.rest);
             c.lead(col);
             let f = &mut self.frames[frame];
             f.absorbs = absorbs;
-            f.para = true;
+            f.para = !taken;
             f.last = Last::Para;
+            if taken {
+                f.plus = Some(at);
+            }
             return;
         }
         if self.frames[frame].kind == Kind::Quote {
@@ -1063,6 +1467,52 @@ impl<'a> Walk<'a> {
         let m = c.col;
         c.lead(m);
         self.apply(frame, col, form, canon + m, at, c);
+    }
+
+    /// Whether the line after `at`, read under the frames up to `owner`, stands at `col` or past it.
+    fn next_col_reaches(&self, at: usize, owner: usize, col: usize) -> bool {
+        let depth = self.frames[1..=owner]
+            .iter()
+            .filter(|f| f.kind == Kind::Quote)
+            .count();
+        self.lines
+            .get(at + 1)
+            .and_then(|line| strip_quote_levels(line, depth))
+            .is_some_and(|rest| indent_cols(rest).0 >= col)
+    }
+
+    /// The readers open a list at a folded marker (§10 I2), so a `+` there is decided too.
+    fn decide_folded_marker(&mut self, at: usize, rest: &str, reached: usize) {
+        let line = self.lines[at];
+        let depth = self.frames[1..=reached]
+            .iter()
+            .filter(|f| f.kind == Kind::Quote)
+            .count();
+        let mut tail = rest;
+        while let Some(marker) = detect_list_marker_full(tail) {
+            let (_, len) = indent_cols(marker.content);
+            let inner = &marker.content[len..];
+            if is_cont_marker(inner) {
+                let column = doc_column(line, tail);
+                match self.attaches_at(Kind::Item, at, column, depth) {
+                    Ok(()) => self.accepted.push((
+                        self.first_line + at,
+                        continuation_marker::Decision {
+                            owner: Some(continuation_marker::Kind::List),
+                            owner_column: Some(column),
+                            first_block: true,
+                            quote_depth: depth,
+                        },
+                    )),
+                    Err(reason) => {
+                        let plus = doc_column(line, inner);
+                        self.refuse_plus(at, plus, Some(Kind::Item), reason, true);
+                    }
+                }
+                return;
+            }
+            tail = inner;
+        }
     }
 
     fn classify(&mut self, rest: &str, owner: usize, at: usize) -> Form {
@@ -1195,12 +1645,6 @@ pub(crate) fn restore_authored_columns(pos: &mut Pos) {
         pos.start_column = authored_column(&edits, pos.start_line, pos.start_column);
         pos.end_column = authored_column(&edits, pos.end_line, pos.end_column);
     });
-}
-
-/// The authored 0-based column of 0-based `column` on 1-based `line` of the
-/// walked source.
-pub(crate) fn authored_line_column(line: usize, column: usize) -> usize {
-    ACTIVE_EDITS.with(|cell| authored_column(&cell.borrow(), line, column + 1) - 1)
 }
 
 /// Map a 1-based `column` on 1-based `line` of the walked source to the

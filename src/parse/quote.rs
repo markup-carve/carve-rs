@@ -1405,9 +1405,7 @@ fn nested_plus_accepted(cur: &LineCursor<'_>, prior: usize) -> bool {
         strip_all_quotes(strip_blockquote_prefix(cur.lines.at(prior)).unwrap_or(""));
     levels > 0
         && is_plus_marker(innermost_marker_content(previous))
-        && cur
-            .continuation_decision(prior)
-            .is_some_and(|decision| decision.refusal.is_none())
+        && cur.continuation_decision(prior).is_some()
 }
 
 /// A quoted line [`collect_blockquote_body`] has consumed.
@@ -1666,10 +1664,7 @@ impl<'a> QuoteBody<'a> {
             && is_plus_marker(quoted.stripped)
             && cur
                 .continuation_decision(quoted.at)
-                .is_some_and(|decision| {
-                    decision.refusal.is_none()
-                        && decision.owner != Some(continuation_marker::Kind::Quote)
-                })
+                .is_some_and(|decision| decision.owner != Some(continuation_marker::Kind::Quote))
             && self
                 .inner
                 .lines
@@ -1683,10 +1678,9 @@ impl<'a> QuoteBody<'a> {
         let at = quoted.at;
         if !(cur.carried_reach(at) != Some(false)
             && is_plus_marker(quoted.stripped)
-            && cur.continuation_decision(at).is_some_and(|decision| {
-                decision.owner == Some(continuation_marker::Kind::Quote)
-                    && decision.refusal.is_none()
-            })
+            && cur
+                .continuation_decision(at)
+                .is_some_and(|decision| decision.owner == Some(continuation_marker::Kind::Quote))
             && quoted.prior.is_some()
             && self.inner.lines.last().is_some_and(|last| {
                 strip_blockquote_prefix(&last.text).is_some()
@@ -1721,10 +1715,7 @@ impl<'a> QuoteBody<'a> {
     ) -> bool {
         let first_block = cur
             .continuation_decision(quoted.at)
-            .is_some_and(|decision| {
-                decision.owner == Some(continuation_marker::Kind::Quote)
-                    && decision.refusal.is_none()
-            });
+            .is_some_and(|decision| decision.owner == Some(continuation_marker::Kind::Quote));
         // A line already owned by the deepest open paragraph cannot be the
         // first block attached to this `+` (carve#3832). A lazy line at the
         // owner's column can still be that first block under L4.
@@ -1789,48 +1780,6 @@ impl<'a> QuoteBody<'a> {
             }
             let column = stripped_col(cur.source_col(quoted.at), quoted.line, kept);
             self.push_carried(cur, quoted.at, kept.to_string(), quoted.source_line, column);
-        }
-        if levels > 0
-            && cur.peek().is_some_and(is_plus_marker)
-            && cur
-                .continuation_decision(cur.pos)
-                .is_some_and(|decision| decision.refusal.is_some())
-        {
-            self.inner.push_at(
-                "+".to_string(),
-                cur.source_line(cur.pos),
-                cur.source_col(cur.pos),
-            );
-            cur.consume();
-            self.inner.push_synthetic_blank();
-            if cur.peek().is_some_and(|line| !is_blank_line(line)) {
-                let start = cur.pos;
-                let first_is_paragraph = line_starts_paragraph(cur.lines.at(start));
-                let end = attached_block_lines_classified(
-                    cur.lines,
-                    start,
-                    &mut cur.comment_closer_last_index,
-                    &mut cur.code_closer_last_index,
-                    options,
-                    &mut |next, at| {
-                        is_blank_line(next)
-                            || (at > start
-                                && (is_plus_marker(next)
-                                    || (first_is_paragraph
-                                        && detect_list_marker_full(next).is_some())))
-                    },
-                );
-                while cur.pos < end {
-                    self.inner.push_at(
-                        cur.lines.at(cur.pos).to_string(),
-                        cur.source_line(cur.pos),
-                        cur.source_col(cur.pos),
-                    );
-                    cur.consume();
-                }
-            }
-            self.para_open = ParaOpen::Closed;
-            return;
         }
         // A second marker can attach the first block when it has its own follower.
         // With no follower it remains literal content of this quote.
@@ -2052,12 +2001,6 @@ impl<'a> QuoteBody<'a> {
             ParaOpen::Closed
         } else if in_description {
             ParaOpen::from_line(trim_ascii_start(description_content), inherited_absorption)
-        } else if is_plus_marker(innermost_marker_content(stripped))
-            && cur
-                .continuation_decision(at)
-                .is_some_and(|decision| decision.refusal.is_some())
-        {
-            ParaOpen::from_line("x", inherited_absorption)
         } else {
             ParaOpen::from_line(stripped, inherited_absorption)
         };
@@ -2141,7 +2084,7 @@ impl<'a> QuoteBody<'a> {
                 .last()
                 .and_then(|last| last.source_line())
                 .and_then(continuation_marker::decision)
-                .is_some_and(|decision| decision.refusal.is_none()))
+                .is_some())
         {
             return false;
         }
@@ -2182,10 +2125,7 @@ impl<'a> QuoteBody<'a> {
             && cur.lines.line(cur.pos + 2).is_some()
             && cur
                 .continuation_decision(cur.pos + 1)
-                .is_some_and(|decision| {
-                    decision.owner == Some(continuation_marker::Kind::Quote)
-                        && decision.refusal.is_none()
-                })
+                .is_some_and(|decision| decision.owner == Some(continuation_marker::Kind::Quote))
         {
             return false;
         }
@@ -2199,7 +2139,7 @@ impl<'a> QuoteBody<'a> {
                 matches!(
                     decision.owner,
                     Some(continuation_marker::Kind::Quote | continuation_marker::Kind::List)
-                ) && decision.refusal.is_none()
+                )
             }))
         {
             return false;
@@ -2216,13 +2156,6 @@ impl<'a> QuoteBody<'a> {
                     .and_then(detect_list_marker_full)
                     .is_some_and(|marker| is_plus_marker(marker.content))
             });
-        let refused_first_plus = cursor_lines
-            .line(attached_start + 1)
-            .map_or(true, is_blank_line)
-            && (cursor_lines.line(attached_start + 1).is_none()
-                || cur
-                    .continuation_decision(attached_start)
-                    .is_some_and(|decision| decision.refusal.is_some()));
         let mut attach_end = attached_block_lines_classified(
             cursor_lines,
             cur.pos,
@@ -2234,9 +2167,7 @@ impl<'a> QuoteBody<'a> {
                     || (attached_paragraph_after_nested_list
                         && at > attached_start
                         && detect_list_marker_full(next).is_some())
-                    || (trim_ascii(next) == "+"
-                        && indent_columns(next) == 0
-                        && !(at == attached_start && refused_first_plus))
+                    || (trim_ascii(next) == "+" && indent_columns(next) == 0)
             },
         );
         while attach_end > cur.pos
@@ -2338,9 +2269,7 @@ impl<'a> QuoteBody<'a> {
             && detect_list_marker_full(line).is_none()
             && self.last_quoted_at.is_some_and(|prior| {
                 cur.continuation_decision(prior).is_some_and(|decision| {
-                    decision.first_block
-                        && decision.refusal.is_none()
-                        && decision.owner == Some(continuation_marker::Kind::Quote)
+                    decision.first_block && decision.owner == Some(continuation_marker::Kind::Quote)
                 })
             }))
         {

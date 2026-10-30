@@ -284,6 +284,22 @@ fn corpus_formatter_semantic_idempotent_and_reparseable_inner() {
     // fixed row runs the whole sweep.
     const NOT_PORTED_AT_PIN: &[(&str, &str)] = &[
         (
+            "743-a-later-term-after-a-shifted-separator-opens-in-the-outer-item",
+            "markup-carve/carve-rs#3535",
+        ),
+        (
+            "744-a-task-item-uses-the-ordered-item-column-rule",
+            "markup-carve/carve-rs#3535",
+        ),
+        (
+            "813-a-description-line-between-two-lists-columns-is-an-outer-sibling-3",
+            "markup-carve/carve-rs#3535",
+        ),
+        (
+            "842-a-plus-at-a-stacked-item-s-marker-column-reaches-it-2",
+            "markup-carve/carve#4409",
+        ),
+        (
             "781-an-opener-is-open-where-it-stands-so-a-combined-token-after-a-guarded-star-stays-split",
             "markup-carve/carve-rs#3526",
         ),

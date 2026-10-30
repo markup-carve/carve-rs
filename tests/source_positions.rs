@@ -1262,7 +1262,7 @@ fn last_position(source: &str, kind: &str) -> serde_json::Value {
 
 #[test]
 fn blank_open_fence_payload_reaches_its_authored_line_ending() {
-    for (suffix, end_line, end_offset) in [(5, 3, 9), (6, 4, 19), (7, 3, 10)] {
+    for (suffix, end_line, end_offset) in [(5, 4, 10), (6, 4, 19), (7, 4, 11)] {
         let source = std::fs::read_to_string(format!(
             "tests/spec/tests/corpus/626-an-indented-plus-below-a-nested-fence-stays-content-at-every-depth-{suffix}.crv"
         ))

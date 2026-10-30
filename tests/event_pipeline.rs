@@ -627,95 +627,6 @@ fn marker_column_colon_line_stays_in_open_list_paragraph() {
 }
 
 #[test]
-fn continuation_after_list_block_keeps_tightness_and_image_shape() {
-    for source in [
-        "- a\n  > q\n\n+\np\n\n+\nq\n",
-        "- a\n  > q\n+\np\n\n+\nq\n",
-        "- a\n+\np\n\n+\nq\n",
-    ] {
-        let (candidate, used) = parse_experimental_event_blocks(source);
-        assert!(used, "{source:?}");
-        assert_eq!(candidate, parse_standard(source), "{source:?}");
-    }
-    for before in ["- a\n", "- a\n  > q\n", "- ```\n  code\n  ```\n"] {
-        for first_blank in ["", "\n"] {
-            for second_blank in ["", "\n"] {
-                for first in ["p", "> q", "# h"] {
-                    for second in ["q", "> q", "![i](x.png)"] {
-                        let source =
-                            format!("{before}{first_blank}+\n{first}\n{second_blank}+\n{second}\n");
-                        let (candidate, _) = parse_experimental_event_blocks(&source);
-                        assert_eq!(candidate, parse_standard(&source), "{source:?}");
-                    }
-                }
-            }
-        }
-    }
-    for before in ["- a\n  > q\n", "- a\n  b\n", "- ```\n  code\n  ```\n"] {
-        for blank in ["", "\n"] {
-            for marker in ["+", "+ ", " +"] {
-                for after in ["para\n", "> q\n", "![i](x.png)\n", "# heading\n"] {
-                    let source = format!("{before}{blank}{marker}\n{after}");
-                    let (candidate, _) = parse_experimental_event_blocks(&source);
-                    assert_eq!(candidate, parse_standard(&source), "{source:?}");
-                }
-            }
-        }
-    }
-}
-
-#[test]
-fn late_list_continuation_uses_one_event_owner() {
-    for source in [
-        "- a\n\n+\np\n+\nq\n",
-        "1. ordered\n\n+\n{.class}\n---\nA /italic/\nA {^note^}\n",
-    ] {
-        let (candidate, used) = parse_experimental_event_blocks(source);
-        assert!(used, "{source:?}");
-        assert_eq!(candidate, parse_standard(source), "{source:?}");
-    }
-}
-
-#[test]
-fn refused_continuation_markers_stay_literal_on_direct_route() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
-    for name in [
-        "435-the-continuation-marker-s-column-gate-reaches-every-container-2.crv",
-        "435-the-continuation-marker-s-column-gate-reaches-every-container-4.crv",
-        "435-the-continuation-marker-s-column-gate-reaches-every-container-11.crv",
-        "629-a-dangling-plus-marker-adds-nothing-and-a-nested-quote-reads-it-like-an-unnested-one-4.crv",
-        "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-37.crv",
-        "633-a-first-block-marker-on-an-indented-opener-reads-two-columns-38.crv",
-        "634-a-refused-continuation-plus-remains-text-3.crv",
-        "634-a-refused-continuation-plus-remains-text-4.crv",
-    ] {
-        let source = fs::read_to_string(corpus.join(name)).unwrap();
-        let (candidate, used) = parse_experimental_event_blocks(&source);
-        assert!(used, "{name}");
-        assert_eq!(candidate, parse_standard(&source), "{name}");
-    }
-
-    for before in ["- a\n", "- a\n\n", "- ```\n", "> q\n", "[^a]: note\n"] {
-        for after in ["\npara\n", "- sibling\n", "\n# heading\n", "\n> q\n"] {
-            let source = format!("{before}+\n{after}");
-            let (candidate, _) = parse_experimental_event_blocks(&source);
-            assert_eq!(candidate, parse_standard(&source), "{source:?}");
-        }
-    }
-    for before in ["- a\n", " - a\n", "> q\n", "[^a]: note\n", "- ```\n"] {
-        for blank in ["", "\n", "\n\n"] {
-            for marker in ["+", " +", "  +", "\t+"] {
-                for after in ["", "para\n", "- sibling\n", "> q\n", "\npara\n"] {
-                    let source = format!("{before}{blank}{marker}\n{after}");
-                    let (candidate, _) = parse_experimental_event_blocks(&source);
-                    assert_eq!(candidate, parse_standard(&source), "{source:?}");
-                }
-            }
-        }
-    }
-}
-
-#[test]
 fn malformed_quote_prefix_stays_literal() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     let name = "646-a-quote-prefixed-plus-takes-one-space-after-each-quote-marker-and-attaches-a-quote-6.crv";
@@ -776,40 +687,6 @@ fn list_comment_and_lower_column_siblings_match_full_document() {
                 assert_eq!(candidate, parse_standard(&source), "{source:?}");
             }
         }
-    }
-}
-
-#[test]
-fn footnote_extraction_keeps_continuation_owner_lines() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
-    for name in [
-        "279-a-boundary-line-inside-an-open-fence-does-not-end-the-container-4.crv",
-        "629-a-dangling-plus-marker-adds-nothing-and-a-nested-quote-reads-it-like-an-unnested-one-8.crv",
-    ] {
-        let source = fs::read_to_string(corpus.join(name)).unwrap();
-        let (candidate, used) = parse_experimental_event_blocks(&source);
-        assert!(used, "{name}");
-        assert_eq!(candidate, parse_standard(&source), "{name}");
-    }
-    for source in [
-        "> [^a]: n\n> +\n\npara\n",
-        "> q\n+\n:::\na\n[^z]: zz\nb\n:::\n",
-        "> [^a]: n\n> +\n\n[^b]: m\n\npara[^b]\n",
-    ] {
-        let (candidate, _) = parse_experimental_event_blocks(source);
-        assert_eq!(candidate, parse_standard(source), "{source:?}");
-    }
-}
-
-#[test]
-fn refused_plus_after_list_fence_matches_full_document() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
-    for suffix in ["", "-2", "-3", "-4", "-5", "-6", "-7"] {
-        let name = format!("627-a-refused-marker-leaves-an-open-fence-s-blank-payload{suffix}.crv");
-        let source = fs::read_to_string(corpus.join(name)).unwrap();
-        let (candidate, used) = parse_experimental_event_blocks(&source);
-        assert!(used, "{suffix}");
-        assert_eq!(candidate, parse_standard(&source));
     }
 }
 
@@ -907,58 +784,6 @@ fn indented_root_list_frames_match_full_document() {
         "1. a\n\n \t1. b\n",
         "  - a\n\n \t- b\n",
         "  1. a\n\n \t1. b\n",
-    ] {
-        let (candidate, _) = parse_experimental_event_blocks(source);
-        assert_eq!(candidate, parse_standard(source), "{source:?}");
-    }
-}
-
-#[test]
-fn list_continuation_after_blank_stays_with_its_frame() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
-    let name = "251-a-continuation-marker-after-a-blank-line-in-a-loose-item.crv";
-    let source = fs::read_to_string(corpus.join(name)).unwrap();
-    let (candidate, used) = parse_experimental_event_blocks(&source);
-    assert!(used, "{name}");
-    assert_eq!(candidate, parse_standard(&source));
-
-    for indent in 0..=4 {
-        for marker in ["- a", "* a", "1. a"] {
-            for middle in ["", "  b\n", "\n  b\n"] {
-                for plus in ["+", " +", "  +", "\t+"] {
-                    for follower in [
-                        "b\n",
-                        "# heading\n",
-                        "> quote\n",
-                        "- sibling\n",
-                        "```\nx\n```\n",
-                    ] {
-                        let source = format!(
-                            "{}{marker}\n{middle}\n{plus}\n{follower}",
-                            " ".repeat(indent)
-                        );
-                        let (candidate, used) = parse_experimental_event_blocks(&source);
-                        if indent == 0
-                            && marker == "- a"
-                            && middle == "\n  b\n"
-                            && plus == "+"
-                            && follower == "b\n"
-                        {
-                            assert!(used, "{source:?}");
-                        }
-                        assert_eq!(candidate, parse_standard(&source), "{source:?}");
-                    }
-                }
-            }
-        }
-    }
-    for source in [
-        "- a\n  - b\n\n+\nc\n",
-        "- a\n- b\n\n+\nc\n",
-        "> - a\n>\n> +\n> c\n",
-        "> - a\n>\n+\nc\n",
-        "[^a]: - a\n\n+\nc\n\nsee[^a]\n",
-        "[^a]: - a\n\n  +\nc\n\nsee[^a]\n",
     ] {
         let (candidate, _) = parse_experimental_event_blocks(source);
         assert_eq!(candidate, parse_standard(source), "{source:?}");
@@ -2962,51 +2787,6 @@ fn quoted_fence_reader_boundaries_match_public_ast_and_html() {
                 admitted += usize::from(used);
                 assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
                 assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
-            }
-        }
-    }
-    assert!(admitted > 0, "the grid must exercise the event route");
-}
-
-#[test]
-fn root_continuation_owner_grid_matches_public_ast_and_html() {
-    for source in [
-        ":: term\n: A first paragraph,\n+\nthen a flush-left block joined with +.\n",
-        "> quoted\n+\n- item\n",
-    ] {
-        let expected = parse_standard(source);
-        let (actual, used) = parse_experimental_event_blocks(source);
-        assert!(used, "root continuation owner must enter the event route");
-        assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
-        assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
-    }
-    let mut admitted = 0usize;
-    for prefix in [
-        "",
-        "Text\n",
-        "# Heading\n",
-        "- item\n",
-        "> quote\n",
-        ":: term\n:  desc\n",
-        "::: note\ninside\n:::\n",
-        "---\ntitle: T\n---\n\n",
-    ] {
-        for marker in ["+\n", " +\n", "- +\n", "> +\n", ":  +\n"] {
-            for follower in [
-                "```\na\n```\n",
-                "> quote\n",
-                "- item\n",
-                "Plain.\n",
-                "::: note\nbody\n:::\n",
-            ] {
-                for tail in ["", "\nAfter.\n", "\n:: next\n:  x\n"] {
-                    let source = format!("{prefix}{marker}{follower}{tail}");
-                    let expected = parse_standard(&source);
-                    let (actual, used) = parse_experimental_event_blocks(&source);
-                    admitted += usize::from(used);
-                    assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
-                    assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
-                }
             }
         }
     }

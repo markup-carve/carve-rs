@@ -13,7 +13,7 @@
   },
   {
     "source": "- - ```\n\n\n  +\ntail\n",
-    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <pre><code>\n</code></pre>\n      </li>\n    </ul>\n    <p>+\ntail</p>\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <pre><code>\n\n</code></pre>\n      </li>\n    </ul>\n    <p>+\ntail</p>\n  </li>\n</ul>"
   },
   {
     "source": "- - ```\n\n  +\n> q\n",
@@ -29,15 +29,15 @@
   },
   {
     "source": "- 1. ```\n\n\n  +\ntail\n",
-    "html": "<ul>\n  <li>\n    <ol>\n      <li>\n        <pre><code>\n</code></pre>\n      </li>\n    </ol>\n    <p>+\ntail</p>\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>\n    <ol>\n      <li>\n        <pre><code>\n\n</code></pre>\n      </li>\n    </ol>\n    <p>+\ntail</p>\n  </li>\n</ul>"
   },
   {
     "source": "- - - ```\n\n\n    +\ntail\n",
-    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>\n            <pre><code>\n</code></pre>\n          </li>\n        </ul>\n        <p>+</p>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail</p>"
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>\n            <pre><code>\n</code></pre>\n          </li>\n        </ul>\n        <p>+\ntail</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
   },
   {
     "source": "- - [ ] ```\n\n\n  +\ntail\n",
-    "html": "<ul>\n  <li>\n    <ul class=\"task-list\">\n      <li><input type=\"checkbox\" disabled> \n        <pre><code>\n</code></pre>\n      </li>\n    </ul>\n    <p>+\ntail</p>\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>\n    <ul class=\"task-list\">\n      <li><input type=\"checkbox\" disabled> \n        <pre><code>\n\n</code></pre>\n      </li>\n    </ul>\n    <p>+\ntail</p>\n  </li>\n</ul>"
   },
   {
     "source": "- - ::: d\n  +\ntail",
@@ -73,11 +73,11 @@
   },
   {
     "source": "- [ ] - [ ] ```\n      +\n\ntail",
-    "html": "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <ul class=\"task-list\">\n      <li><input type=\"checkbox\" disabled> \n        <pre><code>  +\n\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail</p>"
+    "html": "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <ul class=\"task-list\">\n      <li><input type=\"checkbox\" disabled> \n        <pre><code></code></pre>\n      </li>\n    </ul>\n    +\n  </li>\n</ul>\n<p>tail</p>"
   },
   {
     "source": "- [ ] - [ ] - [ ] ```\n            +\n\n",
-    "html": "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <ul class=\"task-list\">\n      <li><input type=\"checkbox\" disabled> \n        <ul class=\"task-list\">\n          <li><input type=\"checkbox\" disabled> \n            <pre><code>      +\n\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>"
+    "html": "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <ul class=\"task-list\">\n      <li><input type=\"checkbox\" disabled> \n        <ul class=\"task-list\">\n          <li><input type=\"checkbox\" disabled> \n            <pre><code></code></pre>\n          </li>\n        </ul>\n        +\n      </li>\n    </ul>\n  </li>\n</ul>"
   },
   {
     "source": "- - ```=html\n  +\n\ntail",

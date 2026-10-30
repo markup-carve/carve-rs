@@ -287,10 +287,11 @@ fn adjacent_footnotes_remain_footnotes_beside_caret_reference() {
 }
 
 #[test]
+#[ignore = "carve#4409: an empty item with a deeper child moves its body to the marker line in carve-js, not ported here, listed on carve-rs#3589"]
 fn quoted_empty_items_keep_nested_blocks() {
     for body in ["> b", "# h", "***", "::: box\n>   text\n>   :::"] {
         let source = format!("> -\n>   {body}\n");
-        let expected = format!("> - +\n>   {body}\n");
+        let expected = format!("> - %%\n>   {body}\n");
         let imported = carve::djot_to_carve(&source);
         assert_eq!(
             carve::to_html(&imported),

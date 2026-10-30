@@ -77,5 +77,5 @@ fn nested_first_block_plus_releases_to_its_surviving_owner() {
     let quote = carve::to_html("> > +\n+\ntail");
     assert!(quote.contains("</blockquote>\n  <p>tail</p>"), "{quote}");
     let sibling = carve::to_html("> - +\n+\ntail\n- sibling");
-    assert!(sibling.contains("</blockquote>\n<ul>"), "{sibling}");
+    assert!(sibling.contains("<p>tail\n- sibling</p>"), "{sibling}");
 }

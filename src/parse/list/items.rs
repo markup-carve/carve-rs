@@ -302,10 +302,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             && self
                 .cur
                 .continuation_decision(self.cur.pos)
-                .is_some_and(|decision| {
-                    decision.owner == Some(continuation_marker::Kind::List)
-                        && decision.refusal.is_none()
-                })
+                .is_some_and(|decision| decision.owner == Some(continuation_marker::Kind::List))
     }
 
     fn plus_continuation(&mut self, line: &str) -> ControlFlow<()> {
@@ -316,6 +313,12 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         self.pending_blank = false;
         // A marker is not the block these were written for either (§15 A4).
         self.drop_pending_attrs();
+        // Only a synthetic separator can stand between an accepted `+` and its block.
+        while self.cur.peek().is_some_and(is_blank_line)
+            && self.cur.continuation_decision(self.cur.pos - 1).is_some()
+        {
+            self.cur.consume();
+        }
         let attached_comment = self.cur.peek().is_some_and(is_line_comment_any_column);
         let attached = parse_continuation_block(
             self.cur,
@@ -331,11 +334,10 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 .continuation_decision(self.cur.pos)
                 .is_some_and(|decision| {
                     decision.owner == Some(continuation_marker::Kind::List)
-                        && (decision.refusal.is_some()
-                            || self.cur.lines.line(self.cur.pos + 1).is_some_and(|line| {
-                                detect_list_marker_full(line)
-                                    .is_some_and(|marker| marker.indent <= base_indent)
-                            }))
+                        && self.cur.lines.line(self.cur.pos + 1).is_some_and(|line| {
+                            detect_list_marker_full(line)
+                                .is_some_and(|marker| marker.indent <= base_indent)
+                        })
                 })
         {
             let literal = MappedSource::new_line_at(
@@ -854,8 +856,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                     && line_starts_paragraph(trim_ascii_start(prior))
                     && !nested_columns.tabbed_marker
             });
-        let nested_bare_ends_item = nested_bare_marker_then_plain(cur, content_col)
-            || refused_first_block_below_column(cur, content_col);
+        let nested_bare_ends_item = nested_bare_marker_then_plain(cur, content_col);
         // A flush lazy run keeps folding band lines below it (PART 1 S4).
         let lazy_scope = if lazy_scope == (0, 0)
             && cur
@@ -883,9 +884,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                             let prior = cur.lines.at(at);
                             line_starts_paragraph(trim_ascii_start(prior))
                                 && !item_block_opener(trim_ascii_start(prior))
-                                && !cur
-                                    .continuation_decision(at)
-                                    .is_some_and(|decision| decision.refusal.is_none())
+                                && cur.continuation_decision(at).is_none()
                         })
                         .and_then(|_| nested_columns.last().map(|&(_, column)| column));
                     collect_indented_block_mapped_with_columns(
@@ -1041,7 +1040,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // First-block form `- +` (grammar §17): a lone `+` as the marker
         // content means the item's first block is the following flush-left
         // block (no inline paragraph).
-        if is_plus_marker(content) {
+        if is_plus_marker(content) && self.cur.continuation_decision(item.at).is_some() {
             self.bare_continuation_item(item);
             return NEXT;
         }
@@ -1152,13 +1151,17 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         let cur = &mut *self.cur;
         let mut children = Vec::new();
         // A first-block marker takes the opener's column or document column zero.
-        let first_block_attaches = cur.continuation_decision(item.at).is_some_and(|decision| {
-            decision.owner == Some(continuation_marker::Kind::List) && decision.refusal.is_none()
-        });
+        let first_block_attaches = cur
+            .continuation_decision(item.at)
+            .is_some_and(|decision| decision.owner == Some(continuation_marker::Kind::List));
+        // Only a synthetic separator can stand between an accepted `+` and its block.
+        while first_block_attaches && cur.peek().is_some_and(is_blank_line) {
+            cur.consume();
+        }
         let attached_comment = cur.peek().is_some_and(is_line_comment_any_column);
         let pull_indent = cur
             .continuation_decision(item.at)
-            .filter(|decision| decision.quote_depth > 0 && decision.refusal.is_none())
+            .filter(|decision| decision.quote_depth > 0)
             .map_or(base_indent, |_| content_col);
         if let Some(block) = first_block_attaches
             .then(|| parse_continuation_block(cur, options, base_indent, None, pull_indent))
@@ -1231,10 +1234,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             && self
                 .cur
                 .continuation_decision(item.at)
-                .is_some_and(|decision| {
-                    decision.owner == Some(continuation_marker::Kind::Quote)
-                        && decision.refusal.is_none()
-                });
+                .is_some_and(|decision| decision.owner == Some(continuation_marker::Kind::Quote));
         let continuation_has_content = if first_block_quote_attaches {
             self.quote_first_block(&mut stream, content, innermost, item.at)
         } else if self.quote_plus_takes_paragraph(innermost) {
@@ -1389,12 +1389,17 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         while quote_follower && cur.pos < end {
             let line = cur.lines.at(cur.pos);
             let (body, consumed, synthetic) = slice_columns_mapped(line, follower_indent, true);
+            // The follower carries the prefixes of the quotes around the host.
+            let mut carried = body.as_str();
+            for _ in 1..quote_prefix.matches('>').count() {
+                carried = strip_blockquote_prefix(trim_ascii_start(carried)).unwrap_or(carried);
+            }
             stream.push_newline_at(
-                format!("{quote_prefix}{body}"),
+                format!("{quote_prefix}{carried}"),
                 cur.source_line(cur.pos),
                 cur.source_col(cur.pos).map(|col| {
-                    col + consumed as isize
-                        - synthetic as isize
+                    col + consumed as isize - synthetic as isize
+                        + (body.chars().count() - carried.chars().count()) as isize
                         - quote_prefix.chars().count() as isize
                 }),
             );
@@ -1763,10 +1768,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 column > 0
                     && indent_columns(prior) >= content_col + column
                     && line_starts_paragraph(trim_ascii_start(prior))
-                    && (trim_ascii(prior) != "+"
-                        || cur
-                            .continuation_decision(cur.pos - 1)
-                            .is_some_and(|decision| decision.refusal.is_some()))
+                    && trim_ascii(prior) != "+"
             })
         {
             return None;
@@ -2219,10 +2221,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             && self
                 .cur
                 .continuation_decision(self.cur.pos)
-                .is_some_and(|decision| {
-                    decision.owner == Some(continuation_marker::Kind::List)
-                        && decision.refusal.is_none()
-                })
+                .is_some_and(|decision| decision.owner == Some(continuation_marker::Kind::List))
         {
             return false;
         }

@@ -80,7 +80,7 @@ fn an_emptied_item_holds_no_block_in_either_continuation_spelling() {
 
     // THE MARKER-LINE SPELLING, which is what `fmt` emits for an emptied item.
     // The item has no content at all, so it has no children at all.
-    let marker_line = last_item_children("- +\n\nSee [it][ref].\n\n[ref]: /url\n");
+    let marker_line = last_item_children("- {empty}\n\nSee [it][ref].\n\n[ref]: /url\n");
     assert!(
         marker_line.is_empty(),
         "an emptied item gained a block: {marker_line:?}"
@@ -107,7 +107,7 @@ fn the_emptied_item_survives_its_own_round_trip() {
     let source = "- [ref]: /url\n\nSee [it][ref].\n";
     assert_eq!(
         carve::to_carve(source),
-        "- +\n\nSee [it][ref].\n\n[ref]: /url\n"
+        "- {empty}\n\nSee [it][ref].\n\n[ref]: /url\n"
     );
     assert!(parses_the_same(source), "parse(fmt(x)) != parse(x)");
 }

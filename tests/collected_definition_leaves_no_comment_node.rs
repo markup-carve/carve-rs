@@ -36,7 +36,7 @@ fn an_emptied_item_is_written_with_the_continuation_marker() {
         // back, hoisted to the document (PART 12 §10, carve-rs#631). Byte-identical
         // to carve-js. The `- +` continuation marker - what this test is about -
         // is unchanged.
-        "- +\n\nSee [it][ref].\n\n[ref]: /url\n"
+        "- {empty}\n\nSee [it][ref].\n\n[ref]: /url\n"
     );
 }
 

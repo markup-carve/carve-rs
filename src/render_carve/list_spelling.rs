@@ -370,13 +370,13 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
                 )
             })
         };
-        // EMPTINESS is the only thing that earns `+`. A second, text-shaped test
+        // EMPTINESS is the only thing that earns `{empty}`. A second, text-shaped test
         // (content starts with `[^` and holds a colon-space) stood for "the item
         // spelled a footnote definition that collection hoisted" - but collection
         // always empties the item, so that test could only fire on authored
-        // inline content, and it replaced the whole item with `+` (carve-rs#2097).
+        // inline content, and it replaced the whole item with the sentinel (carve-rs#2097).
         if trim_non_nbsp(&content).is_empty() {
-            content = "+".to_string();
+            content = "{empty}".to_string();
         }
         let raw_content = content;
         let mut content = trim_non_nbsp(&raw_content).to_string();
@@ -448,7 +448,7 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
                     )
                 });
                 if trim_non_nbsp(&content).is_empty() {
-                    content = "+".to_string();
+                    content = "{empty}".to_string();
                 }
                 content = trim_non_nbsp(&content).to_string();
                 item_source = spell_list_item(session, &prefix, &content, continuation_width);

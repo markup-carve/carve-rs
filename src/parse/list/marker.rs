@@ -695,8 +695,6 @@ pub(crate) fn parse_continuation_block(
         !is_blank_line(line)
             && !detect_list_marker_full(line).is_some_and(|marker| marker.indent <= base_indent)
     });
-    let source_lines = cur.line_map;
-    let colon_geometry = cur.colon_geometry;
     let end = attached_block_end(
         lines,
         start,
@@ -706,17 +704,9 @@ pub(crate) fn parse_continuation_block(
             if (end > start || following_plus_attaches)
                 && trim_ascii(line) == "+"
                 && indent_columns(line) == base_indent
+                && end + 1 < lines.len()
             {
-                let source_line = colon_geometry
-                    .and_then(|lines| lines.get(end).and_then(|line| line.source_line()))
-                    .or_else(|| source_lines.and_then(|lines| lines.get(end).copied().flatten()));
-                if end + 1 < lines.len()
-                    && !source_line
-                        .and_then(continuation_marker::decision)
-                        .is_some_and(|decision| decision.refusal.is_some())
-                {
-                    return true;
-                }
+                return true;
             }
             // A sibling item ends the attachment before lazy continuation can claim it.
             end > start

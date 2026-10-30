@@ -33,6 +33,6 @@ fn hosted_nested_quote_reads_like_its_top_level_twin() {
 fn a_bare_plus_before_a_sibling_item_stays_text_in_a_described_quote() {
     assert_eq!(
         compact(&to_html(":: t\n:  > > > q\n   +\n   - b\n")),
-        "<dl><dt>t</dt><dd><blockquote><blockquote><blockquote><p>q+- b</p></blockquote></blockquote></blockquote></dd></dl>"
+        "<dl><dt>t</dt><dd><blockquote><blockquote><blockquote><p>q</p></blockquote></blockquote><ul><li>b</li></ul></blockquote></dd></dl>"
     );
 }

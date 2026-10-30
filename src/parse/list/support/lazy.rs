@@ -56,7 +56,7 @@ pub(crate) fn fold_lazy_run_and_resume_in_band(
         }
         // The column the run ended at, taken before the fold consumes anything.
         let below = last_consumed_line_below_column(cur, content_col);
-        if !open_after_refused_marker(nested, below, &mut open) {
+        if !open(nested, below) {
             break;
         }
         let before = cur.pos;
@@ -80,7 +80,7 @@ pub(crate) fn fold_lazy_run_and_resume_in_band(
             indent_columns(line) > list_base
                 && indent_columns(line) <= content_col
                 && is_list_marker(line)
-        }) && quote_fold_at_end(nested.source.rsplit('\n'), &nested.line_map)
+        }) && quote_fold_at_end(nested.source.rsplit('\n'))
         {
             let line = cur.peek().unwrap();
             nested.push_newline_at(
@@ -168,9 +168,7 @@ pub(crate) fn collect_trailing_lazy_through_framed(
             || (is_plus_marker(trim_ascii_start(line))
                 && cur
                     .continuation_decision(cur.pos)
-                    .map_or(list_base == 0 && !cur.in_item_body, |decision| {
-                        decision.refusal.is_none()
-                    }))
+                    .map_or(list_base == 0 && !cur.in_item_body, |_| true))
             || {
                 // AS A CONTAINER: this collector runs only for a line folding
                 // into a container's open paragraph, and §7 recognizes an
@@ -288,9 +286,7 @@ pub(crate) fn chunk_keeps_its_band_line(cur: &LineCursor, content_col: usize) ->
         if is_blank_line(line) || indent_columns(line) < content_col {
             return closed_last
                 || trim_ascii(line) == "+"
-                    && cur
-                        .continuation_decision(cur.pos + offset)
-                        .is_some_and(|decision| decision.refusal.is_none());
+                    && cur.continuation_decision(cur.pos + offset).is_some();
         }
         let local = trim_ascii_start(line);
         closed_last = open.is_some_and(|fence| is_fence_close(local, fence));
@@ -390,52 +386,6 @@ pub(crate) fn nested_bare_marker_then_plain(cur: &LineCursor<'_>, content_col: u
         && is_plus_marker(inner.content)
 }
 
-pub(crate) fn refused_first_block_below_column(cur: &LineCursor<'_>, content_col: usize) -> bool {
-    let Some(line) = cur.peek() else {
-        return false;
-    };
-    let list_marker = detect_list_marker_full(line).is_some();
-    cur.pos > 0
-        && indent_columns(line) < content_col
-        && cur
-            .continuation_decision(cur.pos - 1)
-            .is_some_and(|decision| {
-                // A refused first-block `+` in a quote is text, so a lazy line folds into it.
-                // A list's refused `+` leaves its item empty, so not even a marker folds
-                // (carve#3421).
-                decision.first_block
-                    && decision.refusal.is_some()
-                    && if decision.owner == Some(crate::parse::continuation_marker::Kind::Quote) {
-                        is_blank_line(line) && !list_marker
-                    } else if decision.owner == Some(crate::parse::continuation_marker::Kind::List)
-                        && !list_marker
-                        && indent_columns(line) == 0
-                        && line_starts_paragraph(trim_ascii_start(line))
-                        && {
-                            // A quote opened behind the item's own marker ends at its list
-                            // `+`, and the item takes the paragraph line (`- > - +` / `b`).
-                            let prior = trim_ascii_start(cur.lines.at(cur.pos - 1));
-                            !prior.starts_with('>') && prior.contains('>')
-                        }
-                    {
-                        false
-                    } else {
-                        !list_marker
-                            || decision.owner == Some(crate::parse::continuation_marker::Kind::List)
-                                && indent_columns(line) > 0
-                                && {
-                                    // Not a quote opened behind this item's own marker, whose
-                                    // list `+` leaves the marker line's item to take the line.
-                                    let raw = cur.lines.at(cur.pos - 1);
-                                    let prior = trim_ascii_start(raw);
-                                    prior.starts_with('>')
-                                        || !prior.contains('>')
-                                        || indent_columns(line) <= indent_columns(raw)
-                                }
-                    }
-            })
-}
-
 /// How far to dedent a collected line, given the container's content column.
 ///
 /// At or past that column the line IS item content and lands flush at column 0.
@@ -516,10 +466,9 @@ pub(crate) fn collect_indented_block_mapped_after_continuation(
     // collector. The nested source cannot claim it merely because it is flush.
     if cur.peek().is_some_and(is_plus_marker)
         && cur.continuation_decision(cur.pos).is_some_and(|decision| {
-            decision.refusal.is_none()
-                && decision
-                    .owner_column
-                    .is_some_and(|column| column < strip_cols)
+            decision
+                .owner_column
+                .is_some_and(|column| column < strip_cols)
         })
     {
         return LineBuffer::default().into_source();
