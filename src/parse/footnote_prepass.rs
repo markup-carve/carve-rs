@@ -1,6 +1,29 @@
 use super::definition_regions::VerseLine;
 use super::*;
 
+/// The `defs` key of a duplicate definition's body, kept only until the nested
+/// walk has collected the definitions inside it. No label can start with NUL.
+pub(in crate::parse) const LOSING_NOTE_PREFIX: &str = "\u{0}losing:";
+
+fn definition_source(note: NoteBody) -> MappedSource {
+    MappedSource {
+        reached: vec![true; note.lines.len()],
+        col_map: note.col_map,
+        source: note.lines.join("\n"),
+        line_map: note.line_map,
+        item_marker_at_start: false,
+        marker_tail: None,
+        opaque_blank_lines: Vec::new(),
+        discarded_outer_blank: false,
+        outer_plus_after_blank: false,
+        // A FOOTNOTE BODY carries authored base for its sublists, so
+        // a list marker past the body's content column anchors its
+        // span at the marker (markup-carve/carve#1980).
+        in_quoted_body: false,
+        sublists_carry_authored_base: true,
+    }
+}
+
 /// What `extract_footnote_defs` hands back, in order: the document body with
 /// the definition lines removed, each definition's own source, where each
 /// definition LINE sits, and the link definitions lifted out of the note bodies.
@@ -807,6 +830,10 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         // First definition for a label wins (later duplicates are ignored).
         if first_for_label {
             self.register_definition(normalized_label, &def, note);
+        } else if note.lines.iter().any(|line| line.contains("[^")) {
+            // The label loses, not the definitions nested in its body.
+            let key = format!("{LOSING_NOTE_PREFIX}{def_start_line}");
+            self.defs.insert(key, definition_source(note));
         }
         self.push_definition_replacement(raw_def_line, &def, stripped, def_start_line);
         i
@@ -1810,23 +1837,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
     ) {
         self.definition_keys
             .insert(normalized_label, def.label.to_string());
-        let definition_source = MappedSource {
-            col_map: note.col_map,
-            source: note.lines.join("\n"),
-            line_map: note.line_map,
-            item_marker_at_start: false,
-            marker_tail: None,
-            reached: vec![true; note.lines.len()],
-            opaque_blank_lines: Vec::new(),
-            discarded_outer_blank: false,
-            outer_plus_after_blank: false,
-            // A FOOTNOTE BODY carries authored base for its sublists, so
-            // a list marker past the body's content column anchors its
-            // span at the marker (markup-carve/carve#1980).
-            in_quoted_body: false,
-            sublists_carry_authored_base: true,
-        };
-        self.defs.insert(def.label.to_string(), definition_source);
+        self.defs
+            .insert(def.label.to_string(), definition_source(note));
     }
 
     // Leave the container's structural prefix (or a blank line at top

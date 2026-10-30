@@ -2008,6 +2008,7 @@ fn rename_child_ids(
     // An automatic id never lands on a name this file writes further down.
     let own = crate::document_ids::authored_ids(
         std::iter::once(&*children).chain(footnote_bodies.values().map(Vec::as_slice)),
+        None,
     );
     // The last suffix handed out per slug, so a run of equal headings does not
     // restart its search at -2 each time.

@@ -1096,7 +1096,16 @@ fn parse_attrs_with(src: &str, space_only: bool) -> Option<Attrs> {
                 if attrs.classes.is_empty() {
                     attrs.order.push(AttrSlot::Class);
                 }
-                attrs.classes.push(value);
+                // The value is a list of class tokens (CARVE-P4-007); a value
+                // with no token stays one empty entry.
+                let tokens = value
+                    .split([' ', '\t', '\n', '\x0C', '\r'])
+                    .filter(|token| !token.is_empty());
+                let before = attrs.classes.len();
+                attrs.classes.extend(tokens.map(str::to_string));
+                if attrs.classes.len() == before {
+                    attrs.classes.push(value);
+                }
             } else {
                 if !attrs.key_values.contains_key(key) {
                     attrs.order.push(AttrSlot::Key(key.to_string()));

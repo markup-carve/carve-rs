@@ -248,6 +248,7 @@ fn assigned_heading_ids_with_policy(
         had_generated: false,
         collect_explicit_only: true,
         ignore_generated,
+        defined_notes: Some(doc.footnote_defs.keys().cloned().collect()),
     };
     seeder.walk_blocks(&doc.children);
     for blocks in doc.footnote_defs.values() {
@@ -266,6 +267,7 @@ fn assigned_heading_ids_with_policy(
 /// the ids the parser generated for headings.
 pub(crate) fn authored_ids<'a>(
     blocks: impl IntoIterator<Item = &'a [BlockNode]>,
+    defined_notes: Option<BTreeSet<String>>,
 ) -> BTreeSet<String> {
     let mut seeder = Seeder {
         registry: DocumentIdRegistry::default(),
@@ -277,6 +279,7 @@ pub(crate) fn authored_ids<'a>(
         had_generated: false,
         collect_explicit_only: true,
         ignore_generated: true,
+        defined_notes,
     };
     for seq in blocks {
         seeder.walk_blocks(seq);
@@ -295,6 +298,7 @@ fn seed_registry(doc: &Document, id_opts: HeadingIdOptions) -> DocumentIdRegistr
         had_generated: false,
         collect_explicit_only: true,
         ignore_generated: false,
+        defined_notes: Some(doc.footnote_defs.keys().cloned().collect()),
     };
     // Pass A: reserve every explicit id across the whole document (body then
     // footnote defs), so heading auto-slugs in pass B can skip them regardless
@@ -333,6 +337,9 @@ struct Seeder {
     /// pass B.
     collect_explicit_only: bool,
     ignore_generated: bool,
+    /// The labels a footnote reference resolves against; `None` when they are
+    /// not known yet, and every reference counts as resolved.
+    defined_notes: Option<BTreeSet<String>>,
 }
 
 impl Seeder {
@@ -524,11 +531,19 @@ impl Seeder {
                 }
                 InlineNode::Code(code) => self.reserve_attrs(&code.attrs),
                 InlineNode::LiteralInline(lit) => self.reserve_attrs(&lit.attrs),
+                // An unresolved reference drops its attributes, so its id is
+                // not rendered and reserves nothing (CARVE-P2-004).
                 InlineNode::Link(l) => {
-                    self.reserve_attrs(&l.attrs);
+                    if !crate::parse::is_unresolved_reference(l) {
+                        self.reserve_attrs(&l.attrs);
+                    }
                     self.walk_inlines(&l.children);
                 }
-                InlineNode::Image(i) => self.reserve_attrs(&i.attrs),
+                InlineNode::Image(i) => {
+                    if !crate::parse::is_unresolved_image(i) {
+                        self.reserve_attrs(&i.attrs);
+                    }
+                }
                 InlineNode::Span(s) => {
                     self.reserve_attrs(&s.attrs);
                     self.walk_inlines(&s.children);
@@ -550,7 +565,13 @@ impl Seeder {
                     self.walk_inlines(&e.children);
                 }
                 InlineNode::Footnote(f) => {
-                    self.reserve_attrs(&f.attrs);
+                    let resolved = f.inline.is_some()
+                        || self.defined_notes.as_ref().map_or(true, |notes| {
+                            f.id.as_ref().is_some_and(|label| notes.contains(label))
+                        });
+                    if resolved {
+                        self.reserve_attrs(&f.attrs);
+                    }
                     if let Some(inline) = &f.inline {
                         self.walk_inlines(inline);
                     }

@@ -109,7 +109,8 @@ pub(crate) fn marker_content_is_captioned_inline(
             && caption_content(&slice_columns(line, content_col, false)).is_some()
     });
     if !captioned {
-        return false;
+        return content.starts_with("$$`")
+            && multiline_math_takes_caption(content, cur, content_col, options);
     }
     let inline = parse_inline_with_options(content, options);
     inline.len() == 1
@@ -118,6 +119,45 @@ pub(crate) fn marker_content_is_captioned_inline(
             InlineNode::Math(math) => math.display,
             _ => false,
         }
+}
+
+/// The item's own lines up to the first caption are one display-math span.
+fn multiline_math_takes_caption(
+    content: &str,
+    cur: &LineCursor<'_>,
+    content_col: usize,
+    options: &Options<'_>,
+) -> bool {
+    let mut joined = content.to_string();
+    let mut at = cur.pos;
+    loop {
+        let Some(line) = cur.lines.line(at) else {
+            return false;
+        };
+        if is_blank_line(line) {
+            at += 1;
+            let captioned = cur.lines.line(at).is_some_and(|next| {
+                indent_columns(next) == content_col
+                    && caption_content(&slice_columns(next, content_col, false)).is_some()
+            });
+            if !captioned {
+                return false;
+            }
+            break;
+        }
+        if indent_columns(line) < content_col {
+            return false;
+        }
+        let body = slice_columns(line, content_col, false);
+        if caption_content(&body).is_some() {
+            break;
+        }
+        joined.push('\n');
+        joined.push_str(trim_ascii(&body));
+        at += 1;
+    }
+    let inline = parse_inline_with_options(&joined, options);
+    inline.len() == 1 && matches!(&inline[0], InlineNode::Math(math) if math.display)
 }
 
 /// Whether a valid standalone attribute block starts in a list marker's
@@ -1362,7 +1402,14 @@ pub(crate) fn label_without_trailing_comment<'a>(label: &'a str, options: &Optio
             continue;
         }
         if trailing_comment_content(&label[i + 2..]) == content {
-            return label[..i].trim_end_matches(' ');
+            let kept = label[..i].trim_end_matches(' ');
+            // An escaped space is content: the separating run starts after it.
+            let backslashes = kept.bytes().rev().take_while(|&b| b == b'\\').count();
+            return if backslashes % 2 == 1 && kept.len() < i {
+                &label[..=kept.len()]
+            } else {
+                kept
+            };
         }
     }
     label

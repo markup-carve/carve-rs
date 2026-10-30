@@ -594,18 +594,15 @@ pub(in crate::parse) fn register_panel_titles(
     }
 }
 
-pub(in crate::parse) fn collect_caption_titles(
-    blocks: &[BlockNode],
-    titles: &mut BTreeMap<String, String>,
-) {
+pub(in crate::parse) fn collect_caption_titles(blocks: &[BlockNode], index: &mut CaptionIndex<'_>) {
     for block in blocks {
         match block {
-            BlockNode::Table(t) => collect_table_caption_title(t, titles),
+            BlockNode::Table(t) => collect_table_caption_title(t, index),
             BlockNode::Figure(f) => {
-                collect_caption_title(&f.caption, f.attrs.as_ref(), titles);
+                collect_caption_title(&f.caption, f.attrs.as_ref(), index);
                 match &*f.target {
-                    FigureTarget::BlockQuote(b) => collect_caption_titles(&b.children, titles),
-                    FigureTarget::Table(t) => collect_table_caption_title(t, titles),
+                    FigureTarget::BlockQuote(b) => collect_caption_titles(&b.children, index),
+                    FigureTarget::Table(t) => collect_table_caption_title(t, index),
                     FigureTarget::Image(_)
                     | FigureTarget::CodeBlock(_)
                     | FigureTarget::Paragraph(_) => {}
@@ -617,36 +614,37 @@ pub(in crate::parse) fn collect_caption_titles(
                 // the group id and the panel letters from that one draw, and
                 // skip the panel captions exactly as the numbering pass does.
                 if let Some(caption) = &g.caption {
-                    collect_caption_title(caption, g.attrs.as_ref(), titles);
+                    collect_caption_title(caption, g.attrs.as_ref(), index);
                     if let Some((label, number)) = numbered_caption_draw(caption) {
-                        register_panel_titles(&g.children, &label, number, titles);
+                        register_panel_titles(&g.children, &label, number, index.titles);
+                        register_panel_labels(&g.children, caption, number, index.labels);
                     }
                 }
                 for child in &g.children {
                     match child {
                         BlockNode::Figure(f) => {
                             if let FigureTarget::BlockQuote(b) = &*f.target {
-                                collect_caption_titles(&b.children, titles);
+                                collect_caption_titles(&b.children, index);
                             }
                         }
                         BlockNode::Table(_) => {}
-                        other => collect_caption_titles(std::slice::from_ref(other), titles),
+                        other => collect_caption_titles(std::slice::from_ref(other), index),
                     }
                 }
             }
             BlockNode::List(l) => {
                 for item in &l.items {
-                    collect_caption_titles(&item.children, titles);
+                    collect_caption_titles(&item.children, index);
                 }
             }
-            BlockNode::BlockQuote(b) => collect_caption_titles(&b.children, titles),
-            BlockNode::Admonition(a) => collect_caption_titles(&a.children, titles),
-            BlockNode::Directive(d) => collect_caption_titles(&d.children, titles),
-            BlockNode::Div(d) => collect_caption_titles(&d.children, titles),
+            BlockNode::BlockQuote(b) => collect_caption_titles(&b.children, index),
+            BlockNode::Admonition(a) => collect_caption_titles(&a.children, index),
+            BlockNode::Directive(d) => collect_caption_titles(&d.children, index),
+            BlockNode::Div(d) => collect_caption_titles(&d.children, index),
             BlockNode::DefinitionList(d) => {
                 for item in &d.items {
                     for definition in &item.definitions {
-                        collect_caption_titles(definition, titles);
+                        collect_caption_titles(definition, index);
                     }
                 }
             }
@@ -671,19 +669,16 @@ pub(in crate::parse) fn numbered_caption_draw(caption: &[InlineNode]) -> Option<
     Some((label, number))
 }
 
-pub(in crate::parse) fn collect_table_caption_title(
-    table: &Table,
-    titles: &mut BTreeMap<String, String>,
-) {
+pub(in crate::parse) fn collect_table_caption_title(table: &Table, index: &mut CaptionIndex<'_>) {
     if let Some(caption) = &table.caption {
-        collect_caption_title(caption, table.attrs.as_ref(), titles);
+        collect_caption_title(caption, table.attrs.as_ref(), index);
     }
 }
 
 pub(in crate::parse) fn collect_caption_title(
     caption: &[InlineNode],
     attrs: Option<&Attrs>,
-    titles: &mut BTreeMap<String, String>,
+    index: &mut CaptionIndex<'_>,
 ) {
     let Some(idx) = caption
         .iter()
@@ -698,12 +693,66 @@ pub(in crate::parse) fn collect_caption_title(
         return;
     };
     if let Some(id) = attrs.and_then(|attrs| attrs.id.as_ref()) {
+        if index.titles.contains_key(id) {
+            return;
+        }
         let label = plain_inlines_parse(&caption[..idx])
             .trim_end_matches(char::is_whitespace)
             .to_string();
-        titles
-            .entry(id.clone())
-            .or_insert_with(|| format!("{label} {number}"));
+        index.titles.insert(id.clone(), format!("{label} {number}"));
+        index
+            .labels
+            .insert(id.clone(), caption_label(caption, idx, &number.to_string()));
+    }
+}
+
+/// The caption targets a `</#id>` can reach: the plain text and the label it
+/// renders. PART 9R R4 keeps caption markup, so the label is the caption's nodes
+/// before the placeholder, plus the number.
+pub(in crate::parse) struct CaptionIndex<'a> {
+    pub(in crate::parse) titles: &'a mut BTreeMap<String, String>,
+    pub(in crate::parse) labels: &'a mut BTreeMap<String, CrossrefLabel>,
+}
+
+fn caption_label(caption: &[InlineNode], placeholder: usize, number: &str) -> CrossrefLabel {
+    let mut nodes = derive_display_nodes(&caption[..placeholder], true);
+    if let Some(InlineNode::Text(last)) = nodes.last_mut() {
+        last.value
+            .truncate(last.value.trim_end_matches(char::is_whitespace).len());
+    }
+    nodes.push(InlineNode::Text(Text {
+        value: format!(" {number}"),
+        pos: None,
+    }));
+    std::rc::Rc::new(nodes)
+}
+
+fn register_panel_labels(
+    children: &[BlockNode],
+    caption: &[InlineNode],
+    number: usize,
+    labels: &mut BTreeMap<String, CrossrefLabel>,
+) {
+    let Some(placeholder) = caption
+        .iter()
+        .position(|node| matches!(node, InlineNode::CaptionNumber(_)))
+    else {
+        return;
+    };
+    let mut panel_index = 0usize;
+    for child in children {
+        let id = match child {
+            BlockNode::Figure(f) => f.attrs.as_ref().and_then(|attrs| attrs.id.clone()),
+            BlockNode::Table(t) => t.attrs.as_ref().and_then(|attrs| attrs.id.clone()),
+            _ => continue,
+        };
+        if let Some(id) = id {
+            let shown = format!("{number}{}", panel_letter(panel_index));
+            labels
+                .entry(id)
+                .or_insert_with(|| caption_label(caption, placeholder, &shown));
+        }
+        panel_index += 1;
     }
 }
 

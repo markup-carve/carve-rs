@@ -1013,6 +1013,7 @@ fn parse_with_options_mode_and_index(
             BTreeMap::new()
         };
         if matches!(mode, ParseMode::HtmlFacade) && options.extensions.is_empty() && has_crossrefs {
+            heading_index.extend_captions(&doc);
             heading_index.extend_titles(caption_titles);
         }
         // PART 12 §5 again: a heading's GENERATED id is a resolution result and
@@ -1109,10 +1110,16 @@ fn extract_nested_footnote_defs(
             options,
         );
         let body = compose_mapped_source(body, &parent);
-        defs.insert(label, body);
+        defs.insert(label.clone(), body);
 
         for (nested_label, nested_source) in nested {
             let nested_source = compose_mapped_source(nested_source, &parent);
+            // Each scan numbers its own lines; the parent's key keeps these apart.
+            let nested_label = if nested_label.starts_with(LOSING_NOTE_PREFIX) {
+                format!("{nested_label}@{label}")
+            } else {
+                nested_label
+            };
             let nested_line = first_mapped_line(&nested_source);
             let existing_line = defs.get(&nested_label).and_then(first_mapped_line);
             if existing_line.is_some() && existing_line <= nested_line {
@@ -1137,6 +1144,7 @@ fn extract_nested_footnote_defs(
             link_defs.entry(nested_label).or_insert(def);
         }
     }
+    defs.retain(|label, _| !label.starts_with(LOSING_NOTE_PREFIX));
 }
 
 /// Publish each crossref's resolution BESIDE its authored target

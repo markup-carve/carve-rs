@@ -212,7 +212,7 @@
   {
     "name": "final review controls 1",
     "source": "{.a}\n::: a\nx `` a\n:::\n` b `",
-    "html": "<div class=\"a a\"><p>x <code> a</code></p></div><p><code> b </code></p>"
+    "html": "<div class=\"a\"><p>x <code> a</code></p></div><p><code> b </code></p>"
   },
   {
     "name": "final review controls 6",
