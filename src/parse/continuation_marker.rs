@@ -80,10 +80,10 @@ pub(super) fn kind_of(kind: super::own_lines::Kind) -> Option<Kind> {
 
 thread_local! {
     static DECISIONS: RefCell<Option<HashMap<usize, Decision>>> = const { RefCell::new(None) };
-    static LETTER: RefCell<Option<u8>> = const { RefCell::new(None) };
+    static LETTER: RefCell<Option<char>> = const { RefCell::new(None) };
 }
 
-pub(super) struct Guard(Option<HashMap<usize, Decision>>, Option<u8>);
+pub(super) struct Guard(Option<HashMap<usize, Decision>>, Option<char>);
 
 impl Guard {
     pub(super) fn install(owned: Option<&OwnedSource>) -> Self {
@@ -128,7 +128,7 @@ pub(super) fn decision(source_line: usize) -> Option<Decision> {
 /// Text with every refused `+` back as itself.
 pub(super) fn restore_letter(text: &str) -> std::borrow::Cow<'_, str> {
     match LETTER.with(|slot| *slot.borrow()) {
-        Some(byte) if text.as_bytes().contains(&byte) => text.replace(char::from(byte), "+").into(),
+        Some(letter) if text.contains(letter) => text.replace(letter, "+").into(),
         _ => text.into(),
     }
 }
@@ -136,7 +136,9 @@ pub(super) fn restore_letter(text: &str) -> std::borrow::Cow<'_, str> {
 /// The whole line is one refused `+`.
 pub(super) fn is_refused_letter(line: &str) -> bool {
     let line = line.trim_end_matches([' ', '\t']);
-    line.len() == 1 && LETTER.with(|slot| *slot.borrow()) == Some(line.as_bytes()[0])
+    LETTER
+        .with(|slot| *slot.borrow())
+        .is_some_and(|letter| line.strip_prefix(letter) == Some(""))
 }
 
 /// A reader may keep as payload a `+` the walk read as a letter.

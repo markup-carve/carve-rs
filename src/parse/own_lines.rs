@@ -234,12 +234,21 @@ fn doc_column(line: &str, rest: &str) -> usize {
     col
 }
 
-/// A control byte the source does not hold, so a refused `+` stays one letter
-/// through the block readers and comes back before the inline pass.
-fn plus_letter(source: &str) -> Option<u8> {
-    (0x01..0x20)
+/// A character the source does not hold, so a refused `+` stays one letter
+/// through the block readers and comes back before the inline pass. A control
+/// byte keeps every offset on the line; private use is for a source holding them all.
+fn plus_letter(source: &str) -> Option<char> {
+    (0x01u8..0x20)
         .filter(|byte| !matches!(byte, b'\t' | b'\n' | b'\r'))
         .find(|byte| !source.as_bytes().contains(byte))
+        .map(char::from)
+        .or_else(|| {
+            let held: std::collections::HashSet<char> = source.chars().collect();
+            ('\u{e000}'..='\u{f8ff}')
+                .chain('\u{f0000}'..='\u{ffffd}')
+                .chain('\u{100000}'..='\u{10fffd}')
+                .find(|c| !held.contains(c))
+        })
 }
 
 fn indent_rest(line: &str) -> &str {
@@ -507,7 +516,7 @@ pub(crate) struct OwnedSource {
     pub(crate) source: String,
     edits: Vec<LineEdit>,
     /// The byte a refused `+` is written as, when the walk refused one.
-    pub(in crate::parse) letter: Option<u8>,
+    pub(in crate::parse) letter: Option<char>,
     pub(in crate::parse) accepted: Vec<(usize, continuation_marker::Decision)>,
     pub(in crate::parse) refused: Vec<continuation_marker::Refused>,
 }
@@ -614,10 +623,11 @@ fn walk_traced(
         result.push_str(&c.out);
         result.push_str(c.src);
         if std::mem::take(&mut walk.refuse_line) {
-            if let (Some(plus), Some(byte)) = (result[written..].rfind('+'), letter) {
-                // One byte, so every column and offset on the line stays put.
-                let letter = char::from(byte).to_string();
-                result.replace_range(written + plus..written + plus + 1, &letter);
+            if let (Some(plus), Some(letter)) = (result[written..].rfind('+'), letter) {
+                result.replace_range(
+                    written + plus..written + plus + 1,
+                    letter.encode_utf8(&mut [0; 4]),
+                );
                 wrote_letter = true;
             }
         }

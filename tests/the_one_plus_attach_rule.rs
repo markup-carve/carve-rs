@@ -151,3 +151,55 @@ fn a_source_holding_control_bytes_keeps_them() {
     assert!(html.contains('\u{1}'), "{html:?}");
     assert!(html.contains("<li>+</li>"), "{html:?}");
 }
+
+#[test]
+fn a_source_holding_every_control_byte_reads_every_plus_alike() {
+    let controls: String = (0x01u8..0x20)
+        .filter(|byte| !matches!(byte, b'\t' | b'\n' | b'\r'))
+        .map(char::from)
+        .collect();
+    let heads: [&[&str]; 12] = [
+        &["- +"],
+        &["* * +"],
+        &["> +"],
+        &["1. +"],
+        &[":: t", ": +"],
+        &["[^a]: +"],
+        &["- a", "+"],
+        &["> a", "+"],
+        &[":: t", ": a", "+"],
+        &["[^a]: a", "+"],
+        &["- ```", "  x", "+"],
+        &["- a", "  - b", "  +"],
+    ];
+    let followers: [&[&str]; 11] = [
+        &[],
+        &[""],
+        &["para"],
+        &["# H"],
+        &["- l"],
+        &["> q"],
+        &["```", "x", "```"],
+        &["::: d", "y", ":::"],
+        &[": b"],
+        &["| c |"],
+        &["{.k}", "para"],
+    ];
+    let mut failed = Vec::new();
+    for head in heads {
+        for follower in followers {
+            for shift in 0..4 {
+                let pad = " ".repeat(shift);
+                let mut lines: Vec<String> = head.iter().map(|l| (*l).to_string()).collect();
+                lines.extend(follower.iter().map(|l| format!("{pad}{l}")));
+                let source = lines.join("\n") + "\n";
+                let want = to_html(&format!("zz\n\n{source}")).replace("zz", &controls);
+                let got = to_html(&format!("{controls}\n\n{source}"));
+                if got != want {
+                    failed.push(source);
+                }
+            }
+        }
+    }
+    assert!(failed.is_empty(), "{} {failed:#?}", failed.len());
+}
