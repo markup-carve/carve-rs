@@ -740,7 +740,7 @@ struct InlineRun<'a, 'o> {
     // kinds held (E3): a `_` or `/` guard counts only where it stands as one
     // (carve#3973 X1).
     open_entry_at: Option<usize>,
-    open_entry_kinds: u8,
+    open_entry_kinds: u16,
     attribute_target: Option<usize>,
     attribute_slots: Option<HashSet<AttrSlot>>,
     sink: InlineSink<'a>,
@@ -1498,6 +1498,7 @@ pub(in crate::parse) fn parse_critic_markup(
                 return None;
             }
             let inner = std::str::from_utf8(&bytes[content_start..pair]).ok()?;
+            OpenKinds::pass_only(OpenKinds::CRITIC);
             Some((
                 InlineNode::CriticInsert(CriticInsert {
                     children: parse_inline_context(
@@ -1550,6 +1551,7 @@ pub(in crate::parse) fn parse_critic_markup(
                 return None;
             }
             let inner = std::str::from_utf8(&bytes[content_start..pair]).ok()?;
+            OpenKinds::pass_only(OpenKinds::CRITIC);
             Some((
                 InlineNode::CriticDelete(CriticDelete {
                     children: parse_inline_context(
@@ -1579,24 +1581,28 @@ pub(in crate::parse) fn parse_critic_markup(
             }
             let old = std::str::from_utf8(&bytes[content_start..arrow]).ok()?;
             let new = std::str::from_utf8(&bytes[arrow + 2..pair]).ok()?;
+            OpenKinds::pass_only(OpenKinds::CRITIC);
+            let old = parse_inline_context(
+                old,
+                options,
+                false,
+                in_footnote,
+                positions,
+                base + content_start,
+            );
+            OpenKinds::pass_only(OpenKinds::CRITIC);
+            let new = parse_inline_context(
+                new,
+                options,
+                false,
+                in_footnote,
+                positions,
+                base + arrow + 2,
+            );
             Some((
                 InlineNode::CriticSubstitute(CriticSubstitute {
-                    old: parse_inline_context(
-                        old,
-                        options,
-                        false,
-                        in_footnote,
-                        positions,
-                        base + content_start,
-                    ),
-                    new: parse_inline_context(
-                        new,
-                        options,
-                        false,
-                        in_footnote,
-                        positions,
-                        base + arrow + 2,
-                    ),
+                    old,
+                    new,
                     pos: None,
                 }),
                 pair + 2 - start,
