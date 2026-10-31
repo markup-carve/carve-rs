@@ -28,7 +28,8 @@ fn bullet_ordered_and_task_markers_fold_at_each_column() {
                 " ".repeat(column)
             );
             let html = to_html(&source);
-            if column == 1 && marker.starts_with('-') {
+            // A task marker differs from `- head` on an axis, so it folds (carve#4545).
+            if column == 1 && marker == "- second" {
                 assert!(html.contains("<p>a</p>\n    </div>"), "{source}");
                 assert!(!html.contains(&format!("<p>a\n{marker}</p>")), "{source}");
             } else {
