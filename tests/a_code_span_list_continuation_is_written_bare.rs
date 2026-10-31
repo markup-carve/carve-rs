@@ -28,21 +28,17 @@ fn a_list_marker_in_a_paragraph_code_span_is_written_bare() {
 
 #[test]
 fn a_line_below_an_item_or_description_keeps_its_guard() {
-    for marker in ["1. x", "a) x"] {
+    // A task marker between the item's columns is text (carve#4545).
+    for marker in ["1. x", "a) x", "- [ ] x"] {
         for quote in ["", "> "] {
             let source = format!("{quote}- lead\n{quote}  a `b\n{quote} {marker}`\n");
             assert_eq!(round_trips(&source), source);
         }
     }
     for quote in ["", "> "] {
-        let blank = quote.trim_end();
         assert_eq!(
             round_trips(&format!("{quote}- lead\n{quote}  a `b\n{quote} - x`\n")),
             format!("{quote}- lead\n{quote}  a `b`\n{quote}- x``\n")
-        );
-        assert_eq!(
-            round_trips(&format!("{quote}- lead\n{quote}  a `b\n{quote} - [ ] x`\n")),
-            format!("{quote}- lead\n{quote}  a `b`\n{blank}\n{quote}- [ ] x``\n")
         );
     }
     assert_eq!(round_trips(":: t\n: a `b\n- x`\n"), ":: t\n: a `b\n - x`\n");
