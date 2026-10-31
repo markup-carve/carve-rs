@@ -1,39 +1,35 @@
-//! A line folding into a container's inline content is not a place §7
-//! recognizes an abbreviation definition (markup-carve/carve-rs#2096).
-//!
-//! Expectations are the executable spec's reading at markup-carve/carve
-//! 38829a97. The last two cases are the controls: at the document level the
-//! definition still interrupts a paragraph and still ends a quote.
+//! An abbreviation line that reaches a container stays text. Under the later
+//! carve#4412 ruling, a line that misses every frame defines in the document.
 
 #[test]
-fn an_abbreviation_folds_into_a_quote_in_an_item() {
+fn an_abbreviation_below_an_item_ends_its_paragraph() {
     assert_eq!(
         carve::to_html("- >~\n*[A]: b\n"),
-        "<ul>\n  <li>&gt;~\n*[A]: b</li>\n</ul>"
+        "<ul>\n  <li>&gt;~</li>\n</ul>"
     );
 }
 
 #[test]
-fn an_abbreviation_folds_into_a_term_on_a_marker_line() {
+fn an_abbreviation_below_a_marker_line_term_ends_it() {
     assert_eq!(
         carve::to_html(". :: t\n*[A]: b\n"),
-        "<ol>\n  <li>\n    <dl>\n      <dt>t\n*[A]: b</dt>\n    </dl>\n  </li>\n</ol>"
+        "<ol>\n  <li>\n    <dl>\n      <dt>t</dt>\n    </dl>\n  </li>\n</ol>"
     );
 }
 
 #[test]
-fn an_abbreviation_folds_into_a_top_level_term() {
+fn an_abbreviation_below_a_top_level_term_defines() {
     assert_eq!(
         carve::to_html(":: t\n*[A]: b\n\nA\n"),
-        "<dl>\n  <dt>t\n*[A]: b</dt>\n</dl>\n<p>A</p>"
+        "<dl>\n  <dt>t</dt>\n</dl>\n<p><abbr title=\"b\">A</abbr></p>"
     );
 }
 
 #[test]
-fn an_abbreviation_folds_into_a_real_quote_in_an_item() {
+fn an_abbreviation_below_a_quote_in_an_item_ends_it() {
     assert_eq!(
         carve::to_html("- > q\n*[A]: b\n"),
-        "<ul>\n  <li>\n    <blockquote><p>q\n*[A]: b</p></blockquote>\n  </li>\n</ul>"
+        "<ul>\n  <li>\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ul>"
     );
 }
 

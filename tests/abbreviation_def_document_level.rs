@@ -100,10 +100,10 @@ fn nested_definition_line_does_not_interrupt_an_open_paragraph() {
 }
 
 #[test]
-fn flush_left_line_after_an_open_item_still_belongs_to_the_item() {
+fn flush_left_definition_after_an_open_item_belongs_to_the_document() {
     assert_eq!(
         to_html("- x\n*[A]: b\n\nThe A spec.").trim(),
-        "<ul>\n  <li>x\n*[A]: b</li>\n</ul>\n<p>The A spec.</p>"
+        "<ul>\n  <li>x</li>\n</ul>\n<p>The <abbr title=\"b\">A</abbr> spec.</p>"
     );
 }
 

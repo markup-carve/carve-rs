@@ -312,12 +312,13 @@ pub(super) fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool
     if trim_ascii_start(line).starts_with("%%")
         || (detect_abbreviation_def(line).is_some()
             && (cur.at_document_level
-                || (cur.peek() == Some(line)
+                || (cur.invisible_arms
+                    && cur.peek() == Some(line)
                     && cur
                         .source_col(cur.pos)
                         .unwrap_or(indent_columns(line) as isize)
                         == 0
-                    && cur.carried_reach(cur.pos) != Some(true))))
+                    && cur.carried_reach(cur.pos).is_none())))
     {
         return true;
     }

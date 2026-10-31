@@ -46,13 +46,9 @@ fn a_visible_block_in_the_same_place_still_ends_the_item() {
 }
 
 #[test]
-fn an_abbreviation_definition_in_an_item_is_text_and_does_not_get_the_exemption() {
-    // Not a definition inside a container (markup-carve/carve#611), so it is
-    // visible text rather than an invisible block - which is why the exemption
-    // above is comments only, where the neighboring `renders_nothing` checks in
-    // the parser also count an abbreviation definition. Matches carve-js byte
-    // for byte.
+fn an_abbreviation_line_reaching_an_item_is_text_but_one_below_it_defines() {
+    // The second line misses the item under the later carve#4412 ruling.
     let expected = "<ul>\n  <li>a\n*[HTML]: x\nb</li>\n</ul>";
     assert_eq!(html("- a\n  *[HTML]: x\nb\n"), expected);
-    assert_eq!(html("- a\n *[HTML]: x\nb\n"), expected);
+    assert_eq!(html("- a\n *[HTML]: x\nb\n"), "<ul>\n  <li>a</li>\n</ul>\n<p>b</p>");
 }

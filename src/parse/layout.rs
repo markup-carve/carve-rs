@@ -356,14 +356,6 @@ fn try_layout_into(
     }
 
     let mut lines: Vec<&str> = source.lines().collect();
-    // The compact layout path does not classify abbreviation definitions.
-    // Let the AST parser decide their document-level ownership.
-    if lines
-        .iter()
-        .any(|line| detect_abbreviation_def(line).is_some())
-    {
-        return None;
-    }
     // A wrapped attribute is one construct across lines (carve#3421); the tree
     // parser owns where its closer belongs.
     if lines.iter().any(|line| {
