@@ -87,6 +87,10 @@ pub(in crate::parse) struct Stanza {
     /// The comment-only body lines this stanza had, as `(line index, node)`.
     /// Their text is already gone from `lines` - see `verse_comment_line`.
     comments: Vec<(usize, Comment)>,
+    /// Closed `%%%` pairs before the stanza's first line.
+    leading: Vec<Comment>,
+    /// Closed `%%%` pairs after a line, as `(line index, node)`.
+    pairs: Vec<(usize, Comment)>,
 }
 
 /// A verse body line that is nothing but a comment (grammar PART 9 §23, IT IS
@@ -105,6 +109,17 @@ pub(in crate::parse) fn verse_comment_line(stripped: &str) -> Option<String> {
             .trim_end_matches([' ', '\t'])
             .to_string(),
     )
+}
+
+/// The `%%%` run a verse line opens or closes a block comment with, after
+/// optional leading whitespace (PART 9 §28).
+pub(in crate::parse) fn verse_comment_run(stripped: &str) -> Option<usize> {
+    let run = stripped
+        .trim_start_matches([' ', '\t'])
+        .bytes()
+        .take_while(|&b| b == b'%')
+        .count();
+    (run >= 3).then_some(run)
 }
 
 /// Put the comment-only lines back, at the content position of the line each
@@ -276,22 +291,42 @@ pub(in crate::parse) fn harden_verse_breaks(inlines: Vec<InlineNode>) -> Vec<Inl
 pub(in crate::parse) fn splice_verse_comments(
     inlines: Vec<InlineNode>,
     comments: Vec<(usize, Comment)>,
+    pairs: Vec<(usize, Comment)>,
+    last_line: usize,
 ) -> Vec<InlineNode> {
-    if comments.is_empty() {
+    if comments.is_empty() && pairs.is_empty() {
         return inlines;
     }
-    let mut pending = comments.into_iter().peekable();
+    // A `%%%` pair a line hosts sits after that line's content, before the
+    // break that ends it (`true`); a comment line's node sits on its emptied line.
+    let mut merged: Vec<(usize, bool, Comment)> = comments
+        .into_iter()
+        .map(|(at, comment)| (at, false, comment))
+        .chain(pairs.into_iter().map(|(at, comment)| (at, true, comment)))
+        .collect();
+    merged.sort_by_key(|(at, after, _)| (*at, *after));
+    let mut pending = merged.into_iter().peekable();
     let mut line = 0usize;
     // Was the boundary that OPENED the line we are on eaten by a verbatim run,
     // or is it still a node in the tree? See the trailing drain below.
     let mut opened_inside_a_run = false;
-    let mut out =
-        splice_verse_comments_into(inlines, &mut pending, &mut line, &mut opened_inside_a_run);
+    let mut out = splice_verse_comments_into(
+        inlines,
+        &mut pending,
+        &mut line,
+        &mut opened_inside_a_run,
+        last_line,
+    );
     if !opened_inside_a_run {
-        while let Some((_, comment)) = pending.next_if(|(at, _)| *at == line) {
+        while let Some((_, _, comment)) = pending.next_if(|(at, after, _)| *at == line && !after) {
             out.push(InlineNode::Comment(comment));
         }
     }
+    out.extend(
+        pending
+            .filter(|(_, after, _)| *after)
+            .map(|(_, _, comment)| InlineNode::Comment(comment)),
+    );
     out
 }
 
@@ -317,15 +352,18 @@ pub(in crate::parse) fn advance_over_run(
 /// boundary counts once wherever in the tree it turns up.
 pub(in crate::parse) fn splice_verse_comments_into(
     inlines: Vec<InlineNode>,
-    pending: &mut std::iter::Peekable<std::vec::IntoIter<(usize, Comment)>>,
+    pending: &mut std::iter::Peekable<std::vec::IntoIter<(usize, bool, Comment)>>,
     line: &mut usize,
     opened_inside_a_run: &mut bool,
+    last_line: usize,
 ) -> Vec<InlineNode> {
     let mut out = Vec::with_capacity(inlines.len());
     for mut node in inlines {
         // The comment sits BEFORE the boundary that ends its line: the line is
         // empty now, so there is nothing else on it.
-        while let Some((_, comment)) = pending.next_if(|(at, _)| *at == *line) {
+        while let Some((_, _, comment)) =
+            pending.next_if(|(at, after, _)| *at == *line && !after || *after && *at < *line)
+        {
             out.push(InlineNode::Comment(comment));
         }
         // Nothing left to place, so nothing left to count for: the rest of this
@@ -336,6 +374,12 @@ pub(in crate::parse) fn splice_verse_comments_into(
         }
         match &mut node {
             InlineNode::SoftBreak(_) | InlineNode::HardBreak(_) => {
+                // The author's break ending the last line keeps the pairs after it.
+                while let Some((_, _, comment)) =
+                    pending.next_if(|(at, after, _)| *after && *at == *line && *at < last_line)
+                {
+                    out.push(InlineNode::Comment(comment));
+                }
                 *line += 1;
                 // A break node IS the boundary, so the line it opens has one.
                 *opened_inside_a_run = false;
@@ -362,6 +406,7 @@ pub(in crate::parse) fn splice_verse_comments_into(
                     pending,
                     line,
                     opened_inside_a_run,
+                    last_line,
                 )
             }
             InlineNode::Link(n) => {
@@ -370,6 +415,7 @@ pub(in crate::parse) fn splice_verse_comments_into(
                     pending,
                     line,
                     opened_inside_a_run,
+                    last_line,
                 )
             }
             InlineNode::Span(n) => {
@@ -378,6 +424,7 @@ pub(in crate::parse) fn splice_verse_comments_into(
                     pending,
                     line,
                     opened_inside_a_run,
+                    last_line,
                 )
             }
             InlineNode::Extension(n) => {
@@ -386,6 +433,7 @@ pub(in crate::parse) fn splice_verse_comments_into(
                     pending,
                     line,
                     opened_inside_a_run,
+                    last_line,
                 )
             }
             InlineNode::Footnote(n) => {
@@ -395,6 +443,7 @@ pub(in crate::parse) fn splice_verse_comments_into(
                         pending,
                         line,
                         opened_inside_a_run,
+                        last_line,
                     );
                 }
             }
@@ -409,6 +458,7 @@ pub(in crate::parse) fn splice_verse_comments_into(
                             pending,
                             line,
                             opened_inside_a_run,
+                            last_line,
                         );
                     }
                 }
@@ -419,6 +469,7 @@ pub(in crate::parse) fn splice_verse_comments_into(
                     pending,
                     line,
                     opened_inside_a_run,
+                    last_line,
                 )
             }
             InlineNode::CriticDelete(n) => {
@@ -427,6 +478,7 @@ pub(in crate::parse) fn splice_verse_comments_into(
                     pending,
                     line,
                     opened_inside_a_run,
+                    last_line,
                 )
             }
             _ => {}
@@ -654,10 +706,72 @@ pub(in crate::parse) fn parse_line_block(cur: &mut LineCursor, options: &Options
     // give a column back, but the lines a stanza occupies are not in doubt.
     let mut stanza_start: Option<usize> = None;
     let mut stanza_end = cur.pos;
+    // A closed `%%%` pair leaves no verse line, and a blank line in its body
+    // splits no stanza (CARVE-P9-047). Only an opener whose first character is
+    // `%` qualifies; the closer may be indented and matches on exact run length.
+    let mut last_closer: std::collections::HashMap<usize, usize> = Default::default();
+    for at in cur.pos..end {
+        if let Some(run) = cur
+            .lines
+            .line(at)
+            .and_then(|line| verse_comment_run(&strip_leading_columns(line, base_indent)))
+        {
+            last_closer.insert(run, at);
+        }
+    }
+    let mut stanza_pairs: Vec<(usize, Comment)> = Vec::new();
+    let mut leading: Vec<Comment> = Vec::new();
+    let mut stanza_leading: Vec<Comment> = Vec::new();
     while let Some(line) = cur.peek() {
         if cur.pos + 1 == end && exact_colon_fence_len(line) == Some(fence_len) {
             cur.consume();
             break;
+        }
+        let opener = strip_leading_columns(line, base_indent);
+        let run = opener
+            .starts_with('%')
+            .then(|| verse_comment_run(&opener))
+            .flatten();
+        if let Some(run) = run.filter(|run| last_closer.get(run).is_some_and(|&at| at > cur.pos)) {
+            let open_at = cur.pos;
+            let mut close_at = open_at + 1;
+            while cur
+                .lines
+                .line(close_at)
+                .and_then(|line| verse_comment_run(&strip_leading_columns(line, base_indent)))
+                != Some(run)
+            {
+                close_at += 1;
+            }
+            let tail = opener[run..].trim_matches([' ', '\t']);
+            let content = std::iter::once(tail)
+                .filter(|tail| !tail.is_empty())
+                .map(str::to_string)
+                .chain((open_at + 1..close_at).filter_map(|at| {
+                    cur.lines.line(at).map(|line| {
+                        strip_lazy(&strip_leading_columns(line, base_indent)).to_string()
+                    })
+                }))
+                .collect::<Vec<_>>()
+                .join("\n");
+            let pos = if options.positions {
+                span_of(cur, open_at, close_at + 1, options)
+            } else {
+                None
+            };
+            let comment = Comment {
+                block: true,
+                delimited: false,
+                content,
+                pos,
+            };
+            if stanza.lines.is_empty() {
+                leading.push(comment);
+            } else {
+                stanza_pairs.push((stanza.lines.len() - 1, comment));
+            }
+            cur.pos = close_at + 1;
+            continue;
         }
         let source_line = cur.source_line(cur.pos);
         let line_at = cur.pos;
@@ -674,9 +788,14 @@ pub(in crate::parse) fn parse_line_block(cur: &mut LineCursor, options: &Options
                     end_cols,
                     start_cols,
                     comments: std::mem::take(&mut stanza_comments),
+                    leading: std::mem::take(&mut stanza_leading),
+                    pairs: std::mem::take(&mut stanza_pairs),
                 });
             }
             continue;
+        }
+        if stanza.lines.is_empty() {
+            stanza_leading.append(&mut leading);
         }
         stanza_start.get_or_insert(line_at);
         stanza_end = cur.pos;
@@ -748,7 +867,22 @@ pub(in crate::parse) fn parse_line_block(cur: &mut LineCursor, options: &Options
             end_cols: stanza_end_cols,
             start_cols: stanza_start_cols,
             comments: stanza_comments,
+            leading: stanza_leading,
+            pairs: stanza_pairs,
         });
+    }
+    // Pairs after the last verse line stay with it; with no verse line at all
+    // they are the block's only children.
+    let mut orphan_pairs = Vec::new();
+    if !leading.is_empty() {
+        match stanzas.last_mut() {
+            Some(last) => {
+                let at = last.lines.lines.len() - 1;
+                last.pairs
+                    .extend(leading.into_iter().map(|comment| (at, comment)));
+            }
+            None => orphan_pairs = leading,
+        }
     }
 
     let children = stanzas
@@ -761,6 +895,8 @@ pub(in crate::parse) fn parse_line_block(cur: &mut LineCursor, options: &Options
                  end_cols,
                  start_cols,
                  comments,
+                 leading,
+                 pairs,
              }| {
                 let source_line = lines.lines.first().and_then(|line| line.source_line());
                 let anchors: Vec<Option<(usize, isize)>> = if options.positions {
@@ -803,7 +939,11 @@ pub(in crate::parse) fn parse_line_block(cur: &mut LineCursor, options: &Options
                     &emptied,
                     options,
                 );
-                let inlines = splice_verse_comments(inlines, comments);
+                let mut inlines =
+                    splice_verse_comments(inlines, comments, pairs, lines.lines.len() - 1);
+                if !leading.is_empty() {
+                    inlines.splice(0..0, leading.into_iter().map(InlineNode::Comment));
+                }
                 let mut at = at;
                 if let (Some(pos), Some(Some((_, column)))) = (&mut at, anchors.first()) {
                     pos.start_column = document_column(*column, 0);
@@ -822,6 +962,7 @@ pub(in crate::parse) fn parse_line_block(cur: &mut LineCursor, options: &Options
                 node
             },
         )
+        .chain(orphan_pairs.into_iter().map(BlockNode::Comment))
         .collect();
 
     // No inline opener attributes (strict djot); a preceding block-attribute

@@ -39,6 +39,9 @@ struct CarveContext {
     /// Depth of line-block nesting, so the inline writer drops the explicit
     /// backslash: inside a `::: |` fence every newline already IS a hard break.
     line_block_depth: usize,
+    /// The shortest `%%%` fence a block comment may take in the line block
+    /// being written: longer than any `%%%...` comment line there.
+    verse_comment_fence: usize,
     rendered_verbatim_tail: bool,
     colon_fence_depth: usize,
     /// Remains set when a nested list resets colon fence spelling depth.
@@ -686,6 +689,7 @@ fn render_with_escapes_once(
         list_depth: 0,
         quote_depth: 0,
         line_block_depth: 0,
+        verse_comment_fence: 3,
         rendered_verbatim_tail: false,
         colon_fence_depth: 0,
         indented_host_depth: 0,
@@ -2576,11 +2580,7 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
             // Inside the fence every newline IS a hard break (PART 3,
             // line_block_body), so the explicit backslash the inline writer
             // emits for a HardBreak would double it on re-parse.
-            ctx.line_block_depth += 1;
-            let fence = colon_fence_for(ctx);
-            let body = render_inside_colon_container(session, &lb.children, ctx);
-            ctx.line_block_depth -= 1;
-            with_block_attrs(&lb.attrs, &format!("{fence} |\n{body}\n{fence}"))
+            render_line_block(session, lb, ctx)
         }
         BlockNode::Div(div) => {
             let label = div
@@ -3300,7 +3300,12 @@ fn render_nodes_with_verbatim(
         // back as `{,y,}%% c`, and re-parsing carve-rs's own output turned the
         // comment into literal text. PART 11 section 1a states the test: read
         // the bytes the writer just produced, not the source it came from.
-        if matches!(node, InlineNode::Comment(c) if !c.delimited) && needs_comment_space(&out) {
+        let verse_pair = ctx.line_block_depth > 0
+            && matches!(node, InlineNode::Comment(c) if c.block && !c.delimited);
+        if !verse_pair
+            && matches!(node, InlineNode::Comment(c) if !c.delimited)
+            && needs_comment_space(&out)
+        {
             out.push(' ');
         }
         // PART 11 §7c, stated as the PROPERTY it rests on: a `hard_break` in a
@@ -3312,6 +3317,23 @@ fn render_nodes_with_verbatim(
         // list to check - the clause WAS a list, and the case it did not reach
         // is the first one under it.
         let mut rendered = rendered;
+        // A closed `%%%` pair in verse stands on lines of its own (CARVE-P9-047).
+        let pair_opened_line = verse_pair && (out.is_empty() || out.ends_with('\n'));
+        if let (true, InlineNode::Comment(c)) = (verse_pair, node) {
+            let next = nodes.get(idx + 1);
+            rendered = format!(
+                "{}{}{}",
+                if pair_opened_line { "" } else { "\n" },
+                render_block_comment_min(session, &c.content, ctx.verse_comment_fence),
+                if next.is_some_and(
+                    |next| pair_opened_line || !matches!(next, InlineNode::HardBreak(_))
+                ) {
+                    "\n"
+                } else {
+                    ""
+                }
+            );
+        }
         // At a line start a joined `%%%` would open a comment fence, so a
         // comment folded into a term keeps its separator there (carve#2411).
         if let InlineNode::Comment(c) = node {
@@ -3347,7 +3369,15 @@ fn render_nodes_with_verbatim(
             // sequence, and `inline_depth == 1` keeps it to that sequence: a
             // break that merely ends the children of an emphasis has content
             // after it on the same line.
-            let ends_the_stanza = ctx.inline_depth == 1 && idx + 1 == nodes.len();
+            // `%%%` pairs after the stanza's last line leave this break the last one.
+            let trailing_pairs = nodes
+                .iter()
+                .rev()
+                .take_while(
+                    |node| matches!(node, InlineNode::Comment(c) if c.block && !c.delimited),
+                )
+                .count();
+            let ends_the_stanza = ctx.inline_depth == 1 && idx + 1 + trailing_pairs == nodes.len();
             // A LINE WHOSE LAST NODE IS A COMMENT IS EXEMPT, and the exemption
             // is keyed on the NODE rather than on the line's position. The
             // marker runs to the END of its line, so a trailing space there is
@@ -3355,9 +3385,11 @@ fn render_nodes_with_verbatim(
             // backslash written to protect it lands in the note's own content,
             // because the block layer claims the whole line before the inline
             // parser sees it. An EMPTY comment line is where this bites.
-            let inside_a_comment = idx
-                .checked_sub(1)
-                .is_some_and(|prev| matches!(&nodes[prev], InlineNode::Comment(c) if !c.delimited));
+            // A break after a `%%%` pair that opened its line is that line's own.
+            let inside_a_comment = idx.checked_sub(1).is_some_and(|prev| {
+                matches!(&nodes[prev], InlineNode::Comment(c) if !c.delimited
+                    && !(c.block && out.ends_with('\n')))
+            });
             if !inside_a_comment && (ends_the_stanza || verse_break_needs_backslash(session, &out))
             {
                 out.push('\\');
@@ -4637,7 +4669,51 @@ fn pad_delimited(content: &str) -> String {
     }
 }
 
+#[inline(never)]
+fn render_line_block(session: &RenderSession, lb: &LineBlock, ctx: &mut CarveContext) -> String {
+    ctx.line_block_depth += 1;
+    let outer_fence = ctx.verse_comment_fence;
+    ctx.verse_comment_fence = verse_comment_fence(&lb.children);
+    let fence = colon_fence_for(ctx);
+    let body = render_inside_colon_container(session, &lb.children, ctx);
+    ctx.verse_comment_fence = outer_fence;
+    ctx.line_block_depth -= 1;
+    with_block_attrs(&lb.attrs, &format!("{fence} |\n{body}\n{fence}"))
+}
+
+/// The fence a `%%%` pair in this line block needs so that no comment line
+/// spelled `%%%...` there pairs with it.
+fn verse_comment_fence(blocks: &[BlockNode]) -> usize {
+    fn walk(nodes: &[InlineNode], fence: &mut usize) {
+        for node in nodes {
+            match node {
+                InlineNode::Comment(c) if !c.block && !c.delimited => {
+                    let run = 2 + c.content.chars().take_while(|&ch| ch == '%').count();
+                    if run >= 3 {
+                        *fence = (*fence).max(run + 1);
+                    }
+                }
+                InlineNode::Emphasis(n) => walk(&n.children, fence),
+                InlineNode::Link(n) => walk(&n.children, fence),
+                InlineNode::Span(n) => walk(&n.children, fence),
+                _ => {}
+            }
+        }
+    }
+    let mut fence = 3;
+    for block in blocks {
+        if let BlockNode::Paragraph(p) = block {
+            walk(&p.children, &mut fence);
+        }
+    }
+    fence
+}
+
 fn render_block_comment(session: &RenderSession, content: &str) -> String {
+    render_block_comment_min(session, content, 3)
+}
+
+fn render_block_comment_min(session: &RenderSession, content: &str, shortest: usize) -> String {
     let mut longest = 0usize;
     let mut current = 0usize;
     for ch in content.chars() {
@@ -4648,7 +4724,7 @@ fn render_block_comment(session: &RenderSession, content: &str) -> String {
             current = 0;
         }
     }
-    let fence = "%".repeat(3.max(longest + 1));
+    let fence = "%".repeat(shortest.max(longest + 1));
     format!("{fence}\n{}\n{fence}", protect_verbatim(session, content))
 }
 

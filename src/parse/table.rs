@@ -473,6 +473,7 @@ pub(in crate::parse) struct CellInput {
     anchor: Option<(usize, isize)>,
     extra: Vec<CellFragment>,
     alone_pos: Option<Pos>,
+    appended: Option<CellWrap>,
 }
 
 pub(in crate::parse) fn reparse_table_cell(
@@ -480,7 +481,10 @@ pub(in crate::parse) fn reparse_table_cell(
     input: &CellInput,
     options: &Options<'_>,
 ) {
-    let fresh = parse_table_cell(&input.text, options, input.anchor, &input.extra);
+    let mut fresh = parse_table_cell(&input.text, options, input.anchor, &input.extra);
+    if let Some(wrap) = &input.appended {
+        lead_with_append_wrap(&mut fresh.children, wrap.clone());
+    }
     cell.children = fresh.children;
     cell.blocks = fresh.blocks;
     cell.pos = if input.extra.is_empty() {
@@ -573,9 +577,11 @@ pub(in crate::parse) fn parse_table_row(
     let split = split_table_cells_ranged(content);
     let mut fragments: Vec<Vec<CellFragment>> =
         (0..split.cells.len()).map(|_| Vec::new()).collect();
-    collect_continuation_fragments(conts, &split, &mut fragments);
-    let mut inputs = Vec::with_capacity(split.cells.len());
-    let cells = split
+    let appended = collect_continuation_fragments(conts, &split, &mut fragments);
+    let own_cells = split.cells.len();
+    let mut appended_extra = fragments.split_off(own_cells);
+    let mut inputs = Vec::with_capacity(fragments.len() + appended_extra.len());
+    let mut cells: Vec<TableCell> = split
         .cells
         .into_iter()
         .zip(fragments)
@@ -616,10 +622,27 @@ pub(in crate::parse) fn parse_table_row(
                 anchor: cell_anchor,
                 extra,
                 alone_pos,
+                appended: None,
             });
             cell
         })
         .collect();
+    // T6: a slot past the row line's cells is a new cell of this row. It is a
+    // header cell when every other cell is, and its fragment is never a span marker.
+    let header = !cells.is_empty() && cells.iter().all(|cell| cell.header);
+    for (extra, wrap) in appended_extra.drain(..).zip(appended) {
+        let mut cell = parse_table_cell("", options, None, &extra);
+        cell.header = header;
+        lead_with_append_wrap(&mut cell.children, wrap.clone());
+        cells.push(cell);
+        inputs.push(CellInput {
+            text: String::new(),
+            anchor: None,
+            extra,
+            alone_pos: None,
+            appended: Some(wrap),
+        });
+    }
     (
         TableRow {
             cells,
@@ -652,8 +675,9 @@ pub(in crate::parse) fn char_offset_of(whole: &str, part: &str) -> usize {
 pub(in crate::parse) fn collect_continuation_fragments(
     conts: &[(&str, Option<(usize, isize)>)],
     row: &RowSplit,
-    fragments: &mut [Vec<CellFragment>],
-) {
+    fragments: &mut Vec<Vec<CellFragment>>,
+) -> Vec<CellWrap> {
+    let mut appended = Vec::new();
     // The run's WIDTH travels with it, not just the fact that one is open: a
     // run closes on a run of exactly its own length, on the continuation row as
     // much as on the row that opened it (carve-rs#1051).
@@ -699,6 +723,32 @@ pub(in crate::parse) fn collect_continuation_fragments(
                 }
                 _ => None,
             };
+            // A fragment past the last column appends a cell, and a skipped
+            // column an empty one, each led by the wrap of this line at the
+            // pipe that opens its slot (T6, CARVE-P12-069).
+            while fragments.len() <= idx {
+                let slot = fragments.len();
+                let pipe = split.cells.get(slot).map_or(0, |cell| cell.start);
+                appended.push(CellWrap {
+                    line: line_index + 1,
+                    row: None,
+                    col: None,
+                    pos: base
+                        .zip(content_off)
+                        .and_then(|((line_no, stripped), off)| {
+                            (pipe > 0).then(|| Pos {
+                                start_line: line_no,
+                                end_line: line_no,
+                                start_column: document_column(stripped, off + pipe - 1),
+                                end_column: document_column(stripped, off + pipe),
+                                start_offset: 0,
+                                end_offset: 0,
+                                file: None,
+                            })
+                        }),
+                });
+                fragments.push(Vec::new());
+            }
             if let Some(slot) = fragments.get_mut(idx) {
                 let separator_pos = if idx > 0 {
                     base.zip(content_off).map(|((line_no, stripped), off)| Pos {
@@ -724,6 +774,17 @@ pub(in crate::parse) fn collect_continuation_fragments(
                 });
             }
         }
+    }
+    appended
+}
+
+/// Put the wrap of the line that appended a cell first, in place of a leading
+/// wrap of the same line that only marked its first fragment.
+pub(in crate::parse) fn lead_with_append_wrap(children: &mut Vec<InlineNode>, wrap: CellWrap) {
+    if matches!(children.first(), Some(InlineNode::CellWrap(first)) if first.line == wrap.line) {
+        children[0] = InlineNode::CellWrap(wrap);
+    } else {
+        children.insert(0, InlineNode::CellWrap(wrap));
     }
 }
 

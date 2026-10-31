@@ -84,7 +84,7 @@ fn ownership_discovery_does_not_parse_verse_inlines_twice() {
 
 #[test]
 fn indented_comment_closer_in_verse() {
-    assert_eq!(carve::to_html("::: |\n%%%\n:::\n  %%%\nkept\n:::\n\n[r]: /url\n\n[t][r]\n"), "<div class=\"line-block\">\n  <p><br>\n:::<br>\n&nbsp;&nbsp;%%%<br>\nkept</p>\n</div>\n<p><a href=\"/url\">t</a></p>");
+    assert_eq!(carve::to_html("::: |\n%%%\n:::\n  %%%\nkept\n:::\n\n[r]: /url\n\n[t][r]\n"), "<div class=\"line-block\">\n  <p>kept</p>\n</div>\n<p><a href=\"/url\">t</a></p>");
 }
 
 #[test]

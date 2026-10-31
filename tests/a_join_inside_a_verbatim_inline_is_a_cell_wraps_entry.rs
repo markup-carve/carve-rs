@@ -68,10 +68,10 @@ fn the_acceptance_rows_match_and_write_back() {
 fn each_remainder_goes_on_the_plus_line_its_entry_names() {
     for (source, written) in [
         ("| `a |\n+ |\n+ b` |\n", "| `a |\n+ |\n+ b` |\n"),
-        ("| $`a | z |\n+ b` | w |\n", "| $`a | z |\n+ b` |\n"),
+        ("| $`a | z |\n+ b` | w |\n", "| $`a | z |\n+ b` | w |\n"),
         (
             "| `<b | z |\n+ c>`{=html} | w |\n",
-            "| `<b | z |\n+ c>`{=html} |\n",
+            "| `<b | z |\n+ c>`{=html} | w |\n",
         ),
     ] {
         assert_eq!(carve::to_carve(source), written, "{source:?}");

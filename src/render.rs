@@ -1430,6 +1430,18 @@ fn render_list(
         !l.ordered && !l.items.is_empty() && l.items.iter().all(|item| item.checked.is_some());
     // A carrier owns its name, so an authored copy does not reach the element.
     let mut owned: Vec<&str> = Vec::new();
+    // A derived `type`, `start` or `data-delim` wins over an authored copy (PART 10 R1).
+    if l.ordered {
+        if l.ol_type.is_some() {
+            owned.push("type");
+        }
+        if l.start.is_some_and(|start| start != 1) {
+            owned.push("start");
+        }
+        if l.delim == Some(')') {
+            owned.push("data-delim");
+        }
+    }
     if bullet_carrier.is_some() {
         owned.push(crate::roundtrip::MARKER);
     }
@@ -2103,7 +2115,10 @@ fn render_table_row(
             extra.push_str(&format!(" colspan=\"{}\"", entry.colspan));
             emitted.push("colspan");
         }
-        let style = table_cell_style(cell, col, row_align(row, col), defaults);
+        let (cell_attrs, style) = merge_cell_style(
+            &cell.attrs,
+            table_cell_style(cell, col, row_align(row, col), defaults),
+        );
         if !style.is_empty() {
             emitted.push("style");
         }
@@ -2111,7 +2126,7 @@ fn render_table_row(
         out.push_str(tag);
         out.push_str(&cell_scope_attr(cell, tag == "th", in_head));
         out.push_str(&extra);
-        out.push_str(&render_cell_author_attrs(&cell.attrs, &emitted));
+        out.push_str(&render_cell_author_attrs(&cell_attrs, &emitted));
         out.push_str(&style);
         out.push('>');
         if let Some(blocks) = &cell.blocks {
@@ -2167,11 +2182,14 @@ fn render_table_body_row(
             attrs.push_str(&format!(" colspan=\"{}\"", entry.colspan));
             emitted.push("colspan");
         }
-        let style = table_cell_style(
-            cell,
-            cell_index,
-            table_column_align(ctx.defaults, cell_index),
-            ctx.defaults,
+        let (cell_attrs, style) = merge_cell_style(
+            &cell.attrs,
+            table_cell_style(
+                cell,
+                cell_index,
+                table_column_align(ctx.defaults, cell_index),
+                ctx.defaults,
+            ),
         );
         if !style.is_empty() {
             emitted.push("style");
@@ -2183,7 +2201,7 @@ fn render_table_body_row(
         // Below the header run, so a header cell here heads its ROW.
         out.push_str(&cell_scope_attr(cell, is_header, false));
         out.push_str(&attrs);
-        out.push_str(&render_cell_author_attrs(&cell.attrs, &emitted));
+        out.push_str(&render_cell_author_attrs(&cell_attrs, &emitted));
         out.push_str(&style);
         out.push('>');
         if let Some(blocks) = &cell.blocks {
@@ -2336,6 +2354,31 @@ fn cell_scope_attr(cell: &TableCell, is_header_cell: bool, in_header_run: bool) 
     }
 
     format!(" scope=\"{}\"", if in_header_run { "col" } else { "row" })
+}
+
+/// An authored `style` keeps its slot and takes the cell's alignment
+/// declarations, as on a text block (PART 10 R1).
+fn merge_cell_style(attrs: &Option<Attrs>, style: String) -> (Option<Attrs>, String) {
+    let Some(key) = attrs.as_ref().and_then(|a| {
+        a.key_values
+            .keys()
+            .find(|key| key.eq_ignore_ascii_case("style"))
+            .cloned()
+    }) else {
+        return (attrs.clone(), style);
+    };
+    let Some(declarations) = style
+        .strip_prefix(" style=\"")
+        .and_then(|rest| rest.strip_suffix('"'))
+    else {
+        return (attrs.clone(), style);
+    };
+    let mut merged = attrs.clone();
+    if let Some(a) = &mut merged {
+        let value = append_declaration(&a.key_values[&key], declarations);
+        a.key_values.insert(key, value);
+    }
+    (merged, String::new())
 }
 
 fn render_cell_author_attrs(attrs: &Option<Attrs>, emitted: &[&str]) -> String {
@@ -2544,11 +2587,8 @@ fn render_line_block(
     options: &Options<'_>,
     state: &mut RenderState,
 ) {
-    let mut attrs = lb.attrs.clone().unwrap_or_default();
-    attrs.classes.push("line-block".to_string());
-    if !attrs.order.contains(&AttrSlot::Class) {
-        attrs.order.push(AttrSlot::Class);
-    }
+    let mut authored = render_attrs_for(&lb.attrs, "div");
+    append_class_token(&mut authored, "line-block");
 
     indent(out, level);
     // PART 10 §13a: the class alone also names a `line-block` admonition.
@@ -2557,12 +2597,34 @@ fn render_line_block(
     } else {
         String::new()
     };
-    out.push_str(&format!(
-        "<div{carrier}{}>",
-        render_attrs_for(&Some(attrs), "div")
-    ));
+    out.push_str(&format!("<div{carrier}{authored}>"));
     let visible = render_children(out, &lb.children, level + 1, options, state);
     close_block_container(out, level, "div", visible);
+}
+
+/// Append a structural class to the folded attribute run, after every
+/// authored class whatever its spelling, or as a trailing `class` attribute.
+fn append_class_token(attrs: &mut String, token: &str) {
+    let mut at = 0;
+    while let Some(tail) = attrs[at..].strip_prefix(' ') {
+        let name_end = tail.find(['=', ' ']).unwrap_or(tail.len());
+        let value_start = at + 1 + name_end + 2;
+        let Some(close) = tail[name_end..]
+            .strip_prefix("=\"")
+            .and_then(|value| value.find('"'))
+        else {
+            at += 1 + name_end;
+            continue;
+        };
+        if tail[..name_end].eq_ignore_ascii_case("class") {
+            let end = value_start + close;
+            let joiner = if close == 0 { "" } else { " " };
+            attrs.insert_str(end, &format!("{joiner}{}", escape_attr(token)));
+            return;
+        }
+        at = value_start + close + 1;
+    }
+    attrs.push_str(&format!(" class=\"{}\"", escape_attr(token)));
 }
 
 fn close_block_container(out: &mut String, level: usize, tag: &str, has_visible_body: bool) {
@@ -2894,9 +2956,9 @@ fn render_image(
     // PART 10 §13a: the reference label the image resolved by. HTML spells only
     // the resolved `src`, so without this a `![alt][lbl]` comes back inlined.
     let mut blocked: Vec<&str> = if img.title.is_some() {
-        vec!["src", "title"]
+        vec!["src", "alt", "title"]
     } else {
-        vec!["src"]
+        vec!["src", "alt"]
     };
     if options.html_carriers() {
         if let Some(label) = &img.ref_label {
@@ -3006,6 +3068,90 @@ fn write_attr_key_value(out: &mut String, key: &str, value: &str) {
 }
 
 fn write_attrs(out: &mut String, attrs: &Option<Attrs>) {
+    let start = out.len();
+    write_attrs_unfolded(out, attrs);
+    fold_attr_names_from(out, start);
+}
+
+/// HTML attribute names compare ASCII case-insensitively in every merge: one
+/// attribute per name, at the first occurrence's position and spelling, with
+/// the last value; `class` values join (PART 10 §1).
+pub(crate) fn fold_attr_names_from(out: &mut String, start: usize) {
+    let segment = &out[start..];
+    let mut attrs: Vec<(&str, Option<&str>)> = Vec::new();
+    let mut rest = segment;
+    while let Some(tail) = rest.strip_prefix(' ') {
+        let name_end = tail.find(['=', ' ']).unwrap_or(tail.len());
+        let name = &tail[..name_end];
+        let after = &tail[name_end..];
+        match after.strip_prefix("=\"") {
+            Some(value_tail) => {
+                let Some(close) = value_tail.find('"') else {
+                    return;
+                };
+                attrs.push((name, Some(&value_tail[..close])));
+                rest = &value_tail[close + 1..];
+            }
+            None => {
+                attrs.push((name, None));
+                rest = after;
+            }
+        }
+    }
+    if !rest.is_empty() || attrs.is_empty() {
+        return;
+    }
+    let duplicated = attrs.iter().enumerate().any(|(i, (name, _))| {
+        attrs[..i]
+            .iter()
+            .any(|(earlier, _)| earlier.eq_ignore_ascii_case(name))
+    });
+    if !duplicated {
+        return;
+    }
+    let mut merged: Vec<(&str, Option<String>)> = Vec::new();
+    for (name, value) in attrs {
+        let Some(slot) = merged
+            .iter_mut()
+            .find(|(earlier, _)| earlier.eq_ignore_ascii_case(name))
+        else {
+            merged.push((name, value.map(str::to_string)));
+            continue;
+        };
+        if name.eq_ignore_ascii_case("class") {
+            let mut tokens: Vec<String> = slot
+                .1
+                .as_deref()
+                .unwrap_or_default()
+                .split(' ')
+                .filter(|token| !token.is_empty())
+                .map(str::to_string)
+                .collect();
+            for token in value.unwrap_or_default().split(' ') {
+                if !token.is_empty() && !tokens.iter().any(|t| t == token) {
+                    tokens.push(token.to_string());
+                }
+            }
+            slot.1 = Some(tokens.join(" "));
+        } else {
+            slot.1 = value.map(str::to_string);
+        }
+    }
+    let mut folded = String::with_capacity(segment.len());
+    for (name, value) in merged {
+        folded.push(' ');
+        folded.push_str(name);
+        if let Some(value) = value {
+            folded.push_str("=\"");
+            folded.push_str(&value);
+            folded.push('"');
+        }
+    }
+    out.truncate(start);
+    out.push_str(&folded);
+}
+
+fn write_attrs_unfolded(out: &mut String, attrs: &Option<Attrs>) {
     let Some(attrs) = attrs else {
         return;
     };
@@ -3282,6 +3428,12 @@ pub(crate) fn render_attrs_without_keys(attrs: &Option<Attrs>, blocked: &[&str])
 /// so the base class leads - which is what carve-js does for `{#copy}` and
 /// `{k=v}` alike.
 pub(crate) fn render_attrs_with_base_class(attrs: &Option<Attrs>, base: &str) -> String {
+    let mut out = render_attrs_with_base_class_unfolded(attrs, base);
+    fold_attr_names_from(&mut out, 0);
+    out
+}
+
+fn render_attrs_with_base_class_unfolded(attrs: &Option<Attrs>, base: &str) -> String {
     let Some(attrs) = attrs else {
         return format!(" class=\"{}\"", escape_attr(base));
     };
@@ -3349,6 +3501,12 @@ pub(crate) fn render_attrs_with_base_class(attrs: &Option<Attrs>, base: &str) ->
 }
 
 pub(crate) fn render_attrs_after_class(attrs: &Attrs) -> String {
+    let mut out = render_attrs_after_class_unfolded(attrs);
+    fold_attr_names_from(&mut out, 0);
+    out
+}
+
+fn render_attrs_after_class_unfolded(attrs: &Attrs) -> String {
     let mut out = String::new();
     if attrs.order.is_empty() {
         if let Some(id) = &attrs.id {
