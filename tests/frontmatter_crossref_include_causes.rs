@@ -12,7 +12,11 @@ fn html(source: &str) -> String {
 #[test]
 fn an_indented_delimiter_neither_opens_nor_closes_frontmatter() {
     let expected = "<hr>\n<p>a</p>\n<hr>\n<p>x</p>";
-    for source in [" ---\na\n---\nx\n", "---\na\n ---\nx\n", "   ---\na\n   ---\nx\n"] {
+    for source in [
+        " ---\na\n---\nx\n",
+        "---\na\n ---\nx\n",
+        "   ---\na\n   ---\nx\n",
+    ] {
         assert_eq!(html(source), expected, "{source:?}");
     }
     assert_eq!(html("---\na: 1\n---\nx\n"), "<p>x</p>");
@@ -39,7 +43,10 @@ fn a_duplicate_explicit_heading_id_resolves_to_the_first() {
 
 #[test]
 fn a_malformed_code_language_is_literal_inside_a_paragraph() {
-    assert_eq!(html("x {{ a @code:a,b }} y\n"), "<p>x {{ a @code:a,b }} y</p>");
+    assert_eq!(
+        html("x {{ a @code:a,b }} y\n"),
+        "<p>x {{ a @code:a,b }} y</p>"
+    );
     assert_eq!(
         html("> x {{ _a_ @code:a,b }} y\n"),
         "<blockquote><p>x {{ _a_ @code:a,b }} y</p></blockquote>"
