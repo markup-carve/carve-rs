@@ -2,6 +2,14 @@
   "comment": "Conformance pack cases this engine renders differently from the spec model, one entry per cause with its open ticket. See tests/conformance_pack.rs.",
   "entries": [
     {
+      "ticket": "markup-carve/carve#4610",
+      "cause": "a tab after a list separator stays content under the ruling merged after the 5643d59c pack pin",
+      "cases": [
+        "fences-beb7a2645809",
+        "notes-d0f399e3e8f0"
+      ]
+    },
+    {
       "ticket": "markup-carve/carve#4369",
       "cause": "own-content-column ruling merged after the 5643d59c pack pin",
       "cases": [

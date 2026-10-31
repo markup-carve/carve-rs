@@ -389,12 +389,14 @@ pub(crate) fn marker_content_col(line: &str) -> Option<usize> {
 /// `marker_content_col` for a caller holding the line's indentation already.
 pub(crate) fn marker_content_col_at(line: &str, indent: usize) -> Option<usize> {
     let m = detect_list_marker_full_at(line, indent)?;
+    if m.checked.is_some() {
+        return Some(m.indent + 2);
+    }
     let content_off = (m.content.as_ptr() as usize).saturating_sub(line.as_ptr() as usize);
     let column = indent
         + content_off
             .saturating_sub(leading_ws(line))
-            .saturating_sub(marker_attrs_width(line, &m))
-            .saturating_sub(if m.checked.is_some() { 4 } else { 0 });
+            .saturating_sub(marker_attrs_width(line, &m));
     Some(column)
 }
 
