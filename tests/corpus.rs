@@ -1292,11 +1292,78 @@ fn expected_corpus_size() -> usize {
 /// Empty is the normal end state: the pin catching up is what retires an entry,
 /// and the `assert_ne!` in `check_pair` is what forces the deletion rather than
 /// leaving a declaration that no longer declares anything.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[(
-    "518-a-trailing-comment-takes-a-tab-a-run-start-and-its-whole-separator-8",
-    "carve#4559: a caption line holding only a comment makes no caption",
-    "<p><img src=\"u\" alt=\"alt\">\n^</p>",
-)];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
+    (
+        "518-a-trailing-comment-takes-a-tab-a-run-start-and-its-whole-separator-8",
+        "carve#4559: a caption line holding only a comment makes no caption",
+        "<p><img src=\"u\" alt=\"alt\">\n^</p>",
+    ),
+    (
+        "684-a-post-marker-tab-keeps-a-quote-literal",
+        "carve#4610: a tab after the list separator stays content at the marker content column",
+        "<ul>\n  <li>\t&gt; a</li>\n</ul>",
+    ),
+    (
+        "736-model-syntax-boundaries-and-ownership-4",
+        "carve#4610: a tab after the list separator stays content at the marker content column",
+        "<ul>\n  <li>\t- B</li>\n</ul>",
+    ),
+    (
+        "788-whitespace-after-a-leading-content-tab-is-not-content",
+        "carve#4610: a tab after the list separator stays content at the marker content column",
+        "<ul>\n  <li>\t e</li>\n</ul>",
+    ),
+    (
+        "788-whitespace-after-a-leading-content-tab-is-not-content-2",
+        "carve#4610: a tab after the list separator stays content at the marker content column",
+        "<ol>\n  <li>\t  <strong>a</strong>\nb</li>\n</ol>",
+    ),
+    (
+        "788-whitespace-after-a-leading-content-tab-is-not-content-3",
+        "carve#4610: a tab after the list separator stays content at the marker content column",
+        "<blockquote>\n  <ul>\n    <li>\t - x</li>\n  </ul>\n</blockquote>",
+    ),
+    (
+        "840-content-behind-a-lead-tab-offers-no-first-block",
+        "carve#4610: a tab after the list separator stays content at the marker content column",
+        "<ul>\n  <li>\n    <ul>\n      <li>\t+\nx</li>\n    </ul>\n  </li>\n</ul>",
+    ),
+    (
+        "840-content-behind-a-lead-tab-offers-no-first-block-2",
+        "carve#4610: a tab after the list separator stays content at the marker content column",
+        "<ul>\n  <li>\n    <ul>\n      <li>\t+\nx</li>\n    </ul>\n  </li>\n</ul>",
+    ),
+    (
+        "840-content-behind-a-lead-tab-offers-no-first-block-3",
+        "carve#4610: a tab after the list separator stays content at the marker content column",
+        "<ul>\n  <li>\t+</li>\n</ul>\n<blockquote>\n\n</blockquote>",
+    ),
+    (
+        "840-content-behind-a-lead-tab-offers-no-first-block-4",
+        "carve#4610: a tab after the list separator stays content at the marker content column",
+        "<blockquote>\n  <ul>\n    <li>\t- +\nx</li>\n  </ul>\n</blockquote>",
+    ),
+    (
+        "840-content-behind-a-lead-tab-offers-no-first-block-5",
+        "carve#4610: a tab after the list separator stays content at the marker content column",
+        "<ul>\n  <li>\t&gt; +\nx</li>\n</ul>",
+    ),
+    (
+        "853-a-whitespace-run-after-a-tab-sets-the-content-column-where-the-content-starts",
+        "carve#4610: a tab after the list separator stays content at the marker content column",
+        "<ul>\n  <li><p>\t e</p>\n    <p>f</p>\n  </li>\n</ul>",
+    ),
+    (
+        "853-a-whitespace-run-after-a-tab-sets-the-content-column-where-the-content-starts-3",
+        "carve#4610: a tab after the list separator stays content at the marker content column",
+        "<ul>\n  <li>\te\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ul>",
+    ),
+    (
+        "864-a-leading-content-tab-sets-the-item-s-content-column-where-the-content-starts",
+        "carve#4610: a tab after the list separator stays content at the marker content column",
+        "<ul>\n  <li><p>\te</p>\n    <p>f</p>\n  </li>\n</ul>",
+    ),
+];
 
 /// Pairs this engine renders differently from the pinned corpus because it has
 /// not reached the rule yet - the mirror of [`AHEAD_OF_PIN`].

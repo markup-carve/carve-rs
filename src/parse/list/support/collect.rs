@@ -197,7 +197,12 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let attribute_column = marker_lead
         .as_ref()
         .filter(|marker| marker.checked.is_some())
-        .map_or(strip_cols, |marker| marker.indent + 2);
+        .and_then(|_| {
+            cur.pos
+                .checked_sub(1)
+                .and_then(|at| marker_content_col(cur.lines.at(at)))
+        })
+        .unwrap_or(strip_cols);
     let marker_content = marker_lead.map(|marker| marker.content);
     let mut table_seen = marker_content.is_some_and(is_table_start);
     let mut table_caption_open = false;
@@ -298,12 +303,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         let mut lead = cur.lines.at(previous);
         let mut offset = 0;
         while let Some(marker) = detect_list_marker_full_at(lead, indent_columns(lead)) {
-            // A task checkbox is content; its fence starts after the bullet.
-            let width = if marker.checked.is_some() {
-                marker.indent + 2
-            } else {
-                (marker.content.as_ptr() as usize).saturating_sub(lead.as_ptr() as usize)
-            };
+            // A task checkbox is content; its marker column stops before the box.
+            let width = marker_content_col(lead).unwrap_or(marker.indent + 2);
             let column = offset + width;
             if column > strip_cols {
                 marker_line_columns.push(column);

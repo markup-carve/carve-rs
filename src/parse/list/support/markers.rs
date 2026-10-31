@@ -378,7 +378,7 @@ pub(crate) fn marker_attrs_width(line: &str, marker: &ListMarker<'_>) -> usize {
 /// Visual column (tab-aware) at which a list ITEM's continuation content begins,
 /// mirroring `parse_list` exactly: for ordered/unordered it is where the marker
 /// content begins (`- ` -> 2, `1. ` -> 3, `10. ` -> 4); for a TASK the checkbox
-/// counts as content, not marker, so the column is the bullet width (`- ` -> 2)
+/// counts as content, not marker, so the column stops before its box.
 /// An abutting attribute block is item metadata and contributes zero
 /// (`-{#k} [x] ` -> 2, markup-carve/carve#1701).
 /// Returns `None` when `line` is not a list marker.
@@ -397,25 +397,7 @@ pub(crate) fn marker_content_col_at(line: &str, indent: usize) -> Option<usize> 
         + content_off
             .saturating_sub(leading_ws(line))
             .saturating_sub(marker_attrs_width(line, &m));
-    Some(past_lead_tab_run(m.content, column, m.indent))
-}
-
-/// CARVE-P2-010: a tab that begins an item's content is leading whitespace, so
-/// the content column is where the content starts. Tab stops count from
-/// `origin`, the column the marker's own frame starts at (PART 9 §24 C5).
-pub(crate) fn past_lead_tab_run(content: &str, column: usize, origin: usize) -> usize {
-    if !content.starts_with('\t') || content[1..].starts_with("%%%") {
-        return column;
-    }
-    let mut end = column;
-    for b in content.bytes() {
-        match b {
-            b' ' => end += 1,
-            b'\t' => end = origin + ((end - origin) / 4 + 1) * 4,
-            _ => break,
-        }
-    }
-    end
+    Some(column)
 }
 
 /// The content column a definition body marker opens, or `None` when the line

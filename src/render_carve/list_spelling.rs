@@ -191,6 +191,17 @@ pub(super) fn spell_list_item(
     source
 }
 
+/// A tab immediately after a list separator is content (CARVE-P2-010).
+/// Keep it when trimming the wrapper whitespace around a rendered item.
+fn trim_list_content(text: &str) -> String {
+    let content = trim_end_non_nbsp(text).trim_start_matches([' ', '\n', '\r']);
+    if content.starts_with('\t') {
+        content.to_string()
+    } else {
+        trim_non_nbsp(text).to_string()
+    }
+}
+
 pub(super) fn relative_item_content(
     session: &RenderSession,
     content: &str,
@@ -379,7 +390,7 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
             content = "{empty}".to_string();
         }
         let raw_content = content;
-        let mut content = trim_non_nbsp(&raw_content).to_string();
+        let mut content = trim_list_content(&raw_content);
         let mut item_source = spell_list_item(session, &prefix, &content, continuation_width);
         let nested_tightness_loss =
             node.tight && ctx.list_depth > 1 && nested_tight_item_loses_tightness(item);
@@ -417,7 +428,7 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
             )
         {
             let relative = relative_item_content(session, &raw_content, &relative_boundaries);
-            let relative = trim_non_nbsp(&relative).to_string();
+            let relative = trim_list_content(&relative);
             let relative_source = spell_list_item(session, &prefix, &relative, continuation_width);
             if !nested_tightness_loss
                 && !relative_boundaries.is_empty()
@@ -450,7 +461,7 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
                 if trim_non_nbsp(&content).is_empty() {
                     content = "{empty}".to_string();
                 }
-                content = trim_non_nbsp(&content).to_string();
+                content = trim_list_content(&content);
                 item_source = spell_list_item(session, &prefix, &content, continuation_width);
                 if ctx.list_depth >= crate::parse::MAX_NESTING_DEPTH {
                     note_unspellable_list_nesting();
