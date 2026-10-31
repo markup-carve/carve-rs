@@ -51,13 +51,35 @@ fn position(lines: &[PayloadLine], start: usize, end: usize) -> Option<Pos> {
 }
 
 pub(crate) fn from_code(code: &CodeBlock, payload: &[PayloadLine]) -> Option<Table> {
+    from_code_without(code, payload, |_| false)
+}
+
+/// As [`from_code`], leaving out every one-line record `skip` accepts.
+pub(crate) fn from_code_without(
+    code: &CodeBlock,
+    payload: &[PayloadLine],
+    skip: impl Fn(&str) -> bool,
+) -> Option<Table> {
     let format = TableSourceFormat::from_name(code.lang.as_deref()?)?;
     let separator = format.separator();
     let mut attrs = code.attrs.clone()?;
     if !attrs.key_values.get("table").is_some_and(String::is_empty) {
         return None;
     }
-    let (data, ranges) = rows_with_ranges(&code.content, separator)?;
+    let (mut data, mut ranges) = rows_with_ranges(&code.content, separator)?;
+    let kept: Vec<bool> = ranges
+        .iter()
+        .map(|range| {
+            let text = &code.content[range.start..range.end];
+            text.contains('\n') || !skip(text)
+        })
+        .collect();
+    if kept.contains(&false) {
+        let mut keep = kept.iter();
+        data.retain(|_| *keep.next().unwrap());
+        let mut keep = kept.iter();
+        ranges.retain(|_| *keep.next().unwrap());
+    }
     let width = data.iter().map(Vec::len).max().unwrap_or(0);
     let foot = count(attrs.key_values.get("footer-rows"), 0);
     let head = count(
