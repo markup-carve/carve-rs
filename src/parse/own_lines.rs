@@ -79,6 +79,8 @@ struct Frame {
     shift: usize,
     /// The output shift its marker was written with.
     marker_shift: usize,
+    /// How far past the note's body column a marker-line child was measured.
+    source_shift: usize,
     /// 1-based line that opened the frame, for the decision trace.
     line: usize,
     /// A fence's trace family: `code`, `comment`, or `div` for a line block.
@@ -113,6 +115,7 @@ impl Frame {
             span: None,
             shift: 0,
             marker_shift: 0,
+            source_shift: 0,
             line: 0,
             family: "code",
             doc_marker: 0,
@@ -286,6 +289,25 @@ fn is_sibling_of(kind: Kind, text: &str) -> bool {
 
 fn is_cont_marker(rest: &str) -> bool {
     rest.strip_prefix('+').is_some_and(is_ws_only)
+}
+
+/// Whether a note's marker-line content is a chain of items or notes measured
+/// from its source column. One ending in a code fence keeps the body column.
+fn note_child_at_source(rest: &str) -> bool {
+    let mut text = rest;
+    let mut chained = false;
+    for _ in 0..MAX_NESTING_DEPTH {
+        let line = indent_rest(text.trim_end_matches([' ', '\t', '\r']));
+        let next = detect_list_marker_full(line)
+            .map(|marker| marker.content)
+            .or_else(|| parse_footnote_def_line(line).map(|(_, body)| body));
+        let Some(next) = next else {
+            return chained && detect_fence_open(line).is_none();
+        };
+        text = next;
+        chained = true;
+    }
+    false
 }
 
 /// The bullet or ordered marker's content column offset, the bytes up to its
@@ -1173,6 +1195,7 @@ impl<'a> Walk<'a> {
                 0
             };
             c.lead_in(target, shift, false);
+            self.end_source_measure(&form, reached);
             if tracing {
                 // S4: a lazy line folds into the deepest open paragraph.
                 let mut record =
@@ -1297,6 +1320,19 @@ impl<'a> Walk<'a> {
             }
         }
         self.emit_applied(at, record, None);
+    }
+
+    /// The list the readers open at a folded marker is read from the body column,
+    /// so the marker-line child's source measure ends.
+    fn end_source_measure(&mut self, form: &Form, reached: usize) {
+        if !matches!(form, Form::Item(..)) {
+            return;
+        }
+        for f in &mut self.frames[reached + 1..] {
+            f.col = f.col.saturating_sub(f.source_shift);
+            f.cut = f.cut.saturating_sub(f.source_shift);
+            f.source_shift = 0;
+        }
     }
 
     /// The paragraph a lone `+` takes where it is written, when the walk keeps it in that host.
@@ -1469,16 +1505,26 @@ impl<'a> Walk<'a> {
         c.take(head);
         c.measure();
         let at_frame = self.frames.len() - 1;
-        // The readers set a note's marker-line content at its body column.
         if kind == Kind::Note {
+            // A marker-line item or note is measured from its source column
+            // (CARVE-P9-083), and lands at the body column as other content does.
             let (f_col, f_canon, m) = (col + width, canon + width, c.col);
-            self.content(
-                at_frame,
-                f_col.saturating_sub(m),
-                f_canon.saturating_sub(m),
-                at,
-                c,
-            );
+            let body = f_col.saturating_sub(m);
+            let start = if note_child_at_source(c.rest) {
+                col + head
+            } else {
+                body
+            };
+            let depth = self.frames.len();
+            self.content(at_frame, start, f_canon.saturating_sub(m), at, c);
+            // A `+` still reads the body column (carve#4409).
+            let source_shift = start.saturating_sub(body);
+            for f in &mut self.frames[depth..] {
+                if let Some((marker, _)) = &mut f.marker {
+                    *marker = marker.saturating_sub(source_shift);
+                    f.source_shift = source_shift;
+                }
+            }
         } else {
             self.content(at_frame, col + head, canon + head, at, c);
         }

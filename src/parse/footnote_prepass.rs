@@ -214,6 +214,7 @@ struct IndentedNote<'a> {
     lazy_open: bool,
     /// The definition line starts at column 0, so no container hosts the note.
     flush_def: bool,
+    marker_line_note: bool,
 }
 
 /// The quote / list / description host a container-hosted note sits in.
@@ -779,6 +780,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 below_comment_span: None,
                 lazy_open: false,
                 flush_def: indent_columns(raw_def_line) == 0,
+                // A note on its outer note's marker line takes the lazy lines that note gave up.
+                marker_line_note: i == 1,
             };
             i = self.collect_indented_body(&mut note, i, state);
         } else if !self.nested {
@@ -988,7 +991,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         // carve#3885): a line that interrupts no paragraph joins an open one.
         let rest = trim_ascii_start(line);
         if !state.open_term
-            && !self.nested
+            && (!self.nested || state.marker_line_note)
             && state.note_fence.is_none()
             && !interrupts_paragraph_with_rest(line, &self.lines[*i + 1..])
             && !interrupts_paragraph_with_rest(rest, &self.lines[*i + 1..])
@@ -1002,9 +1005,10 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             && !opens_code_fence(rest)
             && (lazy_open || note_paragraph_open(note, rest, self.options))
         {
-            let kept = format!("{LAZY}{}", trim_ascii_start(line));
+            let text = strip_lazy(rest);
+            let kept = format!("{LAZY}{text}");
             note.push_with(kept, Some(self.first_source_line + *i), |_| {
-                stripped_col(Some(0), line, trim_ascii_start(line))
+                stripped_col(Some(0), line, text)
             });
             state.lazy_open = true;
             *i += 1;
