@@ -124,7 +124,16 @@ impl CarveExtension for HeadingNumbers {
             by_id: BTreeMap::new(),
             seen_ids: BTreeSet::new(),
         };
+        // Resolve against the pristine document before this extension injects
+        // section numbers. The completed index includes forward references and
+        // headings this extension does not number.
+        let index = crate::parse::crossref_index_for_document(&doc, state.id_opts);
         number_blocks(&mut doc.children, false, &mut state);
+        for (id, entry) in &mut state.by_id {
+            if let Some(label) = index.label(id) {
+                entry.title = label.as_ref().clone();
+            }
+        }
 
         // Pass 2: rewrite auto-filled cross-references. Only links tagged
         // `from_crossref` are touched, so ordinary `[text](#id)` links and

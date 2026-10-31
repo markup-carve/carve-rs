@@ -163,20 +163,28 @@ fn the_label_keeps_an_escaped_character() {
 // Cloning nodes must not import the hazards a string could not carry.
 // ---------------------------------------------------------------------------
 
-/// Resolution is ONE LEVEL: a cloned label is never re-expanded, so a
-/// cross-reference cycle terminates. Both documents are corpus cases
-/// (`118-cyclic-cross-reference-resolves-to-one-level`), pinned here against
-/// the clone specifically - a naive clone would splice a label into itself.
+/// R4 and carve#4642: a nested reference contributes its target's inline text,
+/// but a reference in that target is not expanded again. Cycles terminate.
 #[test]
 fn a_nested_crossref_in_the_label_is_not_re_expanded() {
     assert_eq!(
         carve::to_html("# A </#A>\n").trim(),
-        "<section id=\"A\">\n  <h1>A <a href=\"#A\">A </a></h1>\n</section>"
+        "<section id=\"A\">\n  <h1>A <a href=\"#A\">A A </a></h1>\n</section>"
     );
     assert_eq!(
         carve::to_html("# A </#B>\n\n# B </#A>\n").trim(),
-        "<section id=\"A\">\n  <h1>A <a href=\"#B\">B </a></h1>\n</section>\n\
-         <section id=\"B\">\n  <h1>B <a href=\"#A\">A </a></h1>\n</section>"
+        "<section id=\"A\">\n  <h1>A <a href=\"#B\">B A </a></h1>\n</section>\n\
+         <section id=\"B\">\n  <h1>B <a href=\"#A\">A B </a></h1>\n</section>"
+    );
+}
+
+#[test]
+fn an_inner_caption_reference_resolves_after_caption_numbering() {
+    let source = "# A </#fig>\n\n{#fig}\n|= x |\n^ Figure #: cap\n\n</#A>\n";
+    let html = carve::to_html(source);
+    assert!(
+        html.contains("<p><a href=\"#A\">A Figure 1</a></p>"),
+        "{html}"
     );
 }
 

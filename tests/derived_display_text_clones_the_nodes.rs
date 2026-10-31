@@ -266,10 +266,8 @@ fn a_footnote_reference_in_the_heading_is_dropped_from_the_label() {
     );
 }
 
-/// Resolution is ONE LEVEL: a nested cross-reference in the heading becomes
-/// empty text in the label rather than being expanded again. Expanding it here
-/// would also drag the `section-number` span of the INNER heading into the outer
-/// label, and it makes a crossref cycle structurally impossible to follow.
+/// R4 and carve#4642: the inner reference contributes its target's authored
+/// text once, without nesting a link or cloning the inner section number.
 #[test]
 fn a_nested_crossref_in_the_heading_is_not_re_expanded() {
     let ext = HeadingNumbers::new();
@@ -277,12 +275,30 @@ fn a_nested_crossref_in_the_heading_is_not_re_expanded() {
     o.extensions.push(&ext);
     let out = carve::to_html_with_options("# A\n\n# H </#A>\n\nSee </#H>\n", &o);
     assert!(
-        out.contains("<p>See <a href=\"#H\">Section 2 - H </a></p>"),
+        out.contains("<p>See <a href=\"#H\">Section 2 - H A</a></p>"),
         "{out}"
     );
     assert!(
         !out.contains("<a href=\"#H\">Section 2 - H <a"),
         "the label nested an anchor: {out}"
+    );
+}
+
+#[test]
+fn a_cloned_heading_keeps_its_inner_references_target_text() {
+    let html = carve::to_html("# a </#b>\n\n## b\n\n</#a>\n");
+    assert!(html.contains("<p><a href=\"#a\">a b</a></p>"), "{html}");
+
+    let self_ref = carve::to_html("# A </#A>\n\n</#A>\n");
+    assert!(
+        self_ref.contains("<p><a href=\"#A\">A A </a></p>"),
+        "{self_ref}"
+    );
+
+    let missing = carve::to_html("# A </#missing>\n\n</#A>\n");
+    assert!(
+        missing.contains("<p><a href=\"#A\">A &lt;/#missing&gt;</a></p>"),
+        "{missing}"
     );
 }
 
