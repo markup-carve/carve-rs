@@ -148,6 +148,7 @@ struct ItemOpen<'l> {
 /// A following-line sub-list chunk, collected for the last item.
 struct SublistChunk {
     nested: MappedSource,
+    closed_marker_comment_span: bool,
     stopped_fence: bool,
     descendant_text_after_fence: bool,
     nested_bare_ends_item: bool,
@@ -897,9 +898,11 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         } else {
             lazy_scope
         };
+        let closed_marker_comment_span = nested_columns.closed_marker_comment_span;
         if stopped_fence.is_none()
             && !descendant_text_after_fence
             && !nested_bare_ends_item
+            && !closed_marker_comment_span
             && !chunk_ends_in_closed_comment_span(&nested)
         {
             fold_lazy_run_and_resume_in_band(
@@ -936,6 +939,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         }
         SublistChunk {
             nested,
+            closed_marker_comment_span,
             stopped_fence: stopped_fence.is_some(),
             descendant_text_after_fence,
             nested_bare_ends_item,
@@ -953,13 +957,15 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             (self.base_indent, self.content_col, self.options);
         let SublistChunk {
             mut nested,
+            closed_marker_comment_span,
             stopped_fence,
             descendant_text_after_fence,
             nested_bare_ends_item,
             band_line_ends_the_chunk,
         } = chunk;
         let nested_sublist = sub_indent >= content_col;
-        let closed_comment_span = chunk_ends_in_closed_comment_span(&nested);
+        let closed_comment_span =
+            closed_marker_comment_span || chunk_ends_in_closed_comment_span(&nested);
         if nested_sublist && nested.outer_plus_after_blank {
             self.tight = false;
         }

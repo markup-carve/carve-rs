@@ -2,13 +2,6 @@
   "comment": "Conformance pack cases this engine renders differently from the spec model, one entry per cause with its open ticket. See tests/conformance_pack.rs.",
   "entries": [
     {
-      "ticket": "markup-carve/carve#3972",
-      "cause": "all three engines agree against the spec model",
-      "cases": [
-        "ownership-ca02e84b0d06"
-      ]
-    },
-    {
       "ticket": "markup-carve/carve#4661",
       "cause": "the line-block colon run past its opener column stays payload at the current spec pin",
       "cases": [

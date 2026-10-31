@@ -119,6 +119,7 @@ pub(crate) struct NestedCollectionState {
     pub(crate) fence_seen: bool,
     pub(crate) lazy_paragraph_owner: Option<usize>,
     pub(crate) tabbed_marker: bool,
+    pub(crate) closed_marker_comment_span: bool,
 }
 
 impl std::ops::Deref for NestedCollectionState {
@@ -331,7 +332,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     run_indented_body!(cur.lines, cur.pos, container, |line, admission| {
         // Handle this before the special lazy and marker-line branches below:
         // the span left no paragraph for any of them to continue.
-        if closed_comment_span_above && indent_columns(line) < strip_cols {
+        if nested_item_columns.closed_marker_comment_span && indent_columns(line) < strip_cols {
             break;
         }
         if admission.blank {
@@ -1094,6 +1095,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         }
         if indent >= strip_cols && comment_fence.is_none() && !is_line_comment_any_column(line) {
             closed_comment_span_above = false;
+            nested_item_columns.closed_marker_comment_span = false;
         }
         if fence.is_some() && indent < strip_cols && !fence_owns_flush_left {
             break;
@@ -1280,6 +1282,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             if is_comment_fence_close_any_column(line, width) {
                 marker_comment_span = None;
                 closed_comment_span_above = true;
+                nested_item_columns.closed_marker_comment_span = true;
             }
         } else if fence.is_none()
             && nested_fence.is_none()
@@ -2026,8 +2029,7 @@ pub(crate) fn chunk_ends_in_closed_comment_span(chunk: &MappedSource) -> bool {
         if !chunk.reached.get(index).copied().unwrap_or(false) {
             continue;
         }
-        // The opener may be the first block of a marker-line child.
-        if let Some((fence, _)) = detect_comment_fence_opener_at_any_column(line) {
+        if let Some(fence) = detect_comment_fence_line_any_column(line) {
             open = Some(fence.fence_len);
         }
     }
