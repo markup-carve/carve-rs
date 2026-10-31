@@ -646,9 +646,6 @@ pub(crate) fn collected_body_takes_the_lazy_line(
     trailing_below_column: bool,
     options: &Options<'_>,
 ) -> bool {
-    if src.lines().last().is_some_and(is_table_start) {
-        return false;
-    }
     if let Some(content) = trailing_marker_line_content(src) {
         return body_ends_with_open_paragraph(&content, options);
     }
@@ -1161,7 +1158,7 @@ pub(crate) fn colon_fences_left_open(nested: &str) -> usize {
                 &mut comment_closers,
             );
             if verse_end == lines.len()
-                && exact_colon_fence_len(lines[verse_end - 1]) != Some(fence_len)
+                && exact_colon_fence_len(trim_ascii_start(lines[verse_end - 1])) != Some(fence_len)
             {
                 return open.len() + 1;
             }
