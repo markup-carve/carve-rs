@@ -2016,12 +2016,8 @@ fn escape_renders_flank(after: Option<char>) -> bool {
 
 /// The character a quote at `i` sees next, with an escape that renders a flank
 /// read as a space.
-fn quote_next_char(text: &str, base: usize, i: usize) -> Option<char> {
-    let char_at = |at: usize| {
-        text.get(at..)
-            .and_then(|rest| rest.chars().next())
-            .or_else(|| next_source_char(text, base, at))
-    };
+fn quote_next_char(text: &str, i: usize) -> Option<char> {
+    let char_at = |at: usize| text.get(at..).and_then(|rest| rest.chars().next());
     match char_at(i + 1) {
         Some('\\') if escape_renders_flank(char_at(i + 2)) => Some(' '),
         next => next,
@@ -2074,23 +2070,10 @@ pub(in crate::parse) enum SmartPunctuationMatch {
     },
 }
 
-fn next_source_char(text: &str, base: usize, after: usize) -> Option<char> {
-    INLINE_SOURCE.with(|source| {
-        let source = source.borrow();
-        let (root, root_base) = source.as_ref()?;
-        let start = base.checked_sub(*root_base)?;
-        let end = start.checked_add(text.len())?;
-        if root.get(start..end)? != text {
-            return None;
-        }
-        root.get(start.checked_add(after)?..)?.chars().next()
-    })
-}
-
 pub(in crate::parse) fn parse_smart_punctuation_at(
     text: &str,
     i: usize,
-    base: usize,
+    _base: usize,
     buf: &str,
     out: &[InlineNode],
     options: &Options<'_>,
@@ -2170,7 +2153,7 @@ pub(in crate::parse) fn parse_smart_punctuation_at(
         buf.chars().last().unwrap_or_default()
     };
     if c == '"' {
-        let next = quote_next_char(text, base, i);
+        let next = quote_next_char(text, i);
         let open = quote_open_context(prev) && !closes_after_dash(prev, next);
         let glyph = if open { "“" } else { "”" };
         let kind = if open {
@@ -2186,7 +2169,7 @@ pub(in crate::parse) fn parse_smart_punctuation_at(
         });
     }
     if c == '\'' {
-        let next = quote_next_char(text, base, i);
+        let next = quote_next_char(text, i);
         let open = quote_open_context(prev) && !closes_after_dash(prev, next);
         let apostrophe = quote_state::single(
             text,
@@ -2592,15 +2575,15 @@ pub(in crate::parse) fn parse_span(
     }
     let (attrs, after_attrs) = read_attrs_at(bytes, after_bracket, bounds.last_close_brace)
         .or_else(|| read_empty_attrs_at(bytes, after_bracket))?;
-    // Absorb a CHAIN of adjacent attribute blocks (`[x]{.a}{.b}` ->
-    // class="a b"), accumulating classes (§15). A non-attribute `{...}` (e.g.
-    // an empty `{}`) reads as None and is left literal, so `[x]{}{}` keeps the
-    // trailing `{}` -- matching carve-php / carve-js.
+    // Absorb every member of the span's glued attribute run. Blessed empty
+    // blocks contribute nothing but do not end the run.
     let mut attrs = Some(attrs);
     let mut slots = None;
     let mut after_attrs = after_attrs;
     while bytes.get(after_attrs) == Some(&b'{') {
-        match read_attrs_at(bytes, after_attrs, bounds.last_close_brace) {
+        match read_attrs_at(bytes, after_attrs, bounds.last_close_brace)
+            .or_else(|| read_empty_attrs_at(bytes, after_attrs))
+        {
             Some((more, next)) => {
                 merge_attrs_indexed(&mut attrs, more, &mut slots);
                 after_attrs = next;

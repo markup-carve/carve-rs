@@ -43,7 +43,7 @@ fn transitive_footnote_headings_enter_the_heading_index() {
 }
 
 #[test]
-fn quote_direction_reads_the_following_source_delimiter() {
+fn quote_direction_stops_at_the_span_closer() {
     let forms = ["*/\"*", "_/\"_", "~/\"~", "=/\"="];
     let prefixes = ["", "a ", "b ", "c ", "d ", "e ", "f ", "g ", "h ", "i "];
     let suffixes = ["", " end", " 1", " &", " z"];
@@ -61,7 +61,7 @@ fn quote_direction_reads_the_following_source_delimiter() {
                 for suffix in suffixes {
                     let source = host(&format!("{prefix}{form}{suffix}"));
                     let html = carve::to_html(&source);
-                    assert!(html.contains('“'), "{source:?}: {html}");
+                    assert!(html.contains('”'), "{source:?}: {html}");
                     checked += 1;
                 }
             }
