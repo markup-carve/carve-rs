@@ -1054,7 +1054,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             return Flow::Stop;
         }
         let rest = trim_ascii_start(line);
-        if (!self.nested || state.marker_line_note)
+        // A nested note takes a line its outer note already read as lazy.
+        if (!self.nested || state.marker_line_note || line.starts_with(LAZY))
             && state.note_fence.is_none()
             && !interrupts_paragraph_with_rest(line, &self.lines[*i + 1..])
             && !interrupts_paragraph_with_rest(rest, &self.lines[*i + 1..])
