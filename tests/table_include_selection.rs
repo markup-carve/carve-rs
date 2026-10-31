@@ -266,20 +266,28 @@ fn region_marker_lines_are_no_table_records() {
 
 #[test]
 fn lint_reads_table_include_records_without_region_markers() {
-    let payload = "%% #region r\nName,Price\nA,1\n%% #endregion r\n";
-    let resolver =
-        |_: &str, _: &carve::IncludeContext<'_>| -> Result<IncludeResolved, IncludeDenial> {
-            Ok(IncludeResolved::from(payload))
-        };
-    let options =
-        Options::default().with_lint_includes(IncludeOptions::new().with_resolver(&resolver));
-    let findings = lint_carve_with_options("{table}\n{{ data.csv @code:csv }}", &options);
-    assert!(
-        !findings
-            .iter()
-            .any(|f| f.rule == "delimited-table-wide-row"),
-        "{findings:?}"
-    );
+    for (payload, options) in [
+        ("%% #region r\nName,Price\nA,1\n%% #endregion r\n", ""),
+        (
+            "%% #region r\r\nName,Price\r\nA,1\r\n%% #endregion r\r\n",
+            "@rows:2-2",
+        ),
+    ] {
+        let resolver =
+            |_: &str, _: &carve::IncludeContext<'_>| -> Result<IncludeResolved, IncludeDenial> {
+                Ok(IncludeResolved::from(payload))
+            };
+        let lint =
+            Options::default().with_lint_includes(IncludeOptions::new().with_resolver(&resolver));
+        let source = format!("{{table}}\n{{{{ data.csv @code:csv {options} }}}}");
+        let findings = lint_carve_with_options(&source, &lint);
+        assert!(
+            !findings
+                .iter()
+                .any(|f| f.rule == "delimited-table-wide-row"),
+            "{payload:?}: {findings:?}"
+        );
+    }
 }
 
 #[test]

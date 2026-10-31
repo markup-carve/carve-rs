@@ -149,7 +149,7 @@ pub(super) fn region_marker(raw_line: &str, code: bool) -> Marker<'_> {
 /// A `{table}` include drops a record that is a well-formed marker line (I1d).
 /// `#region` without a name is no well-formed opener, so it stays a record.
 pub(crate) fn is_table_record_marker(line: &str) -> bool {
-    match region_marker(line, true) {
+    match region_marker(line.strip_suffix('\r').unwrap_or(line), true) {
         Marker::Region { closing, name } => closing || !name.is_empty(),
         _ => false,
     }
