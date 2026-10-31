@@ -970,6 +970,15 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
                 .container
                 .owns_continuation(line, cur.continuation_decision(cur.pos))
         {
+            // The `+` misses the fence's owner, so it ends an unclosed fence
+            // before its block is attached (PART 0 S1).
+            if let Some(open) = fence.open.take() {
+                let closer = char::from(open.fence_char)
+                    .to_string()
+                    .repeat(open.fence_len);
+                self.push(closer, None, None, false);
+                fence.closed_last = true;
+            }
             self.take_plus_block(cur, column);
             return BodyStep::Next;
         }
@@ -981,6 +990,16 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             return self.take_below_column_line(cur, fence, line, column);
         }
         if fence.open.is_some() {
+            // A `+` after a blank does not continue the body, and an open fence
+            // does not extend its reach (CARVE-P0-014).
+            let look = self.container.blank_run_end(cur.lines, cur.pos);
+            if cur.lines.line(look).is_some_and(|after| {
+                self.container
+                    .classify(after, || cur.continuation_decision(look))
+                    == ContainerLine::OwnedContinuation
+            }) {
+                return BodyStep::Stop;
+            }
             // The body's own column, like every other line this collector takes:
             // an opener PAST it leaves its authored residue for the rebase, which
             // would otherwise dedent this line a second time.

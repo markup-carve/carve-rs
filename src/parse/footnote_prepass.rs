@@ -237,18 +237,10 @@ impl NoteHost {
         self.content(raw).is_some_and(is_blank_line)
     }
 
-    // A marker note admits comments at its host column.
+    // A comment below the note's floor closes it (rule A, carve#3885).
     fn reaches_floor(&self, raw: &str, admitted_fence: bool, comment_open: bool) -> bool {
         self.content(raw).is_some_and(|line| {
-            admitted_fence
-                || comment_open
-                || indent_columns(line) >= self.note_floor
-                || (self.quote_depth > 0
-                    && indent_columns(line) > 0
-                    && trim_ascii_start(line).starts_with("%%"))
-                || (self.marker_note
-                    && indent_columns(line) >= self.prefix_cols
-                    && is_line_comment_any_column(line))
+            admitted_fence || comment_open || indent_columns(line) >= self.note_floor
         })
     }
 }
