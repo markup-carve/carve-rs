@@ -204,7 +204,7 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
         }
         cur.consume();
         let trimmed = trim_ascii_end(trim_ascii_start(line));
-        suppress_colon_interrupt |= is_invalid_colon_fence_opener_text(trimmed);
+        suppress_colon_interrupt |= is_invalid_colon_fence_opener_text(strip_lazy(trimmed));
         reference_caption_claimed |=
             reference_caption_candidate && lines.len() == 1 && caption_content(line).is_some();
         line_indices.push(cur.pos - 1);
