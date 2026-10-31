@@ -57,10 +57,7 @@ fn an_absorbed_opener_leaves_a_tail_at_the_description_column_in_the_dd() {
 #[test]
 fn an_opener_one_column_shy_of_the_floor_stays_a_description_child() {
     let src = ":: t\n:  [^f]: note\n    - nested\ntail\n";
-    assert_eq!(
-        html(src),
-        "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>"
-    );
+    assert_eq!(html(src), "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>");
 }
 
 /// Plain continuation at the floor is the note's, exactly as an opener there is:

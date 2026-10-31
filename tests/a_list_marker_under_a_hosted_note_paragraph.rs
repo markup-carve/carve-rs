@@ -85,6 +85,9 @@ fn a_line_leaving_a_quote_hosted_note_left_of_the_item_column_ends_the_note() {
 fn a_line_leaving_a_quote_hosted_note_at_the_item_column_folds() {
     assert_eq!(
         html("- > [^f]: n\n  - b\n\nx[^f]\n"),
-        format!("<ul>\n  <li>\n    <blockquote>\n\n    </blockquote>\n  </li>\n</ul>\n{REF}\n{}", NOTE.replace("note\n", "n\n"))
+        format!(
+            "<ul>\n  <li>\n    <blockquote>\n\n    </blockquote>\n  </li>\n</ul>\n{REF}\n{}",
+            NOTE.replace("note\n", "n\n")
+        )
     );
 }
