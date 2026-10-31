@@ -2,7 +2,7 @@
 fn a_plus_after_a_blank_ends_a_description_fence() {
     let source = ":: t\n: ```\n\n+\nx\n";
     let expected =
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code></code></pre>\n  </dd>\n</dl>\n<p>+\nx</p>";
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code>\n</code></pre>\n  </dd>\n</dl>\n<p>+\nx</p>";
     assert_eq!(carve::to_html(source).trim_end(), expected);
 }
 

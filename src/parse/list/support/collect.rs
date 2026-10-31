@@ -501,7 +501,18 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                                 && is_fence_close(trim_ascii_start(next), open)
                         })
                 });
-                discarded_outer_blank |= outer_follower;
+                // A line below the fence's column already ended the sub-item.
+                let in_fence = active_nested_fence.is_some_and(|open| {
+                    lines
+                        .iter()
+                        .rev()
+                        .find(|line| !is_blank_line(line))
+                        .map_or(true, |line| {
+                            detect_list_marker_full(trim_ascii_start(line)).is_some()
+                                || indent_columns(line) + strip_cols >= open.content_col
+                        })
+                });
+                discarded_outer_blank |= outer_follower && in_fence;
                 nested_blank_run = Some(end);
             }
             marker_note_intermediate_quote_open = false;

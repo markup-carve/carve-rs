@@ -115,9 +115,10 @@
     },
     {
       "ticket": "markup-carve/carve#4033",
-      "cause": "an unclosed fence in a description or footnote body drops its trailing blank run",
+      "cause": "an unclosed fence's trailing blank run in a description body: the pin's model predates carve main, and the model reads a reopened item fence differently",
       "cases": [
-        "fences-9caa332a8a41"
+        "fences-9caa332a8a41",
+        "fences-c9b7d1a267bf"
       ]
     },
     {

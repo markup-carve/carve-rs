@@ -9,11 +9,11 @@ use carve::to_html;
 fn a_description_marker_fence_keeps_its_payload() {
     assert_eq!(
         to_html(":: t\n: ```x\n  [d]: u\n\n[a][d]\n"),
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code class=\"language-x\">[d]: u\n</code></pre>\n  </dd>\n</dl>\n<p>[a][d]</p>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code class=\"language-x\">[d]: u\n\n</code></pre>\n  </dd>\n</dl>\n<p>[a][d]</p>"
     );
     assert_eq!(
         to_html(":: t\n: ```x\n  [^d]: u```\n\nr[^d]\n"),
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code class=\"language-x\">[^d]: u```\n</code></pre>\n  </dd>\n</dl>\n<p>r[^d]</p>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code class=\"language-x\">[^d]: u```\n\n</code></pre>\n  </dd>\n</dl>\n<p>r[^d]</p>"
     );
     assert_eq!(
         to_html(":: t\n: ~~~\n  [^d]: u\n  ~~~\n\nr[^d]\n"),

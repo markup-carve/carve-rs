@@ -1256,9 +1256,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         if !resumes {
             // The run still reaches an open fence that ends with the note.
             if note.holds_open_fence() {
-                for at in *i..after_run {
+                for (at, blank) in lines.iter().enumerate().take(after_run).skip(*i) {
                     let (residue, consumed, synthetic) =
-                        slice_columns_mapped(lines[at], state.body_indent, true);
+                        slice_columns_mapped(blank, state.body_indent, true);
                     note.push_with(residue, Some(self.first_source_line + at), |_| {
                         Some(consumed as isize - synthetic as isize)
                     });
