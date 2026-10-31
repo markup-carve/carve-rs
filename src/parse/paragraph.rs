@@ -31,7 +31,7 @@ pub(super) fn detect_block_image(line: &str) -> Option<Image> {
     Some(img)
 }
 
-fn reference_image_line(line: &str) -> bool {
+pub(super) fn reference_image_line(line: &str) -> bool {
     if !line.starts_with("![") {
         return false;
     }

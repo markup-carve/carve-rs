@@ -199,6 +199,13 @@ struct LeadParagraph {
     attrs_scan_floor: usize,
     anchors: Option<Vec<Option<(usize, isize)>>>,
     caption_below_content_column: bool,
+    // CARVE-P2-021 item 4: once a lone image's caption slot is filled, a
+    // further `^ ` line begins its own paragraph.
+    image_lead: bool,
+    caption_claimed: bool,
+    // An inline image's figure is known before resolution; a reference
+    // image's is not, and its unpromoted text is trimmed.
+    inline_image_lead: bool,
     literal_colon_opener: Option<usize>,
 }
 
@@ -2189,6 +2196,10 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 .positions
                 .then(|| vec![inline_anchor_for_line(self.cur, item.at, paragraph_content)]),
             caption_below_content_column: false,
+            image_lead: detect_block_image(paragraph_content).is_some()
+                || reference_image_line(paragraph_content),
+            caption_claimed: false,
+            inline_image_lead: detect_block_image(paragraph_content).is_some(),
             literal_colon_opener: detect_container_open(content)
                 .map(|open| open.fence_len)
                 .or_else(|| detect_line_block_open(content))
@@ -2318,7 +2329,13 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         if interrupts_lazy_continuation_as_container(self.cur, &next_owned) {
             return false;
         }
-        self.fold_lead_line(lead, trim_ascii_start(next));
+        // CARVE-P2-020: a caption continuation keeps its indentation.
+        if lead.caption_claimed && lead.inline_image_lead {
+            let dedented = slice_columns(next, self.content_col, false);
+            self.fold_lead_line(lead, &dedented);
+        } else {
+            self.fold_lead_line(lead, trim_ascii_start(next));
+        }
         true
     }
 
@@ -2360,6 +2377,11 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         if interrupts {
             return false;
         }
+        let caption = caption_content(&dedented).is_some();
+        if caption && lead.caption_claimed {
+            return false;
+        }
+        lead.caption_claimed |= caption && lead.image_lead && lead.lines.len() == 1;
         if let Some(anchors) = &mut lead.anchors {
             anchors.push(inline_anchor_for_line(self.cur, self.cur.pos, &dedented));
         }
