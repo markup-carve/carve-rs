@@ -1756,7 +1756,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 let trailing_plus_owner = stream
                     .source
                     .lines()
-                    .last()
+                    .next_back()
                     .filter(|last| is_plus_marker(trim_ascii_start(last)))
                     .and_then(|_| stream.line_map.last().copied().flatten())
                     .and_then(continuation_marker::decision)
