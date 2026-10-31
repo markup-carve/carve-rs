@@ -1977,6 +1977,9 @@ pub(in crate::parse) fn extract_link_defs_with_guard_full(
                     canonical
                 }
             } else {
+                // Below the content column the fence is not the item's: its body
+                // is measured from the column it was written at.
+                authored_fence_col = kept_indent;
                 opener_kept.as_str()
             }
         };

@@ -40,7 +40,6 @@ fn pua(text: &str) -> BTreeSet<char> {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn outputs_never_introduce_private_use_codepoints() {
     let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     let mut sources: Vec<(String, String)> = std::fs::read_dir(corpus)

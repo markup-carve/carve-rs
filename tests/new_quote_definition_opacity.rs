@@ -534,7 +534,6 @@ fn literal_angle_text_does_not_hide_real_root_item_columns() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn flush_left_attachment_ends_the_inherited_quote_paragraph() {
     let cases = [
 ("> a\n+\n- inner\n  [r]: /url\n\nSee [r][]\n","<blockquote>\n  <p>a</p>\n  <ul>\n    <li>inner</li>\n  </ul>\n</blockquote>\n<p>See <a href=\"/url\">r</a></p>"),

@@ -77,7 +77,6 @@ fn definitions_stay_above_markers_in_extension_containers() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn fmt_writes_the_region_marker_fixture_bytes() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/region-marker-fmt.json")).unwrap();

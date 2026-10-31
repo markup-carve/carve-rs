@@ -20,7 +20,6 @@ fn a_nested_description_claims_its_fence_after_note_and_task_text() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn nested_description_fences_keep_definition_shaped_payload() {
     let cases = [
 (":: t\n: - ```\n[r]: /u\n[^a]: note\n```\n","<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </dd>\n</dl>\n<pre><code></code></pre>"),
