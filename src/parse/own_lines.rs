@@ -1195,15 +1195,7 @@ impl<'a> Walk<'a> {
                 0
             };
             c.lead_in(target, shift, false);
-            // The list the readers open at a folded marker is read from the body
-            // column, so the child's source measure ends.
-            if matches!(form, Form::Item(..)) {
-                for f in &mut self.frames[reached + 1..] {
-                    f.col = f.col.saturating_sub(f.source_shift);
-                    f.cut = f.cut.saturating_sub(f.source_shift);
-                    f.source_shift = 0;
-                }
-            }
+            self.end_source_measure(&form, reached);
             if tracing {
                 // S4: a lazy line folds into the deepest open paragraph.
                 let mut record =
@@ -1328,6 +1320,19 @@ impl<'a> Walk<'a> {
             }
         }
         self.emit_applied(at, record, None);
+    }
+
+    /// The list the readers open at a folded marker is read from the body column,
+    /// so the marker-line child's source measure ends.
+    fn end_source_measure(&mut self, form: &Form, reached: usize) {
+        if !matches!(form, Form::Item(..)) {
+            return;
+        }
+        for f in &mut self.frames[reached + 1..] {
+            f.col = f.col.saturating_sub(f.source_shift);
+            f.cut = f.cut.saturating_sub(f.source_shift);
+            f.source_shift = 0;
+        }
     }
 
     /// The paragraph a lone `+` takes where it is written, when the walk keeps it in that host.
