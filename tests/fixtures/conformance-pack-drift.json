@@ -79,9 +79,6 @@
       "ticket": "markup-carve/carve-rs#3535",
       "cause": "pin move to carve 8d8bd4a9: rulings on inline, attribute and layout shapes this engine has not reached",
       "cases": [
-        "fences-6bb4b2c08642",
-        "fences-957709fb7e0e",
-        "fences-e0910c8dd446",
         "lazy-68fe7c68d81d",
         "lazy-353dc1c74791",
         "lazy-7753aedc9422",
