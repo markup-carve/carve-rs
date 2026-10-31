@@ -43,6 +43,12 @@ pub(super) fn render_inline_attrs(attrs: &Option<Attrs>, ctx: &mut CarveContext)
     rendered
 }
 
+// A quoted attribute slot shields `~}` from the outer inline closer. Other
+// closing pairs, including `+}`, still need their escaping for readback.
+fn escape_inline_quoted_attr(value: &str) -> String {
+    escape_quoted_run(value, &['"', '|', '{', '}', '[', ']', '`']).replace("~\\}", "~}")
+}
+
 /// A row's block sits past the closing `|`, outside the cell cut, so a pipe in
 /// a quoted value needs no escape there (PART 11 §2).
 pub(super) fn render_row_attrs(attrs: &Option<Attrs>) -> String {
@@ -76,10 +82,7 @@ pub(super) fn render_attrs_with_markers(
         if (!markers.is_empty() || bracketed)
             && (conflicts(value) || value.contains(['{', '}', '[', ']', '`']))
         {
-            format!(
-                "\"{}\"",
-                escape_quoted_run(value, &['"', '|', '{', '}', '[', ']', '`'])
-            )
+            format!("\"{}\"", escape_inline_quoted_attr(value))
         } else {
             quote_attr_value(value)
         }
@@ -118,10 +121,7 @@ pub(super) fn render_attrs_with_markers(
                     if markers.is_empty() && !bracketed {
                         quoted_attr_value(cls)
                     } else {
-                        format!(
-                            "\"{}\"",
-                            escape_quoted_run(cls, &['"', '|', '{', '}', '[', ']', '`'])
-                        )
+                        format!("\"{}\"", escape_inline_quoted_attr(cls))
                     }
                 ));
             }

@@ -948,7 +948,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         let (base_indent, content_col, options) =
             (self.base_indent, self.content_col, self.options);
         let SublistChunk {
-            nested,
+            mut nested,
             stopped_fence,
             descendant_text_after_fence,
             nested_bare_ends_item,
@@ -958,9 +958,22 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         if nested_sublist && nested.outer_plus_after_blank {
             self.tight = false;
         }
+        // A code fence can start a new chunk after an attribute line. Lift the
+        // trailing run before deferring this sublist, or its nested reader will
+        // drop the run as dangling instead of leaving it for the next block.
+        let mut trailing_attrs = Vec::new();
+        while let Some(split) = split_trailing_attrs(&mut nested) {
+            trailing_attrs.push(split);
+        }
         let held = self.pending_attrs.take();
         if held.is_some() {
             self.pending_attrs_pos = None;
+        }
+        for (attrs, pos) in trailing_attrs.into_iter().rev() {
+            if self.pending_attrs.is_none() {
+                self.pending_attrs_pos = pos;
+            }
+            merge_attrs_indexed(&mut self.pending_attrs, attrs, &mut self.pending_attr_slots);
         }
         if self
             .cur

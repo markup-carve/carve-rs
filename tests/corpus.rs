@@ -1235,6 +1235,20 @@ const IMPLEMENTED: &[&str] = &[
     "every-folded-caret-line-loses-its-leading-whitespace-in-a-deep-term",
     "invisible-lines-after-a-plus-are-skipped-and-the-first-visible-line-decides",
     "the-first-caption-registers-a-repeated-id",
+    "a-caption-line-holding-only-a-comment-makes-no-caption",
+    "a-delimited-body-s-overlapping-header-and-footer-make-no-header-cells",
+    "a-fence-opened-at-a-block-start-in-a-note-keeps-no-paragraph-open",
+    "a-folded-marker-keeps-a-note-item-measured-from-its-source-column",
+    "a-lazy-line-in-a-note-does-not-keep-the-note-host-open",
+    "a-lazy-line-keeps-a-description-in-a-div-in-an-item",
+    "a-plus-after-an-attached-block-reaches-its-host-through-quote-prefixes",
+    "a-table-writes-one-col-per-column-entry",
+    "an-accepted-plus-follower-keeps-its-column-through-an-indented-quote-prefix",
+    "an-invisible-item-lead-and-a-caption-line-after-an-accepted-plus",
+    "an-item-on-a-note-marker-line-takes-its-plus-at-its-own-marker-column",
+    "an-unclosed-fence-under-a-description-paragraph-in-a-note-holds-no-paragraph",
+    "every-list-item-measures-its-content-against-its-own-content-column",
+    "the-third-confirmation-round-s-model-findings",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
@@ -1292,78 +1306,7 @@ fn expected_corpus_size() -> usize {
 /// Empty is the normal end state: the pin catching up is what retires an entry,
 /// and the `assert_ne!` in `check_pair` is what forces the deletion rather than
 /// leaving a declaration that no longer declares anything.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
-    (
-        "518-a-trailing-comment-takes-a-tab-a-run-start-and-its-whole-separator-8",
-        "carve#4559: a caption line holding only a comment makes no caption",
-        "<p><img src=\"u\" alt=\"alt\">\n^</p>",
-    ),
-    (
-        "684-a-post-marker-tab-keeps-a-quote-literal",
-        "carve#4610: a tab after the list separator stays content at the marker content column",
-        "<ul>\n  <li>\t&gt; a</li>\n</ul>",
-    ),
-    (
-        "736-model-syntax-boundaries-and-ownership-4",
-        "carve#4610: a tab after the list separator stays content at the marker content column",
-        "<ul>\n  <li>\t- B</li>\n</ul>",
-    ),
-    (
-        "788-whitespace-after-a-leading-content-tab-is-not-content",
-        "carve#4610: a tab after the list separator stays content at the marker content column",
-        "<ul>\n  <li>\t e</li>\n</ul>",
-    ),
-    (
-        "788-whitespace-after-a-leading-content-tab-is-not-content-2",
-        "carve#4610: a tab after the list separator stays content at the marker content column",
-        "<ol>\n  <li>\t  <strong>a</strong>\nb</li>\n</ol>",
-    ),
-    (
-        "788-whitespace-after-a-leading-content-tab-is-not-content-3",
-        "carve#4610: a tab after the list separator stays content at the marker content column",
-        "<blockquote>\n  <ul>\n    <li>\t - x</li>\n  </ul>\n</blockquote>",
-    ),
-    (
-        "840-content-behind-a-lead-tab-offers-no-first-block",
-        "carve#4610: a tab after the list separator stays content at the marker content column",
-        "<ul>\n  <li>\n    <ul>\n      <li>\t+\nx</li>\n    </ul>\n  </li>\n</ul>",
-    ),
-    (
-        "840-content-behind-a-lead-tab-offers-no-first-block-2",
-        "carve#4610: a tab after the list separator stays content at the marker content column",
-        "<ul>\n  <li>\n    <ul>\n      <li>\t+\nx</li>\n    </ul>\n  </li>\n</ul>",
-    ),
-    (
-        "840-content-behind-a-lead-tab-offers-no-first-block-3",
-        "carve#4610: a tab after the list separator stays content at the marker content column",
-        "<ul>\n  <li>\t+</li>\n</ul>\n<blockquote>\n\n</blockquote>",
-    ),
-    (
-        "840-content-behind-a-lead-tab-offers-no-first-block-4",
-        "carve#4610: a tab after the list separator stays content at the marker content column",
-        "<blockquote>\n  <ul>\n    <li>\t- +\nx</li>\n  </ul>\n</blockquote>",
-    ),
-    (
-        "840-content-behind-a-lead-tab-offers-no-first-block-5",
-        "carve#4610: a tab after the list separator stays content at the marker content column",
-        "<ul>\n  <li>\t&gt; +\nx</li>\n</ul>",
-    ),
-    (
-        "853-a-whitespace-run-after-a-tab-sets-the-content-column-where-the-content-starts",
-        "carve#4610: a tab after the list separator stays content at the marker content column",
-        "<ul>\n  <li><p>\t e</p>\n    <p>f</p>\n  </li>\n</ul>",
-    ),
-    (
-        "853-a-whitespace-run-after-a-tab-sets-the-content-column-where-the-content-starts-3",
-        "carve#4610: a tab after the list separator stays content at the marker content column",
-        "<ul>\n  <li>\te\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ul>",
-    ),
-    (
-        "864-a-leading-content-tab-sets-the-item-s-content-column-where-the-content-starts",
-        "carve#4610: a tab after the list separator stays content at the marker content column",
-        "<ul>\n  <li><p>\te</p>\n    <p>f</p>\n  </li>\n</ul>",
-    ),
-];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 
 /// Pairs this engine renders differently from the pinned corpus because it has
 /// not reached the rule yet - the mirror of [`AHEAD_OF_PIN`].
@@ -1443,6 +1386,25 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     ("871-a-div-closes-only-on-a-run-of-its-own-width", "ruling at the 5643d59c pin not ported yet", "<div>\n  <p>:::e\n::::\nq\n:::\nafter</p>\n</div>"),
     ("871-a-div-closes-only-on-a-run-of-its-own-width-2", "ruling at the 5643d59c pin not ported yet", "<ul>\n  <li>\n    <div>\n      <p>:::e\n::::\n:::\nl</p>\n    </div>\n  </li>\n</ul>"),
     ("871-a-div-closes-only-on-a-run-of-its-own-width-3", "ruling at the 5643d59c pin not ported yet", "<blockquote>\n  <div>\n    <p>:::e\n::::\nq\n:::</p>\n  </div>\n</blockquote>\n<p>after</p>"),
+    ("222-a-tab-as-the-first-character-of-a-definition-term", "new corpus pair at the 19f78369 spec pin, engine port pending", "<dl>\n  <dt>x</dt>\n</dl>"),
+    ("439-a-colon-followed-by-only-whitespace-is-not-a-description-8", "new corpus pair at the 19f78369 spec pin, engine port pending", "<dl>\n  <dt>t</dt>\n  <dd>text</dd>\n</dl>\n<p>flush</p>"),
+    ("868-a-plus-at-the-column-of-a-container-opened-on-another-marker-line-attaches-the-next-block-2", "new corpus pair at the 19f78369 spec pin, engine port pending", "<p>r<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <ul>\n        <li>a\n+\np</li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
+    ("872-the-third-confirmation-round-s-model-findings-10", "new corpus pair at the 19f78369 spec pin, engine port pending", "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled aria-label=\"q\"> q\n    <h1 id=\"H\">H</h1>\n  </li>\n</ul>"),
+    ("872-the-third-confirmation-round-s-model-findings-11", "new corpus pair at the 19f78369 spec pin, engine port pending", "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled aria-label=\"q\"> q\n    <ul class=\"task-list\">\n      <li><input type=\"checkbox\" disabled aria-label=\"r\"> r</li>\n    </ul>\n  </li>\n</ul>"),
+    ("872-the-third-confirmation-round-s-model-findings-12", "new corpus pair at the 19f78369 spec pin, engine port pending", "<ul>\n  <li>{{ _x_ @code:js }}\n    ^ c\n  </li>\n</ul>"),
+    ("872-the-third-confirmation-round-s-model-findings-2", "new corpus pair at the 19f78369 spec pin, engine port pending", "<blockquote>\n  <ul>\n    <li></li>\n  </ul>\n  <ul>\n    <li>c</li>\n  </ul>\n</blockquote>\n<p>r<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>n<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
+    ("872-the-third-confirmation-round-s-model-findings-3", "new corpus pair at the 19f78369 spec pin, engine port pending", "<ul>\n  <li>\n    <div class=\"line-block\">\n      <p>a<br>\nlazy</p>\n    </div>\n  </li>\n</ul>\n<div>\n  <p>tail</p>\n</div>"),
+    ("872-the-third-confirmation-round-s-model-findings-4", "new corpus pair at the 19f78369 spec pin, engine port pending", "<dl>\n  <dt>t</dt>\n  <dd>\n    <div class=\"line-block\">\n      <p>a<br>\nlazy</p>\n    </div>\n  </dd>\n</dl>\n<div>\n  <p>tail</p>\n</div>"),
+    ("872-the-third-confirmation-round-s-model-findings", "new corpus pair at the 19f78369 spec pin, engine port pending", "<ul>\n  <li></li>\n</ul>\n<ul>\n  <li>child</li>\n</ul>\n<p>r<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>note<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
+    ("873-a-delimited-body-s-overlapping-header-and-footer-make-no-header-cells", "new corpus pair at the 19f78369 spec pin, engine port pending", "<table>\n  <tbody>\n    <tr><th scope=\"row\">a</th></tr>\n    <tr><th scope=\"row\">b</th></tr>\n  </tbody>\n</table>"),
+    ("873-a-plus-after-an-attached-block-reaches-its-host-through-quote-prefixes-2", "new corpus pair at the 19f78369 spec pin, engine port pending", "<blockquote>\n  <ul>\n    <li>a\n      <h1 id=\"h\">h</h1>\n    </li>\n  </ul>\n  <p>+</p>\n  <h1 id=\"h-2\">h</h1>\n</blockquote>"),
+    ("873-an-invisible-item-lead-and-a-caption-line-after-an-accepted-plus-2", "new corpus pair at the 19f78369 spec pin, engine port pending", "<ul>\n  <li><p>Body.</p></li>\n  <li><p>x</p></li>\n</ul>"),
+    ("873-an-invisible-item-lead-and-a-caption-line-after-an-accepted-plus-3", "new corpus pair at the 19f78369 spec pin, engine port pending", "<ul>\n  <li><p>Body.</p></li>\n  <li><p>x</p></li>\n</ul>"),
+    ("873-an-item-on-a-note-marker-line-takes-its-plus-at-its-own-marker-column-2", "new corpus pair at the 19f78369 spec pin, engine port pending", "<p>r<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <ul>\n        <li>a\n          p\n        </li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
+    ("873-an-item-on-a-note-marker-line-takes-its-plus-at-its-own-marker-column", "new corpus pair at the 19f78369 spec pin, engine port pending", "<p><a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <ul>\n        <li>i\n+\nx</li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
+    ("875-an-accepted-plus-follower-keeps-its-column-through-an-indented-quote-prefix-2", "new corpus pair at the 19f78369 spec pin, engine port pending", "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>\n          <ul>\n            <li></li>\n          </ul>\n        </li>\n      </ul>\n      x\n    </li>\n  </ul>\n</blockquote>"),
+    ("878-a-folded-marker-keeps-a-note-item-measured-from-its-source-column-2", "new corpus pair at the 19f78369 spec pin, engine port pending", "<p>q</p>\n<p><a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <ul>\n        <li>\n          <ul>\n            <li>a\n* z\n              <h1 id=\"H\">H</h1>\n            </li>\n          </ul>\n        </li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
+    ("878-a-folded-marker-keeps-a-note-item-measured-from-its-source-column", "new corpus pair at the 19f78369 spec pin, engine port pending", "<p>q</p>\n<p><a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <ul>\n        <li>a\n* z\n          <pre><code></code></pre>\n        </li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
 ];
 
 fn check_pair(slug: &str) {
