@@ -1197,11 +1197,7 @@ fn expected_corpus_size() -> usize {
 /// Empty is the normal end state: the pin catching up is what retires an entry,
 /// and the `assert_ne!` in `check_pair` is what forces the deletion rather than
 /// leaving a declaration that no longer declares anything.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[(
-    "620-generated-container-documents-5",
-    "PART 0 O1 keeps a matched comment span opaque across authored indentation",
-    "<ul>\n  <li>x</li>\n</ul>",
-)];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 
 /// Pairs this engine renders differently from the pinned corpus because it has
 /// not reached the rule yet - the mirror of [`AHEAD_OF_PIN`].
@@ -1285,6 +1281,12 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
 ];
 
 fn check_pair(slug: &str) {
+    if let Some(failure) = pair_failure(slug) {
+        panic!("{failure}");
+    }
+}
+
+fn pair_failure(slug: &str) -> Option<String> {
     let slug = &resolve_slug(slug);
     let dir = corpus_dir();
     let crv = dir.join(format!("{slug}.crv"));
@@ -1293,28 +1295,31 @@ fn check_pair(slug: &str) {
     let expected =
         fs::read_to_string(&html).unwrap_or_else(|e| panic!("read {}: {e}", html.display()));
     let actual = carve::to_html(&source);
+    let (expected, actual) = (expected.trim(), actual.trim());
 
     if let Some((_, reason, ahead)) = AHEAD_OF_PIN.iter().find(|(name, _, _)| name == slug) {
-        pretty_assert_eq(&format!("{slug} ({reason})"), ahead.trim(), actual.trim());
-        assert_ne!(
-            expected.trim(),
-            actual.trim(),
-            "{slug} now matches the pinned corpus: delete its AHEAD_OF_PIN entry",
-        );
-        return;
+        return declared_pair_failure(slug, "AHEAD_OF_PIN", reason, ahead, expected, actual);
     }
-
     if let Some((_, reason, behind)) = BEHIND_ON_PAIR.iter().find(|(name, _, _)| name == slug) {
-        pretty_assert_eq(&format!("{slug} ({reason})"), behind.trim(), actual.trim());
-        assert_ne!(
-            expected.trim(),
-            actual.trim(),
-            "{slug} now matches the pinned corpus: delete its BEHIND_ON_PAIR entry",
-        );
-        return;
+        return declared_pair_failure(slug, "BEHIND_ON_PAIR", reason, behind, expected, actual);
     }
+    mismatch(slug, expected, actual)
+}
 
-    pretty_assert_eq(slug, expected.trim(), actual.trim());
+fn declared_pair_failure(
+    slug: &str,
+    list: &str,
+    reason: &str,
+    declared: &str,
+    expected: &str,
+    actual: &str,
+) -> Option<String> {
+    if expected == actual {
+        return Some(format!(
+            "{slug} now matches the pinned corpus: delete its {list} entry"
+        ));
+    }
+    mismatch(&format!("{slug} ({reason})"), declared.trim(), actual)
 }
 
 #[test]
@@ -1438,16 +1443,15 @@ fn is_implemented_pair(slug: &str) -> bool {
     })
 }
 
-fn pretty_assert_eq(slug: &str, expected: &str, actual: &str) {
-    if expected == actual {
-        return;
-    }
-    panic!(
-        "corpus pair `{slug}` did not match.\n\n\
-         ----- expected -----\n{expected}\n\
-         ----- actual -------\n{actual}\n\
-         --------------------\n",
-    );
+fn mismatch(slug: &str, expected: &str, actual: &str) -> Option<String> {
+    (expected != actual).then(|| {
+        format!(
+            "corpus pair `{slug}` did not match.\n\n\
+             ----- expected -----\n{expected}\n\
+             ----- actual -------\n{actual}\n\
+             --------------------\n",
+        )
+    })
 }
 
 #[test]
@@ -1544,13 +1548,33 @@ fn all_implemented_pairs_exist() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3525"]
 fn all_implemented_corpus_pairs_match() {
-    for slug in corpus_pairs() {
-        if is_implemented_pair(&slug) {
-            check_pair(&slug);
-        }
-    }
+    let failures: Vec<_> = corpus_pairs()
+        .iter()
+        .filter(|slug| is_implemented_pair(slug))
+        .filter_map(|slug| pair_failure(slug))
+        .collect();
+    assert!(
+        failures.is_empty(),
+        "{} corpus pair(s) failed:\n\n{}",
+        failures.len(),
+        failures.join("\n"),
+    );
+}
+
+#[test]
+fn a_declared_pair_fails_when_stale_or_drifted() {
+    let failure = |declared, actual| {
+        declared_pair_failure("s", "BEHIND_ON_PAIR", "r", declared, "golden", actual)
+    };
+    assert_eq!(failure("today", "today"), None);
+    assert!(failure("golden", "golden")
+        .unwrap()
+        .contains("delete its BEHIND_ON_PAIR entry"));
+    assert!(failure("today", "golden")
+        .unwrap()
+        .contains("delete its BEHIND_ON_PAIR entry"));
+    assert!(failure("today", "drifted").unwrap().contains("did not match"));
 }
 
 // One generated test function per implemented base category, keeping panics
