@@ -3454,15 +3454,21 @@ fn render_attrs_with_base_class_unfolded(attrs: &Option<Attrs>, base: &str) -> S
     let Some(attrs) = attrs else {
         return format!(" class=\"{}\"", escape_attr(base));
     };
-    let merged = |classes: &[String]| -> String {
+    let merged = |name: &str, classes: &[String]| -> String {
         format!(
-            " class=\"{}\"",
+            " {}=\"{}\"",
+            escape_attr(name),
             escape_attr(&merge_base_class(base, classes))
         )
     };
     // No recorded order: the slots go in the canonical order, class first.
     if attrs.order.is_empty() {
-        let mut out = merged(&attrs.classes);
+        let name = attrs
+            .key_values
+            .keys()
+            .find(|key| key.eq_ignore_ascii_case("class"))
+            .map_or("class", String::as_str);
+        let mut out = merged(name, &attrs.classes);
         if let Some(id) = &attrs.id {
             write_attr_id(&mut out, id);
         }
@@ -3479,12 +3485,19 @@ fn render_attrs_with_base_class_unfolded(attrs: &Option<Attrs>, base: &str) -> S
         return out;
     }
 
-    let has_class_slot = attrs.order.iter().any(|s| matches!(s, AttrSlot::Class));
+    let has_class_slot = attrs.order.iter().any(|slot| match slot {
+        AttrSlot::Class => true,
+        AttrSlot::Key(key) => {
+            key.eq_ignore_ascii_case("class") && attrs.key_values.contains_key(key)
+        }
+        AttrSlot::Id => false,
+    });
     let mut out = String::new();
     if !has_class_slot {
-        out.push_str(&merged(&attrs.classes));
+        out.push_str(&merged("class", &attrs.classes));
     }
     let mut class_written = false;
+    let mut class_values_written = !has_class_slot;
     for slot in &attrs.order {
         match slot {
             AttrSlot::Id => {
@@ -3496,13 +3509,21 @@ fn render_attrs_with_base_class_unfolded(attrs: &Option<Attrs>, base: &str) -> S
                 // The FIRST class slot carries the merge; a second one would be
                 // a second `class` attribute, which is never valid.
                 if !class_written {
-                    out.push_str(&merged(&attrs.classes));
+                    out.push_str(&merged("class", &attrs.classes));
                     class_written = true;
+                    class_values_written = true;
+                } else if !class_values_written && !attrs.classes.is_empty() {
+                    write_attr_class(&mut out, &attrs.classes);
+                    class_values_written = true;
                 }
             }
             AttrSlot::Key(key) => {
                 if let Some(value) = attrs.key_values.get(key) {
                     if writes_authored_key(key) {
+                        if key.eq_ignore_ascii_case("class") && !class_written {
+                            out.push_str(&merged(key, &[]));
+                            class_written = true;
+                        }
                         out.push_str(&format!(
                             " {}=\"{}\"",
                             escape_attr(key),
@@ -3512,6 +3533,9 @@ fn render_attrs_with_base_class_unfolded(attrs: &Option<Attrs>, base: &str) -> S
                 }
             }
         }
+    }
+    if !class_values_written && !attrs.classes.is_empty() {
+        write_attr_class(&mut out, &attrs.classes);
     }
 
     out
