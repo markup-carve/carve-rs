@@ -976,13 +976,17 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             emit!(_block_source_line, parse_paragraph(&mut cur, options));
             continue;
         }
-        if !may_start_plain_paragraph(line) && !invalid_brace_line && !root_indented_text {
-            if !late_list_like && trim_ascii_start(line).starts_with("$$`") {
-                if let Some(equation) = parse_equation_block(&mut cur, options) {
-                    emit!(_block_source_line, equation);
-                    continue;
-                }
+        let equation_lead = trim_ascii_start(line);
+        if !late_list_like
+            && (equation_lead.starts_with("$$`")
+                || (equation_lead.starts_with("{%") && line.contains("$$`")))
+        {
+            if let Some(equation) = parse_equation_block(&mut cur, options) {
+                emit!(_block_source_line, equation);
+                continue;
             }
+        }
+        if !may_start_plain_paragraph(line) && !invalid_brace_line && !root_indented_text {
             if late_list_like {
                 let (mut node, item_bodies) = read_local_list_like_line(&mut cur, options);
                 finish_unattributed_block(

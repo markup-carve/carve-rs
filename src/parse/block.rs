@@ -619,7 +619,9 @@ pub(in crate::parse) fn parse_block(
     // A block whose sole content is a display-math span (`$$`…``) followed by a
     // caption is a numbered EQUATION. Diverted before the paragraph fallback so
     // parse_paragraph does not fold the caption line into the math paragraph.
-    if trim_ascii_start(line).starts_with("$$`") {
+    if trim_ascii_start(line).starts_with("$$`")
+        || (trim_ascii_start(line).starts_with("{%") && line.contains("$$`"))
+    {
         if let Some(eq) = parse_equation_block(cur, options) {
             return Some(Box::new(eq));
         }
@@ -660,7 +662,7 @@ fn parse_multiline_equation(cur: &mut LineCursor, options: &Options<'_>) -> Opti
         .map(|line| strip_lazy(line))
         .collect::<Vec<_>>()
         .join("\n");
-    let inline = if options.positions {
+    let mut inline = if options.positions {
         let anchors = lines
             .iter()
             .enumerate()
@@ -670,6 +672,7 @@ fn parse_multiline_equation(cur: &mut LineCursor, options: &Options<'_>) -> Opti
     } else {
         parse_inline_with_options(&joined, options)
     };
+    retain_caption_content(&mut inline);
     if inline.len() != 1 || !matches!(&inline[0], InlineNode::Math(m) if m.display) {
         return None;
     }
@@ -704,7 +707,7 @@ pub(in crate::parse) fn parse_equation_block(
 ) -> Option<BlockNode> {
     let line = cur.peek()?;
     let inline_text = trim_ascii_start(line);
-    let inline = if options.positions {
+    let mut inline = if options.positions {
         parse_inline_lines_with_anchor(
             inline_text,
             options,
@@ -713,6 +716,7 @@ pub(in crate::parse) fn parse_equation_block(
     } else {
         parse_inline_with_options(inline_text, options)
     };
+    retain_caption_content(&mut inline);
     if inline.len() != 1 || !matches!(&inline[0], InlineNode::Math(m) if m.display) {
         return None;
     }

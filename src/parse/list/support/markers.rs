@@ -99,7 +99,7 @@ pub(crate) fn marker_content_is_captioned_inline(
     content_col: usize,
     options: &Options<'_>,
 ) -> bool {
-    if !content.starts_with("$$`") && !content.starts_with("![") {
+    if !content.contains("$$`") && !content.contains("![") {
         return false;
     }
     let blank_before_caption = cur.lines.line(cur.pos).is_some_and(is_blank_line);
@@ -109,16 +109,17 @@ pub(crate) fn marker_content_is_captioned_inline(
             && caption_content(&slice_columns(line, content_col, false)).is_some()
     });
     if !captioned {
-        return content.starts_with("$$`")
+        return content.contains("$$`")
             && multiline_math_takes_caption(content, cur, content_col, options);
     }
     if blank_before_caption && quiet_block_image(content).is_some() {
         return true;
     }
-    let inline = parse_inline_with_options(content, options);
+    let mut inline = parse_inline_with_options(content, options);
+    retain_caption_content(&mut inline);
     inline.len() == 1
         && match &inline[0] {
-            InlineNode::Image(_) => blank_before_caption,
+            InlineNode::Image(_) => blank_before_caption || !content.starts_with("!["),
             InlineNode::Math(math) => math.display,
             _ => false,
         }
@@ -159,7 +160,8 @@ fn multiline_math_takes_caption(
         joined.push_str(trim_ascii(&body));
         at += 1;
     }
-    let inline = parse_inline_with_options(&joined, options);
+    let mut inline = parse_inline_with_options(&joined, options);
+    retain_caption_content(&mut inline);
     inline.len() == 1 && matches!(&inline[0], InlineNode::Math(math) if math.display)
 }
 
