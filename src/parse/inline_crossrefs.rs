@@ -247,7 +247,35 @@ pub(in crate::parse) fn crossref_label_nodes(children: &[InlineNode]) -> Crossre
 /// The core crossref's label: [`derive_display_nodes`] in a link context, since
 /// a resolved reference always renders inside the anchor it produces.
 pub(crate) fn crossref_label_clone(children: &[InlineNode]) -> Vec<InlineNode> {
-    derive_display_nodes(children, true)
+    let mut nodes = derive_display_nodes(children, true);
+    drop_clone_ids(&mut nodes);
+    nodes
+}
+
+/// A heading clone drops every id at every depth, so no id appears twice; every
+/// other attribute stays (PART 9R R4, carve#4554).
+fn drop_clone_ids(nodes: &mut Vec<InlineNode>) {
+    struct DropIds;
+    impl crate::include_walk::SubtreeVisitor for DropIds {
+        fn inlines(&mut self, inlines: &mut Vec<InlineNode>) {
+            for node in inlines {
+                crate::include_walk::visit_inline_children(node, self);
+            }
+        }
+        fn attributes(&mut self, attrs: &mut Option<crate::ast::Attrs>, _inline: bool) {
+            let Some(attrs) = attrs else { return };
+            attrs.id = None;
+            attrs
+                .key_values
+                .retain(|key, _| !key.eq_ignore_ascii_case("id"));
+            attrs.order.retain(|slot| match slot {
+                crate::ast::AttrSlot::Id => false,
+                crate::ast::AttrSlot::Key(key) => !key.eq_ignore_ascii_case("id"),
+                crate::ast::AttrSlot::Class => true,
+            });
+        }
+    }
+    crate::include_walk::SubtreeVisitor::inlines(&mut DropIds, nodes);
 }
 
 /// The one derivation every consumer of a heading's display text goes through
@@ -478,7 +506,13 @@ impl CrossrefIndex {
     /// Resolve a cross-reference target to its `(id, title)`, matching case
     /// exactly.
     pub(crate) fn resolve(&self, target: &str) -> Option<(&str, &str)> {
-        let (id, title) = self.titles.get_key_value(target)?;
+        let (id, title) = match self.titles.get_key_value(target) {
+            Some(found) => found,
+            // Keys are NFC-normalized before the lookup (18:286, carve#4574).
+            None => self
+                .titles
+                .get_key_value(&target.nfc().collect::<String>())?,
+        };
         Some((id.as_str(), title.as_str()))
     }
 }

@@ -541,6 +541,12 @@ pub(super) fn escape_destination_escapes(text: &str) -> String {
 }
 
 pub(crate) fn escape_destination(text: &str) -> String {
+    escape_destination_in(text, false)
+}
+
+/// In a table cell `\|` is a destination escape too, so a pipe is written as
+/// one and a backslash before a pipe doubles (carve#4549).
+pub(crate) fn escape_destination_in(text: &str, in_cell: bool) -> String {
     // Almost every destination holds neither a parenthesis nor a backslash, so
     // there is nothing for the scan to misread and nothing to mark. Skipping
     // the walk keeps that case free of the set entirely.
@@ -558,8 +564,9 @@ pub(crate) fn escape_destination(text: &str) -> String {
     for (i, ch) in text.char_indices() {
         let escapable = ch == '\\'
             && (i + 1 == bytes.len()
-                || matches!(bytes.get(i + 1), Some(b'(') | Some(b')') | Some(b'\\')));
-        if marked.contains(&i) || escapable {
+                || matches!(bytes.get(i + 1), Some(b'(') | Some(b')') | Some(b'\\'))
+                || (in_cell && bytes.get(i + 1) == Some(&b'|')));
+        if marked.contains(&i) || escapable || (in_cell && ch == '|') {
             out.push('\\');
         }
         match ch {

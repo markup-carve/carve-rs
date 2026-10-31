@@ -692,10 +692,13 @@ fn include_column_names(value: &str) -> Option<Vec<String>> {
     let inner = value.strip_prefix('"')?.strip_suffix('"')?;
     let mut names = Vec::new();
     let mut current = String::new();
-    let mut chars = inner.chars();
+    let mut chars = inner.chars().peekable();
     while let Some(ch) = chars.next() {
         match ch {
-            '\\' => current.push(chars.next()?),
+            // `quoted_value`: a backslash escapes ASCII punctuation only (carve#4571).
+            '\\' if chars.peek().is_some_and(char::is_ascii_punctuation) => {
+                current.push(chars.next()?);
+            }
             '"' => return None,
             ',' => names.push(std::mem::take(&mut current)),
             _ => current.push(ch),

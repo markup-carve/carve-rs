@@ -1230,7 +1230,7 @@
     "name": "destination-backslash",
     "source": "|= [a](/a\\|b) |= z |\n",
     "contains": [
-      "href=\"/a%5C%7Cb\""
+      "href=\"/a%7Cb\""
     ],
     "cells": 2,
     "excludes": [

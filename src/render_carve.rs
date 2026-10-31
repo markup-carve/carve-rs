@@ -4523,7 +4523,7 @@ fn render_link(session: &RenderSession, node: &Link, ctx: &mut CarveContext) -> 
         .unwrap_or_default();
     format!(
         "[{text}]({}{title}){}",
-        escape_destination(&node.href),
+        escape_destination_in(&node.href, ctx.table_cell_depth > 0),
         render_inline_attrs(&node.attrs, ctx)
     )
 }
@@ -4634,7 +4634,7 @@ fn render_image_with_attrs(
     format!(
         "![{}]({}{title}){}",
         escape_image_alt(&node.alt, in_table),
-        escape_destination(&node.src),
+        escape_destination_in(&node.src, in_table),
         attrs
     )
 }

@@ -163,7 +163,8 @@ fn shared_depth_vectors_with_room() {
     let vectors: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/nested-braced-emphasis.json")).unwrap();
     for case in vectors["depthCases"].as_array().unwrap() {
-        let padding = 200 - case["remainingInlineDepth"].as_u64().unwrap() as usize - 2;
+        // The top inline run is level 1 of the cap (16:102, carve#4474, carve#4564).
+        let padding = 200 - case["remainingInlineDepth"].as_u64().unwrap() as usize - 1;
         let source = format!(
             "{}{}{}",
             "{/".repeat(padding),
@@ -216,10 +217,8 @@ fn shared_host_depth_vectors() {
                 let Some(remaining) = case["remainingInlineDepth"].as_u64() else {
                     continue;
                 };
-                let host_depth = match case["id"].as_str().unwrap() {
-                    "host-depth-quote" => 3,
-                    _ => 2,
-                };
+                // A block host spends none of the inline budget (16:102, carve#4474).
+                let host_depth = 1;
                 let padding = 200 - remaining as usize - host_depth;
                 let nested = format!(
                     "{}{{^{{^x^}}^}}{}",
