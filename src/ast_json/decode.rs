@@ -557,8 +557,10 @@ pub(super) fn decode_table_cell(value: &Json) -> Result<TableCell, AstJsonError>
         // PART 12 §26: an ingested count WINS and is not recomputed. An importer
         // may have resolved it from markers this engine never saw, which is how
         // §23 settles the same question for `blockImage`.
-        colspan: optional_usize(obj, "colspan")?,
-        rowspan: optional_usize(obj, "rowspan")?,
+        colspan: positive_usize(optional_usize(obj, "colspan")?, "table_cell.colspan")?
+            .filter(|count| *count != 1),
+        rowspan: positive_usize(optional_usize(obj, "rowspan")?, "table_cell.rowspan")?
+            .filter(|count| *count != 1),
         header: required_bool(obj, "table_cell", "header")?,
         span: optional_string(obj, "span")?
             .map(decode_cell_span)

@@ -441,10 +441,10 @@ pub(super) fn run_encode_tasks<'a>(out: &mut String, first: EncodeTask<'a>) {
                             )
                         });
                     }
-                    if let Some(n2) = n.colspan {
+                    if let Some(n2) = n.colspan.filter(|count| *count != 1) {
                         w.field("colspan", |out| write_usize(out, n2));
                     }
-                    if let Some(n2) = n.rowspan {
+                    if let Some(n2) = n.rowspan.filter(|count| *count != 1) {
                         w.field("rowspan", |out| write_usize(out, n2));
                     }
                     if let Some(align) = n.align {
@@ -1612,10 +1612,10 @@ pub(super) fn write_table_cell(out: &mut String, n: &TableCell) {
             )
         });
     }
-    if let Some(count) = n.colspan {
+    if let Some(count) = n.colspan.filter(|count| *count != 1) {
         w.field("colspan", |out| write_usize(out, count));
     }
-    if let Some(count) = n.rowspan {
+    if let Some(count) = n.rowspan.filter(|count| *count != 1) {
         w.field("rowspan", |out| write_usize(out, count));
     }
     if let Some(align) = n.align {
