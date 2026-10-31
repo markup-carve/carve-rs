@@ -50,7 +50,7 @@ fn start_plus_quote_at_outer_marker(
 
 /// A child a caption could not be about: one that publishes nothing, or a quote
 /// or bare `:::` div holding only such children (13:150, carve#4573).
-fn holds_nothing(block: &BlockNode) -> bool {
+pub(crate) fn holds_nothing(block: &BlockNode) -> bool {
     match block {
         BlockNode::BlockQuote(quote) => quote.children.iter().all(holds_nothing),
         BlockNode::Div(div) if div.label.is_none() => div.children.iter().all(holds_nothing),

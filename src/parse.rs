@@ -37,6 +37,7 @@ pub use own_lines::decision_trace;
 pub(in crate::parse) use own_lines::restore_authored_columns;
 pub(crate) use own_lines::{own_lines, walk_body, walk_moves_lines, EditsGuard};
 mod table;
+pub(crate) use quote::holds_nothing;
 pub(crate) use table::table_run_open_after;
 #[cfg(test)]
 #[path = "parse/tests.rs"]

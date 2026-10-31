@@ -307,6 +307,18 @@ fn corpus_formatter_semantic_idempotent_and_reparseable_inner() {
             "783-a-verbatim-run-a-continuation-row-opens-stays-open-into-the-next-continuation-row",
             "markup-carve/carve-rs#3557",
         ),
+        (
+            "854-an-indented-dash-line-neither-opens-nor-closes-frontmatter",
+            "markup-carve/carve-rs#3535",
+        ),
+        (
+            "856-a-child-on-a-note-s-marker-line-is-measured-from-its-source-column",
+            "markup-carve/carve-rs#3535",
+        ),
+        (
+            "863-a-closer-or-caption-at-a-note-marker-line-item-s-content-column-is-the-item-s",
+            "markup-carve/carve-rs#3535",
+        ),
     ];
     for (slug, source) in corpus_sources() {
         let not_ported = NOT_PORTED_AT_PIN.iter().any(|(prefix, _)| {
