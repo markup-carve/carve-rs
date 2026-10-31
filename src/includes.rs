@@ -424,6 +424,14 @@ enum IncludeColumns {
     Range(usize, usize),
 }
 
+/// A `{table}` include reads a well-formed region marker line as no record (I1d).
+fn table_include(
+    code: &crate::ast::CodeBlock,
+    payload: &[crate::parse::delimited_table::PayloadLine],
+) -> Option<crate::ast::Table> {
+    crate::parse::delimited_table::from_code_without(code, payload, is_table_record_marker)
+}
+
 fn selected_table_include(d: &Directive) -> bool {
     d.table_attrs
         .as_ref()
@@ -1508,6 +1516,7 @@ impl State<'_> {
 }
 
 mod regions;
+pub(crate) use regions::is_table_record_marker;
 use regions::{content_line_count, region_range, slice_lines, source_lines};
 pub use regions::{select_include_region, IncludeRegion, IncludeRegionError, IncludeRegionMode};
 struct ResolvedChild {
@@ -2641,7 +2650,7 @@ fn with_child<T>(
             if let BlockNode::CodeBlock(code) = block.as_mut() {
                 code.attrs = Some(attrs.clone());
                 if !selected_table_include(d) {
-                    if let Some(table) = crate::parse::delimited_table::from_code(code, &[]) {
+                    if let Some(table) = table_include(code, &[]) {
                         **block = BlockNode::Table(table);
                     }
                 }
@@ -2988,7 +2997,7 @@ fn expand_child(d: &Directive, state: &mut State<'_>, inline: bool) -> Option<Ex
                 ..code.clone()
             };
             let sliced_valid = selected_range.is_none()
-                || crate::parse::delimited_table::from_code(
+                || table_include(
                     &crate::ast::CodeBlock {
                         attrs: Some(attrs.clone()),
                         ..code.clone()
@@ -2996,19 +3005,17 @@ fn expand_child(d: &Directive, state: &mut State<'_>, inline: bool) -> Option<Ex
                     &[],
                 )
                 .is_some();
-            if let Some(mut table) = crate::parse::delimited_table::from_code(&full_code, &payload)
-                .filter(|table| {
-                    sliced_valid
-                        && selected_range.map_or(true, |(first, last)| {
-                            table.rows.iter().all(|row| {
-                                row.pos.as_ref().map_or(true, |pos| {
-                                    !(pos.start_line < first && pos.end_line >= first
-                                        || pos.start_line <= last && pos.end_line > last)
-                                })
+            if let Some(mut table) = table_include(&full_code, &payload).filter(|table| {
+                sliced_valid
+                    && selected_range.map_or(true, |(first, last)| {
+                        table.rows.iter().all(|row| {
+                            row.pos.as_ref().map_or(true, |pos| {
+                                !(pos.start_line < first && pos.end_line >= first
+                                    || pos.start_line <= last && pos.end_line > last)
                             })
                         })
-                })
-            {
+                    })
+            }) {
                 let headers = table
                     .rows
                     .iter()
@@ -3770,7 +3777,7 @@ fn expand_paragraph(block: &mut Paragraph, state: &mut State<'_>) -> Option<Vec<
                                         if selected_table_include(&d) {
                                             None
                                         } else {
-                                            crate::parse::delimited_table::from_code(code, &[])
+                                            table_include(code, &[])
                                         }
                                     } else {
                                         None

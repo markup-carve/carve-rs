@@ -200,6 +200,97 @@ fn pinned_table_selection_corpus() {
 }
 
 #[test]
+fn region_marker_lines_are_no_table_records() {
+    let file = "%% #region r\nName,Price\nA,1\n%% #endregion r\nB,2\n";
+    let nested = "Name\n%% #region o\nA\n// #region i\nB\n/* #endregion i */\n%% #endregion o\nC\n";
+    let kept = "%% #region\nName\n\"x\n%% #region q\"\n<!-- #region h\n";
+    for (options, payload, present, absent) in [
+        (
+            "",
+            file,
+            &["<th scope=\"col\">Name</th>", "<td>A</td>", "<td>B</td>"][..],
+            &["region"][..],
+        ),
+        (
+            "@rows:2-2",
+            file,
+            &["<th scope=\"col\">Name</th>", "<td>A</td>"],
+            &["region", "<td>B</td>"],
+        ),
+        (
+            "@lines:1-3",
+            file,
+            &["<th scope=\"col\">Name</th>", "<td>A</td>"],
+            &["region", "<td>B</td>"],
+        ),
+        (
+            "@region:o",
+            nested,
+            &["<td>A</td>", "<td>B</td>"],
+            &["region", "<td>C</td>"],
+        ),
+        (
+            "",
+            kept,
+            &[
+                "<th scope=\"col\">%% #region</th>",
+                "<td>x\n%% #region q</td>",
+                "<td>&lt;!-- #region h</td>",
+            ],
+            &[],
+        ),
+    ] {
+        let source = format!("{{table}}\n{{{{ data.csv @code:csv {options} }}}}");
+        let html = render_html(&expand(&source, payload).doc).unwrap();
+        for value in present {
+            assert!(
+                html.contains(value),
+                "{options} {payload:?}: {value}\n{html}"
+            );
+        }
+        for value in absent {
+            assert!(
+                !html.contains(value),
+                "{options} {payload:?}: absent {value}\n{html}"
+            );
+        }
+    }
+    let fence = "{table}\n```csv\n%% #region r\nA,1\n```\n";
+    let doc = parse_with_options(fence, &Options::default());
+    let html = render_html(&doc).unwrap();
+    assert!(
+        html.contains("<th scope=\"col\">%% #region r</th>"),
+        "{html}"
+    );
+}
+
+#[test]
+fn lint_reads_table_include_records_without_region_markers() {
+    for (payload, options) in [
+        ("%% #region r\nName,Price\nA,1\n%% #endregion r\n", ""),
+        (
+            "%% #region r\r\nName,Price\r\nA,1\r\n%% #endregion r\r\n",
+            "@rows:2-2",
+        ),
+    ] {
+        let resolver =
+            |_: &str, _: &carve::IncludeContext<'_>| -> Result<IncludeResolved, IncludeDenial> {
+                Ok(IncludeResolved::from(payload))
+            };
+        let lint =
+            Options::default().with_lint_includes(IncludeOptions::new().with_resolver(&resolver));
+        let source = format!("{{table}}\n{{{{ data.csv @code:csv {options} }}}}");
+        let findings = lint_carve_with_options(&source, &lint);
+        assert!(
+            !findings
+                .iter()
+                .any(|f| f.rule == "delimited-table-wide-row"),
+            "{payload:?}: {findings:?}"
+        );
+    }
+}
+
+#[test]
 fn generated_record_and_column_projection() {
     for variant in 0..1000 {
         let tsv = variant % 2 == 1;
