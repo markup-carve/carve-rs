@@ -1751,17 +1751,29 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         loop {
             let structural_owner = self.cur.peek().and_then(|line| {
                 let column = indent_columns(line);
+                let authored_column =
+                    self.cur.source_col(self.cur.pos).unwrap_or(0).max(0) as usize + column;
+                let trailing_plus_owner = stream
+                    .source
+                    .lines()
+                    .last()
+                    .filter(|last| is_plus_marker(trim_ascii_start(last)))
+                    .and_then(|_| stream.line_map.last().copied().flatten())
+                    .and_then(continuation_marker::decision)
+                    .and_then(|decision| decision.owner_column);
                 let accepted_child_plus = is_plus_marker(trim_ascii_start(line))
                     && self
                         .cur
                         .continuation_decision(self.cur.pos)
                         .is_some_and(|decision| {
                             decision.owner == Some(continuation_marker::Kind::List)
-                                && decision.owner_column == Some(column)
+                                && decision.owner_column == Some(authored_column)
                         });
                 let child_block = column >= lead.ladder_columns[0]
                     && column < lead.nested_content_col
                     && !is_list_marker(trim_ascii_start(line))
+                    && (!is_definition_list_start(trim_ascii_start(line))
+                        || trailing_plus_owner == Some(authored_column))
                     && interrupts_paragraph(self.cur, trim_ascii_start(line));
                 (column > self.base_indent
                     && lead.ladder_columns.contains(&column)
@@ -1770,13 +1782,15 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             });
             if let Some(owner_column) = structural_owner {
                 let before = self.cur.pos;
+                let stream_strip_col = lead.ladder_columns[0];
                 let nested = if self
                     .cur
                     .peek()
                     .is_some_and(|line| is_plus_marker(trim_ascii_start(line)))
                 {
                     let line = self.cur.peek().unwrap();
-                    let (body, consumed, synthetic) = slice_columns_mapped(line, content_col, true);
+                    let (body, consumed, synthetic) =
+                        slice_columns_mapped(line, stream_strip_col, true);
                     let mut nested = MappedSource::new_line_at(
                         body,
                         self.cur.source_line(self.cur.pos),
@@ -1788,15 +1802,48 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                     nested.append(collect_indented_block_mapped_after_continuation(
                         self.cur,
                         owner_column.saturating_sub(1),
-                        content_col,
+                        stream_strip_col,
                         self.options,
                     ));
+                    if self.cur.peek().is_some_and(|next| {
+                        indent_columns(next) == owner_column
+                            && is_definition_list_start(trim_ascii_start(next))
+                    }) {
+                        let start = self.cur.pos;
+                        let end = attached_block_lines_classified(
+                            self.cur.lines,
+                            start,
+                            &mut self.cur.comment_closer_last_index,
+                            &mut self.cur.code_closer_last_index,
+                            self.options,
+                            &mut |next, at| {
+                                at > start
+                                    && (is_plus_marker(trim_ascii_start(next))
+                                        || detect_list_marker_full(next)
+                                            .is_some_and(|marker| marker.indent <= owner_column))
+                            },
+                        )
+                        .max(start + 1);
+                        while self.cur.pos < end {
+                            let next = self.cur.lines.at(self.cur.pos);
+                            let (body, consumed, synthetic) =
+                                slice_columns_mapped(next, stream_strip_col, true);
+                            nested.push_newline_at(
+                                body,
+                                self.cur.source_line(self.cur.pos),
+                                self.cur
+                                    .source_col(self.cur.pos)
+                                    .map(|col| col + consumed as isize - synthetic as isize),
+                            );
+                            self.cur.consume();
+                        }
+                    }
                     nested
                 } else {
                     collect_indented_block_mapped(
                         self.cur,
                         owner_column.saturating_sub(1),
-                        content_col,
+                        stream_strip_col,
                         self.options,
                     )
                 };
