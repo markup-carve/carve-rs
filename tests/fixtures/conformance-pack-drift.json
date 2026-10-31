@@ -137,8 +137,7 @@
       "ticket": "markup-carve/carve-rs#3534",
       "cause": "untriaged drift in the fences family at the e7952c45 pin",
       "cases": [
-        "fences-a6ede733e700",
-        "fences-beb7a2645809"
+        "fences-a6ede733e700"
       ]
     },
     {

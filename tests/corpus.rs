@@ -1274,7 +1274,6 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     ("853-a-comment-closer-below-the-content-column-changes-no-ownership-4", "inline or layout ruling at the 3679436f pin not ported yet", "<p>r<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>a</p>\n      <p>x<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
     ("853-a-line-after-a-marker-line-folded-into-a-sublist-item-folds-too", "inline or layout ruling at the 3679436f pin not ported yet", "<ol>\n  <li>\n    <ul>\n      <li>a\n        <ul>\n          <li>y\n1. ~~~</li>\n        </ul>\n      </li>\n    </ul>\n    z\n  </li>\n</ol>"),
     ("853-a-marker-under-a-quoted-description-paragraph-in-an-item-is-text", "inline or layout ruling at the 3679436f pin not ported yet", "<ul>\n  <li>\n    <blockquote>\n      <dl>\n        <dt>t</dt>\n        <dd>d</dd>\n      </dl>\n      <ul>\n        <li>z</li>\n      </ul>\n    </blockquote>\n  </li>\n</ul>"),
-    ("853-a-whitespace-run-after-a-tab-sets-the-content-column-where-the-content-starts", "inline or layout ruling at the 3679436f pin not ported yet", "<ul>\n  <li><p>e</p>\n    <p>f</p>\n  </li>\n</ul>"),
 ];
 
 fn check_pair(slug: &str) {

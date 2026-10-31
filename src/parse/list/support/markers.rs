@@ -337,12 +337,29 @@ pub(crate) fn marker_content_col_at(line: &str, indent: usize) -> Option<usize> 
         return Some(m.indent + 2);
     }
     let content_off = (m.content.as_ptr() as usize).saturating_sub(line.as_ptr() as usize);
-    Some(
-        indent
-            + content_off
-                .saturating_sub(leading_ws(line))
-                .saturating_sub(marker_attrs_width(line, &m)),
-    )
+    let column = indent
+        + content_off
+            .saturating_sub(leading_ws(line))
+            .saturating_sub(marker_attrs_width(line, &m));
+    Some(past_lead_tab_run(m.content, column, m.indent))
+}
+
+/// CARVE-P2-010: a tab that begins an item's content is leading whitespace, so
+/// the content column is where the content starts. Tab stops count from
+/// `origin`, the column the marker's own frame starts at (PART 9 §24 C5).
+pub(crate) fn past_lead_tab_run(content: &str, column: usize, origin: usize) -> usize {
+    if !content.starts_with('\t') || content[1..].starts_with("%%%") {
+        return column;
+    }
+    let mut end = column;
+    for b in content.bytes() {
+        match b {
+            b' ' => end += 1,
+            b'\t' => end = origin + ((end - origin) / 4 + 1) * 4,
+            _ => break,
+        }
+    }
+    end
 }
 
 /// The content column a definition body marker opens, or `None` when the line
