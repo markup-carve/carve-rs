@@ -33,7 +33,10 @@ fn a_description_body_keeps_the_blank() {
 #[test]
 fn a_note_body_keeps_the_blank() {
     assert_eq!(code("x[^1]\n\n[^1]: ```\n  code\n\nafter\n"), "code\n\n");
-    assert_eq!(code("x[^1]\n\n- [^1]: ```\n    code\n\nafter\n"), "code\n\n");
+    assert_eq!(
+        code("x[^1]\n\n- [^1]: ```\n    code\n\nafter\n"),
+        "code\n\n"
+    );
     assert_eq!(code("x[^1]\n\n- [^1]: ```\n\nafter\n"), "\n");
     assert_eq!(code("[^a]: note\n  ```\n   code\n\nsee[^a]\n"), " code\n\n");
 }
