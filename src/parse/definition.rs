@@ -1268,6 +1268,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         // block. A manufactured blank here would make it attach none.
         if accept_fence_opener
             && paragraph_open
+            && !self.last_line_opens_marker_fence()
             && !(self.nested_definition_open
                 && self.lines.last().is_some_and(|line| is_plus_marker(line)))
             && !self
@@ -1335,6 +1336,22 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
                             .paragraph_marker_column
                             .is_some_and(|marker| marker <= self.content_column))
                 || !item_block_opener_with_invisible_arms(local, true))
+    }
+
+    /// Does the last body line open a fence on a list item's marker line? The
+    /// line after it is that fence's payload or closer, not a block after a
+    /// paragraph.
+    fn last_line_opens_marker_fence(&self) -> bool {
+        let last = self
+            .lines
+            .last()
+            .map(String::as_str)
+            .or_else(|| self.seed.lines().last());
+        last.is_some_and(|line| {
+            let line = trim_ascii_start(line);
+            let bottom = innermost_marker_content(line);
+            bottom.len() != line.len() && detect_fence_open(bottom).is_some()
+        })
     }
 
     fn paragraph_open(&self) -> bool {

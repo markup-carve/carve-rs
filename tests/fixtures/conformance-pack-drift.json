@@ -2,28 +2,6 @@
   "comment": "Conformance pack cases this engine renders differently from the spec model, one entry per cause with its open ticket. See tests/conformance_pack.rs.",
   "entries": [
     {
-      "ticket": "markup-carve/carve#4545",
-      "cause": "the pinned spec model predates the ruling that a list marker between an item's columns is a sibling only on every axis (carve#4605); these match the pack on carve main",
-      "cases": [
-        "ownership-53d830f1834e",
-        "ownership-80748f26d9ed",
-        "ownership-baace234ff19",
-        "ownership-dc80fafb5ce9"
-      ]
-    },
-    {
-      "ticket": "markup-carve/carve#4470",
-      "cause": "the pinned spec model predates the T6 ruling that a continuation cell past the last column is a new cell (carve#4530); these match the pack on carve main",
-      "cases": [
-        "inline-cb88dff1b472",
-        "plus-50d07ed355d0",
-        "plus-69d271a411f9",
-        "plus-baf998c9d969",
-        "plus-d438ebc082a8",
-        "plus-f56c0c6d25a9"
-      ]
-    },
-    {
       "ticket": "markup-carve/carve#3972",
       "cause": "all three engines agree against the spec model",
       "cases": [
@@ -46,8 +24,6 @@
         "fences-5e87d36367a5",
         "fences-77de8e162288",
         "fences-97b499ad9a5e",
-        "fences-e6b042364968",
-        "fences-e727fbef63d9",
         "fences-f413c9695b09"
       ]
     },
@@ -78,7 +54,6 @@
         "notes-2ce0a0643b77",
         "notes-414400566580",
         "notes-47da77f91f9b",
-        "notes-4dc51b5608ab",
         "notes-5078f8dc86e9",
         "notes-6db864f6ba22",
         "notes-7758bc8d539d",
@@ -99,7 +74,6 @@
       "cause": "untriaged day-one drift in the ownership family",
       "cases": [
         "ownership-1cdee5ee6a0a",
-        "ownership-276fc2ecc9ec",
         "ownership-2d71e91b5e4d",
         "ownership-34ea3231e4b7",
         "ownership-dabd40ea2cb5",
@@ -108,36 +82,16 @@
     },
     {
       "ticket": "markup-carve/carve-rs#3534",
-      "cause": "untriaged day-one drift in the plus family",
-      "cases": [
-      ]
-    },
-    {
-      "ticket": "markup-carve/carve-rs#3534",
       "cause": "untriaged day-one drift in the roundtrip family",
       "cases": [
-        "roundtrip-50e7fa11ce58",
-        "roundtrip-cf313303938e"
+        "roundtrip-50e7fa11ce58"
       ]
     },
     {
       "ticket": "markup-carve/carve#4033",
       "cause": "an unclosed fence's trailing blank run in a description body: the pin's model predates carve main, and the model reads a reopened item fence differently",
       "cases": [
-        "fences-9caa332a8a41",
-        "fences-c9b7d1a267bf"
-      ]
-    },
-    {
-      "ticket": "markup-carve/carve-rs#3534",
-      "cause": "untriaged drift in the fences family at the e7952c45 pin",
-      "cases": [
-      ]
-    },
-    {
-      "ticket": "markup-carve/carve-rs#3534",
-      "cause": "untriaged drift in the lazy family at the e7952c45 pin",
-      "cases": [
+        "fences-9caa332a8a41"
       ]
     },
     {
@@ -173,12 +127,13 @@
       ]
     },
     {
-      "ticket": "markup-carve/carve#4479",
-      "cause": "the pinned spec model predates the fold of a list marker that misses a description (PART 0 S2); these match the model on carve main",
+      "ticket": "markup-carve/carve-rs#3535",
+      "cause": "pin move to carve 5643d59c: rulings on first-block plus and note shapes this engine has not reached",
       "cases": [
-        "ownership-19a15d4c0b00",
-        "plus-f3825032510f",
-        "roundtrip-c5d30c150732"
+        "attributes-5944b36aa7a1",
+        "notes-df25868243ba",
+        "notes-e344b261ace5",
+        "notes-f9f3443c5601"
       ]
     }
   ]

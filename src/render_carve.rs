@@ -1841,7 +1841,9 @@ fn region_marker_at_item_marker_column(
 
 fn hosts_caption(block: &BlockNode) -> bool {
     match block {
-        BlockNode::BlockQuote(quote) => quote.fenced || !quote.children.is_empty(),
+        BlockNode::BlockQuote(quote) => {
+            quote.fenced || !quote.children.iter().all(crate::parse::holds_nothing)
+        }
         BlockNode::Table(_) | BlockNode::CodeBlock(_) | BlockNode::BlockImage(_) => true,
         // The group's closer hosts the caption slot (§4c). With the slot
         // already filled, a following `^ ` paragraph re-parses as a paragraph
