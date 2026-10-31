@@ -264,6 +264,9 @@ struct IndentedNote<'a> {
     open_term: bool,
     retained_below_comment: bool,
     below_comment_span: Option<usize>,
+    // A matched comment is one invisible extent. Its closer leaves no open
+    // paragraph for a later line below this note's body column to continue.
+    closed_comment_paragraph: bool,
     lazy_open: bool,
     /// The definition line starts at column 0, so no container hosts the note.
     flush_def: bool,
@@ -856,6 +859,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 open_term: term_start_column(def.first).is_some(),
                 retained_below_comment: false,
                 below_comment_span: None,
+                closed_comment_paragraph: false,
                 lazy_open: false,
                 flush_def: indent_columns(raw_def_line) == 0,
                 // A note on its outer note's marker line takes the lazy lines that note gave up.
@@ -1134,6 +1138,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         if is_blank_line(line) || column >= state.body_indent {
             state.retained_below_comment = false;
+            if column >= state.body_indent && !is_blank_line(line) {
+                state.closed_comment_paragraph = false;
+            }
         }
         if parse_footnote_def_line(line).is_some() {
             return Flow::Stop;
@@ -1167,7 +1174,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 |kept| stripped_col(Some(0), line, kept),
             );
             *i += 1;
+            state.closed_comment_paragraph = true;
             return Flow::Next;
+        }
+        if state.closed_comment_paragraph {
+            return Flow::Stop;
         }
         // Lazy continuation, the same rule as every container (ruling on
         // carve#3885): a line that interrupts no paragraph joins an open one.
@@ -1309,6 +1320,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         column: usize,
         i: &mut usize,
     ) -> Flow {
+        let closes_held_span = closes_a_held_comment_span(&note.lines, line);
         if state.below_comment_span.is_none()
             && !state.retained_below_comment
             && ((parse_footnote_def_line(state.first).is_some()
@@ -1323,6 +1335,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         if let Some(width) = state.below_comment_span {
             if is_comment_fence_close_any_column(line, width) {
                 state.below_comment_span = None;
+                state.closed_comment_paragraph = true;
             }
         } else if let Some(open) = detect_comment_fence_line_any_column(line) {
             if self
@@ -1343,7 +1356,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         note.push_with(kept, Some(self.first_source_line + *i), |kept| {
             stripped_col(Some(0), line, kept)
         });
-        state.retained_below_comment = true;
+        state.closed_comment_paragraph |= closes_held_span;
+        state.retained_below_comment = !closes_held_span;
         *i += 1;
         Flow::Next
     }

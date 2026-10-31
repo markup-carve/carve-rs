@@ -295,6 +295,10 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     // span OPENS - the closer line does not carry the opener's column.
     let mut span_reached_this_frame = comment_fence.is_some();
     let mut closed_comment_span_above = false;
+    // A child marker may carry the opener on that same line. The child parser
+    // consumes its opacity, but this collector still needs the span boundary
+    // to decide whether the line after its closer can be lazy in this item.
+    let mut marker_comment_span = None;
     // A descendant fence may open past this collector's strip column.
     // Preserve that decision before the deferred child loses its lookahead.
     // A marker-line ladder opens descendants before collection begins.
@@ -325,6 +329,11 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let mut lead_fence_scan = LeadFenceScan::default();
     let mut nested_blank_run: Option<usize> = None;
     run_indented_body!(cur.lines, cur.pos, container, |line, admission| {
+        // Handle this before the special lazy and marker-line branches below:
+        // the span left no paragraph for any of them to continue.
+        if closed_comment_span_above && indent_columns(line) < strip_cols {
+            break;
+        }
         if admission.blank {
             table_caption_open = false;
         }
@@ -1267,6 +1276,26 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             break;
         }
         let was_in_comment_span = comment_fence_strip.is_some();
+        if let Some(width) = marker_comment_span {
+            if is_comment_fence_close_any_column(line, width) {
+                marker_comment_span = None;
+                closed_comment_span_above = true;
+            }
+        } else if fence.is_none()
+            && nested_fence.is_none()
+            && active_nested_fence.is_none()
+            && comment_fence.is_none()
+            && colon_open.is_empty()
+            && detect_comment_fence_line_any_column(line).is_none()
+        {
+            if let Some((open, opener_column)) = detect_comment_fence_opener_at_any_column(line) {
+                if opener_column >= strip_cols
+                    && cur.has_comment_closer_after(cur.pos + 1, open.fence_len)
+                {
+                    marker_comment_span = Some(open.fence_len);
+                }
+            }
+        }
         if let Some((fence_len, opener_column)) = comment_fence {
             if is_comment_fence_close_any_column(line, fence_len) {
                 cur.closed_comment_location = Some((cur.pos, opener_column));
@@ -1997,7 +2026,8 @@ pub(crate) fn chunk_ends_in_closed_comment_span(chunk: &MappedSource) -> bool {
         if !chunk.reached.get(index).copied().unwrap_or(false) {
             continue;
         }
-        if let Some(fence) = detect_comment_fence_line_any_column(line) {
+        // The opener may be the first block of a marker-line child.
+        if let Some((fence, _)) = detect_comment_fence_opener_at_any_column(line) {
             open = Some(fence.fence_len);
         }
     }

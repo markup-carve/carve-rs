@@ -897,7 +897,11 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         } else {
             lazy_scope
         };
-        if stopped_fence.is_none() && !descendant_text_after_fence && !nested_bare_ends_item {
+        if stopped_fence.is_none()
+            && !descendant_text_after_fence
+            && !nested_bare_ends_item
+            && !chunk_ends_in_closed_comment_span(&nested)
+        {
             fold_lazy_run_and_resume_in_band(
                 cur,
                 &mut nested,
@@ -955,6 +959,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             band_line_ends_the_chunk,
         } = chunk;
         let nested_sublist = sub_indent >= content_col;
+        let closed_comment_span = chunk_ends_in_closed_comment_span(&nested);
         if nested_sublist && nested.outer_plus_after_blank {
             self.tight = false;
         }
@@ -1008,6 +1013,14 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // a genuine blank BETWEEN items keeps loosening.
         self.pending_blank = false;
         self.items[last_item].children.extend(nested_children);
+        if closed_comment_span
+            && self
+                .cur
+                .peek()
+                .is_some_and(|line| !is_blank_line(line) && indent_columns(line) < content_col)
+        {
+            return END;
+        }
         if nested_bare_ends_item {
             return END;
         }
