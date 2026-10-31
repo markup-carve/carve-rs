@@ -1427,6 +1427,9 @@ struct QuoteBody<'a> {
     span_start: usize,
     inner: LineBuffer,
     para_open: ParaOpen<'a>,
+    open_divs: Vec<usize>,
+    div_code_fence: Option<FenceOpen>,
+    closed_div: bool,
     comment_run: Option<(usize, usize, usize)>,
     comment_lazy_lines: Vec<(usize, String, Option<isize>)>,
     in_fence: Option<FenceOpen>,
@@ -1489,6 +1492,9 @@ impl<'a> QuoteBody<'a> {
             span_start,
             inner: LineBuffer::default(),
             para_open: ParaOpen::Closed,
+            open_divs: Vec::new(),
+            div_code_fence: None,
+            closed_div: false,
             comment_run: None,
             comment_lazy_lines: Vec::new(),
             in_fence: None,
@@ -1960,6 +1966,34 @@ impl<'a> QuoteBody<'a> {
         } else {
             false
         };
+        let mut inherited_absorption = inherited_absorption;
+        // CARVE-P9-016: absorption is a paragraph rule. A div's own closer ends the div.
+        self.closed_div = false;
+        // A nested quote tracks its own stack on its own pass.
+        let local = (!self.open_divs.is_empty() || stripped.contains(":::"))
+            .then(|| strip_all_quotes(stripped))
+            .filter(|&(_, levels)| levels == 0)
+            .map_or("", |(rest, _)| trim_ascii_start(rest));
+        if local.is_empty() {
+        } else if let Some(open) = self.div_code_fence {
+            if is_fence_close(local, open) {
+                self.div_code_fence = None;
+            }
+        } else {
+            let run = exact_colon_fence_len(local);
+            if run.is_some() && run == self.open_divs.last().copied() {
+                self.open_divs.pop();
+                self.closed_div = true;
+                inherited_absorption = false;
+            } else if inherited_absorption && is_suppressed_colon_fence_line(local) {
+                // Text of the open paragraph.
+            } else if let Some(open) = detect_container_open(local).filter(|_| !self.list_open) {
+                self.open_divs.push(open.fence_len);
+                self.closed_div = true;
+            } else if !self.open_divs.is_empty() {
+                self.div_code_fence = detect_fence_open(local);
+            }
+        }
         // The run is advanced on every ordinary quoted line, so the
         // answer is about the BLOCK this line lands in rather than
         // about the line. A continuation row appends to the table above
@@ -1999,7 +2033,7 @@ impl<'a> QuoteBody<'a> {
                 .lines
                 .last()
                 .is_some_and(|line| !is_blank_line(&line.text));
-        self.para_open = if nested_item_closes {
+        self.para_open = if nested_item_closes || self.closed_div {
             ParaOpen::Closed
         } else if in_description {
             ParaOpen::from_line(trim_ascii_start(description_content), inherited_absorption)
@@ -2376,7 +2410,9 @@ impl<'a> QuoteBody<'a> {
         };
         // The replay reads a description body as quoted text; its own base
         // closes the paragraph too.
-        let quoted_open = if self.description_line {
+        let quoted_open = if self.closed_div {
+            false
+        } else if self.description_line {
             fenced_below.unwrap_or(true) && self.para_open.get()
         } else {
             fenced_below.unwrap_or_else(|| self.para_open.get())
