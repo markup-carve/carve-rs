@@ -7,7 +7,6 @@ fn html(source: &str) -> String {
     to_html(source).trim_end().to_string()
 }
 
-
 /// carve-rs#3517
 #[test]
 fn a_term_led_sublist_keeps_its_terms_and_lazy_column() {

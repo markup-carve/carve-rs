@@ -13,9 +13,15 @@ fn refusals(source: &str) -> Vec<(usize, usize)> {
 #[test]
 fn both_plus_lines_of_a_stacked_quote_are_refused() {
     assert_eq!(refusals("> - > +\n> - > +\n s\n"), [(1, 7), (2, 7)]);
-    assert_eq!(refusals("> > * > +\n> > * > +\n>  tail\n"), [(1, 9), (2, 9)]);
+    assert_eq!(
+        refusals("> > * > +\n> > * > +\n>  tail\n"),
+        [(1, 9), (2, 9)]
+    );
     assert_eq!(refusals("> > - > +\n> > - > +\n>  s\n"), [(1, 9), (2, 9)]);
-    assert_eq!(refusals("> > > - > +\n> > > - > +\n>  s\n"), [(1, 11), (2, 11)]);
+    assert_eq!(
+        refusals("> > > - > +\n> > > - > +\n>  s\n"),
+        [(1, 11), (2, 11)]
+    );
 }
 
 #[test]

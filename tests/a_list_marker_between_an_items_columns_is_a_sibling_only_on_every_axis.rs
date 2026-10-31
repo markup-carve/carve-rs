@@ -24,7 +24,10 @@ fn a_task_marker_under_a_plain_item_folds() {
 fn an_ordered_marker_of_another_dialect_folds() {
     assert_eq!(html("1. a\n a. b\n"), "<ol> <li>a a. b</li> </ol>");
     assert_eq!(html("1. a\n i. b\n"), "<ol> <li>a i. b</li> </ol>");
-    assert_eq!(html("a. a\n 1. b\n"), "<ol type=\"a\"> <li>a 1. b</li> </ol>");
+    assert_eq!(
+        html("a. a\n 1. b\n"),
+        "<ol type=\"a\"> <li>a 1. b</li> </ol>"
+    );
 }
 
 #[test]
@@ -41,7 +44,10 @@ fn a_full_sibling_still_opens_an_item() {
         html("- [ ] a\n - [x] b\n"),
         "<ul class=\"task-list\"> <li><input type=\"checkbox\" disabled aria-label=\"a\"> a</li> <li data-task-state=\"x\"><input type=\"checkbox\" checked disabled aria-label=\"b\"> b</li> </ul>"
     );
-    assert_eq!(html("i. a\n ii. b\n"), "<ol type=\"i\"> <li>a</li> <li>b</li> </ol>");
+    assert_eq!(
+        html("i. a\n ii. b\n"),
+        "<ol type=\"i\"> <li>a</li> <li>b</li> </ol>"
+    );
 }
 
 #[test]
