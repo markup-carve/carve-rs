@@ -768,6 +768,7 @@ struct DefinitionBodyCollector<'s, 'o> {
     nested_attribute_closed: bool,
     retained_below_comment: bool,
     retained_comment_column: usize,
+    comment_state: BodyCommentState,
     retained_fence: Option<(FenceOpen, bool)>,
     // Seeded from the marker line's own content: does the body's LEAD open a
     // code fence NESTED past a list marker? Its verbatim body is the flush-left
@@ -811,6 +812,10 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         for raw in seed.lines() {
             advance_nested_lead_fence(&mut nested_lead_fence, raw);
         }
+        let mut comment_state = BodyCommentState::new();
+        for raw in seed.lines() {
+            comment_state.observe(raw);
+        }
         Self {
             seed,
             content_column,
@@ -852,6 +857,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             nested_attribute_closed: false,
             retained_below_comment: false,
             retained_comment_column: 0,
+            comment_state,
             retained_fence: None,
             nested_lead_fence,
         }
@@ -882,6 +888,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
     }
 
     fn push(&mut self, text: String, line: Option<usize>, col: Option<isize>, reached: bool) {
+        self.comment_state.observe(&text);
         self.lines.push(text);
         self.line_map.push(line);
         self.col_map.push(col);
@@ -1449,6 +1456,13 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         line: &str,
         indent: usize,
     ) -> BodyStep {
+        if self
+            .comment_state
+            .comment
+            .is_some_and(|run| cur.has_comment_closer_after(cur.pos + 1, run))
+        {
+            return BodyStep::Stop;
+        }
         if self.ends_below_column(line) {
             return BodyStep::Stop;
         }
