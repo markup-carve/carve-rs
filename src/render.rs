@@ -3101,38 +3101,53 @@ pub(crate) fn fold_attr_names_from(out: &mut String, start: usize) {
     if !rest.is_empty() || attrs.is_empty() {
         return;
     }
-    let duplicated = attrs.iter().enumerate().any(|(i, (name, _))| {
-        attrs[..i]
-            .iter()
-            .any(|(earlier, _)| earlier.eq_ignore_ascii_case(name))
-    });
-    if !duplicated {
+    let mut seen: HashSet<String> = HashSet::with_capacity(attrs.len());
+    if attrs
+        .iter()
+        .all(|(name, _)| seen.insert(name.to_ascii_lowercase()))
+    {
         return;
     }
     let mut merged: Vec<(&str, Option<String>)> = Vec::new();
+    let mut slots: HashMap<String, usize> = HashMap::with_capacity(attrs.len());
+    let mut class_tokens: HashSet<String> = HashSet::new();
+    let mut class_normalized = false;
     for (name, value) in attrs {
-        let Some(slot) = merged
-            .iter_mut()
-            .find(|(earlier, _)| earlier.eq_ignore_ascii_case(name))
-        else {
+        let lower = name.to_ascii_lowercase();
+        let is_class = lower == "class";
+        let Some(&slot) = slots.get(&lower) else {
+            if is_class {
+                class_tokens.extend(
+                    value
+                        .unwrap_or_default()
+                        .split(' ')
+                        .filter(|token| !token.is_empty())
+                        .map(str::to_string),
+                );
+            }
+            slots.insert(lower, merged.len());
             merged.push((name, value.map(str::to_string)));
             continue;
         };
-        if name.eq_ignore_ascii_case("class") {
-            let mut tokens: Vec<String> = slot
-                .1
-                .as_deref()
-                .unwrap_or_default()
-                .split(' ')
-                .filter(|token| !token.is_empty())
-                .map(str::to_string)
-                .collect();
+        let slot = &mut merged[slot];
+        if is_class {
+            let joined = slot.1.get_or_insert_with(String::new);
+            if !class_normalized {
+                *joined = joined
+                    .split(' ')
+                    .filter(|token| !token.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                class_normalized = true;
+            }
             for token in value.unwrap_or_default().split(' ') {
-                if !token.is_empty() && !tokens.iter().any(|t| t == token) {
-                    tokens.push(token.to_string());
+                if !token.is_empty() && class_tokens.insert(token.to_string()) {
+                    if !joined.is_empty() {
+                        joined.push(' ');
+                    }
+                    joined.push_str(token);
                 }
             }
-            slot.1 = Some(tokens.join(" "));
         } else {
             slot.1 = value.map(str::to_string);
         }
