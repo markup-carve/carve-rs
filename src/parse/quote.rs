@@ -136,7 +136,9 @@ impl QuotedEntryScan {
                 peeled = after;
                 quote_depth += 1;
             }
-            if quote_depth != self.quote_depth {
+            // A lazy line carries no `>`: it continues the innermost entry at
+            // whatever depth that entry was opened.
+            if quote_depth != self.quote_depth && !line.starts_with(LAZY) {
                 self.half = None;
                 self.description_col = None;
                 self.content_col = None;
