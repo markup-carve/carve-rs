@@ -162,6 +162,7 @@ impl PrepassFenceState {
 /// came from, and (with positions on) the column each was stripped at.
 struct NoteBody {
     lines: Vec<String>,
+    comment_state: BodyCommentState,
     line_map: Vec<Option<usize>>,
     col_map: Vec<Option<isize>>,
     positions: bool,
@@ -176,6 +177,7 @@ impl NoteBody {
         source_line: Option<usize>,
         col: impl FnOnce(&str) -> Option<isize>,
     ) {
+        self.comment_state.observe(&line);
         if self.positions {
             self.col_map.push(col(&line));
         }
@@ -767,8 +769,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             self.record_definition_start(def.label, raw_def_line, def.def_line, def_start_line);
         }
         let mut i = i + 1;
+        let mut comment_state = BodyCommentState::new();
+        comment_state.observe(def.first);
         let mut note = NoteBody {
             lines: vec![def.first.to_string()],
+            comment_state,
             line_map: vec![Some(def_start_line)],
             col_map: if self.positions {
                 vec![stripped_col(
@@ -924,6 +929,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         );
         if end > i {
             note.lines[0].clear();
+            note.comment_state = BodyCommentState::new();
             note.line_map[0] = None;
             if self.positions {
                 note.col_map[0] = None;
@@ -1020,6 +1026,13 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         // Lazy continuation, the same rule as every container (ruling on
         // carve#3885): a line that interrupts no paragraph joins an open one.
+        if note.comment_state.comment.is_some_and(|run| {
+            self.comment_fence_closers
+                .get(&run)
+                .is_some_and(|&last| last > *i)
+        }) {
+            return Flow::Stop;
+        }
         let rest = trim_ascii_start(line);
         if (!self.nested || state.marker_line_note)
             && state.note_fence.is_none()
@@ -1626,6 +1639,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         let count = attached_one_block_lines(CursorLines::Slice(&attached), self.options);
         note.lines[0].clear();
+        note.comment_state = BodyCommentState::new();
         note.line_map[0] = None;
         if self.positions {
             note.col_map[0] = None;
