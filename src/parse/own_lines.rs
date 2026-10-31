@@ -1072,6 +1072,20 @@ impl<'a> Walk<'a> {
         }
     }
 
+    /// A marker from the reached item's content column up to a missed list
+    /// column can belong to the reached item's list when its axes agree.
+    fn marker_ends_lazy(&self, reached: usize, col: usize, rest: &str) -> bool {
+        let Some(item) = self.frames.get(reached + 1) else {
+            return false;
+        };
+        item.kind == Kind::Item
+            && (same_marker_axes(&item.marker_src, rest)
+                || (self.frames[reached].kind == Kind::Item
+                    && col >= self.frames[reached].col
+                    && col < item.list_col
+                    && same_marker_axes(&self.frames[reached].marker_src, rest)))
+    }
+
     fn top(&mut self) -> &mut Frame {
         self.frames.last_mut().expect("the document frame stays")
     }
@@ -1259,13 +1273,7 @@ impl<'a> Walk<'a> {
             && !term_refuses
             && !form.interrupts()
             && !matches!(form, Form::Dd(_))
-            && !(matches!(form, Form::Item(..))
-                && self.frames.get(reached + 1).is_some_and(|f| {
-                    f.kind == Kind::Item
-                        && (same_marker_axes(&f.marker_src, c.rest)
-                            || c.col == f.list_col.min(f.marker.map_or(f.list_col, |(col, _)| col))
-                            || c.col <= self.frames[reached].col)
-                }))
+            && !(matches!(form, Form::Item(..)) && self.marker_ends_lazy(reached, c.col, c.rest))
         {
             if self.decide && matches!(form, Form::Item(..)) {
                 self.decide_folded_marker(at, c.rest, reached);
