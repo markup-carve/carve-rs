@@ -322,7 +322,7 @@ fn note_child_at_source(rest: &str) -> bool {
             .map(|marker| marker.content)
             .or_else(|| parse_footnote_def_line(line).map(|(_, body)| body));
         let Some(next) = next else {
-            return chained && detect_fence_open(line).is_none();
+            return (chained || quote_marker(line).is_some()) && detect_fence_open(line).is_none();
         };
         text = next;
         chained = true;
@@ -1768,11 +1768,11 @@ impl<'a> Walk<'a> {
             };
             let depth = self.frames.len();
             self.content(at_frame, start, f_canon.saturating_sub(m), at, c);
-            // A `+` still reads the body column (carve#4409).
+            // A marker-line child keeps its authored marker column for a
+            // later own-line `+` (CARVE-P9-067, carve#4623 and carve#4697).
             let source_shift = start.saturating_sub(body);
             for f in &mut self.frames[depth..] {
-                if let Some((marker, _)) = &mut f.marker {
-                    *marker = marker.saturating_sub(source_shift);
+                if f.marker.is_some() {
                     f.source_shift = source_shift;
                 }
             }
