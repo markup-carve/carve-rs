@@ -2169,6 +2169,47 @@ pub(in crate::parse) fn find_colon_fence_end(
     closer_index: &mut Option<HashMap<u8, Vec<usize>>>,
     comment_closers: &mut Option<HashMap<usize, usize>>,
 ) -> usize {
+    find_colon_fence_end_with(
+        lines,
+        start,
+        fence_len,
+        literal,
+        closer_index,
+        comment_closers,
+        |at| std::borrow::Cow::Borrowed(lines.at(at)),
+    )
+}
+
+/// Scan a line block after removing its host's structural indentation. Lines
+/// are measured only as the scan reaches them, so short blocks do not copy the
+/// rest of a large item for each opener.
+pub(in crate::parse) fn find_measured_line_block_end(
+    lines: CursorLines<'_>,
+    start: usize,
+    fence_len: usize,
+    column: usize,
+    comment_closers: &mut Option<HashMap<usize, usize>>,
+) -> usize {
+    find_colon_fence_end_with(
+        lines,
+        start,
+        fence_len,
+        true,
+        &mut None,
+        comment_closers,
+        |at| std::borrow::Cow::Owned(slice_columns(lines.at(at), column, true)),
+    )
+}
+
+fn find_colon_fence_end_with<'a>(
+    lines: CursorLines<'a>,
+    start: usize,
+    fence_len: usize,
+    literal: bool,
+    closer_index: &mut Option<HashMap<u8, Vec<usize>>>,
+    comment_closers: &mut Option<HashMap<usize, usize>>,
+    mut measured: impl FnMut(usize) -> std::borrow::Cow<'a, str>,
+) -> usize {
     if !literal {
         if let Some(end) = lines.colon_end(start) {
             return end;
@@ -2182,7 +2223,8 @@ pub(in crate::parse) fn find_colon_fence_end(
     let mut idx = start + 1;
     let mut paragraph_open = None;
     while idx < lines.len() {
-        let line = lines.at(idx);
+        let line = measured(idx);
+        let line = line.as_ref();
         let top = *stack.last().unwrap();
         let paragraph_was_open = paragraph_open;
         paragraph_open = if literal {
@@ -2220,12 +2262,13 @@ pub(in crate::parse) fn find_colon_fence_end(
                     code_closer_exists_after(index, idx, open.fence_char, open.fence_len)
                 });
             let has_closer = possible
-                && lines.range(idx + 1..lines.len()).any(|candidate| {
+                && (idx + 1..lines.len()).any(|at| {
+                    let candidate = measured(at);
                     is_fence_close(
                         if literal {
-                            trim_ascii_start(candidate)
+                            trim_ascii_start(&candidate)
                         } else {
-                            candidate
+                            &candidate
                         },
                         open,
                     )
@@ -2233,13 +2276,13 @@ pub(in crate::parse) fn find_colon_fence_end(
             if has_closer {
                 idx += 1;
                 while idx < lines.len() {
-                    let candidate = lines.at(idx);
+                    let candidate = measured(idx);
                     idx += 1;
                     if is_fence_close(
                         if literal {
-                            trim_ascii_start(candidate)
+                            trim_ascii_start(&candidate)
                         } else {
-                            candidate
+                            &candidate
                         },
                         open,
                     ) {
@@ -2251,7 +2294,7 @@ pub(in crate::parse) fn find_colon_fence_end(
             }
             if !literal && paragraph_was_open.is_none() {
                 idx += 1;
-                while idx < lines.len() && exact_colon_fence_len(lines.at(idx)) != Some(top) {
+                while idx < lines.len() && exact_colon_fence_len(&measured(idx)) != Some(top) {
                     idx += 1;
                 }
                 paragraph_open = None;
@@ -2261,13 +2304,9 @@ pub(in crate::parse) fn find_colon_fence_end(
         if let Some(open) = detect_comment_fence_line(line) {
             if has_indexed_comment_closer_after(lines, comment_closers, idx + 1, open.fence_len) {
                 if let Some(close) = (idx + 1..lines.len())
-                    .find(|&j| is_comment_fence_close_any_column(lines.at(j), open.fence_len))
+                    .find(|&j| is_comment_fence_close_any_column(&measured(j), open.fence_len))
                 {
-                    if !literal
-                        || !lines
-                            .range(idx + 1..close)
-                            .any(|line| line.starts_with(LAZY))
-                    {
+                    if !literal || !(idx + 1..close).any(|at| measured(at).starts_with(LAZY)) {
                         idx = close + 1;
                         paragraph_open = None;
                         continue;
