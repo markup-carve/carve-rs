@@ -990,8 +990,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         // Lazy continuation, the same rule as every container (ruling on
         // carve#3885): a line that interrupts no paragraph joins an open one.
         let rest = trim_ascii_start(line);
-        if !state.open_term
-            && (!self.nested || state.marker_line_note)
+        if (!self.nested || state.marker_line_note)
             && state.note_fence.is_none()
             && !interrupts_paragraph_with_rest(line, &self.lines[*i + 1..])
             && !interrupts_paragraph_with_rest(rest, &self.lines[*i + 1..])
@@ -1001,7 +1000,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             && parse_footnote_def_line(rest).is_none()
             // §10 I2: under a note's paragraph a marker is text, unless an
             // item hosts the note and the marker may continue that list.
-            && (state.flush_def || !is_list_marker(rest))
+            // A marker below a term ends the note (corpus 855).
+            && ((state.flush_def && !state.open_term) || !is_list_marker(rest))
             && !opens_code_fence(rest)
             && (lazy_open || note_paragraph_open(note, rest, self.options))
         {

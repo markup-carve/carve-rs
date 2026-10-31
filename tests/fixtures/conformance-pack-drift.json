@@ -65,7 +65,6 @@
       "ticket": "markup-carve/carve-rs#3534",
       "cause": "untriaged day-one drift in the notes family",
       "cases": [
-        "notes-0d3c380f6d04",
         "notes-15e93aed2752",
         "notes-2ce0a0643b77",
         "notes-414400566580",
@@ -82,10 +81,8 @@
         "notes-c0e4dadcf339",
         "notes-ce4e197bb78b",
         "notes-d2500c45a956",
-        "notes-e065114c465d",
         "notes-ee421f59e501",
-        "notes-f7a4d0c570a4",
-        "notes-fc2e2bb31a32"
+        "notes-f7a4d0c570a4"
       ]
     },
     {
