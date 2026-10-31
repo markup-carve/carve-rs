@@ -297,6 +297,57 @@ pub(crate) fn dialect_compatible(first: OlDialect, marker: &ListMarker<'_>) -> b
     }
 }
 
+/// The dialects an ordered marker can read as, each with its value.
+fn ordered_dialects(m: &ListMarker<'_>) -> Vec<(OlDialect, usize)> {
+    if is_ambiguous_roman_letter(m.marker) {
+        let upper = m.marker.bytes().all(|b| b.is_ascii_uppercase());
+        let letter = m.marker.as_bytes()[0].to_ascii_lowercase();
+        let roman = match letter {
+            b'i' => 1,
+            b'v' => 5,
+            b'x' => 10,
+            b'l' => 50,
+            b'c' => 100,
+            b'd' => 500,
+            _ => 1000,
+        };
+        return vec![
+            (OlDialect::Roman(upper), roman),
+            (OlDialect::Alpha(upper), usize::from(letter - b'a') + 1),
+        ];
+    }
+    vec![(ol_dialect(m.ol_type), m.start.unwrap_or(1))]
+}
+
+/// PART 9 §11 N1: does `head` continue the list `first` opened, on every axis
+/// (bullet character, ordered dialect and delimiter, plain or task)? An
+/// ambiguous first marker resolves by the §11 tie-break against `head`.
+pub(crate) fn same_list_axes(first: &ListMarker<'_>, head: &ListMarker<'_>) -> bool {
+    if first.ordered != head.ordered {
+        return false;
+    }
+    if !first.ordered {
+        return first.marker == head.marker && first.checked.is_some() == head.checked.is_some();
+    }
+    if first.delim != head.delim {
+        return false;
+    }
+    let heads = ordered_dialects(head);
+    let mut list = ordered_dialects(first);
+    if list.len() > 1 {
+        let next = |d: (OlDialect, usize)| heads.iter().any(|h| h.0 == d.0 && h.1 == d.1 + 1);
+        let (roman, alpha) = (list[0], list[1]);
+        list = vec![if next(roman) {
+            roman
+        } else if next(alpha) || roman.1 != 1 {
+            alpha
+        } else {
+            roman
+        }];
+    }
+    list.iter().any(|d| heads.iter().any(|h| h.0 == d.0))
+}
+
 /// Is `m` a single roman-letter marker (i/v/x/l/c/d/m, either case)? Such a
 /// marker is dialect-AMBIGUOUS: roman or alpha depending on its sibling (§11).
 pub(crate) fn is_ambiguous_roman_letter(m: &str) -> bool {

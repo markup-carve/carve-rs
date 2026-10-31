@@ -65,6 +65,8 @@ struct Frame {
     last: Last,
     marker: Option<(usize, usize)>,
     axes: String,
+    /// An item's marker line from its marker on, for the §11 N1 sibling test.
+    marker_src: String,
     closer: Option<Closer>,
     open_col: usize,
     run: usize,
@@ -113,6 +115,7 @@ impl Frame {
             last: Last::None,
             marker: None,
             axes: String::new(),
+            marker_src: String::new(),
             closer: None,
             open_col: 0,
             run: 0,
@@ -319,6 +322,18 @@ fn note_child_at_source(rest: &str) -> bool {
         chained = true;
     }
     false
+}
+
+/// A marker that matches the open item's list on every §11 N1 axis is its
+/// sibling, not a lazy line (PART 0 S4, carve#4545).
+fn same_marker_axes(first: &str, head: &str) -> bool {
+    match (
+        detect_list_marker_full(first),
+        detect_list_marker_full(head),
+    ) {
+        (Some(first), Some(head)) => same_list_axes(&first, &head),
+        _ => false,
+    }
 }
 
 /// The bullet or ordered marker's content column offset, the bytes up to its
@@ -1244,8 +1259,10 @@ impl<'a> Walk<'a> {
             && !term_refuses
             && !form.interrupts()
             && !matches!(form, Form::Dd(_))
-            && !matches!(&form, Form::Item(_, _, axes)
-                if self.frames.get(reached + 1).is_some_and(|f| f.kind == Kind::Item && &f.axes == axes))
+            && !(matches!(form, Form::Item(..))
+                && self.frames.get(reached + 1).is_some_and(|f| {
+                    f.kind == Kind::Item && same_marker_axes(&f.marker_src, c.rest)
+                }))
         {
             if self.decide && matches!(form, Form::Item(..)) {
                 self.decide_folded_marker(at, c.rest, reached);
@@ -1585,6 +1602,9 @@ impl<'a> Walk<'a> {
             _ => (col, col.saturating_sub(canon)),
         };
         f.axes = axes;
+        if kind == Kind::Item {
+            f.marker_src = c.rest.to_owned();
+        }
         f.shift = self.frames.last().map_or(0, |owner| owner.shift);
         f.marker_shift = f.shift;
         f.line = self.first_line + at;

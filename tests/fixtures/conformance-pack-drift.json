@@ -2,6 +2,16 @@
   "comment": "Conformance pack cases this engine renders differently from the spec model, one entry per cause with its open ticket. See tests/conformance_pack.rs.",
   "entries": [
     {
+      "ticket": "markup-carve/carve#4545",
+      "cause": "the pinned spec model predates the ruling that a list marker between an item's columns is a sibling only on every axis (carve#4605); these match the pack on carve main",
+      "cases": [
+        "ownership-53d830f1834e",
+        "ownership-80748f26d9ed",
+        "ownership-baace234ff19",
+        "ownership-dc80fafb5ce9"
+      ]
+    },
+    {
       "ticket": "markup-carve/carve#4470",
       "cause": "the pinned spec model predates the T6 ruling that a continuation cell past the last column is a new cell (carve#4530); these match the pack on carve main",
       "cases": [
