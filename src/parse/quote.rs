@@ -174,7 +174,10 @@ impl QuotedEntryScan {
                 self.description_col =
                     definition_body_content_col(content).map(|body_col| column + ladder + body_col);
                 self.closed_by_block = false;
-            } else if item_block_opener(content) {
+            } else if item_block_opener(content)
+                || is_definition_placeholder(content)
+                || parse_link_def_line(content).is_some()
+            {
                 // A block written inside the entry closes it, so a lazy line
                 // below has no open half to continue.
                 self.half = None;
@@ -183,7 +186,9 @@ impl QuotedEntryScan {
                 // lazy marker folds into, so it does not make the marker the
                 // enclosing item's loose text - `> - > x` / ` :: t` folds `:: t`
                 // into the quoted paragraph, not into the item (carve-rs#1538).
-                self.closed_by_block = detect_heading(content).is_some()
+                self.closed_by_block = is_definition_placeholder(content)
+                    || parse_link_def_line(content).is_some()
+                    || detect_heading(content).is_some()
                     || thematic_break_marker(content).is_some()
                     || detect_fence_open(content).is_some()
                     || detect_comment_fence_line(content).is_some()

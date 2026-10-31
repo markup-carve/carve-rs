@@ -2523,6 +2523,20 @@ impl<'a> ParaOpen<'a> {
         while let Some(rest) = strip_blockquote_prefix(innermost) {
             innermost = rest;
         }
+        // A definition at the reached container's content column closes its
+        // paragraph even when it was written past that column (PART 0 S3).
+        let at_content = trim_ascii_start(innermost);
+        if is_definition_placeholder(at_content)
+            || parse_link_def_line(at_content).is_some()
+            || parse_footnote_def_line(at_content).is_some()
+        {
+            let verdict = Verdict {
+                open: false,
+                opens_absorption: false,
+            };
+            *answer = Some(verdict);
+            return verdict;
+        }
         let absorbed = suppressed && is_suppressed_colon_fence_line(innermost);
         let open = !is_blank_line(innermost)
             && (absorbed
