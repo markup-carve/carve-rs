@@ -1158,17 +1158,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     // An abutting attribute block is item metadata and contributes zero,
     // so changing its spelling or Unicode value cannot move the body
     // (markup-carve/carve#1701, #1698).
-    fn item_content_col(&self, marker: &ListMarker<'_>) -> usize {
-        if marker.checked.is_some() {
-            return self.base_indent + 2;
-        }
+    fn item_content_col(&self, _marker: &ListMarker<'_>) -> usize {
         let l = self.cur.peek().unwrap();
-        let byte_off = (marker.content.as_ptr() as usize).saturating_sub(l.as_ptr() as usize);
-        let column = indent_columns(l)
-            + byte_off
-                .saturating_sub(leading_ws(l))
-                .saturating_sub(marker_attrs_width(l, marker));
-        past_lead_tab_run(marker.content, column, indent_columns(l))
+        marker_content_col(l).expect("current item marker")
     }
 
     fn bare_continuation_item(&mut self, item: ItemOpen<'l>) {
@@ -2223,7 +2215,11 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     // paragraph text.
     fn paragraph_lead_item(&mut self, item: ItemOpen<'l>) {
         let content = item.marker.content;
-        let paragraph_content = trim_ascii_start(content);
+        let paragraph_content = if item.marker.checked.is_some() {
+            trim_ascii_start(content)
+        } else {
+            content
+        };
         let mut lead = LeadParagraph {
             lines: vec![paragraph_content.to_string()],
             suppress_colon_interrupt: is_invalid_colon_fence_opener_text(content),

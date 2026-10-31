@@ -362,19 +362,12 @@ fn list_marker(rest: &str) -> Option<(usize, usize, String)> {
         i += bytes[i..].iter().position(|&b| b == b'}')? + 1;
     }
     let spaces = bytes[i..].iter().take_while(|&&b| b == b' ').count();
-    let mut width = token + if marker.checked.is_some() { 1 } else { spaces };
-    let mut head = if marker.content.is_empty() {
+    let width = token + spaces;
+    let head = if marker.content.is_empty() {
         rest.len()
     } else {
         marker.content.as_ptr() as usize - rest.as_ptr() as usize
     };
-    if marker.checked.is_none() {
-        let end = past_lead_tab_run(marker.content, width, 0);
-        if end != width {
-            width = end;
-            head += marker.content.len() - trim_ascii_start(marker.content).len();
-        }
-    }
     let axes = match marker.delim {
         Some(d) => (d as char).to_string(),
         None => marker.marker.to_owned(),
