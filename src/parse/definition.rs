@@ -859,10 +859,15 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
     fn into_mapped_source(self) -> MappedSource {
         debug_assert_eq!(self.col_map.len(), self.lines.len());
         debug_assert_eq!(self.reached.len(), self.lines.len());
+        // An open fence's trailing blank survives `str::lines()` (corpus 291).
+        let mut source = self.lines.join("\n");
+        if self.lines.last().is_some_and(|line| line.is_empty()) {
+            source.push('\n');
+        }
         MappedSource {
             newlines_counted: (0, 0),
             col_map: self.col_map,
-            source: self.lines.join("\n"),
+            source,
             line_map: self.line_map,
             item_marker_at_start: false,
             marker_tail: None,
@@ -998,6 +1003,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
                     .classify(after, || cur.continuation_decision(look))
                     == ContainerLine::OwnedContinuation
             }) {
+                self.keep_blanks_for_open_fence(cur, look);
                 return BodyStep::Stop;
             }
             // The body's own column, like every other line this collector takes:
@@ -1699,7 +1705,25 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
                 }
                 BodyStep::Next
             }
-            _ => BodyStep::Stop,
+            _ => {
+                if body_lines_hold_open_code_fence(&self.lines) {
+                    self.keep_blanks_for_open_fence(cur, cur.pos + look);
+                }
+                BodyStep::Stop
+            }
+        }
+    }
+
+    /// A blank run that ends the body still reaches its open fence (PART 0 S2),
+    /// and stays with the cursor as the outer separator.
+    fn keep_blanks_for_open_fence(&mut self, cur: &LineCursor<'_>, end: usize) {
+        for at in cur.pos..end {
+            let (residue, consumed, synthetic) =
+                slice_columns_mapped(cur.lines.at(at), self.content_column, true);
+            let col = cur
+                .source_col(at)
+                .map(|col| col + consumed as isize - synthetic as isize);
+            self.push(residue, cur.source_line(at), col, false);
         }
     }
 }

@@ -6,11 +6,20 @@ use super::*;
 pub(in crate::parse) const LOSING_NOTE_PREFIX: &str = "\u{0}losing:";
 
 fn definition_source(note: NoteBody) -> MappedSource {
+    // An authored trailing blank (an open fence's payload, corpus 291) survives
+    // `str::lines()`; the separator `push_blank` leaves after a `+` block does not.
+    let mut source = note.lines.join("\n");
+    if note.lines.len() > 1
+        && note.lines.last().is_some_and(|line| line.is_empty())
+        && note.line_map.last().is_some_and(Option::is_some)
+    {
+        source.push('\n');
+    }
     MappedSource {
         newlines_counted: (0, 0),
         reached: vec![true; note.lines.len()],
         col_map: note.col_map,
-        source: note.lines.join("\n"),
+        source,
         line_map: note.line_map,
         item_marker_at_start: false,
         marker_tail: None,
@@ -176,6 +185,23 @@ impl NoteBody {
 
     fn push_blank(&mut self) {
         self.push_with(String::new(), None, |_| None);
+    }
+
+    /// Does the body end inside a code fence a blank run still reaches? A `+`
+    /// block (after its synthetic separator, with no blank) ends at the blank.
+    fn holds_open_fence(&self) -> bool {
+        let Some(opener) = open_code_fence_opener(&self.lines) else {
+            return false;
+        };
+        let attached = self.line_map[..opener]
+            .iter()
+            .rposition(Option::is_none)
+            .is_some_and(|separator| {
+                !self.lines[separator + 1..opener]
+                    .iter()
+                    .any(|l| is_blank_line(l))
+            });
+        !attached
     }
 }
 
@@ -1228,6 +1254,16 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 _ => false,
             };
         if !resumes {
+            // The run still reaches an open fence that ends with the note.
+            if note.holds_open_fence() {
+                for (at, blank) in lines.iter().enumerate().take(after_run).skip(*i) {
+                    let (residue, consumed, synthetic) =
+                        slice_columns_mapped(blank, state.body_indent, true);
+                    note.push_with(residue, Some(self.first_source_line + at), |_| {
+                        Some(consumed as isize - synthetic as isize)
+                    });
+                }
+            }
             return Flow::Stop;
         }
         while *i < after_run {
@@ -1539,11 +1575,13 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         let resume_at = self.next_hosted_non_blank(&host, i);
         if resume_at >= self.lines.len() {
+            self.keep_blanks_for_open_fence(&host, note, i, resume_at);
             return i;
         }
         if !walk.reaches_floor(&host, self.lines[resume_at]) {
             while self.hosted_lazy_line(&host, &mut walk, note, &mut i) {}
             if !walk.lazy_open {
+                self.keep_blanks_for_open_fence(&host, note, i, resume_at);
                 return i;
             }
         }
@@ -1861,22 +1899,44 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let lines = self.lines;
         let after = self.next_hosted_non_blank(host, *i + 1);
         if after >= lines.len() || !walk.reaches_floor(host, lines[after]) {
+            self.keep_blanks_for_open_fence(host, note, *i, after);
             return Flow::Stop;
         }
         while *i < after {
-            let raw = lines[*i];
-            let line = host.content(raw).expect("checked quote prefix");
-            let prefix = raw.chars().count() - line.chars().count();
-            let (residue, consumed, synthetic) = slice_columns_mapped(line, host.note_floor, true);
+            let residue = self.push_hosted_blank(host, note, *i);
             if walk.track {
                 walk.opacity.observe(&residue);
             }
-            note.push_with(residue, Some(self.first_source_line + *i), |_| {
-                Some((prefix + consumed) as isize - synthetic as isize)
-            });
             *i += 1;
         }
         Flow::Next
+    }
+
+    /// A blank run that ends the note still reaches the note's open fence
+    /// (PART 0 S2), and stays in the host as its separator.
+    fn keep_blanks_for_open_fence(
+        &self,
+        host: &NoteHost,
+        note: &mut NoteBody,
+        from: usize,
+        to: usize,
+    ) {
+        if from < to && note.holds_open_fence() {
+            for at in from..to {
+                self.push_hosted_blank(host, note, at);
+            }
+        }
+    }
+
+    fn push_hosted_blank(&self, host: &NoteHost, note: &mut NoteBody, at: usize) -> String {
+        let raw = self.lines[at];
+        let line = host.content(raw).expect("checked quote prefix");
+        let prefix = raw.chars().count() - line.chars().count();
+        let (residue, consumed, synthetic) = slice_columns_mapped(line, host.note_floor, true);
+        note.push_with(residue.clone(), Some(self.first_source_line + at), |_| {
+            Some((prefix + consumed) as isize - synthetic as isize)
+        });
+        residue
     }
 
     fn register_definition(

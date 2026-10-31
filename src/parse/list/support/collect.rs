@@ -322,7 +322,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             open
         });
     let mut lead_fence_scan = LeadFenceScan::default();
-    let mut nested_blank_run: Option<(usize, usize, bool)> = None;
+    let mut nested_blank_run: Option<usize> = None;
     run_indented_body!(cur.lines, cur.pos, container, |line, admission| {
         if admission.blank {
             table_caption_open = false;
@@ -412,7 +412,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         }) {
             active_nested_fence = None;
         }
-        if nested_blank_run.is_some_and(|(end, _, _)| cur.pos >= end) {
+        if nested_blank_run.is_some_and(|end| cur.pos >= end) {
             nested_blank_run = None;
         }
         outer_plus_after_blank |= trim_ascii(line) == "+"
@@ -481,8 +481,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             break;
         }
         if admission.blank {
-            // A nested marker-line fence keeps one separator before a plus at
-            // its marker column. A direct item fence keeps every payload blank.
+            // A blank run below a nested marker-line fence is that fence's
+            // payload and, before an outer follower, this item's separator too
+            // (PART 0 S2: a blank reaches every frame).
             if active_nested_fence.is_some()
                 && nested_blank_run.is_none()
                 && (recent_nested_fence_lead(&lines)
@@ -500,34 +501,19 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                                 && is_fence_close(trim_ascii_start(next), open)
                         })
                 });
-                let direct_fence_payload = lines.is_empty()
-                    || lines
+                // A line below the fence's column already ended the sub-item.
+                let in_fence = active_nested_fence.is_some_and(|open| {
+                    lines
                         .iter()
                         .rev()
                         .find(|line| !is_blank_line(line))
-                        .is_some_and(|line| {
-                            detect_fence_open(innermost_marker_content(line)).is_some()
-                        });
-                let applies = outer_follower
-                    && (!direct_fence_payload
-                        || cur
-                            .lines
-                            .line(end)
-                            .is_some_and(|next| is_plus_marker(trim_ascii_start(next))));
-                if outer_follower && direct_fence_payload && !applies {
-                    discarded_outer_blank = true;
-                }
-                nested_blank_run = Some((end, 0, applies));
-            }
-            if let Some((end, kept, applies)) = nested_blank_run.as_mut() {
-                if *applies && cur.pos < *end {
-                    if *kept >= 1 {
-                        discarded_outer_blank = true;
-                        cur.consume();
-                        continue;
-                    }
-                    *kept += 1;
-                }
+                        .map_or(true, |line| {
+                            detect_list_marker_full(trim_ascii_start(line)).is_some()
+                                || indent_columns(line) + strip_cols >= open.content_col
+                        })
+                });
+                discarded_outer_blank |= outer_follower && in_fence;
+                nested_blank_run = Some(end);
             }
             marker_note_intermediate_quote_open = false;
             nested_paragraph_column = None;
@@ -1863,6 +1849,33 @@ pub(crate) fn track_collected_colon_fence(
     if let Some(container) = detect_container_open(line) {
         open.push(container.fence_len);
     }
+}
+
+/// Do the collected body lines end inside a code fence, at any depth? A
+/// fence opened on a list marker line counts. Read once, when a body ends.
+pub(crate) fn body_lines_hold_open_code_fence<S: AsRef<str>>(lines: &[S]) -> bool {
+    open_code_fence_opener(lines).is_some()
+}
+
+/// The line that opened the fence [`body_lines_hold_open_code_fence`] finds.
+pub(crate) fn open_code_fence_opener<S: AsRef<str>>(lines: &[S]) -> Option<usize> {
+    let mut open = None;
+    let mut opener = 0;
+    for (at, line) in lines.iter().enumerate() {
+        let line = line.as_ref();
+        let mut text = trim_ascii_start(line);
+        if open.is_none() {
+            if let Some(marker) = detect_list_marker_full(text) {
+                text = innermost_marker_content(marker.content);
+            }
+        }
+        let was_open = open.is_some();
+        track_collected_fence(&mut open, text, true, indent_columns(line));
+        if !was_open && open.is_some() {
+            opener = at;
+        }
+    }
+    open.map(|_| opener)
 }
 
 pub(crate) fn track_collected_fence(
