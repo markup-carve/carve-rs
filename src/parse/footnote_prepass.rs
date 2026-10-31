@@ -5,6 +5,18 @@ use super::*;
 /// walk has collected the definitions inside it. No label can start with NUL.
 pub(in crate::parse) const LOSING_NOTE_PREFIX: &str = "\u{0}losing:";
 
+fn unfenced_marker_content_col(line: &str) -> Option<usize> {
+    let column = marker_content_col(line)?;
+    let mut content = line;
+    while let Some(marker) = detect_list_marker_full(content) {
+        content = marker.content;
+    }
+    if detect_fence_open(content).is_some() {
+        return None;
+    }
+    Some(column)
+}
+
 fn definition_source(note: NoteBody) -> MappedSource {
     // An authored trailing blank (an open fence's payload, corpus 291) survives
     // `str::lines()`; the separator `push_blank` leaves after a `+` block does not.
@@ -38,7 +50,7 @@ fn definition_source(note: NoteBody) -> MappedSource {
     if note
         .lines
         .first()
-        .and_then(|line| marker_content_col(line))
+        .and_then(|line| unfenced_marker_content_col(line))
         .is_some_and(|content_col| {
             note.lines.windows(2).skip(1).any(|pair| {
                 indent_columns(&pair[0]) < content_col
@@ -936,7 +948,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         // floor when a folded marker precedes a below-column code fence.
         if !in_container
             && !def.authored_quote_def
-            && marker_content_col(def.first).is_some_and(|width| {
+            && unfenced_marker_content_col(def.first).is_some_and(|width| {
                 let first_col = stripped_col(
                     Some(stripped.structural.chars().count() as isize),
                     stripped.bare,
