@@ -126,6 +126,21 @@ pub(in crate::parse) fn standalone_attrs_block_len_iter<'a>(
     if first.starts_with([' ', '\t']) {
         return None;
     }
+    attrs_block_len_from(first, lines)
+}
+
+/// A WRAPPED block whose opener is indented: PART 9 §15 A5 (CARVE-P0-024)
+/// makes it an attribute line whatever the opener's indentation.
+pub(in crate::parse) fn indented_wrapped_attrs_block_len<'a>(
+    mut lines: impl Iterator<Item = &'a str>,
+) -> Option<usize> {
+    let first = lines.next()?;
+    // A lazy line is the paragraph's, not a continuation of this block.
+    let unframed = lines.take_while(|line| strip_lazy(line).len() == line.len());
+    attrs_block_len_from(first, unframed).filter(|&len| len > 1)
+}
+
+fn attrs_block_len_from<'a>(first: &'a str, lines: impl Iterator<Item = &'a str>) -> Option<usize> {
     // AN ATTRIBUTE BLOCK OPENS WITH A BRACE, and refusing everything else here
     // is what keeps this cheap. `interrupts_paragraph` asks this question of
     // EVERY continuation line, and without the guard a paragraph whose lines
@@ -228,7 +243,9 @@ pub(in crate::parse) fn quoted_attrs_block_len<'a>(
         (line, depth)
     }
     let (first, nested_depth) = innermost(stripped);
-    if first.starts_with([' ', '\t']) || !first.starts_with('{') {
+    // §15 A5: the opener's indentation does not change what a wrapped block is.
+    let first = trim_ascii_start(first);
+    if !first.starts_with('{') {
         return QuotedAttrsBlock::No;
     }
     // The single-line spelling is already answered by

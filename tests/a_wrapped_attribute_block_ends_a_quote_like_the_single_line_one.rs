@@ -109,11 +109,10 @@ fn control_a_blank_line_inside_the_braces_refuses_the_block() {
 
 #[test]
 fn control_an_indented_wrapped_block_is_lazy_text() {
-    // FLUSH-LEFT ONLY, under the strict column-0 rule: an indented `{…}` inside
-    // the quote is paragraph text, so the quote goes on collecting. The
-    // single-line spelling already answered this way and the wrapped one has to
-    // agree with it, not with the flush-left rows above.
-    let expected = "<blockquote><p>q\n{.k\n<span class=\"tag\"><strong>#x</strong></span>}\ntail</p></blockquote>";
+    // §15 A5 (CARVE-P0-024) replaced the flush-left-only reading: an indented
+    // wrapped block is an attribute line too, so it ends the quote's paragraph
+    // and the unprefixed `tail` is not lazy.
+    let expected = "<blockquote><p>q</p></blockquote>\n<p>tail</p>";
     assert_eq!(html("> q\n>  {.k\n>  #x}\ntail\n"), expected);
 }
 

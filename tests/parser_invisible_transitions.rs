@@ -20,15 +20,16 @@ fn postblank_comment_span_keeps_the_next_sibling_loose() {
 fn reached_wrapped_attribute_closes_nested_claim_across_its_extent() {
     assert_eq!(
         to_html("- - a\n   {c\n}\nx\n"),
-        "<ul>\n  <li>\n    <ul>\n      <li>a\n{c\n}</li>\n    </ul>\n  </li>\n</ul>\n<p>x</p>"
+        "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n    </ul>\n  </li>\n</ul>\n<p>x</p>"
     );
 }
 
 #[test]
 fn below_column_wrapped_attribute_remains_nested_paragraph_text() {
     assert_eq!(
+        // §15 A5: the wrapped block is an attribute line, so it ends both items.
         to_html("- - a\n {c\n}\nx\n"),
-        "<ul>\n  <li>\n    <ul>\n      <li>a\n{c\n}\nx</li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n    </ul>\n  </li>\n</ul>\n<p c=\"\">x</p>"
     );
 }
 

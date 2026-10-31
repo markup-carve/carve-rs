@@ -85,8 +85,7 @@
       "cause": "untriaged day-one drift in the ownership family",
       "cases": [
         "ownership-34ea3231e4b7",
-        "ownership-dabd40ea2cb5",
-        "ownership-edfbea8daa50"
+        "ownership-dabd40ea2cb5"
       ]
     },
     {
@@ -111,11 +110,7 @@
         "fences-6bb4b2c08642",
         "fences-957709fb7e0e",
         "fences-e0910c8dd446",
-        "lazy-4bc0393d24b2",
         "lazy-68fe7c68d81d",
-        "lazy-f60632f36c87",
-        "ownership-bd5caf2c0c4d",
-        "roundtrip-d27a8c0b8e38",
         "lazy-353dc1c74791",
         "lazy-7753aedc9422",
         "plus-2bca1c74608b",

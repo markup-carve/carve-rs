@@ -1034,6 +1034,20 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         {
             break;
         }
+        // §15 A5: a wrapped attribute block below the item's column is an
+        // attribute line, not lazy text, so it ends the item.
+        if indent < attribute_column
+            && fence.is_none()
+            && comment_fence.is_none()
+            && trim_ascii_start(line).starts_with('{')
+            && indented_wrapped_attrs_block_len(
+                std::iter::once(trim_ascii_start(line))
+                    .chain((cur.pos + 1..cur.lines.len()).map_while(|i| cur.lines.line(i))),
+            )
+            .is_some()
+        {
+            break;
+        }
         if (definition_ended_paragraph || closed_code_leaf)
             && indent < strip_cols
             && !definition_comment_band

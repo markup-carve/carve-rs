@@ -636,8 +636,8 @@ pub(in crate::parse) fn body_ends_with_an_attribute_line(source: &str) -> bool {
     let mut start = end;
     loop {
         if standalone_attrs_block_len(&lines[start..]) == Some(end - start + 1) {
-            // A wrapped opener past the body's column is paragraph text (carve#3421).
-            return start == end || leading_ws(raw_lines[start]) == 0;
+            // §15 A5: an indented wrapped opener is an attribute line too.
+            return true;
         }
         if start == 0 || is_blank_line(lines[start - 1]) {
             return false;
@@ -1209,7 +1209,8 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         let opener = trim_ascii_start(line);
         let nested_attribute_owner =
             opener.starts_with('{') && self.item_content_columns.contains(&indent);
-        let wrapped_attribute = ((indent == self.content_column || nested_attribute_owner)
+        // §15 A5: a wrapped block past the body's column is an attribute line too.
+        let wrapped_attribute = ((indent >= self.content_column || nested_attribute_owner)
             && fence.open.is_none()
             && opener.starts_with('{')
             && parse_standalone_attrs(opener).is_none())

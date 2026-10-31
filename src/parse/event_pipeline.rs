@@ -714,6 +714,20 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             cur.consume();
             continue;
         }
+        if cur.peek().is_some_and(|line| {
+            line.starts_with([' ', '\t']) && trim_ascii_start(line).starts_with('{')
+        }) && indented_wrapped_attrs_block_len(
+            (cur.pos..cur.lines.len()).map_while(|i| cur.lines.line(i)),
+        )
+        .is_some()
+        {
+            let at = cur.pos;
+            if let Some(attrs) = parse_standalone_attrs_block(&mut cur) {
+                let pos = span_of(&cur, at, cur.pos, options);
+                leading_attrs.push((out.len(), attrs, pos));
+                continue;
+            }
+        }
         let invalid_brace_line = if cur.peek().is_some_and(|line| line.starts_with('{')) {
             let at = cur.pos;
             if let Some(attrs) = parse_standalone_attrs_block(&mut cur) {

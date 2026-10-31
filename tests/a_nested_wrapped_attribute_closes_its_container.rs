@@ -37,13 +37,20 @@ fn quoted_braces_outside_the_nested_item_column_remain_text() {
         "{after_blank}"
     );
 
+    // §15 A5: an indented wrapped block is an attribute line and leaves no
+    // paragraph open, so the unprefixed line after it ends the quote.
     let overindented = to_html("> - a\n>    {.c\n>   }\npara\n");
-    assert!(overindented.contains("para</li>"), "{overindented}");
+    assert!(
+        overindented.ends_with("</blockquote>\n<p>para</p>"),
+        "{overindented}"
+    );
     assert!(!overindented.contains("class=\"c\""), "{overindented}");
 
     let top_level = to_html("> - a\n>\n> {.c\n> }\n  cont\n");
-    assert!(top_level.contains("<p class=\"c\">cont</p>"), "{top_level}");
-    assert!(top_level.ends_with("</blockquote>"), "{top_level}");
+    assert!(
+        top_level.ends_with("</blockquote>\n<p>cont</p>"),
+        "{top_level}"
+    );
 }
 
 #[test]
@@ -98,7 +105,10 @@ fn wrapped_and_single_line_nested_attributes_have_the_same_owner() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 
     let overindented = to_html(":: t\n: - a\n      {.c\n}\npara\n");
-    assert!(overindented.contains("para</li>"), "{overindented}");
+    assert!(
+        overindented.ends_with("</dl>\n<p>para</p>"),
+        "{overindented}"
+    );
 }
 
 #[test]
@@ -106,11 +116,11 @@ fn a_line_at_the_definition_column_releases_the_nested_item() {
     for (source, expected) in [
         (
             ":: t\n: - a\n  p\n    {.c\n}\ntail\n",
-            "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>a\np</li>\n    </ul>\n    <p>tail</p>\n  </dd>\n</dl>",
+            "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>a\np</li>\n    </ul>\n  </dd>\n</dl>\n<p>tail</p>",
         ),
         (
             ":: t\n: - a\n\n  p\n    {.c\n}\ntail\n",
-            "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>a</li>\n    </ul>\n    <p>p\n{.c\n}\ntail</p>\n  </dd>\n</dl>",
+            "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>a</li>\n    </ul>\n    <p>p</p>\n  </dd>\n</dl>\n<p>tail</p>",
         ),
     ] {
         assert_eq!(to_html(source), expected, "{source:?}");

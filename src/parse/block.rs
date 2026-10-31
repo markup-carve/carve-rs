@@ -285,7 +285,12 @@ pub(in crate::parse) fn parse_blocks(
                 continue;
             }
         }
-        if line_flush
+        if (line_flush
+            || (trim_ascii_start(line).starts_with('{')
+                && indented_wrapped_attrs_block_len(
+                    (cur.pos..cur.lines.len()).map_while(|i| cur.lines.line(i)),
+                )
+                .is_some()))
             && take_standalone_attrs(
                 cur,
                 options,
