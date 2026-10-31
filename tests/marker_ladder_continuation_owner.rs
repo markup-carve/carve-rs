@@ -39,3 +39,27 @@ fn a_heading_at_an_intermediate_content_column_stays_with_that_item() {
         "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>\n            <ul>\n              <li>\n                <dl>\n                  <dt>t</dt>\n                </dl>\n              </li>\n            </ul>\n            <h1 id=\"h\">h</h1>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>"
     );
 }
+
+#[test]
+fn a_quoted_child_continuation_keeps_its_authored_owner() {
+    assert_eq!(
+        to_html("> - * :: t\n>   +\n>   : d\n").trim(),
+        "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>\n          <dl>\n            <dt>t</dt>\n          </dl>\n          : d\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>"
+    );
+}
+
+#[test]
+fn a_wide_task_marker_keeps_the_child_continuation_at_column_six() {
+    assert_eq!(
+        to_html("* [ ] - :: t\n      +\n      : d\n").trim(),
+        "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <ul>\n      <li>\n        <dl>\n          <dt>t</dt>\n        </dl>\n        : d\n      </li>\n    </ul>\n  </li>\n</ul>"
+    );
+}
+
+#[test]
+fn a_ladder_nested_in_an_outer_item_keeps_its_child_continuation() {
+    assert_eq!(
+        to_html("- host\n  - * :: t\n    +\n    : d\n").trim(),
+        "<ul>\n  <li>host\n    <ul>\n      <li>\n        <ul>\n          <li>\n            <dl>\n              <dt>t</dt>\n            </dl>\n            : d\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>"
+    );
+}

@@ -1753,6 +1753,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 let column = indent_columns(line);
                 let authored_column =
                     self.cur.source_col(self.cur.pos).unwrap_or(0).max(0) as usize + column;
+                let unmapped = self.cur.source_col(self.cur.pos).is_none();
                 let trailing_plus_owner = stream
                     .source
                     .lines()
@@ -1767,13 +1768,17 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                         .continuation_decision(self.cur.pos)
                         .is_some_and(|decision| {
                             decision.owner == Some(continuation_marker::Kind::List)
-                                && decision.owner_column == Some(authored_column)
+                                && decision.owner_column.is_some_and(|owner| {
+                                    owner == authored_column || unmapped && owner > column
+                                })
                         });
                 let child_block = column >= lead.ladder_columns[0]
                     && column < lead.nested_content_col
                     && !is_list_marker(trim_ascii_start(line))
                     && (!is_definition_list_start(trim_ascii_start(line))
-                        || trailing_plus_owner == Some(authored_column))
+                        || trailing_plus_owner.is_some_and(|owner| {
+                            owner == authored_column || unmapped && owner > column
+                        }))
                     && interrupts_paragraph(self.cur, trim_ascii_start(line));
                 (column > self.base_indent
                     && lead.ladder_columns.contains(&column)
