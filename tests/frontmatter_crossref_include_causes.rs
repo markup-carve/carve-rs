@@ -16,6 +16,8 @@ fn an_indented_delimiter_neither_opens_nor_closes_frontmatter() {
         assert_eq!(html(source), expected, "{source:?}");
     }
     assert_eq!(html("---\na: 1\n---\nx\n"), "<p>x</p>");
+    // An indented line inside the block is content, not its closer.
+    assert_eq!(html("---\na\n ---\nb: 1\n---\nx\n"), "<p>x</p>");
 }
 
 #[test]
