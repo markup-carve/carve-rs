@@ -84,6 +84,14 @@ name = "suite"
 path = "tests/suite/main.rs"
 
 [[test]]
+name = "a_definition_ends_a_quoted_term_before_lazy_text"
+path = "tests/a_definition_ends_a_quoted_term_before_lazy_text.rs"
+
+[[test]]
+name = "a_document_abbreviation_ends_lazy_containers"
+path = "tests/a_document_abbreviation_ends_lazy_containers.rs"
+
+[[test]]
 name = "fx22_render_boundaries"
 path = "tests/fx22_render_boundaries.rs"
 
