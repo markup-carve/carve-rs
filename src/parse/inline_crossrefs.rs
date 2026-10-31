@@ -85,7 +85,9 @@ pub(crate) fn crossref_index_for_document(
             collect_caption_titles(blocks, &mut captions);
         }
     }
-    crossref_index(titles, labels)
+    let mut index = crossref_index(titles, labels);
+    index.finalize_labels();
+    index
 }
 
 #[cfg(feature = "experimental-event-parser")]
@@ -116,6 +118,7 @@ pub(in crate::parse) fn crossref_index_and_heading_ids_for_document(
     for blocks in doc.footnote_defs.values() {
         collect_caption_titles(blocks, &mut captions);
     }
+    index.finalize_labels();
     (index, ids)
 }
 
@@ -143,14 +146,16 @@ pub(in crate::parse) fn heading_index(
             collect_explicit_ids(blocks, &mut explicit_ids);
         }
     }
-    heading_index_with_explicit_ids(
+    let (mut index, ids) = heading_index_with_explicit_ids(
         children,
         footnote_defs,
         id_opts,
         collect_crossrefs,
         collect_heading_refs,
         &explicit_ids,
-    )
+    );
+    index.finalize_labels();
+    (index, ids)
 }
 
 fn heading_index_with_explicit_ids(
@@ -231,9 +236,8 @@ pub(crate) type CrossrefLabel = std::rc::Rc<Vec<InlineNode>>;
 /// Two transformations are applied to the clone, both of them rules that hold
 /// wherever this label is about to be placed rather than presentation choices:
 ///
-/// - A NESTED cross-reference becomes empty text. Resolution is ONE LEVEL, so a
-///   cloned label is never re-expanded; doing it here (rather than at render
-///   time) also makes a crossref cycle structurally impossible to follow.
+/// - Nested cross-references are resolved after the complete index is built.
+///   Their target contributes its inline content once, without an inner link.
 /// - Links never nest, so the clone is cleaned as if it already sat inside an
 ///   anchor -- which it does on every target that emits one.
 ///
@@ -241,7 +245,11 @@ pub(crate) type CrossrefLabel = std::rc::Rc<Vec<InlineNode>>;
 /// too: the label renders inside the referring paragraph, and a second copy of
 /// a `fnref` anchor would publish a duplicate id.
 pub(in crate::parse) fn crossref_label_nodes(children: &[InlineNode]) -> CrossrefLabel {
-    std::rc::Rc::new(crossref_label_clone(children))
+    let mut nodes = children.to_vec();
+    strip_non_authored(&mut nodes);
+    let mut nodes = enforce_no_nesting_inline(nodes, true);
+    drop_clone_ids(&mut nodes);
+    std::rc::Rc::new(std::mem::take(&mut nodes))
 }
 
 /// The core crossref's label: [`derive_display_nodes`] in a link context, since
@@ -383,6 +391,12 @@ pub(in crate::parse) fn flatten_nested_crossrefs(nodes: &mut [InlineNode]) {
             InlineNode::Emphasis(e) => flatten_nested_crossrefs(&mut e.children),
             InlineNode::Span(s) => flatten_nested_crossrefs(&mut s.children),
             InlineNode::Link(l) => flatten_nested_crossrefs(&mut l.children),
+            InlineNode::Ruby(r) => {
+                for pair in &mut r.pairs {
+                    flatten_nested_crossrefs(&mut pair.base);
+                    flatten_nested_crossrefs(&mut pair.annotation);
+                }
+            }
             InlineNode::Extension(e) => flatten_nested_crossrefs(&mut e.children),
             InlineNode::CriticInsert(c) => flatten_nested_crossrefs(&mut c.children),
             InlineNode::CriticDelete(c) => flatten_nested_crossrefs(&mut c.children),
@@ -395,12 +409,79 @@ pub(in crate::parse) fn flatten_nested_crossrefs(nodes: &mut [InlineNode]) {
     }
 }
 
+/// Expand references in a heading clone from the completed index. The target's
+/// own references are then erased, so self references and cycles stop at one
+/// level without losing the target's other authored inline nodes.
+fn resolve_nested_crossrefs(nodes: &mut Vec<InlineNode>, raw: &BTreeMap<String, CrossrefLabel>) {
+    let mut result = Vec::with_capacity(nodes.len());
+    for mut node in std::mem::take(nodes) {
+        match &mut node {
+            InlineNode::CrossRef(reference) => {
+                let key = reference.target.nfc().collect::<String>();
+                if let Some(target) = raw.get(&reference.target).or_else(|| raw.get(&key)) {
+                    let mut content = target.as_ref().clone();
+                    flatten_nested_crossrefs(&mut content);
+                    result.extend(content);
+                } else {
+                    result.push(InlineNode::Text(Text {
+                        value: format!("</#{}>", reference.target),
+                        pos: None,
+                    }));
+                }
+                continue;
+            }
+            InlineNode::Emphasis(e) => resolve_nested_crossrefs(&mut e.children, raw),
+            InlineNode::Span(s) => resolve_nested_crossrefs(&mut s.children, raw),
+            InlineNode::Link(l) => resolve_nested_crossrefs(&mut l.children, raw),
+            InlineNode::Ruby(r) => {
+                for pair in &mut r.pairs {
+                    resolve_nested_crossrefs(&mut pair.base, raw);
+                    resolve_nested_crossrefs(&mut pair.annotation, raw);
+                }
+            }
+            InlineNode::Extension(e) => resolve_nested_crossrefs(&mut e.children, raw),
+            InlineNode::CriticInsert(c) => resolve_nested_crossrefs(&mut c.children, raw),
+            InlineNode::CriticDelete(c) => resolve_nested_crossrefs(&mut c.children, raw),
+            InlineNode::CriticSubstitute(c) => {
+                resolve_nested_crossrefs(&mut c.old, raw);
+                resolve_nested_crossrefs(&mut c.new, raw);
+            }
+            _ => {}
+        }
+        result.push(node);
+    }
+    *nodes = result;
+}
+
+#[cfg(test)]
+mod nested_reference_tests {
+    use super::*;
+
+    #[test]
+    fn a_decomposed_explicit_id_matches_before_nfc_fallback() {
+        let id = "e\u{301}";
+        let mut raw = BTreeMap::new();
+        raw.insert(
+            id.to_string(),
+            std::rc::Rc::new(vec![InlineNode::text("target")]),
+        );
+        let mut nodes = vec![InlineNode::CrossRef(CrossRef {
+            target: id.to_string(),
+            href: Some(format!("#{id}")),
+            pos: None,
+        })];
+        resolve_nested_crossrefs(&mut nodes, &raw);
+        assert_eq!(nodes, vec![InlineNode::text("target")]);
+    }
+}
+
 pub(in crate::parse) fn crossref_index(
     titles: BTreeMap<String, String>,
     labels: BTreeMap<String, CrossrefLabel>,
 ) -> CrossrefIndex {
     CrossrefIndex {
         titles,
+        raw_labels: labels.clone(),
         labels,
         by_text: BTreeMap::new(),
         quoted: std::collections::BTreeSet::new(),
@@ -412,6 +493,8 @@ pub(in crate::parse) fn crossref_index(
 #[derive(Default)]
 pub(crate) struct CrossrefIndex {
     titles: BTreeMap<String, String>,
+    /// Preserve the heading nodes until caption targets enter a facade index.
+    raw_labels: BTreeMap<String, CrossrefLabel>,
     /// Id -> the label a resolved reference RENDERS: the target heading's own
     /// inline nodes, cloned (PART 9R R4). `titles` is the same label flattened
     /// to text, which is all a slug or a text lookup needs; a renderer needs
@@ -434,9 +517,26 @@ pub(crate) struct CrossrefIndex {
 }
 
 impl CrossrefIndex {
+    /// Finish labels only after all headings have been collected, so forward
+    /// references and cycles use the same one-level expansion as backward ones.
+    fn finalize_labels(&mut self) {
+        let mut raw = self.raw_labels.clone();
+        for (id, label) in &self.labels {
+            raw.entry(id.clone()).or_insert_with(|| label.clone());
+        }
+        for (id, label) in &mut self.labels {
+            let mut nodes = raw
+                .get(id)
+                .map(|label| label.as_ref().clone())
+                .unwrap_or_else(|| label.as_ref().clone());
+            resolve_nested_crossrefs(&mut nodes, &raw);
+            *label = std::rc::Rc::new(nodes);
+        }
+    }
     /// Add a numbered document's caption targets; a heading with the same id
     /// keeps it.
     pub(in crate::parse) fn extend_captions(&mut self, doc: &Document) {
+        let before = self.labels.len();
         let mut captions = CaptionIndex {
             titles: &mut self.titles,
             labels: &mut self.labels,
@@ -444,6 +544,9 @@ impl CrossrefIndex {
         collect_caption_titles(&doc.children, &mut captions);
         for blocks in doc.footnote_defs.values() {
             collect_caption_titles(blocks, &mut captions);
+        }
+        if self.labels.len() != before {
+            self.finalize_labels();
         }
     }
 

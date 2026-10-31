@@ -1327,8 +1327,6 @@ const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 /// declares anything.
 ///
 const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
-    ("118-cyclic-cross-reference-resolves-to-one-level", "new #4642 one-level cloned-heading ruling at the c98c55a1 pin", "<section id=\"A\">\n  <h1>A <a href=\"#A\">A </a></h1>\n</section>"),
-    ("118-cyclic-cross-reference-resolves-to-one-level-2", "new #4642 one-level cloned-heading ruling at the c98c55a1 pin", "<section id=\"A\">\n  <h1>A <a href=\"#B\">B </a></h1>\n</section>\n<section id=\"B\">\n  <h1>B <a href=\"#A\">A </a></h1>\n</section>"),
     ("879-an-abbreviation-boundary-uses-unicode-letters-and-numbers", "new Unicode abbreviation boundary corpus at the dd990d4b pin", "<p>α<abbr title=\"Hypertext\">HTML</abbr>β <abbr title=\"Hypertext\">HTML</abbr> α<abbr title=\"Hypertext\">HTML</abbr> <abbr title=\"Hypertext\">HTML</abbr>β ２<abbr title=\"Hypertext\">HTML</abbr></p>"),
     ("454-a-block-opener-past-a-nested-footnote-definition-opens-in-the-item-4", "inline or layout ruling at the 8d8bd4a9 pin not ported yet", "<ul>\n  <li>body\n    <ul>\n      <li>item</li>\n    </ul>\n  </li>\n</ul>\n<p>after</p>"),
     ("637-definition-body-note-and-fence-owner-boundaries-4", "inline or layout ruling at the 8d8bd4a9 pin not ported yet", "<ol>\n  <li>d\n    <ul>\n      <li>a</li>\n    </ul>\n  </li>\n</ol>"),
