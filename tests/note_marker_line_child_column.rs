@@ -4,7 +4,9 @@
 
 fn notes(source: &str) -> String {
     let html = carve::to_html(source);
-    let body = html.split_once("<ol>").map_or(html.as_str(), |(_, rest)| rest);
+    let body = html
+        .split_once("<ol>")
+        .map_or(html.as_str(), |(_, rest)| rest);
     body.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
@@ -23,21 +25,31 @@ fn a_block_below_the_item_column_belongs_to_the_note() {
         ("- [ ] a", "    # H"),
     ] {
         let source = format!("[^f]\n\n[^f]: {first}\n{line}\n");
-        let close = if first.starts_with('1') { "</ol>" } else { "</ul>" };
+        let close = if first.starts_with('1') {
+            "</ol>"
+        } else {
+            "</ul>"
+        };
         contains(&source, &format!("{close} <h1 id=\"H\">H</h1>"));
     }
 }
 
 #[test]
 fn a_block_at_the_item_column_stays_in_the_item() {
-    contains("[^f]\n\n[^f]: - a\n        # H\n", "<li>a <h1 id=\"H\">H</h1> </li>");
+    contains(
+        "[^f]\n\n[^f]: - a\n        # H\n",
+        "<li>a <h1 id=\"H\">H</h1> </li>",
+    );
 }
 
 #[test]
 fn a_block_below_a_marker_line_note_belongs_to_the_outer_note() {
     let html = notes("[^f]: [^g]: a\n    # H\n\n[^g] [^f]\n");
     assert!(html.contains("<li id=\"fn1\"> <p>a"), "{html}");
-    assert!(html.contains("<li id=\"fn2\"> <h1 id=\"H\">H</h1>"), "{html}");
+    assert!(
+        html.contains("<li id=\"fn2\"> <h1 id=\"H\">H</h1>"),
+        "{html}"
+    );
 }
 
 #[test]
@@ -46,14 +58,20 @@ fn prose_below_a_marker_line_note_folds_into_its_paragraph() {
         let source = format!("[^f]: [^g]: a\n{line}\n\n[^g] [^f]\n");
         contains(&source, "<li id=\"fn1\"> <p>a z");
     }
-    contains("[^a]: [^b]: [^c]: a\nz\n\n[^c] [^b] [^a]\n", "<li id=\"fn1\"> <p>a z");
+    contains(
+        "[^a]: [^b]: [^c]: a\nz\n\n[^c] [^b] [^a]\n",
+        "<li id=\"fn1\"> <p>a z",
+    );
     contains("[^f]: [^g]: - p\n      q\n\n[^g] [^f]\n", "<li>p q</li>");
 }
 
 #[test]
 fn a_plus_still_reads_the_note_body_column() {
     contains("[^n]: - a\n  +\n  p\n\n[^n]\n", "<li>a p </li>");
-    contains("[^n]: > a\n  +\n  b\n\n[^n]\n", "<p>a</p> <p>b</p> </blockquote>");
+    contains(
+        "[^n]: > a\n  +\n  b\n\n[^n]\n",
+        "<p>a</p> <p>b</p> </blockquote>",
+    );
     contains("[^n]: - a\n    +\n    p\n\n[^n]\n", "<li>a + p</li>");
 }
 
