@@ -79,7 +79,18 @@ pub(super) fn quiet_captioned_image(
     options: &Options<'_>,
     line: &str,
 ) -> Option<BlockNode> {
-    let mut img = quiet_block_image(line)?;
+    if !line.contains('%') || !line.contains("![") {
+        return None;
+    }
+    let mut inline = parse_inline_with_options(line, options);
+    retain_caption_content(&mut inline);
+    let [InlineNode::Image(img)] = inline.as_slice() else {
+        return None;
+    };
+    if img.ref_label.is_some() {
+        return None;
+    }
+    let mut img = img.clone();
     let image_at = cur.pos;
     cur.consume();
     img.pos = span_of(cur, image_at, image_at + 1, options);
@@ -97,7 +108,18 @@ pub(super) fn quiet_captioned_image(
     }))
 }
 
+/// Comments render nothing when deciding whether a paragraph has a single
+/// image or display-math caption host. Visible whitespace stays in the run.
+pub(super) fn retain_caption_content(inline: &mut Vec<InlineNode>) {
+    inline.retain(|node| !matches!(node, InlineNode::Comment(_)));
+}
+
 pub(super) fn reference_image_line(line: &str) -> bool {
+    if line.contains('%') && line.contains("![") {
+        let mut inline = parse_inline_with_options(line, &Options::default());
+        retain_caption_content(&mut inline);
+        return matches!(inline.as_slice(), [InlineNode::Image(img)] if img.ref_label.is_some());
+    }
     if !line.starts_with("![") {
         return false;
     }

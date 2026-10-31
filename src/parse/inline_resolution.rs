@@ -75,19 +75,26 @@ pub(in crate::parse) fn promote_block_images(
                 }
                 continue;
             }
-            let quiet = match block {
-                BlockNode::Paragraph(p) => quiet_run_after_image(&p.children),
-                _ => 0,
+            let (leading_quiet, quiet) = match block {
+                BlockNode::Paragraph(p) => {
+                    let leading = p
+                        .children
+                        .iter()
+                        .take_while(|child| matches!(child, InlineNode::Comment(_)))
+                        .count();
+                    (leading, quiet_run_after_image(&p.children, leading))
+                }
+                _ => (0, 0),
             };
             let ref_figure = matches!(
                 block,
                 BlockNode::Paragraph(p)
                     if p.at_content_column
-                        && p.children.len() >= 3 + quiet
-                        && matches!(&p.children[0], InlineNode::Image(img) if !is_unresolved_image(img))
-                        && matches!(p.children[1 + quiet], InlineNode::SoftBreak(_))
-                        && matches!(&p.children[2 + quiet], InlineNode::Text(t) if caption_marker_len(&t.value).is_some())
-                        && caption_first_line_has_content(&p.children[quiet..])
+                        && p.children.len() >= leading_quiet + 3 + quiet
+                        && matches!(&p.children[leading_quiet], InlineNode::Image(img) if !is_unresolved_image(img))
+                        && matches!(p.children[leading_quiet + 1 + quiet], InlineNode::SoftBreak(_))
+                        && matches!(&p.children[leading_quiet + 2 + quiet], InlineNode::Text(t) if caption_marker_len(&t.value).is_some())
+                        && caption_first_line_has_content(&p.children[leading_quiet + quiet..])
             );
             if ref_figure {
                 // Carry a leading block-attribute line (`{#id}` etc.) from the
@@ -108,10 +115,10 @@ pub(in crate::parse) fn promote_block_images(
                     ),
                     _ => unreachable!(),
                 };
-                let InlineNode::Image(img) = children.remove(0) else {
+                let InlineNode::Image(img) = children.remove(leading_quiet) else {
                     unreachable!()
                 };
-                children.drain(..quiet + 1); // the comments and the soft break
+                children.drain(..leading_quiet + quiet + 1); // comments and soft break
                 if let InlineNode::Text(t) = &mut children[0] {
                     let n = caption_marker_len(&t.value).unwrap();
                     let rest = t.value[n..].to_string();
@@ -180,12 +187,12 @@ pub(in crate::parse) fn promote_block_images(
 /// How many nodes after a paragraph's leading image render nothing before its
 /// first line ends: braced comments, then a line comment with the whitespace
 /// before it (18:317, carve#4568). A space before a braced comment renders.
-fn quiet_run_after_image(children: &[InlineNode]) -> usize {
+fn quiet_run_after_image(children: &[InlineNode], image_at: usize) -> usize {
     let line_end = children
         .iter()
         .position(|node| matches!(node, InlineNode::SoftBreak(_)))
         .unwrap_or(children.len());
-    let run = &children[1.min(line_end)..line_end];
+    let run = &children[(image_at + 1).min(line_end)..line_end];
     let mut braced = 0;
     while matches!(run.get(braced), Some(InlineNode::Comment(c)) if c.delimited) {
         braced += 1;
