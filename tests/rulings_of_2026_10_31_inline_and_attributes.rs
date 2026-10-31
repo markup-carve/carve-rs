@@ -4,7 +4,11 @@
 use carve::to_html;
 
 fn assert_html(source: &str, expected: &str) {
-    assert_eq!(to_html(source).trim_end(), expected.trim_end(), "{source:?}");
+    assert_eq!(
+        to_html(source).trim_end(),
+        expected.trim_end(),
+        "{source:?}"
+    );
 }
 
 #[test]
@@ -30,7 +34,10 @@ fn a_note_body_and_extension_content_hold_a_comment_run() {
          aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>\n",
     );
     assert_html("[a %% c] d\n", "<p>[a] d</p>\n");
-    assert_html(":foo[%% c] d\n", "<p><span class=\"ext-foo\"></span> d</p>\n");
+    assert_html(
+        ":foo[%% c] d\n",
+        "<p><span class=\"ext-foo\"></span> d</p>\n",
+    );
 }
 
 #[test]
