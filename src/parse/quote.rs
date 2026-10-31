@@ -1913,7 +1913,7 @@ impl<'a> QuoteBody<'a> {
             // paragraph; its remaining lines close nothing further and open
             // nothing either.
             self.attrs_block_rest -= 1;
-            self.attrs_closed_last = self.attrs_block_rest == 0 && self.attrs_nested_run;
+            self.attrs_closed_last = self.attrs_block_rest == 0;
             self.para_open = ParaOpen::Closed;
             self.table = TableRun::default();
         } else if let Some(open) = self.in_fence {
@@ -2056,6 +2056,10 @@ impl<'a> QuoteBody<'a> {
             self.para_open = ParaOpen::Closed;
         }
         self.scan_attrs_block(cur, at, stripped, prior_paragraph);
+        // An attribute line leaves no paragraph open, so the next line is not lazy.
+        if parse_standalone_attrs(stripped).is_some() {
+            self.attrs_closed_last = true;
+        }
         if self.unclosed_nested_attribute {
             // A closer without this quote's marker cannot finish the attribute.
             // The opener remains text in the list paragraph, which can still

@@ -314,6 +314,17 @@ pub(super) fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool
     {
         return true;
     }
+    if cur.invisible_arms
+        && line.starts_with([' ', '\t'])
+        && trim_ascii(line).starts_with('{')
+        && cur.lines.line(cur.pos) == Some(line)
+        && indented_wrapped_attrs_block_len(
+            (cur.pos..cur.lines.len()).map_while(|i| cur.lines.line(i)),
+        )
+        .is_some()
+    {
+        return true;
+    }
     if cur.invisible_arms && !line.starts_with([' ', '\t']) {
         if parse_standalone_attrs(line).is_some() {
             return true;

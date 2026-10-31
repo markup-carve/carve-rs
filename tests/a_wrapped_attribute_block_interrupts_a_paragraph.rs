@@ -66,15 +66,11 @@ fn control_the_single_line_spelling_is_unchanged() {
 
 #[test]
 fn control_an_indented_brace_line_is_still_paragraph_text() {
-    // The strict column-0 rule (PART 9 section 24 C3). An indented `{...}` is
-    // lazy paragraph text, and the wrapped reader is flush-left only - so this
-    // must not start a block either.
-    //
-    // Asserted on the braces rather than on the whole string: `#x` renders as a
-    // tag span here, which is inline behavior this rule has nothing to do with.
+    // §15 A5 (CARVE-P0-024) replaced the flush-left-only reading: an indented
+    // wrapped block is an attribute line, so it interrupts `d` and, with no
+    // block below it, attaches to nothing.
     let out = html("d\n  {.k\n  #x}\n");
-    assert!(out.starts_with("<p>d\n{.k\n"), "{out}");
-    assert!(!out.contains("class=\"k\""), "{out}");
+    assert_eq!(out.trim(), "<p>d</p>");
 }
 
 #[test]
