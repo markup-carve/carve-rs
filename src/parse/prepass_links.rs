@@ -198,6 +198,16 @@ impl PreviousLine {
         }
         let bare = strip_container_prefixes(line, false).bare;
         let opens = opens_definition_entry_bare(bare);
+        // A lazy line continues the term or description above it.
+        if !opens
+            && !self.after_blank
+            && self.after_term
+            && !super::paragraph::interrupts_paragraph_with_rest(bare, &[])
+            && detect_list_marker_full(trim_ascii_start(without_blockquote_prefixes(line)))
+                .is_none()
+        {
+            return;
+        }
         if opens && trim_ascii_start(bare).starts_with("::") {
             self.in_definition_list = true;
         } else if !opens && self.after_blank {

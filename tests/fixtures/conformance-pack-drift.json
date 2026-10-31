@@ -51,15 +51,8 @@
       "cause": "untriaged day-one drift in the lazy family",
       "cases": [
         "lazy-27c92f4153c2",
-        "lazy-409aff3004af",
         "lazy-5d96f214fe7c",
-        "lazy-5e6ce23bb8dc",
-        "lazy-7816b7379b87",
-        "lazy-7f31fa259b62",
-        "lazy-8085a00a4378",
-        "lazy-abcf60b5e90f",
         "lazy-c617b01a765e",
-        "lazy-c679fea29386",
         "lazy-d714a9768baa",
         "lazy-e7fc4688d71a",
         "lazy-fec6f2fc03b0"
@@ -84,16 +77,13 @@
         "notes-c0e4dadcf339",
         "notes-ce4e197bb78b",
         "notes-d2500c45a956",
-        "notes-ee421f59e501",
-        "notes-f7a4d0c570a4"
+        "notes-ee421f59e501"
       ]
     },
     {
       "ticket": "markup-carve/carve-rs#3534",
       "cause": "untriaged day-one drift in the ownership family",
       "cases": [
-        "ownership-1cdee5ee6a0a",
-        "ownership-2d71e91b5e4d",
         "ownership-34ea3231e4b7",
         "ownership-dabd40ea2cb5",
         "ownership-edfbea8daa50"
@@ -121,22 +111,9 @@
         "fences-6bb4b2c08642",
         "fences-957709fb7e0e",
         "fences-e0910c8dd446",
-        "lazy-2f59307d9471",
-        "lazy-2f999a65c4be",
         "lazy-4bc0393d24b2",
-        "lazy-4ef9ea1e14a9",
-        "lazy-4f5eaac61ed4",
-        "lazy-6709b8b97bac",
         "lazy-68fe7c68d81d",
-        "lazy-74bb39c5c4a8",
-        "lazy-828973d41d13",
-        "lazy-84f9facca8bb",
-        "lazy-90184211b66b",
-        "lazy-a38a85984127",
-        "lazy-af373c5a715b",
-        "lazy-dc0e3940e686",
         "lazy-f60632f36c87",
-        "lazy-fbd48cd0e8d7",
         "ownership-bd5caf2c0c4d",
         "roundtrip-d27a8c0b8e38",
         "lazy-353dc1c74791",

@@ -8,13 +8,15 @@
 //! ```text
 //! :: t
 //! :  [^f]: note
+//!
 //!     - nested
 //! tail
 //! ```
 //!
-//! The `[^f]: note` line collects out as a footnote; the `- nested` line sits
-//! one column shy of the note's body floor, so it stays a list inside the
-//! description rather than folding into the note. A footnote body and a
+//! The `[^f]: note` line collects out as a footnote; after the blank line the
+//! `- nested` line sits one column shy of the note's body floor, so it stays a
+//! list inside the description. Without the blank it is a marker under the
+//! note's paragraph and folds into the note as text (carve#4206, corpus 800). A footnote body and a
 //! definition body rebase over-indented blocks with sublists included, so a
 //! marker written past the body's content column carries its own authored base
 //! (PART 9 §24 C3): the list and list item begin ON the marker, and the run of
@@ -29,7 +31,7 @@
 
 use carve::ast::BlockNode;
 
-const SIBLING_4: &str = ":: t\n:  [^f]: note\n    - nested\ntail\n";
+const SIBLING_4: &str = ":: t\n:  [^f]: note\n\n    - nested\ntail\n";
 
 /// The `list` node hosted directly by the definition's description body.
 fn description_hosted_list(src: &str) -> carve::ast::List {
@@ -65,11 +67,11 @@ fn a_description_hosted_list_and_item_anchor_on_the_marker() {
             list_pos.start_column,
             list_pos.start_offset
         ),
-        (3, 5, 23),
+        (4, 5, 24),
         "the list extent must begin on the `-` marker, not the placing indent",
     );
     assert_eq!(
-        list_pos.end_offset, 36,
+        list_pos.end_offset, 37,
         "the list extent still ends where it did before the marker anchor",
     );
 
@@ -81,10 +83,10 @@ fn a_description_hosted_list_and_item_anchor_on_the_marker() {
             item_pos.start_column,
             item_pos.start_offset
         ),
-        (3, 5, 23),
+        (4, 5, 24),
         "the list item extent must begin on the `-` marker too",
     );
-    assert_eq!(item_pos.end_offset, 36);
+    assert_eq!(item_pos.end_offset, 37);
 }
 
 #[test]
