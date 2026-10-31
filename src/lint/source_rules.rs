@@ -357,8 +357,25 @@ fn collect_authoring(
         }
         push_block_children(block, depth, &mut note_blocks, &mut note_inlines);
     }
-    for (&line, &(index, width, count, _)) in &table_rows {
-        if index > 0 && count != width {
+    for (&line, &(index, width, count, row)) in &table_rows {
+        // A cell a `+` line appended past the row's last column starts with that
+        // line's cell_wrap (T6), and the row is reported on that line.
+        let appended_by = row
+            .cells
+            .iter()
+            .skip(1)
+            .rev()
+            .map_while(|cell| match cell.children.first() {
+                Some(InlineNode::CellWrap(wrap)) if cell.span.is_none() => Some(wrap.line),
+                _ => None,
+            })
+            .last();
+        if let Some(plus_line) = appended_by.map(|offset| line + offset) {
+            if let Some(source) = rows.get(plus_line - 1) {
+                let at = source.text.find('+').unwrap_or(0);
+                emit(out, rows, plus_line, at, 1, "table-row-cell-count", "This continuation line appends a cell past the last column of its table row. Add the cell to the row line or remove it.");
+            }
+        } else if index > 0 && count != width {
             let at = rows[line - 1].text.find('|').unwrap_or(0);
             emit(out, rows, line, at, 1, "table-row-cell-count", &format!("This table row has {count} cells; the header has {width}. Add or remove a cell to match the table."));
         }

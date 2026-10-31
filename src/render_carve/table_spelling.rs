@@ -181,6 +181,7 @@ pub(super) fn render_table(
         .collect();
     for (row_index, row) in node.rows.iter().enumerate() {
         let mut cells = Vec::new();
+        let own_width = row_line_width(row);
         for (cell_index, cell) in row.cells.iter().enumerate() {
             ctx.cell_not_last = cell_index + 1 < row.cells.len();
             // In the delimiter form the promoted row is written as ordinary
@@ -206,6 +207,7 @@ pub(super) fn render_table(
                 &mut continuations,
                 &mut occupied,
             ) {
+                Ok(_) if cell_index >= own_width => {}
                 Ok(own) => cells.push(own),
                 Err(reason) => {
                     crate::render_carve_error::record_unspellable("table_row", reason);
@@ -226,7 +228,12 @@ pub(super) fn render_table(
         row_slots.push((rows.len(), cells.clone(), '|', attrs.clone()));
         rows.push(render_table_row(&cells, &attrs));
         let mut run = crate::parse::table_run_open_after(&cells.join("|"), None, 0);
-        for line in &continuations[row_index] {
+        for line in &mut continuations[row_index] {
+            // An empty slot past the row line's cells appends nothing.
+            while line.len() > own_width.max(1) && line.last().is_some_and(|slot| slot == " ") {
+                line.pop();
+            }
+            let line = &*line;
             // CARVE-P2-019: a pipe inside a run that stays open is run content,
             // so an empty slot past it would read back as text (CARVE-P11-002).
             let last = line
@@ -321,6 +328,28 @@ pub(super) fn render_table(
         rows.push(row);
     }
     rows.join("\n")
+}
+
+/// How many cells the row line itself writes. A trailing cell led by a
+/// `cell_wrap` and carrying nothing the row line would spell was appended by a
+/// `+` line (T6, CARVE-P12-069), so it is written there alone.
+fn row_line_width(row: &TableRow) -> usize {
+    let header = row.cells.first().is_some_and(|cell| cell.header);
+    let appended = row
+        .cells
+        .iter()
+        .rev()
+        .take_while(|cell| {
+            cell.span.is_none()
+                && cell.attrs.is_none()
+                && cell.align.is_none()
+                && cell.valign.is_none()
+                && cell.blocks.is_none()
+                && cell.header == header
+                && matches!(cell.children.first(), Some(InlineNode::CellWrap(_)))
+        })
+        .count();
+    row.cells.len().saturating_sub(appended).max(1)
 }
 
 /// A cell's written form: its PREFIX glued to the opening pipe, then one

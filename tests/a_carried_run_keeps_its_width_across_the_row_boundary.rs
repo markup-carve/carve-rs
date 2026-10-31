@@ -76,12 +76,10 @@ fn a_run_closed_at_its_own_width_stops_carrying() {
     //
     // A run of two closes the carry, so the pipe separates. The row itself is
     // one column wide - its own pipes were swallowed by the open run - so the
-    // segment after the separator has no column to join and is dropped, which is
-    // the carve#1293 rule for a continuation naming a column the row has not
-    // got. carve-js publishes the same bytes.
+    // segment after the separator appends a new cell (T6, carve#4470).
     assert_eq!(
         html("| a ``b | x |\n+ c`` | d |\n"),
-        one_cell("a <code>b | x c</code>")
+        "<table>\n  <tbody>\n    <tr><td>a <code>b | x c</code></td><td>d</td></tr>\n  </tbody>\n</table>"
     );
     // A run of one does not, so `| d` stays inside the verbatim run and reaches
     // the page. This is the row the fix is for.
@@ -153,10 +151,9 @@ fn the_width_reaches_a_column_the_continuation_walks_into() {
         "<table>\n  <tbody>\n    <tr><td>a x</td><td>b <code>c y ` | z</code></td></tr>\n  </tbody>\n</table>"
     );
     // and a run of its own width does close it, after which the pipe separates
-    // and the segment behind it has no third column to join. carve-js publishes
-    // both of these byte for byte.
+    // and the segment behind it appends a third cell (T6, carve#4470).
     assert_eq!(
         html("| a | b ``c |\n+ x | y `` | z |\n"),
-        "<table>\n  <tbody>\n    <tr><td>a x</td><td>b <code>c y </code></td></tr>\n  </tbody>\n</table>"
+        "<table>\n  <tbody>\n    <tr><td>a x</td><td>b <code>c y </code></td><td>z</td></tr>\n  </tbody>\n</table>"
     );
 }

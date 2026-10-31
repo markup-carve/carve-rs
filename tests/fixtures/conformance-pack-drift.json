@@ -2,6 +2,18 @@
   "comment": "Conformance pack cases this engine renders differently from the spec model, one entry per cause with its open ticket. See tests/conformance_pack.rs.",
   "entries": [
     {
+      "ticket": "markup-carve/carve#4470",
+      "cause": "the pinned spec model predates the T6 ruling that a continuation cell past the last column is a new cell (carve#4530); these match the pack on carve main",
+      "cases": [
+        "inline-cb88dff1b472",
+        "plus-50d07ed355d0",
+        "plus-69d271a411f9",
+        "plus-baf998c9d969",
+        "plus-d438ebc082a8",
+        "plus-f56c0c6d25a9"
+      ]
+    },
+    {
       "ticket": "markup-carve/carve#3972",
       "cause": "all three engines agree against the spec model",
       "cases": [

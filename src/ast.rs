@@ -1670,16 +1670,16 @@ pub struct CellWrap {
     pub pos: Option<Pos>,
 }
 
-/// The first wrap in a table cell records its source line but separates no
+/// The leading wraps of a table cell record their source lines but separate no
 /// visible content. Nested inline lists can start with a wrap that does
 /// separate content outside the nested node, so callers use this only for a
 /// table cell's own child list.
 pub(crate) fn visible_table_cell_children(children: &[InlineNode]) -> &[InlineNode] {
-    if matches!(children.first(), Some(InlineNode::CellWrap(_))) {
-        &children[1..]
-    } else {
-        children
-    }
+    let leading = children
+        .iter()
+        .take_while(|child| matches!(child, InlineNode::CellWrap(_)))
+        .count();
+    &children[leading..]
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
