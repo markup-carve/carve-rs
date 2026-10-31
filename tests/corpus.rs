@@ -1574,7 +1574,9 @@ fn a_declared_pair_fails_when_stale_or_drifted() {
     assert!(failure("today", "golden")
         .unwrap()
         .contains("delete its BEHIND_ON_PAIR entry"));
-    assert!(failure("today", "drifted").unwrap().contains("did not match"));
+    assert!(failure("today", "drifted")
+        .unwrap()
+        .contains("did not match"));
 }
 
 // One generated test function per implemented base category, keeping panics
