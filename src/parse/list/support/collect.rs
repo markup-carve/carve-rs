@@ -410,8 +410,15 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         if nested_bare_marker_then_plain(cur, strip_cols) {
             break;
         }
+        // A paragraph below the child fence's column has left that fence.
+        // The ownership walk writes a refused `+` as a letter; it is not a
+        // paragraph boundary for this collector.
         if active_nested_fence.is_some_and(|open| {
-            indent_columns(line) >= open.content_col && is_fence_close(trim_ascii_start(line), open)
+            (indent_columns(line) < open.content_col
+                && line_starts_paragraph(trim_ascii_start(line))
+                && !continuation_marker::is_refused_letter(trim_ascii_start(line)))
+                || (indent_columns(line) >= open.content_col
+                    && is_fence_close(trim_ascii_start(line), open))
         }) {
             active_nested_fence = None;
         }
@@ -487,18 +494,14 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             // A blank run below a nested marker-line fence is that fence's
             // payload and, before an outer follower, this item's separator too
             // (PART 0 S2: a blank reaches every frame).
-            if active_nested_fence.is_some()
-                && nested_blank_run.is_none()
-                && (recent_nested_fence_lead(&lines)
-                    || marker_content.is_some_and(|content| {
-                        detect_fence_open(innermost_marker_content(content)).is_some()
-                    }))
-            {
+            if active_nested_fence.is_some() && nested_blank_run.is_none() {
                 let end = container.blank_run_end(cur.lines, cur.pos + 1);
                 let outer_follower = cur.lines.line(end).is_some_and(|next| {
                     !is_blank_line(next)
                         && indent_columns(next) >= strip_cols
-                        && !container.owns_continuation(next, cur.continuation_decision(end))
+                        && (!container.owns_continuation(next, cur.continuation_decision(end))
+                            || active_nested_fence
+                                .is_some_and(|open| indent_columns(next) < open.content_col))
                         && !active_nested_fence.is_some_and(|open| {
                             indent_columns(next) == open.content_col
                                 && is_fence_close(trim_ascii_start(next), open)
@@ -512,7 +515,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                         .find(|line| !is_blank_line(line))
                         .map_or(true, |line| {
                             detect_list_marker_full(trim_ascii_start(line)).is_some()
-                                || indent_columns(line) + strip_cols >= open.content_col
+                                || (!continuation_marker::is_refused_letter(trim_ascii_start(line))
+                                    && !is_plus_marker(trim_ascii_start(line))
+                                    && indent_columns(line) + strip_cols >= open.content_col)
                         })
                 });
                 discarded_outer_blank |= outer_follower && in_fence;
