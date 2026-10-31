@@ -1,26 +1,8 @@
-//! Below a definition description's content column, the five invisible-line
-//! kinds answer ONE rule - and the rule is that the four registering kinds FOLD
-//! (markup-carve/carve#1809, §10 I5 DEFINITION OWNERSHIP IS COLUMN-SCOPED).
-//!
-//! THIS FILE FIRST ASSERTED THE OPPOSITE FOR TWO OF THEM, and the history is the
-//! point. markup-carve/carve-rs#1438 read the band as "a link reference
-//! definition ends the body, like the footnote spelling PART 9 section 10 I5
-//! lists it with", which made the two kinds agree - in the wrong direction.
-//! carve#1809 then ruled the band from the LIST ITEM's answer: at a nonzero
-//! column below a container's content column an invisible line "is lazy
-//! paragraph text of THAT container (the one whose content column it fell
-//! below) and does not register". Corpus 430 and 430-6 pin it, and
-//! markup-carve/carve-rs#1443 is the change that moved these rows.
-//!
-//! What #1438 got right survives unchanged, and is why the file stays: the
-//! ABBREVIATION definition folds because PART 12 section 7 recognizes it only as
-//! a direct child of the DOCUMENT, so inside a `dd` it was never an invisible
-//! line at all - and the arm was gated on `cur.at_document_level`, which
-//! describes the CURSOR and not the line, so the identical description answered
-//! one way at top level and the other inside a list item. Two kinds, two
-//! reasons, one answer.
-//!
-//! Every row runs on BOTH render entry points.
+//! Definition-shaped lines below a description's content column follow the
+//! owner they reach. The later carve#4412 ruling makes an abbreviation line
+//! that misses every frame a document definition, even at a nonzero column.
+//! A line that reaches an outer item remains text there. Every row runs on
+//! both render entry points.
 
 fn html(source: &str) -> String {
     let convenience = carve::to_html(source);
@@ -73,11 +55,11 @@ fn a_link_definition_below_the_column_still_registers_nothing() {
 }
 
 #[test]
-fn an_abbreviation_definition_below_the_column_folds_as_prose() {
+fn an_abbreviation_definition_below_the_column_defines_in_the_document() {
     for indent in ["", " ", "  "] {
         assert_eq!(
             html(&format!(":: t\n:  d\n{indent}*[A]: a\ntail\n")),
-            format!("{FOLDS_HEAD}*[A]: a\ntail</dd>\n</dl>"),
+            format!("{ENDS}<p>tail</p>"),
             "indent {:?}",
             indent
         );
@@ -85,18 +67,17 @@ fn an_abbreviation_definition_below_the_column_folds_as_prose() {
 }
 
 #[test]
-fn an_abbreviation_definition_below_the_column_registers_nothing() {
-    // It is description text, and text defines no abbreviation.
+fn an_abbreviation_definition_below_the_column_registers() {
     let out = html(":: t\n:  d\n  *[A]: a\ntail\n\nA here\n");
-    assert!(!out.contains("<abbr"), "{out}");
-    assert!(out.contains("<p>A here</p>"), "{out}");
+    assert!(
+        out.contains("<p><abbr title=\"a\">A</abbr> here</p>"),
+        "{out}"
+    );
 }
 
 #[test]
 fn the_nested_spelling_answers_the_same_way_it_always_did() {
-    // A description inside a list item folded the abbreviation all along, which
-    // is which of the two answers is right: one rule cannot depend on how deep
-    // the host sits.
+    // The line misses the description but still reaches its outer item.
     assert_eq!(
         html("- :: t\n  :  d\n   *[A]: a\n  tail\n"),
         "<ul>\n  <li>\n    <dl>\n      <dt>t</dt>\n      <dd>d\n*[A]: a\ntail</dd>\n    </dl>\n  </li>\n</ul>"

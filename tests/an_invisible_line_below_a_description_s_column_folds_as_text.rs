@@ -1,31 +1,7 @@
-//! Below a definition description's content column an invisible line is lazy
-//! paragraph text OF THAT CONTAINER (markup-carve/carve#1809, §10 I5 DEFINITION
-//! OWNERSHIP IS COLUMN-SCOPED; markup-carve/carve-rs#1443, corpus 430 and 431).
-//!
-//! §10 I5's missing half was WHICH container: "lazy paragraph text" names an
-//! operation on an OPEN paragraph, so ending the description and emitting the
-//! same characters one level out has not carried the sentence out, whatever the
-//! bytes look like.
-//!
-//! THREE MECHANISMS HAD TO CHANGE HERE, and each alone leaves a different half
-//! fold - which is why every row asserts the characters AND, where the kind has
-//! one, the absence of the registration or the attachment:
-//!
-//!  1. this collector briefly BROKE on a definition-shaped line
-//!     (markup-carve/carve-rs#1438 read the band the other way round, and
-//!     carve#1809 overruled that reading), which put the link and footnote kinds
-//!     at document level;
-//!  2. `item_block_opener` counted a footnote definition and a block-attribute
-//!     line as openers, and the below-column guard ejected them before the
-//!     interrupt test ever saw the line;
-//!  3. `rebase_overindented_blocks` then rebased the folded line's RESIDUAL
-//!     INDENT away, delivering it FLUSH inside the description where the block
-//!     parser recognized its shape all over again: `{.k}` became the `dd`'s own
-//!     floating attribute and attached to the paragraph below it.
-//!
-//! Both render entry points on every row: `to_html` opens with a layout fast
-//! path and the CLI runs transforms, and a divergence on one path only is what a
-//! single-path assertion cannot see.
+//! A definition below a description's content column follows the owner it
+//! reaches. Link, note, and attribute lines keep their existing readings.
+//! Under the later carve#4412 ruling, an abbreviation line that misses every
+//! frame defines in the document. Both render entry points are checked.
 
 fn html(source: &str) -> String {
     let convenience = carve::to_html(source);
@@ -45,16 +21,14 @@ fn folds(line: &str) -> String {
 }
 
 #[test]
-fn every_kind_folds_at_both_columns_of_the_band() {
-    // The band is two columns wide under a `:  ` body and the answer does not
-    // move inside it. The plain line is in the set because it is what "folds as
-    // text" means, and it folded from every column all along.
+fn each_kind_uses_its_ownership_rule_at_both_band_columns() {
+    // The band is two columns wide under a `:  ` body.
     for indent in [" ", "  "] {
         for (line, expected) in [
             ("[r]: /u", format!("{ENDS}<p>tail</p>")),
             ("[^f]: n", ENDS.trim_end_matches('\n').to_string()),
             ("{.k}", format!("{ENDS}<p class=\"k\">tail</p>")),
-            ("*[A]: a", folds("*[A]: a")),
+            ("*[A]: a", format!("{ENDS}<p>tail</p>")),
             ("x", folds("x")),
         ] {
             assert_eq!(
@@ -67,9 +41,7 @@ fn every_kind_folds_at_both_columns_of_the_band() {
 }
 
 #[test]
-fn nothing_registers_so_a_reference_below_stays_literal() {
-    // The half-fold rows: characters on the page AND an entry in a symbol table
-    // is the shape a bytes-only assertion passes.
+fn registrations_follow_each_definition_kind() {
     assert_eq!(
         html(":: t\n:  d\n  [r]: /u\ntail\n\nSee [text][r].\n"),
         format!("{ENDS}<p>tail</p>\n<p>See <a href=\"/u\">text</a>.</p>")
@@ -81,8 +53,10 @@ fn nothing_registers_so_a_reference_below_stays_literal() {
         )
     );
     let abbr = html(":: t\n:  d\n  *[A]: a\ntail\n\nA here\n");
-    assert_eq!(abbr, format!("{}\n<p>A here</p>", folds("*[A]: a")));
-    assert!(!abbr.contains("<abbr"), "{abbr}");
+    assert_eq!(
+        abbr,
+        format!("{ENDS}<p>tail</p>\n<p><abbr title=\"a\">A</abbr> here</p>")
+    );
 }
 
 #[test]

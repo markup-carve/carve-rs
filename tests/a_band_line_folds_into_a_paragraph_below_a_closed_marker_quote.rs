@@ -27,7 +27,8 @@ fn a_band_line_stays_out_with_no_paragraph_to_take_it() {
 }
 
 #[test]
-fn a_column_zero_abbreviation_shape_still_folds() {
+fn a_column_zero_abbreviation_ends_the_item_after_its_band_line() {
     let out = html("- > | a |\n  b |\n*[A]: x\n");
-    assert!(out.contains("b |\n*[A]: x\n  </li>"), "{out}");
+    assert!(out.contains("b |\n  </li>"), "{out}");
+    assert!(!out.contains("*[A]: x"), "{out}");
 }
