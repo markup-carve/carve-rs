@@ -1196,7 +1196,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             && !interrupts_paragraph_with_rest(line, &self.lines[*i + 1..])
             && !interrupts_paragraph_with_rest(rest, &self.lines[*i + 1..])
             && !is_colon_fence_opener_shape(line)
-            && exact_colon_fence_len(rest).is_none()
+            && !exact_colon_fence_len(rest).is_some_and(|run| run >= 3)
             && parse_link_def_line(rest).is_none()
             && parse_footnote_def_line(rest).is_none()
             // §10 I2: under a note's paragraph a marker is text, unless an
@@ -1925,7 +1925,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             && walk.opacity.code.is_none()
             && !interrupts_paragraph_with_rest(rest, &self.lines[*i + 1..])
             && !is_colon_fence_opener_shape(rest)
-            && exact_colon_fence_len(rest).is_none()
+            && !exact_colon_fence_len(rest).is_some_and(|run| run >= 3)
             && parse_link_def_line(rest).is_none()
             && parse_footnote_def_line(rest).is_none()
             // §10 I2: a marker below a hosting item's content column continues

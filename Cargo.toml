@@ -92,6 +92,10 @@ name = "a_document_abbreviation_ends_lazy_containers"
 path = "tests/a_document_abbreviation_ends_lazy_containers.rs"
 
 [[test]]
+name = "a_colon_line_without_a_term_continues_a_note"
+path = "tests/a_colon_line_without_a_term_continues_a_note.rs"
+
+[[test]]
 name = "fx22_render_boundaries"
 path = "tests/fx22_render_boundaries.rs"
 

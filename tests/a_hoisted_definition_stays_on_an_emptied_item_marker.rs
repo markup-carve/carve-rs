@@ -23,7 +23,7 @@ const SHAPES: &[(&str, &str, &str)] = &[
     (
         "footnote definition",
         "* * [^f]: n\n  :\n",
-        "* * [^f]: n\n  :\n",
+        "* * [^f]: n\n      :\n",
     ),
     ("no following content", "* * [d]: u\n", "* * [d]: u\n"),
     // A TOP-LEVEL emptied item keeps `- +`, the older canonical form that corpus
