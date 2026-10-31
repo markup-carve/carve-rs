@@ -831,10 +831,39 @@ impl<'a> Walk<'a> {
         column: usize,
         host: usize,
     ) -> Result<(), Refusal> {
-        let Some(line) = self.lines.get(at + 1) else {
+        let mut next = at + 1;
+        if kind == Kind::Note {
+            // A new note definition is invisible to this pending marker. Its
+            // foldable body stays with that definition; the next block decides
+            // whether the older note's `+` can attach (PART 9 §17 L3).
+            while let Some(line) = self.lines.get(next) {
+                let Some(level) = self.through_quotes(line, host) else {
+                    break;
+                };
+                let text = trim_ws_start(level);
+                if doc_column(line, text) != column || parse_footnote_def_line(text).is_none() {
+                    break;
+                }
+                next += 1;
+                while let Some(body) = self.lines.get(next) {
+                    let Some(level) = self.through_quotes(body, host) else {
+                        break;
+                    };
+                    let text = trim_ws_start(level);
+                    if is_blank_line(body)
+                        || parse_footnote_def_line(text).is_some()
+                        || (!line_starts_paragraph(text) && !is_plus_marker(text))
+                    {
+                        break;
+                    }
+                    next += 1;
+                }
+            }
+        }
+        let Some(line) = self.lines.get(next) else {
             return Err(Refusal::Document);
         };
-        if at + 2 == self.lines.len() && line.is_empty() {
+        if next + 1 == self.lines.len() && line.is_empty() {
             return Err(Refusal::Document);
         }
         let Some(rest) = self.through_quotes(line, host) else {
