@@ -1534,6 +1534,13 @@ pub(in crate::parse) fn parse_forced_emphasis(
         None
     };
     let j = word_close.or_else(|| bounds.braced_closers(bytes).close(bytes, i, delim))?;
+    if delim == b'~'
+        && bounds
+            .braced_closers(bytes)
+            .comment_hides_arrow_at_closer(bytes, i, j)
+    {
+        return None;
+    }
     if j == content_start {
         return None; // empty content: `+?` requires at least one byte
     }
