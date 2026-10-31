@@ -72,8 +72,8 @@ fn adjacent_attribute_blocks_merge() {
         carve::to_html("`x`{.a}{.b}"),
         "<p><code class=\"a b\">x</code></p>"
     );
-    // an empty/invalid trailing block stays literal; a space breaks the chain.
-    assert_eq!(carve::to_html("[x]{}{}"), "<p><span>x</span>{}</p>");
+    // A blessed empty block is a member of a bracketed span's run (carve#4077).
+    assert_eq!(carve::to_html("[x]{}{}"), "<p><span>x</span></p>");
     assert_eq!(carve::to_html("*x* {.b}"), "<p><strong>x</strong> {.b}</p>");
     // an UNRESOLVED reference link reverts to literal source, so a trailing
     // block must stay literal too (not be merged-then-dropped).
@@ -88,6 +88,17 @@ fn adjacent_attribute_blocks_merge() {
     );
     // footnote references chain too.
     assert!(carve::to_html("[^a]{.a}{.b}\n\n[^a]: note").contains("class=\"a b\""));
+}
+
+#[test]
+fn blessed_empty_blocks_join_span_attribute_runs_in_every_position() {
+    for source in ["[a]{}{.b}", "[a]{}{}{.b}", "[a]{.b}{}", "[a]{ }{.b}{ }"] {
+        assert_eq!(carve::to_html(source), "<p><span class=\"b\">a</span></p>");
+    }
+    assert_eq!(
+        carve::to_html("*x*{}{.b}"),
+        "<p><strong>x</strong>{}{.b}</p>"
+    );
 }
 
 #[test]
