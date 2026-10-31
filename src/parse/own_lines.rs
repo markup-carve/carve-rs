@@ -336,6 +336,18 @@ fn same_marker_axes(first: &str, head: &str) -> bool {
     }
 }
 
+/// A marker at the missed list's own column, or at the reached owner's
+/// content column, opens a list even when its §11 axes differ (PART 0 S4).
+fn missed_item_starts_list(frames: &[Frame], reached: usize, col: usize, head: &str) -> bool {
+    let Some(item) = frames.get(reached + 1).filter(|f| f.kind == Kind::Item) else {
+        return false;
+    };
+    let list_col = item
+        .list_col
+        .min(item.marker.map_or(item.list_col, |(col, _)| col));
+    same_marker_axes(&item.marker_src, head) || col == list_col || col <= frames[reached].col
+}
+
 /// The bullet or ordered marker's content column offset, the bytes up to its
 /// content, and the sibling axes.
 fn list_marker(rest: &str) -> Option<(usize, usize, String)> {
@@ -1072,20 +1084,6 @@ impl<'a> Walk<'a> {
         }
     }
 
-    /// A marker from the reached item's content column up to a missed list
-    /// column can belong to the reached item's list when its axes agree.
-    fn marker_ends_lazy(&self, reached: usize, col: usize, rest: &str) -> bool {
-        let Some(item) = self.frames.get(reached + 1) else {
-            return false;
-        };
-        item.kind == Kind::Item
-            && (same_marker_axes(&item.marker_src, rest)
-                || (self.frames[reached].kind == Kind::Item
-                    && col >= self.frames[reached].col
-                    && col < item.list_col
-                    && same_marker_axes(&self.frames[reached].marker_src, rest)))
-    }
-
     fn top(&mut self) -> &mut Frame {
         self.frames.last_mut().expect("the document frame stays")
     }
@@ -1273,7 +1271,8 @@ impl<'a> Walk<'a> {
             && !term_refuses
             && !form.interrupts()
             && !matches!(form, Form::Dd(_))
-            && !(matches!(form, Form::Item(..)) && self.marker_ends_lazy(reached, c.col, c.rest))
+            && !(matches!(form, Form::Item(..))
+                && missed_item_starts_list(&self.frames, reached, c.col, c.rest))
         {
             if self.decide && matches!(form, Form::Item(..)) {
                 self.decide_folded_marker(at, c.rest, reached);

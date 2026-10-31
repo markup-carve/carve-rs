@@ -2,6 +2,25 @@
   "comment": "Conformance pack cases this engine renders differently from the spec model, one entry per cause with its open ticket. See tests/conformance_pack.rs.",
   "entries": [
     {
+      "ticket": "markup-carve/carve#4369",
+      "cause": "own-content-column ruling merged after the 5643d59c pack pin",
+      "cases": [
+        "fences-06e5e9514aab",
+        "fences-42fe4e73aeaa",
+        "fences-55cd350a4d6d",
+        "fences-6aa76a6c725f",
+        "lazy-777e736ed857",
+        "ownership-1647bf107571",
+        "ownership-999f1d288b11",
+        "ownership-af75e477c466",
+        "ownership-baace234ff19",
+        "ownership-bd136514e326",
+        "plus-c843bfd6fe62",
+        "roundtrip-3273596976e5",
+        "roundtrip-5cb05799a0e5"
+      ]
+    },
+    {
       "ticket": "markup-carve/carve#3972",
       "cause": "all three engines agree against the spec model",
       "cases": [
