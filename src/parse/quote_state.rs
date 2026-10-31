@@ -199,7 +199,11 @@ pub(super) fn single(
                     allocation: None,
                     path: Vec::new(),
                     index,
-                    demote: alnum && !(i == 0 && state.depth == 1) && prev != '“',
+                    demote: alnum
+                        // Braced comments that open the content count as
+                        // nothing (carve#4552); they leave `prev` unset.
+                        && !(state.depth == 1 && (i == 0 || (prev == '\0' && text.starts_with("{%"))))
+                        && prev != '“',
                 });
             }
         }

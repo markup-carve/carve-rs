@@ -888,6 +888,9 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
                 }
                 continue;
             }
+        } else if let Some(figure) = quiet_captioned_image(&mut cur, options, line) {
+            emit!(_block_source_line, figure);
+            continue;
         }
         if line.starts_with(":::") {
             if detect_line_block_open(line).is_some() {

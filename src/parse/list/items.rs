@@ -2230,9 +2230,11 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 .then(|| vec![inline_anchor_for_line(self.cur, item.at, paragraph_content)]),
             caption_below_content_column: false,
             image_lead: detect_block_image(paragraph_content).is_some()
-                || reference_image_line(paragraph_content),
+                || reference_image_line(paragraph_content)
+                || quiet_block_image(paragraph_content).is_some(),
             caption_claimed: false,
-            inline_image_lead: detect_block_image(paragraph_content).is_some(),
+            inline_image_lead: detect_block_image(paragraph_content).is_some()
+                || quiet_block_image(paragraph_content).is_some(),
             literal_colon_opener: detect_container_open(content)
                 .map(|open| open.fence_len)
                 .or_else(|| detect_line_block_open(content))

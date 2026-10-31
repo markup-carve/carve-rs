@@ -3289,7 +3289,9 @@ pub(crate) fn rewrite_text_align(attrs: &Attrs, tag: &str) -> Option<Attrs> {
     rewritten.key_values.remove(&align_key);
     match &style_key {
         Some(key) => {
-            let merged = append_declaration(&attrs.key_values[key], &declaration);
+            // A style CARVE-P9-054 blanks still takes the alignment (carve#4548).
+            let authored = crate::escape::sanitize_attr_value("style", &attrs.key_values[key]);
+            let merged = append_declaration(&authored, &declaration);
             rewritten.key_values.insert(key.clone(), merged);
             rewritten
                 .order

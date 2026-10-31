@@ -395,3 +395,29 @@ fn generated_container_and_multiline_variants() {
         assert!(html.contains("After."), "variant {variant}: {html}");
     }
 }
+
+#[test]
+fn a_cols_backslash_escapes_ascii_punctuation_only() {
+    // carve#4571: `\z` is a backslash and a `z`, so no header is named `a\zb`.
+    let result = expand(
+        "{table}\n{{ z.csv @code:csv @cols:\"a\\zb\" }}",
+        "azb,c\n1,2\n",
+    );
+    assert!(
+        result
+            .warnings
+            .iter()
+            .any(|w| w.rule == "include-cols-invalid"),
+        "{:?}",
+        result.warnings
+    );
+    assert!(!render_html(&result.doc).unwrap().contains("<table"));
+    let result = expand(
+        "{table}\n{{ z.csv @code:csv @cols:\"a\\,b\" }}",
+        "\"a,b\",c\n1,2\n",
+    );
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert!(render_html(&result.doc)
+        .unwrap()
+        .contains("<th scope=\"col\">a,b</th>"));
+}

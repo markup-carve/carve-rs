@@ -389,6 +389,9 @@ thread_local! {
     /// The joiner offsets of the table cell being parsed, each with the
     /// `cell_wrap` it becomes (CARVE-P12-069).
     pub(in crate::parse) static CELL_WRAPS: RefCell<Vec<(usize, CellWrap)>> = const { RefCell::new(Vec::new()) };
+    /// Set while a cell's inlines are parsed: a destination there reads the
+    /// cell's `\|` escape as `|` (carve#4549).
+    pub(in crate::parse) static IN_CELL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// The `+` joins inside the verbatim payload of the span whose backtick run
@@ -629,7 +632,14 @@ pub(in crate::parse) fn parse_table_row(
         .collect();
     // T6: a slot past the row line's cells is a new cell of this row. It is a
     // header cell when every other cell is, and its fragment is never a span marker.
-    let header = !cells.is_empty() && cells.iter().all(|cell| cell.header);
+    // A `<` marker counts as the cell it extends; a `^` as itself (T5, carve#4566).
+    let covering = |mut c: usize| {
+        while c > 0 && cells[c].span == Some(TableCellSpan::Colspan) {
+            c -= 1;
+        }
+        &cells[c]
+    };
+    let header = !cells.is_empty() && (0..cells.len()).all(|c| covering(c).header);
     for (extra, wrap) in appended_extra.drain(..).zip(appended) {
         let mut cell = parse_table_cell("", options, None, &extra);
         cell.header = header;
@@ -1006,6 +1016,18 @@ pub(in crate::parse) fn parse_cell_inlines(
 /// in force for a run joined across a gap (PART 12 section 4, absent beats
 /// wrong). A node that lies wholly inside one fragment keeps its own position.
 pub(in crate::parse) fn parse_cell_content(
+    slice: &str,
+    options: &Options<'_>,
+    base: Option<(usize, isize)>,
+    extra: &[CellFragment],
+) -> Vec<InlineNode> {
+    let outer = IN_CELL.with(|cell| cell.replace(true));
+    let parsed = parse_cell_fragments(slice, options, base, extra);
+    IN_CELL.with(|cell| cell.set(outer));
+    parsed
+}
+
+fn parse_cell_fragments(
     slice: &str,
     options: &Options<'_>,
     base: Option<(usize, isize)>,

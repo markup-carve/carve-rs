@@ -48,6 +48,16 @@ fn start_plus_quote_at_outer_marker(
     }
 }
 
+/// A child a caption could not be about: one that publishes nothing, or a quote
+/// or bare `:::` div holding only such children (13:150, carve#4573).
+fn holds_nothing(block: &BlockNode) -> bool {
+    match block {
+        BlockNode::BlockQuote(quote) => quote.children.iter().all(holds_nothing),
+        BlockNode::Div(div) if div.label.is_none() => div.children.iter().all(holds_nothing),
+        _ => crate::ast::publishes_nothing(block),
+    }
+}
+
 #[inline(never)]
 pub(in crate::parse) fn finish_blockquote(
     cur: &mut LineCursor,
@@ -64,7 +74,7 @@ pub(in crate::parse) fn finish_blockquote(
     // comment holds nothing either (markup-carve/carve#4220).
     let caption_after_blank_reaches =
         cur.peek().is_some_and(is_blank_line) && cur.carried_reach(cur.pos + 1) == Some(true);
-    let caption = if children.iter().all(crate::ast::publishes_nothing)
+    let caption = if children.iter().all(holds_nothing)
         || (cur.carried_reach(cur.pos) == Some(false) && !caption_after_blank_reaches)
     {
         None

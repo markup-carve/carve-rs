@@ -610,6 +610,8 @@ pub(in crate::parse) fn parse_block(
         // Not standalone: the image folds into a paragraph with the following
         // content (parse_paragraph below); a sole-image paragraph is still
         // promoted to a bare block image afterwards.
+    } else if let Some(figure) = quiet_captioned_image(cur, options, line) {
+        return Some(Box::new(figure));
     }
     if let Some(matched) = try_extension_block(cur, options) {
         return Some(Box::new(matched));

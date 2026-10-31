@@ -112,6 +112,9 @@ pub(crate) fn marker_content_is_captioned_inline(
         return content.starts_with("$$`")
             && multiline_math_takes_caption(content, cur, content_col, options);
     }
+    if blank_before_caption && quiet_block_image(content).is_some() {
+        return true;
+    }
     let inline = parse_inline_with_options(content, options);
     inline.len() == 1
         && match &inline[0] {

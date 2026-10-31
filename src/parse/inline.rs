@@ -383,28 +383,21 @@ thread_local! {
 }
 
 struct InlineFrame {
-    waived_block_root: bool,
+    /// The block depth a top inline run set aside: the run is level 1 of the
+    /// inline cap whatever block holds it (16:102, carve#4564).
+    block_depth: Option<usize>,
 }
 
 impl InlineFrame {
-    fn enter(has_bracket_construct: bool, text: &str, base: usize) -> (Self, bool) {
+    fn enter(text: &str, base: usize) -> (Self, bool) {
         INLINE_FRAMES.with(|frames| {
             let nested = frames.get() > 0;
             if !nested && (text.contains('"') || text.contains('\'')) {
                 INLINE_SOURCE.with(|source| *source.borrow_mut() = Some((text.to_owned(), base)));
             }
             frames.set(frames.get() + 1);
-            let waived_block_root = !nested
-                && has_bracket_construct
-                && NESTING_DEPTH.with(|depth| {
-                    if depth.get() > 0 {
-                        depth.set(depth.get() - 1);
-                        true
-                    } else {
-                        false
-                    }
-                });
-            (Self { waived_block_root }, nested)
+            let block_depth = (!nested).then(|| NESTING_DEPTH.with(|depth| depth.replace(0)));
+            (Self { block_depth }, nested)
         })
     }
 }
@@ -418,8 +411,8 @@ impl Drop for InlineFrame {
                 INLINE_SOURCE.with(|source| *source.borrow_mut() = None);
             }
         });
-        if self.waived_block_root {
-            NESTING_DEPTH.with(|depth| depth.set(depth.get() + 1));
+        if let Some(block_depth) = self.block_depth {
+            NESTING_DEPTH.with(|depth| depth.set(block_depth));
         }
     }
 }
@@ -446,7 +439,7 @@ pub(in crate::parse) fn parse_inline_context_with_pairs(
         return plain;
     }
     let has_link_trigger = text.contains("](") || text.contains("][") || text.contains("]{");
-    let (inline_frame, nested) = InlineFrame::enter(has_link_trigger, text, base);
+    let (inline_frame, nested) = InlineFrame::enter(text, base);
     let _inline_frame = inline_frame;
     // A bracketed inline tree spends its depth budget on its constructs, not
     // on the enclosing block and initial scan. Its descendants still share
@@ -1314,10 +1307,26 @@ impl InlineRun<'_, '_> {
         Some(self.emit(InlineNode::Symbol(symbol), i, consumed))
     }
 
+    /// `flag_shaped_hyphen_run` with a literal bracket run read as a region,
+    /// like a span: its `[` is the start of content and its `]` is no
+    /// following character (CARVE-P3-021, carve#4551).
+    fn flag_run_at(&self, i: usize) -> Option<usize> {
+        let run = self.bounds.bracket_run_at(i);
+        let opens_region = i > 0 && run == Some(i - 1);
+        let n = self.bytes[i..].iter().take_while(|&&b| b == b'-').count();
+        let closes_region = run.is_some_and(|open| self.bounds.matches.get(open) == Some(&(i + n)));
+        if closes_region {
+            return None;
+        }
+        if opens_region && n >= 2 && !self.text[i..].starts_with("-->") {
+            return flag_shaped_hyphen_run(&self.text[i..], 0);
+        }
+        flag_shaped_hyphen_run(self.text, i)
+    }
+
     /// Constructs tried at any byte once the delimited ones declined, in
     /// precedence order.
     fn open_construct(&mut self, c: u8, i: usize) -> Option<usize> {
-        let text = self.text;
         // PART 9 §8 (markup-carve/carve#1443): a hyphen run PRECEDED by
         // whitespace (or the start of the content) and FOLLOWED by a
         // non-whitespace character is a long CLI flag, not a dash, and stays
@@ -1328,7 +1337,7 @@ impl InlineRun<'_, '_> {
         // one: handing back a Text node would split `a --foo` into two text
         // nodes where the other engines keep one, and consuming the run a byte
         // at a time would leave `-->` as a stray `-` plus a live `->` symbol.
-        if let Some(run) = flag_shaped_hyphen_run(text, i) {
+        if let Some(run) = self.flag_run_at(i) {
             self.sink.buffer(i, i + run);
             return Some(i + run);
         }

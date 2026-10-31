@@ -75,15 +75,19 @@ pub(in crate::parse) fn promote_block_images(
                 }
                 continue;
             }
+            let quiet = match block {
+                BlockNode::Paragraph(p) => quiet_run_after_image(&p.children),
+                _ => 0,
+            };
             let ref_figure = matches!(
                 block,
                 BlockNode::Paragraph(p)
                     if p.at_content_column
-                        && p.children.len() >= 3
+                        && p.children.len() >= 3 + quiet
                         && matches!(&p.children[0], InlineNode::Image(img) if !is_unresolved_image(img))
-                        && matches!(p.children[1], InlineNode::SoftBreak(_))
-                        && matches!(&p.children[2], InlineNode::Text(t) if caption_marker_len(&t.value).is_some())
-                        && caption_first_line_has_content(&p.children)
+                        && matches!(p.children[1 + quiet], InlineNode::SoftBreak(_))
+                        && matches!(&p.children[2 + quiet], InlineNode::Text(t) if caption_marker_len(&t.value).is_some())
+                        && caption_first_line_has_content(&p.children[quiet..])
             );
             if ref_figure {
                 // Carry a leading block-attribute line (`{#id}` etc.) from the
@@ -107,7 +111,7 @@ pub(in crate::parse) fn promote_block_images(
                 let InlineNode::Image(img) = children.remove(0) else {
                     unreachable!()
                 };
-                children.remove(0); // the soft break
+                children.drain(..quiet + 1); // the comments and the soft break
                 if let InlineNode::Text(t) = &mut children[0] {
                     let n = caption_marker_len(&t.value).unwrap();
                     let rest = t.value[n..].to_string();
@@ -170,6 +174,31 @@ pub(in crate::parse) fn promote_block_images(
                 _ => {}
             }
         }
+    }
+}
+
+/// How many nodes after a paragraph's leading image render nothing before its
+/// first line ends: braced comments, then a line comment with the whitespace
+/// before it (18:317, carve#4568). A space before a braced comment renders.
+fn quiet_run_after_image(children: &[InlineNode]) -> usize {
+    let line_end = children
+        .iter()
+        .position(|node| matches!(node, InlineNode::SoftBreak(_)))
+        .unwrap_or(children.len());
+    let run = &children[1.min(line_end)..line_end];
+    let mut braced = 0;
+    while matches!(run.get(braced), Some(InlineNode::Comment(c)) if c.delimited) {
+        braced += 1;
+    }
+    let mut at = braced;
+    while matches!(run.get(at), Some(InlineNode::Text(t)) if t.value.trim_matches([' ', '\t']).is_empty())
+    {
+        at += 1;
+    }
+    match run.get(at) {
+        Some(InlineNode::Comment(c)) if !c.delimited && at + 1 == run.len() => run.len(),
+        _ if braced == run.len() => braced,
+        _ => 0,
     }
 }
 

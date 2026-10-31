@@ -1189,11 +1189,12 @@ pub(in crate::parse) fn scan_balanced_destination(
     let mut href_bytes: Vec<u8> = Vec::new();
     let mut depth: usize = 0;
     let mut i = start;
+    let in_cell = super::table::IN_CELL.with(std::cell::Cell::get);
     while i < bytes.len() {
         let b = bytes[i];
         if b == b'\\' {
             if let Some(&next) = bytes.get(i + 1) {
-                if matches!(next, b'(' | b')' | b'\\') {
+                if matches!(next, b'(' | b')' | b'\\') || (in_cell && next == b'|') {
                     href_bytes.push(next);
                     i += 2;
                     continue;

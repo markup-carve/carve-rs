@@ -1,6 +1,12 @@
 use super::*;
 
 pub(super) fn detect_block_image(line: &str) -> Option<Image> {
+    let (img, after) = image_and_tail(line)?;
+    trim_ascii(after).is_empty().then_some(img)
+}
+
+/// The image a line opens with, and the text after it.
+fn image_and_tail(line: &str) -> Option<(Image, &str)> {
     if !line.starts_with("![") {
         return None;
     }
@@ -24,11 +30,71 @@ pub(super) fn detect_block_image(line: &str) -> Option<Image> {
         footnote_refs: true,
     };
     let (img, consumed) = parse_image_at(bytes, 0, &bounds)?;
-    let after = &line[consumed..];
-    if !trim_ascii(after).is_empty() {
+    Some((img, &line[consumed..]))
+}
+
+/// A lone image whose line also holds comments: they render nothing, so the
+/// line is still a caption host (18:317, carve#4568). A braced comment holds its
+/// place until the line end is trimmed, so a space before it still renders.
+pub(super) fn quiet_block_image(line: &str) -> Option<Image> {
+    if !line.starts_with("![") || !line.contains('%') {
         return None;
     }
-    Some(img)
+    let (img, after) = image_and_tail(line)?;
+    (!trim_ascii(after).is_empty() && quiet_image_tail(after)).then_some(img)
+}
+
+/// Whether the text after an image is only comments, read as the model's
+/// `isCaptionableParagraph` reads the line: braced comments hold a place, a
+/// line comment after whitespace runs to the end, and the end is trimmed.
+fn quiet_image_tail(tail: &str) -> bool {
+    let mut quiet = String::with_capacity(tail.len());
+    let mut rest = tail;
+    while let Some(open) = rest.find("{%") {
+        let Some(close) = rest[open + 2..].find("%}") else {
+            break;
+        };
+        quiet.push_str(&rest[..open]);
+        quiet.push('\u{1}');
+        rest = &rest[open + 2 + close + 2..];
+    }
+    quiet.push_str(rest);
+    if let Some(at) = quiet
+        .match_indices("%%")
+        .map(|(at, _)| at)
+        .find(|&at| at > 0 && matches!(quiet.as_bytes()[at - 1], b' ' | b'\t'))
+    {
+        quiet.truncate(at);
+    }
+    quiet
+        .trim_end_matches([' ', '\t'])
+        .replace('\u{1}', "")
+        .is_empty()
+}
+
+/// The figure a [`quiet_block_image`] line makes with the caption below it.
+/// Without a caption nothing is consumed: promotion already renders the image.
+pub(super) fn quiet_captioned_image(
+    cur: &mut LineCursor,
+    options: &Options<'_>,
+    line: &str,
+) -> Option<BlockNode> {
+    let mut img = quiet_block_image(line)?;
+    let image_at = cur.pos;
+    cur.consume();
+    img.pos = span_of(cur, image_at, image_at + 1, options);
+    let Some(caption) = consume_caption(cur, options) else {
+        cur.pos = image_at;
+        return None;
+    };
+    Some(BlockNode::Figure(Figure {
+        attrs: None,
+        target: Box::new(FigureTarget::Image(img)),
+        rendered_target: None,
+        caption,
+        short_caption: None,
+        pos: span_of(cur, image_at, cur.pos, options),
+    }))
 }
 
 pub(super) fn reference_image_line(line: &str) -> bool {
