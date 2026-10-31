@@ -98,9 +98,11 @@ use unicode_normalization::UnicodeNormalization;
 /// is ours rather than something the author wrote.
 const PLACEHOLDER_DEFAULTS: [char; 2] = ['\u{E005}', '\u{E006}'];
 
-/// Slot indices into [`PLACEHOLDER_DEFAULTS`] / [`PLACEHOLDERS`].
+/// Placeholder kinds. The first two are slots in [`PLACEHOLDERS`]; the third
+/// is their two-code-point sequence.
 const P_DEFINITION: usize = 0;
 const P_DOCUMENT_DEFINITION: usize = 1;
+const P_ATTACHED_NONPARAGRAPH_DEFINITION: usize = 2;
 
 thread_local! {
     /// The suffix code points in force for the parse running on this thread.
@@ -240,6 +242,14 @@ fn definition_placeholder() -> String {
     format!("%%{}", placeholder_char(P_DEFINITION))
 }
 
+fn attached_nonparagraph_definition_placeholder() -> String {
+    format!(
+        "%%{}{}",
+        placeholder_char(P_DEFINITION),
+        placeholder_char(P_DOCUMENT_DEFINITION)
+    )
+}
+
 /// The same marker for a definition written at the DOCUMENT's column zero.
 fn document_definition_placeholder() -> String {
     format!("%%{}", placeholder_char(P_DOCUMENT_DEFINITION))
@@ -252,7 +262,13 @@ fn document_definition_placeholder() -> String {
 fn placeholder_kind(line: &str) -> Option<usize> {
     let mut suffix = trim_ascii(line).strip_prefix("%%")?.chars();
     let ch = suffix.next()?;
-    if suffix.next().is_some() {
+    if let Some(second) = suffix.next() {
+        if suffix.next().is_none()
+            && ch == placeholder_char(P_DEFINITION)
+            && second == placeholder_char(P_DOCUMENT_DEFINITION)
+        {
+            return Some(P_ATTACHED_NONPARAGRAPH_DEFINITION);
+        }
         return None;
     }
     PLACEHOLDERS.with(|slot| slot.get().iter().position(|current| *current == ch))
@@ -265,7 +281,14 @@ fn is_definition_placeholder(line: &str) -> bool {
 /// Only the marker a definition left at its container's column - NOT the one a
 /// document-column definition left, which is an I5 interrupter instead.
 fn is_collected_definition_placeholder(line: &str) -> bool {
-    placeholder_kind(line) == Some(P_DEFINITION)
+    matches!(
+        placeholder_kind(line),
+        Some(P_DEFINITION | P_ATTACHED_NONPARAGRAPH_DEFINITION)
+    )
+}
+
+fn is_attached_nonparagraph_definition_placeholder(line: &str) -> bool {
+    placeholder_kind(line) == Some(P_ATTACHED_NONPARAGRAPH_DEFINITION)
 }
 
 fn is_quoted_definition_placeholder(line: &str) -> bool {
