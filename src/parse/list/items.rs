@@ -1145,10 +1145,11 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         }
         let l = self.cur.peek().unwrap();
         let byte_off = (marker.content.as_ptr() as usize).saturating_sub(l.as_ptr() as usize);
-        indent_columns(l)
+        let column = indent_columns(l)
             + byte_off
                 .saturating_sub(leading_ws(l))
-                .saturating_sub(marker_attrs_width(l, marker))
+                .saturating_sub(marker_attrs_width(l, marker));
+        past_lead_tab_run(marker.content, column, indent_columns(l))
     }
 
     fn bare_continuation_item(&mut self, item: ItemOpen<'l>) {

@@ -335,12 +335,19 @@ fn list_marker(rest: &str) -> Option<(usize, usize, String)> {
         i += bytes[i..].iter().position(|&b| b == b'}')? + 1;
     }
     let spaces = bytes[i..].iter().take_while(|&&b| b == b' ').count();
-    let width = token + if marker.checked.is_some() { 1 } else { spaces };
-    let head = if marker.content.is_empty() {
+    let mut width = token + if marker.checked.is_some() { 1 } else { spaces };
+    let mut head = if marker.content.is_empty() {
         rest.len()
     } else {
         marker.content.as_ptr() as usize - rest.as_ptr() as usize
     };
+    if marker.checked.is_none() {
+        let end = past_lead_tab_run(marker.content, width, 0);
+        if end != width {
+            width = end;
+            head += marker.content.len() - trim_ascii_start(marker.content).len();
+        }
+    }
     let axes = match marker.delim {
         Some(d) => (d as char).to_string(),
         None => marker.marker.to_owned(),
@@ -1584,6 +1591,11 @@ impl<'a> Walk<'a> {
         f.doc_marker = doc_column(self.lines[at], c.src);
         self.frames.push(f);
         let head = head.min(c.src.len());
+        let lead_tab = c.src[..head]
+            .bytes()
+            .rev()
+            .take_while(|b| matches!(b, b' ' | b'\t'))
+            .any(|b| b == b'\t');
         c.take(head);
         c.measure();
         let at_frame = self.frames.len() - 1;
@@ -1607,6 +1619,8 @@ impl<'a> Walk<'a> {
                     f.source_shift = source_shift;
                 }
             }
+        } else if kind == Kind::Item && lead_tab {
+            self.lead_tab_content(at_frame, c);
         } else {
             self.content(at_frame, col + head, canon + head, at, c);
         }
@@ -1621,6 +1635,21 @@ impl<'a> Walk<'a> {
         {
             self.frames[at_frame].shift += head - width;
         }
+    }
+
+    /// Content behind a lead tab is paragraph text, whatever it spells (corpus 684, 736).
+    fn lead_tab_content(&mut self, frame: usize, c: &mut Cursor<'_>) {
+        // The quote collector looks past a lead tab, so spell the `+` as text for it.
+        if is_cont_marker(trim_ascii_start(innermost_marker_content(c.rest))) {
+            self.refuse_line = true;
+        }
+        let absorbs = absorbs_colon(c.rest);
+        let col = c.col;
+        c.lead(col);
+        let f = &mut self.frames[frame];
+        f.absorbs = absorbs;
+        f.para = true;
+        f.last = Last::Para;
     }
 
     /// The rest of a marker line. Only a quote starts new coordinates.
