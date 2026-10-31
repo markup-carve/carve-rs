@@ -257,6 +257,10 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 self.cur.consume();
                 continue;
             }
+            if is_attached_nonparagraph_definition_placeholder(line) {
+                self.pending_blank = false;
+                self.blank_run = 0;
+            }
             // Every nonblank line ends the preceding blank run.
             let blank_run_before = std::mem::take(&mut self.blank_run);
             let flow = if self.owns_plus_marker(line) {

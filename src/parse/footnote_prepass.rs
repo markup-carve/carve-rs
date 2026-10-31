@@ -117,6 +117,28 @@ fn is_cont_marker_line(line: &str) -> bool {
     trim_ascii(without_blockquote_prefixes(trim_ascii_start(line))) == "+"
 }
 
+fn first_visible_note_line(lines: &[&str]) -> Option<usize> {
+    let mut at = 0;
+    while let Some(&line) = lines.get(at) {
+        let text = trim_ascii_start(line);
+        if is_blank_line(line)
+            || is_line_comment_any_column(line)
+            || parse_link_def_line(text).is_some()
+            || parse_footnote_def_line(text).is_some()
+        {
+            at += 1;
+        } else if let Some(open) = detect_comment_fence_line(text) {
+            at = lines[at + 1..]
+                .iter()
+                .position(|next| is_comment_fence_close_any_column(next, open.fence_len))
+                .map_or(at + 1, |offset| at + offset + 2);
+        } else {
+            return Some(at);
+        }
+    }
+    None
+}
+
 /// A code fence opener interrupts a note's paragraph whether or not a closer
 /// follows (carve#4018).
 fn opens_code_fence(rest: &str) -> bool {
@@ -874,6 +896,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             }
         }
         // First definition for a label wins (later duplicates are ignored).
+        let note_lines: Vec<&str> = note.lines.iter().map(String::as_str).collect();
+        let attached_nonparagraph = trim_ascii(def.first) == "+"
+            && note.line_map.first() == Some(&None)
+            && first_visible_note_line(&note_lines)
+                .is_some_and(|at| !line_starts_paragraph(note_lines[at]));
         if first_for_label {
             self.register_definition(normalized_label, &def, note);
         } else if note.lines.iter().any(|line| line.contains("[^")) {
@@ -881,7 +908,13 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             let key = format!("{LOSING_NOTE_PREFIX}{def_start_line}");
             self.defs.insert(key, definition_source(note));
         }
-        self.push_definition_replacement(raw_def_line, &def, stripped, def_start_line);
+        self.push_definition_replacement(
+            raw_def_line,
+            &def,
+            stripped,
+            def_start_line,
+            attached_nonparagraph,
+        );
         i
     }
 
@@ -939,14 +972,106 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         {
             return i;
         }
-        let end = attached_block_past_invisible(
-            CursorLines::Slice(lines),
-            i,
-            &mut self.comment_closers,
-            &mut self.closer_index,
+        let start = i;
+        let marker_col = container.content_column.saturating_sub(2);
+        let first_text = trim_ascii_start(lines[i]);
+        let needs_raw_probe = parse_link_def_line(first_text).is_some()
+            || parse_footnote_def_line(first_text).is_some()
+            || detect_list_marker_full(first_text).is_some()
+            || parse_standalone_attrs(first_text).is_some()
+            || is_plus_marker(first_text);
+        let first_boundary_after = |from: usize| {
+            from + lines[from..]
+                .iter()
+                .position(|line| is_blank_line(line) || is_plus_marker(line))
+                .unwrap_or(lines.len() - from)
+        };
+        let window_end = if let Some(open) = detect_fence_open(first_text) {
+            (i + 1..lines.len())
+                .find(|&at| is_fence_close(trim_ascii_start(lines[at]), open))
+                .map_or_else(|| first_boundary_after(i + 1), |at| at + 1)
+        } else if let Some(open) = detect_container_open(first_text) {
+            (i + 1..lines.len())
+                .find(|&at| {
+                    exact_colon_fence_len(trim_ascii_start(lines[at])) == Some(open.fence_len)
+                })
+                .map_or_else(|| first_boundary_after(i + 1), |at| at + 1)
+        } else if let Some(open) = detect_comment_fence_line(first_text) {
+            let after_comment = (i + 1..lines.len())
+                .find(|&at| is_comment_fence_close_any_column(lines[at], open.fence_len))
+                .map_or(i + 1, |at| at + 1);
+            first_boundary_after(after_comment)
+        } else if needs_raw_probe {
+            attached_block_past_invisible(
+                CursorLines::Slice(lines),
+                i,
+                &mut self.comment_closers,
+                &mut self.closer_index,
+                self.options,
+                &mut |line, _| is_blank_line(line) || is_plus_marker(line),
+            )
+        } else {
+            first_boundary_after(i)
+        };
+        let attached: Vec<String> = lines[i..window_end]
+            .iter()
+            .map(|line| strip_leading_columns(line, marker_col))
+            .collect();
+        let attached_refs: Vec<&str> = attached.iter().map(String::as_str).collect();
+        let first_visible_at = first_visible_note_line(&attached_refs).unwrap_or(0);
+        let mut comment_closers = None;
+        let mut closer_index = None;
+        let mut end = attached_block_past_invisible(
+            CursorLines::Slice(&attached_refs),
+            0,
+            &mut comment_closers,
+            &mut closer_index,
             self.options,
-            &mut |line, _| is_blank_line(line) || is_plus_marker(line),
+            &mut |line, at| {
+                let raw = lines[start + at];
+                is_blank_line(line)
+                    || is_plus_marker(line)
+                    || (at > first_visible_at
+                        && marker_col > 0
+                        && indent_columns(raw) <= marker_col
+                        && (item_block_opener(trim_ascii_start(raw)) || is_list_marker(raw)))
+            },
         );
+        while end <= first_visible_at && end < attached_refs.len() {
+            let next = attached_block_past_invisible(
+                CursorLines::Slice(&attached_refs),
+                end,
+                &mut comment_closers,
+                &mut closer_index,
+                self.options,
+                &mut |line, at| {
+                    is_blank_line(line)
+                        || is_plus_marker(line)
+                        || (at > first_visible_at
+                            && marker_col > 0
+                            && indent_columns(lines[start + at]) <= marker_col
+                            && (item_block_opener(trim_ascii_start(lines[start + at]))
+                                || is_list_marker(lines[start + at])))
+                },
+            );
+            if next <= end {
+                break;
+            }
+            end = next;
+        }
+        let mut end = i + end;
+        if attached
+            .first()
+            .is_some_and(|line| line_starts_paragraph(line))
+        {
+            for (at, &raw) in lines.iter().enumerate().take(end).skip(i + 1) {
+                let text = trim_ascii_start(raw);
+                if indent_columns(raw) >= container.content_column && item_block_opener(text) {
+                    end = at;
+                    break;
+                }
+            }
+        }
         if end > i {
             note.lines[0].clear();
             note.comment_state = BodyCommentState::new();
@@ -956,9 +1081,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             }
             while i < end {
                 note.push_with(
-                    lines[i].to_string(),
+                    attached[i - start].clone(),
                     Some(self.first_source_line + i),
-                    |_| Some(0),
+                    |_| Some(marker_col as isize),
                 );
                 i += 1;
             }
@@ -1652,14 +1777,16 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         {
             return i;
         }
-        let attached: Vec<&str> = lines[i..]
+        let attached: Vec<String> = lines[i..]
             .iter()
             .map_while(|raw| host.content(raw).filter(|line| !is_blank_line(line)))
+            .map(|line| strip_leading_columns(line, host.note_floor.saturating_sub(2)))
             .collect();
         if attached.is_empty() {
             return i;
         }
-        let count = attached_one_block_lines(CursorLines::Slice(&attached), self.options);
+        let attached_refs: Vec<&str> = attached.iter().map(String::as_str).collect();
+        let count = attached_one_block_lines(CursorLines::Slice(&attached_refs), self.options);
         note.lines[0].clear();
         note.comment_state = BodyCommentState::new();
         note.line_map[0] = None;
@@ -1667,11 +1794,10 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             note.col_map[0] = None;
         }
         for (offset, line) in attached.into_iter().take(count).enumerate() {
-            note.push_with(
-                line.to_string(),
-                Some(self.first_source_line + i + offset),
-                |_| Some((lines[i + offset].chars().count() - line.chars().count()) as isize),
-            );
+            let col = (lines[i + offset].chars().count() - line.chars().count()) as isize;
+            note.push_with(line, Some(self.first_source_line + i + offset), |_| {
+                Some(col)
+            });
         }
         note.push_blank();
         i + count
@@ -2031,6 +2157,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         def: &DefinitionLine<'a>,
         stripped: &StrippedContainerLine<'a>,
         def_start_line: usize,
+        attached_nonparagraph: bool,
     ) {
         let mut replacement = if def.authored_quote_def {
             raw_def_line
@@ -2052,6 +2179,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             }
             replacement.push_str(&if document_column {
                 document_definition_placeholder()
+            } else if attached_nonparagraph {
+                attached_nonparagraph_definition_placeholder()
             } else {
                 definition_placeholder()
             });
