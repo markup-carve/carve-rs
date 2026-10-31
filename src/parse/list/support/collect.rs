@@ -242,6 +242,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     // with an item paragraph. Its later openers need this item's column.
     let mut released_child_paragraph = false;
     let marker_comment = marker_content
+        .map(innermost_marker_content)
         .and_then(detect_comment_fence_line)
         .filter(|open| cur.has_comment_closer_after(cur.pos, open.fence_len));
     let literal_marker_body = marker_content.is_some_and(|content| {

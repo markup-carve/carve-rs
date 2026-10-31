@@ -433,30 +433,49 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             self.cur.source_line(self.cur.pos),
             self.cur.source_col(self.cur.pos),
         );
-        self.cur.consume();
+        let extent = self.invisible_extent(self.cur.pos, line).unwrap_or(1);
+        for _ in 0..extent {
+            self.cur.consume();
+        }
         let children = item_body(self.deferred, last_item, nested, None, false, self.options);
         self.items[last_item].children.extend(children);
         NEXT
     }
 
+    /// How many lines the comment at `at` covers: a closed `%%%` span is one extent.
+    /// An empty span is `None`: the Djot importer writes it to split a list.
+    fn invisible_extent(&self, at: usize, line: &str) -> Option<usize> {
+        if let Some(open) = detect_comment_fence_line_any_column(line) {
+            let mut end = at + 1;
+            while let Some(next) = self.cur.lines.line(end) {
+                if is_comment_fence_close_any_column(next, open.fence_len) {
+                    return (end > at + 1).then_some(end + 1 - at);
+                }
+                end += 1;
+            }
+            return Some(1);
+        }
+        (is_line_comment_any_column(line) && !is_definition_placeholder(line)).then_some(1)
+    }
+
     fn comment_precedes_a_sibling(&mut self, line: &str) -> bool {
-        let invisible = |cur: &mut LineCursor<'_>, at: usize, line: &str| {
-            (is_line_comment_any_column(line) && !is_definition_placeholder(line))
-                || detect_comment_fence_line_any_column(line)
-                    .is_some_and(|open| !cur.has_comment_closer_after(at + 1, open.fence_len))
-        };
-        if indent_columns(line) > self.base_indent || !invisible(self.cur, self.cur.pos, line) {
+        if indent_columns(line) > self.base_indent {
             return false;
         }
-        let mut at = self.cur.pos + 1;
+        let Some(extent) = self.invisible_extent(self.cur.pos, line) else {
+            return false;
+        };
+        let mut at = self.cur.pos + extent;
         while let Some(next) = self.cur.lines.line(at) {
             if is_blank_line(next) {
                 at += 1;
                 continue;
             }
-            if invisible(self.cur, at, next) && indent_columns(next) <= self.base_indent {
-                at += 1;
-                continue;
+            if indent_columns(next) <= self.base_indent {
+                if let Some(extent) = self.invisible_extent(at, next) {
+                    at += extent;
+                    continue;
+                }
             }
             return detect_list_marker_full(next)
                 .is_some_and(|marker| marker.indent == self.base_indent);
