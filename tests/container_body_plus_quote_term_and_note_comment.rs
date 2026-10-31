@@ -1,14 +1,16 @@
 #[test]
 fn a_plus_after_a_blank_ends_a_description_fence() {
     let source = ":: t\n: ```\n\n+\nx\n";
-    let expected = "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code></code></pre>\n  </dd>\n</dl>\n<p>+\nx</p>";
+    let expected =
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code></code></pre>\n  </dd>\n</dl>\n<p>+\nx</p>";
     assert_eq!(carve::to_html(source).trim_end(), expected);
 }
 
 #[test]
 fn a_plus_ends_an_unclosed_description_fence_before_its_block() {
     let source = ":: t\n: ```\n+\nx\n";
-    let expected = "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code></code></pre>\n    <p>x</p>\n  </dd>\n</dl>";
+    let expected =
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code></code></pre>\n    <p>x</p>\n  </dd>\n</dl>";
     assert_eq!(carve::to_html(source).trim_end(), expected);
 }
 
