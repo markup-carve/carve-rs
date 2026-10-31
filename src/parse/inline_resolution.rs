@@ -408,14 +408,17 @@ pub(in crate::parse) fn collect_heading_titles(
                             scan.by_text.entry(text_key).or_insert_with(|| id.clone());
                         }
                     }
+                    // A duplicate explicit id resolves to the first heading
+                    // (PART 9R R4).
                     if scan.collect_crossrefs {
                         scan.labels
-                            .insert(id.clone(), crossref_label_nodes(&h.children));
-                        scan.titles.insert(id, title);
+                            .entry(id.clone())
+                            .or_insert_with(|| crossref_label_nodes(&h.children));
+                        scan.titles.entry(id).or_insert(title);
                     } else if scan.collect_heading_refs {
                         // `resolve_ref` returns both the id and its title even
                         // though implicit references only consume the id today.
-                        scan.titles.insert(id, title);
+                        scan.titles.entry(id).or_insert(title);
                     }
                 }
                 BlockNode::List(l) => {
@@ -555,7 +558,7 @@ pub(in crate::parse) fn number_caption(
     if let Some(id) = attrs.and_then(|attrs| attrs.id.as_ref()) {
         titles
             .entry(id.clone())
-            .or_insert_with(|| format!("{label} {number}"));
+            .or_insert_with(|| crossref_title(&label, &number.to_string()));
     }
     Some((label, number))
 }
@@ -592,9 +595,9 @@ pub(in crate::parse) fn register_panel_titles(
             _ => continue,
         };
         if let Some(id) = id {
-            titles
-                .entry(id)
-                .or_insert_with(|| format!("{label} {number}{}", panel_letter(panel_index)));
+            titles.entry(id).or_insert_with(|| {
+                crossref_title(label, &format!("{number}{}", panel_letter(panel_index)))
+            });
         }
         panel_index += 1;
     }
@@ -705,7 +708,9 @@ pub(in crate::parse) fn collect_caption_title(
         let label = plain_inlines_parse(&caption[..idx])
             .trim_end_matches(char::is_whitespace)
             .to_string();
-        index.titles.insert(id.clone(), format!("{label} {number}"));
+        index
+            .titles
+            .insert(id.clone(), crossref_title(&label, &number.to_string()));
         index
             .labels
             .insert(id.clone(), caption_label(caption, idx, &number.to_string()));
@@ -720,14 +725,28 @@ pub(in crate::parse) struct CaptionIndex<'a> {
     pub(in crate::parse) labels: &'a mut BTreeMap<String, CrossrefLabel>,
 }
 
+/// PART 9R R4: LABEL + NUMBER, the number alone when the label is empty.
+fn crossref_title(label: &str, number: &str) -> String {
+    if label.is_empty() {
+        number.to_string()
+    } else {
+        format!("{label} {number}")
+    }
+}
+
 fn caption_label(caption: &[InlineNode], placeholder: usize, number: &str) -> CrossrefLabel {
     let mut nodes = derive_display_nodes(&caption[..placeholder], true);
     if let Some(InlineNode::Text(last)) = nodes.last_mut() {
         last.value
             .truncate(last.value.trim_end_matches(char::is_whitespace).len());
     }
+    nodes.retain(|node| !matches!(node, InlineNode::Text(t) if t.value.is_empty()));
     nodes.push(InlineNode::Text(Text {
-        value: format!(" {number}"),
+        value: if nodes.is_empty() {
+            number.to_string()
+        } else {
+            format!(" {number}")
+        },
         pos: None,
     }));
     std::rc::Rc::new(nodes)

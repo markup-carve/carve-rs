@@ -843,7 +843,14 @@ fn parse_with_options_mode_and_index(
     // throwaway probe, the writer's shape comparison - cannot leave a foreign
     // pair installed. See `PLACEHOLDER_DEFAULTS`.
     let _placeholders = PlaceholderGuard::install(pick_definition_placeholders(source));
-    let (frontmatter, frontmatter_raw, body) = split_frontmatter(source, options.positions);
+    // The walk drops a line's leading run, so ` ---` would read as a delimiter
+    // here; `frontmatter_open` and `frontmatter_close` admit no indent.
+    let (frontmatter, frontmatter_raw, body) =
+        if split_frontmatter(normalized.as_ref(), false).1.is_some() {
+            split_frontmatter(source, options.positions)
+        } else {
+            (BTreeMap::new(), None, source)
+        };
     let body_start_line = source
         [..(body.as_ptr() as usize).saturating_sub(source.as_ptr() as usize)]
         .bytes()

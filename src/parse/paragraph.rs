@@ -154,22 +154,9 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
     } else {
         parse_inline_with_options(joined, options)
     };
-    // Unexpanded, it is literal text at document level; nested, its source is inline content.
-    let children = if code_include == Some(false) && cur.at_document_level {
-        let pos = children
-            .first()
-            .and_then(InlineNode::pos)
-            .zip(children.last().and_then(InlineNode::pos))
-            .map(|(first, last)| Pos {
-                end_line: last.end_line,
-                end_column: last.end_column,
-                end_offset: last.end_offset,
-                ..first.clone()
-            });
-        vec![InlineNode::Text(Text {
-            value: joined.to_string(),
-            pos,
-        })]
+    // PART 10 I2: unexpanded, a bare-path line is literal text in every host.
+    let children = if code_include == Some(false) {
+        literal_line_children(&children, joined)
     } else {
         children
     };
@@ -545,4 +532,25 @@ fn consume_caption_slot(
         Some(anchors) => parse_caption_inline_with_anchor(text, options, anchors, caption_context),
         None => parse_caption_inline_with_options(text, options, caption_context),
     })
+}
+
+/// `text` as one literal text node spanning the parsed `children`.
+pub(in crate::parse) fn literal_line_children(
+    children: &[InlineNode],
+    text: &str,
+) -> Vec<InlineNode> {
+    let pos = children
+        .first()
+        .and_then(InlineNode::pos)
+        .zip(children.last().and_then(InlineNode::pos))
+        .map(|(first, last)| Pos {
+            end_line: last.end_line,
+            end_column: last.end_column,
+            end_offset: last.end_offset,
+            ..first.clone()
+        });
+    vec![InlineNode::Text(Text {
+        value: text.to_string(),
+        pos,
+    })]
 }

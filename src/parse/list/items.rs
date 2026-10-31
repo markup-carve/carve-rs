@@ -2382,7 +2382,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             .collect();
         // PART 10 I2: a code include line ends at its own line, so what the
         // item folded in below it is the item's next paragraph.
-        let split = if crate::includes::code_include_line(normalized_para_lines[0]).is_some() {
+        let code_include = crate::includes::code_include_line(normalized_para_lines[0]);
+        let split = if code_include.is_some() {
             1
         } else {
             normalized_para_lines.len()
@@ -2415,6 +2416,11 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             parse_inline_lines_with_anchor(para_text, options, anchors)
         } else {
             parse_inline_with_options(para_text, options)
+        };
+        let children = if code_include == Some(false) {
+            crate::parse::paragraph::literal_line_children(&children, para_text)
+        } else {
+            children
         };
         let mut paragraph = BlockNode::Paragraph(Paragraph {
             attrs: None,
