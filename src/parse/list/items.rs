@@ -2342,7 +2342,10 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // block relative to it (#1705). Ordinary over-indented prose is
         // still lazy paragraph text.
         let over_indented = trim_ascii_start(next);
-        if item_block_opener(over_indented)
+        let absorbed =
+            lead.suppress_colon_interrupt && is_suppressed_colon_fence_line(over_indented);
+        if !absorbed
+            && item_block_opener(over_indented)
             && self
                 .item_unclosed_fence_base
                 .map_or(true, |base| base == indent)
@@ -2359,7 +2362,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // A sibling/nesting marker above the content column was already
         // handled above; only a genuine lazy interrupt ends the fold.
         let next_owned = next.to_string();
-        if interrupts_lazy_continuation_as_container(self.cur, &next_owned) {
+        if !absorbed && interrupts_lazy_continuation_as_container(self.cur, &next_owned) {
             return false;
         }
         // CARVE-P2-020: a caption continuation keeps its indentation.

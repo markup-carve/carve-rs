@@ -179,6 +179,15 @@
         "plus-2bca1c74608b",
         "plus-a0f7cf7091d8"
       ]
+    },
+    {
+      "ticket": "markup-carve/carve#4479",
+      "cause": "the pinned spec model predates the fold of a list marker that misses a description (PART 0 S2); these match the model on carve main",
+      "cases": [
+        "ownership-19a15d4c0b00",
+        "plus-f3825032510f",
+        "roundtrip-c5d30c150732"
+      ]
     }
   ]
 }

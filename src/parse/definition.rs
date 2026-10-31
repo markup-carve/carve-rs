@@ -1573,14 +1573,15 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             format!("{LAZY}{}", trim_ascii_start(line))
         } else if below_the_column {
             line.to_string()
+        } else if detect_list_marker_full(&owned).is_some() {
+            // PART 0 S2: the marker misses the description, so it cannot join a list in it.
+            format!("{LAZY}{owned}")
         } else if detect_fence_open(&owned).is_some() {
             // ONE COLUMN, AS THE LIST TWIN KEEPS IT. The body dedents
             // its own lines by the content margin, so a line pushed at
             // column 0 arrives AT that column on the reparse and the
             // fence shape opens a block one level in, where S10 I5 has
-            // just made it the paragraph's text (carve-rs#2313). Only a
-            // fence gets the column: a list marker given one opens a
-            // second list where the fold continues the first.
+            // just made it the paragraph's text (carve-rs#2313).
             format!("{LAZY}{owned}")
         } else {
             owned
