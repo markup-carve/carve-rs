@@ -1261,7 +1261,10 @@ impl<'a> Walk<'a> {
             && !matches!(form, Form::Dd(_))
             && !(matches!(form, Form::Item(..))
                 && self.frames.get(reached + 1).is_some_and(|f| {
-                    f.kind == Kind::Item && same_marker_axes(&f.marker_src, c.rest)
+                    f.kind == Kind::Item
+                        && (same_marker_axes(&f.marker_src, c.rest)
+                            || c.col == f.list_col.min(f.marker.map_or(f.list_col, |(col, _)| col))
+                            || c.col <= self.frames[reached].col)
                 }))
         {
             if self.decide && matches!(form, Form::Item(..)) {
