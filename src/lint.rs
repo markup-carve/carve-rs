@@ -218,9 +218,11 @@ fn lint_includes(
                     _ => continue,
                 };
                 let start_line = crate::ast_json::block_pos(&block).map_or(1, |pos| pos.start_line);
-                if let Some((rule, message, line)) =
-                    crate::parse::delimited_table::lint_payload(&payload, separator)
-                {
+                if let Some((rule, message, line)) = crate::parse::delimited_table::lint_payload(
+                    &payload,
+                    separator,
+                    crate::includes::is_table_record_marker,
+                ) {
                     findings.push(LintWarning {
                         file: Some(file),
                         included_by,

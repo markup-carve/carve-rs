@@ -67,19 +67,7 @@ pub(crate) fn from_code_without(
         return None;
     }
     let (mut data, mut ranges) = rows_with_ranges(&code.content, separator)?;
-    let kept: Vec<bool> = ranges
-        .iter()
-        .map(|range| {
-            let text = &code.content[range.start..range.end];
-            text.contains('\n') || !skip(text)
-        })
-        .collect();
-    if kept.contains(&false) {
-        let mut keep = kept.iter();
-        data.retain(|_| *keep.next().unwrap());
-        let mut keep = kept.iter();
-        ranges.retain(|_| *keep.next().unwrap());
-    }
+    skip_records(&code.content, &mut data, &mut ranges, skip);
     let width = data.iter().map(Vec::len).max().unwrap_or(0);
     let foot = count(attrs.key_values.get("footer-rows"), 0);
     let head = count(
@@ -178,6 +166,27 @@ pub(crate) fn from_code_without(
     })
 }
 
+fn skip_records(
+    source: &str,
+    rows: &mut Vec<Vec<String>>,
+    ranges: &mut Vec<RowRange>,
+    skip: impl Fn(&str) -> bool,
+) {
+    let kept: Vec<bool> = ranges
+        .iter()
+        .map(|range| {
+            let text = &source[range.start..range.end];
+            text.contains('\n') || !skip(text)
+        })
+        .collect();
+    if kept.contains(&false) {
+        let mut keep = kept.iter();
+        rows.retain(|_| *keep.next().unwrap());
+        let mut keep = kept.iter();
+        ranges.retain(|_| *keep.next().unwrap());
+    }
+}
+
 pub(crate) fn count(raw: Option<&String>, default: usize) -> usize {
     match raw {
         None => default,
@@ -189,14 +198,17 @@ pub(crate) fn count(raw: Option<&String>, default: usize) -> usize {
     }
 }
 
+/// Lints `source` as [`from_code_without`] reads it, leaving out the records `skip` accepts.
 pub(crate) fn lint_payload(
     source: &str,
     separator: char,
+    skip: impl Fn(&str) -> bool,
 ) -> Option<(&'static str, &'static str, usize)> {
-    let (rows, ranges) = match rows_with_error(source, separator) {
+    let (mut rows, mut ranges) = match rows_with_error(source, separator) {
         Ok(value) => value,
         Err(start) => return Some(("delimited-table-malformed", "This marked CSV/TSV record has malformed quoting, so the include remains a code block.", 1 + source[..start].bytes().filter(|b| *b == b'\n').count())),
     };
+    skip_records(source, &mut rows, &mut ranges, skip);
     let width = rows.first()?.len();
     rows.iter().zip(ranges).find(|(row, _)| row.len() > width).map(|(_, range)| ("delimited-table-wide-row", "A CSV/TSV record has more fields than the first record; the table keeps the extra columns.", 1 + source[..range.start].bytes().filter(|b| *b == b'\n').count()))
 }

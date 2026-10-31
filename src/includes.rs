@@ -429,7 +429,7 @@ fn table_include(
     code: &crate::ast::CodeBlock,
     payload: &[crate::parse::delimited_table::PayloadLine],
 ) -> Option<crate::ast::Table> {
-    crate::parse::delimited_table::from_code_without(code, payload, regions::is_table_record_marker)
+    crate::parse::delimited_table::from_code_without(code, payload, is_table_record_marker)
 }
 
 fn selected_table_include(d: &Directive) -> bool {
@@ -1516,6 +1516,7 @@ impl State<'_> {
 }
 
 mod regions;
+pub(crate) use regions::is_table_record_marker;
 use regions::{content_line_count, region_range, slice_lines, source_lines};
 pub use regions::{select_include_region, IncludeRegion, IncludeRegionError, IncludeRegionMode};
 struct ResolvedChild {
