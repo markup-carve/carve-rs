@@ -1101,6 +1101,14 @@ pub(crate) fn code_include_line(line: &str) -> Option<bool> {
         .then_some(shape.quoted)
 }
 
+/// PART 10 I1c: `[A-Za-z0-9_+#./-]+`, as in the spec model.
+fn is_language_info(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"_+#./-".contains(&b))
+}
+
 fn is_line_range(value: &str) -> bool {
     let Some((start, end)) = value.split_once('-') else {
         return false;
@@ -1113,7 +1121,8 @@ fn is_line_range(value: &str) -> bool {
 }
 
 /// The end of a directive at `start` that stays literal text in core inline
-/// content: an invalid `@lines` range, or a bare `@code` on a bare path.
+/// content: an invalid `@lines` range, a `@code:lang` that is not a
+/// `language_info` token, or a bare `@code` on a bare path.
 pub(crate) fn literal_inline_directive_end(text: &str, start: usize) -> Option<usize> {
     let shape = directive_shape(text, start)?;
     shape
@@ -1121,7 +1130,10 @@ pub(crate) fn literal_inline_directive_end(text: &str, start: usize) -> Option<u
         .iter()
         .any(|(key, value)| match key.as_str() {
             "lines" => !value.as_deref().is_some_and(is_line_range),
-            "code" => value.is_none() && !shape.quoted,
+            "code" => match value.as_deref() {
+                None => !shape.quoted,
+                Some(lang) => !is_language_info(lang),
+            },
             _ => false,
         })
         .then_some(shape.end)
