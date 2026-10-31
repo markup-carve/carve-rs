@@ -877,6 +877,7 @@ thread_local! {
 /// (markup-carve/carve#1280).
 pub(crate) fn body_ends_with_open_paragraph(body: &str, options: &Options<'_>) -> bool {
     if body_ends_with_an_attribute_line(body)
+        || body_ends_with_wrapped_attribute(body)
         || quoted_body_ends_with_an_invisible_line(body)
         || body
             .lines()
@@ -924,6 +925,29 @@ pub(crate) fn body_ends_with_open_paragraph(body: &str, options: &Options<'_>) -
     PARAGRAPH_BODY_PROBES.with(|count| count.set(count.get() + 1));
     let blocks = probe_blocks(body, options);
     block_ends_with_open_paragraph(blocks.last(), colon_fences_left_open(body), false)
+}
+
+/// A wrapped attribute block leaves no paragraph open at any opener column.
+/// The ownership walk has already placed the opener in its container.
+fn body_ends_with_wrapped_attribute(body: &str) -> bool {
+    if !body
+        .lines()
+        .rev()
+        .find(|line| !is_blank_line(line))
+        .is_some_and(|line| trim_ascii_end(line).ends_with('}'))
+    {
+        return false;
+    }
+    let lines: Vec<_> = body.lines().collect();
+    let Some(end) = lines.iter().rposition(|line| !is_blank_line(line)) else {
+        return false;
+    };
+    let trimmed: Vec<_> = lines.iter().map(|line| trim_ascii_start(line)).collect();
+    (0..end)
+        .rev()
+        .take_while(|&at| !is_blank_line(lines[at]))
+        .filter(|&at| trimmed[at].starts_with('{'))
+        .any(|at| standalone_attrs_block_len(&trimmed[at..=end]) == Some(end - at + 1))
 }
 
 /// Whether a body's last line is a definition or attribute line written
@@ -1063,38 +1087,7 @@ pub(crate) fn nested_ends_with_open_paragraph(
     {
         return false;
     }
-    // A wrapped attribute is one construct wherever its closer sits (carve#3421), so a
-    // closer below the column still ends the body on an attribute block.
-    let wrapped_attribute_tail = || {
-        let lines: Vec<&str> = nested.lines().collect();
-        let Some(end) = lines.iter().rposition(|line| !is_blank_line(line)) else {
-            return false;
-        };
-        if parse_standalone_attrs(trim_ascii_start(lines[end])).is_some() {
-            return false;
-        }
-        let trimmed: Vec<&str> = lines.iter().map(|line| trim_ascii_start(line)).collect();
-        // The opener must sit at a container's column: the body's own, or a nested
-        // item's content column. Past it, `{.c` is paragraph text.
-        let Some(start) = (0..end)
-            .rev()
-            .take_while(|&at| !is_blank_line(lines[at]))
-            .find(|&at| standalone_attrs_block_len(&trimmed[at..=end]) == Some(end - at + 1))
-        else {
-            return false;
-        };
-        let indent = indent_columns(lines[start]);
-        indent == 0
-            || lines[..start].iter().rev().any(|line| {
-                detect_list_marker_full(trim_ascii_start(line)).is_some_and(|marker| {
-                    indent_columns(line)
-                        + (marker.content.as_ptr() as usize
-                            - trim_ascii_start(line).as_ptr() as usize)
-                        == indent
-                })
-            })
-    };
-    if below_outer_column && wrapped_attribute_tail() {
+    if body_ends_with_wrapped_attribute(nested) {
         return false;
     }
     if !below_outer_column
