@@ -7,6 +7,7 @@ pub(in crate::parse) const LOSING_NOTE_PREFIX: &str = "\u{0}losing:";
 
 fn definition_source(note: NoteBody) -> MappedSource {
     MappedSource {
+        newlines_counted: (0, 0),
         reached: vec![true; note.lines.len()],
         col_map: note.col_map,
         source: note.lines.join("\n"),
@@ -1964,6 +1965,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
     fn finish(self) -> FootnoteExtraction {
         (
             MappedSource {
+                newlines_counted: (0, 0),
                 // The document body's lines are top-level: the footnote-definition
                 // extraction removes whole lines, never a prefix, so nothing has
                 // been stripped from the front of the ones that remain.

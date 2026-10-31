@@ -379,7 +379,7 @@ pub(in crate::parse) fn split_trailing_attrs(
     let line_count = lines.len();
     let kept: Vec<&str> = lines[..start].to_vec();
     let source = kept.join("\n");
-    nested.source = source;
+    nested.set_source(source);
     // Both maps are read by LINE INDEX, and the kept lines keep the indices
     // they had, so trailing entries are simply never reached - trimming them is
     // tidiness, not correctness. It is only safe on a map that is index-aligned

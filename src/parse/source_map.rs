@@ -112,6 +112,7 @@ impl LineBuffer {
             reached.clear();
         }
         MappedSource {
+            newlines_counted: (0, 0),
             col_map,
             source,
             line_map,
@@ -173,6 +174,10 @@ pub(super) struct MappedSource {
     /// (markup-carve/carve#1980, converging with carve-js's
     /// `sublistsCarryAuthoredBase`).
     pub(super) sublists_carry_authored_base: bool,
+    /// Bytes of `source` already counted and the newlines in them, so a run of
+    /// pushed lines does not rescan the whole source each time (carve-rs#3588).
+    /// Code that rewrites `source` goes through [`MappedSource::set_source`].
+    pub(super) newlines_counted: (usize, usize),
 }
 
 impl MappedSource {
@@ -183,6 +188,7 @@ impl MappedSource {
         stripped: Option<isize>,
     ) -> Self {
         MappedSource {
+            newlines_counted: (0, 0),
             source: line,
             line_map: source_line.into_iter().map(Some).collect(),
             col_map: vec![stripped],
@@ -198,14 +204,29 @@ impl MappedSource {
     }
 
     /// Lines in `source`, counted so `reached` can be kept exactly as long.
-    fn line_count(&self) -> usize {
+    fn line_count(&mut self) -> usize {
+        let (counted, mut newlines) = self.newlines_counted;
+        let counted = if counted <= self.source.len() && self.source.is_char_boundary(counted) {
+            counted
+        } else {
+            newlines = 0;
+            0
+        };
         #[cfg(test)]
-        MAPPED_SOURCE_SCAN_BYTES.with(|work| work.set(work.get() + self.source.len()));
+        MAPPED_SOURCE_SCAN_BYTES.with(|work| work.set(work.get() + self.source.len() - counted));
+        newlines += self.source[counted..].matches('\n').count();
+        self.newlines_counted = (self.source.len(), newlines);
         if self.source.is_empty() {
             0
         } else {
-            self.source.matches('\n').count() + 1
+            newlines + 1
         }
+    }
+
+    /// Replace `source` and drop the newline count kept for the old text.
+    pub(super) fn set_source(&mut self, source: String) {
+        self.source = source;
+        self.newlines_counted = (0, 0);
     }
 
     fn pad_reached(&mut self) {
@@ -265,7 +286,7 @@ impl MappedSource {
         }
     }
 
-    pub(super) fn append(&mut self, other: MappedSource) {
+    pub(super) fn append(&mut self, mut other: MappedSource) {
         if other.source.is_empty() {
             return;
         }
@@ -343,6 +364,7 @@ pub(super) fn remap_source(source: String, original: &MappedSource) -> MappedSou
     let source_line_count = source.lines().count();
     if source_line_count <= original.line_map.len() {
         return MappedSource {
+            newlines_counted: (0, 0),
             source,
             line_map: original.line_map[..source_line_count].to_vec(),
             col_map: original.col_map[..source_line_count.min(original.col_map.len())].to_vec(),
@@ -362,6 +384,7 @@ pub(super) fn remap_source(source: String, original: &MappedSource) -> MappedSou
         };
     }
     MappedSource {
+        newlines_counted: (0, 0),
         line_map: (1..=source_line_count).map(Some).collect(),
         // Top-level source: nothing has been stripped, so every column in this
         // text is a column in the document.

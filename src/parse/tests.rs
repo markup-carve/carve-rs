@@ -88,6 +88,7 @@ fn nested_event_cursor_keeps_unpositioned_authored_base_parity() {
     ] {
         let lines = body.lines().count();
         let mapped = MappedSource {
+            newlines_counted: (0, 0),
             source: body.to_string(),
             line_map: (1..=lines).map(Some).collect(),
             col_map: Vec::new(),
@@ -1675,6 +1676,32 @@ mod wrapped_attrs_work_tests {
 #[cfg(test)]
 mod shared_colon_work_tests {
     use super::*;
+
+    #[test]
+    fn lazy_run_below_a_marker_line_quote_scans_each_line_once() {
+        for positions in [false, true] {
+            for line in ["tail\n", " tail\n"] {
+                for count in [64, 256, 1024] {
+                    let source = format!("- > # h\n  b\n{}", line.repeat(count));
+                    source_map::MAPPED_SOURCE_SCAN_BYTES.with(|work| work.set(0));
+                    let html = crate::to_html_with_options(
+                        &source,
+                        &Options {
+                            positions,
+                            ..Options::default()
+                        },
+                    );
+                    assert_eq!(html.matches("tail").count(), count);
+                    assert!(
+                        source_map::MAPPED_SOURCE_SCAN_BYTES.with(Cell::get) <= source.len() * 64,
+                        "count={count}, line={line:?}, scan={}, bytes={}",
+                        source_map::MAPPED_SOURCE_SCAN_BYTES.with(Cell::get),
+                        source.len()
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn rejected_fence_carry_scans_only_new_chunks() {

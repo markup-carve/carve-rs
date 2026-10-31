@@ -860,6 +860,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         debug_assert_eq!(self.col_map.len(), self.lines.len());
         debug_assert_eq!(self.reached.len(), self.lines.len());
         MappedSource {
+            newlines_counted: (0, 0),
             col_map: self.col_map,
             source: self.lines.join("\n"),
             line_map: self.line_map,

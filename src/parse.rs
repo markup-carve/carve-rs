@@ -871,6 +871,7 @@ fn parse_with_options_mode_and_index(
             let body_line_count = body.lines().count();
             (
                 MappedSource {
+                    newlines_counted: (0, 0),
                     source: body.to_owned(),
                     line_map: (body_start_line..body_start_line + body_line_count)
                         .map(Some)
