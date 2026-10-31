@@ -466,8 +466,7 @@ pub(crate) fn reference_label_has_source_spelling(label: &str) -> bool {
 }
 
 /// Read `[...]` content for an inline extension: the content runs to the
-/// FIRST `]` and does NOT balance nested brackets or honor escapes
-/// (`extension_content = {character - ']'}`, carve-js regex `\[([^\]]*)\]`).
+/// first unescaped `]` and does NOT balance nested brackets.
 /// Returns the content and the index just past the closing `]`.
 pub(in crate::parse) fn read_to_first_bracket(
     bytes: &[u8],
@@ -479,13 +478,16 @@ pub(in crate::parse) fn read_to_first_bracket(
     let content_start = start + 1;
     let mut i = content_start;
     while i < bytes.len() {
-        if bytes[i] == b']' {
-            let text = std::str::from_utf8(&bytes[content_start..i])
-                .ok()?
-                .to_string();
-            return Some((text, i + 1));
+        match bytes[i] {
+            b']' => {
+                let text = std::str::from_utf8(&bytes[content_start..i])
+                    .ok()?
+                    .to_string();
+                return Some((text, i + 1));
+            }
+            b'\\' if bytes.get(i + 1).is_some_and(u8::is_ascii_punctuation) => i += 2,
+            _ => i += 1,
         }
-        i += 1;
     }
     None
 }

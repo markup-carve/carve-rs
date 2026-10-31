@@ -1999,6 +1999,26 @@ pub(in crate::parse) fn is_flank_space(ch: char) -> bool {
     matches!(ch, ' ' | '\t' | '\n' | '\r' | '\u{00a0}') || ch == crate::NBSP_PLACEHOLDER
 }
 
+/// A backslash before `after` renders a hard break or a no-break space, which
+/// the typography flank reads as whitespace (CARVE-P3-021, P3-023 R1).
+fn escape_renders_flank(after: Option<char>) -> bool {
+    after.map_or(true, |c| matches!(c, '\n' | '\r' | ' '))
+}
+
+/// The character a quote at `i` sees next, with an escape that renders a flank
+/// read as a space.
+fn quote_next_char(text: &str, base: usize, i: usize) -> Option<char> {
+    let char_at = |at: usize| {
+        text.get(at..)
+            .and_then(|rest| rest.chars().next())
+            .or_else(|| next_source_char(text, base, at))
+    };
+    match char_at(i + 1) {
+        Some('\\') if escape_renders_flank(char_at(i + 2)) => Some(' '),
+        next => next,
+    }
+}
+
 /// The length of the hyphen run at `i` when that run is flag-shaped
 /// (markup-carve/carve#1443), else `None`.
 ///
@@ -2020,7 +2040,9 @@ pub(in crate::parse) fn flag_shaped_hyphen_run(text: &str, i: usize) -> Option<u
     }
     let n = bytes[i..].iter().take_while(|&&b| b == b'-').count();
     let after = text[i + n..].chars().next()?;
-    if is_flank_space(after) {
+    if is_flank_space(after)
+        || (after == '\\' && escape_renders_flank(text[i + n + 1..].chars().next()))
+    {
         return None;
     }
     match text[..i].chars().next_back() {
@@ -2139,10 +2161,7 @@ pub(in crate::parse) fn parse_smart_punctuation_at(
         buf.chars().last().unwrap_or_default()
     };
     if c == '"' {
-        let next = text[i + 1..]
-            .chars()
-            .next()
-            .or_else(|| next_source_char(text, base, i + 1));
+        let next = quote_next_char(text, base, i);
         let open = quote_open_context(prev) && !closes_after_dash(prev, next);
         let glyph = if open { "“" } else { "”" };
         let kind = if open {
@@ -2158,10 +2177,7 @@ pub(in crate::parse) fn parse_smart_punctuation_at(
         });
     }
     if c == '\'' {
-        let next = text[i + 1..]
-            .chars()
-            .next()
-            .or_else(|| next_source_char(text, base, i + 1));
+        let next = quote_next_char(text, base, i);
         let open = quote_open_context(prev) && !closes_after_dash(prev, next);
         let apostrophe = quote_state::single(
             text,
