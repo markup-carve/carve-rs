@@ -82,7 +82,9 @@ pub(super) fn quiet_captioned_image(
     if !line.contains('%') || !line.contains("![") {
         return None;
     }
-    let mut inline = parse_inline_with_options(line, options);
+    let image_at = cur.pos;
+    let anchor = inline_anchor_for_line(cur, image_at, line);
+    let mut inline = parse_inline_lines_with_anchor(line, options, vec![anchor]);
     retain_caption_content(&mut inline);
     let [InlineNode::Image(img)] = inline.as_slice() else {
         return None;
@@ -90,10 +92,8 @@ pub(super) fn quiet_captioned_image(
     if img.ref_label.is_some() {
         return None;
     }
-    let mut img = img.clone();
-    let image_at = cur.pos;
+    let img = img.clone();
     cur.consume();
-    img.pos = span_of(cur, image_at, image_at + 1, options);
     let Some(caption) = consume_caption(cur, options) else {
         cur.pos = image_at;
         return None;

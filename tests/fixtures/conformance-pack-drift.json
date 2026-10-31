@@ -2,44 +2,10 @@
   "comment": "Conformance pack cases this engine renders differently from the spec model, one entry per cause with its open ticket. See tests/conformance_pack.rs.",
   "entries": [
     {
-      "ticket": "markup-carve/carve#4610",
-      "cause": "a tab after a list separator stays content under the ruling merged after the 5643d59c pack pin",
-      "cases": [
-        "fences-beb7a2645809",
-        "notes-d0f399e3e8f0"
-      ]
-    },
-    {
-      "ticket": "markup-carve/carve#4369",
-      "cause": "own-content-column ruling merged after the 5643d59c pack pin",
-      "cases": [
-        "fences-06e5e9514aab",
-        "fences-42fe4e73aeaa",
-        "fences-55cd350a4d6d",
-        "fences-6aa76a6c725f",
-        "lazy-777e736ed857",
-        "ownership-1647bf107571",
-        "ownership-999f1d288b11",
-        "ownership-af75e477c466",
-        "ownership-baace234ff19",
-        "ownership-bd136514e326",
-        "plus-c843bfd6fe62",
-        "roundtrip-3273596976e5",
-        "roundtrip-5cb05799a0e5"
-      ]
-    },
-    {
       "ticket": "markup-carve/carve#3972",
       "cause": "all three engines agree against the spec model",
       "cases": [
         "ownership-ca02e84b0d06"
-      ]
-    },
-    {
-      "ticket": "markup-carve/carve-rs#3534",
-      "cause": "untriaged day-one drift in the attributes family",
-      "cases": [
-        "attributes-55ccb9f36d3a"
       ]
     },
     {
@@ -60,6 +26,7 @@
       "cases": [
         "lazy-27c92f4153c2",
         "lazy-5d96f214fe7c",
+        "lazy-70acba91ccbd",
         "lazy-c617b01a765e",
         "lazy-d714a9768baa",
         "lazy-e7fc4688d71a",
@@ -88,6 +55,7 @@
       "ticket": "markup-carve/carve-rs#3534",
       "cause": "untriaged day-one drift in the ownership family",
       "cases": [
+        "ownership-08cd1743ebaf",
         "ownership-34ea3231e4b7",
         "ownership-dabd40ea2cb5"
       ]
@@ -96,7 +64,8 @@
       "ticket": "markup-carve/carve-rs#3534",
       "cause": "untriaged day-one drift in the roundtrip family",
       "cases": [
-        "roundtrip-50e7fa11ce58"
+        "roundtrip-50e7fa11ce58",
+        "roundtrip-702a692a40ae"
       ]
     },
     {
@@ -110,7 +79,6 @@
       "ticket": "markup-carve/carve-rs#3535",
       "cause": "pin move to carve 8d8bd4a9: rulings on inline, attribute and layout shapes this engine has not reached",
       "cases": [
-        "fences-0a0fa885eb41",
         "fences-6bb4b2c08642",
         "fences-957709fb7e0e",
         "fences-e0910c8dd446",
