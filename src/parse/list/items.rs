@@ -1823,9 +1823,22 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 ));
                 return Some(false);
             }
-            // A lazy line that reaches this item keeps later lines out of
-            // the sub-list until markup-carve/carve#3950 settles the reading.
+            // A lazy line that reaches this item keeps later lines out of the
+            // sub-list, except a block opener at the sub-item's content column,
+            // which is that sub-item's next block (rule A, carve#3950).
             if indent >= content_col {
+                if cur.peek().is_some_and(|line| {
+                    indent_columns(line) == nested_content_col
+                        && !is_list_marker(trim_ascii_start(line))
+                        && interrupts_paragraph(cur, trim_ascii_start(line))
+                }) {
+                    stream.append(collect_indented_block_mapped(
+                        cur,
+                        nested_content_col.saturating_sub(1),
+                        content_col,
+                        options,
+                    ));
+                }
                 return Some(false);
             }
             return Some(resume_marker_sublist(
