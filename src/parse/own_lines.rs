@@ -91,6 +91,13 @@ struct Frame {
     fills_dd: bool,
     /// The line of this frame's table row, for the continuation row below it.
     table_line: Option<usize>,
+    /// Column and shift of the list this marker frame belongs to (PART 0 S3).
+    list_col: usize,
+    list_shift: usize,
+    /// A lazy line left of the list ended its shift.
+    left_of_list: bool,
+    /// An indented list that closed here keeps its shift for the lines after it.
+    closed_list: Option<(usize, usize)>,
 }
 
 impl Frame {
@@ -119,6 +126,10 @@ impl Frame {
             plus: None,
             fills_dd: false,
             table_line: None,
+            list_col: 0,
+            list_shift: 0,
+            left_of_list: false,
+            closed_list: None,
         }
     }
 }
@@ -465,6 +476,8 @@ struct Walk<'a> {
     /// The frames at the last accepted `+`, its host's quote depth and marker
     /// column, and the line its block starts on.
     attached: Option<AttachedBlock>,
+    /// The marker frame this line's opener closed: kind, axes, list column and shift.
+    sibling: Option<(Kind, String, usize, usize)>,
 }
 
 struct AttachedBlock {
@@ -596,6 +609,7 @@ fn walk_traced(
         frames: vec![Frame::new(Kind::Doc)],
         reach: 0,
         runs: None,
+        sibling: None,
         trace,
         first_line,
         decide: decide && source.contains('+'),
@@ -965,6 +979,55 @@ impl<'a> Walk<'a> {
         });
     }
 
+    /// A line left of a closed list's column ends that list's shift.
+    fn end_closed_lists(&mut self, c: &Cursor<'_>) {
+        if c.rest.is_empty() {
+            return;
+        }
+        for f in &mut self.frames {
+            if f.closed_list.is_some_and(|(col, _)| c.col < col) {
+                f.closed_list = None;
+            }
+        }
+    }
+
+    /// The shift a lazy line takes from the list it missed: a line at or past
+    /// that list's column moves with it (PART 0 S3).
+    fn lazy_list_shift(&mut self, reached: usize, col: usize) -> usize {
+        let next = &self.frames[reached + 1];
+        let Some((marker_col, marker_canon)) = next.marker else {
+            return 0;
+        };
+        let list_col = next.list_col.min(marker_col);
+        if col >= list_col && !next.left_of_list {
+            return next.list_shift.min(marker_col.saturating_sub(marker_canon));
+        }
+        if col < list_col {
+            self.frames[reached + 1].left_of_list = true;
+            return self.frames[reached]
+                .closed_list
+                .filter(|&(closed_col, _)| col >= closed_col)
+                .map_or(0, |(_, shift)| shift);
+        }
+        0
+    }
+
+    /// Close the frames this line did not reach, keeping the shift of an
+    /// indented list it ends at or past (PART 0 S3).
+    fn close_frames_after(&mut self, reached: usize, c: &Cursor<'_>) {
+        self.sibling = self
+            .frames
+            .get(reached + 1)
+            .filter(|f| f.marker.is_some())
+            .map(|f| (f.kind, f.axes.clone(), f.list_col, f.list_shift));
+        self.frames.truncate(reached + 1);
+        if let Some((_, _, list_col, list_shift)) = self.sibling {
+            if !c.rest.is_empty() && list_shift > 0 && c.col >= list_col {
+                self.top().closed_list = Some((list_col, list_shift));
+            }
+        }
+    }
+
     fn top(&mut self) -> &mut Frame {
         self.frames.last_mut().expect("the document frame stays")
     }
@@ -976,6 +1039,7 @@ impl<'a> Walk<'a> {
         let mut plus = None;
         let mut refused_by = None;
         let follows_marker_line = at > 0 && self.top().plus == Some(at - 1);
+        self.sibling = None;
         self.reopen_attached_host(at, c.src);
         for k in 1..self.frames.len() {
             let f = &self.frames[k];
@@ -1127,6 +1191,7 @@ impl<'a> Walk<'a> {
         if inner.kind == Kind::Fence {
             self.frames.pop();
         }
+        self.end_closed_lists(c);
         let form = self.classify(c.rest, reached, at);
         let top_para = self.frames.last().expect("frame").para;
         // PART 0 [B-term-keep]: past a missed quote or note a marker leaves a term,
@@ -1156,6 +1221,7 @@ impl<'a> Walk<'a> {
             if self.decide && matches!(form, Form::Item(..)) {
                 self.decide_folded_marker(at, c.rest, reached);
             }
+            let moved = self.lazy_list_shift(reached, c.col);
             let owner = &self.frames[reached];
             let next = &self.frames[reached + 1];
             let limit = if next.kind == Kind::Quote {
@@ -1166,7 +1232,12 @@ impl<'a> Walk<'a> {
             // A lazy line keeps its column: the item reader folds a line below a
             // marker-line child's column as lazy text. At the item's own column
             // it reads as at the child's column.
-            let target = c.col.saturating_sub(owner.cut).max(owner.canon).min(limit);
+            let target = c
+                .col
+                .saturating_sub(owner.cut.max(moved))
+                .max(owner.canon)
+                .min(limit)
+                .min(c.col);
             let shift = if target == owner.canon && c.col >= target {
                 owner.shift
             } else {
@@ -1239,7 +1310,7 @@ impl<'a> Walk<'a> {
         let closed_column = self.frames[reached + 1..]
             .iter()
             .any(|f| f.kind != Kind::Quote);
-        self.frames.truncate(reached + 1);
+        self.close_frames_after(reached, c);
         if c.rest.is_empty() {
             self.top().para = false;
             let col = c.col;
@@ -1262,7 +1333,13 @@ impl<'a> Walk<'a> {
                 let owner = self.top();
                 // A term's continuation moves with the term, so a later `:` body still follows it.
                 let term = owner.para && owner.last == Last::Term;
-                let cut = if term { owner.term_cut } else { owner.cut };
+                let cut = if term {
+                    owner.term_cut
+                } else {
+                    owner
+                        .cut
+                        .max(owner.closed_list.map_or(0, |(_, shift)| shift))
+                };
                 let target = if owner.para || !closed_column || plus_follower {
                     c.col.saturating_sub(cut).max(owner.canon)
                 } else {
@@ -1459,6 +1536,11 @@ impl<'a> Walk<'a> {
         f.canon = canon + width;
         f.cut = col.saturating_sub(canon);
         f.marker = Some((col, canon));
+        // A sibling keeps its list's column and shift.
+        (f.list_col, f.list_shift) = match self.sibling.take() {
+            Some((k, a, list_col, list_shift)) if k == kind && a == axes => (list_col, list_shift),
+            _ => (col, col.saturating_sub(canon)),
+        };
         f.axes = axes;
         f.shift = self.frames.last().map_or(0, |owner| owner.shift);
         f.marker_shift = f.shift;
