@@ -4,7 +4,10 @@
 use carve::to_html;
 
 fn html(source: &str) -> String {
-    to_html(source).split_whitespace().collect::<Vec<_>>().join(" ")
+    to_html(source)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 #[test]
