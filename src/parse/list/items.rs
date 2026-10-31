@@ -307,6 +307,12 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         }
     }
 
+    fn place_plus_block(&mut self, block: BlockNode) {
+        if let Some(last_item) = self.items.len().checked_sub(1) {
+            place_plus_item_chunk(self.deferred, last_item, block);
+        }
+    }
+
     fn drop_pending_attrs(&mut self) {
         note_unattached_block_attrs(
             self.pending_attrs_pos
@@ -327,7 +333,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             && self
                 .cur
                 .continuation_decision(self.cur.pos)
-                .is_some_and(|decision| decision.owner == Some(continuation_marker::Kind::List))
+                .map_or_else(continuation_marker::active, |decision| {
+                    decision.owner == Some(continuation_marker::Kind::List)
+                })
     }
 
     fn plus_continuation(&mut self, line: &str) -> ControlFlow<()> {
@@ -385,7 +393,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             );
             if !self.items.is_empty() && !is_empty_paragraph {
                 // Keep the attachment after any deferred item body.
-                self.place_in_last_item(vec![block]);
+                self.place_plus_block(block);
             }
         }
         if attached_comment
@@ -1741,6 +1749,63 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                     !line.starts_with(LAZY) && strip_description_prefix(line).is_some()
                 });
         loop {
+            let structural_owner = self.cur.peek().and_then(|line| {
+                let column = indent_columns(line);
+                let accepted_child_plus = is_plus_marker(trim_ascii_start(line))
+                    && self
+                        .cur
+                        .continuation_decision(self.cur.pos)
+                        .is_some_and(|decision| {
+                            decision.owner == Some(continuation_marker::Kind::List)
+                                && decision.owner_column == Some(column)
+                        });
+                let child_block = column >= lead.ladder_columns[0]
+                    && column < lead.nested_content_col
+                    && !is_list_marker(trim_ascii_start(line))
+                    && interrupts_paragraph(self.cur, trim_ascii_start(line));
+                (column > self.base_indent
+                    && lead.ladder_columns.contains(&column)
+                    && (accepted_child_plus || child_block))
+                    .then_some(column)
+            });
+            if let Some(owner_column) = structural_owner {
+                let before = self.cur.pos;
+                let nested = if self
+                    .cur
+                    .peek()
+                    .is_some_and(|line| is_plus_marker(trim_ascii_start(line)))
+                {
+                    let line = self.cur.peek().unwrap();
+                    let (body, consumed, synthetic) = slice_columns_mapped(line, content_col, true);
+                    let mut nested = MappedSource::new_line_at(
+                        body,
+                        self.cur.source_line(self.cur.pos),
+                        self.cur
+                            .source_col(self.cur.pos)
+                            .map(|col| col + consumed as isize - synthetic as isize),
+                    );
+                    self.cur.consume();
+                    nested.append(collect_indented_block_mapped_after_continuation(
+                        self.cur,
+                        owner_column.saturating_sub(1),
+                        content_col,
+                        self.options,
+                    ));
+                    nested
+                } else {
+                    collect_indented_block_mapped(
+                        self.cur,
+                        owner_column.saturating_sub(1),
+                        content_col,
+                        self.options,
+                    )
+                };
+                if self.cur.pos > before {
+                    stream.append(nested);
+                    term_lead = false;
+                    continue;
+                }
+            }
             if self.cur.peek().is_some_and(|line| {
                 marked_quote_at_ancestor_column(line, content_col, lead.nested_content_col)
             }) {
@@ -1840,6 +1905,16 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         };
         let has_lazy = if let Some(line) = cur.peek() {
             let line = line.to_string();
+            // The ownership walk has already accepted this marker for one of
+            // the open ladder items. It interrupts the term at that item's
+            // authored column, even when the term's lazy arm would admit it.
+            if is_plus_marker(trim_ascii_start(&line))
+                && cur
+                    .continuation_decision(cur.pos)
+                    .is_some_and(|decision| decision.owner == Some(continuation_marker::Kind::List))
+            {
+                return None;
+            }
             let indent = indent_columns(&line);
             let at_nested_marker = term_lead
                 && ((indent >= child_col
