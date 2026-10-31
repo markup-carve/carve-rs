@@ -2,7 +2,8 @@
 //! 855-a-comment-block-in-a-line-block-leaves-nothing.
 
 fn children(source: &str) -> serde_json::Value {
-    let mut doc: serde_json::Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
+    let mut doc: serde_json::Value =
+        serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
     fn strip(value: &mut serde_json::Value) {
         match value {
             serde_json::Value::Object(map) => {
@@ -20,7 +21,10 @@ fn children(source: &str) -> serde_json::Value {
 #[test]
 fn a_closed_pair_leaves_nothing() {
     for (source, html) in [
-        ("::: |\n%%%\nsecret\n%%%\n:::\n", "<div class=\"line-block\">\n\n</div>"),
+        (
+            "::: |\n%%%\nsecret\n%%%\n:::\n",
+            "<div class=\"line-block\">\n\n</div>",
+        ),
         (
             "::: |\na\n%%%\none\n\ntwo\n%%%\nc\n:::\n",
             "<div class=\"line-block\">\n  <p>a<br>\nc</p>\n</div>",
