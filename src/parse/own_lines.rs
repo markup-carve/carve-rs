@@ -147,6 +147,7 @@ enum Form {
     Fence(Closer, bool, bool),
     Colon(usize, bool),
     Leaf(bool),
+    Attr(usize),
     Note(usize),
     Item(usize, usize, String),
     Term,
@@ -157,7 +158,12 @@ enum Form {
 impl Form {
     fn interrupts(&self) -> bool {
         match self {
-            Form::Blank | Form::Quote | Form::ColonClose(_) | Form::Note(_) | Form::Term => true,
+            Form::Blank
+            | Form::Quote
+            | Form::ColonClose(_)
+            | Form::Note(_)
+            | Form::Term
+            | Form::Attr(_) => true,
             Form::Fence(_, i, _) | Form::Colon(_, i) | Form::Leaf(i) => *i,
             Form::Item(..) | Form::Dd(_) | Form::Text => false,
         }
@@ -499,6 +505,7 @@ fn trace_form(form: &Form) -> &'static str {
         Form::Fence(Closer::Comment(_), ..) => "comment",
         Form::Fence(Closer::Colon(_), ..) | Form::Colon(..) => "div",
         Form::Leaf(_) => "leaf",
+        Form::Attr(_) => "leaf",
         Form::Note(_) => "footnote",
         Form::Item(..) => "item",
         Form::Term => "term",
@@ -527,6 +534,8 @@ struct Walk<'a> {
     attached: Option<AttachedBlock>,
     /// The marker frame this line's opener closed: kind, axes, list column and shift.
     sibling: Option<(Kind, String, usize, usize)>,
+    /// Continuation lines of the wrapped attribute block just classified.
+    attr_rest: Option<(usize, usize)>,
 }
 
 struct AttachedBlock {
@@ -659,6 +668,7 @@ fn walk_traced(
         reach: 0,
         runs: None,
         sibling: None,
+        attr_rest: None,
         trace,
         first_line,
         decide: decide && source.contains('+'),
@@ -1081,6 +1091,35 @@ impl<'a> Walk<'a> {
         self.frames.last_mut().expect("the document frame stays")
     }
 
+    fn carry_attr_continuation(
+        &mut self,
+        at: usize,
+        line: usize,
+        reached: usize,
+        c: &mut Cursor<'_>,
+        tracing: bool,
+    ) -> bool {
+        let Some((left, cut)) = self.attr_rest.take() else {
+            return false;
+        };
+        let missed_quote = self.frames[reached + 1..]
+            .iter()
+            .any(|frame| frame.kind == Kind::Quote);
+        if missed_quote {
+            return false;
+        }
+        let target = c.col.saturating_sub(cut).max(self.top().canon);
+        c.lead_at(target, false);
+        if left > 1 {
+            self.attr_rest = Some((left - 1, cut));
+        }
+        if tracing {
+            let record = TraceRecord::new(line, "S5", self.deepest(), Some("CARVE-P0-024"), "leaf");
+            self.emit(at, record);
+        }
+        true
+    }
+
     fn line(&mut self, at: usize, c: &mut Cursor<'_>, after_plus: &mut bool) {
         let tracing = self.trace.is_some();
         let line = self.first_line + at;
@@ -1172,6 +1211,9 @@ impl<'a> Walk<'a> {
         *after_plus = false;
         let missed = reached < self.frames.len() - 1;
         self.reach = reached;
+        if self.carry_attr_continuation(at, line, reached, c, tracing) {
+            return;
+        }
         let inner = self.frames.last().expect("document frame");
         if inner.kind == Kind::Fence && !missed {
             // S1: an open payload tests its closer first (B-<family>-keep, -end).
@@ -1338,14 +1380,17 @@ impl<'a> Walk<'a> {
         let closed = self.frames.len() - 1 - reached;
         let mut record = tracing.then(|| {
             let name = trace_form(&form);
-            let opens = !matches!(form, Form::Blank | Form::Leaf(_) | Form::Text);
+            let opens = !matches!(
+                form,
+                Form::Blank | Form::Leaf(_) | Form::Attr(_) | Form::Text
+            );
             let cell = match form {
                 Form::ColonClose(_) => Some("B-div-end".to_owned()),
                 _ => opens.then(|| format!("B-{name}-start")),
             };
             let rule = match form {
                 Form::Blank => "CARVE-P0-003",
-                Form::Leaf(_) => "CARVE-P0-011",
+                Form::Leaf(_) | Form::Attr(_) => "CARVE-P0-011",
                 _ => "CARVE-P0-024",
             };
             let mut record =
@@ -1517,6 +1562,11 @@ impl<'a> Walk<'a> {
             if matches!(form, Form::Term) {
                 o.para = true;
                 o.term_cut = col.saturating_sub(canon);
+            }
+        }
+        if let Form::Attr(lines) = form {
+            if lines > 1 {
+                self.attr_rest = Some((lines - 1, col.saturating_sub(canon)));
             }
         }
         match form {
@@ -1870,9 +1920,21 @@ impl<'a> Walk<'a> {
             || is_table_start(rest)
             || parse_link_def_line(rest).is_some()
             || detect_abbreviation_def(rest).is_some()
-            || (rest.starts_with('{') && standalone_attrs_block_len(&[rest]) == Some(1))
         {
             return Form::Leaf(true);
+        }
+        if rest.starts_with('{') {
+            let depth = self.frames[1..=owner]
+                .iter()
+                .filter(|frame| frame.kind == Kind::Quote)
+                .count();
+            let following = (at + 1..self.lines.len())
+                .map(|line| strip_quote_levels(self.lines[line], depth).unwrap_or(""));
+            if let Some(lines) =
+                standalone_attrs_block_len_iter(std::iter::once(rest).chain(following))
+            {
+                return Form::Attr(lines);
+            }
         }
         if is_caption(rest) {
             return Form::Leaf(false);
