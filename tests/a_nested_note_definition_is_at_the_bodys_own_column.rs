@@ -245,7 +245,6 @@ fn an_indented_fence_keeps_its_payload_opaque() {
 /// where it was written. Without the close the stale flag absorbs it and the
 /// fence loses its content.
 #[test]
-#[ignore = "rule A ledger: carve-rs#3523"]
 fn a_block_between_them_closes_the_nested_body() {
     assert_html(
         "[^f]: b\n\n  [^g]: c\n  ```\n   [^n]: note\n\nSee [^n] and [^f] and [^g].\n",

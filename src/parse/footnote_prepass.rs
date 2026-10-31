@@ -183,7 +183,6 @@ impl NoteBody {
 struct LineScan<'a> {
     stripped: StrippedContainerLine<'a>,
     after_term: bool,
-    retained_unclosed_fence: bool,
     fence_line: &'a str,
     /// The column of a fence written at a list item's content column.
     fence_col: Option<usize>,
@@ -441,19 +440,12 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 &mut marker_probe_unaffordable,
             );
         self.last_folded_marker = folded_marker;
-        let retained_unclosed_fence = i > 0
-            && is_line_comment_any_column(lines[i - 1])
-            && indent_columns(line) == 0
-            && self.columns.current().cols.last().is_some()
-            && detect_fence_open(line)
-                .is_some_and(|open| !self.closer_maxima.has_run_after(i, open));
         let opaque = self.fence.open.is_some()
             || folded_fence
             || folded_marker
             || self.verse_lines[i].is_body()
             || self.in_comment_fence.is_some()
-            || prepass_quote_line_is_folded(&self.folded_into_term, i, line)
-            || retained_unclosed_fence;
+            || prepass_quote_line_is_folded(&self.folded_into_term, i, line);
         let content_col = self.columns.observe(line, opaque);
         // A quote nested in a list item sits AT the item's content column, so
         // the prefix scan needs that column to see it (carve-rs#588).
@@ -498,7 +490,6 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         LineScan {
             stripped,
             after_term,
-            retained_unclosed_fence,
             fence_line,
             fence_col,
         }
@@ -629,9 +620,6 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             scan.after_term,
         );
         if fence.opens || (scan.stripped.description && term_fence.is_none()) {
-            if scan.retained_unclosed_fence {
-                open.content_col = self.columns.current().cols.last().copied().unwrap_or(0);
-            }
             if !open.quoted && fence.quote_columns.is_empty() && fence.host_content_col > 0 {
                 open.content_col = fence.host_content_col;
             }
