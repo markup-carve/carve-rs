@@ -1441,7 +1441,6 @@ struct QuoteBody<'a> {
     div_code_fence: Option<FenceOpen>,
     closed_div: bool,
     comment_run: Option<(usize, usize, usize)>,
-    comment_later_quoted_closer: Option<bool>,
     comment_lazy_lines: Vec<(usize, String, Option<isize>)>,
     in_fence: Option<FenceOpen>,
     opaque_tail: bool,
@@ -1507,7 +1506,6 @@ impl<'a> QuoteBody<'a> {
             div_code_fence: None,
             closed_div: false,
             comment_run: None,
-            comment_later_quoted_closer: None,
             comment_lazy_lines: Vec::new(),
             in_fence: None,
             opaque_tail: false,
@@ -1672,12 +1670,10 @@ impl<'a> QuoteBody<'a> {
                     self.inner.lines[index].stripped = column;
                 }
                 self.comment_run = None;
-                self.comment_later_quoted_closer = None;
             }
         } else if self.in_fence.is_none() {
             self.comment_run = detect_comment_fence_line_any_column(comment_text)
                 .map(|open| (open.fence_len, comment_depth, self.inner.lines.len()));
-            self.comment_later_quoted_closer = None;
         }
     }
 
@@ -2264,7 +2260,6 @@ impl<'a> QuoteBody<'a> {
             if self.in_fence.take().is_some() {
                 self.parts.push(std::mem::take(&mut self.inner));
                 self.comment_run = None;
-                self.comment_later_quoted_closer = None;
                 self.comment_lazy_lines.clear();
             }
             // `inner` always holds the quote's first content line, so a
@@ -2376,19 +2371,7 @@ impl<'a> QuoteBody<'a> {
         // A matched comment span cannot hide a line that misses its quote
         // owner. Without a later closer the opener is only a line comment.
         if let Some((run, depth, _)) = self.comment_run {
-            let later = *self.comment_later_quoted_closer.get_or_insert_with(|| {
-                cur.lines.range(cur.pos + 1..cur.lines.len()).any(|raw| {
-                    let mut rest = raw;
-                    for _ in 0..=depth {
-                        let Some(inner) = strip_blockquote_prefix(rest) else {
-                            return false;
-                        };
-                        rest = inner;
-                    }
-                    is_comment_fence_close_any_column(rest, run)
-                })
-            });
-            if later {
+            if future_quoted_comment_closes(cur, depth + 1, 0, run) {
                 return true;
             }
         }
