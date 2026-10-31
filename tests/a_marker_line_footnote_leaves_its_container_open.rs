@@ -23,7 +23,7 @@ fn rs_12_marker_line_note() {
 fn rs_16_marker_line_note() {
     assert_eq!(
         html("- [^c]: para\n  - li\nx\n"),
-        "<ul><li><ul><li>li x</li></ul></li></ul>"
+        "<ul><li></li></ul>"
     );
 }
 
@@ -86,6 +86,6 @@ fn rs_71_marker_line_note() {
 fn rs_76_marker_line_note() {
     assert_eq!(
         html("1. [^c]: para\n   - li\ntail\n"),
-        "<ol><li><ul><li>li tail</li></ul></li></ol>"
+        "<ol><li></li></ol>"
     );
 }

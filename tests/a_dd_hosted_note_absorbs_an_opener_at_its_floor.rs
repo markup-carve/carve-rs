@@ -51,15 +51,15 @@ fn an_absorbed_opener_leaves_a_tail_at_the_description_column_in_the_dd() {
     assert_eq!(html(src), "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>");
 }
 
-/// The opener one column shy of the floor (column 4 against a floor of 5) reaches
-/// nothing: the list is an ordinary description child and `tail` lazily continues
-/// the list item, exactly as before. This band already agreed and must not move.
+/// The opener one column shy of the floor (column 4 against a floor of 5) is a
+/// list marker under the note's open paragraph, so it folds into the note as text
+/// with `tail` (carve#4206, corpus 800).
 #[test]
 fn an_opener_one_column_shy_of_the_floor_stays_a_description_child() {
     let src = ":: t\n:  [^f]: note\n    - nested\ntail\n";
     assert_eq!(
         html(src),
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>nested\ntail</li>\n    </ul>\n  </dd>\n</dl>"
+        "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>"
     );
 }
 

@@ -253,9 +253,12 @@ struct NoteHost {
     description_host: bool,
     quote_indents: Vec<usize>,
     quote_depth: usize,
-    prefix_cols: usize,
     note_floor: usize,
     marker_note: bool,
+    /// Content column of the innermost list item hosting the note, if any.
+    list_floor: Option<usize>,
+    /// The same, for the document level outside the note's quotes.
+    outer_list_floor: Option<usize>,
 }
 
 impl NoteHost {
@@ -275,6 +278,23 @@ impl NoteHost {
             admitted_fence || comment_open || indent_columns(line) >= self.note_floor
         })
     }
+}
+
+fn note_opens_with_term(note: &NoteBody) -> bool {
+    note.lines
+        .iter()
+        .rev()
+        .find(|line| !line.starts_with(LAZY))
+        .is_some_and(|line| term_start_column(line).is_some())
+}
+
+fn item_floor(frame: &ColumnFrame) -> Option<usize> {
+    frame
+        .cols
+        .iter()
+        .copied()
+        .filter(|col| !frame.body_columns.contains(col))
+        .max()
 }
 
 /// Comment and fence opacity of a container-hosted note body.
@@ -1565,8 +1585,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let host = NoteHost {
             quote_depth: quote_indents.len(),
             quote_indents,
-            prefix_cols,
             note_floor: prefix_cols + footnote_body_floor(def.def_line),
+            list_floor: item_floor(self.columns.current()),
+            outer_list_floor: item_floor(&self.columns.frames[0]),
             marker_note: detect_list_marker_full(inside)
                 .is_some_and(|marker| parse_footnote_def_line(marker.content).is_some()),
             description_host,
@@ -1766,9 +1787,25 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             && exact_colon_fence_len(rest).is_none()
             && parse_link_def_line(rest).is_none()
             && parse_footnote_def_line(rest).is_none()
-            // §10 I2: a marker continues a hosting list only from inside the
-            // note's quotes; elsewhere it is text under the note's paragraph.
-            && !(inside.is_some() && host.prefix_cols > 0 && is_list_marker(rest))
+            // §10 I2: a marker below a hosting item's content column continues
+            // that list; at or past it, or under a description, it is text
+            // under the note's paragraph.
+            && !(is_list_marker(rest)
+                && inside.is_some_and(|line| {
+                    host.list_floor
+                        .is_some_and(|floor| indent_columns(line) < floor)
+                }))
+            // A marker below a term ends the note (corpus 846, 855).
+            && !(is_list_marker(rest) && note_opens_with_term(note))
+            // Outside the note's quotes, a marker or a quote left of an outer
+            // item's content column leaves the item.
+            && !(inside.is_none()
+                && host.quote_depth > 0
+                && host
+                    .outer_list_floor
+                    .is_some_and(|floor| indent_columns(raw) < floor)
+                && (is_list_marker(trim_ascii_start(raw))
+                    || strip_blockquote_prefix(trim_ascii_start(raw)).is_some()))
             // The next entry of the hosting list stays out of the note.
             && !(host.description_host
                 && (rest.starts_with(":: ") || strip_definition_marker(rest).is_some()))
@@ -2148,8 +2185,11 @@ fn note_quote_host(raw_def_line: &str, structural_len: usize) -> (Vec<usize>, &s
     // same number of spaces on the lines below it.
     loop {
         let mut indent = leading_ws(inside);
-        if let Some(content) = detect_list_marker_full(inside)
-            .map(|marker| marker.content)
+        let mut item = detect_list_marker_full(inside).map(|marker| marker.content);
+        while let Some(nested) = item.and_then(detect_list_marker_full) {
+            item = Some(nested.content);
+        }
+        if let Some(content) = item
             .or_else(|| strip_definition_marker(&inside[indent..]).map(|(body, _)| body))
             .filter(|content| content.starts_with('>'))
         {
