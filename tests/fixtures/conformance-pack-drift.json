@@ -9,6 +9,13 @@
       ]
     },
     {
+      "ticket": "markup-carve/carve#4661",
+      "cause": "the line-block colon run past its opener column stays payload at the current spec pin",
+      "cases": [
+        "fences-1c15b73bc154"
+      ]
+    },
+    {
       "ticket": "markup-carve/carve-rs#3534",
       "cause": "untriaged day-one drift in the fences family",
       "cases": [
@@ -25,11 +32,9 @@
       "cause": "untriaged day-one drift in the lazy family",
       "cases": [
         "lazy-27c92f4153c2",
-        "lazy-5d96f214fe7c",
         "lazy-70acba91ccbd",
         "lazy-c617b01a765e",
         "lazy-d714a9768baa",
-        "lazy-e7fc4688d71a",
         "lazy-fec6f2fc03b0"
       ]
     },
