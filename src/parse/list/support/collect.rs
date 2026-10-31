@@ -908,6 +908,11 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         }
         let fence_owns_flush_left = (line.starts_with(LAZY)
             && (marker_colon.is_some() || !colon_open.is_empty()))
+            || (literal_marker_body
+                && marker_colon.is_some()
+                && indent < strip_cols
+                && line_starts_paragraph(line)
+                && lines.last().is_some_and(|prior| !is_blank_line(prior)))
             || ((fence.is_some() || (comment_fence.is_some() && !literal_marker_body))
                 && line.starts_with(LAZY))
             || (indent < strip_cols

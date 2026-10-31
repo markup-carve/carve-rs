@@ -1160,7 +1160,6 @@ pub(crate) fn colon_fences_left_open(nested: &str) -> usize {
     }
     let mut host_floor = 0;
     let mut verse_end = 0;
-    let mut closer_index = None;
     let mut comment_closers = None;
     for (index, line) in lines.iter().copied().enumerate() {
         let trimmed = trim_ascii_start(line);
@@ -1197,16 +1196,19 @@ pub(crate) fn colon_fences_left_open(nested: &str) -> usize {
             continue;
         }
         if let Some(fence_len) = detect_line_block_open(trimmed) {
-            verse_end = find_colon_fence_end(
+            // The marker-line opener is measured at its nested item's body
+            // column. Compare its closer in that same coordinate space: an
+            // extra space is payload, while the exact body column closes it.
+            verse_end = find_measured_line_block_end(
                 CursorLines::Slice(&lines),
                 index,
                 fence_len,
-                true,
-                &mut closer_index,
+                column,
                 &mut comment_closers,
             );
-            if verse_end == lines.len()
-                && exact_colon_fence_len(trim_ascii_start(lines[verse_end - 1])) != Some(fence_len)
+            let last = &lines[verse_end - 1];
+            let measured_last = slice_columns(last, column, true);
+            if verse_end == lines.len() && exact_colon_fence_len(&measured_last) != Some(fence_len)
             {
                 return open.len() + 1;
             }

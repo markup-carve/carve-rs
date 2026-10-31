@@ -536,6 +536,8 @@ struct Walk<'a> {
     sibling: Option<(Kind, String, usize, usize)>,
     /// Continuation lines of the wrapped attribute block just classified.
     attr_rest: Option<(usize, usize)>,
+    /// A line block missed by lazy text, held until its bare closer follows.
+    pending_line_block: Option<Frame>,
 }
 
 struct AttachedBlock {
@@ -669,6 +671,7 @@ fn walk_traced(
         runs: None,
         sibling: None,
         attr_rest: None,
+        pending_line_block: None,
         trace,
         first_line,
         decide: decide && source.contains('+'),
@@ -1149,6 +1152,62 @@ impl<'a> Walk<'a> {
         true
     }
 
+    fn retain_lazy_line_block(
+        &mut self,
+        at: usize,
+        c: &mut Cursor<'_>,
+        reached: usize,
+        form: &Form,
+        block: Option<Frame>,
+    ) -> bool {
+        let Some(block) = block.or_else(|| self.pending_line_block.take()) else {
+            return false;
+        };
+        let next_is_bare_closer = self.lines.get(at + 1).is_some_and(|next| {
+            quote_marker(trim_ascii_start(next)).is_none()
+                && block
+                    .closer
+                    .is_some_and(|closer| closer.closes(trim_ascii_start(next), 0, block.open_col))
+        });
+        if !matches!(form, Form::Text)
+            || at == 0
+            || self.lines[at - 1].trim().is_empty()
+            || self.first_line + at - 1 <= block.line
+        {
+            return false;
+        }
+        if !next_is_bare_closer {
+            self.pending_line_block = Some(block);
+            return false;
+        }
+        self.frames.push(block);
+        c.lead(c.col);
+        if self.trace.is_some() {
+            let line = self.first_line + at;
+            let mut record =
+                TraceRecord::new(line, "S4", self.deepest(), Some("CARVE-P0-006"), "lazy");
+            record.reached = Some(self.path(reached));
+            self.emit(at, record);
+        }
+        true
+    }
+
+    fn missed_term_refuses(&self, reached: usize, rest: &str) -> bool {
+        if self.frames.last().expect("frame").last != Last::Term {
+            return false;
+        }
+        let missed_frames = &self.frames[reached + 1..];
+        if detect_list_marker_full(rest).is_some() {
+            missed_frames
+                .iter()
+                .any(|f| matches!(f.kind, Kind::Quote | Kind::Note))
+        } else {
+            rest.strip_prefix(':')
+                .is_some_and(|t| t.starts_with(' ') && !t.trim().is_empty())
+                && missed_frames.iter().any(|f| f.kind == Kind::Quote)
+        }
+    }
+
     fn line(&mut self, at: usize, c: &mut Cursor<'_>, after_plus: &mut bool) {
         let tracing = self.trace.is_some();
         let line = self.first_line + at;
@@ -1308,27 +1367,23 @@ impl<'a> Walk<'a> {
             }
             return;
         }
+        let missed_line_block =
+            (inner.kind == Kind::Fence && inner.line_block && missed).then(|| inner.clone());
         if inner.kind == Kind::Fence {
             self.frames.pop();
         }
         self.end_closed_lists(c);
         let form = self.classify(c.rest, reached, at);
+        // A plain line can continue a line block's open stanza lazily. Restore
+        // its frame only when the next source line is its bare closer; quoted
+        // or other sibling constructs must still use the normal owner walk.
+        if self.retain_lazy_line_block(at, c, reached, &form, missed_line_block) {
+            return;
+        }
         let top_para = self.frames.last().expect("frame").para;
         // PART 0 [B-term-keep]: past a missed quote or note a marker leaves a term,
         // and past a quote a separator too (carve#4300).
-        let term_refuses = self.frames.last().expect("frame").last == Last::Term && {
-            let missed_frames = &self.frames[reached + 1..];
-            if detect_list_marker_full(c.rest).is_some() {
-                missed_frames
-                    .iter()
-                    .any(|f| matches!(f.kind, Kind::Quote | Kind::Note))
-            } else {
-                c.rest
-                    .strip_prefix(':')
-                    .is_some_and(|t| t.starts_with(' ') && !t.trim().is_empty())
-                    && missed_frames.iter().any(|f| f.kind == Kind::Quote)
-            }
-        };
+        let term_refuses = self.missed_term_refuses(reached, c.rest);
         if missed
             && !c.rest.is_empty()
             && top_para
