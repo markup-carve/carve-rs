@@ -1275,8 +1275,6 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     ("853-a-line-after-a-marker-line-folded-into-a-sublist-item-folds-too", "inline or layout ruling at the 3679436f pin not ported yet", "<ol>\n  <li>\n    <ul>\n      <li>a\n        <ul>\n          <li>y\n1. ~~~</li>\n        </ul>\n      </li>\n    </ul>\n    z\n  </li>\n</ol>"),
     ("853-a-marker-under-a-quoted-description-paragraph-in-an-item-is-text", "inline or layout ruling at the 3679436f pin not ported yet", "<ul>\n  <li>\n    <blockquote>\n      <dl>\n        <dt>t</dt>\n        <dd>d</dd>\n      </dl>\n      <ul>\n        <li>z</li>\n      </ul>\n    </blockquote>\n  </li>\n</ul>"),
     ("853-a-whitespace-run-after-a-tab-sets-the-content-column-where-the-content-starts", "inline or layout ruling at the 3679436f pin not ported yet", "<ul>\n  <li><p>e</p>\n    <p>f</p>\n  </li>\n</ul>"),
-    ("853-an-indented-list-starts-a-new-list-at-a-different-marker", "inline or layout ruling at the 3679436f pin not ported yet", "<ul>\n  <li>a\n- x</li>\n</ul>"),
-    ("853-an-indented-list-starts-a-new-list-at-a-different-marker-2", "inline or layout ruling at the 3679436f pin not ported yet", "<ul>\n  <li>p\n    <ul>\n      <li>x\n- y</li>\n    </ul>\n  </li>\n</ul>"),
 ];
 
 fn check_pair(slug: &str) {
