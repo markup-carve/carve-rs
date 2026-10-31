@@ -1437,6 +1437,11 @@ struct QuoteBody<'a> {
     span_start: usize,
     inner: LineBuffer,
     para_open: ParaOpen<'a>,
+    // Depth of the paragraph receiving the last line, even when that line
+    // reached it lazily through a shallower quote prefix.
+    paragraph_depth: Option<usize>,
+    // The depth whose paragraph contains a malformed colon opener.
+    absorption_depth: Option<usize>,
     open_divs: Vec<usize>,
     div_code_fence: Option<FenceOpen>,
     closed_div: bool,
@@ -1502,6 +1507,8 @@ impl<'a> QuoteBody<'a> {
             span_start,
             inner: LineBuffer::default(),
             para_open: ParaOpen::Closed,
+            paragraph_depth: None,
+            absorption_depth: None,
             open_divs: Vec::new(),
             div_code_fence: None,
             closed_div: false,
@@ -1958,6 +1965,26 @@ impl<'a> QuoteBody<'a> {
     ) {
         let QuotedLine { stripped, at, .. } = quoted;
         self.opaque_tail = false;
+        // Depth matters only while a colon paragraph can absorb a later run.
+        // Keep the common prose path deferred so a deep quote does not scan its
+        // marker ladder on every line.
+        let needs_depth = stripped.contains(":::") || self.absorption_depth.is_some();
+        let line_depth = if needs_depth {
+            strip_all_quotes(stripped).1
+        } else {
+            0
+        };
+        let paragraph_depth = if needs_depth && self.para_open.get() {
+            let prior_depth = self.paragraph_depth.or_else(|| {
+                self.inner
+                    .lines
+                    .last()
+                    .map(|line| strip_all_quotes(&line.text).1)
+            });
+            prior_depth.map_or(line_depth, |depth| depth.max(line_depth))
+        } else {
+            line_depth
+        };
         // Whether this line leaves a paragraph open is decided by
         // `ParaOpen::get`, which walks down to the innermost quoted
         // content. Record the line rather than the answer: the walk
@@ -1966,7 +1993,10 @@ impl<'a> QuoteBody<'a> {
         // (markup-carve/carve-rs#731). The absorption state the line
         // inherits goes WITH it, so §12 is decided by the same walk
         // instead of forcing one of its own.
-        let inherited_absorption = if self.para_open.may_carry_absorption() {
+        let inherited_absorption = if self.absorption_depth.is_some() && self.para_open.get() {
+            self.absorption_depth
+                .is_some_and(|depth| line_depth >= depth)
+        } else if self.para_open.may_carry_absorption() {
             let prior_depth = self
                 .inner
                 .lines
@@ -2065,6 +2095,15 @@ impl<'a> QuoteBody<'a> {
             // The opener remains text in the list paragraph, which can still
             // take a lazy continuation below the quote.
             self.para_open = ParaOpen::from_line("x", inherited_absorption);
+        }
+        if needs_depth && self.para_open.get() {
+            self.paragraph_depth = Some(paragraph_depth);
+            if is_invalid_colon_fence_opener_text(strip_all_quotes(stripped).0) {
+                self.absorption_depth = Some(paragraph_depth);
+            }
+        } else if needs_depth || (self.paragraph_depth.is_some() && !self.para_open.get()) {
+            self.paragraph_depth = None;
+            self.absorption_depth = None;
         }
     }
 
@@ -2479,6 +2518,18 @@ impl<'a> QuoteBody<'a> {
     }
 
     fn fold_lazy_line(&mut self, cur: &mut LineCursor<'a>, line: &str) {
+        if is_invalid_colon_fence_opener_text(trim_ascii_start(strip_lazy(line)))
+            && self.para_open.get()
+        {
+            let depth = self.paragraph_depth.or_else(|| {
+                self.inner
+                    .lines
+                    .last()
+                    .map(|prior| strip_all_quotes(&prior.text).1)
+            });
+            self.paragraph_depth = depth;
+            self.absorption_depth = depth;
+        }
         let source_line = cur.source_line(cur.pos);
         // A lazy continuation line carries no quote marker, so nothing was
         // stripped from it beyond what an outer container already took.
