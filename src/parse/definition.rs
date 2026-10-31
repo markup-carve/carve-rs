@@ -141,7 +141,8 @@ pub(in crate::parse) fn fold_term(
             || (!next.starts_with(LAZY) && strip_definition_marker(strip_lazy(next)).is_some())
             || same_column_entry
             || is_list_marker(next)
-            || caption_content(next).is_some()
+            // A term takes no caption: a caret line that misses the column is lazy text.
+            || (caption_content(next).is_some() && cur.carried_reach(cur.pos) != Some(false))
         {
             break;
         }

@@ -1561,6 +1561,10 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             content_col,
             options,
         ));
+        self.fold_continuation_chunk(&mut stream, false);
+        let probed = stream.source.clone();
+        self.item_paragraph_open =
+            ParagraphOpen::deferred(move || body_ends_with_open_paragraph(&probed, options));
         let children = item_body(
             self.deferred,
             self.items.len(),

@@ -1,3 +1,7 @@
+// Rows a later ruling overturned; `corpus.rs` checks them under AHEAD_OF_PIN.
+const AHEAD_OF_PIN: &[&str] =
+    &["518-a-trailing-comment-takes-a-tab-a-run-start-and-its-whole-separator-8.crv"];
+
 fn corpus_category(prefix: &str) {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     let mut count = 0;
@@ -9,6 +13,7 @@ fn corpus_category(prefix: &str) {
                 .unwrap()
                 .to_string_lossy()
                 .starts_with(prefix)
+            && !AHEAD_OF_PIN.contains(&&*path.file_name().unwrap().to_string_lossy())
         {
             let source = std::fs::read_to_string(&path).unwrap();
             let expected = std::fs::read_to_string(path.with_extension("html")).unwrap();

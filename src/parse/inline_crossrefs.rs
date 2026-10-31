@@ -553,10 +553,34 @@ pub(in crate::parse) fn caption_content(line: &str) -> Option<&str> {
     // assembled caption is trailing-stripped (§756). The gate still tests a
     // trailing-stripped view so `^ ` / `^  ` / `^ \t` are not captions.
     let text = &line[start..];
-    if trim_ascii_end(text).is_empty() {
+    if trim_ascii_end(text).is_empty() || comment_only(&bytes[1..]) {
         return None;
     }
     Some(text)
+}
+
+/// A comment is not caption content: removing it must not change the output
+/// (carve#4220), so braced and trailing comments alone open no caption (carve#4559).
+fn comment_only(bytes: &[u8]) -> bool {
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b' ' | b'\t' | b'\n' | b'\r' => i += 1,
+            b'{' if bytes.get(i + 1) == Some(&b'%')
+                && !super::inline_links::followed_by_grapheme_extender(bytes, i + 2) =>
+            {
+                let Some(close) = bytes[i + 2..].windows(2).position(|w| w == b"%}") else {
+                    return false;
+                };
+                i += 2 + close + 2;
+            }
+            b'%' if bytes.get(i + 1) == Some(&b'%') && i > 0 && bytes[i - 1] == b' ' => {
+                return true;
+            }
+            _ => return false,
+        }
+    }
+    true
 }
 
 /// Byte length of a caption marker (`^` + one-or-more spaces) at the START of an
@@ -602,6 +626,7 @@ pub(in crate::parse) fn caption_first_line_has_content(children: &[InlineNode]) 
         match child {
             InlineNode::SoftBreak(_) => break,
             InlineNode::Text(t) if !has_caption_content(&t.value) => continue,
+            InlineNode::Comment(_) => continue,
             _ => return true,
         }
     }
