@@ -53,7 +53,10 @@ fn registrations_follow_each_definition_kind() {
         )
     );
     let abbr = html(":: t\n:  d\n  *[A]: a\ntail\n\nA here\n");
-    assert_eq!(abbr, format!("{ENDS}<p>tail</p>\n<p><abbr title=\"a\">A</abbr> here</p>"));
+    assert_eq!(
+        abbr,
+        format!("{ENDS}<p>tail</p>\n<p><abbr title=\"a\">A</abbr> here</p>")
+    );
 }
 
 #[test]

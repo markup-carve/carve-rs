@@ -69,7 +69,10 @@ fn an_abbreviation_definition_below_the_column_defines_in_the_document() {
 #[test]
 fn an_abbreviation_definition_below_the_column_registers() {
     let out = html(":: t\n:  d\n  *[A]: a\ntail\n\nA here\n");
-    assert!(out.contains("<p><abbr title=\"a\">A</abbr> here</p>"), "{out}");
+    assert!(
+        out.contains("<p><abbr title=\"a\">A</abbr> here</p>"),
+        "{out}"
+    );
 }
 
 #[test]
