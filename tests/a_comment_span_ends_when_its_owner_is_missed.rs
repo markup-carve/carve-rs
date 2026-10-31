@@ -11,6 +11,14 @@ fn a_quote_comment_does_not_hide_an_unprefixed_line() {
 }
 
 #[test]
+fn a_blank_stops_the_search_for_a_quoted_comment_closer() {
+    assert_eq!(
+        to_html("> %%%\n> x\ny\n\n> %%%\n").trim(),
+        "<blockquote><p>x\ny</p></blockquote>\n<blockquote>\n\n</blockquote>"
+    );
+}
+
+#[test]
 fn a_description_comment_does_not_fold_a_line_below_its_column() {
     assert_eq!(
         to_html(":: t\n: %%%\n  x\ny\n  %%%\n").trim(),

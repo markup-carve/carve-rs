@@ -1456,11 +1456,10 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         line: &str,
         indent: usize,
     ) -> BodyStep {
-        if self
-            .comment_state
-            .comment
-            .is_some_and(|run| cur.has_comment_closer_after(cur.pos + 1, run))
-        {
+        if self.comment_state.comment.is_some_and(|run| {
+            !is_comment_fence_close_any_column(line, run)
+                && cur.has_comment_closer_after(cur.pos + 1, run)
+        }) {
             return BodyStep::Stop;
         }
         if self.ends_below_column(line) {
