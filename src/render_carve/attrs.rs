@@ -82,10 +82,7 @@ pub(super) fn render_attrs_with_markers(
         if (!markers.is_empty() || bracketed)
             && (conflicts(value) || value.contains(['{', '}', '[', ']', '`']))
         {
-            format!(
-                "\"{}\"",
-                escape_inline_quoted_attr(value)
-            )
+            format!("\"{}\"", escape_inline_quoted_attr(value))
         } else {
             quote_attr_value(value)
         }
@@ -124,10 +121,7 @@ pub(super) fn render_attrs_with_markers(
                     if markers.is_empty() && !bracketed {
                         quoted_attr_value(cls)
                     } else {
-                        format!(
-                            "\"{}\"",
-                            escape_inline_quoted_attr(cls)
-                        )
+                        format!("\"{}\"", escape_inline_quoted_attr(cls))
                     }
                 ));
             }
