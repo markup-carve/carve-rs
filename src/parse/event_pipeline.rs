@@ -3416,6 +3416,7 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         let line_count = body.lines().count();
         let joined = joined_source(&body.lines().collect::<Vec<_>>());
         let mapped = MappedSource {
+            newlines_counted: (0, 0),
             source: joined,
             line_map: (body_start_line..body_start_line + line_count)
                 .map(Some)
@@ -3819,6 +3820,7 @@ pub(super) fn parse_document_with_custom_options(
             let line_count = body.lines().count();
             let joined = joined_source(&body.lines().collect::<Vec<_>>());
             let mapped = MappedSource {
+                newlines_counted: (0, 0),
                 source: joined,
                 line_map: (body_start_line..body_start_line + line_count)
                     .map(Some)

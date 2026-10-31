@@ -1895,7 +1895,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             && stream.source.lines().skip(1).all(is_blank_line)
         {
             if let Some(end) = stream.source.find('\n') {
-                stream.source.truncate(end);
+                let mut kept = std::mem::take(&mut stream.source);
+                kept.truncate(end);
+                stream.set_source(kept);
                 stream.line_map.truncate(1);
                 stream.col_map.truncate(1);
                 stream.reached.truncate(1);
@@ -2640,7 +2642,7 @@ fn rebase_quoted_fence_payload(stream: &mut MappedSource, marker_leaf: &str) {
         }
         lines.push(line.to_string());
     }
-    stream.source = lines.join("\n");
+    stream.set_source(lines.join("\n"));
 }
 
 /// After a lazy run, collect the lines that reach the sub-list's content
@@ -2675,6 +2677,6 @@ fn walk_chunk(stream: &mut MappedSource) {
             *column += delta;
         }
     }
-    stream.source = walked;
+    stream.set_source(walked);
     stream.marker_tail = None;
 }
