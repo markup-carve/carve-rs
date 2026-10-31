@@ -229,6 +229,9 @@ struct IndentedNote<'a> {
     container: IndentContainer,
     body_indent: usize,
     note_fence: Option<FenceOpen>,
+    // A fence on a list item's marker line in the body: its payload is never
+    // a definition, though the body's own fence state does not track it.
+    marker_fence: Option<(FenceOpen, usize)>,
     // Is this note's body still open for an INDENTED definition below
     // it? A flush line opens it and a block opener closes it. Only
     // whether, not where: a footnote definition registers wherever it
@@ -275,6 +278,7 @@ impl NoteHost {
 /// Comment and fence opacity of a container-hosted note body.
 struct HostedWalk {
     track: bool,
+    marker_fence: Option<(FenceOpen, usize)>,
     opacity: BodyCommentState,
     admitted_fence: Option<(FenceOpen, usize)>,
     lazy_open: bool,
@@ -800,6 +804,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                     open.content_col = body_indent;
                     open
                 }),
+                marker_fence: marker_line_fence(def.first),
                 body_open_below: false,
                 open_term: term_start_column(def.first).is_some(),
                 retained_below_comment: false,
@@ -1353,6 +1358,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         // for exactly this reason. Without the state here the
         // line was consumed as a definition and vanished from
         // the code block.
+        let in_marker_fence = advance_marker_fence(&mut state.marker_fence, trimmed, &note.lines);
         if let Some(open) = state.note_fence {
             if is_fence_close(trimmed, open) {
                 state.note_fence = None;
@@ -1373,7 +1379,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             })
         {
             state.note_fence = Some(open);
-        } else if (!state.open_term || indent_columns(trimmed) == 0)
+        } else if !in_marker_fence
+            && (!state.open_term || indent_columns(trimmed) == 0)
             && self.hoist_note_link_def(note_link_def_candidate(trimmed, note), *i)
         {
             // A BLOCK'S EXTENT ENDS AT A DEFINITION IT CAN
@@ -1559,6 +1566,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             .get_or_insert_with(|| source.contains("%%%") || source.contains("~~~"));
         let mut walk = HostedWalk {
             track,
+            marker_fence: marker_line_fence(def.first),
             opacity: BodyCommentState::new(),
             admitted_fence: None,
             lazy_open: false,
@@ -1825,7 +1833,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         // A link definition at the note's own column is metadata,
         // even when an open marker-line paragraph precedes it.
         let definition_text = note_link_def_candidate(&dedented, note);
+        let in_marker_fence = advance_marker_fence(&mut walk.marker_fence, &dedented, &note.lines);
         if indent_columns(line) >= host.note_floor
+            && !in_marker_fence
             && walk.admitted_fence.is_none()
             && walk.opacity.comment.is_none()
             && walk.opacity.code.is_none()
@@ -2034,6 +2044,53 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             self.note_link_defs,
         )
     }
+}
+
+/// Track a fence opened on a list item's marker line through one body line and
+/// say whether the line is that fence's payload or closer. The fence ends with
+/// its item, at a line below the item's content column, and a marker folded into
+/// a paragraph opens none.
+fn advance_marker_fence(
+    fence: &mut Option<(FenceOpen, usize)>,
+    line: &str,
+    body: &[String],
+) -> bool {
+    let ended =
+        fence.is_some_and(|(_, column)| !is_blank_line(line) && indent_columns(line) < column);
+    if ended {
+        *fence = None;
+    }
+    if let Some((open, _)) = *fence {
+        if is_fence_close(trim_ascii_start(line), open) {
+            *fence = None;
+        }
+        return true;
+    }
+    // A line the ended fence held, or its closer, leaves no paragraph open.
+    if ended
+        || !body.last().is_some_and(|above| {
+            let above = trim_ascii_start(above);
+            !is_blank_line(above)
+                && detect_list_marker_full(above).is_none()
+                && detect_fence_open(above).is_none()
+        })
+    {
+        *fence = marker_line_fence(line);
+    }
+    false
+}
+
+/// The fence a line opens on a list item's marker line, with the item's
+/// content column, if any.
+fn marker_line_fence(line: &str) -> Option<(FenceOpen, usize)> {
+    let indent = indent_columns(line);
+    let line = trim_ascii_start(line);
+    let bottom = innermost_marker_content(line);
+    if bottom.len() == line.len() {
+        return None;
+    }
+    let column = indent + innermost_marker_content_col(line);
+    detect_fence_open(bottom).map(|open| (open, column))
 }
 
 fn note_link_def_candidate<'a>(line: &'a str, note: &NoteBody) -> &'a str {
