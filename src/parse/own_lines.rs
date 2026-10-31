@@ -1091,6 +1091,35 @@ impl<'a> Walk<'a> {
         self.frames.last_mut().expect("the document frame stays")
     }
 
+    fn carry_attr_continuation(
+        &mut self,
+        at: usize,
+        line: usize,
+        reached: usize,
+        c: &mut Cursor<'_>,
+        tracing: bool,
+    ) -> bool {
+        let Some((left, cut)) = self.attr_rest.take() else {
+            return false;
+        };
+        let missed_quote = self.frames[reached + 1..]
+            .iter()
+            .any(|frame| frame.kind == Kind::Quote);
+        if missed_quote {
+            return false;
+        }
+        let target = c.col.saturating_sub(cut).max(self.top().canon);
+        c.lead_at(target, false);
+        if left > 1 {
+            self.attr_rest = Some((left - 1, cut));
+        }
+        if tracing {
+            let record = TraceRecord::new(line, "S5", self.deepest(), Some("CARVE-P0-024"), "leaf");
+            self.emit(at, record);
+        }
+        true
+    }
+
     fn line(&mut self, at: usize, c: &mut Cursor<'_>, after_plus: &mut bool) {
         let tracing = self.trace.is_some();
         let line = self.first_line + at;
@@ -1182,23 +1211,8 @@ impl<'a> Walk<'a> {
         *after_plus = false;
         let missed = reached < self.frames.len() - 1;
         self.reach = reached;
-        if let Some((left, cut)) = self.attr_rest.take() {
-            let missed_quote = self.frames[reached + 1..]
-                .iter()
-                .any(|frame| frame.kind == Kind::Quote);
-            if !missed_quote {
-                let target = c.col.saturating_sub(cut).max(self.top().canon);
-                c.lead_at(target, false);
-                if left > 1 {
-                    self.attr_rest = Some((left - 1, cut));
-                }
-                if tracing {
-                    let record =
-                        TraceRecord::new(line, "S5", self.deepest(), Some("CARVE-P0-024"), "leaf");
-                    self.emit(at, record);
-                }
-                return;
-            }
+        if self.carry_attr_continuation(at, line, reached, c, tracing) {
+            return;
         }
         let inner = self.frames.last().expect("document frame");
         if inner.kind == Kind::Fence && !missed {
