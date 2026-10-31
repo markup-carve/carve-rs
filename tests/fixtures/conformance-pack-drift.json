@@ -38,7 +38,6 @@
         "fences-97b499ad9a5e",
         "fences-e6b042364968",
         "fences-e727fbef63d9",
-        "fences-ee4a1e36de97",
         "fences-f413c9695b09"
       ]
     },
@@ -118,26 +117,13 @@
       "ticket": "markup-carve/carve#4033",
       "cause": "an unclosed fence in a description or footnote body drops its trailing blank run",
       "cases": [
-        "fences-1003c5a0c605",
-        "fences-78bb999cca42",
-        "fences-9caa332a8a41",
-        "fences-e0c82ffb018d",
-        "fences-e4b9e8e7d607",
-        "notes-04e6ac52d99b",
-        "notes-3534a9739250",
-        "notes-37e54703513f",
-        "notes-499cdee61630",
-        "notes-50dee4b44d0d",
-        "notes-9429cd878645",
-        "notes-ac7d6a615617",
-        "ownership-35dce7b7ed21"
+        "fences-9caa332a8a41"
       ]
     },
     {
       "ticket": "markup-carve/carve-rs#3534",
       "cause": "untriaged drift in the fences family at the e7952c45 pin",
       "cases": [
-        "fences-a6ede733e700"
       ]
     },
     {
@@ -170,9 +156,7 @@
         "lazy-dc0e3940e686",
         "lazy-f60632f36c87",
         "lazy-fbd48cd0e8d7",
-        "ownership-8ee51def382e",
         "ownership-bd5caf2c0c4d",
-        "ownership-f93c4ff64ea3",
         "roundtrip-d27a8c0b8e38",
         "lazy-353dc1c74791",
         "lazy-7753aedc9422",
