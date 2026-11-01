@@ -49,7 +49,7 @@ impl Closer {
             Closer::Fence(ch, len) => {
                 col <= open_col && pure_fence(rest).is_some_and(|(c, n)| c == ch && n >= len)
             }
-            Closer::Colon(run) => colon_closer(rest) == Some(run),
+            Closer::Colon(run) => col <= open_col && colon_closer(rest) == Some(run),
             Closer::Comment(run) => comment_run(rest) == Some(run),
         }
     }
@@ -1163,12 +1163,13 @@ impl<'a> Walk<'a> {
         let Some(block) = block.or_else(|| self.pending_line_block.take()) else {
             return false;
         };
-        let next_is_bare_closer = self.lines.get(at + 1).is_some_and(|next| {
-            quote_marker(trim_ascii_start(next)).is_none()
-                && block
-                    .closer
-                    .is_some_and(|closer| closer.closes(trim_ascii_start(next), 0, block.open_col))
-        });
+        // A lazy stanza line does not end the line block. The next nonblank
+        // line is payload whenever it still reaches the block's host column,
+        // even if it spells a quote, fence, or a colon run past the opener's column.
+        let next_reaches_block = self
+            .lines
+            .get(at + 1)
+            .is_some_and(|next| !is_blank_line(next) && indent_cols(next).0 >= block.open_col);
         if !matches!(form, Form::Text)
             || at == 0
             || self.lines[at - 1].trim().is_empty()
@@ -1176,7 +1177,7 @@ impl<'a> Walk<'a> {
         {
             return false;
         }
-        if !next_is_bare_closer {
+        if !next_reaches_block {
             self.pending_line_block = Some(block);
             return false;
         }
@@ -1375,8 +1376,8 @@ impl<'a> Walk<'a> {
         self.end_closed_lists(c);
         let form = self.classify(c.rest, reached, at);
         // A plain line can continue a line block's open stanza lazily. Restore
-        // its frame only when the next source line is its bare closer; quoted
-        // or other sibling constructs must still use the normal owner walk.
+        // its frame when the next nonblank line reaches the block's column;
+        // a line left of it exits through the normal owner walk.
         if self.retain_lazy_line_block(at, c, reached, &form, missed_line_block) {
             return;
         }
