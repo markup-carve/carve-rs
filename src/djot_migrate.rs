@@ -156,7 +156,7 @@ fn loosen_lists_behind_empty_leads(carve: String) -> String {
     let empty_lead = cached_regex!(r"^( *)([-*]|\d+[.)]) (?:\[[ xX]\] )?%%$").unwrap();
     let indent = |line: &str| line.len() - line.trim_start_matches(' ').len();
     let fence_line = cached_regex!(r"^(?:[ \t]*>[ \t]?)*[ \t]*(`{3,}|~{3,})(.*)$").unwrap();
-    let mut lines: Vec<String> = carve.split('\n').map(str::to_owned).collect();
+    let lines: Vec<&str> = carve.split('\n').collect();
     let mut in_fence = vec![false; lines.len()];
     let mut fence: Option<(u8, usize)> = None;
     for (index, line) in lines.iter().enumerate() {
@@ -176,6 +176,7 @@ fn loosen_lists_behind_empty_leads(carve: String) -> String {
         }
         fence = run.map(|(ch, len, _)| (ch, len));
     }
+    let mut starts: Vec<(usize, usize)> = Vec::new();
     let mut index = lines.len();
     while index > 0 {
         index -= 1;
@@ -183,7 +184,7 @@ fn loosen_lists_behind_empty_leads(carve: String) -> String {
             continue;
         }
         let Some((column, marker)) = empty_lead
-            .captures(&lines[index])
+            .captures(lines[index])
             .map(|caps| (caps[1].len(), caps[2].to_owned()))
         else {
             continue;
@@ -196,9 +197,16 @@ fn loosen_lists_behind_empty_leads(carve: String) -> String {
         if !opens_paragraph {
             continue;
         }
+        // Scanning upward, a list already marked at this column holds this item.
+        if starts
+            .last()
+            .is_some_and(|&(first, at)| at == column && first <= index)
+        {
+            continue;
+        }
         let mut first = index;
         while let Some(above) = (0..first).rev().find(|at| !lines[*at].is_empty()) {
-            let same_list = indent(&lines[above]) > column
+            let same_list = indent(lines[above]) > column
                 || lines[above]
                     .get(column..)
                     .is_some_and(|rest| rest.starts_with(&marker));
@@ -207,12 +215,24 @@ fn loosen_lists_behind_empty_leads(carve: String) -> String {
             }
             first = above;
         }
-        let placed = format!("{}{{loose}}", " ".repeat(column));
-        if first == 0 || lines[first - 1] != placed {
-            lines.insert(first, placed);
-        }
+        starts.push((first, column));
     }
-    lines.join("\n")
+    let mut out = String::with_capacity(carve.len() + starts.len() * 8);
+    let mut starts = starts.into_iter().rev().peekable();
+    for (at, line) in lines.iter().enumerate() {
+        if at > 0 {
+            out.push('\n');
+        }
+        while let Some((_, column)) = starts.next_if(|&(first, _)| first == at) {
+            let placed = format!("{}{{loose}}", " ".repeat(column));
+            if at == 0 || lines[at - 1] != placed {
+                out.push_str(&placed);
+                out.push('\n');
+            }
+        }
+        out.push_str(line);
+    }
+    out
 }
 
 fn spell_empty_item_placeholders(carve: String) -> String {

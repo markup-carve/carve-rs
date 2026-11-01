@@ -30,6 +30,9 @@ fn a_second_paragraph_after_the_first_visible_block_still_loosens() {
 fn the_djot_importer_keeps_a_loose_list_behind_an_empty_lead_loose() {
     let carve = carve::djot_to_carve("- [ ] {.c}\n\n  para\n");
     assert!(to_html(&carve).contains("<p>para</p>"), "{carve}");
+    let two = carve::djot_to_carve("- [ ] {.c}\n\n  a\n\n- [ ] {.c}\n\n  b\n");
+    assert_eq!(two.matches("{loose}").count(), 1, "{two}");
+    assert_eq!(to_html(&two).matches("<p>").count(), 2, "{two}");
     for fenced in [
         "```\n- %%\n\n  text\n```\n",
         "```\n```bad\n- %%\n\n  text\n```\n",
