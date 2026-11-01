@@ -305,3 +305,7 @@ path = "tests/fx27_nested_sibling_after_lazy.rs"
 [[test]]
 name = "closed_first_block_attachment_boundary"
 path = "tests/closed_first_block_attachment_boundary.rs"
+
+[[test]]
+name = "accepted_plus_closes_body_fences"
+path = "tests/accepted_plus_closes_body_fences.rs"

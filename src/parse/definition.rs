@@ -579,6 +579,51 @@ pub(in crate::parse) struct DefinitionBodyFence {
     line_block: Option<usize>,
 }
 
+/// Colon containers still open in a collected definition or note body. The
+/// body's comment state handles opaque code and comment lines separately.
+#[derive(Default)]
+pub(in crate::parse) struct OpenBodyColons {
+    widths: Vec<usize>,
+    literal: Option<usize>,
+}
+
+impl OpenBodyColons {
+    pub(in crate::parse) fn from_source(source: &str) -> Self {
+        let mut result = Self::default();
+        let mut comments = BodyCommentState::new();
+        for line in source.lines() {
+            let opaque = comments.code.is_some() || comments.comment.is_some();
+            comments.observe(line);
+            if !opaque && comments.code.is_none() && comments.comment.is_none() {
+                result.observe(line);
+            }
+        }
+        result
+    }
+
+    pub(in crate::parse) fn observe(&mut self, raw: &str) {
+        let line = trim_ascii_start(strip_lazy(raw));
+        if let Some(width) = self.literal {
+            if exact_colon_fence_len(line) == Some(width) {
+                self.literal = None;
+            }
+            return;
+        }
+        if let Some(width) = detect_line_block_open(line)
+            .or_else(|| detect_hardbreaks_block_open(line))
+            .or_else(|| detect_quote_block_open(line))
+        {
+            self.literal = Some(width);
+            return;
+        }
+        track_collected_colon_fence(&mut self.widths, line, true);
+    }
+
+    pub(in crate::parse) fn closing_widths(&self) -> impl Iterator<Item = usize> + '_ {
+        self.widths.iter().rev().copied()
+    }
+}
+
 impl DefinitionBodyFence {
     /// S4's lazy branch continues an open PARAGRAPH, and a verbatim body is not
     /// one - neither while it runs nor once it has finished. A CLOSED code block
@@ -837,6 +882,7 @@ struct DefinitionBodyCollector<'s, 'o> {
     retained_below_comment: bool,
     retained_comment_column: usize,
     comment_state: BodyCommentState,
+    open_colons: OpenBodyColons,
     retained_fence: Option<(FenceOpen, bool)>,
     // Seeded from the marker line's own content: does the body's LEAD open a
     // code fence NESTED past a list marker? Its verbatim body is the flush-left
@@ -926,6 +972,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             retained_below_comment: false,
             retained_comment_column: 0,
             comment_state,
+            open_colons: OpenBodyColons::from_source(seed),
             retained_fence: None,
             nested_lead_fence,
         }
@@ -956,7 +1003,11 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
     }
 
     fn push(&mut self, text: String, line: Option<usize>, col: Option<isize>, reached: bool) {
+        let opaque = self.comment_state.code.is_some() || self.comment_state.comment.is_some();
         self.comment_state.observe(&text);
+        if !opaque && self.comment_state.code.is_none() && self.comment_state.comment.is_none() {
+            self.open_colons.observe(&text);
+        }
         self.lines.push(text);
         self.line_map.push(line);
         self.col_map.push(col);
@@ -1059,6 +1110,10 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
                     .repeat(open.fence_len);
                 self.push(closer, None, None, false);
                 fence.closed_last = true;
+            }
+            let closing: Vec<_> = self.open_colons.closing_widths().collect();
+            for width in closing {
+                self.push(":".repeat(width), None, None, false);
             }
             self.take_plus_block(cur, column);
             return BodyStep::Next;
