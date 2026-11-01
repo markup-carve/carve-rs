@@ -581,6 +581,14 @@ fn colon_fence_openers_end_blockquote_lazy_continuation() {
     );
 }
 
+#[test]
+fn a_colon_run_inside_a_quoted_table_continuation_opens_no_paragraph() {
+    assert_eq!(
+        html("> | a |\n> + b ::::|\ntail\n"),
+        "<blockquote>\n  <table>\n    <tbody>\n      <tr><td>a b ::::</td></tr>\n    </tbody>\n  </table>\n</blockquote>\n<p>tail</p>"
+    );
+}
+
 /// §8 smart-quote flanking battery (HTML path): a quote OPENS (left `“`/`‘`)
 /// after start-of-content, whitespace/NBSP, or one of `( [ { = : - /`, an en/em
 /// dash, or a nested opening curly quote; otherwise it CLOSES (right `”`/`’`).
