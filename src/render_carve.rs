@@ -4997,17 +4997,28 @@ fn guard_code_lines(
             regex::Regex::new(r"^(?:>(?: |$)|:{3,}(?:[ \t]*$|[ \t]+)|\[[^\]\n]+\]:[ \t])").unwrap()
         })
     };
-    written
-        .split('\n')
+    let lines: Vec<_> = written.split('\n').collect();
+    lines
+        .iter()
         .enumerate()
         .map(|(index, line)| {
+            if index > 0
+                && index + 1 < lines.len()
+                && line.len() >= 3
+                && line.bytes().all(|byte| byte == b':')
+            {
+                crate::render_carve_error::record_unspellable(
+                    node_type,
+                    "an interior colon run opens a block at every paragraph column",
+                );
+            }
             if index > 0 && marker.is_match(line) {
                 if ctx.in_term {
                     crate::render_carve_error::record_unspellable(
                         node_type,
                         "a block marker on a continuation line ends the definition term",
                     );
-                    return line.to_owned();
+                    return (*line).to_owned();
                 }
                 if ctx.in_footnote_body && line.starts_with('>') {
                     ctx.footnote_guard_types.push(node_type);
@@ -5020,7 +5031,7 @@ fn guard_code_lines(
                 note_inserted(session, kind);
                 format!("{}{line}", sentinel(session, kind))
             } else {
-                line.to_owned()
+                (*line).to_owned()
             }
         })
         .collect::<Vec<_>>()
