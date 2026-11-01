@@ -345,3 +345,7 @@ path = "tests/a_marker_column_plus_after_a_missed_term.rs"
 [[test]]
 name = "accepted_plus_follower_keeps_its_host"
 path = "tests/accepted_plus_follower_keeps_its_host.rs"
+
+[[test]]
+name = "a_first_block_quote_keeps_its_item_column"
+path = "tests/a_first_block_quote_keeps_its_item_column.rs"

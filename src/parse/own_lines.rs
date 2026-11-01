@@ -1261,6 +1261,23 @@ impl<'a> Walk<'a> {
         }
     }
 
+    fn closed_column_after_quote(&self, reached: usize) -> bool {
+        let first_block = self.attached.as_ref().is_some_and(|attached| {
+            attached.from > 0
+                && attached
+                    .frames
+                    .last()
+                    .is_some_and(|f| matches!(f.kind, Kind::Item | Kind::Dd))
+                && !is_cont_marker(quoted_rest(self.lines[attached.from - 1]))
+        });
+        let closed = &self.frames[reached + 1..];
+        if first_block {
+            closed.first().is_some_and(|f| f.kind != Kind::Quote)
+        } else {
+            closed.iter().any(|f| f.kind != Kind::Quote)
+        }
+    }
+
     fn line(&mut self, at: usize, c: &mut Cursor<'_>, after_plus: &mut bool) {
         let tracing = self.trace.is_some();
         let line = self.first_line + at;
@@ -1545,9 +1562,7 @@ impl<'a> Walk<'a> {
             record.plus = plus_follower.then(|| line - 1);
             record
         });
-        let closed_column = self.frames[reached + 1..]
-            .iter()
-            .any(|f| f.kind != Kind::Quote);
+        let closed_column = self.closed_column_after_quote(reached);
         self.close_frames_after(reached, c);
         if c.rest.is_empty() {
             self.top().para = false;
