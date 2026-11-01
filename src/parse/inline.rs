@@ -132,6 +132,28 @@ pub(in crate::parse) fn position_citation_items_from_map(
 }
 
 impl InlineBounds<'_> {
+    fn with_brackets<'a>(
+        &self,
+        matches: &'a [usize],
+        openers: &'a [usize],
+        run_at: &'a [usize],
+    ) -> InlineBounds<'a> {
+        InlineBounds {
+            matches,
+            openers,
+            run_at,
+            last_close_paren: self.last_close_paren,
+            last_close_brace: self.last_close_brace,
+            last_close_bracket: self.last_close_bracket,
+            last_gt: self.last_gt,
+            crossref_invalid_range: Cell::new(self.crossref_invalid_range.get()),
+            delim_brace: self.delim_brace,
+            braced_closers: RefCell::new(None),
+            native_pairs: self.native_pairs.clone(),
+            footnote_refs: self.footnote_refs,
+        }
+    }
+
     pub(in crate::parse) fn braced_closers(
         &self,
         bytes: &[u8],
@@ -533,6 +555,7 @@ pub(in crate::parse) fn parse_inline_context_with_pairs(
         ),
         quotes: &quotes,
         citation_brackets: std::cell::OnceCell::new(),
+        declined_image_link_brackets: std::cell::OnceCell::new(),
         // Keeps `_a](`×n / `*a](`×n linear. See cached_find_emphasis_close.
         emphasis_no_close: EmphasisMemo::default(),
         open_entry_at: None,
@@ -765,6 +788,7 @@ struct InlineRun<'a, 'o> {
     bounds: InlineBounds<'a>,
     quotes: &'a quote_state::Frame,
     citation_brackets: std::cell::OnceCell<HashMap<usize, usize>>,
+    declined_image_link_brackets: std::cell::OnceCell<(Vec<usize>, Vec<usize>, Vec<usize>)>,
     emphasis_no_close: EmphasisMemo,
     // The last unpaired open entry on this level's delimiter stack and the
     // kinds held (E3): a `_` or `/` guard counts only where it stands as one
@@ -1298,7 +1322,19 @@ impl InlineRun<'_, '_> {
         if !self.has_link_trigger {
             return None;
         }
-        let bounds = &self.bounds;
+        let fallback =
+            if i > 0 && bytes[i - 1] == b'!' && self.last_delimited_comment_close.is_some() {
+                let (matches, openers, run_at) =
+                    self.declined_image_link_brackets.get_or_init(|| {
+                        let (matches, run_at) = compute_link_bracket_runs(bytes, !in_footnote);
+                        let openers = compute_bracket_openers(&matches);
+                        (matches, openers, run_at)
+                    });
+                Some(self.bounds.with_brackets(matches, openers, run_at))
+            } else {
+                None
+            };
+        let bounds = fallback.as_ref().unwrap_or(&self.bounds);
         if let Some(end) = reserved_reference_tail(bytes, i, bounds) {
             return Some(self.emit(
                 InlineNode::Text(Text {
