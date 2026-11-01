@@ -7,7 +7,11 @@ pub(in crate::parse) fn parse_blockquote(
     let (span_start, parts, _) = collect_blockquote_body(cur, options);
     let mut children = Vec::new();
     for part in parts {
-        let source = part.into_source();
+        let mut source = part.into_source();
+        // Each marked line reached this quote through its own `>` prefix.
+        // Reach flags inherited from an enclosing item describe that item's
+        // column, not ownership inside the quote's re-parsed body.
+        source.reached.clear();
         let blocks = parse_quoted_mapped_source(&source, options);
         drop(source);
         children.extend(blocks);
