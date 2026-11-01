@@ -91,7 +91,10 @@ fn the_nested_description_boundary_survives_a_quote_or_an_outer_item() {
 #[test]
 fn the_separator_must_reach_the_innermost_marker_line_item() {
     for indent in [4, 5] {
-        let source = format!(":: t\n: - - :: t\n{}: [r]:\n         /u\n", " ".repeat(indent));
+        let source = format!(
+            ":: t\n: - - :: t\n{}: [r]:\n         /u\n",
+            " ".repeat(indent)
+        );
         let html = to_html(&source);
         assert!(html.contains(": [r]:"), "{indent}: {html}");
     }
