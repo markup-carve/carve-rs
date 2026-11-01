@@ -634,25 +634,31 @@ pub(in crate::parse) fn body_ends_with_an_unnoded_interrupter(source: &str) -> b
 
 /// Does the body end on a payload line of a line block no closer has ended?
 /// That line is stanza text whatever it looks like (PART 2 `line_block`).
-fn body_ends_in_line_block_payload(source: &str) -> bool {
+fn innermost_host_tail(mut line: &str) -> &str {
+    loop {
+        let tail = innermost_marker_tail(line).1;
+        let Some((rest, _)) = strip_definition_marker(tail) else {
+            return tail;
+        };
+        line = trim_ascii_start(rest);
+    }
+}
+
+pub(crate) fn body_ends_in_line_block_payload(source: &str) -> bool {
     let mut open = None;
     let mut last_is_payload = false;
-    for (index, line) in source.lines().enumerate() {
+    for line in source.lines() {
         let mut local = trim_ascii_start(line);
         while let Some(rest) = strip_blockquote_prefix(local) {
             local = trim_ascii_start(rest);
-        }
-        // A line block opened past a list marker belongs to the item's own
-        // collector; the spec model refuses an attribute-shaped payload there
-        // (reported on carve#4748), so this test stays out of it.
-        if index == 0 && innermost_marker_tail(local).0 > 0 {
-            return false;
         }
         last_is_payload = false;
         match open {
             Some(len) if exact_colon_fence_len(local) == Some(len) => open = None,
             Some(_) => last_is_payload = !is_blank_line(local),
-            None => open = detect_line_block_open(local),
+            // A line block opened past list or description markers is still a
+            // stanza of this body (carve#4748, row 910).
+            None => open = detect_line_block_open(innermost_host_tail(local)),
         }
     }
     last_is_payload
