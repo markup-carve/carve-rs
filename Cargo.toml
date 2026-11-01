@@ -337,3 +337,7 @@ path = "tests/table_cell_authored_spans.rs"
 [[test]]
 name = "a_verbatim_interior_colon_run_is_unspellable"
 path = "tests/a_verbatim_interior_colon_run_is_unspellable.rs"
+
+[[test]]
+name = "a_marker_column_plus_after_a_missed_term"
+path = "tests/a_marker_column_plus_after_a_missed_term.rs"
