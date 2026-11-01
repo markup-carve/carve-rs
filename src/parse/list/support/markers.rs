@@ -955,12 +955,37 @@ fn body_ends_with_wrapped_attribute(body: &str) -> bool {
 /// CARVE-P0-012), so the plain check, which sees the `>` first, misses it. A
 /// definition at the quote's own column leaves the document-column
 /// placeholder, which here is still inside the quote.
+/// Whether the body's last line is a bare `>` run: the quote's blank line.
+pub(crate) fn quoted_body_ends_with_a_blank_line(body: &str) -> bool {
+    let Some(mut local) = body.lines().rev().find(|line| !is_blank_line(line)) else {
+        return false;
+    };
+    let mut quoted = false;
+    loop {
+        local = trim_ascii_start(local);
+        if let Some(rest) = strip_blockquote_prefix(local) {
+            quoted = true;
+            local = rest;
+        } else if let Some(marker) = detect_list_marker_full(local) {
+            local = marker.content;
+        } else {
+            break;
+        }
+    }
+    quoted && is_blank_line(local)
+}
+
 pub(crate) fn quoted_body_ends_with_an_invisible_line(body: &str) -> bool {
     let Some(last) = body.lines().rev().find(|line| !is_blank_line(line)) else {
         return false;
     };
     if strip_blockquote_prefix(trim_ascii_start(last)).is_none() {
         return false;
+    }
+    // A bare `>` is the quote's blank line (CARVE-P9-080): no paragraph is
+    // left open for a lazy line.
+    if quoted_body_ends_with_a_blank_line(body) {
+        return true;
     }
     // The innermost quote's residue, with its depth.
     let residue = |line: &str| -> (usize, String) {
@@ -1087,7 +1112,7 @@ pub(crate) fn nested_ends_with_open_paragraph(
     {
         return false;
     }
-    if body_ends_with_wrapped_attribute(nested) {
+    if body_ends_with_wrapped_attribute(nested) || quoted_body_ends_with_a_blank_line(nested) {
         return false;
     }
     if !below_outer_column
