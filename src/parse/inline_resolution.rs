@@ -771,7 +771,7 @@ fn crossref_title(label: &str, number: &str) -> String {
 }
 
 fn caption_label(caption: &[InlineNode], placeholder: usize, number: &str) -> CrossrefLabel {
-    let mut nodes = derive_display_nodes(&caption[..placeholder], true);
+    let mut nodes = crossref_label_clone(&caption[..placeholder]);
     if let Some(InlineNode::Text(last)) = nodes.last_mut() {
         last.value
             .truncate(last.value.trim_end_matches(char::is_whitespace).len());

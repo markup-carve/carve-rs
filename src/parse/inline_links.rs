@@ -1501,6 +1501,7 @@ pub(in crate::parse) fn match_emphasis(
                 OpenKinds::pass_on(
                     OpenKinds::bit(b'/') | OpenKinds::bit(b'*') | OpenKinds::COMBINED,
                 );
+                let _bare = BareEmphasisRun::enter();
                 return Some((
                     InlineNode::Emphasis(Emphasis {
                         attrs: None,
@@ -1596,6 +1597,7 @@ pub(in crate::parse) fn match_emphasis(
     }
     let inner = std::str::from_utf8(&bytes[i + 1..close]).ok()?;
     OpenKinds::pass_on(OpenKinds::bit(delim));
+    let _bare = BareEmphasisRun::enter();
     Some((
         InlineNode::Emphasis(Emphasis {
             attrs: None,

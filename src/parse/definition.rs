@@ -1738,7 +1738,9 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
                 BodyStep::Next
             }
             _ => {
-                if body_lines_hold_open_code_fence(&self.lines) {
+                // A fence the marker line opens past a list marker is open too (carve#4741).
+                if self.nested_lead_fence.is_some() || body_lines_hold_open_code_fence(&self.lines)
+                {
                     self.keep_blanks_for_open_fence(cur, cur.pos + look);
                 }
                 BodyStep::Stop

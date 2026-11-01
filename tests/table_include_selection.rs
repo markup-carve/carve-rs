@@ -421,3 +421,24 @@ fn a_cols_backslash_escapes_ascii_punctuation_only() {
         .unwrap()
         .contains("<th scope=\"col\">a,b</th>"));
 }
+
+#[test]
+fn a_quoted_option_value_selects_like_its_bare_spelling() {
+    let payload = "Name,Qty\nA,1\nB,2\n";
+    let bare = render_html(&expand("{{ data.csv @code:csv @lines:2-2 }}", payload).doc).unwrap();
+    for quoted in [
+        r#"@lines:"2-2""#,
+        "@lines:'2-2'",
+        r#"@code:"csv" @lines:2-2"#,
+    ] {
+        let source =
+            format!("{{{{ data.csv @code:csv {quoted} }}}}").replace("@code:csv @code", "@code");
+        let result = expand(&source, payload);
+        assert!(
+            result.warnings.is_empty(),
+            "{quoted}: {:?}",
+            result.warnings
+        );
+        assert_eq!(render_html(&result.doc).unwrap(), bare, "{quoted}");
+    }
+}

@@ -380,6 +380,34 @@ pub(in crate::parse) fn parse_inline_context(
 thread_local! {
     static INLINE_FRAMES: Cell<usize> = const { Cell::new(0) };
     static INLINE_SOURCE: RefCell<Option<(String, usize)>> = const { RefCell::new(None) };
+    /// A top run holding a link trigger spends no depth (carve-rs#3349), but
+    /// it is still level 1 for an attribute span (carve#4681).
+    static TOP_RUN_UNCOUNTED: Cell<bool> = const { Cell::new(false) };
+    /// Bare emphasis runs entered: each spends depth here but is no level of
+    /// the attribute-span cap (spec model `bracketed`).
+    static BARE_EMPHASIS_RUNS: Cell<usize> = const { Cell::new(0) };
+}
+
+/// The inline level of the run being read, counting the top run as level 1.
+fn inline_level() -> usize {
+    (NESTING_DEPTH.with(Cell::get) + usize::from(TOP_RUN_UNCOUNTED.with(Cell::get)))
+        .saturating_sub(BARE_EMPHASIS_RUNS.with(Cell::get))
+}
+
+/// Holds one bare emphasis run open for [`inline_level`].
+pub(in crate::parse) struct BareEmphasisRun;
+
+impl BareEmphasisRun {
+    pub(in crate::parse) fn enter() -> Self {
+        BARE_EMPHASIS_RUNS.with(|runs| runs.set(runs.get() + 1));
+        Self
+    }
+}
+
+impl Drop for BareEmphasisRun {
+    fn drop(&mut self) {
+        BARE_EMPHASIS_RUNS.with(|runs| runs.set(runs.get() - 1));
+    }
 }
 
 struct InlineFrame {
@@ -409,6 +437,7 @@ impl Drop for InlineFrame {
             frames.set(remaining);
             if remaining == 0 {
                 INLINE_SOURCE.with(|source| *source.borrow_mut() = None);
+                TOP_RUN_UNCOUNTED.with(|flag| flag.set(false));
             }
         });
         if let Some(block_depth) = self.block_depth {
@@ -455,6 +484,9 @@ pub(in crate::parse) fn parse_inline_context_with_pairs(
         }
         None
     };
+    if !nested {
+        TOP_RUN_UNCOUNTED.with(|flag| flag.set(has_link_trigger));
+    }
     if nested && has_link_trigger && NESTING_DEPTH.with(Cell::get) >= MAX_NESTING_DEPTH {
         return vec![InlineNode::text(text.to_string())];
     }
@@ -1283,10 +1315,7 @@ impl InlineRun<'_, '_> {
                     parse_reference_link(bytes, i, options, in_footnote, bounds, positions, base)
                 })
                 .map(|(link, consumed)| (InlineNode::Link(link), consumed))
-                .or_else(|| {
-                    parse_span(bytes, i, options, in_footnote, bounds, positions, base)
-                        .map(|(span, consumed)| (InlineNode::Span(span), consumed))
-                })?;
+                .or_else(|| parse_span(bytes, i, options, in_footnote, bounds, positions, base))?;
         Some(self.emit(node, i, consumed))
     }
 
@@ -2596,7 +2625,7 @@ pub(in crate::parse) fn parse_span(
     bounds: &InlineBounds<'_>,
     positions: Option<&InlinePositionMap<'_>>,
     base: usize,
-) -> Option<(Span, usize)> {
+) -> Option<(InlineNode, usize)> {
     let content_close = bracketed_close(bytes, start, bounds.matches)?;
     let after_bracket = content_close + 1;
     if bytes.get(after_bracket) != Some(&b'{') {
@@ -2620,13 +2649,18 @@ pub(in crate::parse) fn parse_span(
             None => break,
         }
     }
+    // PART 9 §22: a formed attribute span over the cap stays literal as a whole.
+    if inline_level() >= MAX_NESTING_DEPTH {
+        let literal = std::str::from_utf8(&bytes[start..after_attrs]).ok()?;
+        return Some((InlineNode::text(literal.to_string()), after_attrs - start));
+    }
     // Only a valid `{attrs}` follow reaches here, so the content copy stays off
     // the failing `[...]` path (e.g. `[...]()` never gets past the `{` check).
     let content = std::str::from_utf8(&bytes[start + 1..content_close])
         .ok()?
         .to_string();
     Some((
-        Span {
+        InlineNode::Span(Span {
             attrs,
             injected: false,
             children: parse_inline_context(
@@ -2638,7 +2672,7 @@ pub(in crate::parse) fn parse_span(
                 base + start + 1,
             ),
             pos: None,
-        },
+        }),
         after_attrs - start,
     ))
 }
