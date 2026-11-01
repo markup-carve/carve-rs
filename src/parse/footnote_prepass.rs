@@ -1353,6 +1353,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         {
             return Some(Flow::Stop);
         }
+        // S1 tests an open span's closer before ownership (carve#4721).
         if below_comment
             && column == 0
             && state.below_comment_span.is_none()
@@ -1361,6 +1362,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                     .get(&open.fence_len)
                     .is_some_and(|&last| last > *i)
             })
+            && !closes_a_held_comment_span(&note.lines, line)
         {
             return Some(Flow::Stop);
         }
