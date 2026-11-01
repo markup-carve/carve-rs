@@ -1746,8 +1746,52 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             }) {
                 break;
             }
-            if ended_on_blank {
-                break;
+            if ended_on_blank || self.cur.peek().is_some_and(is_blank_line) {
+                // A blank closes the leaf paragraph, but a preceding lazy
+                // fold did not close its item or list (CARVE-P0-015). Resume
+                // at a sibling marker in the surviving nested list. Three
+                // blanks still end the list.
+                let mut at = self.cur.pos;
+                while at < self.cur.lines.len()
+                    && at < self.cur.pos + 3
+                    && is_blank_line(self.cur.lines.at(at))
+                {
+                    at += 1;
+                }
+                let resumed_column = self.cur.lines.line(at).and_then(|line| {
+                    let column = indent_columns(line);
+                    if is_list_marker(line) && lead.ladder_columns.contains(&column) {
+                        Some(column)
+                    } else if column >= lead.nested_content_col {
+                        Some(lead.nested_content_col)
+                    } else {
+                        None
+                    }
+                });
+                if at == self.cur.pos + 3 || at == self.cur.pos || resumed_column.is_none() {
+                    break;
+                }
+                let resumed_column = resumed_column.unwrap();
+                while self.cur.pos < at {
+                    stream.push_newline_at(
+                        String::new(),
+                        self.cur.source_line(self.cur.pos),
+                        self.cur.source_col(self.cur.pos),
+                    );
+                    self.cur.consume();
+                }
+                let before = self.cur.pos;
+                ended_on_blank = resume_marker_sublist(
+                    self.cur,
+                    stream,
+                    resumed_column,
+                    self.content_col,
+                    self.options,
+                );
+                if self.cur.pos == before {
+                    break;
+                }
+                continue;
             }
             if self
                 .cur
