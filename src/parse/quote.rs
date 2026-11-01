@@ -1391,6 +1391,9 @@ pub(in crate::parse) fn collect_blockquote_body(
             body.quoted_line(cur, options, line, stripped);
             continue;
         }
+        if body.take_unmarked_comment_closer(cur, line) {
+            continue;
+        }
         if body.attach_after_quoted_plus(cur, options)
             || body.attach_physical_plus(cur, options, line)
             || body.pull_hosted_block(cur, options, line)
@@ -1506,6 +1509,29 @@ struct QuoteBody<'a> {
 }
 
 impl<'a> QuoteBody<'a> {
+    fn take_unmarked_comment_closer(&mut self, cur: &mut LineCursor<'a>, line: &str) -> bool {
+        let Some((run, depth, _)) = self.comment_run else {
+            return false;
+        };
+        if !closes_open_comment_fence(
+            line,
+            OpenCommentFence {
+                fence_len: run,
+                quote_depth: depth + 1,
+            },
+        ) {
+            return false;
+        }
+        let at = cur.pos;
+        self.note_comment_run(line);
+        self.inner
+            .push_at(line.to_string(), cur.source_line(at), cur.source_col(at));
+        cur.consume();
+        self.last_quoted_at = Some(at);
+        self.para_open = ParaOpen::Closed;
+        true
+    }
+
     fn new(span_start: usize) -> Self {
         Self {
             parts: Vec::new(),
@@ -1673,9 +1699,14 @@ impl<'a> QuoteBody<'a> {
     fn note_comment_run(&mut self, stripped: &str) {
         let (comment_depth, _, comment_text) = prepass_quote_scope(stripped);
         if let Some((run, depth, _)) = self.comment_run {
-            if comment_depth == depth
-                && detect_list_marker_full(trim_ascii_start(stripped)).is_none()
-                && is_comment_fence_close_any_column(comment_text, run)
+            if detect_list_marker_full(trim_ascii_start(stripped)).is_none()
+                && closes_open_comment_fence(
+                    stripped,
+                    OpenCommentFence {
+                        fence_len: run,
+                        quote_depth: depth,
+                    },
+                )
             {
                 for (index, text, column) in self.comment_lazy_lines.drain(..) {
                     self.inner.lines[index].text = text;

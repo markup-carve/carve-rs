@@ -109,16 +109,12 @@ fn a_closer_that_is_not_in_the_same_quote_does_not_close_the_fence() {
     // definition below it is an ordinary definition the block parser publishes,
     // and entering the region on a far closer would swallow it.
     //
-    // The five ways a closer can fail to be in the same quote:
+    // Four ways a closer can fail to close this comment span:
     for (src, why) in [
         ("> %%%\n> [r]: /url\n\nSee [r][].\n", "no closer at all"),
         (
             "> %%%\n> [r]: /url\n\n> %%%\n\nSee [r][].\n",
             "below a blank, so a different quote",
-        ),
-        (
-            "> %%%\n> [r]: /url\n%%%\n\nSee [r][].\n",
-            "back at column 0, outside the quote",
         ),
         (
             "> %%%\n> [r]: /url\n> > %%%\n\nSee [r][].\n",
