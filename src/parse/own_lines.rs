@@ -1176,8 +1176,14 @@ impl<'a> Walk<'a> {
         {
             return false;
         }
+        let next_reaches_block = self
+            .lines
+            .get(at + 1)
+            .is_some_and(|next| !is_blank_line(next) && indent_cols(next).0 >= block.open_col);
         self.frames.push(block);
-        c.lead(c.col);
+        // A stanza's final lazy line is read at the frame's reader column,
+        // not with its authored indentation preserved as inline hard space.
+        c.lead(if next_reaches_block { c.col } else { 0 });
         if self.trace.is_some() {
             let line = self.first_line + at;
             let mut record =

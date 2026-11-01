@@ -254,6 +254,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let literal_marker_body = marker_content.is_some_and(|content| {
         trim_ascii_start(content).starts_with(':') && detect_line_block_open(content).is_some()
     });
+    let marker_line_block = marker_content
+        .map(innermost_marker_content)
+        .is_some_and(|content| detect_line_block_open(content).is_some());
     let mut literal_colon = marker_content
         .and_then(detect_line_block_open)
         .map(|width| (width, strip_cols, strip_cols));
@@ -268,7 +271,12 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         .filter(|marker| marker.indent <= parent_indent)
         .and_then(|marker| {
             let mut seed = Vec::new();
-            track_collected_colon_fence(&mut seed, innermost_marker_content(marker.content), true);
+            let content = if marker_line_block {
+                innermost_marker_content(marker.content)
+            } else {
+                marker.content
+            };
+            track_collected_colon_fence(&mut seed, content, true);
             seed.pop()
         });
     // A description's marker line can open a stanza below this item's column.
@@ -335,10 +343,12 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     run_indented_body!(cur.lines, cur.pos, container, |line, admission| {
         // Marker-line descendants can take an early collection arm below.
         // Close their stanza before any arm can skip the ordinary tracker.
-        if marker_colon.is_some_and(|width| {
-            indent_columns(line) <= marker_colon_column
-                && exact_colon_fence_len(trim_ascii_start(line)) == Some(width)
-        }) && fence.is_none()
+        if marker_line_block
+            && marker_colon.is_some_and(|width| {
+                indent_columns(line) <= marker_colon_column
+                    && exact_colon_fence_len(trim_ascii_start(line)) == Some(width)
+            })
+            && fence.is_none()
             && nested_fence.is_none()
             && active_nested_fence.is_none()
             && comment_fence.is_none()
@@ -963,7 +973,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         }
         let fence_owns_flush_left = (line.starts_with(LAZY)
             && (marker_colon.is_some() || !colon_open.is_empty()))
-            || ((marker_colon.is_some() || description_line_block.is_some())
+            || (((marker_line_block && marker_colon.is_some())
+                || description_line_block.is_some())
                 && indent < strip_cols
                 && line_starts_paragraph(line)
                 && lines.last().is_some_and(|prior| !is_blank_line(prior)))
@@ -1769,8 +1780,11 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 }
             }
         }
-        if indent <= marker_colon_column
-            && !opaque_here
+        if (if marker_line_block {
+            indent <= marker_colon_column
+        } else {
+            indent == strip_cols
+        }) && !opaque_here
             && colon_open.is_empty()
             && marker_colon.is_some()
             && exact_colon_fence_len(&sliced) == marker_colon
