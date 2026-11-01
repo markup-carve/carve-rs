@@ -262,8 +262,17 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 self.pending_blank = false;
                 self.blank_run = 0;
             }
-            // Every nonblank line ends the preceding blank run.
-            let blank_run_before = std::mem::take(&mut self.blank_run);
+            // Every nonblank line ends the preceding blank run, except a
+            // comment outside every item: PART 0 S1 erases it from layout
+            // (CARVE-P9-014). One inside an item is that item's content.
+            let blank_run_before = if trim_ascii_start(line).starts_with("%%")
+                && indent_columns(line) < self.content_col
+                && !self.cur.in_item_body
+            {
+                self.blank_run
+            } else {
+                std::mem::take(&mut self.blank_run)
+            };
             let flow = if self.owns_plus_marker(line) {
                 self.plus_continuation(line)
             } else if let Some(marker) = detect_list_marker_full(line) {
