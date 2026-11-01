@@ -598,6 +598,16 @@ impl<'s> Cursor<'s> {
         self.out.push_str(&self.src[..count]);
         self.src = &self.src[count..];
     }
+
+    fn mark_caption_lazy(&mut self, host: &Frame, line: usize, attached: bool) {
+        if host.kind == Kind::Item && host.line + 1 < line && !attached && is_caption(self.src) {
+            self.out.push_str(LAZY);
+            // The paragraph reader removes LAZY before assigning inline
+            // positions. A zero-delta edit keeps this walk's rewritten source
+            // without shifting those already-stripped positions.
+            self.edits.push((self.out.chars().count(), 0));
+        }
+    }
 }
 
 /// The source the block readers see after the ownership walk, with the column
@@ -1420,6 +1430,10 @@ impl<'a> Walk<'a> {
                 0
             };
             c.lead_in(target, shift, false);
+            // A later item continuation can lose its column in a nested
+            // collector and look like a caption beside an image. Marker-line
+            // content and plus-attached blocks keep their own caption slots.
+            c.mark_caption_lazy(next, line, self.attached.is_some());
             self.end_source_measure(&form, reached);
             if tracing {
                 // S4: a lazy line folds into the deepest open paragraph.
