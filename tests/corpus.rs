@@ -1411,11 +1411,6 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     ("887-a-reference-label-across-a-line-stays-verbatim-in-every-form-3", "new corpus pair at the 7840b697 spec pin, engine port pending (markup-carve/carve#4680)", "<p>![<strong>x</strong>][a\nb]</p>"),
     ("887-a-reference-label-across-a-line-stays-verbatim-in-every-form-5", "new corpus pair at the 7840b697 spec pin, engine port pending (markup-carve/carve#4680)", "<p>[x][<abbr title=\"z\">y</abbr>\nq]</p>"),
     ("887-a-reference-label-across-a-line-stays-verbatim-in-every-form-6", "new corpus pair at the 7840b697 spec pin, engine port pending (markup-carve/carve#4680)", "<p>[x]<a href=\"u\">a\nb</a></p>"),
-    ("888-a-comment-span-in-a-quote-closes-at-an-unmarked-closer", "new corpus pair at the 7840b697 spec pin, engine port pending (markup-carve/carve#4721)", "<blockquote><p>secret</p></blockquote>"),
-    ("888-a-comment-span-in-a-quote-closes-at-an-unmarked-closer-2", "new corpus pair at the 7840b697 spec pin, engine port pending (markup-carve/carve#4721)", "<blockquote><p>secret</p></blockquote>\n<blockquote><p>more</p></blockquote>"),
-    ("888-a-comment-span-in-a-quote-closes-at-an-unmarked-closer-3", "new corpus pair at the 7840b697 spec pin, engine port pending (markup-carve/carve#4721)", "<blockquote><p>secret</p></blockquote>\n<p>after</p>"),
-    ("888-a-comment-span-in-a-quote-closes-at-an-unmarked-closer-4", "new corpus pair at the 7840b697 spec pin, engine port pending (markup-carve/carve#4721)", "<blockquote>\n  <blockquote><p>secret</p></blockquote>\n</blockquote>"),
-    ("888-a-comment-span-in-a-quote-closes-at-an-unmarked-closer-5", "new corpus pair at the 7840b697 spec pin, engine port pending (markup-carve/carve#4721)", "<blockquote>\n  <blockquote><p>secret</p></blockquote>\n</blockquote>\n<blockquote><p>more</p></blockquote>"),
 ];
 
 fn check_pair(slug: &str) {

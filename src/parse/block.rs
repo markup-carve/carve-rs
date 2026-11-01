@@ -1098,31 +1098,19 @@ pub(in crate::parse) fn detect_comment_fence_opener_scoped(
     Some((open, CommentFenceScope::Column(col)))
 }
 
-/// A comment fence a definition pre-pass has entered: its width, and the quote
-/// depth its opener was written at so a closer can be read at the same depth.
+/// A comment fence a definition pre-pass has entered: its width and the maximum
+/// quote depth a closer can carry.
 #[derive(Clone, Copy)]
 pub(in crate::parse) struct OpenCommentFence {
     pub(in crate::parse) fence_len: usize,
     pub(in crate::parse) quote_depth: usize,
 }
 
-/// Does `line` close `open`, read at the depth `open` was written at?
-///
-/// Depth 0 is `is_comment_fence_close_any_column` unchanged. Deeper, the markers
-/// come off first, which is what `PrepassFenceTracker` in carve-php and the
-/// quoted-code-fence closer in `extract_link_defs` already do: a closer is a
-/// continuation line of the container its opener sits in, so it wears the same
-/// prefix. A `> > %%%` therefore stays quoted comment content rather than
-/// closing a `> %%%`.
+/// A matched comment closer is read before quote ownership. It may carry any
+/// prefix up to the opener's depth; a deeper quoted run remains payload.
 pub(in crate::parse) fn closes_open_comment_fence(line: &str, open: OpenCommentFence) -> bool {
-    let mut rest = line;
-    for _ in 0..open.quote_depth {
-        let Some(inner) = strip_prepass_blockquote_prefix(rest) else {
-            return false;
-        };
-        rest = inner;
-    }
-    is_comment_fence_close_any_column(rest, open.fence_len)
+    let (depth, _, rest) = prepass_quote_scope(line);
+    depth <= open.quote_depth && is_comment_fence_close_any_column(rest, open.fence_len)
 }
 
 /// Does the fence opened at `open_at` close inside the container bounding it?
@@ -1221,7 +1209,7 @@ thread_local! {
 ///
 /// List markers inside the comment body do not end it (carve-rs#1053).
 ///
-/// Closer positions are indexed by fence width and quote depth. The first
+/// Closer positions are indexed by fence width and authored quote depth. The first
 /// dedent is memoized per column so repeated openers do not rescan the same
 /// container body.
 #[derive(Default)]
@@ -1247,11 +1235,8 @@ impl ContainerCommentClosers {
             // tail is ignored, and nothing but the blockquote markers comes off.
             //
             // Depth is half the key because stripping the markers collapses
-            // `> > %%%` and `> %%%` onto one run, and they close different
-            // fences. A run shallower than the opener is the line that ENDED the
-            // opener's quote; a deeper one is inside a quote of its own, which
-            // the block parser reads as one. Accepting either would suppress a
-            // definition the block parser publishes.
+            // `> > %%%` and `> %%%` onto one run. A matched span's closer may
+            // be shallower than its opener (S1), but a deeper run is payload.
             //
             // Depth 0 is exactly the set this index held before depth was
             // tracked, so every column-scoped query answers as it did.
@@ -1312,7 +1297,8 @@ impl ContainerCommentClosers {
         closer <= boundary
     }
 
-    /// The quoted twin of `closes_in_column`. The blank line carries the bound:
+    /// The quoted twin of `closes_in_column`. Search every depth at or above
+    /// the opener before deciding which quote owns the closer. The blank line carries the bound:
     /// a blockquote does not survive one, so a `> %%%` below a blank opens a
     /// different quote whose body the block parser never joins to this one.
     ///
@@ -1329,7 +1315,10 @@ impl ContainerCommentClosers {
         quote_col: usize,
         fence_len: usize,
     ) -> bool {
-        let Some(closer) = self.next_closer(open_at, fence_len, depth) else {
+        let Some(closer) = (0..=depth)
+            .filter_map(|candidate| self.next_closer(open_at, fence_len, candidate))
+            .min()
+        else {
             return false;
         };
         if closer >= self.first_blank(lines, open_at) {

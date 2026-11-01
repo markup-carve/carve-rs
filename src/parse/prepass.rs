@@ -1987,7 +1987,7 @@ pub(in crate::parse) fn extract_link_defs_with_guard_full(
         // for why a nested opener is refused rather than guessed at.
         if let Some(open) = in_comment_fence {
             end_prepass_paragraph_at(&folded_into_term, line_index);
-            // ANY column, at the opener's quote depth - see the note in
+            // ANY column, at or shallower than the opener's quote depth - see the note in
             // `extract_footnote_defs`.
             if closes_open_comment_fence(line, open) {
                 in_comment_fence = None;

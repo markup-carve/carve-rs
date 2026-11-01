@@ -656,8 +656,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             // form here made this pass disagree with the one that decides: the
             // block parser closed the comment, this scan did not, and every
             // definition after it went unregistered and came back as visible
-            // text (#574 regression). Any column AT THE OPENER'S QUOTE DEPTH -
-            // see `closes_open_comment_fence`.
+            // text (#574 regression). S1 also accepts a closer with fewer
+            // quote prefixes than its opener; see `closes_open_comment_fence`.
             if closes_open_comment_fence(line, open) {
                 self.in_comment_fence = None;
             }
