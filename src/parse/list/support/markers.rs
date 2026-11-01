@@ -1369,6 +1369,15 @@ pub(crate) fn block_ends_with_open_paragraph(
 
 /// Whether a list item's second block came from a PARAGRAPH-SHAPED line, and so
 /// loosens the item when a blank line sits above it (§17 L1).
+pub(crate) fn block_renders_nothing(block: &BlockNode) -> bool {
+    matches!(
+        block,
+        BlockNode::Comment(_)
+            | BlockNode::AbbreviationDef(_)
+            | BlockNode::LinkReferenceDefinition(_)
+    )
+}
+
 pub(crate) fn block_is_paragraph_shaped(block: &BlockNode) -> bool {
     match block {
         BlockNode::Paragraph(_) => true,
