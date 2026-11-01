@@ -1,6 +1,35 @@
 use carve::lint_carve;
 
 #[test]
+fn indented_fences_never_emit_retired_delimiter_rule() {
+    for fence in ["```", "~~~", "````", "~~~~"] {
+        for (prefix, body_prefix) in [
+            ("  ", "  "),
+            (">   ", ">   "),
+            ("-   ", "    "),
+            (":: t\n:   ", "    "),
+            ("[^a]:   ", "        "),
+        ] {
+            for extra_indent in 0..5 {
+                for info in [
+                    "", "js", "rust", "x", "=html", "bad info", "[a]", "\"t\"", "js [a]", "\t",
+                ] {
+                    let pad = " ".repeat(extra_indent);
+                    let source = format!("{prefix}{pad}{fence}{info}\n{body_prefix}{pad}x\n{body_prefix}{pad}{fence}\n");
+                    let warnings = lint_carve(&source);
+                    assert!(
+                        warnings
+                            .iter()
+                            .all(|warning| warning.rule != "fence-delimiter-indentation"),
+                        "{source:?}: {warnings:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn quoted_plus_in_a_list_item_has_no_false_refusal() {
     let source = "- a\n  > q\n  > > +\n  > > x\n";
     let warnings = lint_carve(source);
@@ -45,7 +74,6 @@ fn source_rules_report_the_shared_triggers() {
         ("blockquote-marker-without-space", ">quoted\n"),
         ("blockquote-marker-without-space", ">+\n"),
         ("block-marker-as-text", "  ::: note\n"),
-        ("fence-delimiter-indentation", "  ```\n  x\n  ```\n"),
         ("list-item-body-detached", "1. item\n\n  # heading\n"),
         (
             "list-item-block-overindented",

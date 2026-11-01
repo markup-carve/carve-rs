@@ -277,7 +277,7 @@ pub(super) fn collect(
     );
     scan.items.sort_by_key(|i| (i.first, i.content));
     let list_lines = ListScan::new(&rows, &scan, out).run(out);
-    LineRules::new(&rows, &scan, &list_lines).run(out);
+    LineRules::new(&rows, &scan).run(out);
     collect_marker_text(&rows, &scan.starts, &list_lines, to_byte, out);
     let recovered_metadata = collect_container_fences(&rows, &mut scan.fences, out);
     collect_version(source, doc, &rows, out);
@@ -1362,7 +1362,6 @@ impl<'s, 'r> ListScan<'s, 'r> {
 struct LineRules<'s, 'r> {
     rows: &'s [Line<'r>],
     scan: &'s BlockScan<'s>,
-    list_lines: &'s BTreeSet<usize>,
     trailing: regex::Regex,
     raw: regex::Regex,
     fence_run: regex::Regex,
@@ -1370,11 +1369,10 @@ struct LineRules<'s, 'r> {
 }
 
 impl<'s, 'r> LineRules<'s, 'r> {
-    fn new(rows: &'s [Line<'r>], scan: &'s BlockScan<'s>, list_lines: &'s BTreeSet<usize>) -> Self {
+    fn new(rows: &'s [Line<'r>], scan: &'s BlockScan<'s>) -> Self {
         Self {
             rows,
             scan,
-            list_lines,
             trailing: regex::Regex::new(r"(?:^|\s)(\{\s*[.#][^{}]*\})\s*$").unwrap(),
             raw: regex::Regex::new(r"^([ \t]*)(`{3,}|~{3,})[ \t]*raw[ \t]+\S+").unwrap(),
             fence_run: regex::Regex::new(r"^(`{3,}|~{3,})").unwrap(),
@@ -1451,7 +1449,7 @@ impl<'s, 'r> LineRules<'s, 'r> {
                 "Use a fence followed by =FORMAT for a raw block; raw FORMAT does not open one.",
             );
         } else if self.scan.paragraphs.contains(&ln) {
-            self.check_paragraph_fence(ln, row, view, at, out);
+            self.check_paragraph_fence(ln, view, at, out);
         }
         if row.text.starts_with('>') && row.text.len() > 1 && !row.text.starts_with("> ") {
             emit(
@@ -1510,27 +1508,13 @@ impl<'s, 'r> LineRules<'s, 'r> {
         }
     }
 
-    fn check_paragraph_fence(
-        &self,
-        ln: usize,
-        row: &Line<'_>,
-        view: &str,
-        at: usize,
-        out: &mut Vec<LintWarning>,
-    ) {
+    fn check_paragraph_fence(&self, ln: usize, view: &str, at: usize, out: &mut Vec<LintWarning>) {
         let Some(m) = self.fence_run.find(view) else {
             return;
         };
         let run = m.as_str();
         if !crate::parse::lint_opens_code_fence(view) && !view[run.len()..].contains(run) {
             emit(out,self.rows,ln,at,view.len(),"fence-opener-fallback","This fence has an invalid info string and parses as paragraph content. Use a language, optional quoted title, and optional label.");
-        } else if at > 0
-            && row.text.starts_with([' ', '\t'])
-            && container_view(row.text).starts_with([' ', '\t'])
-            && !self.list_lines.contains(&ln)
-            && !view[run.len()..].contains(run)
-        {
-            emit(out,self.rows,ln,at,run.len(),"fence-delimiter-indentation","This fence is indented past its container's content column and does not open a code block.");
         }
     }
 }
