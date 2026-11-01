@@ -23,7 +23,10 @@ fn both_fence_spellings_keep_definitions_at_the_note_floor() {
                 payload = " ".repeat(floor)
             );
             let html = to_html(&source);
-            assert!(html.contains("<pre><code>[^b]: inner\none\n</code></pre>"), "{source:?}: {html}");
+            assert!(
+                html.contains("<pre><code>[^b]: inner\none\n</code></pre>"),
+                "{source:?}: {html}"
+            );
             assert!(html.contains("</a> [^b]</p>"), "{source:?}: {html}");
             assert!(!html.contains("id=\"fn2\""), "{source:?}: {html}");
         }
@@ -33,7 +36,10 @@ fn both_fence_spellings_keep_definitions_at_the_note_floor() {
 #[test]
 fn a_child_item_fence_uses_the_child_column() {
     let inside = to_html("- [^a]: - ~~~\n      [^b]: inner\n      ~~~\n\n[^a] [^b]\n");
-    assert!(inside.contains("<pre><code>[^b]: inner\n</code></pre>"), "{inside}");
+    assert!(
+        inside.contains("<pre><code>[^b]: inner\n</code></pre>"),
+        "{inside}"
+    );
     assert!(!inside.contains("id=\"fn2\""), "{inside}");
 
     let outside = to_html("- [^a]: - ~~~\n    [^b]: inner\n\n[^a] [^b]\n");
