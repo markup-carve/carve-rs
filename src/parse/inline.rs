@@ -1981,6 +1981,7 @@ pub(in crate::parse) fn parse_reference_link(
     } else {
         label
     };
+    let ref_label = logical_cell_reference_source(&ref_label);
     // A trailing attribute block attaches to the resolved link, the same
     // slot an inline link uses (`[t][x]{.c}`).
     let mut attrs = None;
@@ -2009,7 +2010,9 @@ pub(in crate::parse) fn parse_reference_link(
         // attribute block so an unresolved `[t][x]{.c}` stays fully
         // literal rather than silently dropping the `{.c}`. A resolved
         // reference ignores `raw_ref` and applies `attrs` instead.
-        raw_ref: Some(std::str::from_utf8(&bytes[start..after]).ok()?.to_string()),
+        raw_ref: Some(logical_cell_reference_source(
+            std::str::from_utf8(&bytes[start..after]).ok()?,
+        )),
         from_crossref: false,
         from_heading_reference: false,
         pos: None,
@@ -2017,6 +2020,46 @@ pub(in crate::parse) fn parse_reference_link(
     };
     resolve_active_link(&mut link);
     Some((link, after - start))
+}
+
+/// A cell's `\|` is its separator escape, consumed before inline reference
+/// resolution. Keep the original bytes for positions and escaped-text nodes,
+/// but use the logical cell spelling for labels and unresolved literals.
+fn logical_cell_reference_source(source: &str) -> String {
+    if !super::table::IN_CELL.with(std::cell::Cell::get) || !source.contains("\\|") {
+        return source.to_string();
+    }
+    let bytes = source.as_bytes();
+    let mut out = String::with_capacity(source.len());
+    let mut at = 0;
+    let mut code_run = None;
+    while at < bytes.len() {
+        if bytes[at] == b'\\'
+            && code_run.is_none()
+            && bytes.get(at + 1).is_some_and(u8::is_ascii_punctuation)
+        {
+            if bytes[at + 1] == b'|' {
+                out.push('|');
+            } else {
+                out.push_str(&source[at..at + 2]);
+            }
+            at += 2;
+        } else if bytes[at] == b'`' {
+            let run = bytes[at..].iter().take_while(|&&byte| byte == b'`').count();
+            code_run = match code_run {
+                None => Some(run),
+                Some(width) if width == run => None,
+                other => other,
+            };
+            out.push_str(&source[at..at + run]);
+            at += run;
+        } else {
+            let ch = source[at..].chars().next().unwrap();
+            out.push(ch);
+            at += ch.len_utf8();
+        }
+    }
+    out
 }
 
 pub(in crate::parse) fn flush_text(
@@ -2481,6 +2524,7 @@ pub(in crate::parse) fn parse_reference_image(
     } else {
         label
     };
+    let ref_label = logical_cell_reference_source(&ref_label);
     let mut attrs = None;
     let mut after = after_label;
     if bytes.get(after) == Some(&b'{') {
@@ -2495,7 +2539,9 @@ pub(in crate::parse) fn parse_reference_image(
         alt,
         title: None,
         ref_label: Some(ref_label),
-        raw_ref: Some(std::str::from_utf8(&bytes[start..after]).ok()?.to_string()),
+        raw_ref: Some(logical_cell_reference_source(
+            std::str::from_utf8(&bytes[start..after]).ok()?,
+        )),
         resolved_empty_reference: false,
         pos: None,
     };
