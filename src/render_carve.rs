@@ -2210,7 +2210,7 @@ fn render_item_blocks(
                 prev_at_marker_column = false;
                 continue;
             }
-            if ctx.list_depth > 1 || ctx.indented_host_depth > 0 {
+            if ctx.list_depth > 1 {
                 if !matches!(block, BlockNode::Comment(_) | BlockNode::CodeBlock(_))
                     && !matches!(prev, Some(BlockNode::Comment(_) | BlockNode::CodeBlock(_)))
                 {

@@ -272,9 +272,6 @@ fn canonical_tree(source: &str, dissolve_section_1c_wrappers: bool) -> String {
 }
 
 fn corpus_formatter_semantic_idempotent_and_reparseable_inner() {
-    const PINNED_FORMATTER_GAPS: &[(&str, &str, &str, &str)] = &[
-        ("743-a-later-term-after-a-shifted-separator-opens-in-the-outer-item-3", "<div class=\"box\">\n  <ul>\n    <li>\n      <ul>\n        <li>\n          <dl>\n            <dt>t</dt>\n          </dl>\n        </li>\n      </ul>\n      <p>: a</p>\n      <dl>\n        <dt>sibling\ntail</dt>\n      </dl>\n    </li>\n  </ul>\n</div>", "::: box\n- * :: t\n\n  : a\n  :: sibling\n  tail\n:::\n", "::: box\n- * :: t\n\n  : a\n\n  :: sibling\n  tail\n:::\n"),
-    ];
     // Corpus rows the spec pin adds whose ruling this engine has not ported yet,
     // with the ticket that ports it. Only a row that still fails is skipped; a
     // fixed row runs the whole sweep.
@@ -332,30 +329,9 @@ fn corpus_formatter_semantic_idempotent_and_reparseable_inner() {
             }
         }
         let formatted = carve::to_carve(&source);
-        // Every document stays in the sweep. Five new rows have exact
-        // formatter baselines tracked in #3431; an output change must update them.
+        // Every document stays in the sweep.
         let formatted_html = carve::to_html(&formatted);
         let source_html = carve::to_html(&source);
-        if let Some((_, html, first, second)) = PINNED_FORMATTER_GAPS
-            .iter()
-            .find(|(name, _, _, _)| *name == slug)
-        {
-            assert_eq!(formatted_html, *html, "formatter baseline moved for {slug}");
-            assert_ne!(
-                formatted_html, source_html,
-                "delete the stale baseline for {slug}"
-            );
-            assert_eq!(
-                formatted, *first,
-                "formatter source baseline moved for {slug}"
-            );
-            assert_eq!(
-                carve::to_carve(&formatted),
-                *second,
-                "second format baseline moved for {slug}"
-            );
-            continue;
-        }
         assert_eq!(
             formatted_html, source_html,
             "formatted corpus source changed HTML semantics for {slug}"
