@@ -47,7 +47,6 @@
       "ticket": "markup-carve/carve-rs#3534",
       "cause": "untriaged day-one drift in the ownership family",
       "cases": [
-        "ownership-08cd1743ebaf",
         "ownership-34ea3231e4b7",
         "ownership-dabd40ea2cb5"
       ]

@@ -1196,9 +1196,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
 
     // This item's content column. For ordered/unordered it is where the
     // marker content begins (`- `=2, `1. `=3, `10. `=4). For a TASK the
-    // checkbox is content, not marker, so the column is the bullet width
-    // (`- `/`* ` = 2) -- a child indented to 2 nests, matching the spec's
-    // task attribute/continuation convention (`- [x] x` / `  {.c}`).
+    // checkbox is content, not marker, so the column stops before the box
+    // (`- [x] `=2, `-   [x] `=4, CARVE-P9-083).
     //
     // An abutting attribute block is item metadata and contributes zero,
     // so changing its spelling or Unicode value cannot move the body

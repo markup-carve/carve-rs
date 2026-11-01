@@ -390,7 +390,20 @@ pub(crate) fn marker_content_col(line: &str) -> Option<usize> {
 pub(crate) fn marker_content_col_at(line: &str, indent: usize) -> Option<usize> {
     let m = detect_list_marker_full_at(line, indent)?;
     if m.checked.is_some() {
-        return Some(m.indent + 2);
+        // CARVE-P9-083: the column is the marker plus its separator run, wherever
+        // the checkbox then sits.
+        let rest = line.get(leading_ws(line)..)?;
+        let token = rest
+            .bytes()
+            .take_while(|&b| !matches!(b, b' ' | b'\t' | b'{'))
+            .count();
+        let attrs = marker_attrs_width(line, &m);
+        let gap = rest
+            .get(token + attrs..)?
+            .bytes()
+            .take_while(|&b| b == b' ')
+            .count();
+        return Some(indent + token + gap);
     }
     let content_off = (m.content.as_ptr() as usize).saturating_sub(line.as_ptr() as usize);
     let column = indent
