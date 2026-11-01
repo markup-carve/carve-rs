@@ -118,6 +118,16 @@ pub fn escape_attr(input: &str) -> String {
     out
 }
 
+/// Escape a rendered-text field carried in an HTML attribute. Unlike an
+/// authored attribute value, this field loses bidi overrides and isolates.
+pub fn escape_rendered_attr(input: &str) -> String {
+    if !has_bidi_control(input) {
+        return escape_attr(input);
+    }
+    let stripped: String = input.chars().filter(|c| !is_bidi_control(*c)).collect();
+    escape_attr(&stripped)
+}
+
 /// URL schemes that must never appear in an attribute value.
 ///
 /// Beyond the classic script-bearing schemes (`javascript`, `vbscript`,
