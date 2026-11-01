@@ -1611,8 +1611,13 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
                 return BodyStep::Next;
             }
         }
-        // A closed deepest fence leaves no paragraph for a below-column line.
-        if fence.holds_no_paragraph() && !self.folded_a_lazy_line {
+        // A caption after the fence opens inline text that folds like a
+        // paragraph (CARVE-P2-021), even when the preceding block is closed.
+        let caption_open = self
+            .lines
+            .last()
+            .is_some_and(|line| caption_content(trim_ascii_start(line)).is_some());
+        if fence.holds_no_paragraph() && !self.folded_a_lazy_line && !caption_open {
             return BodyStep::Stop;
         }
         if !self.body_takes_fold() {

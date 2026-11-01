@@ -315,5 +315,9 @@ name = "accepted_plus_closes_body_fences"
 path = "tests/accepted_plus_closes_body_fences.rs"
 
 [[test]]
+name = "definition_caption_lazy"
+path = "tests/definition_caption_lazy.rs"
+
+[[test]]
 name = "quote_flanks_skip_braced_comments"
 path = "tests/quote_flanks_skip_braced_comments.rs"
