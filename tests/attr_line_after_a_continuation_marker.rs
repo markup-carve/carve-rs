@@ -179,18 +179,16 @@ fn a_paragraph_that_merely_ends_in_a_brace_is_not_swallowed() {
 }
 
 #[test]
-fn attributes_that_reach_nothing_are_dropped() {
-    // §17 L3 bounds the attachment at the blank line, so nothing follows the
-    // attribute block inside it. A set that reaches nothing is dropped, exactly
-    // as one at the end of any other stream is - it does not travel past the
-    // boundary to the quote below, and it does not come back as text.
+fn a_refused_marker_leaves_attributes_for_later_blocks() {
+    // CARVE-P9-067 refuses the marker at a blank or sibling. The attribute
+    // floats in its own scope under §15 A2a, and CARVE-P9-085 keeps `+` as text.
     assert_eq!(
         carve::to_html("- a\n+\n{.x}\n\n> q\n"),
-        "<ul>\n  <li>a</li>\n</ul>\n<blockquote><p>q</p></blockquote>"
+        "<ul>\n  <li>a\n+</li>\n</ul>\n<blockquote class=\"x\"><p>q</p></blockquote>"
     );
     assert_eq!(
         carve::to_html("- a\n+\n{.x}\n"),
-        "<ul>\n  <li>a</li>\n</ul>"
+        "<ul>\n  <li>a\n+</li>\n</ul>"
     );
     assert_eq!(
         carve::to_html("- a\n+\n{.x}\n- b\n"),

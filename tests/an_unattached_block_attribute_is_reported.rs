@@ -142,16 +142,15 @@ fn an_attribute_at_a_definition_body_s_end_is_reported() {
 }
 
 #[test]
-fn an_attribute_a_continuation_marker_could_not_place_is_reported() {
-    // §17 L3 bounds the attachment at the blank line, so the marker's ONE block
-    // is empty and this set reaches nothing. It does not travel past the
-    // boundary to the quote below, and it does not come back as text.
+fn a_refused_marker_leaves_an_attribute_for_the_later_quote() {
+    // CARVE-P9-067 refuses the marker at the blank line. The attribute can
+    // still float to the quote in the document under §15 A2a.
     let found = unattached("- a\n+\n{.x}\n\n> q\n");
 
-    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found.len(), 0, "{found:?}");
     assert_eq!(
         html("- a\n+\n{.x}\n\n> q\n"),
-        "<ul>\n  <li>a</li>\n</ul>\n<blockquote><p>q</p></blockquote>"
+        "<ul>\n  <li>a\n+</li>\n</ul>\n<blockquote class=\"x\"><p>q</p></blockquote>"
     );
 }
 
@@ -243,16 +242,13 @@ fn a_probe_parse_does_not_report_what_the_real_parse_answered() {
 
 #[test]
 fn a_block_that_takes_no_attributes_is_not_a_block_they_reached() {
-    // `apply_attrs_to_block` ends in `_ => {}`, so handing it a COMMENT discards
-    // the set exactly as having no block at all would - and §15 A2a's "float
-    // past what renders nothing" cannot save it, because a `+` attaches ONE
-    // block and there is no next one to float to. This dropped the attributes
-    // with nothing reporting it, while its document-level twin reported them.
+    // A comment gives the attribute no visible block to reach. The refused
+    // marker is text under CARVE-P9-085, and the attribute is reported.
     let found = unattached("- a\n+\n{.x}\n%% c\n");
 
     assert_eq!(found.len(), 1, "{found:?}");
     assert_eq!(found[0].line, 3, "{found:?}");
-    assert_eq!(html("- a\n+\n{.x}\n%% c\n"), "<ul>\n  <li>a</li>\n</ul>");
+    assert_eq!(html("- a\n+\n{.x}\n%% c\n"), "<ul>\n  <li>a\n+</li>\n</ul>");
     // The twin, which always reported.
     assert_eq!(unattached("{.x}\n\n%% c\n").len(), 1);
 }
