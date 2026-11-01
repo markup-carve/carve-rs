@@ -442,6 +442,11 @@ impl BracedClosers {
     }
 
     fn close_editorial(&mut self, source: &[u8], open: usize, delim: u8) -> Option<usize> {
+        // `{+` and `{-` take a `%%` comment the way forced spans do (carve#4750);
+        // the forced-span scan is what finds the comments.
+        if self.emphasis_pairs.is_none() && source.windows(2).any(|pair| pair == b"%%") {
+            self.build_emphasis_pairs(source);
+        }
         self.queries += 1;
         let view = self.code_view(source);
         let bytes = view.as_ref();
@@ -544,6 +549,7 @@ impl BracedClosers {
                 && (at == 0 || bytes[at - 1] != b'`' || (at > 1 && bytes[at - 2] == b'\\')))
                 || self.editorial_host(at).is_some()
                 || comments.contains_key(&at)
+                || self.line_comment_ends.contains_key(&at)
                 || bytes[at] == b'\\'
                 || (bytes[at] == b'{'
                     && matches!(
@@ -566,6 +572,16 @@ impl BracedClosers {
                 .or_else(|| comments.get(&at).copied())
             {
                 BracedStep::Jump(index(end))
+            } else if let Some(&end) = self.line_comment_ends.get(&at) {
+                let mut raw = [usize::MAX; DELIM_BRACE_SLOTS];
+                for &delim in b"+-~#/*_^,=" {
+                    let slot = delim_brace_slot(delim).unwrap();
+                    raw[slot] = self
+                        .raw_close(bytes, at, delim)
+                        .filter(|&close| close < end)
+                        .map_or(usize::MAX, index);
+                }
+                BracedStep::LineComment(Box::new(raw), index(end))
             } else {
                 match bytes[at] {
                     b'\\' => BracedStep::Jump(index((at + 2).min(bytes.len()))),
@@ -590,6 +606,13 @@ impl BracedClosers {
                 for slot in 0..DELIM_BRACE_SLOTS {
                     current[slot][at] = match &steps[at] {
                         BracedStep::Jump(next) => current[slot][*next],
+                        BracedStep::LineComment(raw, next) => {
+                            if raw[slot] == usize::MAX {
+                                current[slot][*next]
+                            } else {
+                                raw[slot]
+                            }
+                        }
                         BracedStep::Raw(raw) => {
                             if raw[slot] == usize::MAX {
                                 usize::MAX
@@ -1312,6 +1335,14 @@ impl BracedClosers {
                 .editorial_host(j)
                 .or_else(|| self.comment_end(bytes, j))
             {
+                j = end;
+                resume = true;
+                continue;
+            }
+            if let Some(&end) = self.line_comment_ends.get(&j) {
+                if let Some(close) = self.raw_close(bytes, j, delim).filter(|&close| close < end) {
+                    break Some(close);
+                }
                 j = end;
                 resume = true;
                 continue;

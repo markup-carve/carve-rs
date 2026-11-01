@@ -708,6 +708,22 @@ fn include_column_names(value: &str) -> Option<Vec<String>> {
     names.iter().all(|name| !name.is_empty()).then_some(names)
 }
 
+/// The characters of a quoted option value, with PART 4's escapes applied.
+fn unquote_option_value(value: &str) -> Option<String> {
+    let quote = value.chars().next().filter(|c| matches!(c, '"' | '\''))?;
+    let inner = value.strip_prefix(quote)?.strip_suffix(quote)?;
+    let mut out = String::with_capacity(inner.len());
+    let mut chars = inner.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\\' if chars.peek().is_some_and(char::is_ascii_punctuation) => out.push(chars.next()?),
+            c if c == quote => return None,
+            c => out.push(c),
+        }
+    }
+    Some(out)
+}
+
 /// A `#name` the section slot would have taken, had it not already been full.
 fn is_section_token(part: &str) -> bool {
     let Some(name) = part.strip_prefix('#') else {
@@ -805,6 +821,12 @@ fn parse_options(raw: RawDirective) -> ParsedDirective {
             }
             return bad();
         };
+        // PART 10: outside `@cols` quotes only delimit a value, so
+        // `@lines:"1-1"` reads as `@lines:1-1`.
+        let unquoted = (key != "cols")
+            .then(|| unquote_option_value(value))
+            .flatten();
+        let value = unquoted.as_deref().unwrap_or(value);
         let key_ok = {
             let mut it = key.chars();
             it.next().is_some_and(is_ident_start) && it.all(is_ident_rest)

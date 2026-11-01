@@ -1,0 +1,4 @@
+[env]
+# Debug frames at MAX_NESTING_DEPTH outgrow the default 2 MiB test thread
+# (see `parse::MAX_NESTING_DEPTH`); corpus walkers now meet a 200-deep inline row.
+RUST_MIN_STACK = "16777216"
