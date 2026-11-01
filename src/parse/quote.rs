@@ -2078,8 +2078,24 @@ impl<'a> QuoteBody<'a> {
                 .lines
                 .last()
                 .is_some_and(|line| !is_blank_line(&line.text));
+        // A `: ` marker line under an open term is the description's first
+        // line: its body, not the marker, decides the paragraph.
+        let marker_body = (self.may_have_term && !description_content.starts_with([' ', '\t']))
+            .then(|| strip_description_prefix(description_content))
+            .flatten()
+            .filter(|body| {
+                is_definition_placeholder(trim_ascii_start(body))
+                    || !is_line_comment_any_column(body)
+            })
+            .filter(|_| {
+                self.open_entry.advance(&self.inner.lines);
+                self.open_entry.half.is_some()
+            });
+        self.description_line |= marker_body.is_some();
         self.para_open = if nested_item_closes || self.closed_div {
             ParaOpen::Closed
+        } else if let Some(body) = marker_body {
+            ParaOpen::from_line(body, inherited_absorption)
         } else if in_description {
             ParaOpen::from_line(trim_ascii_start(description_content), inherited_absorption)
         } else {
