@@ -1,7 +1,7 @@
 //! Historical category-413 regression: marker attributes are now item metadata
 //! and contribute zero to the content column (markup-carve/carve#1701). The
 //! checkbox remains content and contributes zero as well; only the bare marker
-//! and separator establish the column.
+//! and its separator run establish the column.
 
 fn html(source: &str) -> String {
     carve::to_html(source)
@@ -47,15 +47,20 @@ fn a_plain_task_item_still_has_its_column_at_two() {
     );
 }
 
-/// Padding in front of the checkbox is not an attribute block and does not move
-/// the column either: a fix that measured where the checkbox BEGINS rather than
-/// counting the block would move this to 4, which is what carve-js does not do.
+/// The column is the marker plus its separator run (CARVE-P9-083, carve#4618),
+/// and the checkbox contributes zero: `-   [ ] item` has column 4, like `-   item`.
 #[test]
-fn padding_before_the_checkbox_still_moves_nothing() {
-    let expected = "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled aria-label=\"item\"> item\n    \
-                    <h1 id=\"H\">H</h1>\n  </li>\n</ul>";
-    assert_eq!(html("-   [ ] item\n  # H\n").trim(), expected);
-    assert_eq!(html("-   [ ] item\n    # H\n").trim(), expected);
+fn padding_before_the_checkbox_sets_the_column() {
+    assert_eq!(
+        html("-   [ ] item\n  # H\n").trim(),
+        "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled aria-label=\"item\"> item</li>\n</ul>\n\
+         <section id=\"H\">\n  <h1>H</h1>\n</section>"
+    );
+    assert_eq!(
+        html("-   [ ] item\n    # H\n").trim(),
+        "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled aria-label=\"item\"> item\n    \
+         <h1 id=\"H\">H</h1>\n  </li>\n</ul>"
+    );
 }
 
 #[test]

@@ -368,7 +368,7 @@ fn list_marker(rest: &str) -> Option<(usize, usize, String)> {
         i += bytes[i..].iter().position(|&b| b == b'}')? + 1;
     }
     let spaces = bytes[i..].iter().take_while(|&&b| b == b' ').count();
-    let width = token + if marker.checked.is_some() { 1 } else { spaces };
+    let width = token + spaces;
     let head = if marker.content.is_empty() {
         rest.len()
     } else {
