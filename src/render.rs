@@ -7,9 +7,9 @@
 use crate::abbr_budget::AbbrBudgetGuard;
 use crate::ast::*;
 use crate::escape::{
-    escape_attr, escape_text, has_denied_url_scheme, is_dangerous_attr_name, is_valid_attr_name,
-    sanitize_attr_value, sanitize_destination, write_escaped_attr, write_escaped_text,
-    write_escaped_text_inner,
+    escape_attr, escape_rendered_attr, escape_text, has_denied_url_scheme, is_dangerous_attr_name,
+    is_valid_attr_name, sanitize_attr_value, sanitize_destination, write_escaped_attr,
+    write_escaped_text, write_escaped_text_inner,
 };
 use crate::extension::{
     HeadingIdOptions, Options, RenderContext, SocialLinkKind, SocialLinkResolverInput,
@@ -2949,10 +2949,10 @@ fn render_image(
             img.pos.as_ref(),
             crate::render_loss::DeniedSink::ImageSource,
         )),
-        escape_attr(&img.alt)
+        escape_rendered_attr(&img.alt)
     ));
     if let Some(title) = &img.title {
-        out.push_str(&format!(" title=\"{}\"", escape_attr(title)));
+        out.push_str(&format!(" title=\"{}\"", escape_rendered_attr(title)));
     }
     // PART 10 §13a: the reference label the image resolved by. HTML spells only
     // the resolved `src`, so without this a `![alt][lbl]` comes back inlined.

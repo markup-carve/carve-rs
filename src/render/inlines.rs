@@ -997,7 +997,7 @@ pub(super) fn render_link(
         ))
     ));
     if let Some(title) = &l.title {
-        out.push_str(&format!(" title=\"{}\"", escape_attr(title)));
+        out.push_str(&format!(" title=\"{}\"", escape_rendered_attr(title)));
     }
     // PART 10 §13a: the reference label the link resolved by.
     let mut blocked: Vec<&str> = if l.title.is_some() {
