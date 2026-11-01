@@ -1248,7 +1248,12 @@ impl<'a> Walk<'a> {
             return reached;
         };
         let host = attached.frames.len() - 1;
-        if reached < host && self.frames[host].kind == Kind::Item && c.out.contains('>') {
+        let indented_prefix = self.lines[at].starts_with(' ') || self.lines[at].starts_with('\t');
+        if reached < host
+            && self.frames[host].kind == Kind::Item
+            && indented_prefix
+            && c.out.contains('>')
+        {
             c.attachment_shift = self.frames[host].canon.saturating_sub(c.col);
             host
         } else {
