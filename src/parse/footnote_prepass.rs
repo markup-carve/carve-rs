@@ -899,6 +899,13 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         // out spent the budget on every ordinary `- item` too, and the budget is
         // shared: four hundred of them ahead of a real definition exhausted it
         // and the definition was declined.
+        // A marker has already established the body column. Further content
+        // space before the opener does not turn its block into inline text.
+        let def_line = if stripped.needs_empty_list_content {
+            def_line.trim_start_matches(' ')
+        } else {
+            def_line
+        };
         let (label, first) = parse_footnote_def_line(def_line)?;
         // PART 9R R1a: a line that folds into an open paragraph defines nothing,
         // and a probe that cannot afford to say so collects nothing either. The
@@ -1932,8 +1939,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             note_floor: prefix_cols + footnote_body_floor(def.def_line),
             list_floor: item_floor(self.columns.current()),
             outer_list_floor: item_floor(&self.columns.frames[0]),
-            marker_note: detect_list_marker_full(inside)
-                .is_some_and(|marker| parse_footnote_def_line(marker.content).is_some()),
+            marker_note: detect_list_marker_full(inside).is_some_and(|marker| {
+                parse_footnote_def_line(marker.content.trim_start_matches(' ')).is_some()
+            }),
             description_host,
         };
         let i = self.hosted_first_block(&host, note, i, def.first);

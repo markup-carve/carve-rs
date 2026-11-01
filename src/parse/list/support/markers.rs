@@ -10,6 +10,9 @@ pub(crate) fn marker_content_starts_block(
     _cur: &LineCursor<'_>,
     _content_col: usize,
 ) -> bool {
+    // Extra space after a task checkbox is content indentation, not a reason
+    // to turn a recognized block opener into paragraph text.
+    let content = content.trim_start_matches(' ');
     // Reference and footnote definitions are invisible blocks at a container's
     // content column. On a marker line they must enter the nested block parser,
     // not the lead-paragraph scanner (`r. [f]: t` is an empty list item).
