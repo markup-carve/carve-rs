@@ -27,6 +27,25 @@ struct NativeBracedData {
     attributes: HashMap<usize, usize>,
     bare: HashMap<usize, (usize, usize)>,
     bare_at_start: HashMap<usize, (usize, usize)>,
+    comment_arrows: Vec<(usize, usize, usize)>,
+}
+
+fn collect_comment_arrows(
+    bytes: &[u8],
+    comments: &HashMap<usize, usize>,
+) -> Vec<(usize, usize, usize)> {
+    let mut spans: Vec<_> = comments
+        .iter()
+        .filter_map(|(&start, &end)| {
+            let arrow = bytes
+                .get(start + 2..end)?
+                .windows(2)
+                .position(|pair| pair == b"~>")?;
+            Some((start, end, start + 2 + arrow))
+        })
+        .collect();
+    spans.sort_unstable_by_key(|&(start, _, _)| start);
+    spans
 }
 
 pub(super) struct CodeSpanIndex {
@@ -98,6 +117,7 @@ pub(super) struct BracedClosers {
     substitution_hosts: Option<HashMap<usize, usize>>,
     native_opaque: Option<HashMap<usize, usize>>,
     line_comment_ends: HashMap<usize, usize>,
+    comment_arrows: Option<Vec<(usize, usize, usize)>>,
     attribute_tails: HashMap<usize, usize>,
     has_attribute_candidates: Option<bool>,
     comment_closes: Option<Vec<usize>>,
@@ -158,6 +178,7 @@ impl BracedClosers {
             if !strikes.is_empty() {
                 let mut hosts = self.native_opaque.as_ref().unwrap_or(&self.opaque).clone();
                 hosts.extend(&self.note_refs);
+                hosts.extend(&self.line_comment_ends);
                 for (&open, &(close, _)) in &ends {
                     hosts.insert(open, close + 2);
                 }
@@ -177,6 +198,7 @@ impl BracedClosers {
                 attributes: self.attribute_tails.clone(),
                 bare: self.bare_attribute_pairs.clone(),
                 bare_at_start: self.bare_attribute_pairs_at_start.clone(),
+                comment_arrows: collect_comment_arrows(bytes, &self.line_comment_ends),
             }));
         }
         NativeBracedView {
@@ -249,6 +271,7 @@ impl BracedClosers {
         if self.substitution_hosts.is_none() {
             let mut hosts = self.native_opaque.as_ref().unwrap_or(&self.opaque).clone();
             hosts.extend(&self.note_refs);
+            hosts.extend(&self.line_comment_ends);
             let points = self.emphasis_pairs.as_ref().unwrap().points.clone();
             for at in points {
                 if bytes.get(at) != Some(&b'{') {
@@ -384,6 +407,34 @@ impl BracedClosers {
         self.finish_close(bytes, delim, result)
     }
 
+    /// A `~>` hidden by a line comment cannot turn `{~` into a substitution,
+    /// and its comment-owned `~}` cannot then close a forced strike. Query the
+    /// cached comment spans so repeated candidate openers stay bounded.
+    pub(super) fn comment_hides_arrow_at_closer(
+        &mut self,
+        bytes: &[u8],
+        open: usize,
+        close: usize,
+    ) -> bool {
+        let (spans, offset) = if let Some(view) = &self.native_view {
+            (&view.data.comment_arrows, view.offset)
+        } else {
+            (
+                &*self
+                    .comment_arrows
+                    .get_or_insert_with(|| collect_comment_arrows(bytes, &self.line_comment_ends)),
+                0,
+            )
+        };
+        let open = open + offset;
+        let close = close + offset;
+        let before = spans.partition_point(|&(start, _, _)| start < close);
+        before > 0 && {
+            let (start, end, arrow) = spans[before - 1];
+            start > open && end > close && arrow < close
+        }
+    }
+
     fn code_view(&mut self, source: &[u8]) -> Rc<[u8]> {
         self.code_view
             .get_or_insert_with(|| mask_literal_directive_backticks(source).into())
@@ -438,7 +489,7 @@ impl BracedClosers {
             .end(start)
     }
 
-    fn raw_close(&mut self, bytes: &[u8], start: usize, delim: u8) -> Option<usize> {
+    pub(super) fn raw_close(&mut self, bytes: &[u8], start: usize, delim: u8) -> Option<usize> {
         if self.queries == 1 && self.pending == 0 {
             return find_seq(bytes, start, &[delim, b'}']);
         }

@@ -9,6 +9,12 @@ fn html(source: &str) -> String {
 }
 
 #[test]
+fn a_line_comment_hides_an_arrow_before_the_substitution_closer() {
+    assert_eq!(html("{~a %% b~>c~} d\n"), "<p>{~a d</p>");
+    assert_eq!(html("{~a~>b~}\n"), "<p><del>a</del><ins>b</ins></p>");
+}
+
+#[test]
 fn an_arrow_inside_a_nested_frame_is_frame_text() {
     assert_eq!(
         html("{~{+b~>c+}~>a~}\n"),

@@ -505,6 +505,7 @@ pub(in crate::parse) fn parse_inline_context_with_pairs(
         emphasis_no_close: EmphasisMemo::default(),
         open_entry_at: None,
         open_entry_kinds: 0,
+        literal_braced_closers: Vec::new(),
         combined_shape_seen: false,
         combined_shape_scanned: 0,
         attribute_target: None,
@@ -738,6 +739,8 @@ struct InlineRun<'a, 'o> {
     // (carve#3973 X1).
     open_entry_at: Option<usize>,
     open_entry_kinds: u16,
+    // Raw family closers still bound a comment after an opener stays literal.
+    literal_braced_closers: Vec<usize>,
     combined_shape_seen: bool,
     combined_shape_scanned: usize,
     attribute_target: Option<usize>,
@@ -792,6 +795,22 @@ impl InlineRun<'_, '_> {
         }
         if let Some(next) = self.open_construct(c, i) {
             return next;
+        }
+        if c == b'{' {
+            if let Some(&marker) = self.bytes.get(i + 1) {
+                if matches!(
+                    marker,
+                    b'+' | b'-' | b'~' | b'#' | b'/' | b'*' | b'_' | b'^' | b',' | b'='
+                ) {
+                    if let Some(close) =
+                        self.bounds
+                            .braced_closers(self.bytes)
+                            .raw_close(self.bytes, i + 2, marker)
+                    {
+                        self.literal_braced_closers.push(close);
+                    }
+                }
+            }
         }
         let ch = self.text[i..].chars().next().unwrap();
         let end = i + ch.len_utf8();
@@ -1013,6 +1032,16 @@ impl InlineRun<'_, '_> {
             comment_run.map(|open| self.bounds.matches[open]),
         )
         .unwrap_or(bytes.len());
+        while self
+            .literal_braced_closers
+            .last()
+            .is_some_and(|&close| close < i)
+        {
+            self.literal_braced_closers.pop();
+        }
+        if let Some(&close) = self.literal_braced_closers.last() {
+            end = end.min(close + 2);
+        }
         if i > 0 && bytes[i - 1] == b' ' && (OpenKinds::in_combined() || self.shape_before(i)) {
             end = find_seq(&bytes[..end], i + 2, b"*/").unwrap_or(end);
         }
