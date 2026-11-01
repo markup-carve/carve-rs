@@ -155,22 +155,26 @@ fn loosen_lists_behind_empty_leads(carve: String) -> String {
     }
     let empty_lead = cached_regex!(r"^( *)([-*]|\d+[.)]) (?:\[[ xX]\] )?%%$").unwrap();
     let indent = |line: &str| line.len() - line.trim_start_matches(' ').len();
-    let fence_line = cached_regex!(r"^(?:[ \t]*>[ \t]?)*[ \t]*(`{3,}|~{3,})").unwrap();
+    let fence_line = cached_regex!(r"^(?:[ \t]*>[ \t]?)*[ \t]*(`{3,}|~{3,})(.*)$").unwrap();
     let mut lines: Vec<String> = carve.split('\n').map(str::to_owned).collect();
     let mut in_fence = vec![false; lines.len()];
     let mut fence: Option<(u8, usize)> = None;
     for (index, line) in lines.iter().enumerate() {
-        let run = fence_line
-            .captures(line)
-            .map(|caps| (caps[1].as_bytes()[0], caps[1].len()));
+        let run = fence_line.captures(line).map(|caps| {
+            (
+                caps[1].as_bytes()[0],
+                caps[1].len(),
+                caps[2].trim().is_empty(),
+            )
+        });
         if let Some((open, width)) = fence {
             in_fence[index] = true;
-            if run.is_some_and(|(ch, len)| ch == open && len >= width) {
+            if run.is_some_and(|(ch, len, bare)| ch == open && len >= width && bare) {
                 fence = None;
             }
             continue;
         }
-        fence = run;
+        fence = run.map(|(ch, len, _)| (ch, len));
     }
     let mut index = lines.len();
     while index > 0 {
