@@ -25,3 +25,11 @@ fn a_second_paragraph_after_the_first_visible_block_still_loosens() {
         "<ul>\n  <li><p>a</p>\n    <p>Body.</p>\n  </li>\n  <li><p>x</p></li>\n</ul>"
     );
 }
+
+#[test]
+fn the_djot_importer_keeps_a_loose_list_behind_an_empty_lead_loose() {
+    let carve = carve::djot_to_carve("- [ ] {.c}\n\n  para\n");
+    assert!(to_html(&carve).contains("<p>para</p>"), "{carve}");
+    let fenced = "```\n- %%\n\n  text\n```\n";
+    assert_eq!(carve::djot_to_carve(fenced), fenced);
+}
