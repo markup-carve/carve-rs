@@ -120,6 +120,7 @@ pub(super) struct BracedClosers {
     comment_arrows: Option<Vec<(usize, usize, usize)>>,
     attribute_tails: HashMap<usize, usize>,
     has_attribute_candidates: Option<bool>,
+    has_line_comment_marker: Option<bool>,
     comment_closes: Option<Vec<usize>>,
     bare_attribute_pairs: HashMap<usize, (usize, usize)>,
     bare_attribute_pairs_at_start: HashMap<usize, (usize, usize)>,
@@ -444,7 +445,11 @@ impl BracedClosers {
     fn close_editorial(&mut self, source: &[u8], open: usize, delim: u8) -> Option<usize> {
         // `{+` and `{-` take a `%%` comment the way forced spans do (carve#4750);
         // the forced-span scan is what finds the comments.
-        if self.emphasis_pairs.is_none() && source.windows(2).any(|pair| pair == b"%%") {
+        if self.emphasis_pairs.is_none()
+            && *self
+                .has_line_comment_marker
+                .get_or_insert_with(|| source.windows(2).any(|pair| pair == b"%%"))
+        {
             self.build_emphasis_pairs(source);
         }
         self.queries += 1;
