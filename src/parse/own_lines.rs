@@ -550,6 +550,7 @@ struct Cursor<'s> {
     out: String,
     src: &'s str,
     col: usize,
+    attachment_shift: usize,
     rest: &'s str,
     /// `(codepoint after the rewritten run, codepoints removed)` per rewrite.
     edits: Vec<(usize, isize)>,
@@ -576,7 +577,7 @@ impl<'s> Cursor<'s> {
 
     /// Like `lead_as`, plus the owner's output shift.
     fn lead_in(&mut self, target: usize, shift: usize, spaces: bool) {
-        self.lead_at(target.min(self.col) + shift, spaces);
+        self.lead_at(target.min(self.col) + shift + self.attachment_shift, spaces);
     }
 
     fn lead_at(&mut self, col: usize, spaces: bool) {
@@ -717,6 +718,7 @@ fn walk_traced(
             out: String::new(),
             src: line,
             col: 0,
+            attachment_shift: 0,
             rest: line,
             edits: Vec::new(),
         };
@@ -1241,6 +1243,24 @@ impl<'a> Walk<'a> {
             .unwrap_or(reached)
     }
 
+    fn attached_item_after_quote(&self, at: usize, c: &mut Cursor<'_>, reached: usize) -> usize {
+        let Some(attached) = self.attached.as_ref().filter(|a| a.from == at) else {
+            return reached;
+        };
+        let host = attached.frames.len() - 1;
+        let indented_prefix = self.lines[at].starts_with(' ') || self.lines[at].starts_with('\t');
+        if reached < host
+            && self.frames[host].kind == Kind::Item
+            && indented_prefix
+            && c.out.contains('>')
+        {
+            c.attachment_shift = self.frames[host].canon.saturating_sub(c.col);
+            host
+        } else {
+            reached
+        }
+    }
+
     fn line(&mut self, at: usize, c: &mut Cursor<'_>, after_plus: &mut bool) {
         let tracing = self.trace.is_some();
         let line = self.first_line + at;
@@ -1295,6 +1315,8 @@ impl<'a> Walk<'a> {
             reached = k;
         }
         reached = self.item_after_missed_quote_term(reached, c.col, c.rest);
+        // The attachment test measured through quote prefixes. Keep that owner.
+        reached = self.attached_item_after_quote(at, c, reached);
         // A lone `+` nothing took is a plain letter and ends nothing (carve#4396).
         // Payload stays as written.
         if self.decide
