@@ -2511,6 +2511,8 @@ struct ItemBody {
     /// with it. `parse_list` cannot know which it used until the loop is over,
     /// so it sets this on its own entries afterwards.
     widen_list: bool,
+    /// A `+` attached this chunk's definition term to the previous definition list.
+    join_previous_definition: bool,
 }
 
 /// What a chunk hands the worklist.
@@ -2615,6 +2617,7 @@ struct ResolvedBody {
     /// `Some((item, widen_list))` for one chunk of that item, which is appended
     /// instead. See [`append_item_children`] for the second field.
     item: Option<(usize, bool)>,
+    join_previous_definition: bool,
     /// The slot the blocks themselves landed in.
     child_slot: usize,
     /// A blank separated accepted paragraph-shaped blocks inside this item
@@ -2696,6 +2699,7 @@ fn append_item_children(
     children: Vec<BlockNode>,
     widen_list: bool,
     loose_inside_chunk: bool,
+    join_previous_definition: bool,
 ) {
     let BlockNode::List(list) = node else {
         debug_assert!(
@@ -2713,7 +2717,26 @@ fn append_item_children(
         debug_assert!(false, "a pending chunk pointed past the list's items");
         return;
     };
-    target.children.extend(children);
+    if join_previous_definition && children.len() == 1 {
+        let mut children = children;
+        let incoming = children.pop().expect("one block");
+        match (target.children.last_mut(), incoming) {
+            (Some(BlockNode::DefinitionList(existing)), BlockNode::DefinitionList(mut next))
+                if existing.attrs.is_none() && next.attrs.is_none() =>
+            {
+                existing.items.append(&mut next.items);
+                existing.loose |= next.loose;
+                if let (Some(old), Some(new)) = (&mut existing.pos, next.pos) {
+                    old.end_line = new.end_line;
+                    old.end_column = new.end_column;
+                    old.end_offset = new.end_offset;
+                }
+            }
+            (_, incoming) => target.children.push(incoming),
+        }
+    } else {
+        target.children.extend(children);
+    }
     // AND WIDEN IT AGAIN, because the blocks it is widened over only exist
     // now. `parse_list` runs the same pass before it returns, over the lead
     // paragraph an item is sometimes built with; this repeats it over every
@@ -3025,6 +3048,7 @@ fn item_body_with_layout_suppression(
         suppress_tree_looseness,
         item_shown: true,
         widen_list: false,
+        join_previous_definition: false,
     });
     Vec::new()
 }

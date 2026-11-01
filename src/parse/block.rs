@@ -107,6 +107,30 @@ pub(in crate::parse) fn place_item_chunk(
         suppress_tree_looseness: false,
         item_shown: true,
         widen_list: false,
+        join_previous_definition: false,
+    });
+}
+
+/// A continuation can add a term to the definition list in the preceding chunk.
+pub(in crate::parse) fn place_plus_item_chunk(
+    deferred: &mut Vec<ItemBody>,
+    item: usize,
+    block: BlockNode,
+) {
+    deferred.push(ItemBody {
+        item,
+        join_previous_definition: matches!(block, BlockNode::DefinitionList(_)),
+        chunk: Chunk::Parsed {
+            blocks: vec![block],
+            carried: Vec::new(),
+        },
+        depth: 0,
+        in_group: false,
+        attrs: None,
+        drop_empty_paragraphs: false,
+        suppress_tree_looseness: false,
+        item_shown: true,
+        widen_list: false,
     });
 }
 
@@ -169,7 +193,9 @@ pub(in crate::parse) fn resolve_pending_bodies(
         pending.into_iter().map(|body| (0usize, body)).collect();
     while let Some((slot, entry)) = work.pop() {
         let mut nested = Vec::new();
-        let (children, item, loose_inside_chunk, layout) = match entry.body {
+        let (children, item, join_previous_definition, loose_inside_chunk, layout) = match entry
+            .body
+        {
             Body::Colon(body) => {
                 // The body parses under the state its OPENER stood in, not the
                 // state the worklist happens to be in - see `ContainerBody`.
@@ -179,13 +205,21 @@ pub(in crate::parse) fn resolve_pending_bodies(
                     parse_colon_view(body.inner, options, &mut nested),
                     None,
                     false,
+                    false,
                     None,
                 )
             }
             Body::Item(body) => {
                 let target = (body.item, body.widen_list);
+                let join_previous_definition = body.join_previous_definition;
                 let (children, loose, layout) = parse_item_body_into(body, options, &mut nested);
-                (children, Some(target), loose, layout)
+                (
+                    children,
+                    Some(target),
+                    join_previous_definition,
+                    loose,
+                    layout,
+                )
             }
         };
         let child_slot = arena.len();
@@ -194,6 +228,7 @@ pub(in crate::parse) fn resolve_pending_bodies(
             slot,
             index: entry.index,
             item,
+            join_previous_definition,
             child_slot,
             loose_inside_chunk,
             layout,
@@ -223,9 +258,14 @@ pub(in crate::parse) fn resolve_pending_bodies(
         let node = &mut arena[link.slot][link.index];
         match link.item {
             None => fill_container_children(node, children),
-            Some((item, widen_list)) => {
-                append_item_children(node, item, children, widen_list, loose_inside_chunk)
-            }
+            Some((item, widen_list)) => append_item_children(
+                node,
+                item,
+                children,
+                widen_list,
+                loose_inside_chunk,
+                link.join_previous_definition,
+            ),
         }
     }
     *out = std::mem::take(&mut arena[0]);
