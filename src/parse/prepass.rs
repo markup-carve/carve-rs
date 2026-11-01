@@ -502,6 +502,30 @@ fn term_view(raw: &str) -> (&str, usize, bool) {
     term_view_upto(raw, usize::MAX)
 }
 
+/// The deepest item's content column in a term's marker chain. The prepass
+/// must distinguish a separator reaching that item from one folded between
+/// it and an enclosing item or description.
+fn term_list_floor(mut line: &str) -> Option<usize> {
+    let mut column = 0;
+    let mut floor = None;
+    loop {
+        let indent = indent_columns(line);
+        if let Some((_, width)) = detect_prepass_list_marker(line) {
+            floor = Some(column + width);
+            let marker = detect_list_marker_full(line)?;
+            let offset = marker.content.as_ptr() as usize - line.as_ptr() as usize;
+            column += line[..offset].chars().count();
+            line = marker.content;
+            continue;
+        }
+        let Some((body, _)) = strip_definition_marker(trim_ascii_start(line)) else {
+            return floor;
+        };
+        column += indent + (body.as_ptr() as usize - trim_ascii_start(line).as_ptr() as usize);
+        line = body;
+    }
+}
+
 /// Does `rest`, on a line under an open term, end that term?
 fn ends_open_term(lines: &[&str], index: usize, deeper_quote: bool, rest: &str) -> bool {
     deeper_quote
@@ -599,6 +623,7 @@ struct TermScan<'a, 'o> {
     prefix_costs: Vec<usize>,
     probe: TermMarkerProbe,
     term: Option<(usize, usize)>,
+    term_list_floor: Option<usize>,
     term_start: Option<usize>,
     term_quote_columns: Vec<usize>,
     admitted_term_host: Option<(usize, usize, usize)>,
@@ -637,6 +662,7 @@ impl<'a, 'o> TermScan<'a, 'o> {
                 unresolved_code_delimiter: false,
             },
             term: None,
+            term_list_floor: None,
             term_start: None,
             term_quote_columns: Vec::new(),
             admitted_term_host: None,
@@ -817,25 +843,30 @@ impl<'a, 'o> TermScan<'a, 'o> {
         // A term may follow list markers on its line; its column is then the
         // item's content column.
         if let Some(authored_col) = term_start_column(view_line) {
-            let marker_line = detect_list_marker_full(view_line).is_some();
+            let list_floor = term_list_floor(view_line);
+            let marker_line = list_floor.is_some();
             let host_col = self.columns.reached_by_at(quotes, authored_col);
             let body_host = self
                 .columns
                 .frames
                 .get(quotes)
                 .is_some_and(|frame| frame.body_columns.contains(&host_col));
+            let nested_description_list = after_term
+                && strip_definition_marker(trim_ascii_start(view_line)).is_some()
+                && list_floor.is_some();
             if authored_col == 0 || marker_line || host_col == authored_col || body_host {
                 // A term overindented inside a description still measures its
                 // following lines against the description's content column.
                 // The term marker's own column is not a content column (P2-028).
                 self.term = Some((
-                    if body_host && !marker_line {
+                    if body_host || nested_description_list {
                         host_col
                     } else {
                         authored_col
                     },
                     quotes,
                 ));
+                self.term_list_floor = nested_description_list.then_some(list_floor).flatten();
                 self.term_start = Some(index);
                 self.term_quote_columns = term_quote_columns_for(line, &self.columns);
             }
@@ -850,9 +881,13 @@ impl<'a, 'o> TermScan<'a, 'o> {
         };
         let (at_term, quotes, through_list) = term_view_upto(line, term_quotes);
         let rest = trim_ascii_start(at_term);
+        let reaches_nested_body = self.term_list_floor.is_some_and(|floor| {
+            indent_columns(at_term) >= floor && strip_definition_marker(rest).is_some()
+        });
         !through_list
             && quotes == term_quotes
             && !is_blank_line(at_term)
+            && !reaches_nested_body
             && (indent_columns(at_term) > term_col
                 || (term_quotes > 0
                     && self
@@ -894,7 +929,11 @@ impl<'a, 'o> TermScan<'a, 'o> {
         let Some((term_col, term_quotes)) = self.term else {
             return ControlFlow::Continue(false);
         };
-        if quotes == term_quotes && col > term_col && !is_list_marker(rest) {
+        let reaches_nested_body = self
+            .term_list_floor
+            .is_some_and(|floor| col >= floor && strip_definition_marker(rest).is_some());
+        if quotes == term_quotes && col > term_col && !is_list_marker(rest) && !reaches_nested_body
+        {
             // A folded comment fence takes its body and closer with it.
             let last = comment.unwrap_or(index);
             self.ownership.folded.extend(index..=last);
