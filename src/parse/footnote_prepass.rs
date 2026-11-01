@@ -311,6 +311,7 @@ impl PrepassFenceState {
 struct NoteBody {
     lines: Vec<String>,
     comment_state: BodyCommentState,
+    open_colons: OpenBodyColons,
     line_map: Vec<Option<usize>>,
     col_map: Vec<Option<isize>>,
     positions: bool,
@@ -325,7 +326,11 @@ impl NoteBody {
         source_line: Option<usize>,
         col: impl FnOnce(&str) -> Option<isize>,
     ) {
+        let opaque = self.comment_state.code.is_some() || self.comment_state.comment.is_some();
         self.comment_state.observe(&line);
+        if !opaque && self.comment_state.code.is_none() && self.comment_state.comment.is_none() {
+            self.open_colons.observe(&line);
+        }
         if self.positions {
             self.col_map.push(col(&line));
         }
@@ -952,6 +957,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let mut note = NoteBody {
             lines: vec![def.first.to_string()],
             comment_state,
+            open_colons: OpenBodyColons::from_source(def.first),
             line_map: vec![Some(def_start_line)],
             col_map: if self.positions {
                 vec![stripped_col(
@@ -1256,6 +1262,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         if end > i {
             note.lines[0].clear();
             note.comment_state = BodyCommentState::new();
+            note.open_colons = OpenBodyColons::default();
             note.line_map[0] = None;
             if self.positions {
                 note.col_map[0] = None;
@@ -1662,6 +1669,19 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         let lines = self.lines;
         *i += 1;
+        if let Some(open) = note.comment_state.code {
+            note.push_with(
+                char::from(open.fence_char)
+                    .to_string()
+                    .repeat(open.fence_len),
+                None,
+                |_| None,
+            );
+        }
+        let closing: Vec<_> = note.open_colons.closing_widths().collect();
+        for width in closing {
+            note.push_with(":".repeat(width), None, |_| None);
+        }
         let mut attached: Vec<String> = Vec::new();
         let attached_start = *i;
         let end = attached_block_past_invisible(
@@ -1990,6 +2010,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let count = attached_one_block_lines(CursorLines::Slice(&attached_refs), self.options);
         note.lines[0].clear();
         note.comment_state = BodyCommentState::new();
+        note.open_colons = OpenBodyColons::default();
         note.line_map[0] = None;
         if self.positions {
             note.col_map[0] = None;
