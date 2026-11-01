@@ -36,19 +36,27 @@ pub(crate) fn fold_lazy_run_and_resume_in_band(
         }
         // A marker between the host's base and content columns can fold into
         // an open paragraph inside a raised colon container (carve#2474).
+        let band_separator = cur.peek().is_some_and(|line| {
+            let column = indent_columns(line);
+            column > list_base
+                && column < content_col
+                && strip_description_prefix(trim_ascii_start(line)).is_some()
+                && body_ends_in_definition_list(&nested.source, options)
+        });
         let pending = if lazy_column == 0 {
-            lazy_line_pending(cur)
+            band_separator || lazy_line_pending(cur)
         } else {
             cur.peek().map(str::to_string).is_some_and(|line| {
                 let indent = indent_columns(&line);
                 !is_blank_line(&line)
                     && indent <= lazy_column
                     && !(is_list_marker(&line) && indent <= list_base)
-                    && !if indent == 0 {
-                        interrupts_paragraph_as_container(cur, &line)
-                    } else {
-                        interrupts_lazy_continuation(cur, &line)
-                    }
+                    && (band_separator
+                        || !if indent == 0 {
+                            interrupts_paragraph_as_container(cur, &line)
+                        } else {
+                            interrupts_lazy_continuation(cur, &line)
+                        })
             })
         };
         if !pending {
@@ -157,6 +165,12 @@ pub(crate) fn collect_trailing_lazy_through_framed(
     }
     while let Some(line) = cur.peek() {
         let indent = indent_columns(line);
+        let band_separator = term_options.is_some_and(|options| {
+            indent > list_base
+                && indent < content_col
+                && strip_description_prefix(trim_ascii_start(line)).is_some()
+                && body_ends_in_definition_list(&nested.source, options)
+        });
         // A separator at the list marker's column leaves the term. One
         // column inside the marker remains lazy term text.
         if indent <= list_base
@@ -168,6 +182,7 @@ pub(crate) fn collect_trailing_lazy_through_framed(
         }
         if is_blank_line(line)
             || (indent > base_indent
+                && !band_separator
                 && !(after_comment
                     && indent < content_col
                     && line_starts_paragraph(trim_ascii_start(line))
@@ -187,7 +202,7 @@ pub(crate) fn collect_trailing_lazy_through_framed(
                 // / `*[A]: b` dropped the author's line and defined an
                 // abbreviation where the sibling paths fold it (carve-rs#2096).
                 let line_owned = line.to_string();
-                interrupts_lazy_continuation_as_container(cur, &line_owned)
+                !band_separator && interrupts_lazy_continuation_as_container(cur, &line_owned)
             }
         {
             break;
@@ -203,8 +218,9 @@ pub(crate) fn collect_trailing_lazy_through_framed(
         // A block-shaped band line is retained text (PART 1 S4). One kept column
         // does not say so to a term, which a list marker ends at any indent and
         // which publishes the column as a leading space. The frame does.
-        let framed =
-            indent > list_base && (frame_band_lines || dedent_below_column(line, indent) != indent);
+        let framed = band_separator
+            || (indent > list_base
+                && (frame_band_lines || dedent_below_column(line, indent) != indent));
         let take = if framed {
             indent
         } else {
