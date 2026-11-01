@@ -2227,7 +2227,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     fn block_lead_item(&mut self, item: ItemOpen<'l>) -> ControlFlow<()> {
         let (base_indent, content_col, options) =
             (self.base_indent, self.content_col, self.options);
-        let content = item.marker.content;
+        let content = item.marker.content.trim_start_matches(' ');
         let item_at = item.at;
         let mut stream = item_marker_source(self.cur, content, item_at);
         let before_block = self.cur.pos;
