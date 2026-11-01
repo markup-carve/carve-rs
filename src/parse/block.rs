@@ -3,10 +3,9 @@ use super::*;
 /// Follow the nested lead fence over ONE line, in the body's own coordinates
 /// (the description marker already stripped). `collect_definition_body` keeps
 /// this state alive as it collects rather than deciding it once from the seed:
-/// the verbatim body owns flush-left lines only while the fence is OPEN, and an
-/// indented closer at or past the fence's column closes it (carve#1970). A
-/// flush-left line stays below the fence's column and cannot close it, so the
-/// original blank-terminated form is unaffected.
+/// the verbatim body owns lines only while the fence is OPEN. A closer at or
+/// past the fence's column closes it (carve#1970), and a nonblank line below
+/// that column leaves the item that owns it (PART 0 S4, carve#4468).
 pub(in crate::parse) fn advance_nested_lead_fence(
     open: &mut Option<(FenceOpen, usize)>,
     raw: &str,
@@ -16,7 +15,9 @@ pub(in crate::parse) fn advance_nested_lead_fence(
     let content = trim_ascii_start(innermost_marker_content(line));
     match *open {
         Some((fence, col)) => {
-            if indent >= col && is_fence_close(content, fence) {
+            if (!is_blank_line(line) && indent < col)
+                || (indent >= col && is_fence_close(content, fence))
+            {
                 *open = None;
             }
         }
