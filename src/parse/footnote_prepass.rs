@@ -1818,9 +1818,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let i = self.hosted_first_block(&host, note, i, def.first);
         let mut i = self.attach_quoted_plus_block(&host, note, i, raw_def_line);
         let source = self.source;
-        let track = *self
-            .body_opacity_candidates
-            .get_or_insert_with(|| source.contains("%%%") || source.contains("~~~"));
+        let track = *self.body_opacity_candidates.get_or_insert_with(|| {
+            source.contains("%%%") || source.contains("~~~") || source.contains("```")
+        });
         let mut walk = HostedWalk {
             track,
             marker_fence: marker_line_fence(def.first),
@@ -1828,7 +1828,10 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             admitted_fence: None,
             lazy_open: false,
         };
-        if walk.track {
+        // A fence opened by an item on the note's marker line has the item's
+        // extent. The marker fence tracker handles it; it must not leave the
+        // note's own code opacity open after that item ends.
+        if walk.track && walk.marker_fence.is_none() {
             walk.opacity.observe(def.first);
         }
         if walk
@@ -2073,7 +2076,15 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             return self.hosted_lazy_flow(host, walk, note, i);
         }
         walk.lazy_open = false;
-        if host.marker_note && parse_footnote_def_line(trim_ascii_start(line)).is_some() {
+        let dedented = strip_leading_columns(line, host.note_floor);
+        let in_marker_fence = walk
+            .marker_fence
+            .is_some_and(|(_, column)| indent_columns(&dedented) >= column);
+        if host.marker_note
+            && walk.opacity.code.is_none()
+            && !in_marker_fence
+            && parse_footnote_def_line(trim_ascii_start(line)).is_some()
+        {
             return Flow::Stop;
         }
         if trim_ascii(line) == "+"
@@ -2104,7 +2115,6 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             *i = start + count;
             return Flow::Next;
         }
-        let dedented = strip_leading_columns(line, host.note_floor);
         // A link definition at the note's own column is metadata,
         // even when an open marker-line paragraph precedes it.
         let definition_text = note_link_def_candidate(&dedented, note);
