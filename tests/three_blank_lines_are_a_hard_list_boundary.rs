@@ -143,14 +143,11 @@ fn the_boundary_applies_after_a_marker_line_block() {
     assert_eq!(top_kinds("- # H\n\n\n\n- b\n"), "list,list");
 }
 
-/// BOUND, recorded so the next reader does not mistake it for the threshold at
-/// work: an invisible line between two items already opened a second list
-/// before §11 N1a existed, and it still does. The count is of BLANK lines only,
-/// so a run broken by a comment is not a run and this shape is decided
-/// elsewhere.
+/// BOUND: a comment below the content column closes the item, not the list
+/// (CARVE-P9-051), and one blank on each side is a run of two, under the bound.
 #[test]
-fn a_comment_between_two_items_separates_them_for_its_own_reason() {
-    assert_eq!(top_kinds("- a\n\n%% c\n\n- b\n"), "list,comment,list");
+fn a_comment_between_two_items_keeps_one_list() {
+    assert_eq!(top_kinds("- a\n\n%% c\n\n- b\n"), "list");
 }
 
 /// BOUND: three blank lines before an INCOMPATIBLE marker change nothing --
