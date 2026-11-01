@@ -461,6 +461,11 @@ pub(in crate::parse) fn parse_definition_list(
                     detect_fence_open(def_trimmed)
                 },
                 closed_last: false,
+                line_block: if first_block_plus {
+                    None
+                } else {
+                    detect_line_block_open(def_trimmed)
+                },
             };
             let seed = body.source.clone();
             body.append(collect_definition_body(
@@ -560,6 +565,9 @@ pub(in crate::parse) fn is_plus_marker(line: &str) -> bool {
 pub(in crate::parse) struct DefinitionBodyFence {
     open: Option<FenceOpen>,
     closed_last: bool,
+    /// An open line block's colon run: its payload opens nothing (PART 2
+    /// `line_block`, carve#4748).
+    line_block: Option<usize>,
 }
 
 impl DefinitionBodyFence {
@@ -573,6 +581,21 @@ impl DefinitionBodyFence {
 
     /// Follow the fence over one line collected at the body's column.
     fn track(&mut self, dedented: &str, opener_column: usize) {
+        if self.open.is_none() {
+            let line = trim_ascii_start(dedented);
+            if let Some(len) = self.line_block {
+                if exact_colon_fence_len(line) == Some(len) {
+                    self.line_block = None;
+                }
+                self.closed_last = false;
+                return;
+            }
+            if let Some(len) = detect_line_block_open(line) {
+                self.line_block = Some(len);
+                self.closed_last = false;
+                return;
+            }
+        }
         let was_open = self.open.is_some();
         // CARVE-P0-004: an opener PAST the body's column is measured from its own
         // authored column, and so is its closer. The body's own column closes it
@@ -596,6 +619,9 @@ impl DefinitionBodyFence {
 /// Does the definition body collected so far end in something a flush-left line
 /// can FOLD INTO?
 pub(in crate::parse) fn body_ends_with_an_unnoded_interrupter(source: &str) -> bool {
+    if body_ends_in_line_block_payload(source) {
+        return false;
+    }
     if body_ends_with_an_attribute_line(source) {
         return true;
     }
@@ -604,6 +630,32 @@ pub(in crate::parse) fn body_ends_with_an_unnoded_interrupter(source: &str) -> b
         .rev()
         .find(|line| !is_blank_line(line))
         .is_some_and(|last| trim_ascii_start(last).starts_with("%%"))
+}
+
+/// Does the body end on a payload line of a line block no closer has ended?
+/// That line is stanza text whatever it looks like (PART 2 `line_block`).
+fn body_ends_in_line_block_payload(source: &str) -> bool {
+    let mut open = None;
+    let mut last_is_payload = false;
+    for (index, line) in source.lines().enumerate() {
+        let mut local = trim_ascii_start(line);
+        while let Some(rest) = strip_blockquote_prefix(local) {
+            local = trim_ascii_start(rest);
+        }
+        // A line block opened past a list marker belongs to the item's own
+        // collector; the spec model refuses an attribute-shaped payload there
+        // (reported on carve#4748), so this test stays out of it.
+        if index == 0 && innermost_marker_tail(local).0 > 0 {
+            return false;
+        }
+        last_is_payload = false;
+        match open {
+            Some(len) if exact_colon_fence_len(local) == Some(len) => open = None,
+            Some(_) => last_is_payload = !is_blank_line(local),
+            None => open = detect_line_block_open(local),
+        }
+    }
+    last_is_payload
 }
 
 pub(in crate::parse) fn body_ends_with_an_attribute_line(source: &str) -> bool {
@@ -648,7 +700,8 @@ pub(in crate::parse) fn body_ends_with_an_attribute_line(source: &str) -> bool {
 
 pub(in crate::parse) fn definition_body_fold(source: &str, options: &Options<'_>) -> (bool, bool) {
     if body_ends_with_an_unnoded_interrupter(source)
-        || quoted_body_ends_with_an_invisible_line(source)
+        || (quoted_body_ends_with_an_invisible_line(source)
+            && !body_ends_in_line_block_payload(source))
     {
         return (false, false);
     }

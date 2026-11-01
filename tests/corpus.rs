@@ -1421,8 +1421,6 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     ("888-a-comment-span-in-a-quote-closes-at-an-unmarked-closer-3", "new corpus pair at the 7840b697 spec pin, engine port pending (markup-carve/carve#4721)", "<blockquote><p>secret</p></blockquote>\n<p>after</p>"),
     ("888-a-comment-span-in-a-quote-closes-at-an-unmarked-closer-4", "new corpus pair at the 7840b697 spec pin, engine port pending (markup-carve/carve#4721)", "<blockquote>\n  <blockquote><p>secret</p></blockquote>\n</blockquote>"),
     ("888-a-comment-span-in-a-quote-closes-at-an-unmarked-closer-5", "new corpus pair at the 7840b697 spec pin, engine port pending (markup-carve/carve#4721)", "<blockquote>\n  <blockquote><p>secret</p></blockquote>\n</blockquote>\n<blockquote><p>more</p></blockquote>"),
-    ("908-a-line-block-in-a-note-or-description-takes-a-lazy-line-whatever-its-last-payload-line-3", "new corpus pair at the 7840b697 spec pin, engine port pending (markup-carve/carve#4748)", "<dl>\n  <dt>t</dt>\n  <dd>\n    <div class=\"line-block\">\n      <p>~~~</p>\n    </div>\n  </dd>\n</dl>\n<p>b</p>"),
-    ("908-a-line-block-in-a-note-or-description-takes-a-lazy-line-whatever-its-last-payload-line-5", "new corpus pair at the 7840b697 spec pin, engine port pending (markup-carve/carve#4748)", "<dl>\n  <dt>t</dt>\n  <dd>\n    <blockquote>\n      <div class=\"line-block\">\n        <p>{.k}</p>\n      </div>\n    </blockquote>\n  </dd>\n</dl>\n<p>b</p>"),
 ];
 
 fn check_pair(slug: &str) {
