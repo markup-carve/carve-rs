@@ -46,8 +46,7 @@
       "ticket": "markup-carve/carve-rs#3534",
       "cause": "untriaged day-one drift in the roundtrip family",
       "cases": [
-        "roundtrip-50e7fa11ce58",
-        "roundtrip-702a692a40ae"
+        "roundtrip-50e7fa11ce58"
       ]
     },
     {

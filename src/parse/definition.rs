@@ -759,6 +759,9 @@ pub(in crate::parse) fn body_ends_with_an_attribute_line(source: &str) -> bool {
 }
 
 pub(in crate::parse) fn definition_body_fold(source: &str, options: &Options<'_>) -> (bool, bool) {
+    if body_ends_in_line_block_payload(source) {
+        return (true, false);
+    }
     if body_ends_with_an_unnoded_interrupter(source)
         || (quoted_body_ends_with_an_invisible_line(source)
             && !body_ends_in_line_block_payload(source))
