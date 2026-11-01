@@ -1165,6 +1165,7 @@ fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize, marker: cha
         return String::new();
     }
     ctx.list_depth += 1;
+    let tight = node.effective_tight();
     let mut out = String::new();
     let mut counter = node.start.unwrap_or(1);
     // The authored bullet and delimiter, not normalized ones: a change of
@@ -1193,8 +1194,7 @@ fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize, marker: cha
             (prefix, pad)
         };
         let outer = ctx.previous_list.take();
-        let content =
-            trim_block_output(&render_list_item(item, node.tight, ctx, depth + 1)).to_string();
+        let content = trim_block_output(&render_list_item(item, tight, ctx, depth + 1)).to_string();
         ctx.previous_list = outer;
         let mut lines = content.split('\n');
         let first = lines.next().unwrap_or_default();
@@ -1207,7 +1207,7 @@ fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize, marker: cha
         // A loose list is spelled with a blank line between its items. Without
         // it a list whose looseness lives in the item BOUNDARY reads back tight
         // (carve#2281): `- a` / blank / `- b` came back as two glued markers.
-        if !node.tight && index < last {
+        if !tight && index < last {
             out.push('\n');
         }
     }

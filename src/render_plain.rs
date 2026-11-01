@@ -538,6 +538,7 @@ fn render_list(node: &List, depth: usize) -> String {
         return String::new();
     }
     let mut out = String::new();
+    let tight = node.effective_tight();
     let mut counter = node.start.unwrap_or(1);
     let list_depth = LIST_DEPTH.with(|cell| {
         let next = cell.get() + 1;
@@ -560,7 +561,7 @@ fn render_list(node: &List, depth: usize) -> String {
             if index == 0 {
                 content.push_str(&render_block(block, depth + 1));
             } else if matches!(block, BlockNode::List(_)) {
-                if node.tight && content.ends_with("\n\n") {
+                if tight && content.ends_with("\n\n") {
                     content.pop();
                 }
                 content.push_str(&render_block(block, depth + 1));

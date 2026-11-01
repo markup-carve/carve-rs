@@ -347,6 +347,9 @@ fn try_layout_into(
         || source.starts_with("---")
         || source.contains("[^")
         || source.contains("[@")
+        // Standalone code directives can split a list lead into two paragraphs
+        // without a blank. The tree route decides tightness from both blocks.
+        || source.contains("@code")
         || source.contains("</#")
         || source.contains("![")
         || source.contains("%%")

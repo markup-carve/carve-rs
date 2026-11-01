@@ -576,7 +576,7 @@ pub(super) fn encode_block_task<'a>(
         BlockNode::List(n) => {
             let mut w = typed(out, "list");
             w.field("ordered", |out| write_bool(out, n.ordered));
-            w.field("tight", |out| write_bool(out, n.tight));
+            w.field("tight", |out| write_bool(out, n.effective_tight()));
             w.field("items", |out| out.push('['));
             tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
                 let mut w = Writer { out, first: false };
@@ -1183,7 +1183,7 @@ pub(super) fn write_block_leaf(out: &mut String, node: &BlockNode) {
         BlockNode::List(n) => {
             let mut w = typed(out, "list");
             w.field("ordered", |out| write_bool(out, n.ordered));
-            w.field("tight", |out| write_bool(out, n.tight));
+            w.field("tight", |out| write_bool(out, n.effective_tight()));
             w.field("items", |out| write_array(out, &n.items, write_list_item));
             // Same normalization as the task encoder above (PART 12 §22). Kept
             // in step deliberately: this arm is only reachable if `List` ever

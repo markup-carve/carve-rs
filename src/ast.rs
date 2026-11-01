@@ -701,12 +701,44 @@ pub struct List {
     /// Bullet character as authored: `-` or `*` (unordered lists only).
     /// Same §11 semantics as `delim`; `None` falls back to `-`.
     pub bullet_char: Option<char>,
-    /// Whether item paragraphs render without `<p>` wrappers.
+    /// Tightness from source gaps. A literal directive and its following
+    /// paragraph can still make the list loose; use [`List::effective_tight`]
+    /// for rendering.
     pub tight: bool,
     /// Items in source order.
     pub items: Vec<ListItem>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
+}
+
+impl List {
+    /// Whether the final item paragraphs render without `<p>` wrappers.
+    /// A literal code directive followed by a paragraph loosens a list even
+    /// without a source blank.
+    pub fn effective_tight(&self) -> bool {
+        self.tight && !self.has_literal_directive_pair()
+    }
+
+    pub(crate) fn has_literal_directive_pair(&self) -> bool {
+        self.items.iter().any(|item| {
+            let mut previous_directive = false;
+            for child in &item.children {
+                match child {
+                    BlockNode::Comment(_) => continue,
+                    BlockNode::Paragraph(_) if previous_directive => return true,
+                    BlockNode::Paragraph(paragraph) => {
+                        let text = crate::render::plain_inlines(&paragraph.children);
+                        let text = text.trim();
+                        previous_directive = text.starts_with("{{")
+                            && text.ends_with("}}")
+                            && text.contains("@code");
+                    }
+                    _ => previous_directive = false,
+                }
+            }
+            false
+        })
+    }
 }
 
 /// Letter or Roman numeral style for an ordered list.
