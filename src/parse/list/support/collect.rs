@@ -358,6 +358,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             // An attached fence with no closer ends with the item (carve#4018): a line
             // below the item's column is not its payload.
             let attached_fence = detect_fence_open(trim_ascii_start(cur.lines.at(start))).is_some();
+            let mut attached_paragraph_open = None;
             let end = attached_indented_block_end(cur.lines, start, strip_cols, options)
                 .unwrap_or_else(|| {
                     attached_block_lines_classified(
@@ -366,12 +367,27 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                         &mut cur.comment_closer_last_index,
                         &mut cur.code_closer_last_index,
                         options,
-                        &mut |next, _| {
+                        &mut |next, at| {
                             is_blank_line(next)
                                 || is_plus_marker(next)
                                 || detect_list_marker_full(next)
                                     .is_some_and(|marker| marker.indent <= parent_indent)
                                 || attached_fence && indent_columns(next) < strip_cols
+                                // Once an attached block closes, a line below
+                                // the item's content column has no paragraph
+                                // to continue. Cache the result across an
+                                // attached paragraph's lazy lines.
+                                || at > start
+                                    && indent_columns(next) < strip_cols
+                                    && !*attached_paragraph_open.get_or_insert_with(|| {
+                                        body_ends_with_open_paragraph(
+                                            &cur.lines.range(start..at)
+                                                .map(|line| slice_columns_mapped(line, strip_cols, true).0)
+                                                .collect::<Vec<_>>()
+                                                .join("\n"),
+                                            options,
+                                        )
+                                    })
                                 // A `+`-filled description's sibling ends its block (carve#4408).
                                 || strip_definition_marker(trim_ascii_start(next)).is_some()
                         },

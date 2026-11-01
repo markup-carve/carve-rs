@@ -301,3 +301,7 @@ path = "tests/fx27_marker_term_columns.rs"
 [[test]]
 name = "fx27_nested_sibling_after_lazy"
 path = "tests/fx27_nested_sibling_after_lazy.rs"
+
+[[test]]
+name = "closed_first_block_attachment_boundary"
+path = "tests/closed_first_block_attachment_boundary.rs"
