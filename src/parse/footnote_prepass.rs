@@ -184,6 +184,93 @@ fn opens_code_fence(rest: &str) -> bool {
     detect_fence_open(rest).is_some()
 }
 
+/// A note may fold text below its body column, but a definition that misses
+/// every enclosing frame is a document block (PART 0 S4, CARVE-P12-026).
+/// Keep the authored quote prefix in the test: `> *[A]: b` is quote text.
+/// Colon containers have no content-column entry, so check their open span
+/// separately before treating a zero reached column as the document.
+fn document_abbreviation_below_note(
+    line: &str,
+    columns: &ContentColumns,
+    document_colon_open: bool,
+) -> bool {
+    detect_abbreviation_def(trim_ascii_start(line)).is_some()
+        && columns.reached_by(indent_columns(line)) == 0
+        && !document_colon_open
+}
+
+/// Colon containers at document column 0 keep their body at that same column,
+/// so a zero reached content column alone does not make an abbreviation a
+/// document block. Record their span once for the footnote walk rather than
+/// rescanning the preceding source for each note.
+fn document_colon_spans(
+    lines: &[&str],
+    fence_closers: &PrepassFenceClosers,
+    comment_closers: &HashMap<usize, usize>,
+) -> Vec<bool> {
+    let mut spans = Vec::with_capacity(lines.len());
+    let mut containers = Vec::new();
+    let mut code = None;
+    let mut literal = None;
+    let mut comment = None;
+    for (at, &line) in lines.iter().enumerate() {
+        spans.push(!containers.is_empty() || literal.is_some());
+        if let Some(open) = code {
+            if indent_columns(line) == 0 && is_fence_close(line, open) {
+                code = None;
+            }
+            continue;
+        }
+        if let Some(run) = literal {
+            if indent_columns(line) == 0 && exact_colon_fence_len(line) == Some(run) {
+                literal = None;
+            }
+            continue;
+        }
+        if let Some(run) = comment {
+            if is_comment_fence_close_any_column(line, run) {
+                comment = None;
+            }
+            continue;
+        }
+        if let Some(open) = detect_comment_fence_line_any_column(line) {
+            if comment_closers
+                .get(&open.fence_len)
+                .is_some_and(|&last| last > at)
+            {
+                comment = Some(open.fence_len);
+            }
+            continue;
+        }
+        if indent_columns(line) != 0 {
+            continue;
+        }
+        if let Some(open) = detect_fence_open(line) {
+            if fence_closers.closes_after_at(at, open, 0) {
+                code = Some(open);
+            }
+            continue;
+        }
+        if let Some(run) = detect_line_block_open(line)
+            .or_else(|| detect_hardbreaks_block_open(line))
+            .or_else(|| detect_quote_block_open(line))
+        {
+            literal = Some(run);
+            continue;
+        }
+        if let Some(run) = exact_colon_fence_len(line) {
+            if containers.last() == Some(&run) {
+                containers.pop();
+                continue;
+            }
+        }
+        if let Some(open) = detect_container_open(line) {
+            containers.push(open.fence_len);
+        }
+    }
+    spans
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Flow {
     Next,
@@ -404,6 +491,7 @@ struct FootnoteScan<'a, 'o> {
     def_positions: BTreeMap<String, Pos>,
     note_link_defs: BTreeMap<String, LinkDef>,
     body_opacity_candidates: Option<bool>,
+    document_colon_open: Vec<bool>,
     fence: PrepassFenceState,
     // A LINE BLOCK's body is inline content, so a definition-shaped line inside
     // one is text. Without this the line was extracted here and never reached
@@ -451,6 +539,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let comment_fence_closers = comment_fence_close_index(lines);
         let closer_maxima = fence_closer_suffix_maxima(lines);
         let folded_into_term = term_folded_lines(lines, &closer_maxima, options);
+        let document_colon_open = if source.contains("*[") && source.contains(":::") {
+            document_colon_spans(lines, &closer_maxima, &comment_fence_closers)
+        } else {
+            Vec::new()
+        };
         Self {
             source,
             lines,
@@ -468,6 +561,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             def_positions: BTreeMap::new(),
             note_link_defs: BTreeMap::new(),
             body_opacity_candidates: None,
+            document_colon_open,
             fence: PrepassFenceState::default(),
             verse_lines,
             in_comment_fence: None,
@@ -1282,6 +1376,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             && !exact_colon_fence_len(rest).is_some_and(|run| run >= 3)
             && parse_link_def_line(rest).is_none()
             && parse_footnote_def_line(rest).is_none()
+            && !document_abbreviation_below_note(
+                line,
+                &self.columns,
+                self.document_colon_open.get(*i).copied().unwrap_or(false),
+            )
             // §10 I2: under a note's paragraph a marker is text, unless an
             // item hosts the note and the marker may continue that list.
             // A marker below a term ends the note (corpus 855).
@@ -2011,6 +2110,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             && walk.admitted_fence.is_none()
             && walk.opacity.comment.is_none()
             && walk.opacity.code.is_none()
+            && !document_abbreviation_below_note(
+                raw,
+                &self.columns,
+                self.document_colon_open.get(*i).copied().unwrap_or(false),
+            )
             && !interrupts_paragraph_with_rest(rest, &self.lines[*i + 1..])
             && !is_colon_fence_opener_shape(rest)
             && !exact_colon_fence_len(rest).is_some_and(|run| run >= 3)
