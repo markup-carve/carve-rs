@@ -559,7 +559,12 @@ fn direct_root_list_read(
             || !lines[read.end..]
                 .iter()
                 .find(|line| !is_blank_line(line))
-                .is_some_and(|line| trim_ascii(line) == "+")
+                // A comment below the content column closes the item, not the
+                // list (CARVE-P9-051), and only the tree parser reads past it.
+                .is_some_and(|line| {
+                    let line = trim_ascii(line);
+                    line == "+" || line.starts_with("%%")
+                })
     })
 }
 
