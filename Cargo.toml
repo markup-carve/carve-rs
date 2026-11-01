@@ -321,3 +321,7 @@ path = "tests/definition_caption_lazy.rs"
 [[test]]
 name = "quote_flanks_skip_braced_comments"
 path = "tests/quote_flanks_skip_braced_comments.rs"
+
+[[test]]
+name = "table_cell_authored_spans"
+path = "tests/table_cell_authored_spans.rs"

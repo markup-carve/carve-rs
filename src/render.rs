@@ -2318,11 +2318,9 @@ fn table_cell_style(
     format!(" style=\"{declarations}\"")
 }
 
-/// Render a cell's author attributes, dropping any key that collides (case
-/// -insensitively) with a structural attribute this renderer actually emits
-/// for the cell (`rowspan` / `colspan` / `style`) -- the computed value is
-/// authoritative. When no such structural attribute is emitted, the author's
-/// value (e.g. a custom `style`) is preserved.
+/// Render a cell's author attributes. Span attributes always come from the
+/// table's marker grid, while other generated attributes replace an authored
+/// key only when this renderer emits them.
 /// PART 10 SST9: a header cell states what it heads - `col` in the leading
 /// header-row run, `row` below it. The language already distinguishes the two
 /// positions, so this states an association the table has rather than adding a
@@ -2386,8 +2384,12 @@ fn render_cell_author_attrs(attrs: &Option<Attrs>, emitted: &[&str]) -> String {
     let Some(a) = attrs else {
         return String::new();
     };
-    let collides = |k: &str| emitted.contains(&k.to_ascii_lowercase().as_str());
-    if emitted.is_empty() || !a.key_values.keys().any(|k| collides(k)) {
+    let collides = |k: &str| {
+        k.eq_ignore_ascii_case("rowspan")
+            || k.eq_ignore_ascii_case("colspan")
+            || emitted.iter().any(|name| k.eq_ignore_ascii_case(name))
+    };
+    if !a.key_values.keys().any(|k| collides(k)) {
         return render_attrs(attrs);
     }
     let mut filtered = a.clone();
