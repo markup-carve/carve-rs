@@ -70,6 +70,16 @@ pub(crate) fn from_code_without(
     skip_records(&code.content, &mut data, &mut ranges, skip);
     let width = data.iter().map(Vec::len).max().unwrap_or(0);
     let head = effective_header_rows(&attrs, data.len());
+    if attrs
+        .key_values
+        .get("header-rows")
+        .is_some_and(|value| !is_count(value))
+    {
+        attrs.key_values.remove("header-rows");
+        attrs
+            .order
+            .retain(|slot| !matches!(slot, AttrSlot::Key(key) if key == "header-rows"));
+    }
     attrs.key_values.remove("table");
     attrs
         .order
@@ -192,6 +202,12 @@ pub(crate) fn count(raw: Option<&String>, default: usize) -> usize {
         }
         Some(_) => default,
     }
+}
+
+fn is_count(value: &str) -> bool {
+    let value = value.trim();
+    value.is_empty()
+        || (value.bytes().all(|byte| byte.is_ascii_digit()) && value.parse::<usize>().is_ok())
 }
 
 pub(crate) fn effective_header_rows(attrs: &Attrs, rows: usize) -> usize {

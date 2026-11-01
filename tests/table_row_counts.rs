@@ -39,3 +39,20 @@ fn overlapping_delimited_edges_leave_plain_body_cells() {
     let written = carve::render_carve(&carve::parse(source)).unwrap();
     assert_eq!(carve::to_html(&written), html);
 }
+
+#[test]
+fn invalid_delimited_header_count_uses_implicit_first_header() {
+    for format in ["csv", "tsv"] {
+        for invalid in ["x", "1x", "-1", "999999999999999999999999999999999"] {
+            let source = format!("{{table header-rows={invalid}}}\n```{format}\na\nb\n```\n");
+            let html = carve::to_html(&source);
+            assert_eq!(
+                html.trim(),
+                "<table>\n  <thead>\n    <tr><th scope=\"col\">a</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>b</td></tr>\n  </tbody>\n</table>",
+                "{source}"
+            );
+            let written = carve::render_carve(&carve::parse(&source)).unwrap();
+            assert_eq!(carve::to_html(&written), html, "{written}");
+        }
+    }
+}
