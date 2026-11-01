@@ -25,6 +25,9 @@ fn a_plain_payload_needs_no_later_line_to_keep_its_stanza() {
 fn an_exact_closer_ends_the_description_stanza() {
     let source = "- :: u\n  : ::: |\n    %% c\n    :::\ntail\n";
     let html = to_html(source);
-    assert!(html.contains("<div class=\"line-block\">\n          <p></p>\n"), "{html}");
+    assert!(
+        html.contains("<div class=\"line-block\">\n          <p></p>\n"),
+        "{html}"
+    );
     assert!(html.ends_with("</ul>\n<p>tail</p>"), "{html}");
 }
