@@ -57,3 +57,47 @@ fn a_content_less_term_marker_stays_literal() {
     // item text, not a definition list.
     assert_eq!(squash(&to_html("* :: \n")), "<ul> <li>::</li> </ul>");
 }
+
+#[test]
+fn a_definition_in_a_description_nested_under_a_marker_line_term_is_collected() {
+    for marker in ["- [ ]", "-"] {
+        let source = format!(":: t\n: {marker} :: t\n    : [r]:\n         /u\n");
+        let html = to_html(&source);
+        assert!(html.contains("<dd>/u</dd>"), "{marker}: {html}");
+        assert!(!html.contains("[r]:"), "{marker}: {html}");
+    }
+}
+
+#[test]
+fn a_separator_before_the_nested_item_content_column_stays_in_the_term() {
+    let source = ":: t\n: - [ ] :: t\n   : [r]:\n         /u\n";
+    let html = to_html(source);
+    assert!(html.contains("<dt>t\n: [r]:\n     /u</dt>"), "{html}");
+}
+
+#[test]
+fn the_nested_description_boundary_survives_a_quote_or_an_outer_item() {
+    for source in [
+        "> :: t\n> : - [ ] :: t\n>     : [r]:\n>          /u\n",
+        "- :: t\n  : - [ ] :: t\n      : [r]:\n           /u\n",
+    ] {
+        let html = to_html(source);
+        assert!(html.contains("<dd>/u</dd>"), "{source:?}: {html}");
+    }
+    let below = to_html("- :: t\n  : - [ ] :: t\n     : [r]:\n           /u\n");
+    assert!(below.contains(": [r]:"), "{below}");
+}
+
+#[test]
+fn the_separator_must_reach_the_innermost_marker_line_item() {
+    for indent in [4, 5] {
+        let source = format!(
+            ":: t\n: - - :: t\n{}: [r]:\n         /u\n",
+            " ".repeat(indent)
+        );
+        let html = to_html(&source);
+        assert!(html.contains(": [r]:"), "{indent}: {html}");
+    }
+    let at = to_html(":: t\n: - - :: t\n      : [r]:\n         /u\n");
+    assert!(at.contains("<dd>/u</dd>"), "{at}");
+}
