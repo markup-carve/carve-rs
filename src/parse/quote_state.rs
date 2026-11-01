@@ -234,7 +234,7 @@ fn is_letter(c: char) -> bool {
     }
 }
 
-fn is_alnum(c: char) -> bool {
+pub(in crate::parse) fn is_alnum(c: char) -> bool {
     if c.is_ascii() {
         c.is_ascii_alphanumeric()
     } else {

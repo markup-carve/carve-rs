@@ -287,10 +287,9 @@ pub(in crate::parse) fn append_abbreviations_in_text(
     }
 }
 
+/// PART 9R R3: a boundary needs a neighbor that is no Unicode letter or number.
 pub(in crate::parse) fn is_word_boundary(text: &str, pos: usize) -> bool {
-    if pos == 0 || pos >= text.len() {
-        return true;
-    }
-    !text.as_bytes()[pos - 1].is_ascii_alphanumeric()
-        || !text.as_bytes()[pos].is_ascii_alphanumeric()
+    let before = text[..pos].chars().next_back();
+    let after = text[pos..].chars().next();
+    !before.is_some_and(quote_state::is_alnum) || !after.is_some_and(quote_state::is_alnum)
 }
