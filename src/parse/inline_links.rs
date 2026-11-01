@@ -814,6 +814,21 @@ pub(in crate::parse) fn compute_bracket_runs(
     bytes: &[u8],
     footnote_refs: bool,
 ) -> (Vec<usize>, Vec<usize>) {
+    compute_bracket_runs_with_alt(bytes, footnote_refs, true)
+}
+
+pub(in crate::parse) fn compute_link_bracket_runs(
+    bytes: &[u8],
+    footnote_refs: bool,
+) -> (Vec<usize>, Vec<usize>) {
+    compute_bracket_runs_with_alt(bytes, footnote_refs, false)
+}
+
+fn compute_bracket_runs_with_alt(
+    bytes: &[u8],
+    footnote_refs: bool,
+    image_alt: bool,
+) -> (Vec<usize>, Vec<usize>) {
     // A backtick in a literal directive opens and closes no span (CARVE-P6-001).
     let masked = mask_literal_directive_backticks(bytes);
     let bytes = masked.as_slice();
@@ -857,7 +872,7 @@ pub(in crate::parse) fn compute_bracket_runs(
     // literal slot where `{%` opens nothing (CARVE-P3-001).
     let last_percent_close = bytes.windows(2).rposition(|w| w == b"%}");
     let delimited_end = |at: usize, in_alt: bool| -> Option<usize> {
-        if in_alt
+        if (in_alt && image_alt)
             || bytes.get(at + 1) != Some(&b'%')
             || decorated_braced_opener(bytes, at)
             || !last_percent_close.is_some_and(|close| close >= at + 2)
