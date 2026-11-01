@@ -1,6 +1,6 @@
 //! CARVE-P9-083, carve#4496: a note's marker-line item or note is measured from
-//! its source column, so a line below that column leaves the child. A `+` and a
-//! code fence on that line still read the note's body column (carve#4409).
+//! its source column, so a line below that column leaves the child. An own-line
+//! `+` reads the child's authored marker column (carve#4623).
 
 fn notes(source: &str) -> String {
     let html = carve::to_html(source);
@@ -66,13 +66,14 @@ fn prose_below_a_marker_line_note_folds_into_its_paragraph() {
 }
 
 #[test]
-fn a_plus_still_reads_the_note_body_column() {
-    contains("[^n]: - a\n  +\n  p\n\n[^n]\n", "<li>a p </li>");
+fn a_plus_reads_the_childs_authored_marker_column() {
+    contains("[^n]: - a\n  +\n  p\n\n[^n]\n", "<li>a + p</li>");
     contains(
         "[^n]: > a\n  +\n  b\n\n[^n]\n",
-        "<p>a</p> <p>b</p> </blockquote>",
+        "<blockquote><p>a + b</p></blockquote>",
     );
     contains("[^n]: - a\n    +\n    p\n\n[^n]\n", "<li>a + p</li>");
+    contains("[^n]: - a\n      +\n      p\n\n[^n]\n", "<li>a p </li>");
 }
 
 #[test]

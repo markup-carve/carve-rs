@@ -1,7 +1,7 @@
 //! An own-line `+` reaches a child opened on a note marker line at the
 //! child's authored marker column (carve#4623, carve#4697).
 
-use carve::to_html;
+use carve::{to_carve, to_html};
 
 const REFERENCE: &str =
     "<p><a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>";
@@ -38,4 +38,18 @@ fn an_item_refuses_a_plus_at_the_notes_body_column() {
     let source = "[^f]: - i\n  +\n  x\n\n[^f]\n";
     let body = "      <ul>\n        <li>i\n+\nx</li>\n      </ul>";
     assert_eq!(to_html(source).trim(), expected(body));
+}
+
+#[test]
+fn formatting_keeps_marker_line_children_at_their_authored_columns() {
+    for source in [
+        "[^f]: - i\n      +\n      x\n\n[^f]\n",
+        "[^long]: 1. i\n         +\n         x\n\n[^long]\n",
+        "[^f]: - - a\n        # H\n\n[^f]\n",
+        "[^f]: - ```js\n    x\n    ```\n\n[^f]\n",
+    ] {
+        let formatted = to_carve(source);
+        assert_eq!(to_html(&formatted), to_html(source), "{formatted}");
+        assert_eq!(to_carve(&formatted), formatted, "{source}");
+    }
 }
