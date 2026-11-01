@@ -83,6 +83,24 @@ fn blank_separated_indented_footnote_continuation_stays_in_footnote() {
 }
 
 #[test]
+fn nested_note_takes_outer_owned_below_column_prose() {
+    assert_eq!(
+        html("x[^n]\n\n[^f]: note\n      [^n]: y\n    code\n"),
+        concat!(
+            "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n",
+            "<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n",
+            "  <hr>\n",
+            "  <ol>\n",
+            "    <li id=\"fn1\">\n",
+            "      <p>y\ncode<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n",
+            "    </li>\n",
+            "  </ol>\n",
+            "</section>"
+        )
+    );
+}
+
+#[test]
 fn all_space_code_span_does_not_strip_or_panic() {
     assert_eq!(html("` `"), "<p><code> </code></p>");
     assert_eq!(html("`  a  `"), "<p><code> a </code></p>");

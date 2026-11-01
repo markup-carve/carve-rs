@@ -1381,8 +1381,13 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             return Flow::Stop;
         }
         let rest = trim_ascii_start(line);
-        // A nested note takes a line its outer note already read as lazy.
-        if (!self.nested || state.marker_line_note || line.starts_with(LAZY))
+        // A nested note can also take below-column prose that the outer note
+        // owned at its content column. A refused `+` is an internal letter,
+        // not prose, and closes this claim before its following paragraph.
+        if (!self.nested
+            || state.marker_line_note
+            || line.starts_with(LAZY)
+            || (!continuation_marker::is_refused_letter(rest) && column > 0))
             && state.note_fence.is_none()
             && !interrupts_paragraph_with_rest(line, &self.lines[*i + 1..])
             && !interrupts_paragraph_with_rest(rest, &self.lines[*i + 1..])
