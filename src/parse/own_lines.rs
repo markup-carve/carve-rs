@@ -536,8 +536,6 @@ struct Walk<'a> {
     sibling: Option<(Kind, String, usize, usize)>,
     /// Continuation lines of the wrapped attribute block just classified.
     attr_rest: Option<(usize, usize)>,
-    /// A line block missed by lazy text, held until its bare closer follows.
-    pending_line_block: Option<Frame>,
 }
 
 struct AttachedBlock {
@@ -671,7 +669,6 @@ fn walk_traced(
         runs: None,
         sibling: None,
         attr_rest: None,
-        pending_line_block: None,
         trace,
         first_line,
         decide: decide && source.contains('+'),
@@ -1167,25 +1164,16 @@ impl<'a> Walk<'a> {
         form: &Form,
         block: Option<Frame>,
     ) -> bool {
-        let Some(block) = block.or_else(|| self.pending_line_block.take()) else {
+        let Some(block) = block else {
             return false;
         };
-        // A lazy stanza line does not end the line block. The next nonblank
-        // line is payload whenever it still reaches the block's host column,
-        // even if it spells a quote, fence, or a colon run past the opener's column.
-        let next_reaches_block = self
-            .lines
-            .get(at + 1)
-            .is_some_and(|next| !is_blank_line(next) && indent_cols(next).0 >= block.open_col);
+        // An open stanza takes this plain lazy line on its own. A later line
+        // cannot decide whether the current line belongs to the stanza.
         if !matches!(form, Form::Text)
             || at == 0
             || self.lines[at - 1].trim().is_empty()
             || self.first_line + at - 1 <= block.line
         {
-            return false;
-        }
-        if !next_reaches_block {
-            self.pending_line_block = Some(block);
             return false;
         }
         self.frames.push(block);
@@ -1383,8 +1371,7 @@ impl<'a> Walk<'a> {
         self.end_closed_lists(c);
         let form = self.classify(c.rest, reached, at);
         // A plain line can continue a line block's open stanza lazily. Restore
-        // its frame when the next nonblank line reaches the block's column;
-        // a line left of it exits through the normal owner walk.
+        // its frame for this line; the next line gets its own owner decision.
         if self.retain_lazy_line_block(at, c, reached, &form, missed_line_block) {
             return;
         }
