@@ -972,7 +972,18 @@ fn parse_with_options_mode_and_index(
                     (label, children)
                 })
                 .collect();
-            let children = parse_mapped_source_at_document_level(&body, options);
+            let (mut children, skipped_abbreviations) = with_skipped_sibling_abbreviations(|| {
+                parse_mapped_source_at_document_level(&body, options)
+            });
+            let had_skipped_abbreviations = !skipped_abbreviations.is_empty();
+            children.extend(
+                skipped_abbreviations
+                    .into_iter()
+                    .map(BlockNode::AbbreviationDef),
+            );
+            if had_skipped_abbreviations {
+                order_abbreviation_blocks(&mut children, original);
+            }
             (footnote_defs, children)
         });
     let original_line_starts = options
