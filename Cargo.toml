@@ -333,3 +333,7 @@ path = "tests/quote_flanks_skip_braced_comments.rs"
 [[test]]
 name = "table_cell_authored_spans"
 path = "tests/table_cell_authored_spans.rs"
+
+[[test]]
+name = "a_verbatim_interior_colon_run_is_unspellable"
+path = "tests/a_verbatim_interior_colon_run_is_unspellable.rs"
