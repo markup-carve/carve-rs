@@ -88,6 +88,10 @@ name = "a_lazy_caption_keeps_its_column"
 path = "tests/a_lazy_caption_keeps_its_column.rs"
 
 [[test]]
+name = "a_missed_term_refuses_a_definition_separator"
+path = "tests/a_missed_term_refuses_a_definition_separator.rs"
+
+[[test]]
 name = "a_definition_ends_a_quoted_term_before_lazy_text"
 path = "tests/a_definition_ends_a_quoted_term_before_lazy_text.rs"
 

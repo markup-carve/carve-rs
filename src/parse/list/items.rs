@@ -2092,6 +2092,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             base_indent,
             nested_content_col,
             content_col,
+            options,
         );
         if cur.pos == before {
             return None;
