@@ -13,6 +13,24 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    // Categories added between spec 7840b697 and d4c64561.
+    "a-braced-comment-after-a-quote-does-not-change-its-direction",
+    "a-comment-does-not-split-a-nested-list-boundary",
+    "a-fence-on-a-note-s-marker-line-item-reads-its-payload-at-the-item-s-content-column",
+    "a-line-block-behind-nested-markers-takes-a-lazy-line-after-a-fence-shaped-payload",
+    "a-line-block-in-a-description-item-takes-a-lazy-line-after-a-definition-shaped-payload",
+    "a-line-block-in-a-description-under-a-list-item-takes-a-lazy-line-after-a-definition-shaped-payload",
+    "a-line-block-in-an-item-child-keeps-its-stanza-after-a-comment-or-marker-shaped-payload",
+    "a-line-block-stanza-remains-open-after-a-paired-payload-run",
+    "a-note-frame-ends-before-a-second-item-paragraph",
+    "a-plus-attached-div-in-a-list-item-ends-at-the-next-sibling-marker",
+    "a-task-item-reads-a-definition-after-extra-box-padding",
+    "a-wrapped-attribute-lead-is-invisible-to-list-looseness",
+    "abbreviations-skip-caption-cross-reference-text-and-an-unresolved-cross-reference",
+    "an-authored-rowspan-or-colspan-on-a-cell-is-dropped",
+    "an-invisible-line-between-list-or-description-siblings-is-skipped",
+    "an-unresolved-reference-in-a-cell-reads-the-unescaped-pipe",
+    "three-blank-lines-end-a-description-list",
     // Spec 14e66c05 adds 39 corpus pairs in these categories. Each new pair
     // was checked against its committed HTML before the spec pin moved.
     "a-contentless-description-marker-folds-under-a-quoted-term",
@@ -1352,6 +1370,23 @@ const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 /// declares anything.
 ///
 const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
+    // Newly reached corpus pairs at spec d4c64561. Each actual HTML is measured.
+    ("910-a-line-block-in-a-description-item-takes-a-lazy-line-after-a-definition-shaped-payload-2", "spec pin d4c64561: engine port pending", "<dl>\n  <dt>t</dt>\n  <dd>\n    <blockquote>\n      <ul>\n        <li>\n          <div class=\"line-block\">\n            <p>{<span class=\"tag\"><strong>#i</strong></span>}</p>\n          </div>\n        </li>\n      </ul>\n    </blockquote>\n    <p>b</p>\n  </dd>\n</dl>"),
+    ("911-a-fence-on-a-note-s-marker-line-item-reads-its-payload-at-the-item-s-content-column", "spec pin d4c64561: engine port pending", "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <ul>\n        <li>\n          <pre><code class=\"language-js\">    a\n    ```\n</code></pre>\n        </li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
+    ("911-a-fence-on-a-note-s-marker-line-item-reads-its-payload-at-the-item-s-content-column-2", "spec pin d4c64561: engine port pending", "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <ul>\n        <li>\n          <pre><code class=\"language-js\">a\n</code></pre>\n        </li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
+    ("911-a-fence-on-a-note-s-marker-line-item-reads-its-payload-at-the-item-s-content-column-3", "spec pin d4c64561: engine port pending", "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <ol>\n        <li>\n          <pre><code>    a\n    ~~~\n</code></pre>\n        </li>\n      </ol>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
+    ("911-a-fence-on-a-note-s-marker-line-item-reads-its-payload-at-the-item-s-content-column-4", "spec pin d4c64561: engine port pending", "<blockquote><p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <ul>\n        <li>\n          <ul>\n            <li>\n              <pre><code>    a\n    ```\n</code></pre>\n            </li>\n          </ul>\n        </li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
+    ("913-an-invisible-line-between-list-or-description-siblings-is-skipped", "spec pin d4c64561: engine port pending", "<ul>\n  <li>a</li>\n</ul>\n<ul>\n  <li>b <a href=\"/u\">x</a></li>\n</ul>"),
+    ("913-an-invisible-line-between-list-or-description-siblings-is-skipped-2", "spec pin d4c64561: engine port pending", "<ul>\n  <li>a</li>\n</ul>\n<ul>\n  <li>b <abbr title=\"x\">A</abbr></li>\n</ul>"),
+    ("913-an-invisible-line-between-list-or-description-siblings-is-skipped-3", "spec pin d4c64561: engine port pending", "<dl>\n  <dt>t</dt>\n</dl>\n<p>: d</p>"),
+    ("913-an-invisible-line-between-list-or-description-siblings-is-skipped-4", "spec pin d4c64561: engine port pending", "<blockquote>\n  <dl>\n    <dt>t</dt>\n    <dd>x</dd>\n  </dl>\n  <dl>\n    <dt>u</dt>\n    <dd>v <a href=\"/u\">y</a></dd>\n  </dl>\n</blockquote>"),
+    ("915-abbreviations-skip-caption-cross-reference-text-and-an-unresolved-cross-reference-2", "spec pin d4c64561: engine port pending", "<table id=\"t\">\n  <caption>A 1: c</caption>\n  <tbody>\n    <tr><td>a</td></tr>\n  </tbody>\n</table>\n<p>See <a href=\"#t\">A 1</a>.</p>"),
+    ("916-a-comment-does-not-split-a-nested-list-boundary", "spec pin d4c64561: engine port pending", "<ul>\n  <li>o\n    <ul>\n      <li><p>a</p></li>\n      <li><p>b</p></li>\n    </ul>\n  </li>\n</ul>"),
+    ("916-a-comment-does-not-split-a-nested-list-boundary-2", "spec pin d4c64561: engine port pending", "<ul>\n  <li>o\n    <ul>\n      <li><p>a</p></li>\n      <li><p>b</p></li>\n    </ul>\n  </li>\n</ul>"),
+    ("922-a-plus-attached-div-in-a-list-item-ends-at-the-next-sibling-marker", "spec pin d4c64561: engine port pending", "<ul>\n  <li>\n    <div>\n      <ul>\n        <li>b</li>\n      </ul>\n    </div>\n  </li>\n</ul>"),
+    ("922-a-plus-attached-div-in-a-list-item-ends-at-the-next-sibling-marker-2", "spec pin d4c64561: engine port pending", "<ol>\n  <li>\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>x\n2. b</p>\n    </aside>\n  </li>\n</ol>"),
+    ("923-a-line-block-stanza-remains-open-after-a-paired-payload-run", "spec pin d4c64561: engine port pending", "<dl>\n  <dt>u</dt>\n  <dd>\n    <div class=\"line-block\">\n      <p>~~~</p>\n      <p>~~~<br>\nb</p>\n    </div>\n  </dd>\n</dl>"),
+    ("923-a-line-block-stanza-remains-open-after-a-paired-payload-run-2", "spec pin d4c64561: engine port pending", "<dl>\n  <dt>u</dt>\n  <dd>\n    <div class=\"line-block\">\n      <p><code></code></p>\n      <p><code>\nb</code></p>\n    </div>\n  </dd>\n</dl>"),
     ("454-a-block-opener-past-a-nested-footnote-definition-opens-in-the-item-4", "inline or layout ruling at the 8d8bd4a9 pin not ported yet", "<ul>\n  <li>body\n    <ul>\n      <li>item</li>\n    </ul>\n  </li>\n</ul>\n<p>after</p>"),
     ("637-definition-body-note-and-fence-owner-boundaries-4", "inline or layout ruling at the 8d8bd4a9 pin not ported yet", "<ol>\n  <li>d\n    <ul>\n      <li>a</li>\n    </ul>\n  </li>\n</ol>"),
     ("796-a-tab-past-an-off-stop-frame-column-is-measured-in-that-frame", "inline or layout ruling at the 8d8bd4a9 pin not ported yet", "<ul>\n  <li>\n    <ol>\n      <li>a</li>\n    </ol>\n    <pre><code>x\n</code></pre>\n  </li>\n</ul>"),
