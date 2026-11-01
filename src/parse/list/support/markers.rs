@@ -889,6 +889,10 @@ thread_local! {
 /// and looking past it would find one that was never written
 /// (markup-carve/carve#1280).
 pub(crate) fn body_ends_with_open_paragraph(body: &str, options: &Options<'_>) -> bool {
+    // A payload line is stanza text whatever it looks like (PART 2 `line_block`).
+    if crate::parse::definition::body_ends_in_line_block_payload(body) {
+        return true;
+    }
     if body_ends_with_an_attribute_line(body)
         || body_ends_with_wrapped_attribute(body)
         || quoted_body_ends_with_an_invisible_line(body)
@@ -1129,6 +1133,7 @@ pub(crate) fn nested_ends_with_open_paragraph(
         return false;
     }
     if !below_outer_column
+        && !crate::parse::definition::body_ends_in_line_block_payload(nested)
         && (body_ends_with_an_attribute_line(nested)
             || quoted_body_ends_with_an_invisible_line(nested)
             || nested
