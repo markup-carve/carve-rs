@@ -1,5 +1,137 @@
 use super::*;
 
+thread_local! {
+    static SKIPPED_SIBLING_ABBREVIATIONS: std::cell::RefCell<Vec<Vec<AbbreviationDef>>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+pub(in crate::parse) struct SkippedSiblingAbbreviationsGuard;
+
+impl SkippedSiblingAbbreviationsGuard {
+    pub(in crate::parse) fn install() -> Self {
+        SKIPPED_SIBLING_ABBREVIATIONS.with(|cell| cell.borrow_mut().push(Vec::new()));
+        Self
+    }
+}
+
+impl Drop for SkippedSiblingAbbreviationsGuard {
+    fn drop(&mut self) {
+        SKIPPED_SIBLING_ABBREVIATIONS.with(|cell| {
+            cell.borrow_mut().pop();
+        });
+    }
+}
+
+pub(in crate::parse) fn append_skipped_sibling_abbreviations(
+    doc: &mut Document,
+    line_starts: Option<&CodepointLineStarts>,
+    source: &str,
+) {
+    SKIPPED_SIBLING_ABBREVIATIONS.with(|cell| {
+        if let Some(defs) = cell.borrow_mut().last_mut() {
+            if defs.is_empty() {
+                return;
+            }
+            doc.children
+                .extend(std::mem::take(defs).into_iter().map(|mut def| {
+                    if let (Some(pos), Some(starts)) = (&mut def.pos, line_starts) {
+                        apply_offsets(pos, starts);
+                    }
+                    BlockNode::AbbreviationDef(def)
+                }));
+            order_abbreviation_blocks(&mut doc.children, source);
+        }
+    });
+}
+
+/// Put definitions back in authored order after a skipped one was appended
+/// beyond its containing list. The HTML expansion rule uses the last spelling.
+pub(in crate::parse) fn order_abbreviation_blocks(blocks: &mut [BlockNode], source: &str) {
+    let mut lines: BTreeMap<(String, String), std::collections::VecDeque<usize>> = BTreeMap::new();
+    for (index, line) in source.lines().enumerate() {
+        if let Some(def) = detect_abbreviation_def(line) {
+            lines
+                .entry((def.abbr, def.expansion))
+                .or_default()
+                .push_back(index);
+        }
+    }
+    let mut defs: Vec<_> = blocks
+        .iter()
+        .filter_map(|block| {
+            let BlockNode::AbbreviationDef(def) = block else {
+                return None;
+            };
+            let key = (def.abbr.clone(), def.expansion.clone());
+            let order = def
+                .pos
+                .as_ref()
+                .map(|pos| pos.start_line - 1)
+                .or_else(|| {
+                    lines
+                        .get_mut(&key)
+                        .and_then(std::collections::VecDeque::pop_front)
+                })
+                .unwrap_or(usize::MAX);
+            Some((order, def.clone()))
+        })
+        .collect();
+    defs.sort_by_key(|(order, _)| *order);
+    let mut ordered = defs.into_iter();
+    for block in blocks.iter_mut() {
+        if matches!(block, BlockNode::AbbreviationDef(_)) {
+            *block = BlockNode::AbbreviationDef(ordered.next().unwrap().1);
+        }
+    }
+}
+
+pub(in crate::parse) fn with_skipped_sibling_abbreviations<T>(
+    f: impl FnOnce() -> T,
+) -> (T, Vec<AbbreviationDef>) {
+    let _guard = SkippedSiblingAbbreviationsGuard::install();
+    let result = f();
+    let definitions = SKIPPED_SIBLING_ABBREVIATIONS
+        .with(|cell| std::mem::take(cell.borrow_mut().last_mut().unwrap()));
+    (result, definitions)
+}
+
+pub(in crate::parse) fn record_skipped_sibling_abbreviation(
+    cur: &LineCursor<'_>,
+    options: &Options<'_>,
+) {
+    if !cur.at_document_level {
+        return;
+    }
+    let Some(mut def) = cur.peek().and_then(detect_abbreviation_def) else {
+        return;
+    };
+    def.pos = span_of(cur, cur.pos, cur.pos + 1, options);
+    SKIPPED_SIBLING_ABBREVIATIONS.with(|cell| {
+        if let Some(defs) = cell.borrow_mut().last_mut() {
+            defs.push(def);
+        }
+    });
+}
+
+fn consume_invisible_definition_gap(cur: &mut LineCursor<'_>, end: usize, options: &Options<'_>) {
+    while cur.pos < end {
+        if let Some(open) = cur.peek().and_then(detect_comment_fence_line_any_column) {
+            cur.consume();
+            while cur.pos < end {
+                let close = cur
+                    .peek()
+                    .is_some_and(|line| is_comment_fence_close_any_column(line, open.fence_len));
+                cur.consume();
+                if close {
+                    break;
+                }
+            }
+        } else {
+            record_skipped_sibling_abbreviation(cur, options);
+            cur.consume();
+        }
+    }
+}
+
 pub(in crate::parse) fn detect_abbreviation_def(line: &str) -> Option<AbbreviationDef> {
     let rest = line.strip_prefix("*[")?;
     let (abbr, expansion) = rest.split_once("]:")?;
@@ -118,6 +250,21 @@ pub(in crate::parse) fn fold_term(
             }
         }
         let Some(next) = cur.peek() else { break };
+        if cur.at_document_level
+            && detect_abbreviation_def(next).is_some()
+            && (definition_sibling_after_invisible(cur, marker_hosted, entry_column, true, true)
+                .is_some()
+                || definition_sibling_after_invisible(
+                    cur,
+                    marker_hosted,
+                    entry_column,
+                    false,
+                    false,
+                )
+                .is_some())
+        {
+            break;
+        }
         // A description marker left of the body column returns to the outer
         // description. Nested body collection can retain its residual indent
         // without a LAZY frame; that indent must not turn the marker into term
@@ -147,11 +294,10 @@ pub(in crate::parse) fn fold_term(
             break;
         }
         let owned = next.to_string();
-        // AS A CONTAINER, which waives the abbreviation arm. A term's
-        // continuation is a position for INLINE CONTENT, not for a block, so §7
-        // never gets to recognize `*[A]: b` there - and it is a content line at
-        // the document column too, which is why this cannot ask
-        // `at_document_level`. Asked as a paragraph, `:: t` / `*[A]: b` lost the
+        // A term's continuation is a position for INLINE CONTENT, so §7 does
+        // not recognize `*[A]: b` there unless the sibling lookahead above has
+        // proved that the line separates two markers at document level. Asked
+        // as a paragraph without that proof, `:: t` / `*[A]: b` lost the
         // author's second line and defined an abbreviation (carve-rs#2096).
         // A code opener at the container column ends a term even without a
         // closer (CARVE-P2-028). Paragraph continuation requires a closer.
@@ -239,6 +385,78 @@ pub(in crate::parse) fn fold_term(
     children
 }
 
+/// Find a compatible marker beyond lines that emit no visible block. Their
+/// definitions have already been registered by the prepass; this walk only
+/// decides whether the next visible line still belongs to this list.
+fn previous_definition_line_invisible(cur: &LineCursor<'_>) -> bool {
+    cur.pos.checked_sub(1).is_some_and(|at| {
+        let line = cur.lines.at(at);
+        is_line_comment_any_column(line)
+            || is_definition_placeholder(line)
+            || detect_comment_fence_line_any_column(line).is_some()
+    })
+}
+
+fn definition_sibling_after_invisible(
+    cur: &LineCursor<'_>,
+    marker_hosted: bool,
+    list_column: usize,
+    description: bool,
+    allow_blank: bool,
+) -> Option<usize> {
+    let mut at = cur.pos;
+    let mut blanks = 0;
+    while let Some(line) = cur.lines.line(at) {
+        if is_blank_line(line) {
+            if !allow_blank {
+                return None;
+            }
+            blanks += 1;
+            if blanks >= 3 {
+                return None;
+            }
+            at += 1;
+            continue;
+        }
+        if let Some(open) = detect_comment_fence_line_any_column(line) {
+            let mut end = at + 1;
+            while let Some(next) = cur.lines.line(end) {
+                if is_comment_fence_close_any_column(next, open.fence_len) {
+                    break;
+                }
+                end += 1;
+            }
+            if end == at + 1 {
+                return None;
+            }
+            at = end + 1;
+            continue;
+        }
+        if is_line_comment_any_column(line)
+            || is_definition_placeholder(line)
+            || (cur.at_document_level && detect_abbreviation_def(line).is_some())
+        {
+            at += 1;
+            continue;
+        }
+        if line.starts_with(ITEM_PARAGRAPH)
+            || (!line.starts_with(LAZY)
+                && cur.carried_reach(at) == Some(false)
+                && at == cur.pos
+                && !previous_definition_line_invisible(cur))
+        {
+            return None;
+        }
+        let entry = definition_entry_at(strip_lazy(line), marker_hosted, list_column)?;
+        return if description {
+            strip_definition_marker(entry).is_some().then_some(at)
+        } else {
+            is_definition_list_start(entry).then_some(at)
+        };
+    }
+    None
+}
+
 pub(in crate::parse) fn parse_definition_list(
     cur: &mut LineCursor,
     options: &Options<'_>,
@@ -300,7 +518,13 @@ pub(in crate::parse) fn parse_definition_list(
         // here and in carve-js while both rendered the same list; the grouping
         // was an internal nobody could see, until the AST became something
         // engines hand each other (PART 12).
-        while let Some(next) = cur.peek() {
+        while let Some(next_at) =
+            definition_sibling_after_invisible(cur, marker_hosted, list_column, false, false)
+        {
+            consume_invisible_definition_gap(cur, next_at, options);
+            let Some(next) = cur.peek() else {
+                break;
+            };
             let Some(next_term) = definition_entry_at(strip_lazy(next), marker_hosted, list_column)
                 .and_then(|line| line.strip_prefix(":: "))
             else {
@@ -335,37 +559,10 @@ pub(in crate::parse) fn parse_definition_list(
 
         let mut defs = Vec::new();
 
-        loop {
-            // A blank line before a `:  ` definition is a separator (djot
-            // parity): a definition may be separated from its term or a
-            // previous definition by a blank line. A blank not followed by a
-            // `:  ` definition ends the entry.
-            if matches!(cur.peek(), Some(l) if is_blank_line(l)) {
-                let mut look = 0usize;
-                while matches!(cur.lines.line(cur.pos + look), Some(l) if is_blank_line(l)) {
-                    look += 1;
-                }
-                // N1a ends the list before a new description marker too.
-                if look >= 3 {
-                    break;
-                }
-                match cur.lines.line(cur.pos + look) {
-                    Some(after)
-                        if !after.starts_with(ITEM_PARAGRAPH)
-                            && definition_entry_at(
-                                strip_lazy(after),
-                                marker_hosted,
-                                list_column,
-                            )
-                            .is_some_and(|line| strip_definition_marker(line).is_some()) =>
-                    {
-                        for _ in 0..look {
-                            cur.consume();
-                        }
-                    }
-                    _ => break,
-                }
-            }
+        while let Some(next_at) =
+            definition_sibling_after_invisible(cur, marker_hosted, list_column, true, true)
+        {
+            consume_invisible_definition_gap(cur, next_at, options);
             let Some(line) = cur.peek() else {
                 break;
             };
@@ -373,7 +570,10 @@ pub(in crate::parse) fn parse_definition_list(
             // normalized indentation. A marker that did not reach that body's
             // column belongs to the surviving outer owner, even if rebasing
             // placed it at this list's apparent marker column.
-            if !line.starts_with(LAZY) && cur.carried_reach(cur.pos) == Some(false) {
+            if !line.starts_with(LAZY)
+                && cur.carried_reach(cur.pos) == Some(false)
+                && !previous_definition_line_invisible(cur)
+            {
                 break;
             }
             let Some((def, definition_column)) = (!line.starts_with(ITEM_PARAGRAPH))
@@ -521,22 +721,12 @@ pub(in crate::parse) fn parse_definition_list(
             pos: None,
         });
 
-        let saved = cur.pos;
-        while matches!(cur.peek(), Some(line) if is_blank_line(line)) {
-            cur.consume();
-        }
-        // N1a separates sibling terms at every description-list depth.
-        if cur.pos - saved >= 3 {
-            cur.pos = saved;
+        let Some(next_at) =
+            definition_sibling_after_invisible(cur, marker_hosted, list_column, false, true)
+        else {
             break;
-        }
-        if !cur.peek().is_some_and(|l| {
-            definition_entry_at(strip_lazy(l), marker_hosted, list_column)
-                .is_some_and(is_definition_list_start)
-        }) {
-            cur.pos = saved;
-            break;
-        }
+        };
+        consume_invisible_definition_gap(cur, next_at, options);
     }
     BlockNode::DefinitionList(DefinitionList {
         attrs: None,
