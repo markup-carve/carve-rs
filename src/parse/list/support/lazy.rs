@@ -71,7 +71,7 @@ pub(crate) fn fold_lazy_run_and_resume_in_band(
             list_base,
             content_col,
             frame_band_lines,
-            (false, None),
+            (false, None, Some(options)),
         );
         if cur.pos == before {
             break;
@@ -126,6 +126,7 @@ pub(crate) fn collect_marker_sublist_lazy_through(
     list_base: usize,
     content_col: usize,
     ancestor_column: usize,
+    options: &Options<'_>,
 ) -> bool {
     collect_trailing_lazy_through_framed(
         cur,
@@ -134,7 +135,7 @@ pub(crate) fn collect_marker_sublist_lazy_through(
         list_base,
         content_col,
         false,
-        (false, Some(ancestor_column)),
+        (false, Some(ancestor_column), Some(options)),
     )
 }
 
@@ -145,9 +146,9 @@ pub(crate) fn collect_trailing_lazy_through_framed(
     list_base: usize,
     content_col: usize,
     frame_band_lines: bool,
-    lazy_scope: (bool, Option<usize>),
+    lazy_scope: (bool, Option<usize>, Option<&Options<'_>>),
 ) -> bool {
-    let (after_comment, ancestor_quote_column) = lazy_scope;
+    let (after_comment, ancestor_quote_column, term_options) = lazy_scope;
     let mut buffered = frame_band_lines.then(LineBuffer::default);
     if cur.peek().is_some_and(|line| {
         matches!(line.as_bytes().first(), Some(b'`' | b'~')) && detect_fence_open(line).is_some()
@@ -156,6 +157,15 @@ pub(crate) fn collect_trailing_lazy_through_framed(
     }
     while let Some(line) = cur.peek() {
         let indent = indent_columns(line);
+        // A separator at the list marker's column leaves the term. One
+        // column inside the marker remains lazy term text.
+        if indent <= list_base
+            && strip_description_prefix(trim_ascii_start(line)).is_some()
+            && term_options
+                .is_some_and(|options| body_ends_in_definition_list(&nested.source, options))
+        {
+            break;
+        }
         if is_blank_line(line)
             || (indent > base_indent
                 && !(after_comment
