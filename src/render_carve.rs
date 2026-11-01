@@ -2818,17 +2818,23 @@ fn render_footnote_def_source(
         return format!("[^{}]: {{empty}}", write_flat_bracket_run(label));
     }
     let mut lines = body.split('\n');
-    let mut def_lines = vec![format!(
-        "[^{}]: {}",
-        write_flat_bracket_run(label),
-        lines.next().unwrap_or_default()
-    )];
+    let prefix = format!("[^{}]: ", write_flat_bracket_run(label));
+    let mut def_lines = vec![format!("{prefix}{}", lines.next().unwrap_or_default())];
+    // A list opened on this definition's marker line keeps its authored
+    // marker column on following lines. A fence opened on that line is the
+    // exception: its content and closer read the note body column.
+    let marker_line_list = matches!(blocks, [BlockNode::List(list)] if !matches!(list.items.first().and_then(|item| item.children.first()), Some(BlockNode::CodeBlock(_))));
+    let continuation = if marker_line_list {
+        " ".repeat(prefix.len())
+    } else {
+        "  ".to_string()
+    };
     for line in lines {
         // TWO spaces, the body's own column (PART 9 §16). A wider indent is legal
         // continuation but leaves the body's blocks at a relative column above
         // zero, and an indented block opener does not open a block - so a table
         // or a quote written at three came back as a paragraph.
-        def_lines.push(format!("  {line}"));
+        def_lines.push(format!("{continuation}{line}"));
     }
     def_lines.join("\n")
 }
