@@ -129,6 +129,9 @@ struct ListScan<'a, 'l, 'o> {
     item_unopened_fence_span: bool,
     item_unclosed_fence_base: Option<usize>,
     item_rejected_fence_owner: bool,
+    // Whether the current item has shown anything yet: a blank after an invisible
+    // lead separates nothing, so it does not loosen (carve#4639).
+    item_shows: bool,
     // An empty first-block item has no paragraph for a below-column line to continue.
     last_item_bare_continuation: bool,
     // The same S4 state for an item whose marker-line content is only a
@@ -224,6 +227,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             options,
             deferred,
             base_indent,
+            item_shows: !invisible_item_lead(first_marker.content),
             is_task: first_marker.checked.is_some(),
             is_ordered: first_marker.ordered,
             first_dialect: ol_dialect(ol_type),
@@ -709,7 +713,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         }
         let mut carried = Vec::new();
         let (mut nested_children, nested_loose) =
-            parse_item_chunk(&nested, self.options, &mut carried);
+            parse_item_chunk(&nested, self.options, &mut carried, self.item_shows);
         self.carry_chunk_attrs(&mut nested_children, split_stack);
         self.chunk_looseness(&nested_children, nested_loose, collected_tail_blank);
         (nested_children, carried)
@@ -767,8 +771,11 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             || self
                 .item_unclosed_fence_base
                 .is_some_and(|base| base <= self.content_col);
+        let shown_before = self.item_shows;
+        self.item_shows |= !nested_children.iter().all(block_renders_nothing);
         if self.pending_blank
             && blank_can_loosen
+            && shown_before
             && first_visible.is_some_and(block_is_paragraph_shaped)
         {
             self.tight = false;
@@ -788,14 +795,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // list. Clearing it here made `- a` / blank / `  %% note` /
         // `- b` tight, where carve-js and the corpus have it loose
         // (carve-rs#557, corpus 87-compact-list-blocks-6).
-        let renders_nothing = nested_children.iter().all(|block| {
-            matches!(
-                block,
-                BlockNode::Comment(_)
-                    | BlockNode::AbbreviationDef(_)
-                    | BlockNode::LinkReferenceDefinition(_)
-            )
-        });
+        let renders_nothing = nested_children.iter().all(block_renders_nothing);
         if !renders_nothing {
             self.pending_blank = collected_tail_blank
                 || (self.item_open_fence.is_some() && self.previous_line_blank());
@@ -1083,6 +1083,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             self.pending_blank = false;
         }
         self.content_col = self.item_content_col(&marker);
+        self.item_shows = !invisible_item_lead(marker.content);
         // A new item carries none of the previous item's fence state.
         self.item_open_fence = None;
         self.item_unopened_fence_span = false;
@@ -1609,6 +1610,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             false,
             options,
         );
+        if let Some(body) = self.deferred.last_mut() {
+            body.item_shown = false;
+        }
         self.push_item(item, children);
     }
 
@@ -2023,6 +2027,32 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         NEXT
     }
 
+    /// Whether the lines down to the first blank show nothing either: a closed
+    /// `%%%` span does not, and an ordinary line does.
+    fn lead_run_is_invisible(&self, item_at: usize, content: &str) -> bool {
+        let mut open = comment_fence_width(trim_ascii_end(content));
+        for at in item_at + 1..=self.cur.pos {
+            let Some(line) = self.cur.lines.line(at).map(trim_ascii) else {
+                break;
+            };
+            if line.is_empty() {
+                break;
+            }
+            let run = comment_fence_width(line);
+            if open != 0 {
+                if run == open {
+                    open = 0;
+                }
+                continue;
+            }
+            open = run;
+            if run == 0 && !invisible_item_lead(line) {
+                return false;
+            }
+        }
+        true
+    }
+
     fn block_lead_item(&mut self, item: ItemOpen<'l>) -> ControlFlow<()> {
         let (base_indent, content_col, options) =
             (self.base_indent, self.content_col, self.options);
@@ -2111,6 +2141,13 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             refused_definition_plus,
             options,
         );
+        self.item_shows =
+            !(invisible_item_lead(content) && self.lead_run_is_invisible(item_at, content));
+        if !self.item_shows {
+            if let Some(body) = self.deferred.last_mut() {
+                body.item_shown = false;
+            }
+        }
         // The item runs from its marker to the last line its body
         // consumed - the bullet is part of the item, unlike the
         // paragraph inside it, which starts at the text.
@@ -2783,4 +2820,13 @@ fn walk_chunk(stream: &mut MappedSource) {
     }
     stream.set_source(walked);
     stream.marker_tail = None;
+}
+
+fn invisible_item_lead(content: &str) -> bool {
+    is_line_comment_any_column(content)
+        || detect_comment_fence_line_any_column(content).is_some()
+        || is_definition_placeholder(content)
+        || parse_footnote_def_line(content).is_some()
+        || parse_link_def_line(content).is_some_and(|(_, target)| !trim_ascii(target).is_empty())
+        || parse_standalone_attrs(content).is_some()
 }

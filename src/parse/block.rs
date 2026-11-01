@@ -105,6 +105,7 @@ pub(in crate::parse) fn place_item_chunk(
         attrs: None,
         drop_empty_paragraphs: false,
         suppress_tree_looseness: false,
+        item_shown: true,
         widen_list: false,
     });
 }
@@ -213,6 +214,7 @@ pub(in crate::parse) fn resolve_pending_bodies(
                 layout.discarded_outer_blank,
                 &children,
                 &layout.extents,
+                layout.item_shown,
             );
             if layout.discarded_outer_blank && !loose_inside_chunk {
                 mark_nested_discarded_gap(&mut children);

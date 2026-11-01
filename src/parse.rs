@@ -2503,6 +2503,9 @@ struct ItemBody {
     /// That refusal does not create the L1 paragraph gap the accepted blocks
     /// alone would otherwise suggest.
     suppress_tree_looseness: bool,
+    /// False while the item shows nothing above this chunk: a blank after an
+    /// invisible lead separates nothing, so it does not loosen (carve#4639).
+    item_shown: bool,
     /// The list took its own span from its ITEMS rather than from the cursor
     /// (`span_across_items`), so widening the last item moves the list's end
     /// with it. `parse_list` cannot know which it used until the loop is over,
@@ -2627,6 +2630,7 @@ struct ItemLayout {
     discarded_outer_blank: bool,
     outer_plus_after_blank: bool,
     extents: Vec<(usize, usize)>,
+    item_shown: bool,
 }
 
 fn trailing_verbatim_pos(mut block: &BlockNode) -> Option<&Pos> {
@@ -2743,6 +2747,7 @@ fn parse_item_body_into(
         attrs,
         drop_empty_paragraphs,
         suppress_tree_looseness,
+        item_shown,
         ..
     } = body;
     let mut loose_inside_chunk = false;
@@ -2769,6 +2774,7 @@ fn parse_item_body_into(
                         source.discarded_outer_blank,
                         &children,
                         &extents,
+                        item_shown,
                     );
                 } else {
                     layout = Some(ItemLayout {
@@ -2777,6 +2783,7 @@ fn parse_item_body_into(
                         discarded_outer_blank: source.discarded_outer_blank,
                         outer_plus_after_blank: source.outer_plus_after_blank,
                         extents,
+                        item_shown,
                     });
                 }
             }
@@ -2803,6 +2810,7 @@ fn item_chunk_tree_looseness(
     discarded_outer_blank: bool,
     children: &[BlockNode],
     extents: &[(usize, usize)],
+    mut item_shown: bool,
 ) -> bool {
     if children.len() != extents.len() {
         // The nesting-cap fallback returns flattened paragraphs before the
@@ -2858,9 +2866,11 @@ fn item_chunk_tree_looseness(
         if block_is_paragraph_shaped(child)
             && (trailing_blank || blank_before_invisible || discarded_outer_blank)
             && (previous_end > 0 || start > 1)
+            && item_shown
         {
             return true;
         }
+        item_shown |= !block_renders_nothing(child);
         previous_start = start;
         previous_end = end;
         previous_child = Some(child);
@@ -3013,6 +3023,7 @@ fn item_body_with_layout_suppression(
         attrs: attrs.map(Box::new),
         drop_empty_paragraphs,
         suppress_tree_looseness,
+        item_shown: true,
         widen_list: false,
     });
     Vec::new()
@@ -3035,6 +3046,7 @@ fn parse_item_chunk(
     source: &MappedSource,
     options: &Options<'_>,
     carried: &mut Vec<PendingBody>,
+    item_shown: bool,
 ) -> (Vec<BlockNode>, bool) {
     let mut extents = Vec::new();
     if !source
@@ -3057,6 +3069,7 @@ fn parse_item_chunk(
             source.discarded_outer_blank,
             &children,
             &extents,
+            item_shown,
         );
         return (children, loose);
     }
@@ -3075,6 +3088,7 @@ fn parse_item_chunk(
         source.discarded_outer_blank,
         &children,
         &extents,
+        item_shown,
     );
     (children, loose)
 }

@@ -102,11 +102,13 @@ fn djot_to_carve_prepared_with_quotes(
     skip_heading_targets: bool,
 ) -> String {
     if nul_shielded || !stripped_definitions.source.contains('\0') {
-        return spell_empty_item_placeholders(end_note_tasks_before_text(convert_djot_document(
-            stripped_definitions,
-            omit_quote_delimiters,
-            skip_heading_targets,
-        )));
+        return loosen_lists_behind_empty_leads(spell_empty_item_placeholders(
+            end_note_tasks_before_text(convert_djot_document(
+                stripped_definitions,
+                omit_quote_delimiters,
+                skip_heading_targets,
+            )),
+        ));
     }
     let token = "\0U\0";
     let pattern = cached_regex!(r"\x00DJOTNOTEATTR\x00([0-9]+)\x00").unwrap();
@@ -131,18 +133,65 @@ fn djot_to_carve_prepared_with_quotes(
         losses: stripped_definitions.losses.clone(),
         comments: stripped_definitions.comments.clone(),
     };
-    spell_empty_item_placeholders(end_note_tasks_before_text(convert_djot_document(
-        &protected,
-        omit_quote_delimiters,
-        skip_heading_targets,
-    )))
-    .replace(token, "\0")
+    loosen_lists_behind_empty_leads(
+        spell_empty_item_placeholders(end_note_tasks_before_text(convert_djot_document(
+            &protected,
+            omit_quote_delimiters,
+            skip_heading_targets,
+        )))
+        .replace(token, "\0"),
+    )
 }
 
 /// The conversion builds an empty item as `- +`, and a bare `+` is a letter unless
 /// a block stands at its marker column (carve#4396), so the output never keeps it:
 /// a body right below moves up to the marker line, and otherwise the item takes
 /// `{empty}`, or `%%` where `{empty}` would attribute a block below it.
+/// A Djot paragraph behind an attribute-only lead is loose, but the `%%` the lead
+/// becomes shows nothing, so the blank after it no longer says so (carve#4639).
+fn loosen_lists_behind_empty_leads(carve: String) -> String {
+    if !carve.contains("%%\n\n") {
+        return carve;
+    }
+    let empty_lead = cached_regex!(r"^( *)([-*]|\d+[.)]) (?:\[[ xX]\] )?%%$").unwrap();
+    let indent = |line: &str| line.len() - line.trim_start_matches(' ').len();
+    let mut lines: Vec<String> = carve.split('\n').map(str::to_owned).collect();
+    let mut index = lines.len();
+    while index > 0 {
+        index -= 1;
+        let Some((column, marker)) = empty_lead
+            .captures(&lines[index])
+            .map(|caps| (caps[1].len(), caps[2].to_owned()))
+        else {
+            continue;
+        };
+        let content = column + marker.len() + 1;
+        let opens_paragraph = lines.get(index + 1).is_some_and(|line| line.is_empty())
+            && lines.get(index + 2).is_some_and(|line| {
+                indent(line) >= content && !line.trim_start().starts_with(['-', '*', '>', '#', '`'])
+            });
+        if !opens_paragraph {
+            continue;
+        }
+        let mut first = index;
+        while let Some(above) = (0..first).rev().find(|at| !lines[*at].is_empty()) {
+            let same_list = indent(&lines[above]) > column
+                || lines[above]
+                    .get(column..)
+                    .is_some_and(|rest| rest.starts_with(&marker));
+            if !same_list {
+                break;
+            }
+            first = above;
+        }
+        let placed = format!("{}{{loose}}", " ".repeat(column));
+        if first == 0 || lines[first - 1] != placed {
+            lines.insert(first, placed);
+        }
+    }
+    lines.join("\n")
+}
+
 fn spell_empty_item_placeholders(carve: String) -> String {
     if !carve.contains('+') {
         return carve;
