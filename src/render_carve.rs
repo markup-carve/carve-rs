@@ -4496,7 +4496,10 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
 
 fn render_link(session: &RenderSession, node: &Link, ctx: &mut CarveContext) -> String {
     if node.ref_label.is_some() && node.raw_ref.is_some() {
-        return node.raw_ref.clone().unwrap_or_default();
+        return spell_cell_reference_source(
+            node.raw_ref.as_deref().unwrap_or_default(),
+            ctx.table_cell_depth > 0,
+        );
     }
     if node.from_crossref {
         if let Some(target) = node.href.strip_prefix('#') {
@@ -4549,6 +4552,45 @@ fn render_link(session: &RenderSession, node: &Link, ctx: &mut CarveContext) -> 
         escape_destination_in(&node.href, ctx.table_cell_depth > 0),
         render_inline_attrs(&node.attrs, ctx)
     )
+}
+
+/// A reference's `raw_ref` is the logical cell source after the separator
+/// escape has been read. Spell its pipes for a table row again, except inside
+/// verbatim runs where the backslash and pipe are both content.
+fn spell_cell_reference_source(source: &str, in_cell: bool) -> String {
+    if !in_cell || !source.contains('|') {
+        return source.to_string();
+    }
+    let bytes = source.as_bytes();
+    let mut out = String::with_capacity(source.len());
+    let mut at = 0;
+    let mut code_run = None;
+    while at < bytes.len() {
+        if bytes[at] == b'\\'
+            && code_run.is_none()
+            && bytes.get(at + 1).is_some_and(u8::is_ascii_punctuation)
+        {
+            out.push_str(&source[at..at + 2]);
+            at += 2;
+        } else if bytes[at] == b'`' {
+            let run = bytes[at..].iter().take_while(|&&byte| byte == b'`').count();
+            code_run = match code_run {
+                None => Some(run),
+                Some(width) if width == run => None,
+                other => other,
+            };
+            out.push_str(&source[at..at + run]);
+            at += run;
+        } else {
+            let ch = source[at..].chars().next().unwrap();
+            if ch == '|' && code_run.is_none() {
+                out.push('\\');
+            }
+            out.push(ch);
+            at += ch.len_utf8();
+        }
+    }
+    out
 }
 
 /// A LABEL SLOT OPENS WITH `[`, AND `[^x]` IS A NOTE REFERENCE (PART 11 §2).
@@ -4610,7 +4652,7 @@ fn render_image_with_attrs(
     // so there is no longer anything to gain by inlining - and inlining lost
     // `ref`/`raw_ref` and duplicated the destination (carve-rs#631).
     if node.ref_label.is_some() && node.raw_ref.is_some() {
-        return node.raw_ref.clone().unwrap_or_default();
+        return spell_cell_reference_source(node.raw_ref.as_deref().unwrap_or_default(), in_table);
     }
     if let Some(label) = &node.ref_label {
         if !(in_table && label.contains('|'))
