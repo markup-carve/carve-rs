@@ -287,6 +287,10 @@ name = "tab_after_list_marker"
 path = "tests/tab_after_list_marker.rs"
 
 [[test]]
+name = "a_tab_after_spaces_reaches_its_continuation_column"
+path = "tests/a_tab_after_spaces_reaches_its_continuation_column.rs"
+
+[[test]]
 name = "fx27_nested_term_ownership"
 path = "tests/fx27_nested_term_ownership.rs"
 

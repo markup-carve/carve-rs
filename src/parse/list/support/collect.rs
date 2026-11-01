@@ -1503,27 +1503,36 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             comment_fence_strip = None;
         }
         let (sliced, consumed, synthetic) = slice_columns_mapped(payload_line, stripped, true);
-        // A tab left in a closer's indent after the slice would expand from the
-        // body's column 0, not its source column, and land the closer below
-        // its opener. Its columns are measured in the source (carve#3141).
-        let (sliced, consumed, synthetic) = match *fence {
-            Some(open)
-                if literal_colon.is_none()
-                    && stripped < indent
-                    && indent <= open.content_col
-                    && sliced[..sliced.len() - trim_ascii_start(&sliced).len()].contains('\t')
-                    && is_fence_close(trim_ascii_start(payload_line), open) =>
-            {
-                let lead = payload_line.len() - trim_ascii_start(payload_line).len();
-                let mut columns = " ".repeat(indent - stripped);
-                columns.push_str(&payload_line[lead..]);
-                (
-                    columns,
-                    payload_line[..lead].chars().count(),
-                    indent - stripped,
-                )
-            }
-            _ => (sliced, consumed, synthetic),
+        // A tab left after slicing expands from column zero on the next read.
+        // Preserve its authored remainder for visible list lines. Quoted
+        // bodies already had their tab phase rebased by the quote collector;
+        // opaque payloads keep their literal tabs. A fence closer is
+        // structural even while the fence is open (carve#3141).
+        let fence_closer = fence.is_some_and(|open| {
+            indent <= open.content_col && is_fence_close(trim_ascii_start(payload_line), open)
+        });
+        let visible = !cur.in_quoted_body
+            && fence.is_none()
+            && active_nested_fence.is_none()
+            && nested_fence.is_none()
+            && comment_fence.is_none()
+            && !in_comment_span;
+        let (sliced, consumed, synthetic) = if literal_colon.is_none()
+            && stripped < indent
+            && (visible || fence_closer)
+            && sliced[..sliced.len() - trim_ascii_start(&sliced).len()].contains('\t')
+            && indent_columns(&sliced) != indent - stripped
+        {
+            let lead = payload_line.len() - trim_ascii_start(payload_line).len();
+            let mut columns = " ".repeat(indent - stripped);
+            columns.push_str(&payload_line[lead..]);
+            (
+                columns,
+                payload_line[..lead].chars().count(),
+                indent - stripped,
+            )
+        } else {
+            (sliced, consumed, synthetic)
         };
         let mut sliced = sliced;
         let mut trimmed_after_slice = 0usize;
