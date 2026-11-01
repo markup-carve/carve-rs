@@ -51,7 +51,7 @@ impl Layout<'_> {
                         + self.lines[line].len()
                         + usize::from(line + 1 < self.lines.len()),
                     value: if boundary && !inserted {
-                        format!("{prefix}\n{prefix}%%\n")
+                        format!("{prefix}%%\n")
                     } else {
                         String::new()
                     },
