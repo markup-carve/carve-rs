@@ -24,3 +24,12 @@ fn band_followers_obey_the_comments_content_column() {
         );
     }
 }
+
+#[test]
+fn a_blank_before_an_invisible_comment_still_loosens_the_next_paragraph() {
+    let source = "- item\n\n  :: c\n\n    %% note\n    more\n";
+    assert_eq!(
+        carve::to_html(source),
+        "<ul>\n  <li><p>item</p>\n    <dl>\n      <dt>c</dt>\n    </dl>\n    <p>more</p>\n  </li>\n</ul>"
+    );
+}

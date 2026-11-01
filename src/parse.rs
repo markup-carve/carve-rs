@@ -2893,10 +2893,15 @@ fn item_chunk_tree_looseness(
         {
             return true;
         }
-        item_shown |= !block_renders_nothing(child);
-        previous_start = start;
-        previous_end = end;
-        previous_child = Some(child);
+        // Invisible nodes do not consume a visible gap. Keep the preceding
+        // visible block as the search anchor so a blank before a comment can
+        // still loosen the next paragraph.
+        if !block_renders_nothing(child) {
+            item_shown = true;
+            previous_start = start;
+            previous_end = end;
+            previous_child = Some(child);
+        }
     }
     false
 }
