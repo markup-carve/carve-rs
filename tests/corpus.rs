@@ -1375,7 +1375,6 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     ("855-invisible-lines-after-a-plus-are-skipped-and-the-first-visible-line-decides-3", "ruling at the 5643d59c pin not ported yet", "<ul>\n  <li></li>\n  <li>b</li>\n</ul>"),
     ("855-invisible-lines-after-a-plus-are-skipped-and-the-first-visible-line-decides-4", "ruling at the 5643d59c pin not ported yet", "<ul>\n  <li>text</li>\n</ul>"),
     ("855-invisible-lines-after-a-plus-are-skipped-and-the-first-visible-line-decides-6", "ruling at the 5643d59c pin not ported yet", "<ul>\n  <li></li>\n</ul>\n<p>text</p>"),
-    ("856-a-quote-at-the-content-column-stays-in-the-item-after-a-refused-separator", "ruling at the 5643d59c pin not ported yet", "<ul>\n  <li>\n    <blockquote>\n      <dl>\n        <dt>t</dt>\n      </dl>\n    </blockquote>\n    : a\n  </li>\n</ul>\n<blockquote><p>q</p></blockquote>"),
     ("860-an-id-key-is-a-spelling-of-the-id-slot-3", "ruling at the 5643d59c pin not ported yet", "<p><strong id=\"\">x</strong></p>"),
     ("860-an-id-key-is-a-spelling-of-the-id-slot-4", "ruling at the 5643d59c pin not ported yet", "<table>\n  <tbody>\n    <tr><td id=\"\">x</td></tr>\n  </tbody>\n</table>"),
     ("865-a-list-marker-inside-an-item-ends-a-caption-like-a-paragraph-3", "ruling at the 5643d59c pin not ported yet", "<ul>\n  <li>\n    <figure>\n      <blockquote><p>q</p></blockquote>\n      <figcaption>p\n - b</figcaption>\n    </figure>\n  </li>\n</ul>"),

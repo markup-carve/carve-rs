@@ -1220,6 +1220,27 @@ impl<'a> Walk<'a> {
         }
     }
 
+    fn item_after_missed_quote_term(&self, reached: usize, col: usize, rest: &str) -> usize {
+        if !self.frames.last().is_some_and(|f| f.last == Last::Term)
+            || !rest
+                .strip_prefix(':')
+                .is_some_and(|tail| tail.starts_with(' '))
+            || !self.frames[reached + 1..]
+                .iter()
+                .any(|f| f.kind == Kind::Quote)
+        {
+            return reached;
+        }
+        (reached + 1..self.frames.len())
+            .find(|&k| {
+                self.frames[k].kind == Kind::Item
+                    && self.frames[k]
+                        .marker
+                        .is_some_and(|(marker, _)| marker == col)
+            })
+            .unwrap_or(reached)
+    }
+
     fn line(&mut self, at: usize, c: &mut Cursor<'_>, after_plus: &mut bool) {
         let tracing = self.trace.is_some();
         let line = self.first_line + at;
@@ -1273,6 +1294,7 @@ impl<'a> Walk<'a> {
             }
             reached = k;
         }
+        reached = self.item_after_missed_quote_term(reached, c.col, c.rest);
         // A lone `+` nothing took is a plain letter and ends nothing (carve#4396).
         // Payload stays as written.
         if self.decide
