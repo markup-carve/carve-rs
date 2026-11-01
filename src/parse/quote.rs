@@ -1923,8 +1923,7 @@ impl<'a> QuoteBody<'a> {
         let after_nested = self.last_nested && self.may_hold_fence;
         self.last_nested =
             self.in_fence.is_none() && (stripped == ">" || stripped.starts_with("> "));
-        self.may_hold_fence = self.may_hold_fence
-            || stripped.contains("```")
+        let possible_nested_fence = stripped.contains("```")
             || stripped.contains("~~~")
             || stripped.contains(":::")
             || stripped.contains("- ")
@@ -1935,6 +1934,10 @@ impl<'a> QuoteBody<'a> {
         // quoted line's columns are knowable in the document.
         let stripped_at = stripped_col(cur.source_col(quoted.at), quoted.line, stripped);
         self.track_quoted_block(cur, options, quoted, after_nested);
+        // A table row's cell text is opaque to the nested fence replay. In
+        // particular, `::::` inside a continuation cell cannot reopen a
+        // paragraph after the row has closed it.
+        self.may_hold_fence |= possible_nested_fence && !self.table.has_row();
         let kept_at = if self.unclosed_nested_attribute {
             stripped_at.map(|column| column + leading_ws(stripped) as isize)
         } else {

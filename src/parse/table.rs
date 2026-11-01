@@ -198,6 +198,10 @@ pub(in crate::parse) struct TableRun {
 }
 
 impl TableRun {
+    pub(in crate::parse) fn has_row(&self) -> bool {
+        self.rows.is_some()
+    }
+
     /// Feed the next line of the container's own content, already stripped of
     /// the container prefix. Answers whether the line is a CONTINUATION ROW of
     /// the table above it - the one shape whose meaning the line alone does not
