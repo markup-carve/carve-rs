@@ -747,6 +747,7 @@ fn render_with_escapes_once(
     // too. See the note beside `lists_would_merge`; without it a top-level pair
     // -- which is where authors actually write one -- still merged (carve#1088).
     let mut previous_list: Option<&List> = None;
+    let mut previous_definition_list = false;
     let mut adjacent_list_indent = 0;
     let mut separated_from_previous = false;
     let mut previous_emitted: Option<&BlockNode> = None;
@@ -786,6 +787,12 @@ fn render_with_escapes_once(
                     previous_list = None;
                     separated_from_previous = false;
                 }
+                if !writes_nothing(&text) {
+                    // An attribute line already keeps the second list separate.
+                    separated_from_previous |= previous_definition_list
+                        && matches!(child, BlockNode::DefinitionList(list) if list.attrs.is_none());
+                    previous_definition_list = matches!(child, BlockNode::DefinitionList(_));
+                }
                 text
             }
             crate::ast_json::DocEntry::FootnoteDef(label, blocks, _) => {
@@ -807,6 +814,7 @@ fn render_with_escapes_once(
                 // is pushed rather than inside the list arm.
                 if !writes_nothing(&text) {
                     previous_list = None;
+                    previous_definition_list = false;
                     separated_from_previous = false;
                 }
                 text
@@ -1475,6 +1483,7 @@ fn render_blocks(
     // later list inside the earlier one. Three blank lines separate any number
     // of sibling lists at the column they were written.
     let mut previous_list: Option<&List> = None;
+    let mut previous_definition_list = false;
     let mut adjacent_list_indent = 0;
     let mut separated_from_previous = false;
     let mut previous_emitted: Option<&BlockNode> = None;
@@ -1509,6 +1518,12 @@ fn render_blocks(
         } else if !writes_nothing(&text) {
             previous_list = None;
             separated_from_previous = false;
+        }
+        if !writes_nothing(&text) {
+            // An attribute line already keeps the second list separate.
+            separated_from_previous |= previous_definition_list
+                && matches!(block, BlockNode::DefinitionList(list) if list.attrs.is_none());
+            previous_definition_list = matches!(block, BlockNode::DefinitionList(_));
         }
         if !writes_nothing(&text) {
             let adjacent = previous_emitted
