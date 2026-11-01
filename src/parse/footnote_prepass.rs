@@ -5,6 +5,18 @@ use super::*;
 /// walk has collected the definitions inside it. No label can start with NUL.
 pub(in crate::parse) const LOSING_NOTE_PREFIX: &str = "\u{0}losing:";
 
+fn unfenced_marker_content_col(line: &str) -> Option<usize> {
+    let column = marker_content_col(line)?;
+    let mut content = line;
+    while let Some(marker) = detect_list_marker_full(content) {
+        content = marker.content;
+    }
+    if detect_fence_open(content).is_some() {
+        return None;
+    }
+    Some(column)
+}
+
 fn definition_source(note: NoteBody) -> MappedSource {
     // An authored trailing blank (an open fence's payload, corpus 291) survives
     // `str::lines()`; the separator `push_blank` leaves after a `+` block does not.
@@ -15,7 +27,7 @@ fn definition_source(note: NoteBody) -> MappedSource {
     {
         source.push('\n');
     }
-    MappedSource {
+    let mut mapped = MappedSource {
         newlines_counted: (0, 0),
         reached: vec![true; note.lines.len()],
         col_map: note.col_map,
@@ -31,7 +43,34 @@ fn definition_source(note: NoteBody) -> MappedSource {
         // span at the marker (markup-carve/carve#1980).
         in_quoted_body: false,
         sublists_carry_authored_base: true,
+    };
+    // A marker folded below a marker-line list child's content column leaves
+    // a following code fence below that column at the note level. Extraction
+    // has stripped the note floor, so walk this local geometry before parsing.
+    if note
+        .lines
+        .first()
+        .and_then(|line| unfenced_marker_content_col(line))
+        .is_some_and(|content_col| {
+            note.lines.windows(2).skip(1).any(|pair| {
+                indent_columns(&pair[0]) < content_col
+                    && is_list_marker(trim_ascii_start(&pair[0]))
+                    && indent_columns(&pair[1]) < content_col
+                    && detect_fence_open(trim_ascii_start(&pair[1])).is_some()
+            })
+        })
+    {
+        if let Some((walked, shifts)) = walk_body(&mapped.source) {
+            for (line, delta) in shifts {
+                if let Some(Some(column)) = mapped.col_map.get_mut(line) {
+                    *column += delta;
+                }
+            }
+            mapped.set_source(walked);
+            mapped.marker_tail = None;
+        }
     }
+    mapped
 }
 
 /// What `extract_footnote_defs` hands back, in order: the document body with
@@ -905,6 +944,50 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             && note.line_map.first() == Some(&None)
             && first_visible_note_line(&note_lines)
                 .is_some_and(|at| !line_starts_paragraph(note_lines[at]));
+        // Keep the marker-line child's authored column relative to the note
+        // floor when a folded marker precedes a below-column code fence.
+        if !in_container
+            && !def.authored_quote_def
+            && unfenced_marker_content_col(def.first).is_some_and(|width| {
+                let first_col = stripped_col(
+                    Some(stripped.structural.chars().count() as isize),
+                    stripped.bare,
+                    def.first,
+                )
+                .unwrap_or(0)
+                .max(0) as usize;
+                note.line_map.windows(2).skip(1).any(|pair| {
+                    let raw = |source_line: Option<usize>| {
+                        source_line
+                            .and_then(|line| line.checked_sub(self.first_source_line))
+                            .and_then(|at| self.lines.get(at))
+                    };
+                    raw(pair[0])
+                        .zip(raw(pair[1]))
+                        .is_some_and(|(folded, fence)| {
+                            indent_columns(folded) < first_col + width
+                                && is_list_marker(trim_ascii_start(folded))
+                                && indent_columns(fence) < first_col + width
+                                && detect_fence_open(trim_ascii_start(fence)).is_some()
+                        })
+                })
+            })
+        {
+            let first_col = stripped_col(
+                Some(stripped.structural.chars().count() as isize),
+                stripped.bare,
+                def.first,
+            )
+            .unwrap_or(0)
+            .max(0) as usize;
+            let shift = first_col.saturating_sub(body_indent);
+            if shift > 0 {
+                note.lines[0] = format!("{}{}", " ".repeat(shift), note.lines[0]);
+                if let Some(Some(col)) = note.col_map.get_mut(0) {
+                    *col -= shift as isize;
+                }
+            }
+        }
         if first_for_label {
             self.register_definition(normalized_label, &def, note);
         } else if note.lines.iter().any(|line| line.contains("[^")) {
