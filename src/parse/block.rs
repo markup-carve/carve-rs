@@ -129,6 +129,7 @@ pub(in crate::parse) fn place_plus_item_chunk(
         attrs: None,
         drop_empty_paragraphs: false,
         suppress_tree_looseness: false,
+        item_shown: true,
         widen_list: false,
     });
 }
