@@ -68,7 +68,6 @@
       "ticket": "markup-carve/carve-rs#3535",
       "cause": "pin move to carve 5643d59c: rulings on first-block plus and note shapes this engine has not reached",
       "cases": [
-        "attributes-5944b36aa7a1",
         "notes-e344b261ace5"
       ]
     }

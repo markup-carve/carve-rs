@@ -834,7 +834,11 @@ impl<'a> Walk<'a> {
         column: usize,
         host: usize,
     ) -> Result<(), Refusal> {
-        let mut next = at + 1;
+        // An attribute run has no visible block and no column of its own.
+        // Apply the attach gates to the line it leads, not to the attribute.
+        let mut next = self
+            .line_after_run(at + 1, host, column)
+            .map_or(at + 1, |(at, _)| at);
         if kind == Kind::Note {
             // A new note definition is invisible to this pending marker. Its
             // foldable body stays with that definition; the next block decides
@@ -904,8 +908,8 @@ impl<'a> Walk<'a> {
         // leads as well (carve#4278).
         if is_sibling_of(kind, text)
             || self
-                .line_after_run(at + 1, host)
-                .is_some_and(|led| is_sibling_of(kind, led))
+                .line_after_run(at + 1, host, column)
+                .is_some_and(|(_, led)| is_sibling_of(kind, led))
         {
             return Err(Refusal::Sibling);
         }
@@ -914,7 +918,7 @@ impl<'a> Walk<'a> {
 
     /// The first line past the attribute and invisible lines from `from`, or
     /// nothing when they hold no attribute line.
-    fn line_after_run(&self, from: usize, host: usize) -> Option<&'a str> {
+    fn line_after_run(&self, from: usize, host: usize, column: usize) -> Option<(usize, &'a str)> {
         let view = |k: usize| -> &'a str {
             trim_ws_start(self.through_quotes(self.lines[k], host).unwrap_or(""))
         };
@@ -922,6 +926,9 @@ impl<'a> Walk<'a> {
         let mut k = from;
         while k < self.lines.len() {
             let rest = view(k);
+            if doc_column(self.lines[k], rest) != column {
+                return run.then_some((k, rest));
+            }
             let attr = rest
                 .starts_with('{')
                 .then(|| standalone_attrs_block_len_iter((k..self.lines.len()).map(view)));
@@ -935,10 +942,10 @@ impl<'a> Walk<'a> {
             {
                 k += 1;
             } else {
-                return run.then(|| rest.trim_end_matches([' ', '\t', '\r']));
+                return run.then(|| (k, rest.trim_end_matches([' ', '\t', '\r'])));
             }
         }
-        None
+        run.then_some((k, ""))
     }
 
     /// The line behind the quotes around frame `host`.
