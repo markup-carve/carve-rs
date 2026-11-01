@@ -345,6 +345,10 @@ pub(in crate::parse) fn parse_definition_list(
                 while matches!(cur.lines.line(cur.pos + look), Some(l) if is_blank_line(l)) {
                     look += 1;
                 }
+                // N1a ends the list before a new description marker too.
+                if look >= 3 {
+                    break;
+                }
                 match cur.lines.line(cur.pos + look) {
                     Some(after)
                         if !after.starts_with(ITEM_PARAGRAPH)
@@ -520,6 +524,11 @@ pub(in crate::parse) fn parse_definition_list(
         let saved = cur.pos;
         while matches!(cur.peek(), Some(line) if is_blank_line(line)) {
             cur.consume();
+        }
+        // N1a separates sibling terms at every description-list depth.
+        if cur.pos - saved >= 3 {
+            cur.pos = saved;
+            break;
         }
         if !cur.peek().is_some_and(|l| {
             definition_entry_at(strip_lazy(l), marker_hosted, list_column)
