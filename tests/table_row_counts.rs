@@ -20,3 +20,22 @@ fn native_header_cell_remains_in_explicit_body() {
     let html = carve::to_html("{header-rows=1 footer-rows=1}\n| A | B |\n|= C | D |\n| E | F |\n");
     assert!(html.contains("<th scope=\"row\">C</th>"));
 }
+
+#[test]
+fn overlapping_delimited_edges_leave_plain_body_cells() {
+    let source = "{table header-rows=2 footer-rows=1}\n```csv\na\nb\n```\n";
+    let html = carve::to_html(source);
+    assert_eq!(
+        html.trim(),
+        "<table>\n  <tbody>\n    <tr><td>a</td></tr>\n    <tr><td>b</td></tr>\n  </tbody>\n</table>"
+    );
+
+    let oversized = carve::to_html("{table header-rows=5}\n```csv\na\nb\n```\n");
+    assert!(
+        oversized.contains("<th scope=\"row\">a</th>"),
+        "{oversized}"
+    );
+
+    let written = carve::render_carve(&carve::parse(source)).unwrap();
+    assert_eq!(carve::to_html(&written), html);
+}

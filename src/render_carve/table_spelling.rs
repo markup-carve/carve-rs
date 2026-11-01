@@ -20,20 +20,12 @@ pub(super) fn render_delimited_table(
     {
         return None;
     }
-    let foot = crate::parse::delimited_table::count(
-        table
-            .attrs
-            .as_ref()
-            .and_then(|attrs| attrs.key_values.get("footer-rows")),
-        0,
-    );
-    let head = crate::parse::delimited_table::count(
-        table
-            .attrs
-            .as_ref()
-            .and_then(|attrs| attrs.key_values.get("header-rows")),
-        table.rows.len().saturating_sub(foot).min(1),
-    );
+    let head = table
+        .attrs
+        .as_ref()
+        .map_or(table.rows.len().min(1), |attrs| {
+            crate::parse::delimited_table::effective_header_rows(attrs, table.rows.len())
+        });
     let mut lines = Vec::new();
     for (index, row) in table.rows.iter().enumerate() {
         if row.attrs.is_some() {

@@ -69,11 +69,7 @@ pub(crate) fn from_code_without(
     let (mut data, mut ranges) = rows_with_ranges(&code.content, separator)?;
     skip_records(&code.content, &mut data, &mut ranges, skip);
     let width = data.iter().map(Vec::len).max().unwrap_or(0);
-    let foot = count(attrs.key_values.get("footer-rows"), 0);
-    let head = count(
-        attrs.key_values.get("header-rows"),
-        data.len().saturating_sub(foot).min(1),
-    );
+    let head = effective_header_rows(&attrs, data.len());
     attrs.key_values.remove("table");
     attrs
         .order
@@ -195,6 +191,24 @@ pub(crate) fn count(raw: Option<&String>, default: usize) -> usize {
             value.trim().parse().unwrap_or(default)
         }
         Some(_) => default,
+    }
+}
+
+pub(crate) fn effective_header_rows(attrs: &Attrs, rows: usize) -> usize {
+    let foot = count(attrs.key_values.get("footer-rows"), 0);
+    let head = count(
+        attrs.key_values.get("header-rows"),
+        rows.saturating_sub(foot).min(1),
+    );
+    if attrs.key_values.contains_key("header-rows")
+        && attrs.key_values.contains_key("footer-rows")
+        && head.saturating_add(foot) > rows
+    {
+        // An explicit overlap has no partition and no header cells. A lone
+        // oversized count still uses the delimited table rule (PART 9 §13).
+        0
+    } else {
+        head
     }
 }
 
