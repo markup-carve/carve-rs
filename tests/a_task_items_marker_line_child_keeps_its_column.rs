@@ -94,9 +94,9 @@ fn a_task_item_in_a_quote_reads_its_child_the_same_way() {
     );
 }
 #[test]
-fn a_plus_at_the_child_marker_column_stays_lazy_text_in_the_term() {
+fn a_plus_at_the_child_marker_column_attaches_after_the_term() {
     check(
         "- [ ] - :: t\n      +\n      x\n",
-        "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <ul>\n      <li>\n        <dl>\n          <dt>t\n+\nx</dt>\n        </dl>\n      </li>\n    </ul>\n  </li>\n</ul>",
+        "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <ul>\n      <li>\n        <dl>\n          <dt>t</dt>\n        </dl>\n        x\n      </li>\n    </ul>\n  </li>\n</ul>",
     );
 }
