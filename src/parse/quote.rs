@@ -1858,7 +1858,7 @@ impl<'a> QuoteBody<'a> {
             cur.pos += 1;
         }
         let attached_start = cur.pos;
-        let end = attached_block_lines_classified(
+        let mut end = attached_block_lines_classified(
             cur.lines,
             cur.pos,
             &mut cur.comment_closer_last_index,
@@ -1866,6 +1866,33 @@ impl<'a> QuoteBody<'a> {
             options,
             &mut |next, at| is_blank_line(next) || (at > attached_start && is_plus_marker(next)),
         );
+        // Hoisted definitions leave invisible placeholders at the authored
+        // quote level. An accepted marker attaches the first visible block
+        // after that run, with the placeholders still inside the quote.
+        while end > attached_start
+            && cur.lines.line(end - 1).is_some_and(|last| {
+                is_definition_placeholder(without_blockquote_prefixes(trim_ascii_start(last)))
+            })
+            && cur
+                .lines
+                .line(end)
+                .is_some_and(|next| !is_blank_line(next) && !is_plus_marker(next))
+        {
+            let prior = end;
+            end = attached_block_lines_classified(
+                cur.lines,
+                prior,
+                &mut cur.comment_closer_last_index,
+                &mut cur.code_closer_last_index,
+                options,
+                &mut |next, at| {
+                    is_blank_line(next) || (at > attached_start && is_plus_marker(next))
+                },
+            );
+            if end == prior {
+                break;
+            }
+        }
         while cur.pos < end {
             let next = cur.lines.at(cur.pos);
             let kept = if strip_follower_marker {
@@ -2322,7 +2349,8 @@ impl<'a> QuoteBody<'a> {
         );
         while attach_end > cur.pos
             && cursor_lines.line(attach_end - 1).is_some_and(|last| {
-                is_line_comment_any_column(last)
+                is_definition_placeholder(without_blockquote_prefixes(trim_ascii_start(last)))
+                    || is_line_comment_any_column(last)
                     || (!last.starts_with([' ', '\t'])
                         && (parse_link_def_line(last).is_some()
                             || parse_footnote_def_line(last).is_some()))
