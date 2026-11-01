@@ -34,3 +34,11 @@ fn marker_line_term_uses_the_item_content_column_at_every_host() {
     assert!(html("> - :: t\n>  :  head\n").contains("<dt>t\n:  head</dt>"));
     assert!(html("> - :: t\n>   :  head\n").contains("<dd>head</dd>"));
 }
+
+#[test]
+fn a_separator_inside_the_marker_column_stays_in_the_open_term_after_lazy_text() {
+    assert_eq!(
+        html("- :: term\nflush block\n : body\n"),
+        "<ul>\n  <li>\n    <dl>\n      <dt>term\nflush block\n: body</dt>\n    </dl>\n  </li>\n</ul>"
+    );
+}
