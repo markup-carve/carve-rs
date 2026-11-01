@@ -1303,6 +1303,9 @@ pub(crate) fn block_ends_with_open_paragraph(
 ) -> bool {
     match block {
         Some(BlockNode::Paragraph(_)) => true,
+        // A caption has paragraph-like inline text even when its target is a
+        // finished block such as a closed code fence (CARVE-P2-021).
+        Some(BlockNode::Figure(figure)) if !figure.caption.is_empty() => true,
         // A blockquote has no explicit closer: lazy continuation keeps its
         // trailing paragraph open, so a dedented line folds into it.
         Some(BlockNode::BlockQuote(q)) => block_ends_with_open_paragraph(
