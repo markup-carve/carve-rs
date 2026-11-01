@@ -2076,8 +2076,16 @@ fn escape_renders_flank(after: Option<char>) -> bool {
 /// read as a space.
 fn quote_next_char(text: &str, i: usize) -> Option<char> {
     let char_at = |at: usize| text.get(at..).and_then(|rest| rest.chars().next());
-    match char_at(i + 1) {
-        Some('\\') if escape_renders_flank(char_at(i + 2)) => Some(' '),
+    let mut at = i + 1;
+    let bytes = text.as_bytes();
+    while bytes.get(at..at + 2) == Some(b"{%") && !decorated_braced_opener(bytes, at) {
+        let Some(close) = bytes[at + 2..].windows(2).position(|pair| pair == b"%}") else {
+            break;
+        };
+        at += close + 4;
+    }
+    match char_at(at) {
+        Some('\\') if escape_renders_flank(char_at(at + 1)) => Some(' '),
         next => next,
     }
 }

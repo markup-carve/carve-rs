@@ -309,3 +309,7 @@ path = "tests/closed_first_block_attachment_boundary.rs"
 [[test]]
 name = "accepted_plus_closes_body_fences"
 path = "tests/accepted_plus_closes_body_fences.rs"
+
+[[test]]
+name = "quote_flanks_skip_braced_comments"
+path = "tests/quote_flanks_skip_braced_comments.rs"
