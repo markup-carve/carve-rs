@@ -64,18 +64,7 @@ use json::Value;
 const KNOWN_DIFFERENCES: &[(&str, &str)] = &[];
 
 /// Output corrections pending in the shared vectors, retired when the pin agrees.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
-    (
-        "i01-inverted-line-range",
-        "html",
-        r#""<p>{{ child @lines:3-1 }}</p>""#,
-    ),
-    (
-        "i02-directive-in-a-table-cell",
-        "fmt",
-        r#""|= A |= {{ c.crv }} |\n| 1 | 2 |\n""#,
-    ),
-];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 
 // ---------------------------------------------------------------------------
 // Vector location
