@@ -1243,6 +1243,19 @@ impl<'a> Walk<'a> {
             .unwrap_or(reached)
     }
 
+    fn attached_item_after_quote(&self, at: usize, c: &mut Cursor<'_>, reached: usize) -> usize {
+        let Some(attached) = self.attached.as_ref().filter(|a| a.from == at) else {
+            return reached;
+        };
+        let host = attached.frames.len() - 1;
+        if reached < host && self.frames[host].kind == Kind::Item && c.out.contains('>') {
+            c.attachment_shift = self.frames[host].canon.saturating_sub(c.col);
+            host
+        } else {
+            reached
+        }
+    }
+
     fn line(&mut self, at: usize, c: &mut Cursor<'_>, after_plus: &mut bool) {
         let tracing = self.trace.is_some();
         let line = self.first_line + at;
@@ -1297,15 +1310,8 @@ impl<'a> Walk<'a> {
             reached = k;
         }
         reached = self.item_after_missed_quote_term(reached, c.col, c.rest);
-        // The attachment test measured this follower through its quote prefixes.
-        // A later post-prefix column cannot move it outside the accepted host.
-        if let Some(attached) = self.attached.as_ref().filter(|a| a.from == at) {
-            let host = attached.frames.len() - 1;
-            if reached < host && self.frames[host].kind == Kind::Item && c.out.contains('>') {
-                reached = host;
-                c.attachment_shift = self.frames[host].canon.saturating_sub(c.col);
-            }
-        }
+        // The attachment test measured through quote prefixes. Keep that owner.
+        reached = self.attached_item_after_quote(at, c, reached);
         // A lone `+` nothing took is a plain letter and ends nothing (carve#4396).
         // Payload stays as written.
         if self.decide
