@@ -126,7 +126,7 @@ pub(super) fn decode_block_block_quote(obj: &Map<String, Json>) -> Result<BlockN
 }
 
 pub(super) fn decode_block_list(obj: &Map<String, Json>) -> Result<BlockNode, AstJsonError> {
-    Ok(BlockNode::List(List {
+    let mut list = List {
         attrs: optional_attrs(obj)?,
         ordered: required_bool(obj, "list", "ordered")?,
         tight: required_bool(obj, "list", "tight")?,
@@ -142,7 +142,13 @@ pub(super) fn decode_block_list(obj: &Map<String, Json>) -> Result<BlockNode, As
         delim: optional_marker_char(obj, "delim")?,
         bullet_char: optional_marker_char(obj, "bulletChar")?,
         pos: optional_pos(obj, "list")?,
-    }))
+    };
+    // JSON carries effective tightness. Keep the source gap hint used by the
+    // parser when a directive paragraph supplies the only loose boundary.
+    if !list.tight && list.has_literal_directive_pair() {
+        list.tight = true;
+    }
+    Ok(BlockNode::List(list))
 }
 
 pub(super) fn decode_block_code_block(obj: &Map<String, Json>) -> Result<BlockNode, AstJsonError> {

@@ -155,7 +155,7 @@ impl Renderer {
                         a.insert("carveListMarker".into(), Json::String(marker.to_string()));
                     }
                 }
-                a.insert("tight".into(), Json::Bool(n.tight));
+                a.insert("tight".into(), Json::Bool(n.effective_tight()));
                 let items = n
                     .items
                     .iter()

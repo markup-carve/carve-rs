@@ -26,7 +26,7 @@ fn the_line_is_literal_and_ends_its_paragraph() {
 fn a_lazy_line_in_an_item_is_the_next_paragraph() {
     assert_eq!(
         to_html("- {{ a.csv @code @foo }}\n^ cap\n").trim(),
-        "<ul>\n  <li>{{ a.csv @code @foo }}\n    ^ cap\n  </li>\n</ul>"
+        "<ul>\n  <li><p>{{ a.csv @code @foo }}</p>\n    <p>^ cap</p>\n  </li>\n</ul>"
     );
 }
 

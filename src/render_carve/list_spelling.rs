@@ -52,7 +52,7 @@ pub(super) fn list_needs_loose_key(
     body: &str,
     nested: bool,
 ) -> bool {
-    if list.tight || list.items.is_empty() {
+    if list.effective_tight() || list.items.is_empty() {
         return false;
     }
     // TWO OR MORE ITEMS ALWAYS RE-PARSE LOOSE. §17 L2 loosens on a blank line
@@ -284,7 +284,7 @@ pub(super) fn list_item_reads_back(
     if read_list.items.len() != 1 {
         return false;
     }
-    if read_list.tight != list.tight {
+    if read_list.effective_tight() != list.effective_tight() {
         return false;
     }
     let mut target_list = list.clone();
@@ -308,6 +308,7 @@ pub(super) fn list_item_reads_back(
 
 pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveContext) -> String {
     ctx.list_depth += 1;
+    let tight = node.effective_tight();
     let mut out = String::new();
     let mut counter = node.start.unwrap_or(1);
     // The marker is semantic (§11: a different bullet char / ordered delim
@@ -374,7 +375,7 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
                 render_item_blocks(
                     session,
                     &item.children,
-                    node.tight,
+                    tight,
                     item.pos.as_ref(),
                     ctx,
                     &mut relative_boundaries,
@@ -393,7 +394,7 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
         let mut content = trim_list_content(&raw_content);
         let mut item_source = spell_list_item(session, &prefix, &content, continuation_width);
         let nested_tightness_loss =
-            node.tight && ctx.list_depth > 1 && nested_tight_item_loses_tightness(item);
+            tight && ctx.list_depth > 1 && nested_tight_item_loses_tightness(item);
         if nested_tightness_loss {
             crate::render_loss::record_list_tightness_lost(item.pos.as_ref());
         }
@@ -404,7 +405,7 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
             note_unspellable_list_nesting();
         }
         let needs_readback = !capped_boundary
-            && node.tight
+            && tight
             && ((ctx.list_depth > 1 && (!relative_boundaries.is_empty() || nested_tightness_loss))
                 || item.children.windows(2).any(|pair| {
                     matches!(pair[0], BlockNode::List(_))
@@ -486,7 +487,7 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
         let ends_with_nested_list = content.lines().last().is_some_and(|line| {
             line.starts_with(' ') && is_rendered_list_marker(line.trim_start())
         });
-        if !node.tight && idx < node.items.len() - 1 && !ends_with_nested_list {
+        if !tight && idx < node.items.len() - 1 && !ends_with_nested_list {
             out.push('\n');
         }
         escape_window::leave(session, recorded);

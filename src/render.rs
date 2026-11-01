@@ -1347,6 +1347,7 @@ fn render_list(
     options: &Options<'_>,
     state: &mut RenderState,
 ) {
+    let tight = l.effective_tight();
     indent(out, level);
     let tag = if l.ordered { "ol" } else { "ul" };
     out.push('<');
@@ -1408,7 +1409,7 @@ fn render_list(
     // PART 10 §13a: a tight list whose item paragraph keeps its `<p>` for its
     // own attributes reads back as loose without this.
     let tight_carrier = options.html_carriers()
-        && l.tight
+        && tight
         && l.items.iter().any(|item| {
             item.children.iter().any(
                 |child| matches!(child, BlockNode::Paragraph(p) if has_authored_attrs(&p.attrs)),
@@ -1463,7 +1464,7 @@ fn render_list(
         if i > 0 {
             out.push('\n');
         }
-        render_list_item(out, item, level + 1, l.tight, options, state);
+        render_list_item(out, item, level + 1, tight, options, state);
     }
     out.push('\n');
     indent(out, level);
