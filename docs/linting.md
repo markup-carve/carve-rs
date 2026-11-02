@@ -63,6 +63,9 @@ no block, and these Markdown/Djot habits in literal text:
 | `markdown-strikethrough-double-tilde` | `~~gone~~` | `~gone~` |
 | `djot-superscript-caret` | `^sup^` | `{^sup^}` |
 | `djot-plus-bullet` | `+ item` | `- item` |
+| `setext-heading-underline` | `Title` over `---` or `===` | `# Title` |
+| `heading-closing-hashes` | `## h ##` | `## h` |
+| `indented-code-block` | a paragraph indented four spaces after a blank line | a ``` fence |
 
 A plus line consumed by a table continuation does not trigger the bullet rule.
 

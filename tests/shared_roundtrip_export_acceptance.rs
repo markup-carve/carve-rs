@@ -18,13 +18,19 @@ fn fixtures() -> Value {
     // which carve#4811 reads as paragraphs. Its other claims stay as they are.
     let letter_dot = regex::Regex::new(r"(?m)^([ \t]*[A-Za-z]+\.) ([^ ])").unwrap();
     for row in fixtures["markdownExportImport"].as_array_mut().unwrap() {
-        let id = row["id"].as_str().unwrap_or_default();
+        let id = row["id"].as_str().unwrap_or_default().to_owned();
         if id.starts_with("list-style-marker")
             || id == "list-delimiter-changed-between-adjacent-lists"
         {
             if let Some(source) = row["source"].as_str() {
                 row["source"] = Value::from(letter_dot.replace_all(source, "$1  $2").into_owned());
             }
+        }
+        // The pin expects a one-line term marker (carve#4861), declared ahead of
+        // the pinned carve-js, which still folds the wrapped term like carve-rs.
+        if id == "definition-list-wrapped-term" {
+            row["carrierFragments"] =
+                serde_json::json!(["<!-- carve: :: A term that\nwraps onto the next line -->"]);
         }
     }
     fixtures
@@ -991,10 +997,7 @@ fn markdown_reports_a_list_delimiter_forced_apart_from_the_list_above() {
 
 #[test]
 fn shared_reference_marker_and_abbreviation_rows() {
-    let fixtures: Value = serde_json::from_str(include_str!(
-        "spec/resources/roundtrip-export-acceptance-fixtures.json"
-    ))
-    .unwrap();
+    let fixtures = fixtures();
     let wanted = [
         "bare-div",
         "definition-list-wrapped-term",

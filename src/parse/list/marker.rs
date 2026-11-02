@@ -97,6 +97,10 @@ pub(crate) fn detect_unordered(line: &str) -> Option<(&str, Option<Attrs>, &str)
     if c != b'-' && c != b'*' {
         return None;
     }
+    // The thematic break is tested before a list marker, so `- - -` is no bullet (carve#4814).
+    if thematic_break_marker(&line[i..]).is_some() {
+        return None;
+    }
     let (content, attrs) = marker_tail(line, i + 1)?;
     Some((content, attrs, &line[i..i + 1]))
 }
