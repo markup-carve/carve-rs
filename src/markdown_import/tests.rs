@@ -297,6 +297,34 @@ fn a_fence_keeps_its_language_and_body() {
 }
 
 #[test]
+fn a_language_prefix_on_the_info_word_is_stripped_once() {
+    // markup-carve/carve#4905: commonmark.js 0.31 renders `language-js` as
+    // class `language-js`, not `language-language-js`.
+    for (markdown, carve) in [
+        ("``` language-js\nx\n```", "```js\nx\n```\n"),
+        ("~~~language-c++\nx\n~~~", "```c++\nx\n```\n"),
+        (
+            "```language-language-js\nx\n```",
+            "```language-js\nx\n```\n",
+        ),
+        ("```xlanguage-js\nx\n```", "```xlanguage-js\nx\n```\n"),
+        ("```LANGUAGE-js\nx\n```", "```LANGUAGE-js\nx\n```\n"),
+        ("- ```language-js\n  x\n  ```", "- ```js\n  x\n  ```\n"),
+        (
+            "> - ```language-js\n>   x\n>   ```",
+            "> - ```js\n>   x\n>   ```\n",
+        ),
+    ] {
+        assert_eq!(markdown_to_carve(markdown), carve, "{markdown:?}");
+    }
+    let (value, losses, _) = markdown_to_carve_with_losses("```language-\nx\n```").unwrap();
+    assert_eq!(value, "```\nx\n```\n");
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains("\"language-\"")));
+}
+
+#[test]
 fn an_info_string_contributes_only_its_first_word() {
     assert!(markdown_to_carve("``` js title=x\ny\n```").starts_with("```js\n"));
 }
