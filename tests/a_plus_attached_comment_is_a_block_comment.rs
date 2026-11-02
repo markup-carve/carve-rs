@@ -37,7 +37,8 @@ fn item_blocks(source: &str) -> Vec<String> {
 fn a_plus_attached_comment_is_a_block_comment() {
     let blocks = item_blocks("- a\n+\n%% c\nb\n\nx\n");
 
-    assert_eq!(blocks, vec!["paragraph", "comment(block=false)"]);
+    // The comment is read in the item ahead of the block the `+` attaches (carve#4449).
+    assert_eq!(blocks, vec!["paragraph", "comment(block=false)", "paragraph"]);
 }
 
 #[test]
@@ -61,7 +62,7 @@ fn a_plus_attached_comment_fence_is_a_block_comment_too() {
     // The other spelling of the same construct, which shares the arm.
     let blocks = item_blocks("- a\n+\n%%%\nc\nd\n%%%\nb\n\nx\n");
 
-    assert_eq!(blocks, vec!["paragraph", "comment(block=true)"]);
+    assert_eq!(blocks, vec!["paragraph", "comment(block=true)", "paragraph"]);
 }
 
 #[test]

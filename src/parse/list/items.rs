@@ -352,13 +352,18 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             self.cur.consume();
         }
         let attached_comment = self.cur.peek().is_some_and(is_line_comment_any_column);
+        let mut leading = Vec::new();
         let attached = parse_continuation_block(
             self.cur,
             options,
             base_indent,
             Some(content_col),
             marker_column,
+            &mut leading,
         );
+        for comment in leading {
+            self.place_plus_block(comment);
+        }
         if attached.is_none()
             && self.cur.peek().is_some_and(is_plus_marker)
             && self
@@ -402,14 +407,19 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                     && !item_block_opener(next)
             })
         {
+            let mut leading = Vec::new();
             if let Some(block) = parse_continuation_block(
                 self.cur,
                 options,
                 base_indent,
                 Some(content_col),
                 base_indent,
+                &mut leading,
             ) {
-                self.place_in_last_item(vec![block]);
+                leading.push(block);
+            }
+            if !leading.is_empty() {
+                self.place_in_last_item(leading);
             }
         }
         if options.extensions.is_empty()
@@ -1245,10 +1255,14 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             .continuation_decision(item.at)
             .filter(|decision| decision.quote_depth > 0)
             .map_or(base_indent, |_| content_col);
-        if let Some(block) = first_block_attaches
-            .then(|| parse_continuation_block(cur, options, base_indent, None, pull_indent))
-            .flatten()
-        {
+        let mut leading = Vec::new();
+        let attached = first_block_attaches
+            .then(|| {
+                parse_continuation_block(cur, options, base_indent, None, pull_indent, &mut leading)
+            })
+            .flatten();
+        children.append(&mut leading);
+        if let Some(block) = attached {
             let is_empty_paragraph = matches!(
                 &block,
                 BlockNode::Paragraph(p) if p.children.is_empty()
@@ -1262,9 +1276,14 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 .peek()
                 .is_some_and(|line| indent_columns(line) == 0 && line_starts_paragraph(line))
         {
-            if let Some(block) =
-                parse_continuation_block(cur, options, base_indent, None, pull_indent)
-            {
+            if let Some(block) = parse_continuation_block(
+                cur,
+                options,
+                base_indent,
+                None,
+                pull_indent,
+                &mut children,
+            ) {
                 children.push(block);
             }
         }

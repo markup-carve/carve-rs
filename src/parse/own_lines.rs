@@ -494,7 +494,7 @@ struct Walk<'a> {
     lines: Vec<&'a str>,
     frames: Vec<Frame>,
     reach: usize,
-    runs: Option<Runs>,
+    runs: std::cell::OnceCell<Runs>,
     /// Decision trace records (carve `docs/decision-trace.md`); `None` on a parse.
     trace: Option<Vec<TraceRecord>>,
     /// 1-based line of `lines[0]`, past any frontmatter.
@@ -512,6 +512,16 @@ struct Walk<'a> {
     sibling: Option<(Kind, String, usize, usize)>,
     /// Continuation lines of the wrapped attribute block just classified.
     attr_rest: Option<(usize, usize)>,
+    /// The invisible lines between an accepted `+` and its block (carve#4449).
+    skipped: Option<Skipped>,
+}
+
+struct Skipped {
+    host: usize,
+    at: usize,
+    end: usize,
+    fenced: Vec<usize>,
+    lead: String,
 }
 
 struct AttachedBlock {
@@ -587,6 +597,47 @@ impl<'s> Cursor<'s> {
     }
 }
 
+/// A line a note definition's body folds as plain text.
+fn foldable_plain_line(rest: &str) -> bool {
+    let text = rest.trim_end_matches([' ', '\t', '\r']);
+    line_starts_paragraph(rest)
+        && !rest.starts_with("%%")
+        && parse_link_def_line(rest).is_none()
+        && parse_footnote_def_line(rest).is_none()
+        && detect_abbreviation_def(rest).is_none()
+        && !is_caption(rest)
+        && ![": ", ":: "]
+            .iter()
+            .any(|p| text.strip_prefix(p).is_some_and(|t| !is_ws_only(t)))
+}
+
+/// Whether `text` holds only braced comments, blanks and space-led `%%` tails.
+fn braced_comments_only(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b' ' | b'\t' | b'\n' | b'\r' => i += 1,
+            b'{' if bytes.get(i + 1) == Some(&b'%')
+                && !super::inline_links::followed_by_grapheme_extender(bytes, i + 2) =>
+            {
+                let Some(close) = bytes[i + 2..].windows(2).position(|w| w == b"%}") else {
+                    return false;
+                };
+                i += 2 + close + 2;
+            }
+            b'%' if bytes.get(i + 1) == Some(&b'%') && i > 0 && bytes[i - 1] == b' ' => {
+                i += bytes[i..]
+                    .iter()
+                    .position(|&b| b == b'\n')
+                    .unwrap_or(bytes.len() - i);
+            }
+            _ => return false,
+        }
+    }
+    true
+}
+
 /// The source the block readers see after the ownership walk, with the column
 /// edits that map a position in it back to the authored source.
 #[derive(Clone)]
@@ -653,7 +704,7 @@ fn walk_traced(
         lines: body.split('\n').collect(),
         frames: vec![Frame::new(Kind::Doc)],
         reach: 0,
-        runs: None,
+        runs: std::cell::OnceCell::new(),
         sibling: None,
         attr_rest: None,
         trace,
@@ -663,6 +714,7 @@ fn walk_traced(
         accepted: Vec::new(),
         refused: Vec::new(),
         attached: None,
+        skipped: None,
     };
     if let Some(trace) = walk.trace.as_mut() {
         // INPUT: frontmatter lines are read before ownership.
@@ -821,7 +873,7 @@ impl<'a> Walk<'a> {
     ) -> Result<(), Refusal> {
         // An attribute run has no visible block and no column of its own.
         // Apply the attach gates to the line it leads, not to the attribute.
-        let mut next = self.first_visible_line(at + 1, host, column);
+        let mut next = self.first_visible_line(at + 1, host, column, kind == Kind::Item, None);
         if kind == Kind::Note {
             // A new note definition is invisible to this pending marker. Its
             // foldable body stays with that definition; the next block decides
@@ -899,22 +951,94 @@ impl<'a> Walk<'a> {
         Ok(())
     }
 
+    /// Hold the invisible lines after the `+` at `at` for its host, so the readers
+    /// meet them where the block stands. Returns the line the block starts on.
+    fn skip_invisible(
+        &mut self,
+        host: usize,
+        at: usize,
+        column: usize,
+        lead: Option<String>,
+    ) -> usize {
+        let mut fenced = Vec::new();
+        let in_item = self.frames[host].kind == Kind::Item;
+        let end = self.first_visible_line(at + 1, host, column, in_item, Some(&mut fenced));
+        if end == at + 1 || end >= self.lines.len() {
+            return at + 1;
+        }
+        let lead = lead.unwrap_or_else(|| {
+            let line = self.lines[end];
+            let rest = self.through_quotes(line, host).unwrap_or(line);
+            let canon = self.frames[host].marker.map_or(0, |(_, canon)| canon);
+            line[..line.len() - rest.len()].to_owned() + &" ".repeat(canon)
+        });
+        self.skipped = Some(Skipped {
+            host,
+            at,
+            end,
+            fenced,
+            lead,
+        });
+        end
+    }
+
+    /// Write a held invisible line at its block's lead, or as a `%%` line.
+    fn skipped_line(&mut self, at: usize, c: &mut Cursor<'a>) -> bool {
+        let Some(skipped) = self.skipped.as_ref() else {
+            return false;
+        };
+        let line = self.lines[at];
+        let rest = trim_ws_start(self.through_quotes(line, skipped.host).unwrap_or(line));
+        let authored = &line[..line.len() - rest.len()];
+        c.out.push_str(&skipped.lead);
+        if authored != skipped.lead {
+            c.edits.push((
+                skipped.lead.chars().count(),
+                authored.chars().count() as isize - skipped.lead.chars().count() as isize,
+            ));
+        }
+        c.src = if skipped.fenced.contains(&at) {
+            "%%"
+        } else {
+            rest
+        };
+        let (host, from, end) = (skipped.host, skipped.at, skipped.end);
+        if at + 1 == end {
+            if self.frames[host].plus == Some(from) {
+                self.frames[host].plus = Some(at);
+            }
+            self.skipped = None;
+        }
+        if self.trace.is_some() {
+            let line = self.first_line + at;
+            let mut record =
+                TraceRecord::new(line, "S5", self.deepest(), Some("CARVE-P0-024"), "leaf");
+            record.plus = Some(line - 1);
+            self.emit(at, record);
+        }
+        true
+    }
+
     /// The first line past the invisible lines from `from` (CARVE-P9-013,
     /// carve#4449). Off the marker column an invisible line is that next line.
-    fn first_visible_line(&self, from: usize, host: usize, column: usize) -> usize {
+    /// `fenced` collects the skipped lines the readers take as `%%` lines.
+    fn first_visible_line(
+        &self,
+        from: usize,
+        host: usize,
+        column: usize,
+        in_item: bool,
+        mut fenced: Option<&mut Vec<usize>>,
+    ) -> usize {
         let view = |k: usize| -> &'a str {
             trim_ws_start(
                 self.through_quotes(self.lines[k], host)
                     .unwrap_or("\u{e000}"),
             )
         };
-        let run = |text: &str| -> Option<usize> {
-            let n = text.bytes().take_while(|&b| b == b'%').count();
-            (n >= 3 && is_ws_only(&text[n..])).then_some(n)
-        };
         let misses = |k: usize| {
             self.through_quotes(self.lines[k], host)
-                .is_none_or(|level| {
+                .map_or(true, |level| {
                     let text = trim_ws_start(level);
                     !is_ws_only(text) && doc_column(self.lines[k], text) < column
                 })
@@ -928,26 +1052,30 @@ impl<'a> Walk<'a> {
             if is_blank_line(self.lines[k]) || doc_column(self.lines[k], rest) != column {
                 return k;
             }
-            if let Some(width) = run(rest).filter(|&width| {
-                (k + 1..self.lines.len()).any(|j| {
-                    let t = self.lines[j].trim_start_matches([' ', '\t', '>']);
-                    run(t) == Some(width)
-                })
-            }) {
+            let width = comment_run(rest).filter(|width| {
+                let lines = &self.lines;
+                let runs = self.runs.get_or_init(|| closer_runs(lines));
+                runs.last_comment.get(width).is_some_and(|&j| j > k)
+            });
+            if let Some(width) = width {
+                // A nonblank line that misses the host ends the span under S1
+                // (CARVE-P0-005, carve#4870).
+                let opener = k;
                 k += 1;
-                while k < self.lines.len() && run(view(k)) != Some(width) && !misses(k) {
+                while k < self.lines.len() && comment_run(view(k)) != Some(width) && !misses(k) {
                     k += 1;
                 }
-                if k < self.lines.len() && run(view(k)) == Some(width) {
+                if k < self.lines.len() && comment_run(view(k)) == Some(width) {
                     k += 1;
+                }
+                // The list readers keep the span as one comment; the others
+                // read its lines as `%%` lines.
+                if let Some(fenced) = fenced.as_deref_mut().filter(|_| !in_item) {
+                    fenced.extend(opener..k.min(self.lines.len()));
                 }
             } else if parse_footnote_def_line(rest).is_some() {
                 k += 1;
-                while k < self.lines.len()
-                    && !is_blank_line(self.lines[k])
-                    && line_starts_paragraph(view(k))
-                    && parse_footnote_def_line(view(k)).is_none()
-                {
+                while k < self.lines.len() && foldable_plain_line(view(k)) {
                     k += 1;
                 }
             } else if rest.starts_with("%%")
@@ -961,11 +1089,54 @@ impl<'a> Walk<'a> {
                 .flatten()
             {
                 k += len;
+            } else if let Some(end) = rest
+                .starts_with("{%")
+                .then(|| self.comment_only_para_end(k, in_item, &view))
+                .flatten()
+            {
+                // A paragraph of only comments is skipped as a `%%` line is (carve#4799).
+                if let Some(fenced) = fenced.as_deref_mut() {
+                    fenced.extend(k..end);
+                }
+                k = end;
             } else {
                 return k;
             }
         }
         k
+    }
+
+    /// The end of the paragraph of only braced comments that starts at `k`.
+    /// In an item a list marker interrupts it; elsewhere the marker is its text.
+    fn comment_only_para_end(
+        &self,
+        k: usize,
+        in_item: bool,
+        view: &dyn Fn(usize) -> &'a str,
+    ) -> Option<usize> {
+        let mut end = k + 1;
+        while end < self.lines.len() && !is_blank_line(view(end)) {
+            let rest = view(end);
+            if detect_list_marker_full(rest).is_some() {
+                if in_item {
+                    break;
+                }
+                return None;
+            }
+            if !line_starts_paragraph(rest)
+                || rest.starts_with("%%")
+                || parse_link_def_line(rest).is_some()
+                || parse_footnote_def_line(rest).is_some()
+                || detect_abbreviation_def(rest).is_some()
+                || (rest.starts_with('{')
+                    && standalone_attrs_block_len_iter([rest].into_iter()).is_some())
+            {
+                break;
+            }
+            end += 1;
+        }
+        let para: Vec<&str> = (k..end).map(view).collect();
+        braced_comments_only(&para.join("\n")).then_some(end)
     }
 
     /// The first line past the attribute and invisible lines from `from`, or
@@ -1353,7 +1524,10 @@ impl<'a> Walk<'a> {
         }
     }
 
-    fn line(&mut self, at: usize, c: &mut Cursor<'_>, after_plus: &mut bool) {
+    fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
+        if self.skipped_line(at, c) {
+            return;
+        }
         let tracing = self.trace.is_some();
         let line = self.first_line + at;
         let mut reached = 0;
@@ -1422,16 +1596,18 @@ impl<'a> Walk<'a> {
             self.refuse_letter(at, column, refusal);
         }
         if let Some(k) = plus {
-            if self.decide {
-                self.accept_plus(at, k, false);
-                self.note_attached(k, at + 1);
-            }
             self.frames.truncate(k + 1);
             let f = self.top();
             f.para = false;
             let canon = f.marker.expect("plus frames carry a marker").1;
             let shift = f.marker_shift;
             c.lead_in(canon, shift, false);
+            if self.decide {
+                self.accept_plus(at, k, false);
+                let column = doc_column(self.lines[at], c.rest);
+                let end = self.skip_invisible(k, at, column, Some(c.out.clone()));
+                self.note_attached(k, end);
+            }
             *after_plus = true;
             if tracing {
                 // S2, B-plus-start: a lone `+` at an open marker column.
@@ -1490,7 +1666,7 @@ impl<'a> Walk<'a> {
                 // A span in a line-block payload pairs past the column too (carve-php#3137).
                 let rest = c.rest;
                 let lines = &self.lines;
-                let runs = self.runs.get_or_insert_with(|| closer_runs(lines));
+                let runs = self.runs.get_or_init(|| closer_runs(lines));
                 let fence = detect_fence_open(rest).map(|_| {
                     let ch = rest.as_bytes()[0];
                     (ch, rest.bytes().take_while(|&b| b == ch).count())
@@ -1986,7 +2162,8 @@ impl<'a> Walk<'a> {
                     Ok(()) => {
                         taken = true;
                         self.accept_plus(at, frame, true);
-                        self.note_attached(frame, at + 1);
+                        let end = self.skip_invisible(frame, at, column, None);
+                        self.note_attached(frame, end);
                     }
                     Err(reason) => {
                         let plus = doc_column(self.lines[at], c.rest);
@@ -2115,7 +2292,7 @@ impl<'a> Walk<'a> {
         }
         if let Some(run) = comment_run(rest) {
             let lines = &self.lines;
-            let runs = self.runs.get_or_insert_with(|| closer_runs(lines));
+            let runs = self.runs.get_or_init(|| closer_runs(lines));
             if runs.last_comment.get(&run).is_some_and(|&j| j > at) {
                 return Form::Fence(Closer::Comment(run), true, false);
             }

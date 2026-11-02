@@ -738,22 +738,47 @@ pub(crate) fn parse_continuation_block(
     base_indent: usize,
     content_col: Option<usize>,
     pull_indent: usize,
+    leading: &mut Vec<BlockNode>,
 ) -> Option<BlockNode> {
     // Definitions belong to the attached block. Nested lists manage their own markers.
     let mut next_visible = cur.pos;
-    while cur.lines.line(next_visible).is_some_and(|line| {
-        is_document_definition_placeholder(line) || is_line_comment_any_column(line)
-    }) {
-        next_visible += 1;
+    while let Some(line) = cur.lines.line(next_visible) {
+        if is_document_definition_placeholder(line) || is_line_comment_any_column(line) {
+            next_visible += 1;
+        } else if let Some(open) = detect_comment_fence_line_any_column(line) {
+            // A comment span the walk skipped before the block (carve#4449).
+            let close = (next_visible + 1..cur.lines.len()).find(|&k| {
+                is_comment_fence_close(trim_ascii_start(cur.lines.at(k)), open.fence_len)
+            });
+            match close {
+                Some(close) => next_visible = close + 1,
+                None => break,
+            }
+        } else {
+            break;
+        }
     }
     let comments_precede_block = cur.lines.line(next_visible).is_some_and(|line| {
         !is_blank_line(line) && !(trim_ascii(line) == "+" && indent_columns(line) == base_indent)
     });
-    while cur.peek().is_some_and(|line| {
-        is_document_definition_placeholder(line)
-            || comments_precede_block && is_line_comment_any_column(line)
-    }) {
-        cur.consume();
+    while cur.pos < next_visible {
+        let line = cur.lines.at(cur.pos);
+        if is_document_definition_placeholder(line) {
+            cur.consume();
+        } else if !comments_precede_block {
+            break;
+        } else {
+            // The comments stay in the host, ahead of the block (carve#4449).
+            let start = cur.pos;
+            if let Some(block) = parse_block(cur, options, &mut Vec::new()) {
+                if matches!(*block, BlockNode::Comment(_)) {
+                    leading.push(*block);
+                }
+            }
+            if cur.pos == start {
+                cur.consume();
+            }
+        }
     }
     if let Some(line) = cur.peek() {
         if let Some(nm) = detect_list_marker_full(line) {

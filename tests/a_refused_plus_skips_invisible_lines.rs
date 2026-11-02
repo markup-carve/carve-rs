@@ -39,3 +39,36 @@ fn a_sibling_after_the_invisible_line_refuses_the_plus() {
 fn a_visible_block_after_the_invisible_line_still_attaches() {
     assert_eq!(flat("- +\n%% c\ntext\n"), "<ul><li>text</li></ul>");
 }
+
+#[test]
+fn a_comment_span_or_comment_paragraph_before_the_block_is_skipped() {
+    for invisible in ["%%%\nc\n%%%", "{% c %}"] {
+        for (tail, expected) in [
+            ("text", "<ul><li>text</li></ul>"),
+            ("> q", "<ul><li><blockquote><p>q</p></blockquote></li></ul>"),
+        ] {
+            let source = format!("- +\n{invisible}\n{tail}\n");
+            assert_eq!(flat(&source), expected, "{source:?}");
+        }
+    }
+}
+
+#[test]
+fn a_comment_paragraph_with_nothing_after_it_leaves_the_plus_a_letter() {
+    assert_eq!(flat("- a\n+\n{% c %}\n"), "<ul><li>a+</li></ul>");
+}
+
+#[test]
+fn a_skipped_comment_stays_in_the_item() {
+    use carve::ast::BlockNode;
+    let doc = carve::parse("- +\n%%%\nc\n%%%\ntext\n");
+    let BlockNode::List(list) = &doc.children[0] else {
+        panic!("expected a list, got {:?}", doc.children[0]);
+    };
+    let kinds: Vec<_> = list.items[0]
+        .children
+        .iter()
+        .map(|block| matches!(block, BlockNode::Comment(_)))
+        .collect();
+    assert_eq!(kinds, [true, false]);
+}
