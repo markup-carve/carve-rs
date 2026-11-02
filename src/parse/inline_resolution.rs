@@ -1752,6 +1752,71 @@ pub(in crate::parse) struct EmphasisMemo {
     last_comment_close: Option<Option<usize>>,
     pub(in crate::parse) atomic: Option<std::rc::Rc<[(usize, usize)]>>,
     literal_directives: Option<std::rc::Rc<[(usize, usize)]>>,
+    /// Bare entries that declined at a closer for an inner word delimiter, as
+    /// `(opener content start, closer, kind)` (carve#4810).
+    pub(in crate::parse) declines: Vec<Decline>,
+}
+
+/// `(opener content start, closer, kind)` of a bare entry R2 declined.
+type Decline = (usize, usize, u8);
+
+thread_local! {
+    /// Declines still held over the content of the bare span just formed,
+    /// keyed by that content's address and length.
+    static HELD_DECLINES: std::cell::RefCell<Option<(usize, usize, Vec<Decline>)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+impl EmphasisMemo {
+    /// A memo for `text`, holding the declines its enclosing span passed on.
+    pub(in crate::parse) fn for_text(text: &str) -> Self {
+        let declines = HELD_DECLINES.with(|held| {
+            let mut held = held.borrow_mut();
+            match held.as_ref() {
+                Some(&(ptr, len, _)) if ptr == text.as_ptr() as usize && len == text.len() => held
+                    .take()
+                    .map(|(_, _, declines)| declines)
+                    .unwrap_or_default(),
+                _ => Vec::new(),
+            }
+        });
+        Self {
+            declines,
+            ..Self::default()
+        }
+    }
+
+    /// Whether an entry of a kind in `kinds` declines at or past `at`: it is
+    /// still on the stack there, so no opener of that kind and no combined
+    /// token forms, and the closer that declines it is text (carve#4810).
+    pub(in crate::parse) fn entry_declines_past(&mut self, at: usize, kinds: &[u8]) -> bool {
+        // The scan only moves forward, so an entry that declined behind it is done.
+        while self
+            .declines
+            .last()
+            .is_some_and(|&(_, close, _)| close < at)
+        {
+            self.declines.pop();
+        }
+        self.declines
+            .iter()
+            .any(|&(from, close, kind)| from <= at && close >= at && kinds.contains(&kind))
+    }
+
+    /// Hand the declines held over the content `[open + 1, close)` to the
+    /// memo `EmphasisMemo::for_text` builds for `inner`.
+    pub(in crate::parse) fn hold_declines_over(&self, open: usize, inner: &str) {
+        let held: Vec<_> = self
+            .declines
+            .iter()
+            .filter(|&&(from, close, _)| from <= open && close > open)
+            .map(|&(_, close, kind)| (0, close - open - 1, kind))
+            .collect();
+        HELD_DECLINES.with(|slot| {
+            *slot.borrow_mut() =
+                (!held.is_empty()).then_some((inner.as_ptr() as usize, inner.len(), held));
+        });
+    }
 }
 
 /// Whether the `*/` at `at` can close the combined token (`biCloser`).
@@ -2015,6 +2080,10 @@ fn find_emphasis_close_walk(
     // The `*` of a `/*` split under an open `/`: its `*/` lost the `/` to that span.
     let splits_shape = delim == b'*' && OpenKinds::is_open(b'/');
     let mut shape_seen = splits_shape && from >= 2 && bytes[from - 2] == b'/';
+    // An inner word delimiter closes nothing; the closer that follows declines.
+    let mut holds_own_delimiter = false;
+    // The name run last measured for that test, as `mention_or_tag_name_run` returns it.
+    let mut name_run: Option<(usize, usize, usize)> = None;
     while j < bytes.len() {
         if opener_end.is_some_and(|end| j > end) {
             return None;
@@ -2309,15 +2378,79 @@ fn find_emphasis_close_walk(
             // An arrow's `=` may still close (`=b=>`, PART 9 §9); only a
             // comparison's is shielded, above.
             let next = flank_after(bytes, j + 1);
-            if quote_state::alnum_at(bytes, next) || followed_by_grapheme_extender(bytes, next) {
+            if quote_state::alnum_at(bytes, next) {
+                if word_before(bytes, flank_before(bytes, j)) {
+                    let (_, _, name_end) = match name_run {
+                        Some(run) if run.0 <= j && j < run.1 => run,
+                        _ => *name_run.insert(mention_or_tag_name_run(bytes, j)),
+                    };
+                    if j >= name_end {
+                        holds_own_delimiter = true;
+                    }
+                }
                 j += 1;
                 continue;
+            }
+            if followed_by_grapheme_extender(bytes, next) {
+                j += 1;
+                continue;
+            }
+            if holds_own_delimiter {
+                memo.declines.push((from, j, delim));
+                return None;
             }
             return Some(j);
         }
         j += 1;
     }
     None
+}
+
+/// Whether a letter or digit ends `bytes[..at]`, read past grapheme extenders.
+fn word_before(bytes: &[u8], at: usize) -> bool {
+    let mut end = at;
+    loop {
+        let mut start = end;
+        while start > 0 && bytes[start - 1] & 0xc0 == 0x80 {
+            start -= 1;
+        }
+        if end == 0 || !followed_by_grapheme_extender(bytes, start.saturating_sub(1)) {
+            return quote_state::alnum_before(bytes, end);
+        }
+        end = start.saturating_sub(1);
+    }
+}
+
+/// The run of name characters around `at` as `(start, end, name_end)`: a
+/// position in `start..name_end` lies in the name of a mention or tag, which
+/// R2's own-delimiter test does not read (carve#4810), so `_@a_b_` forms.
+fn mention_or_tag_name_run(bytes: &[u8], at: usize) -> (usize, usize, usize) {
+    let is_name = |c: u8| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-' | b'.');
+    let mut start = at;
+    while start > 0 && is_name(bytes[start - 1]) {
+        start -= 1;
+    }
+    let mut end = at;
+    while end < bytes.len() && is_name(bytes[end]) {
+        end += 1;
+    }
+    let no_name = (start, end, start);
+    if start == 0 || !matches!(bytes[start - 1], b'@' | b'#') {
+        return no_name;
+    }
+    // A `_` before the sigil may be the span's own opener, so only a letter or digit refuses.
+    if start >= 2 && bytes[start - 2].is_ascii_alphanumeric() {
+        return no_name;
+    }
+    let Ok(rest) = std::str::from_utf8(&bytes[start..end]) else {
+        return no_name;
+    };
+    let len = super::inline_links::name_run_len(rest);
+    if rest[..len].bytes().any(|b| b.is_ascii_alphabetic()) {
+        (start, end, start + len)
+    } else {
+        no_name
+    }
 }
 
 /// Whether the `]` at `close` ends a bracket a link or image could use: it

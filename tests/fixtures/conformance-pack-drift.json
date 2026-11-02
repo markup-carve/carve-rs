@@ -47,63 +47,6 @@
       ]
     },
     {
-      "ticket": "markup-carve/carve#4810",
-      "cause": "spec pin c3c2f80f: a bare slash span holding a path does not form, carve-rs port pending",
-      "cases": [
-        "guards-0ae1e7cf5796",
-        "guards-0e0fc39f0596",
-        "guards-11d3c29b2665",
-        "guards-153e8b05b9cb",
-        "guards-15a9109d8e3b",
-        "guards-16989181fda6",
-        "guards-245a4551d0e2",
-        "guards-24a53be1d849",
-        "guards-2b7fb4ac3fc8",
-        "guards-44609b4341fd",
-        "guards-538f8f3d5647",
-        "guards-58469fc51e16",
-        "guards-5d99fcddeb1f",
-        "guards-61e1689d452b",
-        "guards-6252f82b074f",
-        "guards-63ab4e3cd217",
-        "guards-678b7f2445b0",
-        "guards-6e5e0526a7a8",
-        "guards-72b7ec5a9d87",
-        "guards-784386fcc34c",
-        "guards-7c0814c12f9e",
-        "guards-80a8f39b6aec",
-        "guards-81d567ec370d",
-        "guards-81fb5229db8a",
-        "guards-8e441b658f28",
-        "guards-9576a8f87b86",
-        "guards-95dff57d1cf3",
-        "guards-98ffc177480c",
-        "guards-9dad92e90e2e",
-        "guards-ae980139912d",
-        "guards-bac12aa94ce8",
-        "guards-c0829a2caebd",
-        "guards-c0a7aa0a48ae",
-        "guards-d3b31f777ca6",
-        "guards-e5c740c83e1d",
-        "guards-e7d7661f3da3",
-        "guards-eeed8105767a",
-        "guards-f2819695d45d",
-        "guards-fe76b0d67261",
-        "inline-b57dce59e1d6"
-      ]
-    },
-    {
-      "ticket": "markup-carve/carve#4810",
-      "cause": "spec pin c3c2f80f: a bare span holding its own delimiter does not form, carve-rs port pending",
-      "cases": [
-        "attributes-4a9626ec0fde",
-        "combined-7d04c2a8fbb9",
-        "combined-8a09e2d68fb4",
-        "combined-aff46d1219c3",
-        "inline-97a7245ea9b9"
-      ]
-    },
-    {
       "ticket": "markup-carve/carve#4816",
       "cause": "spec pin c3c2f80f: an unresolved footnote reference keeps its attribute text, carve-rs port pending",
       "cases": [

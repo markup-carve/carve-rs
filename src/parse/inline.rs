@@ -558,7 +558,7 @@ pub(in crate::parse) fn parse_inline_context_with_pairs(
         citation_brackets: std::cell::OnceCell::new(),
         declined_image_link_brackets: std::cell::OnceCell::new(),
         // Keeps `_a](`×n / `*a](`×n linear. See cached_find_emphasis_close.
-        emphasis_no_close: EmphasisMemo::default(),
+        emphasis_no_close: EmphasisMemo::for_text(text),
         open_entry_at: None,
         open_entry_kinds: 0,
         literal_braced_closers: Vec::new(),
