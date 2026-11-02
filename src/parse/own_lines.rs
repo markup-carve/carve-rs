@@ -1456,10 +1456,19 @@ impl<'a> Walk<'a> {
         // PART 0 [B-term-keep]: past a missed quote or note a marker leaves a term,
         // and past a quote a separator too (carve#4300).
         let term_refuses = self.missed_term_refuses(reached, c.rest);
+        // A caption at its owner's block column attaches to a quote it follows and
+        // is never its lazy line (CARVE-P2-008, carve#4312); past a note it folds.
+        let missed_frames = &self.frames[reached + 1..];
+        let captions_quote = matches!(form, Form::Leaf(false))
+            && is_caption(c.rest)
+            && c.col == self.frames[reached].col
+            && missed_frames.first().is_some_and(|f| f.kind == Kind::Quote)
+            && !missed_frames.iter().any(|f| f.kind == Kind::Note);
         if missed
             && !c.rest.is_empty()
             && top_para
             && !term_refuses
+            && !captions_quote
             && !form.interrupts()
             && !matches!(form, Form::Dd(_))
             && !(matches!(form, Form::Item(..))

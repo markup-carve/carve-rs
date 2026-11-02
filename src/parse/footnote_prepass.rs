@@ -1,6 +1,8 @@
 use super::definition_regions::VerseLine;
 use super::*;
 
+const NOTE_BODY_COLUMN: usize = 2;
+
 /// The `defs` key of a duplicate definition's body, kept only until the nested
 /// walk has collected the definitions inside it. No label can start with NUL.
 pub(in crate::parse) const LOSING_NOTE_PREFIX: &str = "\u{0}losing:";
@@ -140,9 +142,32 @@ fn note_paragraph_open(note: &NoteBody, rest: &str, options: &Options<'_>) -> bo
             return true;
         }
     }
-    let open = body_ends_with_open_paragraph(&lines.join("\n"), options);
+    let open = nested_note_body(lines).map_or_else(
+        || body_ends_with_open_paragraph(&lines.join("\n"), options),
+        |body| body_ends_with_open_paragraph(&body, options),
+    );
     note.open_paragraph_at.set(open.then_some(lines.len()));
     open
+}
+
+/// The body of a nested note that runs to the end of `lines`. The probe takes a
+/// definition out of the flow, so the outer body would end in the paragraph before
+/// it; a lazy line needs the deepest leaf's paragraph (CARVE-P0-006).
+fn nested_note_body(lines: &[String]) -> Option<String> {
+    let at = lines.iter().rposition(|line| parse_footnote_def_line(line).is_some())?;
+    let tail = &lines[at + 1..];
+    if !tail.iter().all(|line| {
+        is_blank_line(line) || line.starts_with(LAZY) || indent_columns(line) >= NOTE_BODY_COLUMN
+    }) {
+        return None;
+    }
+    let (_, first) = parse_footnote_def_line(&lines[at])?;
+    let mut body = first.to_string();
+    for line in tail {
+        body.push('\n');
+        body.push_str(&strip_leading_columns(line, NOTE_BODY_COLUMN));
+    }
+    Some(body)
 }
 
 /// A line that can only be paragraph text: it starts with a letter or digit
@@ -410,7 +435,6 @@ struct NoteHost {
     quote_indents: Vec<usize>,
     quote_depth: usize,
     note_floor: usize,
-    marker_note: bool,
     /// Content column of the innermost list item hosting the note, if any.
     list_floor: Option<usize>,
     /// The same, for the document level outside the note's quotes.
@@ -1948,9 +1972,6 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             note_floor: prefix_cols + footnote_body_floor(def.def_line),
             list_floor: item_floor(self.columns.current()),
             outer_list_floor: item_floor(&self.columns.frames[0]),
-            marker_note: detect_list_marker_full(inside).is_some_and(|marker| {
-                parse_footnote_def_line(marker.content.trim_start_matches(' ')).is_some()
-            }),
             description_host,
         };
         let i = self.hosted_first_block(&host, note, i, def.first);
@@ -2221,16 +2242,6 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         walk.lazy_open = false;
         let dedented = strip_leading_columns(line, host.note_floor);
-        let in_marker_fence = walk
-            .marker_fence
-            .is_some_and(|(_, column)| indent_columns(&dedented) >= column);
-        if host.marker_note
-            && walk.opacity.code.is_none()
-            && !in_marker_fence
-            && parse_footnote_def_line(trim_ascii_start(line)).is_some()
-        {
-            return Flow::Stop;
-        }
         if trim_ascii(line) == "+"
             && self
                 .decision_at(self.first_source_line + *i)
