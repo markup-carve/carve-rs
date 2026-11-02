@@ -1078,8 +1078,8 @@ pub(crate) fn nested_ends_with_open_paragraph(
     }
     // A payload line is stanza text whatever it looks like (PART 2 `line_block`).
     // A quoted stanza is the quote's to continue, not this item's.
-    if crate::parse::definition::line_block_payload_tail(nested).is_some() {
-        return true;
+    if let Some(open) = crate::parse::definition::body_ends_inside_line_block(nested) {
+        return open;
     }
     if !below_outer_column
         && !crate::parse::definition::body_ends_in_line_block_payload(nested)
