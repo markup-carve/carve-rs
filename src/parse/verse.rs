@@ -735,6 +735,14 @@ pub(in crate::parse) fn parse_line_block(cur: &mut LineCursor, options: &Options
                 end
             };
             let open_at = cur.pos;
+            // A lazy line missed the span's owner, so it ends the span (S1, carve#4956).
+            let limit = (open_at + 1..limit)
+                .find(|&at| {
+                    cur.lines
+                        .line(at)
+                        .is_some_and(|line| line.starts_with(LAZY))
+                })
+                .unwrap_or(limit);
             let mut close_at = open_at + 1;
             while close_at < limit
                 && cur

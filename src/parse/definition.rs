@@ -918,6 +918,18 @@ fn innermost_host_tail(mut line: &str) -> (bool, &str) {
     }
 }
 
+/// `Some(stanza open)` when the body ends inside an unclosed line block.
+pub(crate) fn body_ends_inside_line_block(source: &str) -> Option<bool> {
+    if !source.contains(":::") {
+        return None;
+    }
+    let mut scan = LineBlockTail::default();
+    for line in source.lines() {
+        scan.step(line);
+    }
+    scan.in_block()
+}
+
 pub(crate) fn body_ends_in_line_block_payload(source: &str) -> bool {
     line_block_payload_tail(source).is_some()
 }
@@ -942,6 +954,7 @@ pub(crate) struct LineBlockTail {
     quoted: bool,
     host_col: usize,
     last_is_payload: bool,
+    span: Option<usize>,
 }
 
 impl LineBlockTail {
@@ -964,8 +977,32 @@ impl LineBlockTail {
         {
             self.open = None;
         }
+        // A `%%%` span leaves nothing: the stanza reads as it stood before the
+        // span opened, and a line that missed the host ended it (carve#4956).
+        let missed = !is_blank_line(line)
+            && (indent_columns(line) < self.host_col || (self.quoted && !line_quoted));
+        if self.open.is_some() && exact_colon_fence_len(local) != self.open {
+            if let Some(run) = self.span {
+                if missed {
+                    self.span = None;
+                } else {
+                    if crate::parse::verse::verse_comment_run(local) == Some(run) {
+                        self.span = None;
+                    }
+                    self.last_is_payload = stanza_open;
+                    return;
+                }
+            } else if let Some(run) = crate::parse::verse::verse_comment_run(local) {
+                self.span = Some(run);
+                self.last_is_payload = stanza_open;
+                return;
+            }
+        }
         match self.open {
-            Some(len) if exact_colon_fence_len(local) == Some(len) => self.open = None,
+            Some(len) if exact_colon_fence_len(local) == Some(len) => {
+                self.open = None;
+                self.span = None;
+            }
             Some(_) => self.last_is_payload = !is_blank_line(local),
             // A line block opened past list or description markers is still a
             // stanza of this body (carve#4748, row 910).
@@ -980,6 +1017,11 @@ impl LineBlockTail {
                 };
             }
         }
+    }
+
+    /// `Some(stanza open)` while the scanned body is still inside a line block.
+    pub(crate) fn in_block(&self) -> Option<bool> {
+        self.open.map(|_| self.last_is_payload)
     }
 
     pub(crate) fn tail(&self) -> Option<bool> {

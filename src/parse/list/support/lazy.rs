@@ -162,6 +162,8 @@ pub(crate) fn collect_trailing_lazy_through_framed(
 ) -> bool {
     let (after_comment, ancestor_quote_column, term_options) = lazy_scope;
     let mut buffered = frame_band_lines.then(LineBuffer::default);
+    // A stanza line keeps its lazy frame, so a `%%%` span it misses ends there (carve#4956).
+    let stanza_tail = crate::parse::definition::body_ends_in_line_block_payload(&nested.source);
     if cur.peek().is_some_and(|line| {
         matches!(line.as_bytes().first(), Some(b'`' | b'~')) && detect_fence_open(line).is_some()
     }) {
@@ -223,6 +225,7 @@ pub(crate) fn collect_trailing_lazy_through_framed(
         // does not say so to a term, which a list marker ends at any indent and
         // which publishes the column as a leading space. The frame does.
         let framed = band_separator
+            || stanza_tail
             || (indent > list_base
                 && (frame_band_lines || dedent_below_column(line, indent) != indent));
         let take = if framed {
@@ -236,12 +239,13 @@ pub(crate) fn collect_trailing_lazy_through_framed(
         // text on the re-parse, and a flush line has none: the fence shape then
         // opened a block one level in, where the fold had just made it the
         // paragraph's text. The description-body twin frames it the same way.
-        let sliced =
-            if framed || (indent == 0 && detect_fence_open(trim_ascii_start(line)).is_some()) {
-                format!("{LAZY}{sliced}")
-            } else {
-                sliced
-            };
+        let sliced = if (framed && !(stanza_tail && sliced.starts_with(LAZY)))
+            || (indent == 0 && detect_fence_open(trim_ascii_start(line)).is_some())
+        {
+            format!("{LAZY}{sliced}")
+        } else {
+            sliced
+        };
         let source_line = cur.source_line(cur.pos);
         let source_col = cur.source_col(cur.pos).map(|col| col + consumed as isize);
         if let Some(buffered) = &mut buffered {
