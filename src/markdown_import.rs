@@ -243,6 +243,8 @@ fn fence_language(info: &str) -> Option<&str> {
     info.trim_matches([' ', '\t'])
         .split([' ', '\t'])
         .next()
+        // CommonMark 0.31 renders `language-js` as class `language-js`, not `language-language-js`.
+        .map(|word| word.strip_prefix("language-").unwrap_or(word))
         .filter(|word| {
             !word.is_empty()
                 && word
