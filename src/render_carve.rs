@@ -70,6 +70,9 @@ struct CarveContext {
     /// The paragraph being written sits at that column, so a list marker on a
     /// continuation line below it would end the item (CARVE-P11-007).
     item_paragraph: bool,
+    /// Nothing visible follows the item being written before its outermost
+    /// list ends: no later item at any level, no later block in a host item.
+    item_is_trailing: bool,
     in_footnote_body: bool,
     footnote_guard_types: Vec<&'static str>,
     escape_mode: EscapeMode,
@@ -718,6 +721,7 @@ fn render_with_escapes_once(
         at_item_content_column: false,
         marker_line_shift: 0,
         item_paragraph: false,
+        item_is_trailing: true,
         in_footnote_body: false,
         footnote_guard_types: Vec::new(),
         escape_mode,
@@ -2068,25 +2072,13 @@ fn guard_literal_plus_after_nested_list(
     }
 }
 
-fn next_visible_is_paragraph_shaped(blocks: &[BlockNode]) -> bool {
-    blocks
-        .iter()
-        .find(|block| {
-            !matches!(
-                block,
-                BlockNode::Comment(_)
-                    | BlockNode::AbbreviationDef(_)
-                    | BlockNode::LinkReferenceDefinition(_)
-            )
-        })
-        .is_some_and(|block| match block {
-            BlockNode::Paragraph(_) | BlockNode::BlockImage(_) => true,
-            BlockNode::Figure(figure) => matches!(
-                *figure.target,
-                FigureTarget::Image(_) | FigureTarget::Paragraph(_)
-            ),
-            _ => false,
-        })
+fn is_visible_block(block: &BlockNode) -> bool {
+    !matches!(
+        block,
+        BlockNode::Comment(_)
+            | BlockNode::AbbreviationDef(_)
+            | BlockNode::LinkReferenceDefinition(_)
+    )
 }
 
 fn render_item_blocks(
@@ -2097,8 +2089,12 @@ fn render_item_blocks(
     ctx: &mut CarveContext,
     relative_boundaries: &mut Vec<(usize, usize)>,
 ) -> String {
+    let item_is_trailing = ctx.item_is_trailing;
     if !tight {
-        return render_blocks(session, blocks, ctx, item);
+        ctx.item_is_trailing = false;
+        let out = render_blocks(session, blocks, ctx, item);
+        ctx.item_is_trailing = item_is_trailing;
+        return out;
     }
     if ctx.block_depth >= MAX_RENDER_DEPTH {
         crate::render_depth::record("carve");
@@ -2115,6 +2111,7 @@ fn render_item_blocks(
     let mut a_sub_list_already_opened = false;
     let mut moved_marker: Option<&BlockNode> = None;
     let list = blocks.as_ptr() as usize;
+    let last_visible = blocks.iter().rposition(is_visible_block);
     for (index, block) in blocks.iter().enumerate() {
         let escape_window::Visit::Render(recorded) = escape_window::visit(session, list, index)
         else {
@@ -2122,7 +2119,10 @@ fn render_item_blocks(
         };
         let next = blocks.get(index + 1);
         let guard_start = ctx.footnote_guard_types.len();
+        let nothing_visible_below = last_visible.map_or(true, |last| last <= index);
+        ctx.item_is_trailing = item_is_trailing && nothing_visible_below;
         let mut rendered = render_block(session, block, ctx);
+        ctx.item_is_trailing = item_is_trailing;
         guard_literal_plus_after_nested_list(prev, block, &mut rendered);
         escape_window::leave(session, recorded);
         if writes_nothing(&rendered) {
@@ -2204,12 +2204,15 @@ fn render_item_blocks(
         // sub-list, and a `{% text %}` delimited comment is not written at a
         // column that re-attaches - both measured, both left alone.
         //
-        // Unless a paragraph follows: the blank then sits above it and loosens
-        // the item (§17 L1b), and the re-parse keeps the comment in this item.
+        // Only where nothing visible follows, in this item or as a later item
+        // at any list level: a blank in front of an invisible line loosens the
+        // list at the next sibling marker (carve#4904), and without the blank
+        // the parser keeps the comment in this item.
         if !separated
             && matches!(prev, Some(BlockNode::List(_)))
             && matches!(block, BlockNode::Comment(comment) if !comment.block && !comment.delimited)
-            && !next_visible_is_paragraph_shaped(&blocks[index + 1..])
+            && item_is_trailing
+            && nothing_visible_below
         {
             out.push('\n');
         }

@@ -330,7 +330,9 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
     let delim = node.delim.unwrap_or('.');
     let bullet = node.bullet_char.unwrap_or('-');
     let items = node.items.as_ptr() as usize;
+    let list_is_trailing = ctx.list_depth == 1 || ctx.item_is_trailing;
     for (idx, item) in node.items.iter().enumerate() {
+        ctx.item_is_trailing = list_is_trailing && idx + 1 == node.items.len();
         let escape_window::Visit::Render(recorded) = escape_window::visit(session, items, idx)
         else {
             if node.ordered {
@@ -523,6 +525,7 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
         }
         escape_window::leave(session, recorded);
     }
+    ctx.item_is_trailing = list_is_trailing;
     ctx.list_depth -= 1;
     trim_end_non_nbsp(&out).to_string()
 }
