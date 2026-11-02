@@ -47,7 +47,10 @@ fn task_marker_in_a_setext_heading_stays_text() {
 
 #[test]
 fn a_loose_task_item_keeps_its_box() {
-    assert_eq!(markdown_to_carve("* [ ] foo\n\n* [ ] bar\n"), "* [ ] foo\n\n* [ ] bar\n");
+    assert_eq!(
+        markdown_to_carve("* [ ] foo\n\n* [ ] bar\n"),
+        "* [ ] foo\n\n* [ ] bar\n"
+    );
     assert_eq!(
         rendered("* [ ] foo\n\n* [ ] bar\n"),
         "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled aria-label=\"foo\"> <p>foo</p></li>\n  <li><input type=\"checkbox\" disabled aria-label=\"bar\"> <p>bar</p></li>\n</ul>\n"
