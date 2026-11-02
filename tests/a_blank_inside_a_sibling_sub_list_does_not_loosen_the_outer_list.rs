@@ -20,7 +20,6 @@ fn a_blank_inside_a_fence_in_the_second_sub_list() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3523"]
 fn sibling_sub_list_shapes_keep_the_outer_item_tight() {
     let loose = [
         ("a tilde fence", "- e\n  1. x\n  * ~~~\n\n    ~~~\n"),
@@ -41,10 +40,6 @@ fn sibling_sub_list_shapes_keep_the_outer_item_tight() {
             "a second paragraph of the sibling sub-item",
             "- e\n  1. x\n  * y\n\n    z\n",
         ),
-        (
-            "a folded marker below the sub-item column",
-            "- e\n  1. x\n    * y\n\n     z\n",
-        ),
     ]
     .into_iter()
     .filter_map(|(name, src)| {
@@ -53,6 +48,16 @@ fn sibling_sub_list_shapes_keep_the_outer_item_tight() {
     })
     .collect::<Vec<_>>();
     assert!(loose.is_empty(), "{}", loose.join("\n"));
+}
+
+// Rule A (markup-carve/carve#3885): `* y` misses the `1.` item's column, so it
+// is a sibling list in the outer item and the blank before `z` is the outer item's.
+#[test]
+fn a_marker_below_the_sub_item_column_leaves_the_blank_to_the_outer_item() {
+    assert_eq!(
+        html("- e\n  1. x\n    * y\n\n     z\n"),
+        "<ul>\n  <li><p>e</p>\n    <ol>\n      <li>x</li>\n    </ol>\n    <ul>\n      <li>y</li>\n    </ul>\n    <p>z</p>\n  </li>\n</ul>",
+    );
 }
 
 #[test]

@@ -52,12 +52,12 @@ fn an_attribute_line_past_the_quote_marker_is_quoted_text() {
     );
 }
 
+// Rule A (markup-carve/carve#3885), as in the unnested case above.
 #[test]
-#[ignore = "rule A ledger: carve-rs#3523"]
-fn an_attribute_line_past_a_nested_quote_marker_is_quoted_text() {
+fn an_attribute_line_past_a_nested_quote_marker_is_not_quoted_text() {
     assert_eq!(
         html("> - > para\n>   > more\n>   >  {#k}\ntail\n"),
-        "<blockquote><ul><li><blockquote><p>para more {<span class=\"tag\"><strong>#k</strong></span>} tail</p></blockquote></li></ul></blockquote>"
+        "<blockquote><ul><li><blockquote><p>para more</p></blockquote></li></ul></blockquote><p>tail</p>"
     );
 }
 

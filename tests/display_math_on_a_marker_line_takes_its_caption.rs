@@ -3,13 +3,13 @@
 //!
 //! Each `NN.html` under `tests/fixtures/marker-line-equation-caption/` is the
 //! executable spec's output for `NN.crv` (`scripts/spec` at markup-carve/carve
-//! a61aa4d). Rows 11 and up are controls that already matched.
+//! a61aa4d; rows 14 and 15 regenerated at carve 0c3c6c35).
+//! Rows 11 and up are controls that already matched.
 
 use carve::{to_html, to_html_with_options, Options};
 use std::path::Path;
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3523"]
 fn the_fixtures_match_the_executable_spec() {
     let dir =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/marker-line-equation-caption");

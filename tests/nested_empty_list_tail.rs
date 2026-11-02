@@ -1,5 +1,5 @@
+// The fixture rows are the spec model's output at carve 0c3c6c35.
 #[test]
-#[ignore = "rule A ledger: carve-rs#3523"]
 fn an_empty_nested_item_leaves_following_markers_to_their_list() {
     let cases: Vec<serde_json::Value> =
         serde_json::from_str(include_str!("fixtures/nested-empty-list-tail.json")).unwrap();

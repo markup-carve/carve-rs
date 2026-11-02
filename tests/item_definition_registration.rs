@@ -13,12 +13,13 @@ fn check(source: &str, expected: &str) {
     }
 }
 
+// Rule A (markup-carve/carve#3885): the comment below the item retains nothing,
+// so the closerless fence opens at the document and runs to its end.
 #[test]
-#[ignore = "rule A ledger: carve-rs#3523"]
 fn exact_html() {
     check(
         "- para\n%% c\n```\n- a\n  [^f]: t",
-        "<ul>\n  <li>para\n    <pre><code></code></pre>\n  </li>\n  <li>a</li>\n</ul>\n",
+        "<ul>\n  <li>para</li>\n</ul>\n<pre><code>- a\n  [^f]: t</code></pre>\n",
     );
     check(
         "- a\n  [^f]: t\n[^f]: a\n     [r]: /url\n[r][]",
