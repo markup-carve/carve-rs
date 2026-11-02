@@ -1,35 +1,35 @@
 [
   {
     "source": "- +\n- tail\n",
-    "html": "<ul>\n  <li></li>\n  <li>tail</li>\n</ul>"
+    "html": "<ul>\n  <li>+</li>\n  <li>tail</li>\n</ul>"
   },
   {
     "source": "- +\n1. tail\n",
-    "html": "<ul>\n  <li></li>\n</ul>\n<ol>\n  <li>tail</li>\n</ol>"
+    "html": "<ul>\n  <li>+</li>\n</ul>\n<ol>\n  <li>tail</li>\n</ol>"
   },
   {
     "source": "- - +\n- tail\n",
-    "html": "<ul>\n  <li>\n    <ul>\n      <li></li>\n    </ul>\n  </li>\n  <li>tail</li>\n</ul>"
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>+</li>\n    </ul>\n  </li>\n  <li>tail</li>\n</ul>"
   },
   {
     "source": "- - +\n1. tail\n",
-    "html": "<ul>\n  <li>\n    <ul>\n      <li></li>\n    </ul>\n  </li>\n</ul>\n<ol>\n  <li>tail</li>\n</ol>"
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>+</li>\n    </ul>\n  </li>\n</ul>\n<ol>\n  <li>tail</li>\n</ol>"
   },
   {
     "source": "- - - +\n- tail\n",
-    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li></li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n  <li>tail</li>\n</ul>"
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>+</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n  <li>tail</li>\n</ul>"
   },
   {
     "source": "- - - +\n1. tail\n",
-    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li></li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<ol>\n  <li>tail</li>\n</ol>"
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>+</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<ol>\n  <li>tail</li>\n</ol>"
   },
   {
     "source": "- - - - +\n- tail\n",
-    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>\n            <ul>\n              <li></li>\n            </ul>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n  <li>tail</li>\n</ul>"
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>\n            <ul>\n              <li>+</li>\n            </ul>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n  <li>tail</li>\n</ul>"
   },
   {
     "source": "- - - - +\n1. tail\n",
-    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>\n            <ul>\n              <li></li>\n            </ul>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<ol>\n  <li>tail</li>\n</ol>"
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>\n            <ul>\n              <li>+</li>\n            </ul>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<ol>\n  <li>tail</li>\n</ol>"
   },
   {
     "source": "- - {.x}\n- tail\n",
@@ -37,58 +37,58 @@
   },
   {
     "source": "- - +\n  Z\n",
-    "html": "<ul>\n  <li>\n    <ul>\n      <li></li>\n    </ul>\n    Z\n  </li>\n</ul>"
-  },
-  {
-    "source": "- - - +\n    mid\n+\nout\n",
-    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li></li>\n        </ul>\n        mid\n      </li>\n    </ul>\n    out\n  </li>\n</ul>"
-  },
-  {
-    "source": "- - - +\n    mid\nlazy\n",
-    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li></li>\n        </ul>\n        mid\nlazy\n      </li>\n    </ul>\n  </li>\n</ul>"
-  },
-  {
-    "source": "- - +\n    Z\nlazy\n",
-    "html": "<ul>\n  <li>\n    <ul>\n      <li>Z\nlazy</li>\n    </ul>\n  </li>\n</ul>"
-  },
-  {
-    "source": "- - +\n    Z\n",
     "html": "<ul>\n  <li>\n    <ul>\n      <li>Z</li>\n    </ul>\n  </li>\n</ul>"
   },
   {
+    "source": "- - - +\n    mid\n+\nout\n",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>mid</li>\n        </ul>\n      </li>\n    </ul>\n    out\n  </li>\n</ul>"
+  },
+  {
+    "source": "- - - +\n    mid\nlazy\n",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>mid\nlazy</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- - +\n    Z\nlazy\n",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>+\nZ\nlazy</li>\n    </ul>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- - +\n    Z\n",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>+\nZ</li>\n    </ul>\n  </li>\n</ul>"
+  },
+  {
     "source": "- - +\n    - x\n",
-    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>x</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>+\n        <ul>\n          <li>x</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>"
   },
   {
     "source": "- - - +\n    - x\n",
-    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li></li>\n          <li>x</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>+</li>\n          <li>x</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>"
   },
   {
     "source": "- - +\n - x\n",
-    "html": "<ul>\n  <li>\n    <ul>\n      <li></li>\n    </ul>\n  </li>\n</ul>\n<ul>\n  <li>x</li>\n</ul>"
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>+</li>\n    </ul>\n  </li>\n  <li>x</li>\n</ul>"
   },
   {
     "source": "- - - +\n   - x\n",
-    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li></li>\n        </ul>\n      </li>\n    </ul>\n    <ul>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>+</li>\n        </ul>\n      </li>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>"
   },
   {
     "source": "- - +\n  - x\n",
-    "html": "<ul>\n  <li>\n    <ul>\n      <li></li>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>+</li>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>"
   },
   {
     "source": "- - +\n  1. x\n",
-    "html": "<ul>\n  <li>\n    <ul>\n      <li></li>\n    </ul>\n    <ol>\n      <li>x</li>\n    </ol>\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>+</li>\n    </ul>\n    <ol>\n      <li>x</li>\n    </ol>\n  </li>\n</ul>"
   },
   {
     "source": "- - +\n\n  Z\n",
-    "html": "<ul>\n  <li>\n    <ul>\n      <li></li>\n    </ul>\n    <p>Z</p>\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>+</li>\n    </ul>\n    <p>Z</p>\n  </li>\n</ul>"
   },
   {
     "source": "- - +\n  +\n - x\n",
-    "html": "<ul>\n  <li>\n    <ul>\n      <li></li>\n    </ul>\n    +\n- x\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>+</li>\n    </ul>\n  </li>\n  <li>x</li>\n</ul>"
   },
   {
     "source": "- - - +\n    +\n   - x\n",
-    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li></li>\n        </ul>\n        +\n- x\n      </li>\n    </ul>\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>+</li>\n        </ul>\n      </li>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>"
   }
 ]

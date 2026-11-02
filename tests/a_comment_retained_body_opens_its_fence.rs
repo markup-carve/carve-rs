@@ -37,11 +37,11 @@ fn a_column_zero_line_exits_an_unclosed_retained_admonition_fence() {
     );
 }
 
+// Rule A (markup-carve/carve#3885): a comment below the item's column retains
+// nothing, so the fence after it is a document block.
 #[test]
-#[ignore = "rule A ledger: carve-rs#3523"]
-fn a_comment_under_an_item_keeps_the_nested_description_fence_in_its_body() {
-    let expected =
-        "<ul><li><dl><dt>t</dt><dd><p>para</p><pre><code></code></pre></dd></dl></li></ul>";
+fn a_comment_under_an_item_leaves_the_fence_to_the_document() {
+    let expected = "<ul><li><dl><dt>t</dt><dd>para</dd></dl></li></ul><pre><code></code></pre>";
     assert_eq!(html("- :: t\n  : para\n%% c\n```\n"), expected);
     assert_eq!(html("- :: t\n  : para\n %% c\n ```\n"), expected);
 }
@@ -121,12 +121,11 @@ fn an_indented_fence_after_a_retained_description_comment_opens_as_code() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3523"]
-fn an_unclosed_retained_fence_under_an_item_keeps_a_marker_as_code() {
+fn an_unclosed_fence_after_a_comment_under_an_item_keeps_a_marker_as_code() {
     let source = "- :: t\n  : para\n %% c\n ```\n - y\n";
     let rendered = carve::to_html(source);
     assert!(rendered.contains("<pre><code>- y\n</code></pre>"));
-    assert!(rendered.ends_with("</dd>\n    </dl>\n  </li>\n</ul>"));
+    assert!(rendered.starts_with("<ul>\n  <li>\n    <dl>\n      <dt>t</dt>\n      <dd>para</dd>\n    </dl>\n  </li>\n</ul>\n<pre>"));
 }
 
 #[test]

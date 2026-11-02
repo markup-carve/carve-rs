@@ -70,7 +70,6 @@ fn column_zero_model_rows() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3523"]
 fn legacy_column_zero_cases_match_model() {
     let rows: Vec<Row> =
         serde_json::from_str(include_str!("fixtures/column_zero_legacy_cases.json")).unwrap();
@@ -179,4 +178,26 @@ fn nested_tightness_loss_is_reported() {
         .value
         .lines()
         .all(|line| line.trim() != "+" || line.starts_with('+')));
+}
+
+// A task's checkbox moves its marker-line child right, so a fence there owns
+// only lines that reach the child's own column.
+#[test]
+fn a_marker_line_fence_after_a_checkbox_owns_lines_at_its_own_column() {
+    for (source, html) in [
+        (
+            "- [ ] - ```\n      +\n\ntail",
+            "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <ul>\n      <li>\n        <pre><code></code></pre>\n      </li>\n    </ul>\n    +\n  </li>\n</ul>\n<p>tail</p>",
+        ),
+        (
+            "- [ ] - [ ] ```\n  x\n",
+            "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <ul class=\"task-list\">\n      <li><input type=\"checkbox\" disabled> \n        <pre><code></code></pre>\n      </li>\n    </ul>\n    x\n  </li>\n</ul>",
+        ),
+        (
+            "- [ ] - [ ] ```\n        x\n",
+            "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <ul class=\"task-list\">\n      <li><input type=\"checkbox\" disabled> \n        <pre><code>x\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>",
+        ),
+    ] {
+        assert_eq!(carve::to_html(source).trim_end(), html, "{source:?}");
+    }
 }

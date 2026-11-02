@@ -1682,11 +1682,13 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             nested_lead_is_continuation: is_plus_marker(innermost_content),
             before_block: self.cur.pos,
         };
-        let collection_content_col = if detect_fence_open(inner_lead).is_some() {
-            content_col
-        } else {
-            marker_line_child_col
-        };
+        // A task's checkbox moves the nested marker right; marker attributes do not.
+        let collection_content_col =
+            if detect_fence_open(inner_lead).is_some() && item.marker.checked.is_none() {
+                content_col
+            } else {
+                marker_line_child_col
+            };
         let collection_floor = if nested_definition_ended_paragraph
             || detect_fence_open(inner_lead).is_some()
             || !body_ends_with_open_paragraph(content, options)

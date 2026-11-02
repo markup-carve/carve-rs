@@ -12,8 +12,8 @@ fn normalized(html: &str) -> String {
         .into_owned()
 }
 
+// The `ownership` rows are the spec model's output at carve 0c3c6c35.
 #[test]
-#[ignore = "rule A ledger: carve-rs#3523"]
 fn closed_code_does_not_resume_a_rejected_inline_fence_paragraph() {
     for row in fixtures()["ownership"].as_array().unwrap() {
         let html = to_html(row["source"].as_str().unwrap());

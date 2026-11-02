@@ -14,12 +14,17 @@ fn an_attribute_past_a_quoted_items_column_keeps_its_paragraph_open() {
     );
 }
 
+// Rule A (markup-carve/carve#3885): an ordered host retains nothing either, as a
+// bullet host does, so `tail` is a document paragraph.
 #[test]
-#[ignore = "rule A ledger: carve-rs#3523"]
-fn a_comment_below_a_description_retains_its_next_paragraph() {
+fn a_comment_below_a_description_retains_no_next_paragraph() {
     assert_eq!(
         html("1. :: t\n   : para\n%% c\ntail\n"),
-        "<ol><li><dl><dt>t</dt><dd><p>para</p><p>tail</p></dd></dl></li></ol>"
+        "<ol><li><dl><dt>t</dt><dd>para</dd></dl></li></ol><p>tail</p>"
+    );
+    assert_eq!(
+        html("- :: t\n  : para\n%% c\ntail\n"),
+        "<ul><li><dl><dt>t</dt><dd>para</dd></dl></li></ul><p>tail</p>"
     );
     assert_eq!(
         html("1. :: t\n   : para\n%% c\n2. b\n"),

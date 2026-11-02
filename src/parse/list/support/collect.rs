@@ -194,7 +194,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let marker_base = marker_lead
         .as_ref()
         .map_or(parent_indent, |marker| marker.indent);
-    let marker_ordered = marker_lead.as_ref().is_some_and(|marker| marker.ordered);
     let attribute_column = marker_lead
         .as_ref()
         .filter(|marker| marker.checked.is_some())
@@ -1057,10 +1056,10 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         let comment_boundary = indent < strip_cols
             && (marker_colon.is_some()
                 || (marker_is_definition_term && marker_definition_has_description))
-            && (marker_ordered
-                || cur.pos.checked_sub(1).is_some_and(|at| {
-                    indent_columns(cur.lines.at(at)) > marker_base && prior_comment
-                }))
+            && cur
+                .pos
+                .checked_sub(1)
+                .is_some_and(|at| indent_columns(cur.lines.at(at)) > marker_base && prior_comment)
             && (cur.pos.checked_sub(1).is_some_and(|at| {
                 let previous = cur.lines.at(at);
                 indent_columns(previous) < strip_cols && prior_comment
