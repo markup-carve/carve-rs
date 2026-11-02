@@ -71,7 +71,11 @@ pub(in crate::parse) fn place_hoisted_abbreviations(
 pub(in crate::parse) fn order_abbreviation_blocks(blocks: &mut [BlockNode], source: &str) {
     let mut lines: BTreeMap<(String, String), std::collections::VecDeque<usize>> = BTreeMap::new();
     for (index, line) in source.lines().enumerate() {
-        if let Some(def) = detect_abbreviation_def(line) {
+        // A container definition counts at its authored line too (carve#4865).
+        let def = line
+            .find("*[")
+            .and_then(|at| detect_abbreviation_def(&line[at..]));
+        if let Some(def) = def {
             lines
                 .entry((def.abbr, def.expansion))
                 .or_default()
