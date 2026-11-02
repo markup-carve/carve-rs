@@ -12,6 +12,10 @@ on:
   # the suite on it here, without opening a pull request for code that must
   # never merge.
   workflow_dispatch:
+  # Nightly on main for the jobs that skip pull requests whose diff cannot
+  # reach them (stack-floor-release).
+  schedule:
+    - cron: '30 3 * * *'
 
 env:
   CARGO_TERM_COLOR: always
@@ -114,6 +118,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
+      # 1.75 links its ~65 test binaries with the system ld (stable already
+      # uses rust-lld). mold cut that leg's build from 4m27s to 3m32s on run
+      # 41431170921, and it is the slowest leg of the workflow.
+      - uses: rui314/setup-mold@v1
+        if: matrix.toolchain == '1.75'
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -164,6 +173,9 @@ jobs:
       #
       # The price is wall clock on a RED suite only; a green suite runs exactly
       # as long as it did, because there is no first failure to stop at.
+      # Default features include experimental-event-parser-options, so this is
+      # also the event parser parity run; a separate `--features` job would
+      # resolve to the same feature set and rerun the same binaries.
       - run: cargo nextest run -E 'not binary(perf_regressions)' --no-fail-fast
       # NEXTEST DOES NOT RUN DOCTESTS, by design - they need a compiler
       # invocation per test rather than a binary to schedule. This crate has
@@ -255,52 +267,41 @@ jobs:
     name: Stack floor ratchets (release)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
+      # A pull request that touches neither the crate nor the probe cannot move
+      # a floor; main and the nightly run always measure.
+      - uses: dorny/paths-filter@v3
+        id: paths
+        if: github.event_name == 'pull_request'
+        with:
+          filters: |
+            stack:
+              - 'src/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'tests/stack_floor_attribution.rs'
+              - 'tests/suite/**'
+              - 'tests/common/**'
+              - '.github/workflows/ci.yml'
       - uses: actions/checkout@v6
+        if: github.event_name != 'pull_request' || steps.paths.outputs.stack == 'true'
         with:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
+        if: github.event_name != 'pull_request' || steps.paths.outputs.stack == 'true'
       - uses: Swatinem/rust-cache@v2
+        if: github.event_name != 'pull_request' || steps.paths.outputs.stack == 'true'
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@v2
+        if: github.event_name != 'pull_request' || steps.paths.outputs.stack == 'true'
         with:
           tool: cargo-nextest
       - run: cargo nextest run --locked --release --test suite -E 'test(/^stack_floor_attribution::/)'
-
-  event-parser:
-    name: Experimental event parser parity
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          submodules: recursive
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-nextest
-      - run: cargo nextest run --locked --features experimental-event-parser -E 'not binary(perf_regressions)' --no-fail-fast
-
-  event-parser-options:
-    name: Experimental event parser options parity
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          submodules: recursive
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-nextest
-      - run: cargo nextest run --locked --features experimental-event-parser-options -E 'not binary(perf_regressions)' --no-fail-fast
+        if: github.event_name != 'pull_request' || steps.paths.outputs.stack == 'true'
 
   lints:
     name: rustfmt + clippy
@@ -320,8 +321,6 @@ jobs:
       # The suite declares its modules through a macro, which cargo fmt does not expand.
       - run: rustfmt --check --edition 2021 tests/*.rs
       - run: cargo clippy --locked --all-targets -- -D warnings
-      - run: cargo clippy --locked --all-targets --features experimental-event-parser -- -D warnings
-      - run: cargo clippy --locked --all-targets --features experimental-event-parser-options -- -D warnings
       - name: Check cyclomatic complexity
         run: |
           python3 -m venv "$RUNNER_TEMP/complexity-venv"
