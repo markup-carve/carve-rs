@@ -2407,6 +2407,12 @@ fn find_emphasis_close_walk(
 }
 
 /// Whether a letter or digit ends `bytes[..at]`, read past grapheme extenders.
+/// Whether the delimiter at `at` has a word character on each side, which
+/// refuses a bare span of its kind around it (R2, carve#4810).
+pub(crate) fn word_flanked_delimiter(bytes: &[u8], at: usize) -> bool {
+    quote_state::alnum_at(bytes, at + 1) && word_before(bytes, at)
+}
+
 fn word_before(bytes: &[u8], at: usize) -> bool {
     let mut end = at;
     loop {
