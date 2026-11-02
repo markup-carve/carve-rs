@@ -470,6 +470,8 @@ struct NoteHost {
     list_floor: Option<usize>,
     /// The same, for the document level outside the note's quotes.
     outer_list_floor: Option<usize>,
+    /// A task box keeps the note at its literal column (carve#4352).
+    behind_task_box: bool,
 }
 
 impl NoteHost {
@@ -489,6 +491,17 @@ impl NoteHost {
             admitted_fence || comment_open || indent_columns(line) >= self.note_floor
         })
     }
+}
+
+fn behind_task_box(raw_def_line: &str) -> bool {
+    let mut line = without_blockquote_prefixes(trim_ascii_start(raw_def_line));
+    while let Some(marker) = detect_list_marker_full(line) {
+        if marker.checked.is_some() {
+            return true;
+        }
+        line = marker.content;
+    }
+    false
 }
 
 fn note_opens_with_term(note: &NoteBody) -> bool {
@@ -2035,6 +2048,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             list_floor: item_floor(self.columns.current()),
             outer_list_floor: item_floor(&self.columns.frames[0]),
             description_host,
+            behind_task_box: behind_task_box(raw_def_line),
         };
         let i = self.hosted_first_block(&host, note, i, def.first);
         let mut i = self.attach_quoted_plus_block(&host, note, i, raw_def_line);
@@ -2069,7 +2083,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             self.keep_blanks_for_open_fence(&host, note, i, resume_at);
             return i;
         }
-        if !walk.reaches_floor(&host, self.lines[resume_at]) {
+        if i == resume_at && self.hosted_marker_column_plus(&host, &mut walk, note, &mut i) {
+            // The attached block leaves the walk at its next line.
+        } else if !walk.reaches_floor(&host, self.lines[resume_at]) {
             while self.hosted_lazy_line(&host, &mut walk, note, &mut i) {}
             if !walk.lazy_open {
                 self.keep_blanks_for_open_fence(&host, note, i, resume_at);
@@ -2100,6 +2116,21 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         {
             return i;
         }
+        // A second lone `+` passes the grant on to the block below it.
+        let i = i + usize::from(
+            !host.behind_task_box
+                && lines
+                    .get(i)
+                    .and_then(|raw| host.content(raw))
+                    .is_some_and(|line| {
+                        trim_ascii(line) == "+"
+                            && indent_columns(line) == host.note_floor.saturating_sub(2)
+                    })
+                && lines
+                    .get(i + 1)
+                    .and_then(|raw| host.content(raw))
+                    .is_some_and(|line| !is_blank_line(line)),
+        );
         let attached: Vec<String> = lines[i..]
             .iter()
             .map_while(|raw| host.content(raw).filter(|line| !is_blank_line(line)))
@@ -2225,6 +2256,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let Some(&raw) = self.lines.get(*i) else {
             return false;
         };
+        if self.is_marker_column_plus(host, walk, *i) {
+            return false;
+        }
         let inside = host.content(raw);
         let rest = trim_ascii_start(
             inside.unwrap_or_else(|| without_blockquote_prefixes(trim_ascii_start(raw))),
@@ -2286,6 +2320,83 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         at
     }
 
+    fn is_marker_column_plus(&self, host: &NoteHost, walk: &HostedWalk, at: usize) -> bool {
+        let Some(&raw) = self.lines.get(at) else {
+            return false;
+        };
+        let marker_col = host.note_floor.saturating_sub(2);
+        !host.behind_task_box
+            && !walk.reaches_floor(host, raw)
+            && host
+                .content(raw)
+                .is_some_and(|line| indent_columns(line) == marker_col && trim_ascii(line) == "+")
+            && self
+                .decision_at(self.first_source_line + at)
+                .is_some_and(|decision| decision.owner == Some(continuation_marker::Kind::Footnote))
+    }
+
+    /// A lone `+` at the column of a note's marker gives the note its next
+    /// block, measured from that column (PART 9 §17 L3).
+    fn hosted_marker_column_plus(
+        &mut self,
+        host: &NoteHost,
+        walk: &mut HostedWalk,
+        note: &mut NoteBody,
+        i: &mut usize,
+    ) -> bool {
+        if !self.is_marker_column_plus(host, walk, *i) {
+            return false;
+        }
+        let marker_col = host.note_floor.saturating_sub(2);
+        let lines = self.lines;
+        let start = *i + 1;
+        let attached: Vec<String> = lines[start..]
+            .iter()
+            .map_while(|raw| host.content(raw).filter(|line| !is_blank_line(line)))
+            .map(|line| strip_leading_columns(line, marker_col))
+            .collect();
+        let attached_refs: Vec<&str> = attached.iter().map(String::as_str).collect();
+        let (mut comment_closers, mut closer_index) = (None, None);
+        let count = attached_block_past_invisible(
+            CursorLines::Slice(&attached_refs),
+            0,
+            &mut comment_closers,
+            &mut closer_index,
+            self.options,
+            &mut |line, _| is_blank_line(line) || is_plus_marker(line),
+        );
+        if let Some(open) = note.comment_state.code {
+            note.push_with(
+                char::from(open.fence_char)
+                    .to_string()
+                    .repeat(open.fence_len),
+                None,
+                |_| None,
+            );
+        }
+        let closing: Vec<_> = note.open_colons.closing_widths().collect();
+        for width in closing {
+            note.push_with(":".repeat(width), None, |_| None);
+        }
+        note.push_blank();
+        let mut visible = false;
+        for (offset, line) in attached.into_iter().take(count).enumerate() {
+            let source_line = self.first_source_line + start + offset;
+            let col = (lines[start + offset].chars().count() - line.chars().count()) as isize;
+            if !visible && self.hoist_note_link_def(&line, start + offset) {
+                note.push_with(definition_placeholder(), Some(source_line), |_| Some(col));
+                continue;
+            }
+            visible |= !is_line_comment_any_column(&line);
+            note.push_with(line, Some(source_line), |_| Some(col));
+        }
+        walk.lazy_open = false;
+        walk.marker_fence = None;
+        walk.opacity = BodyCommentState::new();
+        *i = start + count;
+        true
+    }
+
     fn hosted_line(
         &mut self,
         host: &NoteHost,
@@ -2300,6 +2411,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         if is_blank_line(line) {
             walk.lazy_open = false;
             return self.hosted_blank_run(host, walk, note, i);
+        }
+        if self.hosted_marker_column_plus(host, walk, note, i) {
+            return Flow::Next;
         }
         if !walk.reaches_floor(host, raw) {
             return self.hosted_lazy_flow(host, walk, note, i);
