@@ -42,3 +42,16 @@ fn lists_skip_it_between_siblings() {
 fn a_following_text_line_keeps_the_paragraph() {
     assert_eq!(carve::to_html("{% c %}\nx\n").trim_end(), "<p>\nx</p>");
 }
+
+#[test]
+fn a_comment_between_siblings_keeps_its_position() {
+    let json = carve::to_json_with_options(
+        "- x\n\n{% a\nb %}\n\n- y\n",
+        &carve::Options::default().with_positions(true),
+    );
+    let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let comment = &value["children"][0]["items"][0]["children"][1];
+    assert_eq!(comment["type"], "comment");
+    assert_eq!(comment["pos"]["startLine"], 3);
+    assert_eq!(comment["pos"]["endLine"], 4);
+}

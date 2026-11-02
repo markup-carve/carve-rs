@@ -533,12 +533,24 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         }
         if trim_ascii_start(line).starts_with("{%") {
             // A paragraph of only braced comments joins the item as its comments (carve#4799).
-            let text: Vec<&str> = (self.cur.pos - extent..self.cur.pos)
+            let lines = self.cur.pos - extent..self.cur.pos;
+            let text: Vec<&str> = lines
+                .clone()
                 .map(|k| trim_ascii(self.cur.lines.at(k)))
                 .collect();
+            let joined = text.join("\n");
+            let children = if self.options.positions {
+                let anchors = lines
+                    .zip(&text)
+                    .map(|(k, line)| inline_anchor_for_line(self.cur, k, line))
+                    .collect();
+                parse_inline_lines_with_anchor(&joined, self.options, anchors)
+            } else {
+                parse_inline_with_options(&joined, self.options)
+            };
             let paragraph = BlockNode::Paragraph(Paragraph {
                 attrs: None,
-                children: parse_inline_with_options(&text.join("\n"), self.options),
+                children,
                 at_content_column: false,
                 block_image: false,
                 pos: None,
