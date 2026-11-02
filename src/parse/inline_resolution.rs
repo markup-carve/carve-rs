@@ -1756,8 +1756,7 @@ pub(in crate::parse) struct EmphasisMemo {
 
 /// Whether the `*/` at `at` can close the combined token (`biCloser`).
 pub(in crate::parse) fn combined_closer_at(bytes: &[u8], at: usize) -> bool {
-    !followed_by_grapheme_extender(bytes, at + 2)
-        && !bytes.get(at + 2).is_some_and(u8::is_ascii_alphanumeric)
+    !followed_by_grapheme_extender(bytes, at + 2) && !quote_state::alnum_at(bytes, at + 2)
 }
 
 /// The `*/` closing the combined `/*` token whose content starts at `start`.
@@ -1906,9 +1905,7 @@ fn guard_stands(bytes: &[u8], at: usize, from: usize, delim: u8) -> bool {
     if d == delim || OpenKinds::is_open(d) || before == Some(d) || before == Some(b'\\') {
         return false;
     }
-    if before.is_some_and(|b| b.is_ascii_alphanumeric())
-        || bytes.get(at).map_or(true, |&b| is_carve_ws(b))
-    {
+    if quote_state::alnum_before(bytes, guard) || bytes.get(at).map_or(true, |&b| is_carve_ws(b)) {
         return false;
     }
     if (before == Some(b'_') || (before == Some(b'/') && matches!(d, b'/' | b'_')))
@@ -1934,7 +1931,7 @@ fn bare_opener_state(bytes: &[u8], at: usize) -> u8 {
         None => 1,
         Some(b'_') => 2,
         Some(b'/') if matches!(ch, b'/' | b'_') => 2,
-        Some(b) if b.is_ascii_alphanumeric() => 0,
+        _ if quote_state::alnum_before(bytes, at) => 0,
         _ => 1,
     }
 }
@@ -1944,9 +1941,7 @@ pub(in crate::parse) fn combined_shape_at(bytes: &[u8], at: usize) -> bool {
     bytes[at] == b'/'
         && bytes.get(at + 1) == Some(&b'*')
         && bytes.get(at + 2).is_some_and(|&next| !is_carve_ws(next))
-        && !at
-            .checked_sub(1)
-            .is_some_and(|prev| bytes[prev].is_ascii_alphanumeric())
+        && !quote_state::alnum_before(bytes, at)
 }
 
 /// Whether `pos` sits in a bracket run of this inline run. A kind open
@@ -2080,7 +2075,7 @@ fn find_emphasis_close_walk(
             if (j == start
                 || guarded_at == Some(j)
                 || j.checked_sub(1).is_some_and(|prev| {
-                    !(bytes[prev].is_ascii_alphanumeric()
+                    !(quote_state::alnum_before(bytes, j)
                         || matches!(bytes[prev], b'_' | b'/')
                         || bytes[prev] == ch)
                 }))
@@ -2302,11 +2297,9 @@ fn find_emphasis_close_walk(
             // followed by an alphanumeric. Applies to every delimiter.
             // An arrow's `=` may still close (`=b=>`, PART 9 §9); only a
             // comparison's is shielded, above.
-            if let Some(&next) = bytes.get(j + 1) {
-                if next.is_ascii_alphanumeric() || followed_by_grapheme_extender(bytes, j + 1) {
-                    j += 1;
-                    continue;
-                }
+            if quote_state::alnum_at(bytes, j + 1) || followed_by_grapheme_extender(bytes, j + 1) {
+                j += 1;
+                continue;
             }
             return Some(j);
         }

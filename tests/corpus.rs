@@ -1350,7 +1350,28 @@ fn expected_corpus_size() -> usize {
 /// Empty is the normal end state: the pin catching up is what retires an entry,
 /// and the `assert_ne!` in `check_pair` is what forces the deletion rather than
 /// leaving a declaration that no longer declares anything.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
+    (
+        "704-a-non-ascii-letter-does-not-block-a-bare-delimiter",
+        "carve#4806: a Unicode letter or number now blocks a bare delimiter",
+        "<p>é*x* y and a*x* y\ny *x*é and y *x*a</p>",
+    ),
+    (
+        "792-a-glued-attribute-run-is-one-physical-line-2",
+        "carve#4078 superseding ruling: each glued block may wrap",
+        "<p class=\"a b\">p</p>",
+    ),
+    (
+        "792-a-glued-attribute-run-is-one-physical-line-3",
+        "carve#4078 superseding ruling: each glued block may wrap",
+        "<p class=\"a b\">p</p>",
+    ),
+    (
+        "792-a-glued-attribute-run-is-one-physical-line-4",
+        "carve#4078 superseding ruling: each glued block may wrap",
+        "",
+    ),
+];
 
 /// Pairs this engine renders differently from the pinned corpus because it has
 /// not reached the rule yet - the mirror of [`AHEAD_OF_PIN`].
@@ -1428,10 +1449,6 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     ("873-a-plus-after-an-attached-block-reaches-its-host-through-quote-prefixes-2", "new corpus pair at the 19f78369 spec pin, engine port pending", "<blockquote>\n  <ul>\n    <li>a\n      <h1 id=\"h\">h</h1>\n    </li>\n  </ul>\n  <p>+</p>\n  <h1 id=\"h-2\">h</h1>\n</blockquote>"),
     ("878-a-folded-marker-keeps-a-note-item-measured-from-its-source-column-2", "new corpus pair at the 19f78369 spec pin, engine port pending", "<p>q</p>\n<p><a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <ul>\n        <li>\n          <ul>\n            <li>a\n* z\n              <h1 id=\"H\">H</h1>\n            </li>\n          </ul>\n        </li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
     ("880-an-own-line-plus-reaches-a-marker-line-quote-at-its-authored-column-3", "new corpus pair at the 7840b697 spec pin, engine port pending (markup-carve/carve#4697)", "<p><a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <blockquote>\n        <blockquote><p>a\n+\nb</p></blockquote>\n      </blockquote>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
-    ("887-a-reference-label-across-a-line-stays-verbatim-in-every-form-2", "new corpus pair at the 7840b697 spec pin, engine port pending (markup-carve/carve#4680)", "<p>[<strong>t</strong>][a\nb]</p>"),
-    ("887-a-reference-label-across-a-line-stays-verbatim-in-every-form-3", "new corpus pair at the 7840b697 spec pin, engine port pending (markup-carve/carve#4680)", "<p>![<strong>x</strong>][a\nb]</p>"),
-    ("887-a-reference-label-across-a-line-stays-verbatim-in-every-form-5", "new corpus pair at the 7840b697 spec pin, engine port pending (markup-carve/carve#4680)", "<p>[x][<abbr title=\"z\">y</abbr>\nq]</p>"),
-    ("887-a-reference-label-across-a-line-stays-verbatim-in-every-form-6", "new corpus pair at the 7840b697 spec pin, engine port pending (markup-carve/carve#4680)", "<p>[x]<a href=\"u\">a\nb</a></p>"),
 ];
 
 fn check_pair(slug: &str) {

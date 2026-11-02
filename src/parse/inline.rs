@@ -1574,7 +1574,10 @@ fn reserved_reference_tail(bytes: &[u8], start: usize, bounds: &InlineBounds<'_>
     if bytes.get(label_open..label_open + 2) != Some(&b"[@"[..]) {
         return None;
     }
-    reference_label_close(bytes, label_open).map(|close| close + 1)
+    // A label crossing a line is no citation key: it fails as a label (carve#4680).
+    reference_label_close(bytes, label_open)
+        .filter(|&close| !bytes[label_open..close].contains(&b'\n'))
+        .map(|close| close + 1)
 }
 
 pub(in crate::parse) fn parse_critic_markup(

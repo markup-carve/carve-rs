@@ -28,7 +28,13 @@ thread_local! {
 }
 
 pub(in crate::parse) fn valid_wrapped_attr_continuation(line: &str) -> bool {
-    trim_ascii_end(line).ends_with('}') || parse_attrs_with(trim_ascii(line), false).is_some()
+    let line = trim_ascii(line);
+    if line.ends_with('}') {
+        return true;
+    }
+    // The tail of a line that closes one block and opens the next, `}{.b`.
+    let payload = line.rfind("}{").map_or(line, |at| &line[at + 2..]);
+    parse_attrs_with(payload, false).is_some()
 }
 
 /// A standalone block-attribute block, possibly spanning several contiguous
@@ -62,43 +68,14 @@ pub(in crate::parse) fn parse_standalone_attrs_block(cur: &mut LineCursor) -> Op
     if trim_ascii_end(first).ends_with('}') {
         return None;
     }
-    // Multi-line: join contiguous lines until one closes with `}`.
-    let mut joined = String::new();
-    let mut count = 0usize;
-    let mut quote: Option<char> = None;
-    while let Some(raw) = cur.lines.line(cur.pos + count) {
-        let line = strip_lazy(raw);
-        if is_blank_line(line) {
-            return None;
-        }
-        if count > 0 && !valid_wrapped_attr_continuation(line) {
-            return None;
-        }
-        if !joined.is_empty() {
-            if quote.is_some() {
-                return None;
-            }
-            joined.push(' ');
-        }
-        #[cfg(test)]
-        ATTRS_LOOKAHEAD_BYTES.with(|work| work.set(work.get() + line.len()));
-        joined.push_str(trim_ascii(line));
-        quote = open_quote_at_end(trim_ascii(line));
-        count += 1;
-        if trim_ascii_end(line).ends_with('}') {
-            let inner = trim_ascii(&joined);
-            if inner.starts_with('{') && inner.ends_with('}') {
-                if let Some(attrs) = parse_attrs_with(&inner[1..inner.len() - 1], false) {
-                    for _ in 0..count {
-                        cur.consume();
-                    }
-                    return Some(attrs);
-                }
-            }
-            return None;
-        }
+    let start = cur.pos;
+    let lines =
+        std::iter::successors(Some(start), |at| Some(at + 1)).map_while(|at| cur.lines.line(at));
+    let (attrs, count) = wrapped_attrs_run(lines)?;
+    for _ in 0..count {
+        cur.consume();
     }
-    None
+    Some(attrs)
 }
 
 /// How many LINES a standalone attribute block occupies when one starts at
@@ -158,9 +135,15 @@ fn attrs_block_len_from<'a>(first: &'a str, lines: impl Iterator<Item = &'a str>
     if trim_ascii_end(first).ends_with('}') {
         return None;
     }
+    wrapped_attrs_run(std::iter::once(first).chain(lines)).map(|(_, count)| count)
+}
+
+/// A wrapped attribute run: contiguous lines joined until every block has
+/// closed. Each block of a glued run may wrap (carve#4078).
+fn wrapped_attrs_run<'a>(lines: impl Iterator<Item = &'a str>) -> Option<(Attrs, usize)> {
     let mut joined = String::new();
     let mut quote: Option<char> = None;
-    for (count, raw) in std::iter::once(first).chain(lines).enumerate() {
+    for (count, raw) in lines.enumerate() {
         let line = strip_lazy(raw);
         if is_blank_line(line) {
             return None;
@@ -178,18 +161,35 @@ fn attrs_block_len_from<'a>(first: &'a str, lines: impl Iterator<Item = &'a str>
         ATTRS_LOOKAHEAD_BYTES.with(|work| work.set(work.get() + line.len()));
         joined.push_str(trim_ascii(line));
         quote = open_quote_at_end(trim_ascii(line));
-        if trim_ascii_end(line).ends_with('}') {
-            let inner = trim_ascii(&joined);
-            if inner.starts_with('{')
-                && inner.ends_with('}')
-                && parse_attrs_with(&inner[1..inner.len() - 1], false).is_some()
-            {
-                return Some(count + 1);
-            }
-            return None;
+        if line.contains('}') && !holds_open_attr_block(&joined) {
+            return parse_standalone_attrs(&joined).map(|attrs| (attrs, count + 1));
         }
     }
     None
+}
+
+/// Whether the run's last block is still open. A `{` inside an open block or a
+/// `}` outside one is not a run at all, so neither reads as open.
+fn holds_open_attr_block(run: &str) -> bool {
+    let mut open = false;
+    let mut quote = None;
+    let mut chars = run.chars();
+    while let Some(ch) = chars.next() {
+        match (quote, ch) {
+            (Some(_), '\\') => {
+                chars.next();
+            }
+            (Some(q), _) if q == ch => quote = None,
+            (Some(_), _) => {}
+            (None, '"' | '\'') => quote = Some(ch),
+            (None, '{') if open => return false,
+            (None, '{') => open = true,
+            (None, '}') if !open => return false,
+            (None, '}') => open = false,
+            _ => {}
+        }
+    }
+    open
 }
 
 /// What a quoted line says about a standalone attribute block starting on it.

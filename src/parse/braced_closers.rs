@@ -1,8 +1,9 @@
 use super::inline_resolution::mask_literal_directive_backticks;
 use super::substitution_scanner::SubstitutionScanner;
 use super::{
-    delim_brace_slot, find_seq, raw_inline_format_end, read_attrs_at, scanned_autolink_end,
-    skip_code_span, trailing_comment_end, DELIM_BRACE_SLOTS, MAX_NESTING_DEPTH,
+    delim_brace_slot, find_seq, quote_state, raw_inline_format_end, read_attrs_at,
+    scanned_autolink_end, skip_code_span, trailing_comment_end, DELIM_BRACE_SLOTS,
+    MAX_NESTING_DEPTH,
 };
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -710,8 +711,8 @@ impl BracedClosers {
                 // E3: a bare opener inside a same-kind braced span is literal.
                 bare_openers[slot] |= !braced
                     && braced_depth[slot] == 0
-                    && !before
-                        .is_some_and(|byte| byte.is_ascii_alphanumeric() || byte == bytes[at])
+                    && !quote_state::alnum_before(bytes, at)
+                    && before != Some(bytes[at])
                     && !matches!(bytes[at + 1], b' ' | b'\t' | b'\r' | b'\n')
                     && bytes[at + 1] != bytes[at];
             }
@@ -885,13 +886,14 @@ impl BracedClosers {
                 let next = bytes[at + 1];
                 if pending[slot]
                     && before.is_some_and(|byte| !matches!(byte, b' ' | b'\t' | b'\r' | b'\n'))
-                    && !next.is_ascii_alphanumeric()
+                    && !quote_state::alnum_at(bytes, at + 1)
                 {
                     pending[slot] = false;
                 } else if !matches!(next, b' ' | b'\t' | b'\r' | b'\n')
                     && next != marker
                     && before != Some(marker)
-                    && !before.is_some_and(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+                    && !quote_state::alnum_before(bytes, at)
+                    && before != Some(b'_')
                     && (!matches!(marker, b'/' | b'_') || before != Some(b'/'))
                 {
                     pending[slot] = true;
@@ -1006,7 +1008,7 @@ impl BracedClosers {
                         if state[k] != usize::MAX
                             && before
                                 .is_some_and(|byte| !matches!(byte, b' ' | b'\t' | b'\r' | b'\n'))
-                            && !next.is_some_and(|byte| byte.is_ascii_alphanumeric())
+                            && !quote_state::alnum_at(bytes, position + 1)
                         {
                             state[k] = usize::MAX;
                         } else if state[k] == usize::MAX
@@ -1016,11 +1018,11 @@ impl BracedClosers {
                             && before != Some(marker)
                             && (marker != b'=' || next != Some(b'>'))
                             && (before.is_some_and(|_| opener_marks.contains(&(position - 1)))
-                                || !before.is_some_and(|byte| {
-                                    byte.is_ascii_alphanumeric()
-                                        || byte == b'_'
-                                        || byte == b'/' && matches!(marker, b'/' | b'_')
-                                }))
+                                || !(quote_state::alnum_before(bytes, position)
+                                    || before.is_some_and(|byte| {
+                                        byte == b'_'
+                                            || byte == b'/' && matches!(marker, b'/' | b'_')
+                                    })))
                         {
                             state[k] = i;
                         }
@@ -1050,7 +1052,8 @@ impl BracedClosers {
             let unguarded_opener = next.is_some_and(|byte| {
                 !matches!(byte, b' ' | b'\t' | b'\r' | b'\n') && byte != marker
             }) && before != Some(marker)
-                && !before.is_some_and(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+                && !quote_state::alnum_before(bytes, position)
+                && before != Some(b'_')
                 && (marker != b'=' || next != Some(b'>'))
                 && (!matches!(marker, b'/' | b'_') || before != Some(b'/'));
             let resolve = |encoded: usize, slot: usize| {
@@ -1090,7 +1093,7 @@ impl BracedClosers {
                     _ if delim_brace_slot(marker) == Some(slot)
                         && before
                             .is_some_and(|byte| !matches!(byte, b' ' | b'\t' | b'\r' | b'\n'))
-                        && !next.is_some_and(|byte| byte.is_ascii_alphanumeric()) =>
+                        && !quote_state::alnum_at(bytes, position + 1) =>
                     {
                         at
                     }
@@ -1200,7 +1203,7 @@ impl BracedClosers {
                         Some(byte) if byte == bytes[guard] => return false,
                         Some(b'_') => {}
                         Some(b'/') if bytes[guard] == b'_' => {}
-                        _ => return !outer.is_some_and(|byte| byte.is_ascii_alphanumeric()),
+                        _ => return !quote_state::alnum_before(bytes, guard),
                     }
                     guard -= 1;
                 }

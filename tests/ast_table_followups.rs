@@ -45,14 +45,14 @@ fn invalid_row_partitions_leave_one_table_body() {
 }
 
 #[test]
-fn multiline_reference_labels_stay_literal_in_ast() {
-    for source in ["[a][b\nc]\n", "![a][b\nc]\n"] {
+fn multiline_reference_labels_keep_their_source_in_ast() {
+    // carve#4680: the label claims its run, as a one-line label does.
+    for (source, kind) in [("[a][b\nc]\n", "link"), ("![a][b\nc]\n", "image")] {
         let tree: serde_json::Value =
             serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
         let nodes = tree["children"][0]["children"].as_array().unwrap();
-        assert_eq!(nodes.len(), 3, "{source}: {nodes:?}");
-        assert_eq!(nodes[0]["type"], "text", "{source}");
-        assert_eq!(nodes[1]["type"], "soft_break", "{source}");
-        assert_eq!(nodes[2]["type"], "text", "{source}");
+        assert_eq!(nodes.len(), 1, "{source}: {nodes:?}");
+        assert_eq!(nodes[0]["type"], kind, "{source}");
+        assert_eq!(nodes[0]["rawRef"], source.trim_end(), "{source}");
     }
 }

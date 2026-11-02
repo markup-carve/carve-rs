@@ -439,12 +439,7 @@ pub(in crate::parse) fn reference_label_close(bytes: &[u8], start: usize) -> Opt
             b'{' if skip_editorial_comment(bytes, i).is_some() => {
                 i = skip_editorial_comment(bytes, i)?;
             }
-            b']' => {
-                return (!bytes[start + 1..i]
-                    .iter()
-                    .any(|byte| matches!(byte, b'\n' | b'\r')))
-                .then_some(i);
-            }
+            b']' => return Some(i),
             _ => i += 1,
         }
     }
@@ -1491,12 +1486,11 @@ pub(in crate::parse) fn match_emphasis(
     // opener guard before the token and the bare closer guard after it.
     if c == b'/'
         && bytes.get(i + 1) == Some(&b'*')
+        && !quote_state::alnum_before(bytes, i)
         && !i
             .checked_sub(1)
             .and_then(|before| bytes.get(before))
-            .is_some_and(|before| {
-                before.is_ascii_alphanumeric() || (!guard_open && matches!(before, b'_' | b'/'))
-            })
+            .is_some_and(|before| !guard_open && matches!(before, b'_' | b'/'))
     {
         let start = i + 2;
         // Opener guard: the first content byte must exist and not be whitespace.
@@ -1594,7 +1588,7 @@ pub(in crate::parse) fn match_emphasis(
         // alphanumeric or `_`, keeping paths/identifiers/numbers literal
         // (`a/b/c`, `foo*bar*baz`, `snake_case`, `x = 5`, `key=value`, `1,2,3`).
         // Use the forced `{X…X}` family for deliberate intraword emphasis.
-        if prev.is_ascii_alphanumeric() {
+        if quote_state::alnum_before(bytes, i) {
             return None;
         }
         // A `_` or `/` guard blocks the opener unless it is an open entry
@@ -1646,7 +1640,7 @@ pub(in crate::parse) fn bare_opener_stands(bytes: &[u8], i: usize, guard_open: b
     if after == delim || before == Some(delim) || OpenKinds::is_open(delim) {
         return false;
     }
-    if before.is_some_and(|b| b.is_ascii_alphanumeric()) || (delim == b'=' && after == b'>') {
+    if quote_state::alnum_before(bytes, i) || (delim == b'=' && after == b'>') {
         return false;
     }
     guard_open || !(before == Some(b'_') || (matches!(delim, b'/' | b'_') && before == Some(b'/')))

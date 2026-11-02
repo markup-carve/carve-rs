@@ -234,12 +234,46 @@ fn is_letter(c: char) -> bool {
     }
 }
 
-pub(in crate::parse) fn is_alnum(c: char) -> bool {
+pub(crate) fn is_alnum(c: char) -> bool {
     if c.is_ascii() {
         c.is_ascii_alphanumeric()
     } else {
         is_letter(c) || in_ranges(c, &unicode_categories::NUMBER)
     }
+}
+
+/// Whether a Unicode letter or number ends right before byte `at`, the guard
+/// class of CARVE-P3-013.
+pub(in crate::parse) fn alnum_before(bytes: &[u8], at: usize) -> bool {
+    if at == 0 || at > bytes.len() {
+        return false;
+    }
+    let mut start = at - 1;
+    while start > 0 && bytes[start] & 0xc0 == 0x80 {
+        start -= 1;
+    }
+    std::str::from_utf8(&bytes[start..at])
+        .ok()
+        .and_then(|text| text.chars().next())
+        .is_some_and(is_alnum)
+}
+
+/// Whether a Unicode letter or number starts at byte `at`.
+pub(in crate::parse) fn alnum_at(bytes: &[u8], at: usize) -> bool {
+    let Some(&first) = bytes.get(at) else {
+        return false;
+    };
+    let len = match first {
+        0..=0x7f => return first.is_ascii_alphanumeric(),
+        0xc0..=0xdf => 2,
+        0xe0..=0xef => 3,
+        _ => 4,
+    };
+    bytes
+        .get(at..at + len)
+        .and_then(|slice| std::str::from_utf8(slice).ok())
+        .and_then(|text| text.chars().next())
+        .is_some_and(is_alnum)
 }
 
 #[cfg(test)]
