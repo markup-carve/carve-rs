@@ -113,9 +113,35 @@ pub(in crate::parse) fn record_skipped_sibling_abbreviation(
     });
 }
 
+/// The last closer of each comment fence width in `from..end`.
+fn last_comment_closers(cur: &LineCursor<'_>, from: usize, end: usize) -> HashMap<usize, usize> {
+    let mut last = HashMap::new();
+    for index in from..end {
+        let candidate = cur.lines.at(index);
+        let run = trim_ascii_start(strip_lazy(candidate))
+            .bytes()
+            .take_while(|&byte| byte == b'%')
+            .count();
+        if run >= 3 && is_comment_fence_close_any_column(candidate, run) {
+            last.insert(run, index);
+        }
+    }
+    last
+}
+
 fn consume_invisible_definition_gap(cur: &mut LineCursor<'_>, end: usize, options: &Options<'_>) {
+    let last_closer = last_comment_closers(cur, cur.pos, end);
     while cur.pos < end {
-        if let Some(open) = cur.peek().and_then(detect_comment_fence_line_any_column) {
+        let at = cur.pos;
+        let span = cur
+            .peek()
+            .and_then(detect_comment_fence_line_any_column)
+            .filter(|open| {
+                last_closer
+                    .get(&open.fence_len)
+                    .is_some_and(|&last| last > at)
+            });
+        if let Some(open) = span {
             cur.consume();
             while cur.pos < end {
                 let close = cur
@@ -407,6 +433,7 @@ fn definition_sibling_after_invisible(
 ) -> Option<usize> {
     let mut at = cur.pos;
     let mut blanks = 0;
+    let mut last_closers: Option<HashMap<usize, usize>> = None;
     while let Some(line) = cur.lines.line(at) {
         if is_blank_line(line) {
             if !allow_blank {
@@ -420,14 +447,27 @@ fn definition_sibling_after_invisible(
             continue;
         }
         if let Some(open) = detect_comment_fence_line_any_column(line) {
-            let mut end = at + 1;
-            while let Some(next) = cur.lines.line(end) {
-                if is_comment_fence_close_any_column(next, open.fence_len) {
-                    break;
-                }
-                end += 1;
+            // §28: with no closer ahead the opener is one `%%` line. The first miss
+            // builds an index, so a run of distinct widths does not rescan the document.
+            let may_close = last_closers
+                .as_ref()
+                .map_or(true, |last: &HashMap<usize, usize>| {
+                    last.get(&open.fence_len).is_some_and(|&last| last > at)
+                });
+            let closer = may_close
+                .then(|| {
+                    (at + 1..cur.lines.len()).find(|&index| {
+                        is_comment_fence_close_any_column(cur.lines.at(index), open.fence_len)
+                    })
+                })
+                .flatten();
+            if let Some(closer) = closer {
+                at = closer + 1;
+            } else {
+                last_closers
+                    .get_or_insert_with(|| last_comment_closers(cur, at + 1, cur.lines.len()));
+                at += 1;
             }
-            at = end + 1;
             continue;
         }
         if is_line_comment_any_column(line)
