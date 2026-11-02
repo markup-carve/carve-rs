@@ -267,7 +267,7 @@ fn carrier_collision_report_names_the_attribute_and_accepts_the_canonical_code()
 fn a_forced_list_delimiter_change_reports_both_delimiters() {
     let output = run_input(
         &["--markdown", "--report-losses", "-"],
-        "a. one\n\n1. two\n",
+        "a.  one\n\n1. two\n",
     );
     assert!(output.status.success(), "{:?}", output.stderr);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -285,7 +285,7 @@ fn a_forced_list_delimiter_change_reports_both_delimiters() {
         for code in allowed {
             args.extend(["--allow-loss", code]);
         }
-        run_input(&args, "a. one\n\n1. two\n").status.success()
+        run_input(&args, "a.  one\n\n1. two\n").status.success()
     };
     assert!(strict(&["list-delimiter-changed"]));
     assert!(!strict(&[]));

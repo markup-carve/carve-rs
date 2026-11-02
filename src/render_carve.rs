@@ -3980,7 +3980,7 @@ fn render_inline_body(
         InlineNode::Extension(extension) => format!(
             ":{}[{}]{}",
             escape_identifier(&extension.name),
-            render_inlines(session, &extension.children, ctx),
+            render_bracketed_content(session, &extension.children, ctx),
             render_inline_attrs(&extension.attrs, ctx)
         ),
         // The neighbour characters are the REAL ones, not `\0`: this arm writes

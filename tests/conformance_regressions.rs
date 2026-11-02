@@ -388,8 +388,8 @@ fn reference_prepass_keeps_forward_reference_resolution() {
 fn every_list_marker_dialect_collects_definitions() {
     assert!(html("1. [r]: /u\n\n[x][r]").contains("href=\"/u\""));
     assert!(html("- [ ] [r]: /u\n\n[x][r]").contains("href=\"/u\""));
-    assert!(html("a. [r]: /u\n\n[x][r]").contains("href=\"/u\""));
-    assert!(html("i. [r]: /u\n\n[x][r]").contains("href=\"/u\""));
+    assert!(html("a.  [r]: /u\n\n[x][r]").contains("href=\"/u\""));
+    assert!(html("i.  [r]: /u\n\n[x][r]").contains("href=\"/u\""));
 }
 
 #[test]
@@ -407,11 +407,8 @@ fn tag_after_crossref_opener_with_space_is_a_tag() {
 
 #[test]
 fn smart_typography_tokenizes_overlapping_arrows_and_dashes_left_to_right() {
-    // `-->` is the canonical rightwards arrow since markup-carve/carve#1442, so
-    // the second token here is an arrow rather than an en dash plus `>`. The
-    // left-to-right property this pins is unchanged: `->` is taken first, and
-    // what remains is tokenized from where it left off.
-    assert_eq!(html("->-->"), "<p>\u{2192}\u{2192}</p>");
+    // `->` is text (carve#4815), and `-->` after it is still the canonical arrow.
+    assert_eq!(html("->-->"), "<p>-&gt;\u{2192}</p>");
     // `--->` is not `-->`, so no arrow matches where the run starts - and the
     // run is flag-shaped (nothing before it, a non-whitespace character after
     // it), so it stays literal (markup-carve/carve#1443). In the row above the
@@ -701,10 +698,10 @@ fn inline_extension_name_content_and_class_merge() {
     assert_eq!(html(":1[x]"), "<p>:1[x]</p>");
     // A name may contain digits after the first identifier char.
     assert_eq!(html(":a1[x]"), "<p><span class=\"ext-a1\">x</span></p>");
-    // Content stops at the first `]`; the rest is literal text.
+    // Content closes at the `]` at bracket depth zero (carve#4513).
     assert_eq!(
         html(":foo[a [b] c]"),
-        "<p><span class=\"ext-foo\">a [b</span> c]</p>"
+        "<p><span class=\"ext-foo\">a [b] c</span></p>"
     );
     // Authored classes merge into one `class` attribute, structural first.
     assert_eq!(
@@ -828,8 +825,8 @@ fn the_doubled_run_is_the_canonical_arrow_in_both_families() {
 }
 
 #[test]
-fn the_single_hyphen_arrows_are_deprecated_but_still_render() {
-    assert_eq!(html("-> <- <->"), "<p>→ ← ↔</p>");
+fn the_single_hyphen_arrows_are_text() {
+    assert_eq!(html("-> <- <->"), "<p>-&gt; &lt;- &lt;-&gt;</p>");
 }
 
 #[test]

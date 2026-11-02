@@ -1518,6 +1518,73 @@ pub(in crate::parse) struct FenceOpen {
 }
 
 pub(in crate::parse) fn detect_fence_open(line: &str) -> Option<FenceOpen> {
+    valid_fence_open(line).or_else(|| recovered_fence_open(line))
+}
+
+/// PART 9 §2 RECOVERY (carve#4807): a language token that ends where metadata
+/// would start keeps the code block and drops the rest, unless the rest of the
+/// line holds a run of the opener's character as long as the opener.
+fn recovered_fence_open(line: &str) -> Option<FenceOpen> {
+    let line = trim_ascii_end(line);
+    let bytes = line.as_bytes();
+    let fence_char = *bytes.first().filter(|b| matches!(b, b'`' | b'~'))?;
+    let fence_len = bytes.iter().take_while(|&&b| b == fence_char).count();
+    if fence_len < 3 {
+        return None;
+    }
+    let lang_start = fence_len + usize::from(bytes.get(fence_len) == Some(&b' '));
+    let lang_end = lang_start
+        + bytes[lang_start..]
+            .iter()
+            .take_while(|&&b| is_fence_language_byte(b))
+            .count();
+    if lang_end == lang_start {
+        return None;
+    }
+    let rest = &line[lang_end..];
+    let ends_token = rest.chars().next().is_some_and(|c| {
+        c.is_whitespace() || matches!(c, '\u{feff}' | '"' | '{' | '[' | '\u{201c}' | '\u{201d}')
+    });
+    if !ends_token || line[fence_len..].contains(&line[..fence_len]) {
+        return None;
+    }
+    Some(FenceOpen {
+        fence_char,
+        fence_len,
+        content_col: 0,
+        quoted: false,
+        lang_start,
+        lang_end,
+        title_start: None,
+        title_end: None,
+        label_start: None,
+        label_end: None,
+    })
+}
+
+fn is_fence_language_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'+' | b'#' | b'.' | b'/')
+}
+
+/// Whether a fence opener only opens through the §2 recovery, with the format
+/// word a legacy `raw FORMAT` opener names.
+pub(in crate::parse) fn recovered_fence_format(line: &str) -> Option<Option<&str>> {
+    if valid_fence_open(line).is_some() {
+        return None;
+    }
+    let open = recovered_fence_open(line)?;
+    if &line[open.lang_start..open.lang_end] != "raw" {
+        return Some(None);
+    }
+    let rest = line[open.lang_end..].trim_start();
+    let word = rest
+        .find(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '_' | '-')))
+        .map_or(rest, |end| &rest[..end]);
+    let names_format = word.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_');
+    Some(names_format.then_some(word))
+}
+
+fn valid_fence_open(line: &str) -> Option<FenceOpen> {
     let line = trim_ascii_end(line);
     let bytes = line.as_bytes();
     let mut i = 0;
@@ -1603,15 +1670,7 @@ pub(in crate::parse) fn detect_fence_open(line: &str) -> Option<FenceOpen> {
     // (c++, c#, f#, asp.net, text/html); the token is still anchored (no
     // whitespace), so a multiword/quoted info string is not a fence. `/` is
     // allowed so MIME-like tags stay a single language token.
-    while i < bytes.len()
-        && (bytes[i].is_ascii_alphanumeric()
-            || bytes[i] == b'_'
-            || bytes[i] == b'-'
-            || bytes[i] == b'+'
-            || bytes[i] == b'#'
-            || bytes[i] == b'.'
-            || bytes[i] == b'/')
-    {
+    while i < bytes.len() && is_fence_language_byte(bytes[i]) {
         i += 1;
     }
     let lang_end = i;

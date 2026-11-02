@@ -13,7 +13,7 @@
 #[test]
 fn type_precedes_the_authored_attributes() {
     assert_eq!(
-        carve::to_html("{k=v .attr}\na. alpha\n"),
+        carve::to_html("{k=v .attr}\na.  alpha\n"),
         "<ol type=\"a\" k=\"v\" class=\"attr\">\n  <li>alpha</li>\n</ol>",
     );
 }
@@ -29,7 +29,7 @@ fn start_precedes_the_authored_attributes() {
 #[test]
 fn an_id_keeps_its_authored_position_after_the_structural_one() {
     assert_eq!(
-        carve::to_html("{#i .attr}\na. alpha\n"),
+        carve::to_html("{#i .attr}\na.  alpha\n"),
         "<ol type=\"a\" id=\"i\" class=\"attr\">\n  <li>alpha</li>\n</ol>",
     );
 }

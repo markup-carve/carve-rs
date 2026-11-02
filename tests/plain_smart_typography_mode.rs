@@ -23,9 +23,9 @@ const CASES: &[(&str, &str)] = &[
     ("a...b", "a…b"),
     ("a--b", "a–b"),
     ("a---b", "a—b"),
-    ("a -> b", "a → b"),
+    ("a --> b", "a → b"),
     ("a <= b", "a ≤ b"),
-    ("(c) 2026", "© 2026"),
+    ("(tm) 2026", "™ 2026"),
     ("say \"hi\"", "say “hi”"),
 ];
 
@@ -81,11 +81,11 @@ fn code_spans_are_left_alone() {
 
 #[test]
 fn structure_still_renders_around_the_switch() {
-    let plain = source_mode("# Title...\n\n- one... item\n- two -> three\n");
+    let plain = source_mode("# Title...\n\n- one... item\n- two --> three\n");
 
     assert!(plain.contains("Title..."), "{plain}");
     assert!(plain.contains("one... item"), "{plain}");
-    assert!(plain.contains("two -> three"), "{plain}");
+    assert!(plain.contains("two --> three"), "{plain}");
 }
 
 #[test]

@@ -1718,7 +1718,70 @@ fn convert_djot_block_markers_with(source: &str, only_empty: bool) -> String {
             &scan.thematic_lines,
         );
     }
+    widen_letter_dot_markers(&mut lines, &masked);
     join_djot_marker_lines(lines, &scan.quote_exit_items, &scan.empty_task_breaks)
+}
+
+/// Djot takes one space after a letter or roman `.` marker and Carve two
+/// (carve#4811). The item's later lines move with its content column.
+fn widen_letter_dot_markers(lines: &mut [String], masked: &[&str]) {
+    let quote = cached_regex!(r"^(?:[ \t]*>[ \t]?)*").unwrap();
+    let host = cached_regex!(r"^[ \t]*(?:(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\))(?:\{[^}\n]*\})? +(?:\[[ xX\]] +)?|: |\[\^[^\]\r\n]+\]: +)").unwrap();
+    let letter_dot = cached_regex!(r"^[ \t]*([A-Za-z]+)\.(?:\{[^}\n]*\})? \S").unwrap();
+    let invisible_body = cached_regex!(r"^(?:\[\^[^\]\n]+\]:|%%%%|\x00DJOTEMPTYNOTE)").unwrap();
+    let roman =
+        cached_regex!(r"(?i)^M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})$")
+            .unwrap();
+    for index in 0..lines.len() {
+        let first = |line: &str| line.trim_start_matches([' ', '\t', '>']).chars().next();
+        let authored =
+            first(masked[index]).is_some_and(|c| Some(c) == first(&lines[index]) || c == '(');
+        if !authored {
+            continue;
+        }
+        let quote_len = quote.find(&lines[index]).map_or(0, |m| m.end());
+        let mut at = quote_len;
+        while at < lines[index].len() {
+            let line = lines[index].clone();
+            let rest = &line[at..];
+            let Some(found) = host.find(rest) else {
+                break;
+            };
+            let token = letter_dot
+                .captures(rest)
+                .filter(|_| !invisible_body.is_match(&rest[found.end()..]))
+                .map(|caps| caps[1].to_owned());
+            let cased = token.as_deref().is_some_and(|token| {
+                token.len() == 1
+                    || roman.is_match(token)
+                        && (token == token.to_lowercase() || token == token.to_uppercase())
+            });
+            let end = at + found.end();
+            if !cased {
+                at = end;
+                continue;
+            }
+            lines[index].insert(end, ' ');
+            let prefix = &line[..quote_len];
+            for later in &mut lines[index + 1..] {
+                let Some(body) = later.strip_prefix(prefix) else {
+                    if later.trim().is_empty() {
+                        continue;
+                    }
+                    break;
+                };
+                if body.trim().is_empty() {
+                    continue;
+                }
+                let indent = body.len() - body.trim_start_matches([' ', '\t']).len();
+                if quote_len + indent < end {
+                    break;
+                }
+                later.insert(quote_len, ' ');
+            }
+            at = end + 1;
+        }
+    }
 }
 
 fn djot_nested_list_lines(masked: &[&str]) -> Vec<bool> {

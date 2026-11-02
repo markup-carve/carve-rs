@@ -15,7 +15,7 @@ fn a_whitespace_only_one_cell_row_is_a_nested_table() {
 
 #[test]
 fn a_reference_definition_on_a_list_marker_line_is_invisible() {
-    let html = carve::to_html("r. [f]: t\n");
+    let html = carve::to_html("r.  [f]: t\n");
     assert!(html.contains("<li></li>"), "{html}");
     assert!(!html.contains("[f]"), "{html}");
 }

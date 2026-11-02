@@ -38,13 +38,12 @@ fn a_parenthesis_with_no_opener_leaves_the_line_as_prose() {
 }
 
 /// The inner pair balances and the outer opener does not, so a counter that
-/// only asks "did every `)` find an opener" reads this as a definition. `(c)`
-/// becomes the copyright sign once the line is prose.
+/// only asks "did every `)` find an opener" reads this as a definition.
 #[test]
 fn an_outer_opener_left_unclosed_leaves_the_line_as_prose() {
     assert_eq!(
         html("[a]: a(b(c)d\n\n[x][a]\n"),
-        "<p>[a]: a(b\u{a9}d</p>\n<p>[x][a]</p>"
+        "<p>[a]: a(b(c)d</p>\n<p>[x][a]</p>"
     );
 }
 

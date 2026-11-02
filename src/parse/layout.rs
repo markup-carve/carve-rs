@@ -1712,7 +1712,7 @@ mod layout_html_tests {
         // result is compared with the authoritative path above. The pin to spec
         // c3c2f80f adds one more, compared the same way.
         assert_eq!(
-            accepted, 75,
+            accepted, 81,
             "update the pinned acceptance count only after reviewing the exact-parity widening"
         );
     }

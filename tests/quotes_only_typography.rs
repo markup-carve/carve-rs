@@ -1,7 +1,7 @@
 use carve::{Options, SmartTypographyMode};
 
-const SOURCE: &str = "He said \"hi\" and 'yes'; it's fine... a--b c---d -> <= (c) (r) (tm) +-\n";
-const EXPECTED: &str = "He said \"hi\" and 'yes'; it's fine… a–b c—d → ≤ © ® ™ ±";
+const SOURCE: &str = "He said \"hi\" and 'yes'; it's fine... a--b c---d --> <= (c) (r) (tm) +-\n";
+const EXPECTED: &str = "He said \"hi\" and 'yes'; it's fine… a–b c—d → ≤ (c) (r) ™ ±";
 
 #[test]
 fn quotes_only_typography_reaches_every_target() {

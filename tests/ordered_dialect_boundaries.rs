@@ -27,10 +27,12 @@ fn a_dialect_cannot_cross_a_hard_list_boundary() {
 
 #[test]
 fn two_blank_lines_still_permit_the_sibling_tie_break() {
-    assert!(to_html("v. x\n\n\nvi. y\n").contains("<ol type=\"i\" start=\"5\">"));
+    assert!(to_html("v.  x\n\n\nvi.  y\n").contains("<ol type=\"i\" start=\"5\">"));
 }
 
 #[test]
 fn three_blanks_inside_the_item_body_do_not_end_the_sibling_search() {
-    assert!(to_html("x. one\n\n\n\n   body\n\nxi. two\n").contains("<ol type=\"i\" start=\"10\">"));
+    assert!(
+        to_html("x.  one\n\n\n\n    body\n\nxi.  two\n").contains("<ol type=\"i\" start=\"10\">")
+    );
 }

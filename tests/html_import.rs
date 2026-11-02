@@ -119,7 +119,7 @@ fn ruby_import_keeps_nested_pairs_and_visible_fallback() {
         nested.report.diagnostics
     );
     let extra = html_to_carve("<ruby>a<rt>b</rt><rt>c</rt></ruby>", &options).unwrap();
-    assert_eq!(extra.value, "a(b)\\(c)\n");
+    assert_eq!(extra.value, "a(b)(c)\n");
     assert!(extra
         .report
         .diagnostics
@@ -130,7 +130,7 @@ fn ruby_import_keeps_nested_pairs_and_visible_fallback() {
         &options,
     )
     .unwrap();
-    assert_eq!(obsolete.value, "a(b)\\(c)\n");
+    assert_eq!(obsolete.value, "a(b)(c)\n");
     let fallback = html_to_carve("<ruby>a<rp>other</rp><rt>b</rt></ruby>", &options).unwrap();
     assert_eq!(fallback.value, "a(b)\n");
     assert!(fallback

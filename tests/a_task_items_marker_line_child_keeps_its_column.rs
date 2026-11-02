@@ -63,10 +63,10 @@ fn a_marker_of_another_kind_at_the_items_column_opens_a_list_in_the_item() {
 }
 
 #[test]
-fn a_marker_of_another_kind_below_the_child_marker_is_lazy() {
+fn a_marker_of_another_kind_below_the_child_marker_opens_a_list() {
     check(
         "- [ ] 1. a\n     - b\n",
-        "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <ol>\n      <li>a\n- b</li>\n    </ol>\n  </li>\n</ul>",
+        "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <ol>\n      <li>a</li>\n    </ol>\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>",
     );
 }
 

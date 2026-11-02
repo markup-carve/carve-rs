@@ -11,14 +11,17 @@ fn markdown_link_label_protects_a_closing_bracket_in_an_angle_run() {
 
 #[test]
 fn a_caption_tag_is_not_a_number_placeholder() {
-    for tag in ["#1", "#_", "#-a"] {
+    for tag in ["#1", "#_"] {
         let html = to_html(&format!("![p](p.png)\n^ Figure {tag} q\n"));
         assert!(
-            html.contains(&format!(
-                "<span class=\"tag\"><strong>{tag}</strong></span>"
-            )),
+            html.contains(&format!("Figure {tag} q")),
             "{tag} was numbered: {html}"
         );
+    }
+    for tag in ["#a", "#-a"] {
+        let html = to_html(&format!("![p](p.png)\n^ Figure {tag} q\n"));
+        let span = format!("<span class=\"tag\"><strong>{tag}</strong></span>");
+        assert!(html.contains(&span), "{tag} was numbered: {html}");
     }
 }
 

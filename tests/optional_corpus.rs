@@ -95,28 +95,7 @@ const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 /// Cases the pinned corpus has moved past and this engine has not reached yet,
 /// the mirror of [`AHEAD_OF_PIN`] (as in `tests/corpus.rs`). Each entry fails in
 /// both directions the same way, so the port retires it.
-const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
-    (
-        "66-smart-typography-quotes-off-html",
-        "markup-carve/carve#4808: (c) and (r) are text, port pending",
-        "<p>He said \"hello\" and 'yes'; it's fine… a–b, c—d.</p>\n<p>Arrows → ← ↔ ⇒ and comparisons ≠ ≤ ≥ and © ® ™ ±.</p>\n<p>Typed “curly” ‘quotes’ and escaped \"plain\" stay literal.</p>\n<p>Code: <code>a--b \"q\" (c)</code>.</p>\n<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled aria-label=\"Don&apos;t &quot;guess&quot;… a–b\"> Don't \"guess\"… a–b</li>\n</ul>\n<section id=\"Don-t-guess-a-b\">\n  <h1>Don't \"guess\"… a–b</h1>\n  <p><a href=\"#Don-t-guess-a-b\">Don't \"guess\"… a–b</a></p>\n</section>",
-    ),
-    (
-        "66-smart-typography-quotes-off-markdown",
-        "markup-carve/carve#4808: (c) and (r) are text, port pending",
-        "He said \"hello\" and 'yes'; it's fine… a–b, c—d.\n\nArrows → ← ↔ ⇒ and comparisons ≠ ≤ ≥ and © ® ™ ±.\n\nTyped “curly” ‘quotes’ and escaped \\\"plain\\\" stay literal.\n\nCode: `a--b \"q\" (c)`.\n\n- [ ] Don't \"guess\"… a–b\n\n# Don't \"guess\"… a–b\n\n[Don't \"guess\"… a–b](#dont-guess-ab)",
-    ),
-    (
-        "66-smart-typography-quotes-off-plain",
-        "markup-carve/carve#4808: (c) and (r) are text, port pending",
-        "He said \"hello\" and 'yes'; it's fine… a–b, c—d.\n\nArrows → ← ↔ ⇒ and comparisons ≠ ≤ ≥ and © ® ™ ±.\n\nTyped “curly” ‘quotes’ and escaped \"plain\" stay literal.\n\nCode: a--b \"q\" (c).\n\n- Don't \"guess\"… a–b\n\nDon't \"guess\"… a–b\n\nDon't \"guess\"… a–b",
-    ),
-    (
-        "66-smart-typography-quotes-off-ansi",
-        "markup-carve/carve#4808: (c) and (r) are text, port pending",
-        "He said \"hello\" and 'yes'; it's fine… a–b, c—d.\n\nArrows → ← ↔ ⇒ and comparisons ≠ ≤ ≥ and © ® ™ ±.\n\nTyped “curly” ‘quotes’ and escaped \"plain\" stay literal.\n\nCode: \u{1b}[93ma--b \"q\" (c)\u{1b}[0m.\n\n\u{1b}[90m☐\u{1b}[0m Don't \"guess\"… a–b\n\n\u{1b}[1m\u{1b}[95mDon't \"guess\"… a–b\u{1b}[0m\n\u{1b}[95m══════════════════\u{1b}[0m\n\n\u{1b}[4m\u{1b}[34mDon't \"guess\"… a–b\u{1b}[0m",
-    ),
-];
+const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[];
 
 /// The floor a manifest emptied or halved cannot get past. It sits under the
 /// count today for the same reason the other floors in this repo do: the

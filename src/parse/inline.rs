@@ -907,9 +907,7 @@ impl InlineRun<'_, '_> {
                         && bytes.get(end + 1) == Some(&b'*')
                         && bytes.get(end + 2) != Some(&b'*')
                 }
-                b'(' => ![b"(c)".as_slice(), b"(r)", b"(tm)"]
-                    .iter()
-                    .any(|form| bytes[end..].starts_with(form)),
+                b'(' => !bytes[end..].starts_with(b"(tm)"),
                 _ => false,
             };
             if !literal {
@@ -2259,19 +2257,15 @@ pub(in crate::parse) fn parse_smart_punctuation_at(
     }
 
     // ORDERED LONGEST-FIRST, and the order is the rule (markup-carve/carve#1442):
-    // `<-->` beats `<->` and `<--`, `-->` beats the hyphen-run pass above, `<==`
-    // beats `<=`, `(tm)` beats `(c)`.
+    // `<-->` beats `<--`, `-->` beats the hyphen-run pass above, `<==` beats `<=`,
+    // `...`, `(tm)` and `+-` stand alone; `(c)` and `(r)` are text (carve#4808).
     //
-    // The doubled run is the canonical arrow in both families. `<-` `->` `<->`
-    // still match and are DEPRECATED rather than removed, so a document written
-    // before the rule goes on working. `=>` is GONE: it is ubiquitous in prose
-    // about code (`key => value`, `x => x + 1`, `Some(x) => x`) and every one of
-    // those silently became an arrow in the rendered output only. `<=` keeps ≤
-    // for the mirror-image reason, which is what forces the left double arrow to
+    // The doubled run is the canonical arrow in both families. `<-` `->` `<->` and
+    // `=>` are gone (carve#4815), and an arrow needs its exact hyphen run
+    // (carve#4645). `<=` keeps ≤, which is what forces the left double arrow to
     // grow a character in the first place.
     for (source, kind) in [
         ("<-->", "left_right_arrow"),
-        ("<->", "left_right_arrow"),
         ("-->", "rightwards_arrow"),
         ("<--", "leftwards_arrow"),
         ("<=>", "left_right_double_arrow"),
@@ -2279,16 +2273,14 @@ pub(in crate::parse) fn parse_smart_punctuation_at(
         ("<==", "leftwards_double_arrow"),
         ("(tm)", "trademark"),
         ("...", "ellipsis"),
-        ("->", "rightwards_arrow"),
-        ("<-", "leftwards_arrow"),
         ("<=", "less_than_or_equal"),
         (">=", "greater_than_or_equal"),
         ("!=", "not_equal"),
         ("+-", "plus_minus"),
-        ("(c)", "copyright"),
-        ("(r)", "registered"),
     ] {
-        if text[i..].starts_with(source) {
+        if text[i..].starts_with(source)
+            && !(source == "<--" && text.as_bytes().get(i + 3) == Some(&b'-'))
+        {
             return Some(SmartPunctuationMatch::Single {
                 kind,
                 value: source,
@@ -2687,10 +2679,7 @@ pub(in crate::parse) fn parse_inline_extension(
         return None;
     }
     let name = std::str::from_utf8(&bytes[name_start..i]).ok()?.to_string();
-    // `extension_content = {character - ']'}`: the content runs to the FIRST
-    // unescaped `]` and does not balance nested brackets (`:foo[a [b] c]` ->
-    // `<span class="ext-foo">a [b</span> c]`).
-    let (content, after_bracket) = read_to_first_bracket(bytes, i)?;
+    let (content, after_bracket) = read_extension_content(bytes, i)?;
     let mut attrs = None;
     let mut after = after_bracket;
     if bytes.get(after) == Some(&b'{') {
@@ -2783,7 +2772,7 @@ mod literal_run_tests {
 
     #[test]
     fn right_arrow_stays_a_smart_punctuation_node() {
-        let nodes = parse_inline_with_options("Step 1 -> done...", &Options::default());
+        let nodes = parse_inline_with_options("Step 1 --> done...", &Options::default());
         assert!(nodes.iter().any(|node| matches!(
             node,
             InlineNode::SmartPunctuation(punctuation) if punctuation.kind == "rightwards_arrow"
@@ -2796,7 +2785,7 @@ mod literal_run_tests {
 
     #[test]
     fn punctuation_and_unicode_keep_source_positions() {
-        let source = "Café term: text! carve#529 a@b (c) (tm) --flag --> -> ....";
+        let source = "Café term: text! carve#529 a@b (c) (tm) --flag --> --> ....";
         let document = parse_with_options(source, &Options::default().with_positions(true));
         let BlockNode::Paragraph(paragraph) = &document.children[0] else {
             panic!("expected a paragraph");
@@ -2832,7 +2821,6 @@ mod literal_run_tests {
         assert_eq!(
             kinds,
             [
-                "copyright",
                 "trademark",
                 "rightwards_arrow",
                 "rightwards_arrow",

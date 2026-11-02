@@ -4,7 +4,7 @@ fn a_separator_at_a_nested_marker_column_returns_to_the_outer_item() {
         "- - :: t\n  : a",
         "- 1. :: t\n  : a",
         "1. - :: t\n   : a",
-        "* - a. :: t\n    : a",
+        "* - a.  :: t\n    : a",
         "> - - :: t\n>   : a",
     ] {
         let html = carve::to_html(source);

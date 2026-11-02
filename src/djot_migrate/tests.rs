@@ -133,7 +133,7 @@ fn djot_only_block_markers_take_carve_spellings() {
     assert_eq!(djot_to_carve("* * *"), "***");
     assert_eq!(djot_to_carve("      - - -"), "***");
     assert_eq!(djot_to_carve("(1) one\n(2) two"), "1. one\n2. two");
-    assert_eq!(djot_to_carve("(a) one\n(b) two"), "a. one\nb. two");
+    assert_eq!(djot_to_carve("(a) one\n(b) two"), "a.  one\nb.  two");
     assert_eq!(djot_to_carve("- item\n\n  * * *"), "- item\n\n  ***");
 }
 

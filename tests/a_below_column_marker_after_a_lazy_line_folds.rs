@@ -60,7 +60,7 @@ fn every_pair_the_sweep_found_folds() {
     // The four (prefix, column) pairs, in the sweep's notation: `lll` col 1,
     // `llll` col 1, `llll` col 3, `qlll` col 3. An ordered marker diverged on
     // exactly the same four, so both spellings are asserted.
-    for (marker, folded, opens) in [("- y", "\nb</li>", true), ("1. y", "\nb\n1. y</li>", false)] {
+    for (marker, folded, opens) in [("- y", "\nb</li>", true), ("1. y", "\nb</li>", true)] {
         for (prefix, lazy) in [
             ("- - - x", " b"),
             ("- - - - x", " b"),

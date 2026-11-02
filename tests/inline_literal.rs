@@ -116,7 +116,7 @@ fn smart_typography_is_suppressed_inside() {
     assert_eq!(h("!`a -- b ... \"q\" (c)`"), "<p>a -- b ... \"q\" (c)</p>");
     // Control: the same characters in ordinary text DO transform, proving the
     // suppression above is real, not an inert input.
-    assert_eq!(h("a -- b ... \"q\" (c)"), "<p>a – b … “q” ©</p>");
+    assert_eq!(h("a -- b ... \"q\" (tm)"), "<p>a – b … “q” ™</p>");
     // Suppressed inside an attributed literal too.
     assert_eq!(h("!`a -- b`{.x}"), "<p><span class=\"x\">a -- b</span></p>");
 }

@@ -31,31 +31,31 @@ fn roundtrip(source: &str, carrier: &str, style: OrderedListType, start: usize) 
 #[test]
 fn style_markers_restore_alpha_roman_and_ambiguous_lists() {
     roundtrip(
-        "a. one\na. two\n",
+        "a.  one\na.  two\n",
         "<!-- carve: a. -->\n1. one",
         OrderedListType::LowerAlpha,
         1,
     );
     roundtrip(
-        "iv. one\nv. two\n",
+        "iv.  one\nv.  two\n",
         "<!-- carve: iv. -->\n4. one",
         OrderedListType::LowerRoman,
         4,
     );
     roundtrip(
-        "i. one\nj. two\n",
+        "i.  one\nj.  two\n",
         "<!-- carve: i. j. -->\n9. one",
         OrderedListType::LowerAlpha,
         9,
     );
     roundtrip(
-        "i. one\nii. two\n",
+        "i.  one\nii.  two\n",
         "<!-- carve: i. ii. -->\n1. one",
         OrderedListType::LowerRoman,
         1,
     );
     roundtrip(
-        "i. one\n",
+        "i.  one\n",
         "<!-- carve: i. -->\n1. one",
         OrderedListType::LowerRoman,
         1,
@@ -101,9 +101,9 @@ fn style_marker_uses_markdown_start_and_delimiter() {
 #[test]
 fn style_marker_survives_quote_and_attribute_hosts() {
     for (source, fragment) in [
-        ("> a. q\n> b. r\n", "> <!-- carve: a. -->\n> 1. q"),
+        ("> a.  q\n> b.  r\n", "> <!-- carve: a. -->\n> 1. q"),
         (
-            "{.steps}\na. one\nb. two\n",
+            "{.steps}\na.  one\nb.  two\n",
             "<!-- carve: {.steps} -->\n<!-- carve: a. -->\n1. one",
         ),
     ] {
@@ -133,7 +133,7 @@ fn style_marker_survives_quote_and_attribute_hosts() {
 
 #[test]
 fn footnote_body_list_style_is_carried_only_at_eligible_depth() {
-    let source = "[^n]: text\n\n    a. one\n    b. two\nafter [^n]\n";
+    let source = "[^n]: text\n\n    a.  one\n    b.  two\nafter [^n]\n";
     let markdown =
         carve::to_markdown_with_options(source, &Options::default().with_roundtrip(true));
     assert!(markdown.contains("<!-- carve: a. -->"), "{markdown}");
@@ -154,9 +154,9 @@ fn footnote_body_list_style_is_carried_only_at_eligible_depth() {
 #[test]
 fn nested_style_and_continuation_stay_in_their_lists() {
     for source in [
-        "- outer\n\n  a. first\n  b. second\n",
-        "a. first\n   continued\nb. second\n",
-        "a. one\n\nI. two\n",
+        "- outer\n\n  a.  first\n  b.  second\n",
+        "a.  first\n    continued\nb.  second\n",
+        "a.  one\n\nI.  two\n",
     ] {
         let markdown =
             carve::to_markdown_with_options(source, &Options::default().with_roundtrip(true));
@@ -181,7 +181,7 @@ fn nested_style_and_continuation_stay_in_their_lists() {
 
 #[test]
 fn a_styled_list_before_a_plain_list_keeps_its_style() {
-    let source = "a. one\n\n1. two\n";
+    let source = "a.  one\n\n1. two\n";
     let markdown =
         carve::to_markdown_with_options(source, &Options::default().with_roundtrip(true));
     let imported = carve::migrate_markdown(&markdown);
@@ -195,9 +195,9 @@ fn a_styled_list_before_a_plain_list_keeps_its_style() {
 #[test]
 fn footnote_opening_and_nested_lists_keep_a_style_loss() {
     for source in [
-        "[^n]: a. one\n",
-        "[^n]: text\n\n    - x\n\n      a. one\n",
-        "[^n]: text\n\n    > a. one\n",
+        "[^n]: a.  one\n",
+        "[^n]: text\n\n    - x\n\n      a.  one\n",
+        "[^n]: text\n\n    > a.  one\n",
     ] {
         let markdown =
             carve::to_markdown_with_options(source, &Options::default().with_roundtrip(true));
@@ -266,7 +266,7 @@ fn a_style_marker_cannot_fill_an_empty_footnote_opening() {
 
 #[test]
 fn adjacent_nested_styles_do_not_consume_each_others_tokens() {
-    let source = "- outer\n\n  a. one\n\n  ii. two\n";
+    let source = "- outer\n\n  a.  one\n\n  ii.  two\n";
     let markdown =
         carve::to_markdown_with_options(source, &Options::default().with_roundtrip(true));
     let imported = carve::migrate_markdown(&markdown);
@@ -285,7 +285,7 @@ fn adjacent_nested_styles_do_not_consume_each_others_tokens() {
 
 #[test]
 fn style_carrier_on_an_item_opening_line_reports_loss() {
-    let source = "- a. one\n  b. two\n";
+    let source = "- a.  one\n  b.  two\n";
     let result = carve::with_render_loss_report(
         carve::RenderTarget::Markdown,
         carve::CheckedRenderOptions::default(),
@@ -311,7 +311,7 @@ fn style_carrier_on_an_item_opening_line_reports_loss() {
 
 #[test]
 fn nested_style_token_does_not_end_the_outer_styled_list() {
-    let source = "- host\n\n  i. outer one\n\n     a. inner one\n     b. inner two\n  ii. outer two\n  iii. outer three\n";
+    let source = "- host\n\n  i.  outer one\n\n      a.  inner one\n      b.  inner two\n  ii.  outer two\n  iii.  outer three\n";
     let markdown =
         carve::to_markdown_with_options(source, &Options::default().with_roundtrip(true));
     let imported = carve::migrate_markdown(&markdown);

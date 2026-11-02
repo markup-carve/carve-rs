@@ -330,30 +330,6 @@ fn note_child_at_source(rest: &str) -> bool {
     false
 }
 
-/// A marker that matches the open item's list on every §11 N1 axis is its
-/// sibling, not a lazy line (PART 0 S4, carve#4545).
-fn same_marker_axes(first: &str, head: &str) -> bool {
-    match (
-        detect_list_marker_full(first),
-        detect_list_marker_full(head),
-    ) {
-        (Some(first), Some(head)) => same_list_axes(&first, &head),
-        _ => false,
-    }
-}
-
-/// A marker at the missed list's own column, or at the reached owner's
-/// content column, opens a list even when its §11 axes differ (PART 0 S4).
-fn missed_item_starts_list(frames: &[Frame], reached: usize, col: usize, head: &str) -> bool {
-    let Some(item) = frames.get(reached + 1).filter(|f| f.kind == Kind::Item) else {
-        return false;
-    };
-    let list_col = item
-        .list_col
-        .min(item.marker.map_or(item.list_col, |(col, _)| col));
-    same_marker_axes(&item.marker_src, head) || col == list_col || col <= frames[reached].col
-}
-
 /// The bullet or ordered marker's content column offset, the bytes up to its
 /// content, and the sibling axes.
 fn list_marker(rest: &str) -> Option<(usize, usize, String)> {
@@ -1493,8 +1469,10 @@ impl<'a> Walk<'a> {
             && !lazy_refused
             && !form.interrupts()
             && !matches!(form, Form::Dd(_))
+            // A marker that misses an item is a sibling or a new list, never lazy
+            // text: leading space stops no line form (PART 0 S3, carve#4545).
             && !(matches!(form, Form::Item(..))
-                && missed_item_starts_list(&self.frames, reached, c.col, c.rest))
+                && self.frames[reached + 1..].iter().any(|f| f.kind == Kind::Item))
         {
             if self.decide && matches!(form, Form::Item(..)) {
                 self.decide_folded_marker(at, c.rest, reached);

@@ -33,7 +33,7 @@ fn run(args: &[&str], input: &str) -> (String, String, bool) {
     )
 }
 
-const INPUT: &str = "He said \"hi\" -- really... 1 -> 2\n";
+const INPUT: &str = "He said \"hi\" -- really... 1 --> 2\n";
 
 #[test]
 fn html_source_mode_emits_what_the_author_typed() {
@@ -41,7 +41,7 @@ fn html_source_mode_emits_what_the_author_typed() {
     assert!(ok);
     assert_eq!(
         out.trim(),
-        "<p>He said \"hi\" -- really... 1 -&gt; 2</p>",
+        "<p>He said \"hi\" -- really... 1 --&gt; 2</p>",
         "{out}"
     );
 }
@@ -50,7 +50,7 @@ fn html_source_mode_emits_what_the_author_typed() {
 fn markdown_source_mode_emits_what_the_author_typed() {
     let (out, _, ok) = run(&["--markdown", "--smart-typography", "source"], INPUT);
     assert!(ok);
-    assert_eq!(out.trim(), "He said \"hi\" -- really... 1 -> 2", "{out}");
+    assert_eq!(out.trim(), "He said \"hi\" -- really... 1 --> 2", "{out}");
 }
 
 // The next two assert on the OUTPUT, never on the exit status. The flag was
@@ -60,7 +60,7 @@ fn markdown_source_mode_emits_what_the_author_typed() {
 fn plain_source_mode_emits_what_the_author_typed() {
     let (out, _, ok) = run(&["--plain", "--smart-typography", "source"], INPUT);
     assert!(ok);
-    assert_eq!(out.trim(), "He said \"hi\" -- really... 1 -> 2", "{out}");
+    assert_eq!(out.trim(), "He said \"hi\" -- really... 1 --> 2", "{out}");
 
     let (glyph, _, ok) = run(&["--plain"], INPUT);
     assert!(ok);
@@ -71,7 +71,7 @@ fn plain_source_mode_emits_what_the_author_typed() {
 fn ansi_source_mode_emits_what_the_author_typed() {
     let (out, _, ok) = run(&["--ansi", "--smart-typography", "source"], INPUT);
     assert!(ok);
-    assert_eq!(out.trim(), "He said \"hi\" -- really... 1 -> 2", "{out}");
+    assert_eq!(out.trim(), "He said \"hi\" -- really... 1 --> 2", "{out}");
 
     let (glyph, _, ok) = run(&["--ansi"], INPUT);
     assert!(ok);

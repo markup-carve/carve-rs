@@ -7,14 +7,14 @@ fn first_line(s: &str) -> String {
 #[test]
 fn ambiguous_roman_letter_resolves_by_sibling() {
     // consecutive roman numeral -> roman
-    assert_eq!(first_line("i. one\nii. two\n"), "<ol type=\"i\">");
+    assert_eq!(first_line("i.  one\nii.  two\n"), "<ol type=\"i\">");
     // consecutive letter -> alpha
     assert_eq!(
-        first_line("c. one\nd. two\n"),
+        first_line("c.  one\nd.  two\n"),
         "<ol type=\"a\" start=\"3\">"
     );
     // lone `i` defaults to roman
-    assert_eq!(first_line("i. only\n"), "<ol type=\"i\">");
+    assert_eq!(first_line("i.  only\n"), "<ol type=\"i\">");
 }
 
 #[test]
@@ -28,7 +28,7 @@ fn delimiter_change_starts_a_new_list() {
 
 #[test]
 fn dialect_change_starts_a_new_list() {
-    let html = carve::to_html("1. a\nb. b\n");
+    let html = carve::to_html("1. a\nb.  b\n");
     assert!(
         html.contains("</ol>\n<ol type=\"a\" start=\"2\">"),
         "{html}"

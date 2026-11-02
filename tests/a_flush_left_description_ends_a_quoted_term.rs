@@ -10,7 +10,7 @@ fn compact(html: &str) -> String {
 
 #[test]
 fn a_flush_left_description_after_a_quoted_term_only_item_leaves_the_quote() {
-    for marker in ["-", "1.", "a.", "iv)", "- [ ]", "-{.c}"] {
+    for marker in ["-", "1.", "a. ", "iv)", "- [ ]", "-{.c}"] {
         let html = compact(&to_html(&format!("> {marker} :: term\n: body\n")));
         assert!(
             html.ends_with("</blockquote><p>:body</p>"),

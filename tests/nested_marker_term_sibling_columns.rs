@@ -42,10 +42,8 @@ fn an_outer_item_reclaims_a_term_between_its_child_columns() {
 #[test]
 fn list_markers_follow_the_ladder_columns_after_a_lazy_term_line() {
     let between = to_html("- * :: t\n : a\n   - sibling\n   tail\n");
-    assert!(
-        between.contains("<dt>t\n: a\n- sibling\ntail</dt>"),
-        "{between}"
-    );
+    assert!(between.contains("<dt>t\n: a</dt>"), "{between}");
+    assert!(between.contains("<li>sibling\ntail</li>"), "{between}");
 
     let at_child = to_html("- * :: t\n : a\n    - sibling\n    tail\n");
     assert!(at_child.contains("<dt>t\n: a</dt>"), "{at_child}");

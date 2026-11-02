@@ -282,6 +282,7 @@ pub(super) fn collect(
     let list_lines = ListScan::new(&rows, &scan, out).run(out);
     LineRules::new(&rows, &scan).run(out);
     collect_marker_text(&rows, &scan.starts, &list_lines, to_byte, out);
+    collect_recovered_code_fences(&rows, &scan.code_openers, out);
     let recovered_metadata = collect_container_fences(&rows, &mut scan.fences, out);
     collect_version(source, doc, &rows, out);
     recovered_metadata
@@ -581,6 +582,7 @@ fn source_visible(row: &Line<'_>, start: usize, len: usize, scan: &BlockScan<'_>
 #[derive(Default)]
 struct BlockScan<'d> {
     ignored: BTreeSet<usize>,
+    code_openers: BTreeSet<usize>,
     // `%%` line comments: the one hidden place a mis-cased `%% #Region` is checked.
     line_comments: BTreeSet<usize>,
     paragraphs: BTreeSet<usize>,
@@ -805,7 +807,11 @@ impl<'d> BlockWalker<'d, '_> {
                 scan.ignored.extend(pos.start_line..=pos.end_line);
                 scan.line_comments.extend(pos.start_line..=pos.end_line);
             }
-            BlockNode::CodeBlock(_) | BlockNode::RawBlock(_) | BlockNode::Comment(_) => {
+            BlockNode::CodeBlock(_) => {
+                scan.code_openers.insert(pos.start_line);
+                scan.ignored.extend(pos.start_line..=pos.end_line);
+            }
+            BlockNode::RawBlock(_) | BlockNode::Comment(_) => {
                 scan.ignored.extend(pos.start_line..=pos.end_line);
             }
             BlockNode::Paragraph(p) => {
@@ -820,6 +826,7 @@ impl<'d> BlockWalker<'d, '_> {
                 scan.headings.insert(pos.end_line);
             }
             BlockNode::Figure(f) if matches!(&*f.target, FigureTarget::CodeBlock(_)) => {
+                scan.code_openers.insert(pos.start_line);
                 scan.ignored.extend(pos.start_line..=pos.end_line);
             }
             _ => {}
@@ -1228,14 +1235,9 @@ impl<'s, 'r> ListScan<'s, 'r> {
         let (ln, index, column) = (l.ln, l.index, l.column);
         let rows = self.rows;
         let items = &self.scan.items;
-        if !(l.containing.is_none()
-            && ln > 1
+        if !(ln > 1
             && !self.scan.ignored.contains(&ln)
             && self.marker_shaped.is_match(l.view)
-            && quoted_view(rows[index - 1].text, l.owner.map_or(0, |i| i.quotes))
-                .0
-                .trim()
-                .is_empty()
             && !out
                 .iter()
                 .any(|w| w.rule == "ordered-list-split-by-indent" && w.line == ln))
@@ -1250,7 +1252,7 @@ impl<'s, 'r> ListScan<'s, 'r> {
                 items
                     .iter()
                     .filter(|i| {
-                        i.first < ln
+                        i.last < ln
                             && i.quotes == opened.quotes
                             && i.base < opened.base
                             && opened.base < i.content
@@ -1261,8 +1263,17 @@ impl<'s, 'r> ListScan<'s, 'r> {
                     .max_by_key(|i| i.content)
             });
         if let Some(host) = host {
+            let after_blank = quoted_view(rows[index - 1].text, l.owner.map_or(0, |i| i.quotes))
+                .0
+                .trim()
+                .is_empty();
+            let where_ = if after_blank {
+                " after a blank line"
+            } else {
+                ""
+            };
             let len = self.marker_shaped.find(l.view).unwrap().len() - 1;
-            emit(out, rows, ln, l.at, len, "list-marker-below-content-column", &format!("This list marker starts at column {column} after a blank line, below the content column {} of the list item above, so it starts a separate list instead of nesting. Indent it to column {} to nest it under the item, or start it at column {} to put it at the item's own level.", host.content, host.content, host.base));
+            emit(out, rows, ln, l.at, len, "list-marker-below-content-column", &format!("This list marker starts at column {column}{where_}, below the content column {} of the list item above, so it starts a separate list instead of nesting. Indent it to column {} to nest it under the item, or start it at column {} to put it at the item's own level.", host.content, host.content, host.base));
         }
     }
 
@@ -1410,7 +1421,6 @@ struct LineRules<'s, 'r> {
     rows: &'s [Line<'r>],
     scan: &'s BlockScan<'s>,
     trailing: regex::Regex,
-    raw: regex::Regex,
     fence_run: regex::Regex,
     include: regex::Regex,
 }
@@ -1421,7 +1431,6 @@ impl<'s, 'r> LineRules<'s, 'r> {
             rows,
             scan,
             trailing: regex::Regex::new(r"(?:^|\s)(\{\s*[.#][^{}]*\})\s*$").unwrap(),
-            raw: regex::Regex::new(r"^([ \t]*)(`{3,}|~{3,})[ \t]*raw[ \t]+\S+").unwrap(),
             fence_run: regex::Regex::new(r"^(`{3,}|~{3,})").unwrap(),
             include: regex::Regex::new(r"\{\{([^{}]*)\}\}").unwrap(),
         }
@@ -1484,18 +1493,7 @@ impl<'s, 'r> LineRules<'s, 'r> {
         }
         let view = container_view(row.text).trim_start_matches([' ', '\t']);
         let at = row.text.len() - view.len();
-        if let Some(m) = self.raw.captures(view) {
-            let at = at + m[1].len();
-            emit(
-                out,
-                rows,
-                ln,
-                at,
-                row.text.len() - at,
-                "raw-block-syntax",
-                "Use a fence followed by =FORMAT for a raw block; raw FORMAT does not open one.",
-            );
-        } else if self.scan.paragraphs.contains(&ln) {
+        if self.scan.paragraphs.contains(&ln) {
             self.check_paragraph_fence(ln, view, at, out);
         }
         if row.text.starts_with('>') && row.text.len() > 1 && !row.text.starts_with("> ") {
@@ -1563,6 +1561,48 @@ impl<'s, 'r> LineRules<'s, 'r> {
         if !crate::parse::lint_opens_code_fence(view) && !view[run.len()..].contains(run) {
             emit(out,self.rows,ln,at,view.len(),"fence-opener-fallback","This fence has an invalid info string and parses as paragraph content. Use a language, optional quoted title, and optional label.");
         }
+    }
+}
+
+/// A code fence opened through the PART 9 §2 recovery dropped its metadata
+/// (carve#4807); a legacy `raw FORMAT` opener is told the raw spelling (carve#4849).
+fn collect_recovered_code_fences(
+    rows: &[Line<'_>],
+    openers: &BTreeSet<usize>,
+    out: &mut Vec<LintWarning>,
+) {
+    for &ln in openers {
+        let Some(row) = rows.get(ln.saturating_sub(1)) else {
+            continue;
+        };
+        let Some(at) = row
+            .text
+            .find("```")
+            .into_iter()
+            .chain(row.text.find("~~~"))
+            .min()
+        else {
+            continue;
+        };
+        let view = &row.text[at..];
+        let Some(format) = crate::parse::lint_recovered_fence_format(view) else {
+            continue;
+        };
+        let message = match format {
+            Some(format) => format!(
+                "Invalid code fence metadata was dropped. For a raw block use ```={format}."
+            ),
+            None => "Invalid code fence metadata was dropped. Use a language, optional quoted title, and optional label; the code block is preserved.".to_owned(),
+        };
+        emit(
+            out,
+            rows,
+            ln,
+            at,
+            view.len(),
+            "fence-title-syntax",
+            &message,
+        );
     }
 }
 

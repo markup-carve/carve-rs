@@ -467,7 +467,7 @@
  {
   "name": "806-a-marker-folds-into-the-paragraph-a-first-block-plus-took",
   "source": "- +\n  b\n * w1\n",
-  "html": "<ul>\n  <li>+\nb\n* w1</li>\n</ul>\n"
+  "html": "<ul>\n  <li>+\nb</li>\n</ul>\n<ul>\n  <li>w1</li>\n</ul>"
  },
  {
   "name": "811-a-first-block-plus-does-not-take-the-closer-of-its-div-2",

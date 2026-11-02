@@ -15,12 +15,12 @@ fn written(inlines: &str) -> String {
 fn a_split_opener_is_escaped_at_its_opener() {
     for (inlines, expected) in [
         (
-            r#"{"type":"text","value":"x (r"},{"type":"text","value":") y"}"#,
-            "x \\(r) y\n",
+            r#"{"type":"text","value":"x (tm"},{"type":"text","value":") y"}"#,
+            "x \\(tm) y\n",
         ),
         (
-            r#"{"type":"text","value":"x "},{"type":"text","value":"("},{"type":"text","value":"r"},{"type":"text","value":")"},{"type":"text","value":" y"}"#,
-            "x \\(r) y\n",
+            r#"{"type":"text","value":"x "},{"type":"text","value":"("},{"type":"text","value":"tm"},{"type":"text","value":")"},{"type":"text","value":" y"}"#,
+            "x \\(tm) y\n",
         ),
         (
             r#"{"type":"text","value":"x -"},{"type":"text","value":"- y"}"#,
@@ -35,17 +35,17 @@ fn a_split_opener_is_escaped_at_its_opener() {
 
 #[test]
 fn a_flattened_ruby_is_written_as_the_text_it_flattens_to() {
-    let ruby = r#"{"type":"ruby","pairs":[{"base":[{"type":"text","value":"["}],"annotation":[{"type":"text","value":"r"}]}]}"#;
+    let ruby = r#"{"type":"ruby","pairs":[{"base":[{"type":"text","value":"["}],"annotation":[{"type":"text","value":"tm"}]}]}"#;
     assert_eq!(
         written(&format!(
             r#"{{"type":"span","attrs":{{"classes":["c"]}},"children":[{ruby}]}}"#
         )),
-        "[\\[\\(r)]{.c}\n"
+        "[\\[\\(tm)]{.c}\n"
     );
     assert_eq!(
         written(&format!(
             r#"{{"type":"span","attrs":{{"classes":["c"]}},"children":[{{"type":"emphasis","children":[{ruby}]}}]}}"#
         )),
-        "[/\\[\\(r)/]{.c}\n"
+        "[/\\[\\(tm)/]{.c}\n"
     );
 }
