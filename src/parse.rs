@@ -256,12 +256,28 @@ fn document_definition_placeholder() -> String {
     format!("%%{}", placeholder_char(P_DOCUMENT_DEFINITION))
 }
 
+/// The tag a FOOTNOTE definition appends to its placeholder. A footnote
+/// definition opens a frame, so unlike a link or abbreviation definition it is
+/// not skipped between list or description siblings (PART 9 §10 I5, carve#4873).
+fn footnote_placeholder_tag() -> [char; 2] {
+    [placeholder_char(P_DEFINITION); 2]
+}
+
+fn untagged_placeholder_suffix(line: &str) -> Option<(&str, bool)> {
+    let suffix = trim_ascii(line).strip_prefix("%%")?;
+    let tag: String = footnote_placeholder_tag().iter().collect();
+    Some(match suffix.strip_suffix(tag.as_str()) {
+        Some(base) if !base.is_empty() => (base, true),
+        _ => (suffix, false),
+    })
+}
+
 /// Which placeholder `line` is, if it is one.
 ///
 /// Compares the suffix CODE POINT rather than building the marker string, so a
 /// per-line test on a collected block allocates nothing.
 fn placeholder_kind(line: &str) -> Option<usize> {
-    let mut suffix = trim_ascii(line).strip_prefix("%%")?.chars();
+    let mut suffix = untagged_placeholder_suffix(line)?.0.chars();
     let ch = suffix.next()?;
     if let Some(second) = suffix.next() {
         if suffix.next().is_none()
@@ -278,6 +294,12 @@ fn placeholder_kind(line: &str) -> Option<usize> {
 fn is_definition_placeholder(line: &str) -> bool {
     placeholder_kind(line).is_some()
 }
+
+fn is_footnote_definition_placeholder(line: &str) -> bool {
+    is_definition_placeholder(line)
+        && untagged_placeholder_suffix(line).is_some_and(|(_, footnote)| footnote)
+}
+
 
 /// Only the marker a definition left at its container's column - NOT the one a
 /// document-column definition left, which is an I5 interrupter instead.

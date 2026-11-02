@@ -2537,6 +2537,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             } else {
                 definition_placeholder()
             });
+            replacement.extend(footnote_placeholder_tag());
         }
         replacement.push_str(
             &" ".repeat(
