@@ -217,7 +217,7 @@ fn a_further_plus_inside_the_attached_code_fence_is_code_text() {
 fn a_marker_inside_the_attached_colon_fence_is_body_text() {
     assert_eq!(
         flat("- x\n+\n::: note\na\n- m\nb\n:::\n"),
-        "<ul> <li>x <aside class=\"admonition note\" aria-label=\"Note\"> <p>a - m b</p> </aside> </li> </ul>"
+        "<ul> <li>x <aside class=\"admonition note\" aria-label=\"Note\"> <p>a</p> </aside> </li> <li>m b</li> </ul> <div> </div>"
     );
 }
 

@@ -2205,7 +2205,33 @@ pub(in crate::parse) fn find_colon_fence_end(
         lines,
         start,
         fence_len,
-        literal,
+        ColonScanMode {
+            literal,
+            boundary: None,
+        },
+        closer_index,
+        comment_closers,
+        |at| std::borrow::Cow::Borrowed(lines.at(at)),
+    )
+}
+
+pub(in crate::parse) fn find_colon_fence_end_bounded(
+    lines: CursorLines<'_>,
+    start: usize,
+    fence_len: usize,
+    literal: bool,
+    closer_index: &mut Option<HashMap<u8, Vec<usize>>>,
+    comment_closers: &mut Option<HashMap<usize, usize>>,
+    boundary: &mut dyn FnMut(&str, usize) -> bool,
+) -> usize {
+    find_colon_fence_end_with(
+        lines,
+        start,
+        fence_len,
+        ColonScanMode {
+            literal,
+            boundary: Some(boundary),
+        },
         closer_index,
         comment_closers,
         |at| std::borrow::Cow::Borrowed(lines.at(at)),
@@ -2226,23 +2252,34 @@ pub(in crate::parse) fn find_measured_line_block_end(
         lines,
         start,
         fence_len,
-        true,
+        ColonScanMode {
+            literal: true,
+            boundary: None,
+        },
         &mut None,
         comment_closers,
         |at| std::borrow::Cow::Owned(slice_columns(lines.at(at), column, true)),
     )
 }
 
+type ColonBoundary<'a> = &'a mut dyn FnMut(&str, usize) -> bool;
+
+struct ColonScanMode<'a> {
+    literal: bool,
+    boundary: Option<ColonBoundary<'a>>,
+}
+
 fn find_colon_fence_end_with<'a>(
     lines: CursorLines<'a>,
     start: usize,
     fence_len: usize,
-    literal: bool,
+    mut mode: ColonScanMode<'_>,
     closer_index: &mut Option<HashMap<u8, Vec<usize>>>,
     comment_closers: &mut Option<HashMap<usize, usize>>,
     mut measured: impl FnMut(usize) -> std::borrow::Cow<'a, str>,
 ) -> usize {
-    if !literal {
+    let literal = mode.literal;
+    if !literal && mode.boundary.is_none() {
         if let Some(end) = lines.colon_end(start) {
             return end;
         }
@@ -2257,6 +2294,9 @@ fn find_colon_fence_end_with<'a>(
     while idx < lines.len() {
         let line = measured(idx);
         let line = line.as_ref();
+        if mode.boundary.as_mut().is_some_and(|f| f(line, idx)) {
+            return idx;
+        }
         let top = *stack.last().unwrap();
         let paragraph_was_open = paragraph_open;
         paragraph_open = if literal {

@@ -588,21 +588,26 @@ pub(crate) fn attached_block_end(
                     .get(fence_len)
                     .is_some_and(|&last| last > opener)
             });
-            end = if may_close {
-                find_colon_fence_end(
+            if may_close {
+                end = find_colon_fence_end_bounded(
                     lines,
                     opener,
                     fence_len,
                     literal,
                     closer_index,
                     comment_closers,
-                )
-            } else {
-                (opener + 1..lines.len())
-                    .find(|&at| is_blank_line(lines.at(at)))
-                    .unwrap_or(lines.len())
-            };
-            continue;
+                    &mut |line, at| {
+                        detect_list_marker_full(line).is_some() && is_boundary(line, at)
+                    },
+                );
+                continue;
+            }
+            // An unclosed colon block has no later closer to carry its
+            // attachment past the first blank or host boundary.
+            end = (opener + 1..lines.len())
+                .find(|&at| is_blank_line(lines.at(at)) || is_boundary(lines.at(at), at))
+                .unwrap_or(lines.len());
+            break;
         }
         if is_boundary(line, end) {
             break;
