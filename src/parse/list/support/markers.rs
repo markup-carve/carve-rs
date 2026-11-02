@@ -848,6 +848,16 @@ thread_local! {
 /// and looking past it would find one that was never written
 /// (markup-carve/carve#1280).
 pub(crate) fn body_ends_with_open_paragraph(body: &str, options: &Options<'_>) -> bool {
+    body_ends_with_open_paragraph_in(body, options, false)
+}
+
+/// [`body_ends_with_open_paragraph`] for a description or footnote body, where
+/// a list marker opens a list (PART 0 S3, carve#4860).
+pub(crate) fn marker_body_ends_with_open_paragraph(body: &str, options: &Options<'_>) -> bool {
+    body_ends_with_open_paragraph_in(body, options, true)
+}
+
+fn body_ends_with_open_paragraph_in(body: &str, options: &Options<'_>, marker_body: bool) -> bool {
     // A payload line is stanza text whatever it looks like (PART 2 `line_block`).
     if let Some(open) = crate::parse::definition::body_ends_inside_line_block(body) {
         return open;
@@ -899,7 +909,11 @@ pub(crate) fn body_ends_with_open_paragraph(body: &str, options: &Options<'_>) -
     }
     #[cfg(test)]
     PARAGRAPH_BODY_PROBES.with(|count| count.set(count.get() + 1));
-    let blocks = probe_blocks(body, options);
+    let blocks = if marker_body {
+        probe_marker_body_blocks(body, options)
+    } else {
+        probe_blocks(body, options)
+    };
     block_ends_with_open_paragraph(blocks.last(), colon_fences_left_open(body), false)
 }
 

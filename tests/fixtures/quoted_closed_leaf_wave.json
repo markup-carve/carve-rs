@@ -97,7 +97,7 @@
   {
     "id": "quote-leaf-1---22",
     "source": "> - a\n>   b\n1. lazy\n",
-    "html": "<blockquote><ul><li>a\nb\n1. lazy</li></ul></blockquote>"
+    "html": "<blockquote><ul><li>a\nb</li></ul></blockquote><ol><li>lazy</li></ol>"
   },
   {
     "id": "quote-leaf-1---23",
@@ -202,7 +202,7 @@
   {
     "id": "quote-leaf-1-1.-46",
     "source": "> 1. a\n>    b\n1. lazy\n",
-    "html": "<blockquote><ol><li>a\nb\n1. lazy</li></ol></blockquote>"
+    "html": "<blockquote><ol><li>a\nb</li></ol></blockquote><ol><li>lazy</li></ol>"
   },
   {
     "id": "quote-leaf-1-1.-47",
@@ -307,7 +307,7 @@
   {
     "id": "quote-leaf-2---70",
     "source": "> > - a\n> >   b\n1. lazy\n",
-    "html": "<blockquote><blockquote><ul><li>a\nb\n1. lazy</li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li>a\nb</li></ul></blockquote></blockquote><ol><li>lazy</li></ol>"
   },
   {
     "id": "quote-leaf-2---71",
@@ -412,7 +412,7 @@
   {
     "id": "quote-leaf-2-1.-94",
     "source": "> > 1. a\n> >    b\n1. lazy\n",
-    "html": "<blockquote><blockquote><ol><li>a\nb\n1. lazy</li></ol></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ol><li>a\nb</li></ol></blockquote></blockquote><ol><li>lazy</li></ol>"
   },
   {
     "id": "quote-leaf-2-1.-95",
@@ -517,7 +517,7 @@
   {
     "id": "quote-leaf-3---118",
     "source": "> > > - a\n> > >   b\n1. lazy\n",
-    "html": "<blockquote><blockquote><blockquote><ul><li>a\nb\n1. lazy</li></ul></blockquote></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><blockquote><ul><li>a\nb</li></ul></blockquote></blockquote></blockquote><ol><li>lazy</li></ol>"
   },
   {
     "id": "quote-leaf-3---119",
@@ -622,7 +622,7 @@
   {
     "id": "quote-leaf-3-1.-142",
     "source": "> > > 1. a\n> > >    b\n1. lazy\n",
-    "html": "<blockquote><blockquote><blockquote><ol><li>a\nb\n1. lazy</li></ol></blockquote></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><blockquote><ol><li>a\nb</li></ol></blockquote></blockquote></blockquote><ol><li>lazy</li></ol>"
   },
   {
     "id": "quote-leaf-3-1.-143",

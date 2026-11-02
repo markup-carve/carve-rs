@@ -44,16 +44,18 @@ fn paragraph_and_explicit_quote_continuations_keep_their_owner() {
         "> - ::: box\n>   :::\n> paragraph\n- tail\n",
     ] {
         let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
+        // An item paragraph no longer folds a missing marker (carve#4860).
+        let item_paragraph = source.starts_with("> - paragraph");
         assert_eq!(
             ast["children"].as_array().unwrap().len(),
-            1,
+            if item_paragraph { 2 } else { 1 },
             "{source}: {ast}"
         );
         assert_eq!(ast["children"][0]["type"], "block_quote");
         let html = carve::to_html(source);
         assert!(html.contains("tail"));
-        if source.starts_with("> - paragraph") {
-            assert!(html.contains("- tail"), "{source}: {html}");
+        if item_paragraph {
+            assert_eq!(ast["children"][1]["type"], "list", "{source}: {ast}");
         }
     }
 }
@@ -100,12 +102,13 @@ fn colon_shapes_inside_opaque_blocks_do_not_close_the_host() {
         assert!(html.contains("tail"), "{source}: {html}");
         let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
         if source.contains("paragraph") {
+            // The marker misses the item body and opens a list (carve#4860).
             assert_eq!(
                 ast["children"].as_array().unwrap().len(),
-                1,
+                2,
                 "{source}: {ast}"
             );
-            assert!(html.contains("- tail"), "{source}: {html}");
+            assert_eq!(ast["children"][1]["type"], "list", "{source}: {ast}");
         } else {
             assert_eq!(
                 ast["children"].as_array().unwrap().len(),
@@ -273,9 +276,10 @@ fn existing_fence_verdict_survives_hosted_opaque_shapes() {
             let source = format!("{quote}{}", body.replace("{q}", &quote));
             let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(&source))).unwrap();
             if body.starts_with("- ::: |") {
+                // The marker misses the item body, so it closes it (carve#4860).
                 assert_eq!(
                     ast["children"].as_array().unwrap().len(),
-                    1,
+                    2,
                     "{source}: {ast}"
                 );
             } else {
@@ -299,17 +303,13 @@ fn a_sibling_item_ends_the_previous_colon_scope() {
         "> - ::: box\n>   body\n> - :::bad\n>   :::\n- tail\n",
     ] {
         let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
-        let expected = if source.starts_with("> - a\n") { 2 } else { 1 };
+        // The second row's item paragraph no longer folds the marker (carve#4860).
         assert_eq!(
             ast["children"].as_array().unwrap().len(),
-            expected,
+            2,
             "{source}: {ast}"
         );
-        if expected == 2 {
-            assert_eq!(ast["children"][1]["type"], "list", "{source}: {ast}");
-        } else {
-            assert!(carve::to_html(source).contains("- tail"), "{source}");
-        }
+        assert_eq!(ast["children"][1]["type"], "list", "{source}: {ast}");
     }
 }
 

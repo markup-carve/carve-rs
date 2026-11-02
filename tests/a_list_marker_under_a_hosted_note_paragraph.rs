@@ -1,11 +1,11 @@
-//! A list marker below a hosted note's floor folds into the note's paragraph
-//! (PART 9 §10 I2) unless it sits left of a hosting item's content column, where
-//! it continues that list. A description hosts no list, so there it always folds.
+//! A list marker below a hosted note's floor closes the note and opens a list
+//! in the nearest body whose content column it reaches (markup-carve/carve#4860);
+//! left of a hosting item's content column it continues that list.
 //! A lazy line under a term keeps the `:` line below it a description.
 
 use carve::to_html;
 
-const NOTE: &str = "<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>note\n- b<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>";
+const NOTE: &str = "<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>note<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>";
 const REF: &str = "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>";
 
 fn html(source: &str) -> String {
@@ -14,8 +14,15 @@ fn html(source: &str) -> String {
 
 #[test]
 fn a_marker_under_a_description_note_folds_at_any_column() {
-    let dl = "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>";
-    for marker in ["- b", "  - b", "   - b", "    - b"] {
+    let after = "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>\n<ul>\n  <li>b</li>\n</ul>";
+    let inside =
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>b</li>\n    </ul>\n  </dd>\n</dl>";
+    for (marker, dl) in [
+        ("- b", after),
+        ("  - b", after),
+        ("   - b", inside),
+        ("    - b", inside),
+    ] {
         assert_eq!(
             html(&format!(":: t\n:  [^q]: note\n{marker}\n\nx[^q]\n")),
             format!("{dl}\n{REF}\n{NOTE}"),
@@ -28,11 +35,13 @@ fn a_marker_under_a_description_note_folds_at_any_column() {
 fn a_marker_at_the_hosting_item_column_folds() {
     assert_eq!(
         html("- [^q]: note\n  - b\n\nx[^q]\n"),
-        format!("<ul>\n  <li></li>\n</ul>\n{REF}\n{NOTE}")
+        format!(
+            "<ul>\n  <li>\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>\n{REF}\n{NOTE}"
+        )
     );
     assert_eq!(
         html("> - [^q]: note\n>   - b\n\nx[^q]\n"),
-        format!("<blockquote>\n  <ul>\n    <li></li>\n  </ul>\n</blockquote>\n{REF}\n{NOTE}")
+        format!("<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>b</li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n{REF}\n{NOTE}")
     );
 }
 
@@ -86,8 +95,8 @@ fn a_line_leaving_a_quote_hosted_note_at_the_item_column_folds() {
     assert_eq!(
         html("- > [^f]: n\n  - b\n\nx[^f]\n"),
         format!(
-            "<ul>\n  <li>\n    <blockquote>\n\n    </blockquote>\n  </li>\n</ul>\n{REF}\n{}",
-            NOTE.replace("note\n", "n\n")
+            "<ul>\n  <li>\n    <blockquote>\n\n    </blockquote>\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>\n{REF}\n{}",
+            NOTE.replace("<p>note<", "<p>n<")
         )
     );
 }

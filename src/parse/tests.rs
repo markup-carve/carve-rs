@@ -54,7 +54,8 @@ fn nested_event_cursor_keeps_mapped_eof_and_crlf_parity() {
         "- head\n  - child",
         "> quote\n> - item",
         "::: note\n- item\n:::",
-        "[^note]: first\n    - child\n\nUse [^note].",
+        // At the body column: past it the walk moves the sublist (carve#4860).
+        "[^note]: first\n  - child\n\nUse [^note].",
         "- head\r\n  ```\r\n  body\r\n  ```",
         "> first\r\n> second",
     ] {

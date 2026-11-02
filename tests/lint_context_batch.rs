@@ -69,15 +69,16 @@ fn invalid_separator_padding_is_a_near_miss() {
 
 #[test]
 fn a_marker_folded_into_a_note_paragraph_is_reported() {
-    for (source, at) in [
-        (":: t\n:  [^f]: note\n     - nested\n   tail\n", (3, 6)),
-        (". d\n   [^n]: e\n     - a\n", (3, 6)),
-        ("- > para\n  > [^f]: n\n  >   - sub\ntail[^f]\n", (3, 7)),
-        ("[^n]: d\n  - para\n    [r]: /u\nx\n\n[r][] [^n]\n", (2, 3)),
+    // A marker in a note body opens a list there, so no paragraph holds it
+    // (carve#4860).
+    for source in [
+        ":: t\n:  [^f]: note\n     - nested\n   tail\n",
+        ". d\n   [^n]: e\n     - a\n",
+        "- > para\n  > [^f]: n\n  >   - sub\ntail[^f]\n",
+        "[^n]: d\n  - para\n    [r]: /u\nx\n\n[r][] [^n]\n",
     ] {
-        assert_eq!(
-            findings(source, "list-marker-without-blank-line"),
-            vec![at],
+        assert!(
+            findings(source, "list-marker-without-blank-line").is_empty(),
             "{source}"
         );
     }

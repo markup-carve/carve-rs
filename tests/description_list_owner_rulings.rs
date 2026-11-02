@@ -22,7 +22,7 @@ fn a_list_below_the_inner_description_belongs_to_the_outer_one() {
 #[test]
 fn a_term_past_the_description_column_interrupts_a_folded_list_marker() {
     let source = ":: t\n:  d\n    - b\n    :: u\n    :  e\n";
-    let expected = "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>d\n- b</p>\n    <dl>\n      <dt>u</dt>\n      <dd>e</dd>\n    </dl>\n  </dd>\n</dl>";
+    let expected = "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>d</p>\n    <ul>\n      <li>b</li>\n    </ul>\n    <dl>\n      <dt>u</dt>\n      <dd>e</dd>\n    </dl>\n  </dd>\n</dl>";
     assert_html_in_both_position_modes(source, expected);
 }
 

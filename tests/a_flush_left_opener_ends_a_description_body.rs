@@ -1,5 +1,6 @@
 //! Description-body boundaries follow §10 I2 and the definition-body production.
-//! List markers and captions below the body column continue an open paragraph.
+//! Captions below the body column continue an open paragraph; a list marker
+//! that misses the body column closes it (carve#4860).
 //! Fences with a closer ahead end it; fences without one fold (carve#2735).
 
 use carve::{to_html, to_html_with_options, Options};
@@ -31,10 +32,13 @@ fn assert_html(src: &str, expected: &str) {
 
 const BODY: &str = ":: t\n:  d\n";
 
-/// A bullet marker continues the open description paragraph.
+/// A bullet marker below the body column closes the body and opens a list (carve#4860).
 #[test]
 fn a_bullet_continues_the_body() {
-    assert_html(&format!("{BODY}- z\n"), "<dl><dt>t</dt><dd>d - z</dd></dl>");
+    assert_html(
+        &format!("{BODY}- z\n"),
+        "<dl><dt>t</dt><dd>d</dd></dl><ul><li>z</li></ul>",
+    );
 }
 
 /// Ordered markers follow the same paragraph rule.
@@ -42,16 +46,16 @@ fn a_bullet_continues_the_body() {
 fn an_ordered_marker_continues_the_body() {
     assert_html(
         &format!("{BODY}1. z\n"),
-        "<dl><dt>t</dt><dd>d 1. z</dd></dl>",
+        "<dl><dt>t</dt><dd>d</dd></dl><ol><li>z</li></ol>",
     );
 }
 
-/// A task marker is literal text when no list opens.
+/// A task marker opens a task list the same way.
 #[test]
 fn a_task_marker_continues_the_body() {
     assert_html(
         &format!("{BODY}- [ ] z\n"),
-        "<dl><dt>t</dt><dd>d - [ ] z</dd></dl>",
+        "<dl><dt>t</dt><dd>d</dd></dl><ul class=\"task-list\"><li><input type=\"checkbox\" disabled aria-label=\"z\"> z</li></ul>",
     );
 }
 
@@ -106,14 +110,13 @@ fn a_second_description_still_attaches() {
     );
 }
 
-/// INSIDE A QUOTE the flush-left marker is the QUOTE's lazy continuation - it
-/// carries no `>` and so reaches no column inside it - and both readers fold
-/// it. A band that fired below document level would move this.
+/// INSIDE A QUOTE the flush-left marker carries no `>` and misses the body
+/// column, so it closes the body and the quote and opens a list (carve#4860).
 #[test]
 fn a_marker_under_a_quoted_body_still_folds() {
     assert_html(
         "> :: t\n> :  d\n- z\n",
-        "<blockquote><dl><dt>t</dt><dd>d - z</dd></dl></blockquote>",
+        "<blockquote><dl><dt>t</dt><dd>d</dd></dl></blockquote><ul><li>z</li></ul>",
     );
 }
 
@@ -127,9 +130,12 @@ fn a_marker_under_an_item_hosted_body_is_a_sibling() {
     );
 }
 
-/// A BELOW-COLUMN marker at a nonzero column is not this band: it never reached
-/// the body's column, so it is lazy text wherever it sits.
+/// A BELOW-COLUMN marker at a nonzero column never reached the body's column,
+/// so it closes the body and opens a list (carve#4860).
 #[test]
 fn a_below_column_marker_is_not_this_band() {
-    assert_html(":: t\n:   d\n  - z\n", "<dl><dt>t</dt><dd>d - z</dd></dl>");
+    assert_html(
+        ":: t\n:   d\n  - z\n",
+        "<dl><dt>t</dt><dd>d</dd></dl><ul><li>z</li></ul>",
+    );
 }

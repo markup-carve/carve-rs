@@ -493,7 +493,7 @@ fn lazy_item_markers_preserve_the_owned_paragraph_witness() {
 fn folded_markers_preserve_frames_and_real_quote_exits() {
     let cases = [
 ("frame-preservation-0",":: term\n> ```\nlazy\n> - x\n> ```\n> [r]: /t\n","<dl>\n  <dt>term</dt>\n</dl>\n<blockquote>\n  <pre><code></code></pre>\n</blockquote>\n<p>lazy</p>\n<blockquote>\n  <ul>\n    <li>x</li>\n  </ul>\n  <pre><code>[r]: /t\n</code></pre>\n</blockquote>"),
-("frame-preservation-2","> > - a\n> - b\n> - ```\n> [r]: /t\n> ```\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n- b\n- <code></code></li>\n    </ul>\n  </blockquote>\n  <pre><code></code></pre>\n</blockquote>"),
+("frame-preservation-2","> > - a\n> - b\n> - ```\n> [r]: /t\n> ```\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a</li>\n    </ul>\n  </blockquote>\n  <ul>\n    <li>b</li>\n    <li>\n      <pre><code></code></pre>\n    </li>\n  </ul>\n  <pre><code></code></pre>\n</blockquote>"),
 ("frame-preservation-3",">   - a\n> - ```\n> [r]: /t\n> ```\n","<blockquote>\n  <ul>\n    <li>a</li>\n    <li>\n      <pre><code></code></pre>\n    </li>\n  </ul>\n  <pre><code></code></pre>\n</blockquote>"),
 ("frame-preservation-4","> p\n> ```\n> ```a\n> [r]: /t\n","<blockquote>\n  <p>p</p>\n  <pre><code>```a\n[r]: /t\n</code></pre>\n</blockquote>"),
 ];

@@ -51,7 +51,7 @@ fn a_marker_below_both_body_columns_stays_literal() {
     let source = ":: T\n: D\n    :: t\n    : d\n - b\n";
     assert_eq!(
         html(source),
-        "<dl>\n  <dt>T</dt>\n  <dd>\n    <p>D</p>\n    <dl>\n      <dt>t</dt>\n      <dd>d\n- b</dd>\n    </dl>\n  </dd>\n</dl>"
+        "<dl>\n  <dt>T</dt>\n  <dd>\n    <p>D</p>\n    <dl>\n      <dt>t</dt>\n      <dd>d</dd>\n    </dl>\n  </dd>\n</dl>\n<ul>\n  <li>b</li>\n</ul>"
     );
 }
 

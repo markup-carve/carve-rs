@@ -1,4 +1,4 @@
-//! A line that misses a description folds as text (PART 0 S2, S4), an invalid
+//! A list marker that misses a description closes it (carve#4860), an invalid
 //! colon opener absorbs the bare run under it past the item's column too, and a
 //! div's own closer ends the div in a quote (CARVE-P9-016).
 
@@ -15,7 +15,7 @@ fn html(source: &str) -> String {
 fn a_marker_missing_a_description_folds() {
     assert_eq!(
         html(":: t\n: - a\n- b\n"),
-        "<dl> <dt>t</dt> <dd> <ul> <li>a - b</li> </ul> </dd> </dl>"
+        "<dl> <dt>t</dt> <dd> <ul> <li>a</li> </ul> </dd> </dl> <ul> <li>b</li> </ul>"
     );
     assert_eq!(
         html(":: t\n: - a\n\n- b\n"),

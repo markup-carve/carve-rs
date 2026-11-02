@@ -88,20 +88,6 @@ pub(crate) fn fold_lazy_run_and_resume_in_band(
         if cur.pos == before {
             break;
         }
-        while cur.peek().is_some_and(|line| {
-            indent_columns(line) > list_base
-                && indent_columns(line) <= content_col
-                && is_list_marker(line)
-        }) && quote_fold_at_end(nested.source.rsplit('\n'))
-        {
-            let line = cur.peek().unwrap();
-            nested.push_newline_at(
-                format!("{LAZY}{}", trim_ascii_start(line)),
-                cur.source_line(cur.pos),
-                cur.source_col(cur.pos),
-            );
-            cur.consume();
-        }
         let before_resume = cur.pos;
         let resumed = resume(cur);
         if !frame_band_lines && body_ends_in_definition_list(&resumed.source, options) {

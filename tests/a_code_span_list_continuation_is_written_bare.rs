@@ -43,7 +43,10 @@ fn a_line_below_an_item_or_description_keeps_its_guard() {
             format!("{quote}- lead\n{quote}  a `b`\n{quote}- x``\n")
         );
     }
-    assert_eq!(round_trips(":: t\n: a `b\n- x`\n"), ":: t\n: a `b\n - x`\n");
+    assert_eq!(
+        round_trips(":: t\n: a `b\n- x`\n"),
+        ":: t\n: a `b`\n\n- x``\n"
+    );
     assert_eq!(round_trips("`a\n > x`\n"), "`a`\n\n> x``\n");
 }
 

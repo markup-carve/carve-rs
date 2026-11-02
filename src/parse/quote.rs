@@ -230,6 +230,10 @@ pub(in crate::parse) struct NestedFenceReplay {
 pub(in crate::parse) struct NestedLevel {
     hosts: Vec<(usize, usize, bool)>,
     term_columns: HashSet<usize>,
+    /// Content column of the description body a line last opened.
+    description_body: Option<usize>,
+    /// A term or description is open, so a `: ` line is a description.
+    entry_open: bool,
     /// The fence a quoted host holds open, as (opener, the host's content column,
     /// the opener's own column, and whether this is a payload span). The two columns differ when the opener is
     /// SHIFTED past its host, and a closer at either one ends it.
@@ -307,6 +311,17 @@ impl NestedFenceReplay {
         }
     }
 
+    /// Whether the deepest open paragraph is a list item's, a description's or
+    /// a note's (PART 0 S3, carve#4860).
+    fn paragraph_in_body(&mut self, lines: &[SourceLine], cur: &LineCursor<'_>) -> bool {
+        self.advance(lines, cur);
+        self.chain.last().is_some_and(|deepest| deepest.para)
+            && self
+                .chain
+                .iter()
+                .any(|level| !level.hosts.is_empty() || level.description_body.is_some())
+    }
+
     /// Whether the deepest level ends on a payload line of a hosted line block.
     fn stanza_open(&mut self, lines: &[SourceLine], cur: &LineCursor<'_>) -> bool {
         self.advance(lines, cur);
@@ -329,6 +344,15 @@ impl NestedFenceReplay {
             cur,
         };
         loop {
+            // A line left of a description body ends it, lazy or not.
+            if let Some(level) = self.chain.get_mut(pos.level) {
+                if level
+                    .description_body
+                    .is_some_and(|body| indent_columns(text) < body)
+                {
+                    level.description_body = None;
+                }
+            }
             if self.replay_held(pos, text) {
                 return;
             }
@@ -773,7 +797,9 @@ impl NestedLevel {
         column: usize,
         sibling: bool,
     ) -> (&'t str, usize, bool) {
-        let inside_item = self.hosts.last().is_some_and(|&(_, _, item)| item);
+        // A marker opens a list in every marker body (PART 0 S3, carve#4860).
+        let inside_body =
+            !self.hosts.is_empty() || self.description_body.is_some_and(|body| column >= body);
         let mut inner = trim_ascii_start(text);
         let mut col = column;
         let mut block_start = false;
@@ -783,7 +809,7 @@ impl NestedLevel {
                     .hosts
                     .last()
                     .is_some_and(|&(_, content, _)| col < content);
-                if self.para && (!inside_item || below_host) && !sibling {
+                if self.para && (!inside_body || below_host) && !sibling {
                     break;
                 }
                 let next = col + marker_content_col(inner).expect("matched list marker");
@@ -798,7 +824,15 @@ impl NestedLevel {
             }
             if parse_footnote_def_line(inner).is_some() {
                 self.hosts.push((col, col + 2, false));
+            } else if let Some((_, width)) = strip_definition_marker(inner) {
+                if self.entry_open {
+                    self.description_body = Some(col + width);
+                }
             }
+            self.entry_open = is_definition_list_start(inner)
+                || (self.entry_open
+                    && (strip_definition_marker(inner).is_some()
+                        || (self.para && line_starts_paragraph(inner))));
             break;
         }
         (inner, col, block_start)
@@ -1514,6 +1548,8 @@ struct QuoteBody<'a> {
     // shape, for the same reason (markup-carve/carve-rs#1050).
     attrs_block_rest: usize,
     attrs_nested_run: bool,
+    /// Lines scanned for a lone `+` since the last blank, and whether one was seen.
+    plus_scan: (usize, bool),
     attrs_closed_last: bool,
     unclosed_nested_attribute: bool,
     // The first line index the block lookahead is still worth running on. A scan
@@ -1594,6 +1630,7 @@ impl<'a> QuoteBody<'a> {
             last_nested: false,
             nested_verdict: None,
             nested_replay: NestedFenceReplay::default(),
+            plus_scan: (0, false),
             may_hold_fence: false,
             description_line: false,
             literal_quote_body: None,
@@ -2550,6 +2587,16 @@ impl<'a> QuoteBody<'a> {
                 return true;
             }
         }
+        // A quote in a marker body, or holding one, ends at an unmarked list
+        // marker: the marker opens a list there or closes the body (PART 0 S3, carve#4860).
+        if !line.starts_with(LAZY)
+            && is_list_marker(line)
+            && (cur.in_marker_body()
+                || self.nested_replay.paragraph_in_body(&self.inner.lines, cur))
+            && !self.follows_quote_plus()
+        {
+            return true;
+        }
         // An attribute-shaped payload line of a hosted line block is stanza
         // text and leaves the stanza open (PART 2 `line_block`).
         if self.attrs_closed_last
@@ -2665,6 +2712,25 @@ impl<'a> QuoteBody<'a> {
         }
         *seen = self.inner.lines.len();
         scan.in_block() == Some(true)
+    }
+
+    /// A lone `+` since the last blank attaches the block after it to the
+    /// quote, so an unmarked marker there is the quote's (§17 L3).
+    fn follows_quote_plus(&mut self) -> bool {
+        let (mut scanned, mut held) = self.plus_scan;
+        if self.inner.lines.len() < scanned {
+            (scanned, held) = (0, false);
+        }
+        for line in self.inner.lines.iter().skip(scanned) {
+            let text = strip_all_quotes(trim_ascii_start(strip_lazy(&line.text))).0;
+            if is_blank_line(text) {
+                held = false;
+            } else if is_plus_marker(trim_ascii_start(text)) {
+                held = true;
+            }
+        }
+        self.plus_scan = (self.inner.lines.len(), held);
+        held
     }
 
     /// A span the quote holds is open whether or not its closer follows
