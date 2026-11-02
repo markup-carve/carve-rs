@@ -30,7 +30,11 @@ fn list_and_footnote_bodies_are_containers() {
     let list = "- ::: references\n  :::\n";
     let footnote = "Note[^a].\n\n[^a]: body\n\n    ::: references\n    :::\n";
     for source in [list, footnote] {
-        let warnings = lint_carve_with_options(source, &options);
+        // carve#3992: the footnote's `:::` is also past its body's column.
+        let warnings: Vec<_> = lint_carve_with_options(source, &options)
+            .into_iter()
+            .filter(|w| w.rule != "block-opener-overindented")
+            .collect();
         assert_eq!(warnings.len(), 1, "{source:?}: {warnings:?}");
         assert_eq!(warnings[0].rule, "references-placement-in-container");
     }

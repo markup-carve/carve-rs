@@ -1004,6 +1004,11 @@ pub(in crate::parse) fn parse_attrs(src: &str) -> Option<Attrs> {
     parse_attrs_with(src, true)
 }
 
+/// Whether `src`, the text between an attribute block's braces, is a valid block.
+pub(crate) fn is_valid_attr_payload(src: &str) -> bool {
+    parse_attrs_with(src, false).is_some()
+}
+
 fn parse_attrs_with(src: &str, space_only: bool) -> Option<Attrs> {
     // A TAB AT ANY OF THE FIVE INLINE POSITIONS MAKES THE BLOCK UNRECOGNIZED,
     // and its braces show. One test rather than five, because all five are the

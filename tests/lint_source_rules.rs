@@ -239,7 +239,13 @@ fn fence_tracking_ends_with_the_owning_item() {
             "- a\n  - b\n\n    {fence}\n    p\n {fence}\n\n    tail\n"
         ))
         .into_iter()
-        .filter(|warning| warning.rule != "unclosed-code-fence")
+        .filter(|warning| {
+            // carve#3992: the fence at column 2 is also past the document's column.
+            !matches!(
+                warning.rule,
+                "unclosed-code-fence" | "block-opener-overindented"
+            )
+        })
         .collect();
         assert_eq!(warnings.len(), 1);
         assert_eq!(

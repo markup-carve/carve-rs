@@ -558,6 +558,7 @@ struct Walk<'a> {
     refuse_line: bool,
     accepted: Vec<(usize, continuation_marker::Decision)>,
     refused: Vec<continuation_marker::Refused>,
+    overindented: Vec<OverindentedOpener>,
     /// The frames at the last accepted `+`, its host's quote depth and marker
     /// column, and the line its block starts on.
     attached: Option<AttachedBlock>,
@@ -742,6 +743,19 @@ pub(crate) struct OwnedSource {
     pub(in crate::parse) letter: Option<char>,
     pub(in crate::parse) accepted: Vec<(usize, continuation_marker::Decision)>,
     pub(in crate::parse) refused: Vec<continuation_marker::Refused>,
+    pub(in crate::parse) overindented: Vec<OverindentedOpener>,
+}
+
+/// An opener S3 reads past its owner's content column (carve#3992).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct OverindentedOpener {
+    pub(crate) line: usize,
+    /// 1-based codepoint column of the opener in the authored line.
+    pub(crate) column: usize,
+    pub(crate) kind: &'static str,
+    pub(crate) owner: &'static str,
+    pub(crate) content_column: usize,
+    pub(crate) authored_column: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -807,6 +821,7 @@ fn walk_traced(
         refuse_line: false,
         accepted: Vec::new(),
         refused: Vec::new(),
+        overindented: Vec::new(),
         attached: None,
         skipped: None,
         next_visible: 0,
@@ -876,6 +891,7 @@ fn walk_traced(
             letter: letter.filter(|_| wrote_letter),
             accepted: std::mem::take(&mut walk.accepted),
             refused: std::mem::take(&mut walk.refused),
+            overindented: std::mem::take(&mut walk.overindented),
         });
     (owned, walk.trace)
 }
@@ -1892,6 +1908,11 @@ impl<'a> Walk<'a> {
             form => {
                 let (canon, shift) = (self.top().canon, self.top().shift);
                 let col = c.col;
+                if !plus_follower {
+                    let owner = self.frames.len() - 1;
+                    let content = self.frames[owner].col;
+                    self.note_opener(owner, &form, content, at, c);
+                }
                 c.lead_in(canon, shift, matches!(form, Form::Term | Form::Dd(_)));
                 let owner = self.frames.len() - 1;
                 self.apply(owner, col, form, canon, at, c);
@@ -2317,6 +2338,7 @@ impl<'a> Walk<'a> {
         }
         if self.frames[frame].kind == Kind::Quote {
             let col = c.col;
+            self.note_opener(frame, &form, 0, at, c);
             c.lead(0);
             return self.apply(frame, col, form, 0, at, c);
         }
@@ -2371,6 +2393,56 @@ impl<'a> Walk<'a> {
             }
             tail = inner;
         }
+    }
+
+    /// Record an opener past a non-item owner's content column; list items and
+    /// markers have their own lint rules. A table reports at its first row.
+    fn note_opener(
+        &mut self,
+        owner: usize,
+        form: &Form,
+        content: usize,
+        at: usize,
+        c: &Cursor<'_>,
+    ) {
+        let rest = trim_line_end(c.rest);
+        let kind = match form {
+            Form::Quote => "block quote",
+            Form::Colon(..) => "colon fence",
+            Form::Fence(Closer::Comment(_), ..) => return,
+            Form::Fence(_, _, true) => "line block",
+            Form::Fence(..) => "code fence",
+            Form::Term => "definition term",
+            Form::Leaf(_) if is_heading(rest) => "heading",
+            Form::Leaf(_) if detect_thematic_break(rest) => "thematic break",
+            Form::Leaf(_) if is_table_start(rest) => "table row",
+            _ => return,
+        };
+        let frame = &self.frames[owner];
+        if kind == "table row" && at > 0 && frame.table_line == Some(at - 1) {
+            return;
+        }
+        let owner_name = match frame.kind {
+            Kind::Doc => "doc",
+            Kind::Quote => "quote",
+            Kind::Note => "note",
+            Kind::Dd => "dd",
+            Kind::Colon => "colon",
+            Kind::Item | Kind::Fence => return,
+        };
+        if c.col <= content {
+            return;
+        }
+        let line = self.lines[at];
+        let column = line[..line.len() - c.rest.len()].chars().count() + 1;
+        self.overindented.push(OverindentedOpener {
+            line: self.first_line + at,
+            column,
+            kind,
+            owner: owner_name,
+            content_column: content,
+            authored_column: c.col,
+        });
     }
 
     fn classify(&mut self, rest: &str, owner: usize, at: usize) -> Form {
