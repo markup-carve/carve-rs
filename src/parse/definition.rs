@@ -622,7 +622,14 @@ pub(in crate::parse) fn parse_definition_list(
                 while cur.peek().is_some_and(is_blank_line) {
                     cur.consume();
                 }
-                let attached_list = cur.peek().is_some_and(is_list_marker);
+                // A list marker inside an attached colon block is its content.
+                let attached_list = cur.peek().is_some_and(|line| {
+                    is_list_marker(line)
+                        || detect_container_open(line).is_some()
+                        || detect_line_block_open(line).is_some()
+                        || detect_hardbreaks_block_open(line).is_some()
+                        || detect_quote_block_open(line).is_some()
+                });
                 let mut boundary = |a: &str, _| {
                     is_blank_line(a)
                         || is_plus_marker(a)
@@ -668,8 +675,15 @@ pub(in crate::parse) fn parse_definition_list(
             // flush-left block, which supplies no indentation for the rule to
             // measure against.
             let mut fence = DefinitionBodyFence {
+                // An attached fence's blank line ends its flush payload; the body
+                // column still reaches it (carve#4392).
                 open: if first_block_plus {
-                    None
+                    let source = body.source.as_str();
+                    let mut lines = source.lines();
+                    lines
+                        .next()
+                        .and_then(detect_fence_open)
+                        .filter(|open| !lines.any(|line| is_fence_close(line, *open)))
                 } else {
                     detect_fence_open(def_trimmed)
                 },

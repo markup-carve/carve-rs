@@ -1237,9 +1237,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 .position(|line| is_blank_line(line) || is_plus_marker(line))
                 .unwrap_or(lines.len() - from)
         };
-        let window_end = if let Some(open) = detect_fence_open(first_text) {
+        let pulled_closer = pulled_fence_closer(lines, i, container.content_column);
+        let window_end = if let Some(closer) = pulled_closer {
+            closer + 1
+        } else if let Some(open) = detect_fence_open(first_text) {
             (i + 1..lines.len())
-                .find(|&at| is_fence_close(trim_ascii_start(lines[at]), open))
+                .find(|&at| {
+                    is_fence_close(strip_leading_columns(lines[at], marker_col).as_str(), open)
+                })
                 .map_or_else(|| first_boundary_after(i + 1), |at| at + 1)
         } else if let Some(open) = detect_container_open(first_text) {
             (i + 1..lines.len())
@@ -1266,7 +1271,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         };
         let attached: Vec<String> = lines[i..window_end]
             .iter()
-            .map(|line| strip_leading_columns(line, marker_col))
+            .enumerate()
+            .map(|(offset, line)| {
+                if pulled_closer == Some(i + offset) {
+                    trim_ascii_start(line).to_string()
+                } else {
+                    strip_leading_columns(line, marker_col)
+                }
+            })
             .collect();
         let attached_refs: Vec<&str> = attached.iter().map(String::as_str).collect();
         let first_visible_at = first_visible_note_line(&attached_refs).unwrap_or(0);
@@ -1753,16 +1765,26 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         let mut attached: Vec<String> = Vec::new();
         let attached_start = *i;
-        let end = attached_block_past_invisible(
-            CursorLines::Slice(lines),
-            *i,
-            &mut self.comment_closers,
-            &mut self.closer_index,
-            self.options,
-            &mut |a, _| is_blank_line(a) || is_plus_marker(a),
+        let pulled_closer = pulled_fence_closer(lines, *i, state.body_indent);
+        let end = pulled_closer.map_or_else(
+            || {
+                attached_block_past_invisible(
+                    CursorLines::Slice(lines),
+                    *i,
+                    &mut self.comment_closers,
+                    &mut self.closer_index,
+                    self.options,
+                    &mut |a, _| is_blank_line(a) || is_plus_marker(a),
+                )
+            },
+            |closer| closer + 1,
         );
         while *i < end {
-            attached.push(slice_columns(lines[*i], column, true));
+            attached.push(if pulled_closer == Some(*i) {
+                trim_ascii_start(lines[*i]).to_string()
+            } else {
+                slice_columns(lines[*i], column, true)
+            });
             *i += 1;
         }
         if !attached.is_empty() {
@@ -2555,6 +2577,37 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
 /// say whether the line is that fence's payload or closer. The fence ends with
 /// its item, at a line below the item's content column, and a marker folded into
 /// a paragraph opens none.
+/// The closer of a fence a `+` attached from left of the note's body. A blank
+/// line ends the flush payload, so past it only the body column reaches the
+/// fence, and a closer there closes it (PART 0 S3 and S4, carve#4392).
+fn pulled_fence_closer(lines: &[&str], opener: usize, body_column: usize) -> Option<usize> {
+    let text = lines.get(opener)?;
+    if indent_columns(text) >= body_column {
+        return None;
+    }
+    let open = detect_fence_open(trim_ascii_start(text))?;
+    let mut past_blank = false;
+    for (at, line) in lines.iter().enumerate().skip(opener + 1) {
+        if is_blank_line(line) {
+            past_blank = true;
+        } else if !past_blank {
+            if is_fence_close(
+                strip_leading_columns(line, indent_columns(text)).as_str(),
+                open,
+            ) {
+                return None;
+            }
+        } else if indent_columns(line) < body_column {
+            return None;
+        } else if indent_columns(line) == body_column
+            && is_fence_close(trim_ascii_start(line), open)
+        {
+            return Some(at);
+        }
+    }
+    None
+}
+
 fn advance_marker_fence(
     fence: &mut Option<(FenceOpen, usize)>,
     line: &str,

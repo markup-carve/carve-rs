@@ -77,6 +77,9 @@ fn a_plus_reads_the_childs_authored_marker_column() {
 }
 
 #[test]
-fn a_fence_on_the_item_keeps_the_body_column() {
-    contains("[^n]: - ```\n    x\n    ```\n\n[^n]\n", "<pre><code>x");
+fn a_fence_on_the_item_reads_at_the_item_column() {
+    contains(
+        "[^n]: - ```\n        x\n        ```\n\n[^n]\n",
+        "<pre><code>x",
+    );
 }

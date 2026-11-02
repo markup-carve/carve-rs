@@ -35,7 +35,7 @@ fn both_fence_spellings_keep_definitions_at_the_note_floor() {
 
 #[test]
 fn a_child_item_fence_uses_the_child_column() {
-    let inside = to_html("- [^a]: - ~~~\n      [^b]: inner\n      ~~~\n\n[^a] [^b]\n");
+    let inside = to_html("- [^a]: - ~~~\n          [^b]: inner\n          ~~~\n\n[^a] [^b]\n");
     assert!(
         inside.contains("<pre><code>[^b]: inner\n</code></pre>"),
         "{inside}"

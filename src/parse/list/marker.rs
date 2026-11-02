@@ -596,8 +596,13 @@ pub(crate) fn attached_block_end(
                     literal,
                     closer_index,
                     comment_closers,
+                    // A sibling of the host ends the frame, whatever closer follows
+                    // (CARVE-P9-084, carve#4798).
                     &mut |line, at| {
-                        detect_list_marker_full(line).is_some() && is_boundary(line, at)
+                        (detect_list_marker_full(line).is_some()
+                            || strip_lazy(line).strip_prefix(":: ").is_some()
+                            || strip_definition_marker(strip_lazy(line)).is_some())
+                            && is_boundary(line, at)
                     },
                 );
                 continue;
