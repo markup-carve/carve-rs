@@ -153,7 +153,8 @@ pub(crate) fn prepare(source: &str, options: Options) -> PreparedStrikes<'_> {
         references: HashMap::new(),
     };
     let bytes = source.as_bytes();
-    if !bytes.contains(&b'~') {
+    let breaks = link_breaks(source, options);
+    if !bytes.contains(&b'~') && breaks.is_empty() {
         return result;
     }
     let mut eligible = vec![false; source.len()];
@@ -284,6 +285,9 @@ pub(crate) fn prepare(source: &str, options: Options) -> PreparedStrikes<'_> {
             insertions.extend([run.start, run.end]);
         }
     }
+    insertions.extend(breaks);
+    insertions.sort_unstable();
+    insertions.dedup();
     if insertions.is_empty() && result.inert.is_empty() {
         return result;
     }
@@ -314,6 +318,77 @@ pub(crate) fn prepare(source: &str, options: Options) -> PreparedStrikes<'_> {
     }
     result.text = Cow::Owned(text);
     result
+}
+
+/// Offsets where pulldown joins brackets CommonMark §6.3 keeps apart; an
+/// empty comment there splits them. `[a]\\[b]`: an escaped `[` opens no
+/// label. `[a](<u>"t")`: a title needs whitespace after the destination.
+fn link_breaks(source: &str, options: Options) -> Vec<usize> {
+    let escaped_label = source.contains("]\\[");
+    let angle = source.contains("](<");
+    if !escaped_label && !angle {
+        return Vec::new();
+    }
+    let mut breaks = Vec::new();
+    let mut opaque = 0usize;
+    for (event, range) in Parser::new_ext(source, options).into_offset_iter() {
+        match &event {
+            Event::Start(Tag::CodeBlock(_) | Tag::HtmlBlock | Tag::MetadataBlock(_)) => opaque += 1,
+            Event::End(TagEnd::CodeBlock | TagEnd::HtmlBlock | TagEnd::MetadataBlock(_)) => {
+                opaque = opaque.saturating_sub(1);
+            }
+            _ => {}
+        }
+        if opaque > 0 {
+            continue;
+        }
+        let span = &source[range.clone()];
+        match &event {
+            Event::Text(_) if escaped_label => {
+                // pulldown's text for `\[` starts at the backslash.
+                if span.starts_with('[') && source[..range.start].ends_with("]\\") {
+                    breaks.push(range.start - 1);
+                }
+            }
+            Event::Start(Tag::Link { link_type, .. } | Tag::Image { link_type, .. }) => {
+                if escaped_label
+                    && matches!(
+                        link_type,
+                        LinkType::Reference | LinkType::Collapsed | LinkType::Shortcut
+                    )
+                {
+                    if let Some(at) = span.rfind("]\\[") {
+                        breaks.push(range.start + at + 1);
+                    }
+                }
+                if angle && *link_type == LinkType::Inline {
+                    if let Some(at) = span.rfind("](<") {
+                        let dest = &span[at + 3..];
+                        let mut escaped = false;
+                        let close = dest.bytes().position(|byte| {
+                            let end = byte == b'>' && !escaped;
+                            escaped = byte == b'\\' && !escaped;
+                            end
+                        });
+                        let joined = close.is_some_and(|close| {
+                            !dest[..close].contains(['<', '\n', '\r'])
+                                && !matches!(
+                                    dest.as_bytes().get(close + 1),
+                                    None | Some(b' ' | b'\t' | b'\n' | b'\r' | b')')
+                                )
+                        });
+                        if joined {
+                            breaks.push(range.start + at + 1);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    breaks.sort_unstable();
+    breaks.dedup();
+    breaks
 }
 
 struct TildeRun {
