@@ -271,7 +271,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             // comment appears between the blanks (PART 0 S1, carve#4716).
             let blank_run_before = if self.invisible_extent(self.cur.pos, line).is_some()
                 && indent_columns(line) < self.content_col
-                && !self.cur.in_item_body
             {
                 self.blank_run
             } else {
@@ -476,14 +475,14 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         NEXT
     }
 
-    /// How many lines the comment at `at` covers: a closed `%%%` span is one extent.
-    /// An empty span is `None`: the Djot importer writes it to split a list.
+    /// How many lines the invisible run at `at` covers. An empty closed
+    /// comment span is still invisible between siblings (CARVE-P9-013).
     fn invisible_extent(&self, at: usize, line: &str) -> Option<usize> {
         if let Some(open) = detect_comment_fence_line_any_column(line) {
             let mut end = at + 1;
             while let Some(next) = self.cur.lines.line(end) {
                 if is_comment_fence_close_any_column(next, open.fence_len) {
-                    return (end > at + 1).then_some(end + 1 - at);
+                    return Some(end + 1 - at);
                 }
                 end += 1;
             }

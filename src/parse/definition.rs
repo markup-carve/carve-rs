@@ -426,9 +426,6 @@ fn definition_sibling_after_invisible(
                 }
                 end += 1;
             }
-            if end == at + 1 {
-                return None;
-            }
             at = end + 1;
             continue;
         }
@@ -436,9 +433,15 @@ fn definition_sibling_after_invisible(
             || is_definition_placeholder(line)
             || (cur.at_document_level && detect_abbreviation_def(line).is_some())
         {
-            // A deeper invisible line belongs to a nested body, not to the
-            // run between this definition list's siblings.
-            if indent_columns(line) > list_column {
+            // A definition placeholder whose source span includes hidden body
+            // lines is a nested owner, not an invisible line between siblings.
+            // The source map exposes that span as a jump to the next line.
+            if is_definition_placeholder(line)
+                && cur
+                    .source_line(at)
+                    .zip(cur.source_line(at + 1))
+                    .is_some_and(|(current, next)| next > current + 1)
+            {
                 return None;
             }
             at += 1;
