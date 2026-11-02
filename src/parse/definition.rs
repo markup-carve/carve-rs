@@ -436,6 +436,11 @@ fn definition_sibling_after_invisible(
             || is_definition_placeholder(line)
             || (cur.at_document_level && detect_abbreviation_def(line).is_some())
         {
+            // A deeper invisible line belongs to a nested body, not to the
+            // run between this definition list's siblings.
+            if indent_columns(line) > list_column {
+                return None;
+            }
             at += 1;
             continue;
         }
