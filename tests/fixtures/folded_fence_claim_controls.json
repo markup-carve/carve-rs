@@ -62,7 +62,7 @@
   {
     "id": "shifted-unclosed-1-%%%",
     "source": "> - a\n>     ::: |\n>     %%%\n>   :::\n>   :::bad\n>   :::\n- tail\n",
-    "html": "<blockquote><ul><li>a\n      <div class=\"line-block\"><p></p></div>\n      :::bad\n:::\n- tail\n    </li></ul></blockquote>"
+    "html": "<blockquote><ul><li>a\n      <div class=\"line-block\"></div></li></ul></blockquote><ul><li>tail</li></ul>"
   },
   {
     "id": "shifted-unclosed-2-```",
@@ -77,7 +77,7 @@
   {
     "id": "shifted-unclosed-2-%%%",
     "source": "> > - a\n> >     ::: |\n> >     %%%\n> >   :::\n> >   :::bad\n> >   :::\n- tail\n",
-    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"line-block\"><p></p></div>\n        :::bad\n:::\n- tail\n      </li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"line-block\"></div></li></ul></blockquote></blockquote><ul><li>tail</li></ul>"
   },
   {
     "id": "later-sibling-code-1-```",

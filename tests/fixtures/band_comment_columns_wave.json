@@ -124,12 +124,11 @@
   },
   {
     "source": "- t\n\n  %%%\n  z\n",
-    "html": "<ul>\n  <li><p>t</p>\n    <p>z</p>\n  </li>\n</ul>",
-    "tight": false,
+    "html": "<ul>\n  <li>t</li>\n</ul>",
+    "tight": true,
     "itemKinds": [
       "paragraph",
-      "comment",
-      "paragraph"
+      "comment"
     ]
   },
   {
@@ -143,12 +142,11 @@
   },
   {
     "source": "- t\n\n\n  %%%\n  z\n",
-    "html": "<ul>\n  <li><p>t</p>\n    <p>z</p>\n  </li>\n</ul>",
-    "tight": false,
+    "html": "<ul>\n  <li>t</li>\n</ul>",
+    "tight": true,
     "itemKinds": [
       "paragraph",
-      "comment",
-      "paragraph"
+      "comment"
     ]
   },
   {
@@ -162,12 +160,11 @@
   },
   {
     "source": "- t\n\n   %%%\n  z\n",
-    "html": "<ul>\n  <li><p>t</p>\n    <p>z</p>\n  </li>\n</ul>",
-    "tight": false,
+    "html": "<ul>\n  <li>t</li>\n</ul>",
+    "tight": true,
     "itemKinds": [
       "paragraph",
-      "comment",
-      "paragraph"
+      "comment"
     ]
   },
   {
@@ -181,12 +178,11 @@
   },
   {
     "source": "- t\n\n\n   %%%\n  z\n",
-    "html": "<ul>\n  <li><p>t</p>\n    <p>z</p>\n  </li>\n</ul>",
-    "tight": false,
+    "html": "<ul>\n  <li>t</li>\n</ul>",
+    "tight": true,
     "itemKinds": [
       "paragraph",
-      "comment",
-      "paragraph"
+      "comment"
     ]
   },
   {
@@ -200,12 +196,11 @@
   },
   {
     "source": "- t\n\n    %%%\n  z\n",
-    "html": "<ul>\n  <li><p>t</p>\n    <p>z</p>\n  </li>\n</ul>",
-    "tight": false,
+    "html": "<ul>\n  <li>t</li>\n</ul>",
+    "tight": true,
     "itemKinds": [
       "paragraph",
-      "comment",
-      "paragraph"
+      "comment"
     ]
   },
   {
@@ -219,12 +214,11 @@
   },
   {
     "source": "- t\n\n\n    %%%\n  z\n",
-    "html": "<ul>\n  <li><p>t</p>\n    <p>z</p>\n  </li>\n</ul>",
-    "tight": false,
+    "html": "<ul>\n  <li>t</li>\n</ul>",
+    "tight": true,
     "itemKinds": [
       "paragraph",
-      "comment",
-      "paragraph"
+      "comment"
     ]
   },
   {
@@ -352,12 +346,11 @@
   },
   {
     "source": "* t\n\n  %%%\n  z\n",
-    "html": "<ul>\n  <li><p>t</p>\n    <p>z</p>\n  </li>\n</ul>",
-    "tight": false,
+    "html": "<ul>\n  <li>t</li>\n</ul>",
+    "tight": true,
     "itemKinds": [
       "paragraph",
-      "comment",
-      "paragraph"
+      "comment"
     ]
   },
   {
@@ -371,12 +364,11 @@
   },
   {
     "source": "* t\n\n\n  %%%\n  z\n",
-    "html": "<ul>\n  <li><p>t</p>\n    <p>z</p>\n  </li>\n</ul>",
-    "tight": false,
+    "html": "<ul>\n  <li>t</li>\n</ul>",
+    "tight": true,
     "itemKinds": [
       "paragraph",
-      "comment",
-      "paragraph"
+      "comment"
     ]
   },
   {
@@ -390,12 +382,11 @@
   },
   {
     "source": "* t\n\n   %%%\n  z\n",
-    "html": "<ul>\n  <li><p>t</p>\n    <p>z</p>\n  </li>\n</ul>",
-    "tight": false,
+    "html": "<ul>\n  <li>t</li>\n</ul>",
+    "tight": true,
     "itemKinds": [
       "paragraph",
-      "comment",
-      "paragraph"
+      "comment"
     ]
   },
   {
@@ -409,12 +400,11 @@
   },
   {
     "source": "* t\n\n\n   %%%\n  z\n",
-    "html": "<ul>\n  <li><p>t</p>\n    <p>z</p>\n  </li>\n</ul>",
-    "tight": false,
+    "html": "<ul>\n  <li>t</li>\n</ul>",
+    "tight": true,
     "itemKinds": [
       "paragraph",
-      "comment",
-      "paragraph"
+      "comment"
     ]
   },
   {
@@ -428,12 +418,11 @@
   },
   {
     "source": "* t\n\n    %%%\n  z\n",
-    "html": "<ul>\n  <li><p>t</p>\n    <p>z</p>\n  </li>\n</ul>",
-    "tight": false,
+    "html": "<ul>\n  <li>t</li>\n</ul>",
+    "tight": true,
     "itemKinds": [
       "paragraph",
-      "comment",
-      "paragraph"
+      "comment"
     ]
   },
   {
@@ -447,12 +436,11 @@
   },
   {
     "source": "* t\n\n\n    %%%\n  z\n",
-    "html": "<ul>\n  <li><p>t</p>\n    <p>z</p>\n  </li>\n</ul>",
-    "tight": false,
+    "html": "<ul>\n  <li>t</li>\n</ul>",
+    "tight": true,
     "itemKinds": [
       "paragraph",
-      "comment",
-      "paragraph"
+      "comment"
     ]
   },
   {
@@ -634,12 +622,11 @@
   },
   {
     "source": "1. t\n\n   %%%\n   z\n",
-    "html": "<ol>\n  <li><p>t</p>\n    <p>z</p>\n  </li>\n</ol>",
-    "tight": false,
+    "html": "<ol>\n  <li>t</li>\n</ol>",
+    "tight": true,
     "itemKinds": [
       "paragraph",
-      "comment",
-      "paragraph"
+      "comment"
     ]
   },
   {
@@ -653,12 +640,11 @@
   },
   {
     "source": "1. t\n\n\n   %%%\n   z\n",
-    "html": "<ol>\n  <li><p>t</p>\n    <p>z</p>\n  </li>\n</ol>",
-    "tight": false,
+    "html": "<ol>\n  <li>t</li>\n</ol>",
+    "tight": true,
     "itemKinds": [
       "paragraph",
-      "comment",
-      "paragraph"
+      "comment"
     ]
   },
   {
@@ -690,12 +676,11 @@
   },
   {
     "source": "1. t\n\n    %%%\n   z\n",
-    "html": "<ol>\n  <li><p>t</p>\n    <p>z</p>\n  </li>\n</ol>",
-    "tight": false,
+    "html": "<ol>\n  <li>t</li>\n</ol>",
+    "tight": true,
     "itemKinds": [
       "paragraph",
-      "comment",
-      "paragraph"
+      "comment"
     ]
   },
   {
@@ -709,12 +694,11 @@
   },
   {
     "source": "1. t\n\n\n    %%%\n   z\n",
-    "html": "<ol>\n  <li><p>t</p>\n    <p>z</p>\n  </li>\n</ol>",
-    "tight": false,
+    "html": "<ol>\n  <li>t</li>\n</ol>",
+    "tight": true,
     "itemKinds": [
       "paragraph",
-      "comment",
-      "paragraph"
+      "comment"
     ]
   },
   {
@@ -746,12 +730,11 @@
   },
   {
     "source": "1. t\n\n     %%%\n   z\n",
-    "html": "<ol>\n  <li><p>t</p>\n    <p>z</p>\n  </li>\n</ol>",
-    "tight": false,
+    "html": "<ol>\n  <li>t</li>\n</ol>",
+    "tight": true,
     "itemKinds": [
       "paragraph",
-      "comment",
-      "paragraph"
+      "comment"
     ]
   },
   {
@@ -765,12 +748,11 @@
   },
   {
     "source": "1. t\n\n\n     %%%\n   z\n",
-    "html": "<ol>\n  <li><p>t</p>\n    <p>z</p>\n  </li>\n</ol>",
-    "tight": false,
+    "html": "<ol>\n  <li>t</li>\n</ol>",
+    "tight": true,
     "itemKinds": [
       "paragraph",
-      "comment",
-      "paragraph"
+      "comment"
     ]
   },
   {
@@ -1024,12 +1006,11 @@
   },
   {
     "source": "10. t\n\n    %%%\n    z\n",
-    "html": "<ol start=\"10\">\n  <li><p>t</p>\n    <p>z</p>\n  </li>\n</ol>",
-    "tight": false,
+    "html": "<ol start=\"10\">\n  <li>t</li>\n</ol>",
+    "tight": true,
     "itemKinds": [
       "paragraph",
-      "comment",
-      "paragraph"
+      "comment"
     ]
   },
   {
@@ -1043,12 +1024,11 @@
   },
   {
     "source": "10. t\n\n\n    %%%\n    z\n",
-    "html": "<ol start=\"10\">\n  <li><p>t</p>\n    <p>z</p>\n  </li>\n</ol>",
-    "tight": false,
+    "html": "<ol start=\"10\">\n  <li>t</li>\n</ol>",
+    "tight": true,
     "itemKinds": [
       "paragraph",
-      "comment",
-      "paragraph"
+      "comment"
     ]
   },
   {
@@ -1098,12 +1078,11 @@
   },
   {
     "source": "10. t\n\n     %%%\n    z\n",
-    "html": "<ol start=\"10\">\n  <li><p>t</p>\n    <p>z</p>\n  </li>\n</ol>",
-    "tight": false,
+    "html": "<ol start=\"10\">\n  <li>t</li>\n</ol>",
+    "tight": true,
     "itemKinds": [
       "paragraph",
-      "comment",
-      "paragraph"
+      "comment"
     ]
   },
   {
@@ -1117,12 +1096,11 @@
   },
   {
     "source": "10. t\n\n\n     %%%\n    z\n",
-    "html": "<ol start=\"10\">\n  <li><p>t</p>\n    <p>z</p>\n  </li>\n</ol>",
-    "tight": false,
+    "html": "<ol start=\"10\">\n  <li>t</li>\n</ol>",
+    "tight": true,
     "itemKinds": [
       "paragraph",
-      "comment",
-      "paragraph"
+      "comment"
     ]
   },
   {
@@ -1172,12 +1150,11 @@
   },
   {
     "source": "10. t\n\n      %%%\n    z\n",
-    "html": "<ol start=\"10\">\n  <li><p>t</p>\n    <p>z</p>\n  </li>\n</ol>",
-    "tight": false,
+    "html": "<ol start=\"10\">\n  <li>t</li>\n</ol>",
+    "tight": true,
     "itemKinds": [
       "paragraph",
-      "comment",
-      "paragraph"
+      "comment"
     ]
   },
   {
@@ -1191,12 +1168,11 @@
   },
   {
     "source": "10. t\n\n\n      %%%\n    z\n",
-    "html": "<ol start=\"10\">\n  <li><p>t</p>\n    <p>z</p>\n  </li>\n</ol>",
-    "tight": false,
+    "html": "<ol start=\"10\">\n  <li>t</li>\n</ol>",
+    "tight": true,
     "itemKinds": [
       "paragraph",
-      "comment",
-      "paragraph"
+      "comment"
     ]
   },
   {

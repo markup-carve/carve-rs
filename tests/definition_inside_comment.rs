@@ -49,8 +49,7 @@ fn a_definition_after_a_closed_comment_still_registers() {
 
 #[test]
 fn an_unterminated_comment_fence_does_not_swallow_a_later_definition() {
-    // An unterminated `%%%` degrades to a single-line comment, so the state is
-    // never entered and what follows is ordinary document.
+    // carve#4907: an unterminated `%%%` opens a span to the end of the document.
     let out = html("%%%\n\n[^a]: note\n\nsee [^a]\n");
-    assert!(out.contains("doc-noteref"), "should resolve: {out}");
+    assert_eq!(out, "", "the span hides the rest: {out}");
 }

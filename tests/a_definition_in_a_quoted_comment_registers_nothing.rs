@@ -125,9 +125,10 @@ fn a_closer_that_is_not_in_the_same_quote_does_not_close_the_fence() {
             "the wrong width",
         ),
     ] {
+        // carve#4907: the unclosed span hides the definition.
         assert!(
-            html(src).contains("href=\"/url\""),
-            "lost a definition whose fence never closed ({why})",
+            !html(src).contains("href=\"/url\""),
+            "registered a definition inside an unclosed span ({why})",
         );
     }
 }
@@ -141,9 +142,16 @@ fn a_blank_line_is_the_whole_bound_for_a_quoted_scope() {
     //
     // Both quotes here hold an unterminated opener, so both definitions register
     // rather than one region spanning the blank and eating them.
+    // carve#4907: each unclosed span hides its own definition.
     let out = html("> %%%\n> [r]: /one\n\n> %%%\n> [s]: /two\n\nSee [r][] and [s][].\n");
-    assert!(out.contains("href=\"/one\""), "lost the first: {out}");
-    assert!(out.contains("href=\"/two\""), "lost the second: {out}");
+    assert!(
+        !out.contains("href=\"/one\""),
+        "registered the first: {out}"
+    );
+    assert!(
+        !out.contains("href=\"/two\""),
+        "registered the second: {out}"
+    );
 }
 
 #[test]
@@ -263,8 +271,12 @@ fn a_closer_that_has_left_the_item_does_not_close_a_marker_line_quote() {
     // as unterminated and publishes the definition under it. Taking the far
     // closer suppressed that definition AND put it back on the page as quoted
     // text, which is a worse defect than the one this change closes.
+    // carve#4907: the item's unclosed span hides the definition.
     let out = html("- > %%%\n  > [r]: /url\n> %%%\n\nSee [r][].\n");
-    assert!(out.contains("href=\"/url\""), "lost the definition: {out}");
+    assert!(
+        !out.contains("href=\"/url\""),
+        "registered the definition: {out}"
+    );
     assert!(
         !out.contains("[r]: /url"),
         "definition leaked as text: {out}"
@@ -273,7 +285,7 @@ fn a_closer_that_has_left_the_item_does_not_close_a_marker_line_quote() {
     // The control on the same pair: at column 0 there is nothing to dedent below,
     // so the blank line stays the whole bound there and nothing about a quote
     // written at the document level changes.
-    assert!(html("> %%%\n> [r]: /url\n\n> %%%\n\nSee [r][].\n").contains("href=\"/url\""));
+    assert!(!html("> %%%\n> [r]: /url\n\n> %%%\n\nSee [r][].\n").contains("href=\"/url\""));
 }
 
 #[test]

@@ -19,13 +19,6 @@
       ]
     },
     {
-      "ticket": "markup-carve/carve-rs#3534",
-      "cause": "untriaged day-one drift in the notes family",
-      "cases": [
-        "notes-c0e4dadcf339"
-      ]
-    },
-    {
       "ticket": "markup-carve/carve#4033",
       "cause": "an unclosed fence's trailing blank run in a description body: the pin's model predates carve main, and the model reads a reopened item fence differently",
       "cases": [
@@ -247,14 +240,11 @@
       "cause": "spec pin 5889a6fe: comments and one-line definitions close no indentation container, carve-rs port pending",
       "cases": [
         "attributes-2b77986c20cb",
-        "attributes-80f499652a38",
-        "attributes-8f9441a23e92",
         "fences-0f3cd4f4afa1",
         "fences-0f97ddc61064",
         "fences-12567203d079",
         "fences-6bc0ef499ad3",
         "fences-ff7cb8098738",
-        "lazy-4c72164cbc27",
         "notes-141a19fe4d26",
         "notes-2e4eb2b5337e",
         "notes-ad837470e80a",
@@ -264,8 +254,6 @@
         "ownership-0b450abbd040",
         "ownership-fed027499f76",
         "roundtrip-06b8bec64416",
-        "roundtrip-29bf84d5501e",
-        "roundtrip-50e7fa11ce58",
         "roundtrip-6195169377bd",
         "roundtrip-6c679719a4ee"
       ]
@@ -369,6 +357,14 @@
         "roundtrip-99aafdbd4a0d",
         "roundtrip-c5d30c150732",
         "roundtrip-db67dc897ae3"
+      ]
+    },
+    {
+      "ticket": "markup-carve/carve-rs#3776",
+      "cause": "carve#4907 F1 port follow-up: a column-0 closer of a span opened on a nested item's marker line",
+      "cases": [
+        "ownership-410ecffd1fdc",
+        "ownership-6beddda1d2d6"
       ]
     }
   ]

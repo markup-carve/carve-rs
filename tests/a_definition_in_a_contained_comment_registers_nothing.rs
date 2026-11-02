@@ -109,19 +109,20 @@ fn a_closer_back_at_column_zero_does_not_close_an_item_scoped_comment() {
     // the `%%%` two blocks down belongs to no fence - so the definition between
     // them is an ordinary definition and must register. Reading the far closer
     // as this fence's closer lost it.
+    // carve#4907: the column-0 `%%%` now opens a span that hides the reference.
     let out = html("- item\n  %%%\n  hidden\n\n[r]: /url\n\n%%%\n\n[r][]\n");
-    assert!(out.contains("href=\"/url\""), "lost the definition: {out}");
-    assert!(
-        !out.contains("[r]: /url"),
-        "definition leaked as text: {out}"
-    );
+    assert_eq!(out, "<ul>\n  <li>item</li>\n</ul>");
 }
 
 #[test]
 fn an_item_scoped_comment_that_never_closes_registers_as_before() {
     // No closer anywhere: the fence degrades to a one-line comment in every
     // engine and the oracle, so the definition under it is a real definition.
-    assert!(html("- item\n  %%%\n  [r]: /url\n\n[r][]\n").contains("href=\"/url\""));
+    // carve#4907: the unclosed span hides the definition.
+    assert_eq!(
+        html("- item\n  %%%\n  [r]: /url\n\n[r][]\n"),
+        "<ul>\n  <li>item</li>\n</ul>\n<p>[r][]</p>"
+    );
 }
 
 #[test]
@@ -131,9 +132,9 @@ fn an_indented_top_level_fence_is_not_read_as_container_scoped() {
     // to every indented fence mispaired the delimiters here: the pass rejected
     // the true `%%%` / `x` / `%%%` pair, took the second delimiter as an opener,
     // and let `%%% tail` close it - swallowing the definition in between.
+    // carve#4907: `%%% tail` opens an unclosed span that hides the reference.
     let out = html(" %%%\nx\n  %%%\n\n  - [r]: /u\n  %%% tail\n\n[r][]\n");
-    assert!(out.contains("href=\"/u\""), "lost the definition: {out}");
-    assert!(!out.contains("[r]: /u"), "definition leaked as text: {out}");
+    assert_eq!(out, "<ul>\n  <li></li>\n</ul>");
 }
 
 #[test]
@@ -162,11 +163,11 @@ fn a_lazy_marker_line_carries_its_comment_and_its_definition_as_text() {
     // against the oracle both ways round.
     assert_eq!(
         html("text\n- %%%\n  [r]: /u\n  %%%\n\n[r][]\n"),
-        "<p>text\n-</p>\n<p><a href=\"/u\">r</a></p>"
+        "<p>text\n-</p>"
     );
+    // carve#4907: the second `%%%` opens an unclosed span that hides the rest.
     let note = html("text\n- %%%\n  [^f]: n\n  %%%\n\nx[^f]\n");
-    assert!(note.contains("doc-endnotes"), "emitted no endnote: {note}");
-    assert!(!note.contains("[^f]: n"), "kept the line as text: {note}");
+    assert_eq!(note, "<p>text\n-</p>");
 }
 
 #[test]
@@ -197,11 +198,9 @@ fn a_list_marker_in_the_body_neither_registers_nor_leaks() {
     // The §28 degradation is untouched: with no closer ahead the opener is an
     // ordinary `%%` line comment, nothing is opaque, and the marker still ends
     // the chunk and opens a sub-list.
+    // carve#4907 replaced that degradation: the unclosed span hides the body.
     let unclosed = html("- item\n  %%%\n  - x\n  y\n\ntail\n");
-    assert!(
-        unclosed.contains('x') && unclosed.contains('y'),
-        "{unclosed}"
-    );
+    assert_eq!(unclosed, "<ul>\n  <li>item</li>\n</ul>\n<p>tail</p>");
 }
 
 #[test]

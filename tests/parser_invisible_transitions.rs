@@ -55,7 +55,8 @@ fn ordered_item_matched_comment_payload_is_opaque_across_indent() {
     // indentation. The current spec model gap is tracked in carve#3881.
     assert_eq!(
         to_html("1. 1. a\n\n   %%%\n  note\n%%%\nx\n"),
-        "<ol>\n  <li>\n    <ol>\n      <li>a</li>\n    </ol>\n  </li>\n</ol>\n<p>note</p>\n<p>x</p>"
+        // carve#4907: the column-0 `%%%` opens a span that hides `x`.
+        "<ol>\n  <li>\n    <ol>\n      <li>a</li>\n    </ol>\n  </li>\n</ol>\n<p>note</p>"
     );
 }
 

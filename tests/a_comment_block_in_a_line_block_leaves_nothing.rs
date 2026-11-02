@@ -35,11 +35,11 @@ fn a_closed_pair_leaves_nothing() {
         ),
         (
             "::: |\na\n%%%\nc\n:::\n",
-            "<div class=\"line-block\">\n  <p>a<br>\n<br>\nc</p>\n</div>",
+            "<div class=\"line-block\">\n  <p>a</p>\n</div>",
         ),
         (
             "::: |\n %%%\nx\n%%%\n:::\n",
-            "<div class=\"line-block\">\n  <p>&nbsp;%%%<br>\nx<br>\n</p>\n</div>",
+            "<div class=\"line-block\">\n  <p>&nbsp;%%%<br>\nx</p>\n</div>",
         ),
         (
             "::: |\na\n\n%%%\nx\n%%%\n\nb\n:::\n",
@@ -86,6 +86,6 @@ fn the_written_fence_pairs_with_no_comment_line() {
     assert_eq!(children(&once), children(source));
     assert_eq!(
         carve::to_html(&once),
-        "<div class=\"line-block\">\n  <p><br>\na</p>\n</div>"
+        "<div class=\"line-block\">\n\n</div>"
     );
 }

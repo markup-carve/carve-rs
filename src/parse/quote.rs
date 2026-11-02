@@ -1365,31 +1365,15 @@ pub(in crate::parse) fn quoted_colon_body_follows(
     false
 }
 
-/// Does a line matching `closes` follow line `from` at nesting `level`, before
-/// the quote at that level ends?
+/// Whether a comment opener at line `from` opens a span: always, with no
+/// closer lookahead (carve#4907).
 pub(in crate::parse) fn closer_ahead(
-    lines: &[SourceLine],
-    from: usize,
-    level: usize,
-    closes: impl Fn(&str) -> bool,
+    _lines: &[SourceLine],
+    _from: usize,
+    _level: usize,
+    _closes: impl Fn(&str) -> bool,
 ) -> bool {
-    for line in &lines[from + 1..] {
-        let mut text = line.text.as_str();
-        if text.starts_with(LAZY) {
-            return false;
-        }
-        for _ in 0..level {
-            // A nested quote's marker may stand at a hosted item's column.
-            match strip_blockquote_prefix(trim_ascii_start(text)) {
-                Some(rest) => text = rest,
-                None => return false,
-            }
-        }
-        if closes(text) {
-            return true;
-        }
-    }
-    false
+    true
 }
 
 #[inline(never)]
@@ -1502,7 +1486,6 @@ struct QuoteBody<'a> {
     comment_run: Option<(usize, usize, usize)>,
     comment_lazy_lines: Vec<(usize, String, Option<isize>)>,
     // The comment run whose unmarked closer search already failed.
-    no_unmarked_closer: Option<(usize, usize, usize)>,
     in_fence: Option<FenceOpen>,
     opaque_tail: bool,
     fence_count: usize,
@@ -1566,6 +1549,7 @@ impl<'a> QuoteBody<'a> {
             OpenCommentFence {
                 fence_len: run,
                 quote_depth: depth + 1,
+                floor: 0,
             },
         ) {
             return false;
@@ -1593,7 +1577,6 @@ impl<'a> QuoteBody<'a> {
             closed_div: false,
             comment_run: None,
             comment_lazy_lines: Vec::new(),
-            no_unmarked_closer: None,
             in_fence: None,
             opaque_tail: false,
             fence_count: 0,
@@ -1754,6 +1737,7 @@ impl<'a> QuoteBody<'a> {
                     OpenCommentFence {
                         fence_len: run,
                         quote_depth: depth,
+                        floor: 0,
                     },
                 )
             {
@@ -2663,27 +2647,10 @@ impl<'a> QuoteBody<'a> {
         false
     }
 
-    /// The quote's own closer search (PART 0 recovery table, carve#4770): an
-    /// exact-width closer ahead, marked or not, before a blank line. A failed
-    /// search fails for every later line of the same run.
-    fn unmarked_closer_ahead(&mut self, cur: &LineCursor<'_>, run: usize) -> bool {
-        if self.no_unmarked_closer == self.comment_run {
-            return false;
-        }
-        let found = (cur.pos + 1..cur.lines.len())
-            .map(|at| {
-                let mut text = trim_ascii_start(cur.lines.at(at));
-                while let Some(rest) = strip_blockquote_prefix(text) {
-                    text = trim_ascii_start(rest);
-                }
-                text
-            })
-            .find(|text| is_blank_line(text) || is_comment_fence_close(text, run))
-            .is_some_and(|text| !is_blank_line(text));
-        if !found {
-            self.no_unmarked_closer = self.comment_run;
-        }
-        found
+    /// A span the quote holds is open whether or not its closer follows
+    /// (carve#4907).
+    fn unmarked_closer_ahead(&mut self, _cur: &LineCursor<'_>, _run: usize) -> bool {
+        true
     }
 
     fn fold_lazy_line(&mut self, cur: &mut LineCursor<'a>, line: &str) {

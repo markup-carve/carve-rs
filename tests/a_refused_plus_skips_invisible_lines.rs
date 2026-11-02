@@ -13,7 +13,8 @@ fn flat(source: &str) -> String {
 fn a_comment_fence_crossing_a_quote_end_refuses_the_plus() {
     assert_eq!(
         flat("> - +\n> %%%\n\n> %%%\n> text\n"),
-        "<blockquote><ul><li>+</li></ul></blockquote><blockquote><p>text</p></blockquote>"
+        // carve#4907: the second quote's unclosed span hides `text`.
+        "<blockquote><ul><li>+</li></ul></blockquote><blockquote></blockquote>"
     );
 }
 

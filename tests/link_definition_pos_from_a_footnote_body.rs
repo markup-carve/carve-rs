@@ -50,9 +50,8 @@ fn a_definition_from_a_footnote_body_has_a_position() {
     let defs = definitions(NOTE_BODY_DEF);
     assert_eq!(defs.len(), 1, "expected one definition, got {defs:?}");
     let span = defs[0].1.expect("the definition carries a pos");
-    // The whole line INCLUDING its indentation, the same span carve-js and
-    // carve-php produce for this input.
-    assert_eq!(sliced(NOTE_BODY_DEF, span), "  [r]: /u");
+    // From its own `[`, past the note body's indentation (carve#4952).
+    assert_eq!(sliced(NOTE_BODY_DEF, span), "[r]: /u");
 }
 
 #[test]

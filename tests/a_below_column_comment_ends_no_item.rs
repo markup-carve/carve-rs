@@ -142,9 +142,13 @@ fn an_unterminated_comment_fence_at_column_zero_answers_as_the_line_form_does() 
     // exactly as the `%%` spelling does. This row used to assert the opposite,
     // on carve#1907's record that the two spellings parted; the ruling closed
     // it.
+    // carve#4907 replaced that: the opener now opens a span that hides `tail`.
     let folded = both_paths("- a\n  - x\n%% c\ntail\n");
-    assert_eq!(both_paths("- a\n  - x\n%%% c\ntail\n"), folded);
     assert!(folded.contains("<li>x</li>"), "{folded}");
+    assert_eq!(
+        both_paths("- a\n  - x\n%%% c\ntail\n"),
+        "<ul>\n  <li>a\n    <ul>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>"
+    );
 }
 
 #[test]

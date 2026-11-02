@@ -165,12 +165,10 @@ fn a_reference_definition_after_a_commented_opener_still_registers() {
 /// every later line block, taking the definitions inside them with it.
 #[test]
 fn an_unterminated_comment_fence_does_not_suppress_later_line_blocks() {
+    // carve#4907: the unterminated `%%%` hides the rest of the document.
     let html = carve::to_html("%%%\n\n::: |\n[^a]: note\n:::\n\nsee [^a]\n");
 
-    assert!(
-        html.contains("[^a]: note"),
-        "the verse line was extracted after an unterminated comment: {html}"
-    );
+    assert_eq!(html, "", "the span hides the line block: {html}");
     assert!(
         !html.contains("doc-noteref"),
         "a footnote formed from a line block's verse: {html}"

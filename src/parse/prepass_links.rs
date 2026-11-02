@@ -470,6 +470,19 @@ pub(in crate::parse) fn strip_blockquote_prefix(line: &str) -> Option<&str> {
 
 /// Hoist every authored `[label]: /url` definition into the document as a
 /// `LinkReferenceDefinition` node (PART 12 §10, NORMATIVE).
+/// The ORIGINAL source's lines, split the way `CodepointLineStarts` counts them.
+fn original_lines(source: &str) -> Vec<&str> {
+    let mut lines = Vec::new();
+    let mut rest = source;
+    while let Some(at) = rest.find(['\r', '\n']) {
+        lines.push(&rest[..at]);
+        let step = if rest[at..].starts_with("\r\n") { 2 } else { 1 };
+        rest = &rest[at + step..];
+    }
+    lines.push(rest);
+    lines
+}
+
 pub(in crate::parse) fn append_link_reference_definitions(
     doc: &mut Document,
     link_defs: &BTreeMap<String, LinkDef>,
@@ -480,20 +493,27 @@ pub(in crate::parse) fn append_link_reference_definitions(
     if link_defs.is_empty() {
         return;
     }
-    let lines = line_starts.map(|_| source.split('\n').collect::<Vec<_>>());
+    let lines = line_starts.map(|_| original_lines(source));
     let mut authored: Vec<(Option<usize>, LinkReferenceDefinition)> = Vec::new();
     for (label, def) in link_defs {
         let pos = match (line_starts, lines.as_ref(), def.line) {
             (Some(line_starts), Some(lines), Some(line)) => {
                 let text = lines.get(line).copied().unwrap_or("");
+                let text = text.strip_prefix('\u{feff}').unwrap_or(text);
                 let start = line_starts.get(line).copied().unwrap_or(0);
                 let bom_column = usize::from(line == 0 && line_starts.has_leading_bom());
+                // A leaf starts at its own `[`: a container prefix and leading
+                // indentation stay outside the span (carve#4952).
+                let label = def.raw_label.as_deref().unwrap_or(label);
+                let lead = text
+                    .find(&format!("[{label}]:"))
+                    .map_or(0, |at| text[..at].chars().count());
                 Some(Pos {
                     start_line: line + 1,
                     end_line: line + 1,
-                    start_column: 1 + bom_column,
+                    start_column: 1 + bom_column + lead,
                     end_column: text.chars().count() + 1 + bom_column,
-                    start_offset: start,
+                    start_offset: start + lead,
                     end_offset: start + text.chars().count(),
                     file: None,
                 })

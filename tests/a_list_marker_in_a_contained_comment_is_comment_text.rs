@@ -83,9 +83,9 @@ fn an_unterminated_fence_still_degrades_and_the_marker_still_opens_a_list() {
     // the gate must still fire. The guard reads the span state the PRECEDING
     // lines left, and that state is only ever set where a closer really
     // follows - which is what keeps this case working.
+    // carve#4907 replaced the degradation: the span hides the marker and `y`.
     let out = to_html("- item\n  %%%\n  - x\n  y\n\ntail\n");
-    assert!(out.contains('x') && out.contains('y'), "{out}");
-    assert!(out.contains("<ul>"), "{out}");
+    assert_eq!(out, "<ul>\n  <li>item</li>\n</ul>\n<p>tail</p>");
 }
 
 #[test]

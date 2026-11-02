@@ -291,7 +291,8 @@ fn a_comment_closer_at_the_host_boundary_hides_definitions() {
             .iter()
             .any(|w| w.rule == "unresolved-reference-link"));
     }
-    assert!(carve::to_html("- item\n  %%%\n  [r]: /url\n\n[use][r]\n").contains("href="));
+    // carve#4907: the unclosed span hides the definition too.
+    assert!(!carve::to_html("- item\n  %%%\n  [r]: /url\n\n[use][r]\n").contains("href="));
 }
 
 #[test]

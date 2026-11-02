@@ -576,7 +576,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 }
                 end += 1;
             }
-            return Some(1);
+            // An unclosed span hides the rest of the container (carve#4907).
+            return Some(end - at);
         }
         if (!is_footnote_definition_placeholder(line)
             && (is_line_comment_any_column(line) || is_definition_placeholder(line)))

@@ -96,7 +96,7 @@ fn the_frames_own_column_is_unchanged() {
 fn a_fence_below_every_column_ends_nothing() {
     assert_eq!(
         both_paths("- - - x\n %%% x\n # h\n"),
-        "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>x</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<section id=\"h\">\n  <h1>h</h1>\n</section>"
+        "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>x</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>"
     );
 }
 

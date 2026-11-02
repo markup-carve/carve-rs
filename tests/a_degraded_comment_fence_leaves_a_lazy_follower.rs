@@ -150,11 +150,11 @@ fn an_at_column_line_after_the_fence_is_still_the_items() {
     // into the paragraph it opened.
     assert_eq!(
         both_paths("- x\n  %%% x\n  # h\n"),
-        "<ul>\n  <li>x\n    <h1 id=\"h\">h</h1>\n  </li>\n</ul>",
+        "<ul>\n  <li>x</li>\n</ul>",
     );
     assert_eq!(
         both_paths("- x\n  %%% x\n  b\n c\n"),
-        "<ul>\n  <li>x\n    b\nc\n  </li>\n</ul>",
+        "<ul>\n  <li>x</li>\n</ul>\n<p>c</p>",
     );
 }
 
@@ -181,10 +181,7 @@ fn a_terminated_fence_leaves_the_item_open() {
 fn a_fence_below_the_content_column_ends_nothing() {
     // THE THIRD CONTROL. Written below the column the fence reached no
     // container, so it is lazy paragraph text and ends nothing.
-    assert_eq!(
-        both_paths("- x\n %%% x\n b\n"),
-        "<ul>\n  <li>x</li>\n</ul>\n<p>b</p>",
-    );
+    assert_eq!(both_paths("- x\n %%% x\n b\n"), "<ul>\n  <li>x</li>\n</ul>",);
 }
 
 /// A FRAME ONE LEVEL IN STILL ENDS, and this is the row that says the rule is

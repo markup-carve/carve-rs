@@ -113,34 +113,9 @@ pub(in crate::parse) fn record_skipped_sibling_abbreviation(
     });
 }
 
-/// The last closer of each comment fence width in `from..end`.
-fn last_comment_closers(cur: &LineCursor<'_>, from: usize, end: usize) -> HashMap<usize, usize> {
-    let mut last = HashMap::new();
-    for index in from..end {
-        let candidate = cur.lines.at(index);
-        let run = trim_ascii_start(strip_lazy(candidate))
-            .bytes()
-            .take_while(|&byte| byte == b'%')
-            .count();
-        if run >= 3 && is_comment_fence_close_any_column(candidate, run) {
-            last.insert(run, index);
-        }
-    }
-    last
-}
-
 fn consume_invisible_definition_gap(cur: &mut LineCursor<'_>, end: usize, options: &Options<'_>) {
-    let last_closer = last_comment_closers(cur, cur.pos, end);
     while cur.pos < end {
-        let at = cur.pos;
-        let span = cur
-            .peek()
-            .and_then(detect_comment_fence_line_any_column)
-            .filter(|open| {
-                last_closer
-                    .get(&open.fence_len)
-                    .is_some_and(|&last| last > at)
-            });
+        let span = cur.peek().and_then(detect_comment_fence_line_any_column);
         if let Some(open) = span {
             cur.consume();
             while cur.pos < end {
@@ -434,7 +409,6 @@ fn definition_sibling_after_invisible(
 ) -> Option<usize> {
     let mut at = cur.pos;
     let mut blanks = 0;
-    let mut last_closers: Option<HashMap<usize, usize>> = None;
     while let Some(line) = cur.lines.line(at) {
         if is_blank_line(line) {
             if !allow_blank {
@@ -448,27 +422,11 @@ fn definition_sibling_after_invisible(
             continue;
         }
         if let Some(open) = detect_comment_fence_line_any_column(line) {
-            // §28: with no closer ahead the opener is one `%%` line. The first miss
-            // builds an index, so a run of distinct widths does not rescan the document.
-            let may_close = last_closers
-                .as_ref()
-                .map_or(true, |last: &HashMap<usize, usize>| {
-                    last.get(&open.fence_len).is_some_and(|&last| last > at)
-                });
-            let closer = may_close
-                .then(|| {
-                    (at + 1..cur.lines.len()).find(|&index| {
-                        is_comment_fence_close_any_column(cur.lines.at(index), open.fence_len)
-                    })
-                })
-                .flatten();
-            if let Some(closer) = closer {
-                at = closer + 1;
-            } else {
-                last_closers
-                    .get_or_insert_with(|| last_comment_closers(cur, at + 1, cur.lines.len()));
-                at += 1;
-            }
+            // An unclosed span hides the rest (carve#4907).
+            let closer = (at + 1..cur.lines.len()).find(|&index| {
+                is_comment_fence_close_any_column(cur.lines.at(index), open.fence_len)
+            });
+            at = closer.map_or(cur.lines.len(), |closer| closer + 1);
             continue;
         }
         if is_footnote_definition_placeholder(line) {
@@ -1571,6 +1529,9 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         let Some(open) = detect_comment_fence_line_any_column(line) else {
             return false;
         };
+        if body_open_comment_run(&self.lines).is_some() {
+            return false;
+        }
         let authored_opener_comment = || {
             cur.source_col(cur.pos).is_some_and(|comment_col| {
                 (0..cur.pos)
@@ -1594,7 +1555,10 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
     /// Rule A (carve#3885): a comment below the body's column ends the body,
     /// unless it closes a comment span the body holds.
     fn take_below_column_comment(&mut self, cur: &mut LineCursor<'_>, line: &str) -> BodyStep {
-        if !closes_a_held_comment_span(&self.lines, line) {
+        // Inside a held span a `%%` line is payload, not a line that misses
+        // the body (carve#4907).
+        let payload = body_open_comment_run(&self.lines).is_some();
+        if !payload && !closes_a_held_comment_span(&self.lines, line) {
             return BodyStep::Stop;
         }
         let kept = trim_ascii_start(line).to_owned();

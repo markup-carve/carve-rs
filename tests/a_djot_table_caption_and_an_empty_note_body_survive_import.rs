@@ -59,7 +59,7 @@ fn a_caption_inside_a_quote_keeps_its_marker() {
 fn an_empty_footnote_body_becomes_a_comment() {
     assert_eq!(
         imported("[^a]\n[^b]\n\n[^b]:\n"),
-        "[^carve-djot-note-0]: %%%%\n\n[^carve-djot-note-0]\n[^b]\n\n[^b]: %%%%\n"
+        "[^carve-djot-note-0]: %%\n\n[^carve-djot-note-0]\n[^b]\n\n[^b]: %%\n"
     );
 }
 

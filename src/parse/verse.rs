@@ -709,16 +709,6 @@ pub(in crate::parse) fn parse_line_block(cur: &mut LineCursor, options: &Options
     // A closed `%%%` pair leaves no verse line, and a blank line in its body
     // splits no stanza (CARVE-P9-047). Only an opener whose first character is
     // `%` qualifies; the closer may be indented and matches on exact run length.
-    let mut last_closer: std::collections::HashMap<usize, usize> = Default::default();
-    for at in cur.pos..end {
-        if let Some(run) = cur
-            .lines
-            .line(at)
-            .and_then(|line| verse_comment_run(&strip_leading_columns(line, base_indent)))
-        {
-            last_closer.insert(run, at);
-        }
-    }
     let mut stanza_pairs: Vec<(usize, Comment)> = Vec::new();
     let mut leading: Vec<Comment> = Vec::new();
     let mut stanza_leading: Vec<Comment> = Vec::new();
@@ -732,17 +722,30 @@ pub(in crate::parse) fn parse_line_block(cur: &mut LineCursor, options: &Options
             .starts_with('%')
             .then(|| verse_comment_run(&opener))
             .flatten();
-        if let Some(run) = run.filter(|run| last_closer.get(run).is_some_and(|&at| at > cur.pos)) {
+        if let Some(run) = run {
+            // An unclosed span runs to the block's own closer (carve#4907).
+            let limit = if end > 0
+                && cur
+                    .lines
+                    .line(end - 1)
+                    .is_some_and(|line| exact_colon_fence_len(line) == Some(fence_len))
+            {
+                end - 1
+            } else {
+                end
+            };
             let open_at = cur.pos;
             let mut close_at = open_at + 1;
-            while cur
-                .lines
-                .line(close_at)
-                .and_then(|line| verse_comment_run(&strip_leading_columns(line, base_indent)))
-                != Some(run)
+            while close_at < limit
+                && cur
+                    .lines
+                    .line(close_at)
+                    .and_then(|line| verse_comment_run(&strip_leading_columns(line, base_indent)))
+                    != Some(run)
             {
                 close_at += 1;
             }
+            let closed = close_at < limit;
             let tail = opener[run..].trim_matches([' ', '\t']);
             let content = std::iter::once(tail)
                 .filter(|tail| !tail.is_empty())
@@ -754,8 +757,9 @@ pub(in crate::parse) fn parse_line_block(cur: &mut LineCursor, options: &Options
                 }))
                 .collect::<Vec<_>>()
                 .join("\n");
+            let next = if closed { close_at + 1 } else { limit };
             let pos = if options.positions {
-                span_of(cur, open_at, close_at + 1, options)
+                span_of(cur, open_at, next, options)
             } else {
                 None
             };
@@ -770,7 +774,7 @@ pub(in crate::parse) fn parse_line_block(cur: &mut LineCursor, options: &Options
             } else {
                 stanza_pairs.push((stanza.lines.len() - 1, comment));
             }
-            cur.pos = close_at + 1;
+            cur.pos = next;
             continue;
         }
         let source_line = cur.source_line(cur.pos);

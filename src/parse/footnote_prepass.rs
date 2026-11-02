@@ -259,11 +259,7 @@ fn document_abbreviation_below_note(
 /// so a zero reached content column alone does not make an abbreviation a
 /// document block. Record their span once for the footnote walk rather than
 /// rescanning the preceding source for each note.
-fn document_colon_spans(
-    lines: &[&str],
-    fence_closers: &PrepassFenceClosers,
-    comment_closers: &HashMap<usize, usize>,
-) -> Vec<bool> {
+fn document_colon_spans(lines: &[&str], fence_closers: &PrepassFenceClosers) -> Vec<bool> {
     let mut spans = Vec::with_capacity(lines.len());
     let mut containers = Vec::new();
     let mut code = None;
@@ -290,12 +286,7 @@ fn document_colon_spans(
             continue;
         }
         if let Some(open) = detect_comment_fence_line_any_column(line) {
-            if comment_closers
-                .get(&open.fence_len)
-                .is_some_and(|&last| last > at)
-            {
-                comment = Some(open.fence_len);
-            }
+            comment = Some(open.fence_len);
             continue;
         }
         if indent_columns(line) != 0 {
@@ -578,7 +569,6 @@ struct FootnoteScan<'a, 'o> {
     // closer - which is not a colon fence - and every later definition in the
     // document was skipped. Comment bodies remain opaque here.
     in_comment_fence: Option<OpenCommentFence>,
-    comment_fence_closers: HashMap<usize, usize>,
     closer_maxima: PrepassFenceClosers,
     folded_into_term: TermLineOwnership,
     // Built on the first CONTAINER-scoped opener and never for a document that
@@ -611,11 +601,10 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let recent_list_marker = list_marker_since_blank(lines);
         let probe_budget = probe_budget_for(source.len());
         let verse_lines = verse_owned_lines(source, options);
-        let comment_fence_closers = comment_fence_close_index(lines);
         let closer_maxima = fence_closer_suffix_maxima(lines);
         let folded_into_term = term_folded_lines(lines, &closer_maxima, options);
         let document_colon_open = if source.contains("*[") && source.contains(":::") {
-            document_colon_spans(lines, &closer_maxima, &comment_fence_closers)
+            document_colon_spans(lines, &closer_maxima)
         } else {
             Vec::new()
         };
@@ -640,7 +629,6 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             fence: PrepassFenceState::default(),
             verse_lines,
             in_comment_fence: None,
-            comment_fence_closers,
             closer_maxima,
             folded_into_term,
             container_closers: None,
@@ -817,6 +805,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
 
     fn step_comment_fence(&mut self, i: usize) -> bool {
         let line = self.lines[i];
+        if self.in_comment_fence.is_some_and(|open| {
+            !closes_open_comment_fence(line, open) && misses_comment_owner(line, open)
+        }) {
+            self.in_comment_fence = None;
+        }
         if let Some(open) = self.in_comment_fence {
             end_prepass_paragraph_at(&self.folded_into_term, i);
             // ANY column, matching `comment_fence_close_index` and the block
@@ -841,29 +834,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let Some((open, scope)) = detect_comment_fence_opener_scoped(line, &self.columns) else {
             return false;
         };
-        // THE CONTAINER BOUNDS THE SPAN, NOT THE DELIMITER. For a column
-        // scope the bound ends the container at the first line that dedents
-        // below the column the fence REACHES, so measuring from where the
-        // `%%%` happens to be written read a legal body line as the end:
-        // `- item` / `    %%%` / `  [r]: /u` / `    %%%` put the fence at 4
-        // and its body at 2, still inside the item, and the fence was
-        // declined (carve-rs#1054). For a quote scope the blank line is the
-        // bound - see `CommentFenceScope`.
-        if !comment_fence_scope_closes(
-            scope,
-            self.lines,
-            i,
-            open.fence_len,
-            &self.columns,
-            &self.comment_fence_closers,
-            &mut self.container_closers,
-        ) {
-            return false;
-        }
         end_prepass_paragraph_at(&self.folded_into_term, i);
         self.in_comment_fence = Some(OpenCommentFence {
             fence_len: open.fence_len,
             quote_depth: scope.quote_depth(),
+            floor: scope.floor(),
         });
         self.keep_line(i);
         true
@@ -1455,11 +1430,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         // Lazy continuation, the same rule as every container (ruling on
         // carve#3885): a line that interrupts no paragraph joins an open one.
-        if note.comment_state.comment.is_some_and(|run| {
-            self.comment_fence_closers
-                .get(&run)
-                .is_some_and(|&last| last > *i)
-        }) {
+        if note.comment_state.comment.is_some() {
             return Flow::Stop;
         }
         let rest = trim_ascii_start(line);
@@ -1546,17 +1517,21 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             && trim_ascii_start(line).starts_with("%%")
             && !is_definition_placeholder(line);
         // Rule A (carve#3885): a comment below the body's column closes the note.
+        let held_payload = below_comment
+            && body_open_comment_run(&note.lines).is_some()
+            && !closes_a_held_comment_span(&note.lines, line);
+        if held_payload {
+            note.push_with(line.to_owned(), Some(self.first_source_line + *i), |kept| {
+                stripped_col(Some(0), line, kept)
+            });
+            *i += 1;
+            return Some(Flow::Next);
+        }
         if below_comment
             && state.below_comment_span.is_none()
             && state.note_fence.is_none()
             // §28: an opener with no closer ahead is a `%%` line for this question too.
-            && detect_comment_fence_line_any_column(line).map_or(true, |open| {
-                !closes_a_held_comment_span(&note.lines, line)
-                    && !self
-                        .comment_fence_closers
-                        .get(&open.fence_len)
-                        .is_some_and(|&last| last > *i)
-            })
+            && detect_comment_fence_line_any_column(line).is_none()
         {
             return Some(Flow::Stop);
         }
@@ -1564,11 +1539,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         if below_comment
             && column == 0
             && state.below_comment_span.is_none()
-            && detect_comment_fence_line_any_column(line).is_some_and(|open| {
-                self.comment_fence_closers
-                    .get(&open.fence_len)
-                    .is_some_and(|&last| last > *i)
-            })
+            && detect_comment_fence_line_any_column(line).is_some()
             && !closes_a_held_comment_span(&note.lines, line)
         {
             return Some(Flow::Stop);
@@ -1614,6 +1585,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
     ) -> Flow {
         let closes_held_span = closes_a_held_comment_span(&note.lines, line);
         if state.below_comment_span.is_none()
+            && !closes_held_span
             && !state.retained_below_comment
             && ((parse_footnote_def_line(state.first).is_some()
                 && column == 0
@@ -1629,14 +1601,10 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 state.below_comment_span = None;
                 state.closed_comment_paragraph = true;
             }
-        } else if let Some(open) = detect_comment_fence_line_any_column(line) {
-            if self
-                .comment_fence_closers
-                .get(&open.fence_len)
-                .is_some_and(|&last| last > *i)
-            {
-                state.below_comment_span = Some(open.fence_len);
-            }
+        } else if let Some(open) =
+            detect_comment_fence_line_any_column(line).filter(|_| !closes_held_span)
+        {
+            state.below_comment_span = Some(open.fence_len);
         }
         let matched_span_line = matched_span_line || state.below_comment_span.is_some();
         let kept =

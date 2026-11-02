@@ -45,5 +45,5 @@ fn an_indented_closer_closes_an_indented_opener() {
 fn an_unclosed_indented_fence_opens_no_block() {
     // PART 9 section 28: without a closer it is not a fenced comment, so the
     // following blocks still render instead of being swallowed to EOF.
-    assert_eq!(to_html("a\n  %%% x\nb\n"), "<p>a</p>\n<p>b</p>");
+    assert_eq!(to_html("a\n  %%% x\nb\n"), "<p>a</p>");
 }

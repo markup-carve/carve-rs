@@ -888,42 +888,6 @@ pub(in crate::parse) struct CommentFenceOpen {
     pub(in crate::parse) tail: String,
 }
 
-/// A fenced-comment line is a leading run of 3+ `%`; any following text is
-/// non-structural tail. The opener tail is preserved as comment content.
-/// The last line index at which a comment fence of each length closes.
-///
-/// An UNTERMINATED comment fence is not a fenced comment: the block parser
-/// degrades it to a single-line comment. A pre-pass that treats it as an open
-/// fence stays open for the rest of the document, which suppressed every later
-/// line block and took the definitions inside them with it.
-///
-/// Keyed by EXACT length, because that is what `is_comment_fence_close` tests -
-/// a `%%%%` line does not close a `%%%` fence. And recorded for any line whose
-/// leading `%` run is long enough, not only the bare ones: `%%% trailing` is a
-/// closer to that function, so filtering to all-`%` lines missed real closers.
-///
-/// Precomputed because the forward scan it replaces is quadratic on exactly the
-/// input the perf suite guards: `%%% x`, `%%%% x`, ... is all openers and no
-/// closers, so every line scans to the end.
-pub(in crate::parse) fn comment_fence_close_index(
-    lines: &[&str],
-) -> std::collections::HashMap<usize, usize> {
-    let mut last: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
-    for (i, line) in lines.iter().enumerate() {
-        // The RAW line. This index only ever answers for a TOP-LEVEL opener -
-        // the line-block state is entered nowhere else - so a `> %%%` inside a
-        // container is not a closer for it, and stripping the prefix made one.
-        // Leading whitespace is not part of the delimiter (an indented closer
-        // closes an indented opener), but nothing else is stripped: the note
-        // above is why a `> %%%` must not answer for a top-level opener.
-        let run = comment_fence_width(trim_ascii_end(trim_ascii_start(line)));
-        if run >= 3 {
-            last.insert(run, i);
-        }
-    }
-    last
-}
-
 /// The same fence seen from a position that CONSUMES it.
 ///
 /// A comment is recognized at ANY column (carve#624), but the strict form above
@@ -1095,14 +1059,20 @@ pub(in crate::parse) fn detect_comment_fence_opener_in_container(
 /// lazy continuation.
 #[derive(Clone, Copy)]
 pub(in crate::parse) enum CommentFenceScope {
-    /// The column the `%` run starts at. Zero is the document level.
+    /// The content column the `%` run reaches. Zero is the document level.
     Column(usize),
-    /// The blockquote markers the `%` run was written behind: how many, and the
-    /// column the first of them starts at.
-    Quoted { depth: usize, col: usize },
+    /// The number of blockquote markers the `%` run was written behind, and
+    /// the column inside the quote it reaches (past a marker on its line).
+    Quoted { depth: usize, floor: usize },
 }
 
 impl CommentFenceScope {
+    pub(in crate::parse) fn floor(self) -> usize {
+        match self {
+            CommentFenceScope::Column(floor) | CommentFenceScope::Quoted { floor, .. } => floor,
+        }
+    }
+
     pub(in crate::parse) fn quote_depth(self) -> usize {
         match self {
             CommentFenceScope::Quoted { depth, .. } => depth,
@@ -1126,16 +1096,16 @@ pub(in crate::parse) fn detect_comment_fence_opener_scoped(
     line: &str,
     columns: &ContentColumns,
 ) -> Option<(CommentFenceOpen, CommentFenceScope)> {
-    let (depth, col, quoted) = prepass_quote_scope(line);
+    let (depth, _, quoted) = prepass_quote_scope(line);
     if depth > 0 {
         // Inside the quote the delimiter is read at any column, the same way the
         // column-scoped opener above reads it - the quote is the container, so
         // its own indentation does not have to reach anything further.
-        let (open, _) = detect_comment_fence_opener_at_any_column(quoted)?;
-        return Some((open, CommentFenceScope::Quoted { depth, col }));
+        let (open, floor) = detect_comment_fence_opener_at_any_column(quoted)?;
+        return Some((open, CommentFenceScope::Quoted { depth, floor }));
     }
     let (open, col) = detect_comment_fence_opener_in_container(line, columns)?;
-    Some((open, CommentFenceScope::Column(col)))
+    Some((open, CommentFenceScope::Column(columns.reached_by(col))))
 }
 
 /// A comment fence a definition pre-pass has entered: its width and the maximum
@@ -1144,6 +1114,26 @@ pub(in crate::parse) fn detect_comment_fence_opener_scoped(
 pub(in crate::parse) struct OpenCommentFence {
     pub(in crate::parse) fence_len: usize,
     pub(in crate::parse) quote_depth: usize,
+    /// The content column the opener reached; zero at the document level.
+    pub(in crate::parse) floor: usize,
+}
+
+/// S1 (carve#4907): a span with no closer ends at a nonblank line that misses
+/// its owner. A `%%` line is payload and misses nothing.
+pub(in crate::parse) fn misses_comment_owner(line: &str, open: OpenCommentFence) -> bool {
+    let rest = if open.quote_depth > 0 {
+        let (depth, _, rest) = prepass_quote_scope(line);
+        if is_blank_line(line) || depth < open.quote_depth {
+            return true;
+        }
+        rest
+    } else {
+        line
+    };
+    open.floor > 0
+        && !is_blank_line(rest)
+        && !trim_ascii_start(rest).starts_with("%%")
+        && indent_columns(rest) < open.floor
 }
 
 /// A matched comment closer is read before quote ownership. It may carry any
@@ -1151,44 +1141,6 @@ pub(in crate::parse) struct OpenCommentFence {
 pub(in crate::parse) fn closes_open_comment_fence(line: &str, open: OpenCommentFence) -> bool {
     let (depth, _, rest) = prepass_quote_scope(line);
     depth <= open.quote_depth && is_comment_fence_close_any_column(rest, open.fence_len)
-}
-
-/// Does the fence opened at `open_at` close inside the container bounding it?
-///
-/// The document level is the only scope the RAW closer index answers for, and
-/// the only one it can: it reads raw lines, so a `> %%%` matches nothing in it,
-/// and a `%%%` written back at column 0 is not the closer of a fence a container
-/// holds. It was asked FIRST for every scope all the same, as a gate the bounded
-/// scan then had to agree with, and that is what made a quoted fence read as
-/// unterminated to the pre-passes alone. It is also what made the leak
-/// contingent on unrelated text: a stray column-0 `%%%` later in the document
-/// got the same quoted fence past the gate, and it then answered correctly -
-/// which is why the already-pinned spellings passed while the reported one did
-/// not (markup-carve/carve#1341).
-///
-/// A column-scoped query is unchanged by dropping the gate. For depth 0 the
-/// bounded index holds exactly the runs the raw one does, so the gate was
-/// redundant there rather than load-bearing.
-pub(in crate::parse) fn comment_fence_scope_closes(
-    scope: CommentFenceScope,
-    lines: &[&str],
-    open_at: usize,
-    fence_len: usize,
-    columns: &ContentColumns,
-    raw_closers: &HashMap<usize, usize>,
-    bounded: &mut Option<ContainerCommentClosers>,
-) -> bool {
-    match scope {
-        CommentFenceScope::Column(0) => raw_closers
-            .get(&fence_len)
-            .is_some_and(|close_at| *close_at > open_at),
-        CommentFenceScope::Column(col) => bounded
-            .get_or_insert_with(|| ContainerCommentClosers::build(lines))
-            .closes_in_column(lines, open_at, columns.reached_by(col), fence_len),
-        CommentFenceScope::Quoted { depth, col } => bounded
-            .get_or_insert_with(|| ContainerCommentClosers::build(lines))
-            .closes_in_quote(lines, open_at, depth, col, fence_len),
-    }
 }
 
 pub(in crate::parse) fn detect_comment_fence_opener_at_any_column(
@@ -1260,10 +1212,6 @@ pub(in crate::parse) struct ContainerCommentClosers {
     /// column -> (query point the answer was computed from, the answer).
     dedents: HashMap<usize, (usize, usize)>,
     note_dedents: HashMap<(usize, usize), (usize, usize)>,
-    /// (query point the answer was computed from, the answer), for the blank
-    /// line that ends a quote. One entry rather than a map because the question
-    /// carries no column.
-    blank: Option<(usize, usize)>,
 }
 
 impl ContainerCommentClosers {
@@ -1290,21 +1238,7 @@ impl ContainerCommentClosers {
             by_width,
             dedents: HashMap::new(),
             note_dedents: HashMap::new(),
-            blank: None,
         }
-    }
-
-    fn closes_in_column(
-        &mut self,
-        lines: &[&str],
-        open_at: usize,
-        open_col: usize,
-        fence_len: usize,
-    ) -> bool {
-        let Some(closer) = self.next_closer(open_at, fence_len, 0) else {
-            return false;
-        };
-        closer <= self.first_dedent(lines, open_at, open_col)
     }
 
     pub(in crate::parse) fn closes_in_cursor(
@@ -1335,36 +1269,6 @@ impl ContainerCommentClosers {
             }
         };
         closer <= boundary
-    }
-
-    /// The quoted twin of `closes_in_column`. Search every depth at or above
-    /// the opener before deciding which quote owns the closer. The blank line carries the bound:
-    /// a blockquote does not survive one, so a `> %%%` below a blank opens a
-    /// different quote whose body the block parser never joins to this one.
-    ///
-    /// The dedent joins it only where the quote is itself inside something. A
-    /// quote at column 0 has nothing to dedent below, so the blank is the whole
-    /// test there; a `- > %%%` sits at column 2, and a later `> %%%` back at
-    /// column 0 has left the item, which the depth alone cannot see because both
-    /// runs are one marker deep.
-    fn closes_in_quote(
-        &mut self,
-        lines: &[&str],
-        open_at: usize,
-        depth: usize,
-        quote_col: usize,
-        fence_len: usize,
-    ) -> bool {
-        let Some(closer) = (0..=depth)
-            .filter_map(|candidate| self.next_closer(open_at, fence_len, candidate))
-            .min()
-        else {
-            return false;
-        };
-        if closer >= self.first_blank(lines, open_at) {
-            return false;
-        }
-        quote_col == 0 || closer < self.first_dedent(lines, open_at, quote_col)
     }
 
     pub(in crate::parse) fn closes_in_note(
@@ -1409,51 +1313,6 @@ impl ContainerCommentClosers {
         let positions = self.by_width.get(&(fence_len, depth))?;
         let next = positions.partition_point(|at| *at <= open_at);
         positions.get(next).copied()
-    }
-
-    /// Memoized the way `first_dedent` is, and for the same reason: with no
-    /// blank between `from` and the answer, the answer is still the answer for
-    /// every query point in between, so a run of quoted openers costs one walk
-    /// rather than one each.
-    fn first_blank(&mut self, lines: &[&str], open_at: usize) -> usize {
-        if let Some((from, at)) = self.blank {
-            if from <= open_at && open_at < at {
-                return at;
-            }
-        }
-        let mut at = lines.len();
-        for (offset, line) in lines[open_at + 1..].iter().enumerate() {
-            #[cfg(test)]
-            CONTAINER_DEDENT_STEPS.with(|c| c.set(c.get() + 1));
-            if is_blank_line(line) {
-                at = open_at + 1 + offset;
-                break;
-            }
-        }
-        self.blank = Some((open_at, at));
-        at
-    }
-
-    fn first_dedent(&mut self, lines: &[&str], open_at: usize, open_col: usize) -> usize {
-        if let Some(&(from, at)) = self.dedents.get(&open_col) {
-            if from <= open_at && open_at < at {
-                return at;
-            }
-        }
-        let mut at = lines.len();
-        for (offset, line) in lines[open_at + 1..].iter().enumerate() {
-            #[cfg(test)]
-            CONTAINER_DEDENT_STEPS.with(|c| c.set(c.get() + 1));
-            if is_blank_line(line) {
-                continue;
-            }
-            if indent_columns(line) < open_col {
-                at = open_at + 1 + offset;
-                break;
-            }
-        }
-        self.dedents.insert(open_col, (open_at, at));
-        at
     }
 }
 
@@ -2378,7 +2237,7 @@ fn find_colon_fence_end_with<'a>(
     fence_len: usize,
     mut mode: ColonScanMode<'_>,
     closer_index: &mut Option<HashMap<u8, Vec<usize>>>,
-    comment_closers: &mut Option<HashMap<usize, usize>>,
+    _comment_closers: &mut Option<HashMap<usize, usize>>,
     mut measured: impl FnMut(usize) -> std::borrow::Cow<'a, str>,
 ) -> usize {
     let literal = mode.literal;
@@ -2477,15 +2336,26 @@ fn find_colon_fence_end_with<'a>(
             }
         }
         if let Some(open) = detect_comment_fence_line(line) {
-            if has_indexed_comment_closer_after(lines, comment_closers, idx + 1, open.fence_len) {
-                if let Some(close) = (idx + 1..lines.len())
-                    .find(|&j| is_comment_fence_close_any_column(&measured(j), open.fence_len))
+            match (idx + 1..lines.len())
+                .find(|&j| is_comment_fence_close_any_column(&measured(j), open.fence_len))
+            {
+                Some(close)
+                    if !literal || !(idx + 1..close).any(|at| measured(at).starts_with(LAZY)) =>
                 {
-                    if !literal || !(idx + 1..close).any(|at| measured(at).starts_with(LAZY)) {
-                        idx = close + 1;
-                        paragraph_open = None;
-                        continue;
+                    idx = close + 1;
+                    paragraph_open = None;
+                    continue;
+                }
+                Some(_) => {}
+                // An unclosed span hides the block's own closer (carve#4907).
+                None => {
+                    for at in idx + 1..lines.len() {
+                        let line = measured(at);
+                        if mode.boundary.as_mut().is_some_and(|f| f(line.as_ref(), at)) {
+                            return at;
+                        }
                     }
+                    return lines.len();
                 }
             }
         }

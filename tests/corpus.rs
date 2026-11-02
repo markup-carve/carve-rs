@@ -1267,6 +1267,8 @@ const IMPLEMENTED: &[&str] = &[
     "an-id-key-spells-the-id-slot",
     "an-indented-caret-line-after-a-quote-paragraph-that-starts-with-a-caret-folds-into-it",
     "an-indented-comment-block-in-a-line-block-leaves-nothing",
+    "a-braced-comment-before-a-flag-opener-counts-as-nothing",
+    "a-line-after-a-comment-block-in-a-line-block-reads-the-stanza-without-it",
     "an-indented-dash-line-neither-opens-nor-closes-frontmatter",
     "an-invalid-colon-opener-past-a-description-s-content-column-absorbs-the-bare-run",
     "an-item-hands-its-blank-run-to-a-description-or-note-child-s-open-fence",
@@ -1394,6 +1396,11 @@ const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 /// declares anything.
 ///
 const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
+    // Corpus pairs the spec 04ab7a96 pin moved past this engine. Each actual HTML is measured.
+    ("867-an-indented-comment-block-in-a-line-block-leaves-nothing-4", "ruling at the 5643d59c pin not ported yet", "<div class=\"line-block\">\n  <p>&nbsp;&nbsp;%%%<br>\nx</p>\n</div>"),
+    ("939-a-line-after-a-comment-block-in-a-line-block-reads-the-stanza-without-it-3", "spec pin 04ab7a96: markup-carve/carve#4956 not ported yet", "<ul>\n  <li>\n    <div class=\"line-block\">\n      <p>x</p>\n    </div>\n  </li>\n</ul>"),
+    ("939-a-line-after-a-comment-block-in-a-line-block-reads-the-stanza-without-it-4", "spec pin 04ab7a96: markup-carve/carve#4956 not ported yet", "<blockquote>\n  <div class=\"line-block\">\n    <p>x</p>\n  </div>\n</blockquote>\n<p>b</p>"),
+    ("939-a-line-after-a-comment-block-in-a-line-block-reads-the-stanza-without-it-6", "spec pin 04ab7a96: markup-carve/carve#4956 not ported yet", "<dl>\n  <dt>t</dt>\n  <dd>\n    <div class=\"line-block\">\n      <p>x</p>\n    </div>\n  </dd>\n</dl>"),
     // Corpus pairs the spec 4577df8f pin moved past this engine. Each actual HTML is measured.
     ("448-a-marker-folds-into-a-quote-below-it", "spec pin 4577df8f: markup-carve/carve#4860 not ported yet", "<ul>\n  <li>a\n    <blockquote>\n      <ul>\n        <li>x\n- m</li>\n      </ul>\n    </blockquote>\n  </li>\n</ul>"),
     ("448-a-marker-folds-into-a-quote-below-it-2", "spec pin 4577df8f: markup-carve/carve#4860 not ported yet", "<ul>\n  <li>\n    <blockquote>\n      <ul>\n        <li>x\n- m</li>\n      </ul>\n    </blockquote>\n  </li>\n</ul>"),
@@ -1488,15 +1495,12 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     ("449-a-comment-below-a-description-body-s-column-ends-the-body-10", "spec pin 5889a6fe: markup-carve/carve#4862 not ported yet", "<dl>\n  <dt>t</dt>\n  <dd>x</dd>\n</dl>\n<p>more</p>"),
     ("449-a-comment-below-a-description-body-s-column-ends-the-body-13", "spec pin 5889a6fe: markup-carve/carve#4862 not ported yet", "<dl>\n  <dt>t</dt>\n  <dd>x</dd>\n</dl>\n<p>more</p>"),
     ("449-a-comment-below-a-description-body-s-column-ends-the-body-8", "spec pin 5889a6fe: markup-carve/carve#4862 not ported yet", "<dl>\n  <dt>t</dt>\n  <dd>x</dd>\n</dl>\n<p>more</p>"),
-    ("449-a-comment-below-a-description-body-s-column-ends-the-body-9", "spec pin 5889a6fe: markup-carve/carve#4862 not ported yet", "<dl>\n  <dt>t</dt>\n  <dd>x</dd>\n</dl>\n<p>more</p>"),
     ("481-a-bare-colon-run-interrupts-a-paragraph-whether-or-not-a-line-follows-it-7", "spec pin 5889a6fe: markup-carve/carve#4863 not ported yet", "<p>::: {.x}\nnot a div\n:::</p>"),
     ("506-comment-columns-and-surviving-list-items-3", "spec pin 5889a6fe: markup-carve/carve#4862 not ported yet", "<ul>\n  <li>intro</li>\n</ul>\n<p>tail</p>"),
     ("506-comment-columns-and-surviving-list-items-7", "spec pin 5889a6fe: markup-carve/carve#4862 not ported yet", "<ul>\n  <li>intro</li>\n</ul>\n<p>tail</p>"),
     ("506-comment-columns-and-surviving-list-items-8", "spec pin 5889a6fe: markup-carve/carve#4862 not ported yet", "<ul>\n  <li>intro</li>\n</ul>\n<p>tail</p>"),
     ("510-a-nested-quoted-term-leaves-no-paragraph-for-a-lazy-line", "spec pin 5889a6fe: markup-carve/carve#4861 not ported yet", "<blockquote>\n  <blockquote>\n    <dl>\n      <dt>term\ntail</dt>\n    </dl>\n  </blockquote>\n</blockquote>"),
     ("513-a-comment-span-opened-below-every-content-column-is-located-there-8", "spec pin 5889a6fe: markup-carve/carve#4862 not ported yet", "<ul>\n  <li>item</li>\n</ul>\n<pre><code>tail\n</code></pre>"),
-    ("556-a-closed-block-leaves-no-frame-for-the-line-below-14", "spec pin 5889a6fe: markup-carve/carve#4862 not ported yet", "<ul>\n  <li>\n    <div class=\"box\">\n\n    </div>\n  </li>\n</ul>\n<p>x</p>"),
-    ("556-a-closed-block-leaves-no-frame-for-the-line-below-15", "spec pin 5889a6fe: markup-carve/carve#4862 not ported yet", "<ul>\n  <li>a</li>\n</ul>\n<p>x</p>"),
     ("561-a-line-block-payload-span-pairs-past-the-content-column", "spec pin 5889a6fe: markup-carve/carve#4863 not ported yet", "<blockquote>\n  <ul>\n    <li>\n      <div class=\"line-block\">\n        <p>&nbsp;&nbsp;<code>\n:::\n&nbsp;&nbsp;</code></p>\n      </div>\n      :::bad\n:::\n- tail\n    </li>\n  </ul>\n</blockquote>"),
     ("567-a-description-marker-followed-by-a-no-break-space-has-content-3", "spec pin 5889a6fe: markup-carve/carve#4861 not ported yet", "<dl>\n  <dt>t\n:</dt>\n</dl>"),
     ("569-a-quoted-term-takes-a-lazy-line", "spec pin 5889a6fe: markup-carve/carve#4861 not ported yet", "<blockquote>\n  <dl>\n    <dt>t\ntail</dt>\n  </dl>\n</blockquote>"),
@@ -1520,8 +1524,6 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     ("789-a-line-below-a-list-item-folds-into-the-open-paragraph-of-a-div-or-an-absorbed-colon-run-3", "spec pin 5889a6fe: markup-carve/carve#4863 not ported yet", "<blockquote>\n  <ul>\n    <li>x\n:::d\n:::\n- tail</li>\n  </ul>\n</blockquote>"),
     ("789-a-line-below-a-list-item-folds-into-the-open-paragraph-of-a-div-or-an-absorbed-colon-run-4", "spec pin 5889a6fe: markup-carve/carve#4863 not ported yet", "<ul>\n  <li>a\n    <ul>\n      <li>m\n:::e\n:::\nl</li>\n    </ul>\n  </li>\n</ul>"),
     ("81-paragraph-interruption-9", "spec pin 5889a6fe: markup-carve/carve#4863 not ported yet", "<p>text\n:::note\nbody\n:::</p>"),
-    ("824-a-closerless-comment-fence-opens-no-span-in-a-body", "spec pin 5889a6fe: markup-carve/carve#4862 not ported yet", "<dl>\n  <dt>t</dt>\n  <dd>head</dd>\n</dl>\n<p>tail</p>"),
-    ("824-a-closerless-comment-fence-opens-no-span-in-a-body-2", "spec pin 5889a6fe: markup-carve/carve#4862 not ported yet", "<p>tail</p>\n<p>r<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>head<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
     ("826-a-comment-or-link-definition-at-a-body-s-column-refuses-a-first-block-plus-5", "spec pin 5889a6fe: markup-carve/carve#4862 not ported yet", "<ul>\n  <li>a\n    <ul>\n      <li>+</li>\n    </ul>\n  </li>\n</ul>\n<p>after</p>"),
     ("826-a-comment-or-link-definition-at-a-body-s-column-refuses-a-first-block-plus-6", "spec pin 5889a6fe: markup-carve/carve#4862 not ported yet", "<ul>\n  <li>a\n    <ul>\n      <li>+</li>\n    </ul>\n  </li>\n</ul>\n<p>after</p>"),
     ("82-blockquote-lazy-continuation-5", "spec pin 5889a6fe: markup-carve/carve#4861 not ported yet", "<blockquote>\n  <dl>\n    <dt>t\n~</dt>\n  </dl>\n</blockquote>"),
@@ -1549,9 +1551,6 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     ("86-list-lazy-continuation-9", "spec pin 5889a6fe: markup-carve/carve#4863 not ported yet", "<ul>\n  <li>item\n:::note\nbody\n:::\ntail</li>\n</ul>"),
     ("889-a-term-continuation-in-a-description-keeps-spaces-past-the-body-column", "spec pin 5889a6fe: markup-carve/carve#4861 not ported yet", "<dl>\n  <dt>t</dt>\n  <dd>\n    <dl>\n      <dt>t\nu</dt>\n    </dl>\n  </dd>\n</dl>"),
     ("889-a-term-continuation-in-a-description-keeps-spaces-past-the-body-column-2", "spec pin 5889a6fe: markup-carve/carve#4861 not ported yet", "<dl>\n  <dt>t</dt>\n  <dd>\n    <dl>\n      <dt>t\n  u</dt>\n    </dl>\n  </dd>\n</dl>"),
-    ("930-a-line-that-misses-a-nested-host-ends-it-when-a-comment-closer-lies-ahead-3", "spec pin 5889a6fe: markup-carve/carve#4770 not ported yet", "<ul>\n  <li>a\n    <blockquote><p>n\nzz</p></blockquote>\n  </li>\n</ul>"),
-    ("930-a-line-that-misses-a-nested-host-ends-it-when-a-comment-closer-lies-ahead-5", "spec pin 5889a6fe: markup-carve/carve#4770 not ported yet", "<ul>\n  <li>a\n    <dl>\n      <dt>u</dt>\n      <dd>n\nzz</dd>\n    </dl>\n  </li>\n</ul>"),
-    ("933-a-comment-closer-ahead-is-read-from-the-span-s-raw-lines-7", "spec pin 5889a6fe: markup-carve/carve#4895 not ported yet", "<ul>\n  <li>a\n    <ul>\n      <li>n\nzz</li>\n    </ul>\n  </li>\n</ul>"),
     // Corpus pairs the spec c3c2f80f pin moved past this engine. Each actual HTML is measured.
     // Newly reached corpus pairs at spec d4c64561. Each actual HTML is measured.
     ("915-abbreviations-skip-caption-cross-reference-text-and-an-unresolved-cross-reference-2", "spec pin d4c64561: engine port pending", "<table id=\"t\">\n  <caption>A 1: c</caption>\n  <tbody>\n    <tr><td>a</td></tr>\n  </tbody>\n</table>\n<p>See <a href=\"#t\">A 1</a>.</p>"),
@@ -1571,7 +1570,7 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     ("866-an-abbreviation-definition-after-a-plus-is-skipped-like-a-link-definition-2", "ruling at the 5643d59c pin not ported yet", "<dl>\n  <dt>t</dt>\n  <dd>*[A]: b\ntext</dd>\n</dl>\n<p>A</p>"),
     ("866-an-abbreviation-definition-after-a-plus-is-skipped-like-a-link-definition-3", "ruling at the 5643d59c pin not ported yet", "<blockquote><p>*[A]: b\ntext</p></blockquote>\n<p>A</p>"),
     ("867-an-indented-comment-block-in-a-line-block-leaves-nothing", "ruling at the 5643d59c pin not ported yet", "<div class=\"line-block\">\n  <p>&nbsp;&nbsp;%%%<br>\n&nbsp;&nbsp;secret<br>\n&nbsp;&nbsp;%%%</p>\n</div>"),
-    ("867-an-indented-comment-block-in-a-line-block-leaves-nothing-2", "ruling at the 5643d59c pin not ported yet", "<div class=\"line-block\">\n  <p>a<br>\n&nbsp;&nbsp;&nbsp;%%%<br>\nsecret<br>\n<br>\nc</p>\n</div>"),
+    ("867-an-indented-comment-block-in-a-line-block-leaves-nothing-2", "ruling at the 5643d59c pin not ported yet", "<div class=\"line-block\">\n  <p>a<br>\n&nbsp;&nbsp;&nbsp;%%%<br>\nsecret</p>\n</div>"),
     ("871-a-div-closes-only-on-a-run-of-its-own-width", "ruling at the 5643d59c pin not ported yet", "<div>\n  <p>:::e\n::::\nq\n:::\nafter</p>\n</div>"),
     ("871-a-div-closes-only-on-a-run-of-its-own-width-2", "ruling at the 5643d59c pin not ported yet", "<ul>\n  <li>\n    <div>\n      <p>:::e\n::::\n:::\nl</p>\n    </div>\n  </li>\n</ul>"),
     ("871-a-div-closes-only-on-a-run-of-its-own-width-3", "ruling at the 5643d59c pin not ported yet", "<blockquote>\n  <div>\n    <p>:::e\n::::\nq\n:::</p>\n  </div>\n</blockquote>\n<p>after</p>"),

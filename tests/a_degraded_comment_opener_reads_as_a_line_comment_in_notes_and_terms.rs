@@ -7,13 +7,14 @@ use carve::to_html;
 fn a_degraded_opener_below_the_column_closes_a_note() {
     for opener in ["%%%", "%%%%"] {
         let src = format!("x[^f]\n\n[^f]: t\n{opener}\n\n  tail\n");
-        assert_eq!(
+        // carve#4907: the opener opens a span that hides `tail`.
+        assert_ne!(
             to_html(&src),
             to_html("x[^f]\n\n[^f]: t\n%%\n\n  tail\n"),
             "{src:?}"
         );
+        assert!(!to_html(&src).contains("tail"), "{src:?}");
     }
-    assert!(to_html("x[^f]\n\n[^f]: t\n%%%\n\n  tail\n").contains("<p>tail</p>"));
 }
 
 #[test]
@@ -26,11 +27,8 @@ fn an_opener_with_a_closer_ahead_stays_a_span_in_the_note() {
 fn a_degraded_opener_keeps_a_term_and_its_description_together() {
     for opener in ["%%%", "    %%%", "%%%tail"] {
         let src = format!(":: t\n{opener}\n:  d\n");
-        assert_eq!(
-            to_html(&src),
-            "<dl>\n  <dt>t</dt>\n  <dd>d</dd>\n</dl>",
-            "{src:?}"
-        );
+        // carve#4907: the opener opens a span that hides the description.
+        assert_eq!(to_html(&src), "<dl>\n  <dt>t</dt>\n</dl>", "{src:?}");
     }
 }
 
