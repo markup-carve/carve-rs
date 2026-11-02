@@ -117,7 +117,7 @@ fn a_quote_keeps_a_multi_line_element_whole() {
 fn a_quote_keeps_an_html_comment() {
     assert_eq!(
         carve("> quoted\n>\n> <!-- note -->\n\nafter\n"),
-        "> quoted\n>\n> ```=html\n> <!-- note -->\n> ```\n\nafter\n",
+        "> quoted\n>\n> %% note\n\nafter\n",
     );
 }
 
@@ -203,7 +203,7 @@ fn a_quote_inside_an_item_keeps_the_element() {
 fn a_list_item_keeps_an_html_comment() {
     assert_eq!(
         carve("- item\n\n  <!-- note -->\n\nafter\n"),
-        "{loose}\n- item\n\n  ```=html\n  <!-- note -->\n  ```\n\nafter\n",
+        "{loose}\n- item\n\n  %% note\n\nafter\n",
     );
 }
 

@@ -309,10 +309,14 @@ fn assess_markdown_migration(
                     MarkdownLossKind::CarrierMarkersDamaged => "carrier-markers-damaged",
                     MarkdownLossKind::CarrierMarkerDropped => "carrier-marker-dropped",
                     MarkdownLossKind::RawCodeFallback => "raw-code-fallback",
+                    MarkdownLossKind::HtmlComment => "markdown-html-comment",
                 }
                 .to_owned(),
                 message: loss.message,
-                severity: HtmlImportSeverity::Warning,
+                severity: match loss.kind {
+                    MarkdownLossKind::HtmlComment => HtmlImportSeverity::Info,
+                    _ => HtmlImportSeverity::Warning,
+                },
                 // Degraded where the span and its text survive and a whitespace
                 // run inside it does not (markup-carve/carve#2804).
                 fidelity: match loss.kind {
@@ -321,6 +325,7 @@ fn assess_markdown_migration(
                     | MarkdownLossKind::CarrierMarkersDamaged
                     | MarkdownLossKind::CarrierMarkerDropped
                     | MarkdownLossKind::RawCodeFallback => MigrationFidelity::Degraded,
+                    MarkdownLossKind::HtmlComment => MigrationFidelity::Normalized,
                 },
                 // A damaged set is a FALLBACK reading: the markers came through
                 // as the raw HTML they are and no container was guessed.
