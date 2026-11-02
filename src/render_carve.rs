@@ -3801,6 +3801,17 @@ fn render_inline_body(
                     );
                 }
             }
+            // The bare span would not form around its own word-flanked
+            // delimiter, so the braced form beats escaping it (carve#4810).
+            if let Some(delim) = bare_delimiter(emphasis.kind) {
+                if holds_word_flanked_delimiter(&emphasis.children, delim) {
+                    return format!(
+                        "{}{}",
+                        render_forced_emphasis(delim, &content),
+                        render_inline_attrs(&emphasis.attrs, ctx)
+                    );
+                }
+            }
             let (delim, body) = match emphasis.kind {
                 EmphasisKind::Italic => (
                     "/",
@@ -4957,6 +4968,49 @@ fn render_emphasis(
     } else {
         format!("{delim}{content}{delim}")
     }
+}
+
+fn holds_word_flanked_delimiter(children: &[InlineNode], delim: &str) -> bool {
+    let delim = delim.as_bytes()[0];
+    let mut run = String::new();
+    let flanked = |run: &str| {
+        let bytes = run.as_bytes();
+        (0..bytes.len())
+            .any(|at| bytes[at] == delim && crate::parse::word_flanked_delimiter(bytes, at))
+    };
+    for child in children {
+        match child {
+            InlineNode::Text(text) => run.push_str(&text.value),
+            // A name's own characters are not read (`_@a_b_` forms), but its
+            // last one flanks a delimiter written after it.
+            InlineNode::Mention(mention) => {
+                run.push('@');
+                run.extend(
+                    mention
+                        .user
+                        .chars()
+                        .map(|c| if c == delim as char { 'x' } else { c }),
+                );
+            }
+            InlineNode::Tag(tag) => {
+                run.push('#');
+                run.extend(
+                    tag.name
+                        .chars()
+                        .map(|c| if c == delim as char { 'x' } else { c }),
+                );
+            }
+            // A braced comment counts as nothing for the flank test (carve#4719).
+            InlineNode::Comment(comment) if comment.delimited => {}
+            _ => {
+                if flanked(&run) {
+                    return true;
+                }
+                run.clear();
+            }
+        }
+    }
+    flanked(&run)
 }
 
 fn bare_delimiter(kind: EmphasisKind) -> Option<&'static str> {
