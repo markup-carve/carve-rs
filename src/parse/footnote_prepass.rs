@@ -156,7 +156,7 @@ fn nested_note_paragraph_open(note: &NoteBody, options: &Options<'_>) -> bool {
         return false;
     }
     if let Some(known) = note.open_paragraph_at.get() {
-        if known <= lines.len() && lines[known..].iter().all(|line| continues_paragraph(line)) {
+        if known <= lines.len() && lines[known..].iter().all(|line| keeps_paragraph_open(line)) {
             note.open_paragraph_at.set(Some(lines.len()));
             return true;
         }
@@ -195,6 +195,17 @@ fn open_nested_note_body(lines: &[String]) -> Option<String> {
 fn continues_paragraph(line: &str) -> bool {
     let text = trim_ascii_start(line.strip_prefix(LAZY).unwrap_or(line));
     text.chars().next().is_some_and(char::is_alphanumeric) && !is_list_marker(text)
+}
+
+/// A line below an open paragraph that interrupts nothing, whatever it starts with.
+fn keeps_paragraph_open(line: &str) -> bool {
+    let text = trim_ascii_start(line.strip_prefix(LAZY).unwrap_or(line));
+    !is_blank_line(text)
+        && !is_list_marker(text)
+        && !interrupts_paragraph_with_rest(text, &[])
+        && !is_colon_fence_opener_shape(text)
+        && !opens_code_fence(text)
+        && !text.starts_with(['{', '[', '%', '+', '|', ':', '^'])
 }
 
 fn is_cont_marker_line(line: &str) -> bool {

@@ -887,3 +887,13 @@ fn a_lazy_line_between_a_nested_note_and_its_host_keeps_the_nested_paragraph_ope
     let rendered = html("- [^a]: text\n    [^b]: inner\n     one\n    zero\n\nx [^a] [^b]\n");
     assert!(rendered.contains("<p>inner\none\nzero"), "{rendered}");
 }
+
+#[test]
+fn punctuation_led_lazy_lines_in_a_nested_note_stay_in_its_paragraph() {
+    let rendered =
+        html("- [^a]: text\n    [^b]: inner\n    !one\n      !deep\n    !two\n\nx [^a] [^b]\n");
+    assert!(
+        rendered.contains("<p>inner\n!one\n!deep\n!two"),
+        "{rendered}"
+    );
+}
