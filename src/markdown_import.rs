@@ -1246,12 +1246,17 @@ fn markdown_to_ast_with_code_lines(
     let fences = normalize_table_delimiter_tabs(&fences, options);
     let headings = normalize_heading_closers(&fences, options);
     let emails = normalize_table_email_autolinks(&headings, options);
-    let (source, cased_closers) = lower_html_block_closers(&emails, options);
+    // Every pass from here on keeps the length, so the offsets it records hold.
+    let (broken, inserted_lines, tight_lists) = insert_block_breaks(&emails, options);
+    let broken = normalize_table_delimiter_tabs(&broken, options);
+    let (closers, cased_closers) = lower_html_block_closers(&broken, options);
+    let (source, masks) = mask_pulldown_misreads(&closers, options);
     let mut builder = Builder {
         carrier_token: carrier_token
             .filter(|token| !token.is_empty())
             .map(str::to_owned),
         track_code_lines: code_lines.is_some(),
+        tight_lists,
         ..Builder::default()
     };
     if source.contains("[^") && source.contains('|') {
@@ -1265,12 +1270,7 @@ fn markdown_to_ast_with_code_lines(
             }
         }
     }
-    let mut line_starts = vec![0];
-    for (index, byte) in source.bytes().enumerate() {
-        if byte == b'\n' || (byte == b'\r' && source.as_bytes().get(index + 1) != Some(&b'\n')) {
-            line_starts.push(index + 1);
-        }
-    }
+    let line_starts = authored_line_starts(&source, &inserted_lines);
     let mut table_autolink = false;
     let mut text_end = None;
     let prepared_urls = crate::markdown_gfm_autolinks::prepare_urls(&source, options);
@@ -1473,8 +1473,10 @@ fn markdown_to_ast_with_code_lines(
             &source,
             &range,
             &cased_closers,
+            &masks,
             builder.quote_depth(),
         );
+        builder.note_list_start(&event, range.start);
         if let Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) = &event {
             let word = info
                 .trim_matches([' ', '\t'])
@@ -1829,8 +1831,20 @@ fn correct_pulldown_event<'e>(
     source: &str,
     range: &std::ops::Range<usize>,
     cased_closers: &[(std::ops::Range<usize>, String)],
+    masks: &[(usize, u8)],
     quotes: usize,
 ) -> Event<'e> {
+    let event = match &event {
+        Event::Text(value) => match restore_masks(value, source, range, masks) {
+            Some(restored) => Event::Text(restored.into()),
+            None => event,
+        },
+        Event::InlineHtml(value) => match restore_masks(value, source, range, masks) {
+            Some(restored) => Event::InlineHtml(restored.into()),
+            None => event,
+        },
+        _ => event,
+    };
     match &event {
         Event::HardBreak if !spaces_break(source, range) => Event::SoftBreak,
         Event::Html(html) => {
@@ -1856,7 +1870,7 @@ fn correct_pulldown_event<'e>(
 /// rejects (`<a h=x<TAB>)>`).
 fn inline_html_fixup(html: &str, quotes: usize) -> Option<Event<'static>> {
     static TAG: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    if html.starts_with("<!") || html.starts_with("<?") {
+    if html.starts_with("<!") || html.starts_with("<?") || html.starts_with("</") {
         if !html.contains('\n') {
             return None;
         }
@@ -2273,6 +2287,593 @@ fn lower_html_block_closers<'a>(
     }
 }
 
+/// Line starts of the authored text; a line `insert_block_breaks` added has none.
+fn authored_line_starts(source: &str, inserted: &[usize]) -> Vec<usize> {
+    let mut line_starts = vec![0];
+    for (index, byte) in source.bytes().enumerate() {
+        if (byte == b'\n' && inserted.binary_search(&index).is_err())
+            || (byte == b'\r' && source.as_bytes().get(index + 1) != Some(&b'\n'))
+        {
+            line_starts.push(index + 1);
+        }
+    }
+    line_starts
+}
+
+/// A blank line inserted for the parse where cmark-gfm starts a block that
+/// pulldown cannot start without one: a table interrupting a paragraph, and an
+/// indented code line right after a table's rows. Returns the inserted line
+/// endings (left out of the line map) and the lists the unmodified parse read
+/// as tight, which an inserted blank line must not loosen.
+fn insert_block_breaks<'a>(
+    source: &'a str,
+    options: Options,
+) -> (Cow<'a, str>, Vec<usize>, Vec<usize>) {
+    const MAX_PASSES: usize = 32;
+    if !source.contains('|') || !source.contains('-') {
+        return (Cow::Borrowed(source), Vec::new(), Vec::new());
+    }
+    let mut insertions: Vec<(usize, String)> = Vec::new();
+    let mut rejected: HashSet<usize> = HashSet::new();
+    for _ in 0..MAX_PASSES {
+        let (text, _) = apply_insertions(source, &insertions);
+        let candidates: Vec<usize> = block_break_candidates(&text, options)
+            .into_iter()
+            .map(|at| to_original(at, &insertions))
+            .filter(|at| {
+                !rejected.contains(at)
+                    && insertions
+                        .binary_search_by_key(at, |(done, _)| *done)
+                        .is_err()
+            })
+            .collect();
+        if candidates.is_empty() {
+            break;
+        }
+        let mut trial = insertions.clone();
+        for &at in &candidates {
+            trial.push((at, blank_line_for(&source[at..])));
+        }
+        trial.sort();
+        let (trial_text, _) = apply_insertions(source, &trial);
+        let starts = block_starts(
+            &normalize_table_delimiter_tabs(&trial_text, options),
+            options,
+        );
+        let mut accepted = 0;
+        for at in candidates {
+            let at_final = to_final(at, &trial);
+            let line_end = trial_text[at_final..]
+                .find('\n')
+                .map_or(trial_text.len(), |end| at_final + end);
+            let first = starts.partition_point(|start| *start < at_final);
+            if starts.get(first).is_some_and(|start| *start <= line_end) {
+                insertions.push((at, blank_line_for(&source[at..])));
+                accepted += 1;
+            } else {
+                rejected.insert(at);
+            }
+        }
+        insertions.sort();
+        if accepted == 0 {
+            break;
+        }
+    }
+    if insertions.is_empty() {
+        return (Cow::Borrowed(source), Vec::new(), Vec::new());
+    }
+    let (text, newlines) = apply_insertions(source, &insertions);
+    let tight = tight_lists(source, options)
+        .into_iter()
+        .map(|start| to_final(start, &insertions))
+        .collect();
+    (Cow::Owned(text), newlines, tight)
+}
+
+fn apply_insertions(source: &str, insertions: &[(usize, String)]) -> (String, Vec<usize>) {
+    let mut text = String::with_capacity(source.len() + insertions.len() * 2);
+    let mut newlines = Vec::new();
+    let mut cursor = 0;
+    for (at, blank) in insertions {
+        text.push_str(&source[cursor..*at]);
+        text.push_str(blank);
+        newlines.push(text.len() - 1);
+        cursor = *at;
+    }
+    text.push_str(&source[cursor..]);
+    (text, newlines)
+}
+
+/// An offset in the original text, from one in the text with `insertions`.
+fn to_original(at: usize, insertions: &[(usize, String)]) -> usize {
+    let mut shift = 0;
+    for (start, blank) in insertions {
+        if start + shift + blank.len() <= at {
+            shift += blank.len();
+        }
+    }
+    at - shift
+}
+
+/// An offset in the text with `insertions`, from one in the original text.
+fn to_final(at: usize, insertions: &[(usize, String)]) -> usize {
+    at + insertions
+        .iter()
+        .filter(|(start, _)| *start <= at)
+        .map(|(_, blank)| blank.len())
+        .sum::<usize>()
+}
+
+/// A blank line for above `line`, carrying its quote markers so the blank does
+/// not close a quote.
+fn blank_line_for(line: &str) -> String {
+    let prefix_len = line
+        .bytes()
+        .take_while(|byte| matches!(byte, b' ' | b'\t' | b'>'))
+        .count();
+    let prefix = line[..prefix_len].trim_end_matches([' ', '\t']);
+    if prefix.contains('>') {
+        format!("{prefix}\n")
+    } else {
+        "\n".into()
+    }
+}
+
+fn line_spans(text: &str, range: std::ops::Range<usize>) -> Vec<(usize, &str)> {
+    let mut spans = Vec::new();
+    let mut start = range.start;
+    for line in text[range].split_inclusive('\n') {
+        spans.push((start, line.trim_end_matches(['\n', '\r'])));
+        start += line.len();
+    }
+    spans
+}
+
+fn strip_block_prefix(line: &str) -> &str {
+    line.trim_start_matches([' ', '\t', '>'])
+}
+
+fn gfm_cells(row: &str) -> Vec<&str> {
+    let row = row.trim_matches([' ', '\t']);
+    let row = row.strip_prefix('|').unwrap_or(row);
+    let row = if row.ends_with('|') && !row.ends_with("\\|") {
+        &row[..row.len() - 1]
+    } else {
+        row
+    };
+    let mut cells = Vec::new();
+    let mut start = 0;
+    let bytes = row.as_bytes();
+    let mut at = 0;
+    while at < bytes.len() {
+        match bytes[at] {
+            b'\\' => at += 1,
+            b'|' => {
+                cells.push(&row[start..at]);
+                start = at + 1;
+            }
+            _ => {}
+        }
+        at += 1;
+    }
+    cells.push(&row[start..]);
+    cells
+}
+
+fn gfm_delimiter_cell(cell: &str) -> bool {
+    let cell = cell.trim_matches([' ', '\t']);
+    let cell = cell.strip_prefix(':').unwrap_or(cell);
+    let cell = cell.strip_suffix(':').unwrap_or(cell);
+    !cell.is_empty() && cell.bytes().all(|byte| byte == b'-')
+}
+
+fn gfm_delimiter_row(line: &str) -> bool {
+    let row = strip_block_prefix(line);
+    row.contains('|') && gfm_cells(row).into_iter().all(gfm_delimiter_cell)
+}
+
+/// Line starts where a blank line would let pulldown start the block
+/// cmark-gfm starts there.
+fn block_break_candidates(text: &str, options: Options) -> Vec<usize> {
+    let mut candidates = Vec::new();
+    let mut depth = 0usize;
+    let mut heading = false;
+    let mut run: Option<std::ops::Range<usize>> = None;
+    let interrupts = |run: Option<std::ops::Range<usize>>, candidates: &mut Vec<usize>| {
+        let Some(run) = run else { return };
+        let lines = line_spans(text, run);
+        for pair in lines.windows(2).skip(1) {
+            let (header_at, header) = pair[0];
+            let (_, row) = pair[1];
+            let header = strip_block_prefix(header);
+            if header.contains('|')
+                && gfm_delimiter_row(row)
+                && gfm_cells(header).len() == gfm_cells(strip_block_prefix(row)).len()
+            {
+                candidates.push(header_at);
+            }
+        }
+    };
+    for (event, range) in Parser::new_ext(text, options).into_offset_iter() {
+        let inline = matches!(
+            event,
+            Event::Text(_)
+                | Event::Code(_)
+                | Event::InlineMath(_)
+                | Event::InlineHtml(_)
+                | Event::SoftBreak
+                | Event::HardBreak
+                | Event::FootnoteReference(_)
+                | Event::TaskListMarker(_)
+                | Event::Start(
+                    Tag::Emphasis
+                        | Tag::Strong
+                        | Tag::Strikethrough
+                        | Tag::Link { .. }
+                        | Tag::Image { .. }
+                )
+                | Event::End(
+                    TagEnd::Emphasis
+                        | TagEnd::Strong
+                        | TagEnd::Strikethrough
+                        | TagEnd::Link
+                        | TagEnd::Image
+                )
+        );
+        if inline {
+            if !heading && depth == 0 {
+                run = Some(match run {
+                    Some(open) => open.start..range.end.max(open.end),
+                    None => range.clone(),
+                });
+            }
+            continue;
+        }
+        interrupts(run.take(), &mut candidates);
+        match event {
+            Event::Start(Tag::Heading { .. }) => heading = true,
+            Event::End(TagEnd::Heading(_)) => heading = false,
+            Event::Start(Tag::Table(_)) if depth == 0 => {
+                depth += 1;
+                let lines = line_spans(text, range);
+                if !lines.get(1).is_some_and(|(_, row)| gfm_delimiter_row(row)) {
+                    continue;
+                }
+                for (at, line) in lines.into_iter().skip(2) {
+                    let body = line.trim_start_matches('>');
+                    let width = body
+                        .bytes()
+                        .take_while(|byte| matches!(byte, b' ' | b'\t' | b'>'))
+                        .count();
+                    if body[..width].contains('\t') || body[..width].contains("    ") {
+                        candidates.push(at);
+                        break;
+                    }
+                }
+            }
+            Event::Start(Tag::Table(_)) => depth += 1,
+            Event::End(TagEnd::Table) => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    interrupts(run, &mut candidates);
+    candidates.sort_unstable();
+    candidates.dedup();
+    candidates
+}
+
+/// Where tables and indented code blocks start, in order.
+fn block_starts(text: &str, options: Options) -> Vec<usize> {
+    Parser::new_ext(text, options)
+        .into_offset_iter()
+        .filter(|(event, _)| {
+            matches!(
+                event,
+                Event::Start(Tag::Table(_) | Tag::CodeBlock(CodeBlockKind::Indented))
+            )
+        })
+        .map(|(_, range)| range.start)
+        .collect()
+}
+
+/// Start offsets of the lists pulldown reads as tight.
+fn tight_lists(text: &str, options: Options) -> Vec<usize> {
+    let mut stack: Vec<(Option<usize>, bool)> = Vec::new();
+    let mut tight = Vec::new();
+    for (event, range) in Parser::new_ext(text, options).into_offset_iter() {
+        match event {
+            Event::Start(Tag::List(_)) => stack.push((Some(range.start), true)),
+            Event::Start(Tag::Paragraph) => {
+                if let [.., (Some(_), is_tight), (None, _)] = stack.as_mut_slice() {
+                    *is_tight = false;
+                }
+            }
+            Event::Start(_) => stack.push((None, true)),
+            Event::End(TagEnd::List(_)) => {
+                if let Some((Some(start), true)) = stack.pop() {
+                    tight.push(start);
+                }
+            }
+            Event::End(_) => {
+                stack.pop();
+            }
+            _ => {}
+        }
+    }
+    tight
+}
+
+/// Bytes replaced for the parse where pulldown accepts what CommonMark or
+/// cmark-gfm reject, or rejects what they accept; restored by
+/// `restore_masks` on the event that covers them. Covers a delimiter cell
+/// outside `:?-+:?`, a `]` inside a CDATA section, the line ending inside a
+/// closing tag, and a multi-line parenthesized link title.
+fn mask_pulldown_misreads<'a>(
+    source: &'a str,
+    options: Options,
+) -> (Cow<'a, str>, Vec<(usize, u8)>) {
+    static CDATA: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static CLOSER: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let mut masks: Vec<(usize, u8)> = Vec::new();
+    if source.contains('|') && source.contains('-') {
+        for (event, range) in Parser::new_ext(source, options).into_offset_iter() {
+            let Event::Start(Tag::Table(_)) = event else {
+                continue;
+            };
+            let Some(&(row_at, row)) = line_spans(source, range).get(1) else {
+                continue;
+            };
+            let lead = row.len() - strip_block_prefix(row).len();
+            let body = &row[lead..];
+            for cell in gfm_cells(body) {
+                let cell_at = row_at + lead + (cell.as_ptr() as usize - body.as_ptr() as usize);
+                if !gfm_delimiter_cell(cell) {
+                    let trimmed = cell.trim_start_matches([' ', '\t']);
+                    let skip = cell.len() - trimmed.len();
+                    if let Some(inner) = trimmed
+                        .bytes()
+                        .enumerate()
+                        .skip(1)
+                        .find(|(_, byte)| matches!(byte, b':' | b' ' | b'\t'))
+                        .map(|(index, _)| index)
+                    {
+                        masks.push((cell_at + skip + inner, trimmed.as_bytes()[inner]));
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    let mut expected: Vec<std::ops::Range<usize>> = Vec::new();
+    if source.contains("<![CDATA[") {
+        let cdata = CDATA
+            .get_or_init(|| regex::Regex::new(r"(?s)<!\[CDATA\[.*?\]\]>").expect("CDATA pattern"));
+        for hit in cdata.find_iter(source) {
+            let body = hit.start() + "<![CDATA[".len()..hit.end() - "]]>".len();
+            let brackets: Vec<usize> = source[body.clone()]
+                .match_indices(']')
+                .map(|(at, _)| body.start + at)
+                .collect();
+            if !brackets.is_empty() {
+                masks.extend(brackets.into_iter().map(|at| (at, b']')));
+                expected.push(hit.range());
+            }
+        }
+    }
+    if source.contains("</") {
+        let closer = CLOSER.get_or_init(|| {
+            regex::Regex::new(r"</[A-Za-z][A-Za-z0-9-]*[ \t]*(\r\n|\n|\r)[ \t>]*>")
+                .expect("closing tag pattern")
+        });
+        let text_ranges: Vec<_> = Parser::new_ext(source, options)
+            .into_offset_iter()
+            .filter(|(event, _)| matches!(event, Event::Text(_)))
+            .map(|(_, range)| range)
+            .collect();
+        for hit in closer.find_iter(source) {
+            if !covers(&text_ranges, hit.start()) {
+                continue;
+            }
+            // The tag's `>` is the first one that is text; those before it are
+            // quote markers.
+            let ending = hit
+                .as_str()
+                .find(['\r', '\n'])
+                .map_or(0, |at| hit.start() + at);
+            let Some(bracket) = (ending..hit.end())
+                .find(|at| source.as_bytes()[*at] == b'>' && covers(&text_ranges, *at))
+            else {
+                continue;
+            };
+            for at in ending..bracket {
+                if matches!(source.as_bytes()[at], b'\r' | b'\n' | b'>') {
+                    masks.push((at, source.as_bytes()[at]));
+                }
+            }
+            expected.push(hit.start()..bracket + 1);
+        }
+    }
+    if masks.is_empty() {
+        return respell_paren_titles(source, options, Vec::new());
+    }
+    masks.sort_unstable();
+    expected.sort_by_key(|range| range.start);
+    let mask_byte = |original: u8| match original {
+        b'\r' | b'\n' | b'>' | b']' => b' ',
+        _ => b'x',
+    };
+    let masked_with = |masks: &[(usize, u8)]| {
+        let mut bytes = source.as_bytes().to_vec();
+        for &(at, original) in masks {
+            bytes[at] = mask_byte(original);
+        }
+        String::from_utf8(bytes).unwrap_or_else(|_| source.to_owned())
+    };
+    let text = masked_with(&masks);
+    let mut html = HashSet::new();
+    let mut tables = Vec::new();
+    let mut texts = Vec::new();
+    for (event, range) in Parser::new_ext(&text, options).into_offset_iter() {
+        match event {
+            Event::InlineHtml(_) => {
+                html.insert((range.start, range.end));
+            }
+            Event::Start(Tag::Table(_)) => tables.push(range),
+            Event::Text(_) => texts.push(range),
+            _ => {}
+        }
+    }
+    let mut kept = Vec::new();
+    for &(at, original) in &masks {
+        let in_expected = expected
+            .partition_point(|range| range.start <= at)
+            .checked_sub(1)
+            .map(|index| &expected[index])
+            .filter(|range| range.contains(&at));
+        let keep = match in_expected {
+            Some(range) => html.contains(&(range.start, range.end)),
+            None => !covers(&tables, at) && covers(&texts, at),
+        };
+        if keep {
+            kept.push((at, original));
+        }
+    }
+    let masked = masked_with(&kept);
+    let (respelled, kept) = respell_paren_titles(&masked, options, kept);
+    let respelled = respelled.into_owned();
+    if respelled == source {
+        return (Cow::Borrowed(source), kept);
+    }
+    (Cow::Owned(respelled), kept)
+}
+
+/// Whether `at` lies in one of `ranges`, sorted and not overlapping.
+fn covers(ranges: &[std::ops::Range<usize>], at: usize) -> bool {
+    let index = ranges.partition_point(|range| range.end <= at);
+    ranges.get(index).is_some_and(|range| range.contains(&at))
+}
+
+/// pulldown cuts a multi-line `( ... )` title at an escaped parenthesis that
+/// opens a line. Such a title is parsed with `"` or `'` delimiters instead.
+fn respell_paren_titles<'a>(
+    source: &'a str,
+    options: Options,
+    masks: Vec<(usize, u8)>,
+) -> (Cow<'a, str>, Vec<(usize, u8)>) {
+    static TITLE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    if !source.contains("](") || !source.contains("\\") {
+        return (Cow::Borrowed(source), masks);
+    }
+    let title = TITLE.get_or_init(|| {
+        regex::Regex::new(r#"\]\([ \t]*(?:<[^<>\n]*>|[^ \t\r\n()<]\S*?)[ \t]*(?:\r\n|\n|\r|[ \t])[ \t\r\n>]*\(((?:\\.|[^()\\])*)\)[ \t\r\n>]*\)"#)
+            .expect("parenthesized title pattern")
+    });
+    let mut candidates = Vec::new();
+    for found in title.captures_iter(source) {
+        let body = found.get(1).expect("title body");
+        let delimiter = if !body.as_str().contains('"') {
+            b'"'
+        } else if !body.as_str().contains('\'') {
+            b'\''
+        } else {
+            continue;
+        };
+        if body.as_str().contains(['\n', '\r']) && body.as_str().contains('\\') {
+            candidates.push((
+                body.start() - 1,
+                body.end(),
+                found.get(0).expect("whole match").end(),
+                unescape_title(body.as_str()),
+                delimiter,
+            ));
+        }
+    }
+    if candidates.is_empty() {
+        return (Cow::Borrowed(source), masks);
+    }
+    let respelled = |accepted: &[&(usize, usize, usize, String, u8)]| {
+        let mut bytes = source.as_bytes().to_vec();
+        for (open, close, _, _, delimiter) in accepted {
+            bytes[*open] = *delimiter;
+            bytes[*close] = *delimiter;
+        }
+        String::from_utf8(bytes).unwrap_or_else(|_| source.to_owned())
+    };
+    let all: Vec<_> = candidates.iter().collect();
+    let titles: HashMap<usize, String> = Parser::new_ext(&respelled(&all), options)
+        .into_offset_iter()
+        .filter_map(|(event, range)| match event {
+            Event::Start(Tag::Link { title, .. }) => Some((range.end, title.to_string())),
+            _ => None,
+        })
+        .collect();
+    let accepted: Vec<_> = candidates
+        .iter()
+        .filter(|(_, _, end, expected, _)| {
+            titles
+                .get(end)
+                .is_some_and(|title| title_lines(title) == title_lines(expected))
+        })
+        .collect();
+    if accepted.is_empty() {
+        return (Cow::Borrowed(source), masks);
+    }
+    (Cow::Owned(respelled(&accepted)), masks)
+}
+
+/// A title compared with each line's container prefix and indentation left out.
+fn title_lines(title: &str) -> Vec<&str> {
+    title
+        .split('\n')
+        .enumerate()
+        .map(|(index, line)| {
+            if index == 0 {
+                line
+            } else {
+                line.trim_start_matches([' ', '\t', '>'])
+            }
+        })
+        .collect()
+}
+
+fn unescape_title(body: &str) -> String {
+    let mut out = String::with_capacity(body.len());
+    let mut chars = body.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            if let Some(next) = chars.peek().copied().filter(char::is_ascii_punctuation) {
+                out.push(next);
+                chars.next();
+                continue;
+            }
+        }
+        out.push(ch);
+    }
+    out
+}
+
+/// The masked bytes an event covers, put back.
+fn restore_masks(
+    value: &str,
+    source: &str,
+    range: &std::ops::Range<usize>,
+    masks: &[(usize, u8)],
+) -> Option<String> {
+    let first = masks.partition_point(|(at, _)| *at < range.start);
+    let hits: Vec<_> = masks[first..]
+        .iter()
+        .take_while(|(at, _)| *at < range.end)
+        .collect();
+    if hits.is_empty() || source.get(range.clone()) != Some(value) {
+        return None;
+    }
+    let mut bytes = value.as_bytes().to_vec();
+    for (at, original) in hits {
+        bytes[at - range.start] = *original;
+    }
+    String::from_utf8(bytes).ok()
+}
+
 fn normalize_heading_closers<'a>(source: &'a str, options: Options) -> Cow<'a, str> {
     if !source.contains('\t') {
         return Cow::Borrowed(source);
@@ -2428,6 +3029,7 @@ enum Frame {
         delim: Option<char>,
         bullet_char: Option<char>,
         items: Vec<ListItem>,
+        forced_tight: bool,
         /// A list is loose when any item holds more than one block, which
         /// CommonMark decides by blank lines between items; the parser has
         /// already applied that rule, so this reads the result off the tree.
@@ -2554,6 +3156,9 @@ fn levels_added(frame: &Frame) -> (usize, usize) {
 
 #[derive(Default)]
 struct Builder {
+    /// Offsets of the lists the parse before `insert_block_breaks` read as tight.
+    tight_lists: Vec<usize>,
+    next_list_tight: bool,
     carrier_token: Option<String>,
     frames: Vec<Frame>,
     /// Block and inline nesting the open frames account for, held against
@@ -2630,6 +3235,12 @@ impl Builder {
         self.footnote_labels
             .insert(label.to_owned(), renamed.clone());
         renamed
+    }
+
+    fn note_list_start(&mut self, event: &Event<'_>, at: usize) {
+        if matches!(event, Event::Start(Tag::List(_))) {
+            self.next_list_tight = self.tight_lists.contains(&at);
+        }
     }
 
     fn quote_depth(&self) -> usize {
@@ -3079,6 +3690,7 @@ impl Builder {
                         .unwrap_or('-')
                 }),
                 items: Vec::new(),
+                forced_tight: std::mem::take(&mut self.next_list_tight),
                 tight: true,
             },
             Tag::Item => Frame::ListItem {
@@ -3335,6 +3947,7 @@ impl Builder {
                 delim,
                 bullet_char,
                 items,
+                forced_tight,
                 tight,
             } => self.block(BlockNode::List(List {
                 attrs: None,
@@ -3346,7 +3959,7 @@ impl Builder {
                 bare_marker: false,
                 delim,
                 bullet_char,
-                tight,
+                tight: tight || forced_tight,
                 items,
                 pos: None,
             })),
