@@ -142,6 +142,19 @@ pub(super) fn nested_tight_item_loses_tightness(item: &ListItem) -> bool {
     })
 }
 
+fn nested_list_ends_in_a_plus_letter(block: &BlockNode) -> bool {
+    let BlockNode::List(list) = block else {
+        return false;
+    };
+    match list.items.last().and_then(|item| item.children.last()) {
+        Some(BlockNode::Paragraph(paragraph)) => {
+            matches!(paragraph.children.as_slice(), [InlineNode::Text(text)] if text.value == "+")
+        }
+        Some(nested) => nested_list_ends_in_a_plus_letter(nested),
+        None => false,
+    }
+}
+
 pub(super) fn indent_adjacent_list(text: &str, width: usize) -> String {
     let indent = " ".repeat(width);
     text.lines()
@@ -425,7 +438,18 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
                         || matches!(pair[0], BlockNode::BlockQuote(_))
                             && matches!(pair[1], BlockNode::BlockQuote(_))
                 }));
+        // A blank would make a bare letter `+` hold, so the escape would relax
+        // into a blank line; the failed read-back has to reach the escape pass
+        // instead (CARVE-P11-042, carve#4868).
+        let bare_plus_letter = item.children.windows(2).any(|pair| {
+            nested_list_ends_in_a_plus_letter(&pair[0])
+                && matches!(
+                    pair[1],
+                    BlockNode::CodeBlock(_) | BlockNode::Figure(_) | BlockNode::BlockQuote(_)
+                )
+        }) && item_source.lines().any(|line| line.ends_with(" +"));
         if needs_readback
+            && !bare_plus_letter
             && !list_item_reads_back(
                 session,
                 &item_source,
