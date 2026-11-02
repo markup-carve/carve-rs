@@ -1443,12 +1443,51 @@ pub(in crate::parse) fn decorated_braced_opener(bytes: &[u8], open: usize) -> bo
         && followed_by_grapheme_extender(bytes, open + 2)
 }
 
-/// A text and its braced comments, `(open, end)` each.
-type CommentSpans = (Vec<u8>, Vec<(usize, usize)>);
+/// A text (its address, length and bytes) and its braced comments, `(open, end)` each.
+type CommentSpans = ((usize, usize), Vec<u8>, Vec<(usize, usize)>);
+
+/// Nested inline runs alternate between texts, so a few are kept.
+const COMMENT_SPAN_TEXTS: usize = 8;
 
 thread_local! {
-    static COMMENT_SPANS: std::cell::RefCell<CommentSpans> =
-        const { std::cell::RefCell::new((Vec::new(), Vec::new())) };
+    static COMMENT_SPANS: std::cell::RefCell<Vec<CommentSpans>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn comment_spans(bytes: &[u8]) -> Vec<(usize, usize)> {
+    let mut spans = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' => i += 2,
+            b'`' => {
+                let open = bytes[i..].iter().take_while(|&&b| b == b'`').count();
+                let mut k = i + open;
+                let mut closed = None;
+                while k < bytes.len() {
+                    let run = bytes[k..].iter().take_while(|&&b| b == b'`').count();
+                    if run == open {
+                        closed = Some(k + run);
+                        break;
+                    }
+                    k += run.max(1);
+                }
+                let Some(end) = closed else { break };
+                i = end;
+            }
+            b'{' if bytes.get(i + 1) == Some(&b'%')
+                && !followed_by_grapheme_extender(bytes, i + 2) =>
+            {
+                let Some(close) = find_seq(bytes, i + 2, b"%}") else {
+                    break;
+                };
+                spans.push((i, close + 2));
+                i = close + 2;
+            }
+            _ => i += 1,
+        }
+    }
+    spans
 }
 
 /// The braced comments of `bytes` as `(open, end)`, outside escapes and
@@ -1456,42 +1495,23 @@ thread_local! {
 fn with_comment_spans<R>(bytes: &[u8], f: impl FnOnce(&[(usize, usize)]) -> R) -> R {
     COMMENT_SPANS.with(|cache| {
         let mut cache = cache.borrow_mut();
-        if cache.0 != bytes {
-            let mut spans = Vec::new();
-            let mut i = 0;
-            while i < bytes.len() {
-                match bytes[i] {
-                    b'\\' => i += 2,
-                    b'`' => {
-                        let open = bytes[i..].iter().take_while(|&&b| b == b'`').count();
-                        let mut k = i + open;
-                        let mut closed = None;
-                        while k < bytes.len() {
-                            let run = bytes[k..].iter().take_while(|&&b| b == b'`').count();
-                            if run == open {
-                                closed = Some(k + run);
-                                break;
-                            }
-                            k += run.max(1);
-                        }
-                        let Some(end) = closed else { break };
-                        i = end;
-                    }
-                    b'{' if bytes.get(i + 1) == Some(&b'%')
-                        && !followed_by_grapheme_extender(bytes, i + 2) =>
-                    {
-                        let Some(close) = find_seq(bytes, i + 2, b"%}") else {
-                            break;
-                        };
-                        spans.push((i, close + 2));
-                        i = close + 2;
-                    }
-                    _ => i += 1,
-                }
+        let key = (bytes.as_ptr() as usize, bytes.len());
+        // An address can be reused for another text, so the bytes decide.
+        match cache
+            .iter()
+            .position(|(at, text, _)| *at == key && text.as_slice() == bytes)
+        {
+            Some(0) => {}
+            Some(hit) => {
+                let entry = cache.remove(hit);
+                cache.insert(0, entry);
             }
-            *cache = (bytes.to_vec(), spans);
+            None => {
+                cache.truncate(COMMENT_SPAN_TEXTS - 1);
+                cache.insert(0, (key, bytes.to_vec(), comment_spans(bytes)));
+            }
         }
-        f(&cache.1)
+        f(&cache[0].2)
     })
 }
 
