@@ -35,7 +35,9 @@ mod prepass_links;
 mod quote;
 pub use own_lines::decision_trace;
 pub(in crate::parse) use own_lines::restore_authored_columns;
-pub(crate) use own_lines::{own_lines, walk_body, walk_moves_lines, EditsGuard};
+pub(crate) use own_lines::{
+    comment_only_para_end, own_lines, walk_body, walk_moves_lines, EditsGuard,
+};
 mod table;
 pub(crate) use quote::holds_nothing;
 pub(crate) use quote_state::is_alnum;

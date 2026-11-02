@@ -716,6 +716,10 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
     macro_rules! emit {
         ($line:expr, $node:expr) => {{
             let node = $node;
+            // The standard reader turns it into comment blocks (carve#4799).
+            if crate::ast::comment_only_paragraph(&node) {
+                return None;
+            }
             if let Some(extents) = extents.as_deref_mut() {
                 extents.push((current_block_start.get(), cur.pos));
             }
