@@ -93,6 +93,9 @@ struct Frame {
     plus: Option<usize>,
     /// A fence that fills a description's `+`: it closes back into that list.
     fills_dd: bool,
+    /// A comment span opened after a term or a description restores that state
+    /// at its closer (CARVE-P9-013).
+    entry_last: Option<Last>,
     /// The line of this frame's table row, for the continuation row below it.
     table_line: Option<usize>,
     /// Column and shift of the list this marker frame belongs to (PART 0 S3).
@@ -131,6 +134,7 @@ impl Frame {
             doc_marker: 0,
             plus: None,
             fills_dd: false,
+            entry_last: None,
             table_line: None,
             list_col: 0,
             list_shift: 0,
@@ -183,6 +187,18 @@ fn indent_cols(s: &str) -> (usize, usize) {
         len += 1;
     }
     (col, len)
+}
+
+/// The owner's state once a fence or span frame closes.
+fn last_after_closer(inner: Option<&Frame>) -> Last {
+    match inner {
+        Some(Frame {
+            entry_last: Some(last),
+            ..
+        }) => *last,
+        Some(Frame { fills_dd: true, .. }) => Last::Dd,
+        _ => Last::Block,
+    }
 }
 
 fn is_ws_only(s: &str) -> bool {
@@ -1659,8 +1675,8 @@ impl<'a> Walk<'a> {
                     self.top().span = None;
                 }
             } else if closer.is_some_and(|cl| cl.closes(c.rest, col, open_col)) {
-                let fills_dd = self.frames.pop().is_some_and(|f| f.fills_dd);
-                self.top().last = if fills_dd { Last::Dd } else { Last::Block };
+                let inner = self.frames.pop();
+                self.top().last = last_after_closer(inner.as_ref());
             } else if line_block {
                 // A span in a line-block payload pairs past the column too (carve-php#3137).
                 let rest = c.rest;
@@ -1956,25 +1972,31 @@ impl<'a> Walk<'a> {
             self.frames[owner].canon,
             self.frames[owner].shift,
         );
+        let mut entry_last = None;
         {
             let o = &mut self.frames[owner];
-            // A caption folds its following lines like a paragraph (CARVE-P2-021).
-            o.para = matches!(form, Form::Leaf(false));
             o.table_line = matches!(form, Form::Leaf(true))
                 .then_some(at)
                 .filter(|_| is_table_start(c.rest) || is_table_continuation(c.rest));
-            // An invisible line does not choose the next line's owner, so a
-            // `: ` line after it still follows the term (CARVE-P9-013).
-            let invisible = matches!(form, Form::Leaf(true))
+            // An invisible line or comment span after a term or a description
+            // closes neither: the next visible line is classified as if it were
+            // absent (CARVE-P9-013).
+            let invisible = (matches!(form, Form::Leaf(true))
                 && (c.rest.starts_with("%%")
                     || parse_link_def_line(c.rest).is_some()
-                    || detect_abbreviation_def(c.rest).is_some());
-            o.last = match form {
-                Form::Term => Last::Term,
-                Form::Dd(_) => Last::Dd,
-                _ if invisible && o.last == Last::Term => Last::Term,
-                _ => Last::Other,
-            };
+                    || detect_abbreviation_def(c.rest).is_some()))
+                || matches!(form, Form::Fence(Closer::Comment(_), ..));
+            if invisible && matches!(o.last, Last::Term | Last::Dd) {
+                entry_last = Some(o.last);
+            } else {
+                // A caption folds its following lines like a paragraph (CARVE-P2-021).
+                o.para = matches!(form, Form::Leaf(false));
+                o.last = match form {
+                    Form::Term => Last::Term,
+                    Form::Dd(_) => Last::Dd,
+                    _ => Last::Other,
+                };
+            }
             if matches!(form, Form::Term) {
                 o.para = true;
                 o.term_cut = col.saturating_sub(canon);
@@ -1996,6 +2018,7 @@ impl<'a> Walk<'a> {
                 f.line_block = line_block;
                 f.shift = o_shift;
                 f.line = self.first_line + at;
+                f.entry_last = entry_last;
                 f.family = match closer {
                     Closer::Fence(..) => "code",
                     Closer::Comment(_) => "comment",

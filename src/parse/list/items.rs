@@ -132,6 +132,8 @@ struct ListScan<'a, 'l, 'o> {
     // Whether the current item has shown anything yet: a blank after an invisible
     // lead separates nothing, so it does not loosen (carve#4639).
     item_shows: bool,
+    // The current item's marker line, which bounds the look-back at a sibling.
+    item_head: usize,
     // An empty first-block item has no paragraph for a below-column line to continue.
     last_item_bare_continuation: bool,
     // The same S4 state for an item whose marker-line content is only a
@@ -222,12 +224,14 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         ol_type: Option<OrderedListType>,
     ) -> Self {
         let base_indent = first_marker.indent;
+        let item_head = cur.pos;
         Self {
             cur,
             options,
             deferred,
             base_indent,
             item_shows: !invisible_item_lead(first_marker.content),
+            item_head,
             is_task: first_marker.checked.is_some(),
             is_ordered: first_marker.ordered,
             first_dialect: ol_dialect(ol_type),
@@ -319,6 +323,45 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 .filter(|_| self.pending_attrs.is_some()),
         );
         self.pending_attrs = None;
+    }
+
+    /// §17 L1c with CARVE-P9-013: a blank followed only by invisible lines, at
+    /// any depth of the item, still stands before this sibling marker.
+    fn blank_behind_invisible(&self) -> bool {
+        let lines = self.cur.lines;
+        let from = self.item_head;
+        let mut k = self.cur.pos;
+        let mut skipped = false;
+        while k > from + 1 {
+            k -= 1;
+            let line = lines.at(k);
+            if is_blank_line(line) {
+                return skipped;
+            }
+            if let Some(open) = detect_comment_fence_line_any_column(line) {
+                let mut opener = k;
+                loop {
+                    if opener <= from + 1 {
+                        return false;
+                    }
+                    opener -= 1;
+                    if detect_comment_fence_line_any_column(lines.at(opener))
+                        .is_some_and(|o| o.fence_len == open.fence_len)
+                    {
+                        break;
+                    }
+                }
+                k = opener;
+            } else if !(is_line_comment_any_column(line)
+                || (is_definition_placeholder(line) && !is_footnote_definition_placeholder(line))
+                || parse_link_def_line(trim_ascii_start(line)).is_some()
+                || detect_abbreviation_def(trim_ascii_start(line)).is_some())
+            {
+                return false;
+            }
+            skipped = true;
+        }
+        false
     }
 
     fn previous_line_blank(&self) -> bool {
@@ -1056,11 +1099,15 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // a genuine blank BETWEEN items keeps loosening.
         self.pending_blank = false;
         self.items[last_item].children.extend(nested_children);
+        // A sibling marker after the span is read as if the span were absent
+        // (CARVE-P9-013), so it does not end the list here.
         if closed_comment_span
-            && self
-                .cur
-                .peek()
-                .is_some_and(|line| !is_blank_line(line) && indent_columns(line) < content_col)
+            && self.cur.peek().is_some_and(|line| {
+                !is_blank_line(line)
+                    && indent_columns(line) < content_col
+                    && !(indent_columns(line) == self.base_indent
+                        && detect_list_marker_full(line).is_some())
+            })
         {
             return END;
         }
@@ -1106,10 +1153,14 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         if !self.sibling_joins_list(&marker, blank_run_before) {
             return END;
         }
-        if self.pending_blank || (!self.items.is_empty() && self.previous_line_blank()) {
+        if self.pending_blank
+            || (!self.items.is_empty()
+                && (self.previous_line_blank() || self.blank_behind_invisible()))
+        {
             self.tight = false;
             self.pending_blank = false;
         }
+        self.item_head = self.cur.pos;
         self.content_col = self.item_content_col(&marker);
         self.item_shows = !invisible_item_lead(marker.content);
         // A new item carries none of the previous item's fence state.
