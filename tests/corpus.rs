@@ -1379,7 +1379,6 @@ const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 ///
 const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     // Corpus pairs the spec c3c2f80f pin moved past this engine. Each actual HTML is measured.
-    ("01-emphasis-6", "spec pin c3c2f80f: markup-carve/carve#4810 not ported yet", "<p><em>usr/local</em></p>"),
     ("132-thematic-break-requires-contiguous-markers", "spec pin c3c2f80f: markup-carve/carve#4814 not ported yet", "<ul>\n  <li>\n    <ul>\n      <li>*</li>\n    </ul>\n  </li>\n</ul>"),
     ("132-thematic-break-requires-contiguous-markers-5", "spec pin c3c2f80f: markup-carve/carve#4814 not ported yet", "<ul>\n  <li>\n    <ul>\n      <li>-</li>\n    </ul>\n  </li>\n</ul>"),
     ("163-unresolved-footnote-reference-with-a-trailing-attribute-stays-literal", "spec pin c3c2f80f: markup-carve/carve#4816 not ported yet", "<p>Text[^a].</p>"),

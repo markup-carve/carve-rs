@@ -1752,6 +1752,71 @@ pub(in crate::parse) struct EmphasisMemo {
     last_comment_close: Option<Option<usize>>,
     pub(in crate::parse) atomic: Option<std::rc::Rc<[(usize, usize)]>>,
     literal_directives: Option<std::rc::Rc<[(usize, usize)]>>,
+    /// Bare entries that declined at a closer for an inner word delimiter, as
+    /// `(opener content start, closer, kind)` (carve#4810).
+    pub(in crate::parse) declines: Vec<Decline>,
+}
+
+/// `(opener content start, closer, kind)` of a bare entry R2 declined.
+type Decline = (usize, usize, u8);
+
+thread_local! {
+    /// Declines still held over the content of the bare span just formed,
+    /// keyed by that content's address and length.
+    static HELD_DECLINES: std::cell::RefCell<Option<(usize, usize, Vec<Decline>)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+impl EmphasisMemo {
+    /// A memo for `text`, holding the declines its enclosing span passed on.
+    pub(in crate::parse) fn for_text(text: &str) -> Self {
+        let declines = HELD_DECLINES.with(|held| {
+            let mut held = held.borrow_mut();
+            match held.as_ref() {
+                Some(&(ptr, len, _)) if ptr == text.as_ptr() as usize && len == text.len() => held
+                    .take()
+                    .map(|(_, _, declines)| declines)
+                    .unwrap_or_default(),
+                _ => Vec::new(),
+            }
+        });
+        Self {
+            declines,
+            ..Self::default()
+        }
+    }
+
+    /// Whether an entry of a kind in `kinds` declines at or past `at`: it is
+    /// still on the stack there, so no opener of that kind and no combined
+    /// token forms, and the closer that declines it is text (carve#4810).
+    pub(in crate::parse) fn entry_declines_past(&mut self, at: usize, kinds: &[u8]) -> bool {
+        // The scan only moves forward, so an entry that declined behind it is done.
+        while self
+            .declines
+            .last()
+            .is_some_and(|&(_, close, _)| close < at)
+        {
+            self.declines.pop();
+        }
+        self.declines
+            .iter()
+            .any(|&(from, close, kind)| from <= at && close >= at && kinds.contains(&kind))
+    }
+
+    /// Hand the declines held over the content `[open + 1, close)` to the
+    /// memo `EmphasisMemo::for_text` builds for `inner`.
+    pub(in crate::parse) fn hold_declines_over(&self, open: usize, inner: &str) {
+        let held: Vec<_> = self
+            .declines
+            .iter()
+            .filter(|&&(from, close, _)| from <= open && close > open)
+            .map(|&(_, close, kind)| (0, close - open - 1, kind))
+            .collect();
+        HELD_DECLINES.with(|slot| {
+            *slot.borrow_mut() =
+                (!held.is_empty()).then_some((inner.as_ptr() as usize, inner.len(), held));
+        });
+    }
 }
 
 /// Whether the `*/` at `at` can close the combined token (`biCloser`).
@@ -2015,6 +2080,8 @@ fn find_emphasis_close_walk(
     // The `*` of a `/*` split under an open `/`: its `*/` lost the `/` to that span.
     let splits_shape = delim == b'*' && OpenKinds::is_open(b'/');
     let mut shape_seen = splits_shape && from >= 2 && bytes[from - 2] == b'/';
+    // An inner word delimiter closes nothing; the closer that follows declines.
+    let mut holds_own_delimiter = false;
     while j < bytes.len() {
         if opener_end.is_some_and(|end| j > end) {
             return None;
@@ -2309,15 +2376,54 @@ fn find_emphasis_close_walk(
             // An arrow's `=` may still close (`=b=>`, PART 9 §9); only a
             // comparison's is shielded, above.
             let next = flank_after(bytes, j + 1);
-            if quote_state::alnum_at(bytes, next) || followed_by_grapheme_extender(bytes, next) {
+            if quote_state::alnum_at(bytes, next) {
+                if quote_state::alnum_before(bytes, flank_before(bytes, j))
+                    && !in_mention_or_tag_name(bytes, j)
+                {
+                    holds_own_delimiter = true;
+                }
                 j += 1;
                 continue;
+            }
+            if followed_by_grapheme_extender(bytes, next) {
+                j += 1;
+                continue;
+            }
+            if holds_own_delimiter {
+                memo.declines.push((from, j, delim));
+                return None;
             }
             return Some(j);
         }
         j += 1;
     }
     None
+}
+
+/// Whether `at` lies in the name of a mention or tag, which R2's own-delimiter
+/// test does not read (carve#4810): `_@a_b_` forms.
+fn in_mention_or_tag_name(bytes: &[u8], at: usize) -> bool {
+    let is_name = |c: u8| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-' | b'.');
+    let mut start = at;
+    while start > 0 && is_name(bytes[start - 1]) {
+        start -= 1;
+    }
+    if start == 0 || !matches!(bytes[start - 1], b'@' | b'#') {
+        return false;
+    }
+    // A `_` before the sigil may be the span's own opener, so only a letter or digit refuses.
+    if start >= 2 && bytes[start - 2].is_ascii_alphanumeric() {
+        return false;
+    }
+    let mut end = at;
+    while end < bytes.len() && is_name(bytes[end]) {
+        end += 1;
+    }
+    let Ok(rest) = std::str::from_utf8(&bytes[start..end]) else {
+        return false;
+    };
+    let len = super::inline_links::name_run_len(rest);
+    at < start + len && rest[..len].bytes().any(|b| b.is_ascii_alphabetic())
 }
 
 /// Whether the `]` at `close` ends a bracket a link or image could use: it

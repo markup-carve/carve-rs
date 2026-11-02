@@ -1642,6 +1642,7 @@ pub(in crate::parse) fn match_emphasis(
     let flank_start = flank_before(bytes, i);
     if c == b'/'
         && bytes.get(i + 1) == Some(&b'*')
+        && !no_close.entry_declines_past(i, b"/*")
         && !quote_state::alnum_before(bytes, flank_start)
         && !flank_start
             .checked_sub(1)
@@ -1755,6 +1756,9 @@ pub(in crate::parse) fn match_emphasis(
             return None;
         }
     }
+    if no_close.entry_declines_past(i, &[delim]) {
+        return None;
+    }
     let close = cached_find_emphasis_close(bytes, i + 1, delim, no_close, bounds)?;
     if NESTING_DEPTH.with(|depth| depth.get() >= MAX_NESTING_DEPTH) {
         return Some((
@@ -1763,6 +1767,7 @@ pub(in crate::parse) fn match_emphasis(
         ));
     }
     let inner = std::str::from_utf8(&bytes[i + 1..close]).ok()?;
+    no_close.hold_declines_over(i, inner);
     OpenKinds::pass_on(OpenKinds::bit(delim));
     let _bare = BareEmphasisRun::enter();
     Some((
