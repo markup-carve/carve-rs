@@ -41,3 +41,11 @@ fn a_probed_container_definition_is_hoisted_once() {
         assert_eq!(count, 1, "{source:?}");
     }
 }
+
+#[test]
+fn a_definition_shaped_run_in_prose_does_not_move_the_order() {
+    assert_eq!(
+        expansion("mention *[A]: second\n\n> *[A]: first\n\n*[A]: second\n\nA\n"),
+        "second"
+    );
+}

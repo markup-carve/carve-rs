@@ -74,16 +74,25 @@ pub(in crate::parse) fn place_hoisted_abbreviations(
     blocks.extend(unplaced.into_iter().map(BlockNode::AbbreviationDef));
 }
 
+/// `line` with every container prefix stripped, as the prepass reads it.
+fn behind_container_prefixes(line: &str) -> &str {
+    let mut rest = trim_ascii_start(line);
+    loop {
+        let next = trim_ascii_start(strip_container_prefixes(rest, true).bare);
+        if next.len() == rest.len() {
+            return rest;
+        }
+        rest = next;
+    }
+}
+
 /// Put definitions back in authored order after a skipped one was appended
 /// beyond its containing list. The HTML expansion rule uses the last spelling.
 pub(in crate::parse) fn order_abbreviation_blocks(blocks: &mut [BlockNode], source: &str) {
     let mut lines: BTreeMap<(String, String), std::collections::VecDeque<usize>> = BTreeMap::new();
     for (index, line) in source.lines().enumerate() {
         // A container definition counts at its authored line too (carve#4865).
-        let def = line
-            .find("*[")
-            .and_then(|at| detect_abbreviation_def(&line[at..]));
-        if let Some(def) = def {
+        if let Some(def) = detect_abbreviation_def(behind_container_prefixes(line)) {
             lines
                 .entry((def.abbr, def.expansion))
                 .or_default()
