@@ -956,6 +956,7 @@ pub(crate) struct LineBlockTail {
     last_is_payload: bool,
     span: Option<usize>,
     base: usize,
+    had_span: bool,
 }
 
 impl LineBlockTail {
@@ -999,6 +1000,7 @@ impl LineBlockTail {
                 crate::parse::verse::verse_comment_run(local).filter(|_| lead == self.base)
             {
                 self.span = Some(run);
+                self.had_span = true;
                 self.last_is_payload = stanza_open;
                 return;
             }
@@ -1014,6 +1016,7 @@ impl LineBlockTail {
             None => {
                 let (host_quoted, tail) = innermost_host_tail(local);
                 self.open = detect_line_block_open(tail);
+                self.had_span = false;
                 self.quoted = line_quoted || host_quoted;
                 self.host_col = if tail.len() < local.len() {
                     line.len() - tail.len()
@@ -1029,6 +1032,11 @@ impl LineBlockTail {
                 };
             }
         }
+    }
+
+    /// Whether a `%%%` span has opened in the current line block.
+    pub(crate) fn held_span(&self) -> bool {
+        self.had_span
     }
 
     /// `Some(stanza open)` while the scanned body is still inside a line block.
@@ -1208,6 +1216,8 @@ struct DefinitionBodyCollector<'s, 'o> {
     retained_below_comment: bool,
     /// A lazy run is folding into a line-block stanza that held a `%%%` span.
     stanza_fold: bool,
+    /// The line-block scan over the body, advanced only by new lines.
+    stanza_scan: Option<(LineBlockTail, usize)>,
     retained_comment_column: usize,
     comment_state: BodyCommentState,
     open_colons: OpenBodyColons,
@@ -1299,6 +1309,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             nested_attribute_closed: false,
             retained_below_comment: false,
             stanza_fold: false,
+            stanza_scan: None,
             retained_comment_column: 0,
             comment_state,
             open_colons: OpenBodyColons::from_source(seed),
@@ -2128,12 +2139,23 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         BodyStep::Next
     }
 
-    fn folds_into_a_spanned_stanza(&self) -> bool {
+    fn folds_into_a_spanned_stanza(&mut self) -> bool {
         if self.stanza_fold {
             return true;
         }
-        self.lines.iter().any(|line| line.contains("%%%"))
-            && body_ends_inside_line_block(&self.body_so_far()) == Some(true)
+        let seed = self.seed;
+        let (scan, seen) = self.stanza_scan.get_or_insert_with(|| {
+            let mut scan = LineBlockTail::default();
+            for line in seed.lines() {
+                scan.step(line);
+            }
+            (scan, 0)
+        });
+        for line in &self.lines[*seen..] {
+            scan.step(line);
+        }
+        *seen = self.lines.len();
+        scan.in_block() == Some(true) && scan.held_span()
     }
 
     /// A structural opener in the band below the body's column that still
