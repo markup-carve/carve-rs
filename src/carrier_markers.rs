@@ -1311,7 +1311,8 @@ pub(crate) fn restore_carrier_markers(carve: &str, lift: &CarrierLift) -> String
     let mut source_with_definitions = carve.to_owned();
     // The import writes a resolved reference inline, so only a definition no
     // link or image used needs its line back.
-    let used_ids: Vec<String> = pulldown_cmark::Parser::new_ext(&lift.source, markdown_options())
+    let prepared = crate::markdown_strike::prepare(&lift.source, markdown_options());
+    let used_ids: Vec<String> = pulldown_cmark::Parser::new_ext(&prepared.text, markdown_options())
         .filter_map(|event| match event {
             Event::Start(Tag::Link { id, .. } | Tag::Image { id, .. }) if !id.is_empty() => {
                 Some(id.into_string())

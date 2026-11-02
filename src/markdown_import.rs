@@ -1242,8 +1242,11 @@ fn markdown_to_ast_with_code_lines(
         options.insert(Options::ENABLE_YAML_STYLE_METADATA_BLOCKS);
     }
 
-    let headings = normalize_heading_closers(&without_nuls, options);
-    let source = normalize_table_email_autolinks(&headings, options);
+    let fences = normalize_fence_closers(&without_nuls, options);
+    let fences = normalize_table_delimiter_tabs(&fences, options);
+    let headings = normalize_heading_closers(&fences, options);
+    let emails = normalize_table_email_autolinks(&headings, options);
+    let (source, cased_closers) = lower_html_block_closers(&emails, options);
     let mut builder = Builder {
         carrier_token: carrier_token
             .filter(|token| !token.is_empty())
@@ -1465,6 +1468,13 @@ fn markdown_to_ast_with_code_lines(
                 event = Event::SoftBreak;
             }
         }
+        event = correct_pulldown_event(
+            event,
+            &source,
+            &range,
+            &cased_closers,
+            builder.quote_depth(),
+        );
         if let Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) = &event {
             let word = info
                 .trim_matches([' ', '\t'])
@@ -1543,7 +1553,7 @@ fn markdown_to_ast_with_code_lines(
         }
         let task_marker = matches!(event, Event::TaskListMarker(_));
         let ordered = task_marker && builder.in_ordered_item();
-        let extension_reaches = task_marker && tasklist_extension_reaches(&source, &range);
+        let extension_reaches = task_marker && builder.task_box_reaches(&source, &range);
         if task_marker && (ordered || !extension_reaches) {
             // NOWHERE TO PUT A BOX, or none to read. Carve spells a checkbox
             // only behind a bullet, so handing the writer one on an ordered
@@ -1814,6 +1824,93 @@ fn markdown_to_ast_with_code_lines(
 /// them. CommonMark strips only spaces and tabs (4.8 paragraphs, 6.7 soft line
 /// breaks), and only two spaces make a hard break (6.6), so both characters
 /// are content.
+fn correct_pulldown_event<'e>(
+    event: Event<'e>,
+    source: &str,
+    range: &std::ops::Range<usize>,
+    cased_closers: &[(std::ops::Range<usize>, String)],
+    quotes: usize,
+) -> Event<'e> {
+    match &event {
+        Event::HardBreak if !spaces_break(source, range) => Event::SoftBreak,
+        Event::Html(html) => {
+            let mut value = html.to_string();
+            for (at, original) in cased_closers {
+                if at.start < range.end && range.start < at.end {
+                    value = value.replacen(&original.to_ascii_lowercase(), original, 1);
+                }
+            }
+            if value == html.as_ref() {
+                event
+            } else {
+                Event::Html(value.into())
+            }
+        }
+        Event::InlineHtml(html) => inline_html_fixup(html, quotes).unwrap_or(event),
+        _ => event,
+    }
+}
+
+/// pulldown keeps the container prefixes inside a multi-line comment,
+/// processing instruction or CDATA section, and accepts tags CommonMark §6.6
+/// rejects (`<a h=x<TAB>)>`).
+fn inline_html_fixup(html: &str, quotes: usize) -> Option<Event<'static>> {
+    static TAG: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    if html.starts_with("<!") || html.starts_with("<?") {
+        if !html.contains('\n') {
+            return None;
+        }
+        let mut lines = html.split('\n');
+        let mut fixed = lines.next().unwrap_or_default().to_owned();
+        for line in lines {
+            let mut rest = line;
+            for _ in 0..quotes {
+                let indent = rest.bytes().take_while(|byte| *byte == b' ').count();
+                if indent > 3 || rest.as_bytes().get(indent) != Some(&b'>') {
+                    break;
+                }
+                rest = &rest[indent + 1..];
+                rest = rest.strip_prefix([' ', '\t']).unwrap_or(rest);
+            }
+            fixed.push('\n');
+            fixed.push_str(rest.trim_start_matches([' ', '\t']));
+        }
+        return (fixed != html && fixed.ends_with('>')).then(|| Event::InlineHtml(fixed.into()));
+    }
+    let tag = TAG.get_or_init(|| {
+        let ws = r"[ \t]*(?:\r\n|\r|\n)?[ \t]*";
+        let attribute = format!(
+            r#"(?:[ \t\r\n]+[A-Za-z_:][A-Za-z0-9_.:-]*(?:{ws}={ws}(?:[^ \t\r\n"'=<>`]+|'[^']*'|"[^"]*"))?)"#
+        );
+        regex::Regex::new(&format!(
+            r"^(?:<[A-Za-z][A-Za-z0-9-]*{attribute}*{ws}/?>|</[A-Za-z][A-Za-z0-9-]*{ws}>)$"
+        ))
+        .expect("inline tag pattern")
+    });
+    (!html.contains('\n') && !tag.is_match(html)).then(|| Event::Text(html.to_owned().into()))
+}
+
+/// CommonMark §6.7 needs two SPACES right before the line ending; pulldown
+/// counts any trailing whitespace, so `a`, space, tab broke the line.
+fn spaces_break(source: &str, range: &std::ops::Range<usize>) -> bool {
+    let run = &source.as_bytes()[range.clone()];
+    if run.first() == Some(&b'\\') {
+        return true;
+    }
+    let end = run
+        .iter()
+        .position(|byte| matches!(byte, b'\n' | b'\r'))
+        .unwrap_or(run.len());
+    let run = &run[..end];
+    if !run
+        .iter()
+        .all(|byte| matches!(byte, b' ' | b'\t' | 0x0b | 0x0c))
+    {
+        return true;
+    }
+    run.ends_with(b"  ")
+}
+
 fn stripped_line_end(source: &str, text_end: usize) -> Option<(&str, usize)> {
     let tail = &source[text_end..];
     let run = tail
@@ -1971,6 +2068,208 @@ fn normalize_table_email_autolinks<'a>(source: &'a str, options: Options) -> Cow
     } else {
         output.push_str(&source[copied..]);
         Cow::Owned(output)
+    }
+}
+
+/// CommonMark §4.5 lets spaces or tabs follow a closing fence; pulldown only
+/// accepts spaces, so `~~~` plus a tab left the rest of the document in the
+/// block. Each candidate's tabs become spaces only when that makes the line
+/// close its block, so a tab in code content is never touched.
+fn normalize_fence_closers<'a>(source: &'a str, options: Options) -> Cow<'a, str> {
+    const MAX_PASSES: usize = 32;
+    if !source.contains('\t') || !(source.contains("```") || source.contains("~~~")) {
+        return Cow::Borrowed(source);
+    }
+    let code_text = |text: &str| {
+        let mut depth = 0usize;
+        let mut ranges = Vec::new();
+        for (event, range) in Parser::new_ext(text, options).into_offset_iter() {
+            match event {
+                Event::Start(Tag::CodeBlock(_)) => depth += 1,
+                Event::End(TagEnd::CodeBlock) => depth = depth.saturating_sub(1),
+                Event::Text(_) if depth > 0 => ranges.push(range),
+                _ => {}
+            }
+        }
+        ranges
+    };
+    let blank = |text: &mut String, (_, from, to): (usize, usize, usize)| {
+        text.replace_range(from..to, &" ".repeat(to - from));
+    };
+    let mut text = source.to_owned();
+    let mut rejected = Vec::new();
+    for _ in 0..MAX_PASSES {
+        let mut candidates = Vec::new();
+        let mut fence: Option<(u8, usize)> = None;
+        for (event, range) in Parser::new_ext(&text, options).into_offset_iter() {
+            match event {
+                Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(_))) => {
+                    let opener = text[range.start..].trim_start_matches(' ').as_bytes();
+                    let ch = opener.first().copied().unwrap_or(b'`');
+                    fence = Some((ch, opener.iter().take_while(|byte| **byte == ch).count()));
+                }
+                Event::End(TagEnd::CodeBlock) => fence = None,
+                Event::Text(_) => {
+                    let Some((ch, count)) = fence else { continue };
+                    let mut start = range.start;
+                    for line in text[range.clone()].split_inclusive('\n') {
+                        let body = line.trim_end_matches(['\n', '\r']);
+                        let lead = body.len() - body.trim_start_matches(' ').len();
+                        let run = body[lead..].bytes().take_while(|byte| *byte == ch).count();
+                        let tail = &body[lead + run..];
+                        if run >= count
+                            && tail.contains('\t')
+                            && tail.bytes().all(|byte| matches!(byte, b' ' | b'\t'))
+                            && !rejected.contains(&(start + lead))
+                        {
+                            candidates.push((start + lead, start + lead + run, start + body.len()));
+                            fence = None;
+                            break;
+                        }
+                        start += line.len();
+                    }
+                }
+                _ => {}
+            }
+        }
+        if candidates.is_empty() {
+            break;
+        }
+        let mut trial = text.clone();
+        for &candidate in &candidates {
+            blank(&mut trial, candidate);
+        }
+        let code = code_text(&trial);
+        let mut accepted = 0;
+        for candidate in candidates {
+            if code.iter().any(|range| range.contains(&candidate.0)) {
+                rejected.push(candidate.0);
+            } else {
+                blank(&mut text, candidate);
+                accepted += 1;
+            }
+        }
+        if accepted == 0 {
+            break;
+        }
+    }
+    if text == source {
+        Cow::Borrowed(source)
+    } else {
+        Cow::Owned(text)
+    }
+}
+
+/// GFM trims spaces or tabs around delimiter cells; pulldown rejects a
+/// delimiter row holding a tab, so `|<TAB>---<TAB>|` left the table as text.
+fn normalize_table_delimiter_tabs<'a>(source: &'a str, options: Options) -> Cow<'a, str> {
+    static DELIMITER: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    if !source.contains('\t') || !source.contains('|') {
+        return Cow::Borrowed(source);
+    }
+    let delimiter = DELIMITER.get_or_init(|| {
+        regex::Regex::new(r"^\|?[ \t]*:?-+:?[ \t]*(\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$")
+            .expect("delimiter row pattern")
+    });
+    let mut tabs = Vec::new();
+    let mut start = 0;
+    for line in source.split_inclusive('\n') {
+        let body = line.trim_end_matches(['\n', '\r']);
+        let prefix = body
+            .bytes()
+            .take_while(|byte| matches!(byte, b' ' | b'\t' | b'>'))
+            .count();
+        let row = &body[prefix..];
+        if row.contains('|') && row.contains('\t') && delimiter.is_match(row) {
+            tabs.extend(
+                row.bytes()
+                    .enumerate()
+                    .filter(|(_, byte)| *byte == b'\t')
+                    .map(|(at, _)| start + prefix + at),
+            );
+        }
+        start += line.len();
+    }
+    if tabs.is_empty() {
+        return Cow::Borrowed(source);
+    }
+    let mut trial = source.to_owned();
+    for &tab in &tabs {
+        trial.replace_range(tab..tab + 1, " ");
+    }
+    let tables: Vec<_> = Parser::new_ext(&trial, options)
+        .into_offset_iter()
+        .filter(|(event, _)| matches!(event, Event::Start(Tag::Table(_))))
+        .map(|(_, range)| range)
+        .collect();
+    let mut normalized = source.to_owned();
+    for tab in tabs {
+        if tables.iter().any(|range| range.contains(&tab)) {
+            normalized.replace_range(tab..tab + 1, " ");
+        }
+    }
+    if normalized == source {
+        return Cow::Borrowed(source);
+    }
+    Cow::Owned(normalized)
+}
+
+/// CommonMark §4.6 ends a `<script>`, `<pre>`, `<style>` or `<textarea>`
+/// block at its closing tag in any case; pulldown matches only lowercase. The
+/// closer is lowercased for the parse and its spelling restored on the event.
+fn lower_html_block_closers<'a>(
+    source: &'a str,
+    options: Options,
+) -> (Cow<'a, str>, Vec<(std::ops::Range<usize>, String)>) {
+    const MAX_PASSES: usize = 32;
+    static OPENER: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static CLOSER: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let mut cased = Vec::new();
+    let lower = source.to_ascii_lowercase();
+    if !["</script>", "</pre>", "</style>", "</textarea>"]
+        .iter()
+        .any(|closer| lower.matches(closer).count() != source.matches(closer).count())
+    {
+        return (Cow::Borrowed(source), cased);
+    }
+    let opener = OPENER.get_or_init(|| {
+        regex::Regex::new(r"(?i)^ {0,3}<(?:script|pre|style|textarea)(?:[ \t>]|$)")
+            .expect("raw block opener")
+    });
+    let closer = CLOSER.get_or_init(|| {
+        regex::Regex::new(r"(?i)</(?:script|pre|style|textarea)>").expect("raw block closer")
+    });
+    let mut text = source.to_owned();
+    for _ in 0..MAX_PASSES {
+        let mut found = Vec::new();
+        for (event, range) in Parser::new_ext(&text, options).into_offset_iter() {
+            if !matches!(event, Event::Start(Tag::HtmlBlock)) {
+                continue;
+            }
+            let block = &text[range.clone()];
+            if !opener.is_match(block.lines().next().unwrap_or_default()) {
+                continue;
+            }
+            if let Some(hit) = closer.find(block) {
+                let at = range.start + hit.start()..range.start + hit.end();
+                if text[at.clone()] != text[at.clone()].to_ascii_lowercase() {
+                    found.push(at);
+                }
+            }
+        }
+        if found.is_empty() {
+            break;
+        }
+        for at in found {
+            cased.push((at.clone(), text[at.clone()].to_owned()));
+            let lowered = text[at.clone()].to_ascii_lowercase();
+            text.replace_range(at, &lowered);
+        }
+    }
+    if cased.is_empty() {
+        (Cow::Borrowed(source), cased)
+    } else {
+        (Cow::Owned(text), cased)
     }
 }
 
@@ -2331,6 +2630,26 @@ impl Builder {
         self.footnote_labels
             .insert(label.to_owned(), renamed.clone());
         renamed
+    }
+
+    fn quote_depth(&self) -> usize {
+        self.frames
+            .iter()
+            .filter(|frame| matches!(frame, Frame::BlockQuote(_)))
+            .count()
+    }
+
+    /// The box belongs to the item; a heading (`- [ ] a` over `-`) keeps the
+    /// brackets as text.
+    fn task_box_reaches(&self, source: &str, marker: &std::ops::Range<usize>) -> bool {
+        tasklist_extension_reaches(source, marker) && self.task_box_placeable()
+    }
+
+    fn task_box_placeable(&self) -> bool {
+        matches!(
+            self.frames.as_slice(),
+            [.., Frame::ListItem { .. }] | [.., Frame::ListItem { .. }, Frame::Paragraph(_)]
+        )
     }
 
     /// Whether the item being filled belongs to an ORDERED list.
@@ -2732,8 +3051,10 @@ impl Builder {
             Tag::List(start) => Frame::List {
                 ordered: start.is_some(),
                 start: start.map(|start| start as usize),
+                // A list after a tab-indented line can start at the previous
+                // line ending.
                 delim: start.and_then(|_| {
-                    let marker = source.trim_start_matches([' ', '\t']);
+                    let marker = source.trim_start_matches([' ', '\t', '\n', '\r']);
                     let digits = marker
                         .bytes()
                         .take_while(|byte| byte.is_ascii_digit())
@@ -2742,7 +3063,7 @@ impl Builder {
                 }),
                 bullet_char: start.is_none().then(|| {
                     source
-                        .trim_start_matches([' ', '\t'])
+                        .trim_start_matches([' ', '\t', '\n', '\r'])
                         .chars()
                         .next()
                         .map(|marker| if marker == '+' { '-' } else { marker })
@@ -3670,6 +3991,7 @@ fn inline_text(node: &InlineNode) -> String {
         InlineNode::Link(link) => inline_run_text(&link.children),
         InlineNode::Span(span) => inline_run_text(&span.children),
         InlineNode::Image(image) => image.alt.clone(),
+        InlineNode::AutoLink(link) => link.text.clone(),
         InlineNode::SoftBreak(_) | InlineNode::HardBreak(_) => "\n".into(),
         _ => String::new(),
     }
