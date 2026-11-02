@@ -1278,15 +1278,44 @@ mod reference_definition_provenance {
     use super::*;
 
     #[test]
+    fn a_definition_starts_at_its_own_bracket() {
+        // carve#4952: a container prefix, a marker and indentation stay outside.
+        for (source, expected) in [
+            ("> - para\n>   [A]: b\n", "[A]: b"),
+            (">  [A]: b\n", "[A]: b"),
+            ("  [A]: b\n", "[A]: b"),
+            ("1. [A]: b\n", "[A]: b"),
+            (":: t\n: [A]: b\n", "[A]: b"),
+            ("- [x] [x]: /u\n", "[x]: /u"),
+        ] {
+            let doc = parse_with_options(source, &Options::default().with_positions(true));
+            let pos = doc
+                .children
+                .iter()
+                .find_map(|node| match node {
+                    BlockNode::LinkReferenceDefinition(def) => def.pos.as_ref(),
+                    _ => None,
+                })
+                .expect("definition position");
+            let selected: String = source
+                .chars()
+                .skip(pos.start_offset)
+                .take(pos.end_offset - pos.start_offset)
+                .collect();
+            assert_eq!(selected, expected, "{source:?}");
+        }
+    }
+
+    #[test]
     fn hoisted_definitions_keep_the_authored_line() {
         for (source, expected) in [
             ("---\ntitle: x\n---\n\n[r]: /u", "[r]: /u"),
-            ("> [r]: /u", "> [r]: /u"),
-            ("- [r]: /u", "- [r]: /u"),
-            ("[^a]: note\n  [r]: /u\n\nsee[^a] [t][r]", "  [r]: /u"),
+            ("> [r]: /u", "[r]: /u"),
+            ("- [r]: /u", "[r]: /u"),
+            ("[^a]: note\n  [r]: /u\n\nsee[^a] [t][r]", "[r]: /u"),
             (
                 "[^a]: note\n  [^b]: nested\n    [r]: /u\n\nsee[^a]",
-                "    [r]: /u",
+                "[r]: /u",
             ),
             ("😀\0 prose\n\n[r]: /u", "[r]: /u"),
         ] {

@@ -1089,7 +1089,7 @@ fn parse_with_options_mode_and_index(
         append_link_reference_definitions(
             &mut doc,
             &link_defs,
-            source,
+            original,
             original_line_starts.as_ref(),
         );
     }

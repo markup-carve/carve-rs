@@ -3921,7 +3921,7 @@ pub(super) fn parse_document_with_custom_options(
         append_link_reference_definitions(
             &mut doc,
             &link_defs,
-            source,
+            original_source,
             original_line_starts.as_ref(),
         );
     }
@@ -4160,7 +4160,7 @@ fn parse_document_with_footnotes_options(
         append_link_reference_definitions(
             &mut doc,
             &link_defs,
-            source,
+            original_source,
             original_line_starts.as_ref(),
         );
     }

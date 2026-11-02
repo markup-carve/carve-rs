@@ -77,7 +77,7 @@ fn a_list_stops_before_the_definition_hoisted_out_of_it() {
     assert_eq!(nth(source, "list_item", 0), (0, 3));
     // And the two no longer claim the same offsets, so offset 8 resolves to one
     // node.
-    assert_eq!(nth(source, "link_reference_definition", 0), (5, 14));
+    assert_eq!(nth(source, "link_reference_definition", 0), (7, 14));
 }
 
 #[test]
@@ -85,7 +85,7 @@ fn a_quote_stops_before_the_definition_hoisted_out_of_it() {
     let source = "> a\n> [r]: /u\n";
 
     assert_eq!(nth(source, "block_quote", 0), (0, 3));
-    assert_eq!(nth(source, "link_reference_definition", 0), (4, 13));
+    assert_eq!(nth(source, "link_reference_definition", 0), (6, 13));
 }
 
 #[test]
