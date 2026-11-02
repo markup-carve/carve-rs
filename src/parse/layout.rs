@@ -713,11 +713,8 @@ fn render_layout_inline(
                 // then text. This path answered two (markup-carve/carve-rs#1655).
                 if close == i + 1
                     || (i > 0 && bytes[i - 1] == delimiter)
-                    || (i > 0 && text.as_bytes()[i - 1].is_ascii_alphanumeric())
-                    || text
-                        .as_bytes()
-                        .get(close + 1)
-                        .is_some_and(|byte| byte.is_ascii_alphanumeric())
+                    || quote_state::alnum_before(text.as_bytes(), i)
+                    || quote_state::alnum_at(text.as_bytes(), close + 1)
                     || text.as_bytes()[i + 1].is_ascii_whitespace()
                     || text.as_bytes()[close - 1].is_ascii_whitespace()
                 {

@@ -3645,10 +3645,10 @@ fn render_inline_body(
                     || ctx.emphasis_counts[index] > before_emphasis[index]
             };
             let combined_needs_nesting = !hugs_its_delimiters(&content)
-                || prev_char.is_ascii_alphanumeric()
+                || crate::parse::is_alnum(prev_char)
                 || matches!(prev_char, '_' | '/')
                 || (render_attrs(&emphasis.attrs).is_empty()
-                    && (next_char.is_ascii_alphanumeric()
+                    && (crate::parse::is_alnum(next_char)
                         || crate::parse::followed_by_grapheme_extender(
                             next_char.encode_utf8(&mut [0; 4]).as_bytes(),
                             0,
@@ -4877,7 +4877,7 @@ fn bare_delimiter(kind: EmphasisKind) -> Option<&'static str> {
 }
 
 fn is_word_boundary(ch: char) -> bool {
-    ch.is_ascii_alphanumeric() || ch == '_'
+    crate::parse::is_alnum(ch) || ch == '_'
 }
 
 /// The braced form of a bare emphasis whose opener the previous emitted
