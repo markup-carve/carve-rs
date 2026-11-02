@@ -16,7 +16,10 @@ fn check(data: &str) {
             .collect();
         let expected = vector["expected"]["findings"].as_array().unwrap();
         assert_eq!(
-            actual.iter().map(|w| (w.line, w.column)).collect::<Vec<_>>(),
+            actual
+                .iter()
+                .map(|w| (w.line, w.column))
+                .collect::<Vec<_>>(),
             expected
                 .iter()
                 .map(|f| (
@@ -28,7 +31,10 @@ fn check(data: &str) {
         );
         for (warning, finding) in actual.iter().zip(expected) {
             for included in finding["includes"].as_array().unwrap() {
-                assert!(warning.message.contains(included.as_str().unwrap()), "{name}");
+                assert!(
+                    warning.message.contains(included.as_str().unwrap()),
+                    "{name}"
+                );
             }
         }
     }
@@ -36,9 +42,15 @@ fn check(data: &str) {
 
 #[test]
 fn the_spec_vectors_hold() {
-    check(include_str!("spec/tests/lint-rule-vectors/html-comment-renders-as-text.json"));
-    check(include_str!("spec/tests/lint-rule-vectors/comment-shaped-emphasis.json"));
-    check(include_str!("spec/tests/lint-rule-vectors/glob-shaped-strong.json"));
+    check(include_str!(
+        "spec/tests/lint-rule-vectors/html-comment-renders-as-text.json"
+    ));
+    check(include_str!(
+        "spec/tests/lint-rule-vectors/comment-shaped-emphasis.json"
+    ));
+    check(include_str!(
+        "spec/tests/lint-rule-vectors/glob-shaped-strong.json"
+    ));
 }
 
 #[test]
@@ -61,7 +73,10 @@ fn a_markdown_html_comment_imports_as_a_carve_comment() {
         ("<!--\n%%%\n-->\n", "%%%%\n%%%\n%%%%\n"),
         ("> <!-- q -->\n", "> %% q\n"),
         ("<!-- a --> x\n", "```=html\n<!-- a --> x\n```\n"),
-        ("<!-- a --><!-- b -->\n", "```=html\n<!-- a --><!-- b -->\n```\n"),
+        (
+            "<!-- a --><!-- b -->\n",
+            "```=html\n<!-- a --><!-- b -->\n```\n",
+        ),
         ("<!-- carve: x -->\n", "```=html\n<!-- carve: x -->\n```\n"),
     ] {
         assert_eq!(markdown_to_carve(markdown), carve, "{markdown:?}");
