@@ -2240,7 +2240,7 @@ pub struct Abbreviation {
     pub pos: Option<Pos>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 /// An inline or referenced footnote.
 pub struct Footnote {
     /// Attributes attached to this node.
@@ -2253,9 +2253,27 @@ pub struct Footnote {
     pub number: Option<usize>,
     /// Resolved backlink identifier.
     pub ref_id: Option<String>,
+    /// The trailing attribute run as typed. An unresolved reference renders it
+    /// as text (carve#4816); never written to the wire.
+    pub raw_attrs: Option<String>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
+
+/// `raw_attrs` is source spelling the AST does not carry, so it takes no part
+/// in equality: a tree read back from AST JSON equals the parsed one.
+impl PartialEq for Footnote {
+    fn eq(&self, other: &Self) -> bool {
+        self.attrs == other.attrs
+            && self.id == other.id
+            && self.inline == other.inline
+            && self.number == other.number
+            && self.ref_id == other.ref_id
+            && self.pos == other.pos
+    }
+}
+
+impl Eq for Footnote {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Inline text marked as an insertion.

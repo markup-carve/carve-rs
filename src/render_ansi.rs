@@ -923,7 +923,10 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
                     // UNRESOLVED: literal and UNSTYLED, as the HTML target
                     // renders it. Styling it announced a footnote the document
                     // does not have.
-                    format!("[^{id}]")
+                    let run = strip_terminal_controls(
+                        &crate::render_carve::unresolved_footnote_run(footnote),
+                    );
+                    format!("[^{id}]{run}")
                 }
             }
         }

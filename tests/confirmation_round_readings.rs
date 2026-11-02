@@ -47,7 +47,8 @@ fn a_cell_s_escaped_pipe_reaches_a_destination_as_a_pipe() {
 #[test]
 fn a_literal_bracket_run_is_a_typography_region() {
     contains("a [--x] y and a [---x] y\n", "a [--x] y and a [---x] y");
-    contains("a (--x) y\n", "(\u{2013}x) y");
+    contains("a (--x) y\n", "(--x) y");
+    contains("a(--x) y\n", "(\u{2013}x) y");
     contains("x [a --] y\n", "[a \u{2013}] y");
     contains("[[--x] y\n", "[[--x] y");
     contains("a [--x y\n", "[\u{2013}x y");

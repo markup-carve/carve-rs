@@ -320,6 +320,7 @@ fn markdown_emits_control_bytes_from_author_leaf_fields_and_still_refuses_del_an
                         inline: None,
                         number: None,
                         ref_id: None,
+                        raw_attrs: None,
                         pos: None,
                     }),
                     carve::InlineNode::CriticSubstitute(carve::CriticSubstitute {
@@ -468,6 +469,7 @@ fn the_terminal_target_strips_control_bytes_from_every_author_leaf_field() {
                         inline: None,
                         number: None,
                         ref_id: None,
+                        raw_attrs: None,
                         pos: None,
                     }),
                     carve::InlineNode::CriticSubstitute(carve::CriticSubstitute {

@@ -277,6 +277,10 @@ fn corpus_formatter_semantic_idempotent_and_reparseable_inner() {
     // fixed row runs the whole sweep.
     const NOT_PORTED_AT_PIN: &[(&str, &str)] = &[
         (
+            "930-a-line-that-misses-a-nested-host-ends-it-when-a-comment-closer-lies-ahead",
+            "markup-carve/carve-rs#3757",
+        ),
+        (
             "743-a-later-term-after-a-shifted-separator-opens-in-the-outer-item",
             "markup-carve/carve-rs#3535",
         ),

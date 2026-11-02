@@ -891,7 +891,9 @@ fn render_inline(node: &InlineNode, depth: usize) -> String {
                 if footnote_is_defined(&id) {
                     format!("[{id}]")
                 } else {
-                    format!("[^{id}]")
+                    let run =
+                        strip_controls(&crate::render_carve::unresolved_footnote_run(footnote));
+                    format!("[^{id}]{run}")
                 }
             }
         }
