@@ -70,9 +70,12 @@ struct CarveContext {
     /// The paragraph being written sits at that column, so a list marker on a
     /// continuation line below it would end the item (CARVE-P11-007).
     item_paragraph: bool,
-    /// Nothing visible follows the item being written before its outermost
-    /// list ends: no later item at any level, no later block in a host item.
-    item_is_trailing: bool,
+    /// The next visible line after the item being written is a sibling list
+    /// marker, at this list level or an enclosing one.
+    item_followed_by_marker: bool,
+    /// Set for one `render_blocks` call: write the comments after its last
+    /// visible block one newline apart, as a blank there would loosen a list.
+    join_trailing_comments: bool,
     in_footnote_body: bool,
     footnote_guard_types: Vec<&'static str>,
     escape_mode: EscapeMode,
@@ -721,7 +724,8 @@ fn render_with_escapes_once(
         at_item_content_column: false,
         marker_line_shift: 0,
         item_paragraph: false,
-        item_is_trailing: true,
+        item_followed_by_marker: false,
+        join_trailing_comments: false,
         in_footnote_body: false,
         footnote_guard_types: Vec::new(),
         escape_mode,
@@ -1482,6 +1486,8 @@ fn render_blocks(
     let previous_host = ctx.after_caption_host;
     let previous_paragraph_start = ctx.paragraph_starts_after_caption_host;
     ctx.after_caption_host = false;
+    let join_trailing_comments = std::mem::take(&mut ctx.join_trailing_comments);
+    let last_visible = blocks.iter().rposition(is_visible_block);
     let mut rendered: Vec<String> = Vec::new();
     // TWO ADJACENT SIBLING LISTS NEED SOMETHING BETWEEN THEM. Written at the
     // same column with matching markers they merge on re-parse, so
@@ -1543,8 +1549,12 @@ fn render_blocks(
             previous_definition_list = matches!(block, BlockNode::DefinitionList(_));
         }
         if !writes_nothing(&text) {
-            let adjacent = previous_emitted
-                .is_some_and(|previous| region_marker_adjacent(previous, block, &text));
+            let trailing_comment = join_trailing_comments
+                && last_visible.is_some_and(|last| index > last)
+                && matches!(block, BlockNode::Comment(comment) if !comment.delimited);
+            let adjacent = trailing_comment
+                || previous_emitted
+                    .is_some_and(|previous| region_marker_adjacent(previous, block, &text));
             if !after_empty_nested {
                 adjacent_list_indent = 0;
             }
@@ -2081,6 +2091,20 @@ fn is_visible_block(block: &BlockNode) -> bool {
     )
 }
 
+fn next_visible_is_paragraph_shaped(blocks: &[BlockNode]) -> bool {
+    blocks
+        .iter()
+        .find(|block| is_visible_block(block))
+        .is_some_and(|block| match block {
+            BlockNode::Paragraph(_) | BlockNode::BlockImage(_) => true,
+            BlockNode::Figure(figure) => matches!(
+                *figure.target,
+                FigureTarget::Image(_) | FigureTarget::Paragraph(_)
+            ),
+            _ => false,
+        })
+}
+
 fn render_item_blocks(
     session: &RenderSession,
     blocks: &[BlockNode],
@@ -2089,11 +2113,11 @@ fn render_item_blocks(
     ctx: &mut CarveContext,
     relative_boundaries: &mut Vec<(usize, usize)>,
 ) -> String {
-    let item_is_trailing = ctx.item_is_trailing;
+    let followed_by_marker = ctx.item_followed_by_marker;
     if !tight {
-        ctx.item_is_trailing = false;
+        ctx.item_followed_by_marker = false;
         let out = render_blocks(session, blocks, ctx, item);
-        ctx.item_is_trailing = item_is_trailing;
+        ctx.item_followed_by_marker = followed_by_marker;
         return out;
     }
     if ctx.block_depth >= MAX_RENDER_DEPTH {
@@ -2120,9 +2144,9 @@ fn render_item_blocks(
         let next = blocks.get(index + 1);
         let guard_start = ctx.footnote_guard_types.len();
         let nothing_visible_below = last_visible.map_or(true, |last| last <= index);
-        ctx.item_is_trailing = item_is_trailing && nothing_visible_below;
+        ctx.item_followed_by_marker = followed_by_marker && nothing_visible_below;
         let mut rendered = render_block(session, block, ctx);
-        ctx.item_is_trailing = item_is_trailing;
+        ctx.item_followed_by_marker = followed_by_marker;
         guard_literal_plus_after_nested_list(prev, block, &mut rendered);
         escape_window::leave(session, recorded);
         if writes_nothing(&rendered) {
@@ -2204,15 +2228,19 @@ fn render_item_blocks(
         // sub-list, and a `{% text %}` delimited comment is not written at a
         // column that re-attaches - both measured, both left alone.
         //
-        // Only where nothing visible follows, in this item or as a later item
-        // at any list level: a blank in front of an invisible line loosens the
-        // list at the next sibling marker (carve#4904), and without the blank
-        // the parser keeps the comment in this item.
+        // Unless a paragraph follows: the blank then sits above it and loosens
+        // the item (§17 L1b), and the re-parse keeps the comment in this item.
+        // Nor when a sibling marker comes next: a blank in front of an
+        // invisible line loosens the list at that marker (carve#4904).
+        let blank_loosens = if nothing_visible_below {
+            followed_by_marker
+        } else {
+            next_visible_is_paragraph_shaped(&blocks[index + 1..])
+        };
         if !separated
             && matches!(prev, Some(BlockNode::List(_)))
             && matches!(block, BlockNode::Comment(comment) if !comment.block && !comment.delimited)
-            && item_is_trailing
-            && nothing_visible_below
+            && !blank_loosens
         {
             out.push('\n');
         }

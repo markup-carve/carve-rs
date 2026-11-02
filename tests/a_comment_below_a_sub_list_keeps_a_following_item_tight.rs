@@ -18,6 +18,9 @@ fn the_reported_shapes_keep_their_html() {
         "> - - s\n> %% c\n> - s\n",
         "- a\n  - s\n  %% c\n  p\n",
         "- a\n  - s\n  %% c\n  - t\n",
+        "- :: t\n  : d\n    %% c\n- s\n",
+        "- :: t\n  : d\n    %%%\n    c\n    %%%\n- s\n",
+        "- o\n  - - s\n    - t\n      - u\n\n     %% c\n    :: u\n    : v\n",
     ] {
         round_trips(src);
     }
@@ -29,6 +32,14 @@ fn a_following_sibling_takes_no_separator() {
     assert_eq!(
         carve::to_carve("- o\n  - - s\n  %% c\n  - s\n"),
         "- o\n  - - s\n    %% c\n  - s\n"
+    );
+}
+
+#[test]
+fn a_description_s_trailing_comment_takes_no_separator_before_a_sibling() {
+    assert_eq!(
+        carve::to_carve("- :: t\n  : d\n    %% c\n- s\n"),
+        "- :: t\n  : d\n    %% c\n- s\n"
     );
 }
 
