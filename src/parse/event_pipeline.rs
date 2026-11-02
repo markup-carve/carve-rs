@@ -3325,6 +3325,7 @@ fn has_fence_candidate_without_final_newline(source: &str) -> bool {
 }
 
 pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
+    let _skipped_abbreviations = SkippedSiblingAbbreviationsGuard::install();
     let source_len = source.len();
     let normalized = if needs_event_normalization(source) {
         Some(normalize_source(source))
@@ -3483,6 +3484,7 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         resolve_reference_links(&mut doc, &link_defs, &headings);
     }
     append_link_reference_definitions(&mut doc, &link_defs, source, None);
+    append_skipped_sibling_abbreviations(&mut doc, None, source);
     if may_have_abbrevs {
         apply_abbreviations(&mut doc);
     }
@@ -3608,6 +3610,7 @@ fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Doc
         resolve_reference_links(&mut doc, &link_defs, &headings);
     }
     append_link_reference_definitions(&mut doc, &link_defs, source, None);
+    append_skipped_sibling_abbreviations(&mut doc, None, source);
     if may_have_abbrevs {
         apply_abbreviations(&mut doc);
     }
@@ -3681,6 +3684,7 @@ pub(super) fn parse_document_with_custom_options(
     options: &Options<'_>,
     mode: ParseMode,
 ) -> Option<(Document, Option<CrossrefIndex>, bool)> {
+    let _skipped_abbreviations = SkippedSiblingAbbreviationsGuard::install();
     if NESTING_DEPTH.with(|depth| depth.get() >= MAX_NESTING_DEPTH) {
         return None;
     }
@@ -3903,6 +3907,7 @@ pub(super) fn parse_document_with_custom_options(
             original_line_starts.as_ref(),
         );
     }
+    append_skipped_sibling_abbreviations(&mut doc, original_line_starts.as_ref(), original_source);
     let mut crossref_index = if matches!(mode, ParseMode::Html | ParseMode::HtmlFacade) {
         if may_have_abbrevs {
             apply_abbreviations(&mut doc);
@@ -4141,6 +4146,7 @@ fn parse_document_with_footnotes_options(
             original_line_starts.as_ref(),
         );
     }
+    append_skipped_sibling_abbreviations(&mut doc, original_line_starts.as_ref(), original_source);
     let mut caption_titles = BTreeMap::new();
     if matches!(mode, ParseMode::Html | ParseMode::HtmlFacade) {
         if may_have_abbrevs {
