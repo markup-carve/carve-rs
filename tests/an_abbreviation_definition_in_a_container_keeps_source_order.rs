@@ -49,3 +49,12 @@ fn a_definition_shaped_run_in_prose_does_not_move_the_order() {
         "second"
     );
 }
+
+#[test]
+fn an_indented_document_definition_keeps_its_place_in_the_order() {
+    // Carve has no indented code: the indented line defines too.
+    assert_eq!(
+        expansion("    *[A]: first\n\n*[A]: second\n\n> *[A]: first\n\nA\n"),
+        "first"
+    );
+}
