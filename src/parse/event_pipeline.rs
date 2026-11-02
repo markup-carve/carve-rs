@@ -716,21 +716,35 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
     macro_rules! emit {
         ($line:expr, $node:expr) => {{
             let node = $node;
-            // The standard reader turns it into comment blocks (carve#4799).
+            // A paragraph of only braced comments is its comments (carve#4799).
             if crate::ast::comment_only_paragraph(&node) {
-                return None;
+                let comments = crate::ast::comment_only_paragraph_blocks(&node).unwrap_or_default();
+                for _ in 0..comments.len() {
+                    if let Some(extents) = extents.as_deref_mut() {
+                        extents.push((current_block_start.get(), cur.pos));
+                    }
+                    if options.positions {
+                        block_start_indices.push(current_block_start.get());
+                    }
+                    #[cfg(feature = "experimental-event-parser-options")]
+                    if options.source_lines {
+                        source_lines.push($line);
+                    }
+                }
+                out.extend(comments);
+            } else {
+                if let Some(extents) = extents.as_deref_mut() {
+                    extents.push((current_block_start.get(), cur.pos));
+                }
+                if options.positions {
+                    block_start_indices.push(current_block_start.get());
+                }
+                #[cfg(feature = "experimental-event-parser-options")]
+                if options.source_lines {
+                    source_lines.push($line);
+                }
+                out.push(node);
             }
-            if let Some(extents) = extents.as_deref_mut() {
-                extents.push((current_block_start.get(), cur.pos));
-            }
-            if options.positions {
-                block_start_indices.push(current_block_start.get());
-            }
-            #[cfg(feature = "experimental-event-parser-options")]
-            if options.source_lines {
-                source_lines.push($line);
-            }
-            out.push(node);
         }};
     }
     let mut leading_attrs: Vec<(usize, Attrs, Option<Pos>)> = Vec::new();

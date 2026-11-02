@@ -2343,6 +2343,7 @@ pub(crate) fn publishes_nothing(block: &BlockNode) -> bool {
 /// A paragraph holding only braced comments renders nothing, as a `%%` line
 /// does (PART 9 §21a, carve#4799), so the parser emits its comments as block
 /// comments instead, which the writer keeps.
+#[inline(never)]
 pub(crate) fn comment_only_paragraph_blocks(block: &BlockNode) -> Option<Vec<BlockNode>> {
     let BlockNode::Paragraph(paragraph) = block else {
         return None;
@@ -2359,6 +2360,7 @@ pub(crate) fn comment_only_paragraph_blocks(block: &BlockNode) -> Option<Vec<Blo
     })
 }
 
+#[inline(never)]
 pub(crate) fn comment_only_paragraph(block: &BlockNode) -> bool {
     let BlockNode::Paragraph(paragraph) = block else {
         return false;

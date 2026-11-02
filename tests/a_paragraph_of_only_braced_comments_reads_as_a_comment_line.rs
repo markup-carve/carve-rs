@@ -7,9 +7,15 @@ fn renders_nothing_and_hosts_no_caption() {
         ("{% c %}\n", ""),
         ("{% c %}\n{% d %}\n", ""),
         ("> {% c %}\n", "<blockquote>\n\n</blockquote>"),
-        ("> {% c %}\n^ cap\n", "<blockquote>\n\n</blockquote>\n<p>^ cap</p>"),
+        (
+            "> {% c %}\n^ cap\n",
+            "<blockquote>\n\n</blockquote>\n<p>^ cap</p>",
+        ),
         ("{#a}\n{% c %}\n\np\n", "<p id=\"a\">p</p>"),
-        ("- a\n- {% c %}\n- b\n", "<ul>\n  <li>a</li>\n  <li></li>\n  <li>b</li>\n</ul>"),
+        (
+            "- a\n- {% c %}\n- b\n",
+            "<ul>\n  <li>a</li>\n  <li></li>\n  <li>b</li>\n</ul>",
+        ),
     ];
     for (source, expected) in cases {
         assert_eq!(carve::to_html(source).trim_end(), expected, "{source:?}");
