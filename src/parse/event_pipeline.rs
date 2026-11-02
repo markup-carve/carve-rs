@@ -714,6 +714,19 @@ fn take_indented_wrapped_attrs(
     Some((attrs, span_of(cur, at, cur.pos, options)))
 }
 
+fn reads_abbreviations(document_reads: bool, at_document_level: bool) -> bool {
+    document_reads || !at_document_level
+}
+
+/// The node a definition leaves in place: one at document level, none below it.
+fn placed_abbreviation(definition: AbbreviationDef, at_document_level: bool) -> Option<BlockNode> {
+    if at_document_level {
+        return Some(BlockNode::AbbreviationDef(definition));
+    }
+    hoist_abbreviation(definition);
+    None
+}
+
 fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
     lines: &[&str],
     options: &Options<'_>,
@@ -725,6 +738,8 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
 ) -> Option<Vec<BlockNode>> {
     let defer_pending = pending_out.is_some();
     let direct_owner = !defer_pending && extents.is_none();
+    // A definition in every container, with document scope (carve#4865).
+    let abbreviations = reads_abbreviations(ABBREVIATIONS, at_document_level);
     let mut out = Vec::new();
     let mut block_start_indices = Vec::new();
     let mut pending_bodies = Vec::new();
@@ -786,15 +801,13 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             }
         }
         let line = cur.peek().unwrap();
-        if ABBREVIATIONS || !at_document_level {
+        if abbreviations {
             if let Some(mut definition) = detect_abbreviation_def(line) {
                 let at = cur.pos;
                 cur.consume();
                 definition.pos = span_of(&cur, at, cur.pos, options);
-                if at_document_level {
-                    emit!(_block_source_line, BlockNode::AbbreviationDef(definition));
-                } else {
-                    hoist_abbreviation(definition);
+                if let Some(node) = placed_abbreviation(definition, at_document_level) {
+                    emit!(_block_source_line, node);
                 }
                 continue;
             }
@@ -1070,7 +1083,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             if DEFINITIONS && is_definition_placeholder(next) {
                 break;
             }
-            if (ABBREVIATIONS || !at_document_level)
+            if abbreviations
                 && !paragraph_lines.is_empty()
                 && detect_abbreviation_def(next).is_some()
             {

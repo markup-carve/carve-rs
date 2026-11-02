@@ -225,6 +225,7 @@ pub(in crate::parse) fn prepass_abbreviation_nodes(
 }
 
 /// Hoist the prepass's container definitions through the sibling-gap list.
+#[cfg(feature = "experimental-event-parser")]
 pub(in crate::parse) fn hoist_prepass_abbreviations(
     source: &str,
     positions: bool,
