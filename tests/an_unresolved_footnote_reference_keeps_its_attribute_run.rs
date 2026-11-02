@@ -6,8 +6,14 @@ use carve::{render_carve, to_html, to_plain_text};
 #[test]
 fn the_run_renders_as_typed() {
     for (source, expected) in [
-        ("x[^n]{.c} and [t][m]{.c}\n", "<p>x[^n]{.c} and [t][m]{.c}</p>"),
-        ("x[^n]{a=\"<b>\"}{.c}\n", "<p>x[^n]{a=\"&lt;b&gt;\"}{.c}</p>"),
+        (
+            "x[^n]{.c} and [t][m]{.c}\n",
+            "<p>x[^n]{.c} and [t][m]{.c}</p>",
+        ),
+        (
+            "x[^n]{a=\"<b>\"}{.c}\n",
+            "<p>x[^n]{a=\"&lt;b&gt;\"}{.c}</p>",
+        ),
         ("x[^n]{ .c }\n", "<p>x[^n]{ .c }</p>"),
         (
             "|a[^n]{.c}|\n",

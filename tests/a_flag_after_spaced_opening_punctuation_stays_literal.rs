@@ -15,7 +15,10 @@ fn a_flag_after_spaced_opening_punctuation_stays_literal() {
         ("a {%c%}(--x)\n", "<p>a (--x)</p>"),
         ("[(--x)] y\n", "<p>[(--x)] y</p>"),
         ("{_(--x)_}\n", "<p><u>(--x)</u></p>"),
-        ("range (1--10) and a(--x)\n", "<p>range (1–10) and a(–x)</p>"),
+        (
+            "range (1--10) and a(--x)\n",
+            "<p>range (1–10) and a(–x)</p>",
+        ),
         ("a ((--x))\n", "<p>a ((–x))</p>"),
         ("a (-- x)\n", "<p>a (– x)</p>"),
     ] {
