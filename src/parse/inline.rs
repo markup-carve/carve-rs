@@ -1260,6 +1260,13 @@ impl InlineRun<'_, '_> {
                 }
             }
         }
+        if let InlineNode::Footnote(f) = last {
+            if f.inline.is_none() {
+                if let Ok(lit) = std::str::from_utf8(&bytes[i..next]) {
+                    f.raw_attrs.get_or_insert_with(String::new).push_str(lit);
+                }
+            }
+        }
         merge_attrs_into_inline(last, attrs.unwrap(), &mut self.attribute_slots);
         // An attached attribute block is owned by the construct it
         // decorates, so extend the construct through the closing
@@ -1416,6 +1423,13 @@ impl InlineRun<'_, '_> {
         }
         if opens_region && n >= 2 && !self.text[i..].starts_with("-->") {
             return flag_shaped_hyphen_run(&self.text[i..], 0);
+        }
+        if flank_start > 0 && matches!(self.bytes[flank_start - 1], b'(' | b'"' | b'\'') {
+            let opener = flank_start - 1;
+            let before_opener = flank_before(self.bytes, opener);
+            if before_opener > 0 && run == Some(before_opener - 1) {
+                return flag_shaped_hyphen_run(&self.text[opener..], i - opener);
+            }
         }
         flag_shaped_hyphen_run(self.text, i)
     }
@@ -1815,10 +1829,14 @@ pub(in crate::parse) fn parse_footnote_ref(
         return None;
     }
     let mut attrs = None;
+    let mut raw_attrs = None;
     let mut after = i + 1;
     if bytes.get(after) == Some(&b'{') {
         if let Some((parsed_attrs, next)) = read_attrs_at(bytes, after, bounds.last_close_brace) {
             attrs = Some(parsed_attrs);
+            raw_attrs = std::str::from_utf8(&bytes[after..next])
+                .ok()
+                .map(str::to_string);
             after = next;
         }
     }
@@ -1829,6 +1847,7 @@ pub(in crate::parse) fn parse_footnote_ref(
             inline: None,
             number: None,
             ref_id: None,
+            raw_attrs,
             pos: None,
         },
         after - start,
@@ -1874,6 +1893,7 @@ pub(in crate::parse) fn parse_inline_footnote(
             inline: Some(children),
             number: None,
             ref_id: None,
+            raw_attrs: None,
             pos: None,
         },
         after - start,
@@ -2203,9 +2223,18 @@ pub(in crate::parse) fn flag_shaped_hyphen_run(text: &str, i: usize) -> Option<u
     {
         return None;
     }
-    match text[..flank_before(bytes, i)].chars().next_back() {
+    let start = flank_before(bytes, i);
+    match text[..start].chars().next_back() {
         None => Some(n),
         Some(before) if is_flank_space(before) => Some(n),
+        // An opening `(`, `"` or `'` after whitespace is the flag's whitespace (carve#4813).
+        Some('(' | '"' | '\'') => {
+            match text[..flank_before(bytes, start - 1)].chars().next_back() {
+                None => Some(n),
+                Some(before) if is_flank_space(before) => Some(n),
+                Some(_) => None,
+            }
+        }
         Some(_) => None,
     }
 }

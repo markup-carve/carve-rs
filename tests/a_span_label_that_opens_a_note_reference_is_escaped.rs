@@ -38,7 +38,7 @@ fn the_premise_an_unescaped_caret_label_is_a_note_reference_and_not_a_span() {
     // re-read as something other than the span, or §2 would FORBID the escape.
     let as_written = carve::to_html("[^1]{abbr=y}\n");
     assert!(
-        !as_written.contains("abbr"),
+        !as_written.contains("<abbr"),
         "expected the span to be gone, got {as_written:?}"
     );
     // And the escaped spelling has to bring it back, or the escape is the wrong

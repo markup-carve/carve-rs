@@ -166,6 +166,16 @@ impl CarveWriterOptions {
     }
 }
 
+/// The attribute run an unresolved footnote reference renders as text
+/// (carve#4816): as typed, or spelled from its attributes when the tree came
+/// from AST JSON.
+pub(crate) fn unresolved_footnote_run(footnote: &Footnote) -> String {
+    footnote
+        .raw_attrs
+        .clone()
+        .unwrap_or_else(|| render_attrs(&footnote.attrs))
+}
+
 /// Render a tree as canonical Carve source.
 pub fn render_carve(doc: &Document) -> Result<String, crate::RenderCarveError> {
     render_carve_with_options(doc, &CarveWriterOptions::default())
@@ -201,6 +211,11 @@ pub fn render_carve_with_options(
             .ids()
             .map(str::to_owned)
             .collect();
+    *session.footnote_labels.borrow_mut() = doc
+        .footnote_defs
+        .keys()
+        .map(|label| crate::parse::label_key(label))
+        .collect();
     let source_watch = crate::render_carve_error::SourceSpellWatch::new();
     let watch = crate::render_depth::RenderDepthWatch::new();
     let output = protect_leading_bom(render_reading_back_marker_lines(session, doc));
@@ -4018,10 +4033,20 @@ fn render_inline_body(
                 ctx.note_content_depth -= 1;
                 format!("^[{content}]")
             } else {
-                format!(
-                    "[^{}]",
-                    write_flat_bracket_run(footnote.id.as_deref().unwrap_or_default())
-                )
+                let label = footnote.id.as_deref().unwrap_or_default();
+                // An unresolved reference renders its run as text (carve#4816), so it is written as typed.
+                if let Some(run) = footnote.raw_attrs.as_deref().filter(|_| {
+                    !session
+                        .footnote_labels
+                        .borrow()
+                        .contains(&crate::parse::label_key(label))
+                }) {
+                    return spell_cell_reference_source(
+                        &format!("[^{}]{run}", write_flat_bracket_run(label)),
+                        ctx.table_cell_depth > 0,
+                    );
+                }
+                format!("[^{}]", write_flat_bracket_run(label))
             };
             format!("{body}{}", render_inline_attrs(&footnote.attrs, ctx))
         }

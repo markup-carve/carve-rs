@@ -738,6 +738,7 @@ pub(super) fn render_inline_after(
                 write!(out, "><sup>{number}</sup></a>").unwrap();
             } else if let Some(id) = &f.id {
                 write_escaped_text(out, &format!("[^{id}]"));
+                write_escaped_text(out, &crate::render_carve::unresolved_footnote_run(f));
             }
         }
         InlineNode::NonBreakingSpace(n) => {

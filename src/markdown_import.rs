@@ -1121,6 +1121,7 @@ fn fallback_footnote_text(
             inline: None,
             number: None,
             ref_id: None,
+            raw_attrs: None,
             pos: None,
         }),
         end,
@@ -2390,6 +2391,7 @@ impl Builder {
                     inline: None,
                     number: Some(number),
                     ref_id: None,
+                    raw_attrs: None,
                     pos: None,
                 }));
             }

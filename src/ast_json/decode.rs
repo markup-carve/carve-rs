@@ -1064,6 +1064,7 @@ pub(super) fn decode_inline_footnote_ref(
         // carry the previous document's numbering (carve-rs#648). The HTML
         // renderer assigns this itself while numbering.
         ref_id: None,
+        raw_attrs: None,
         pos: optional_pos(obj, "footnote_ref")?,
     }))
 }
@@ -1088,6 +1089,7 @@ pub(super) fn decode_inline_inline_footnote(
         // carry the previous document's numbering (carve-rs#648). The HTML
         // renderer assigns this itself while numbering.
         ref_id: None,
+        raw_attrs: None,
         pos: optional_pos(obj, "inline_footnote")?,
     }))
 }
