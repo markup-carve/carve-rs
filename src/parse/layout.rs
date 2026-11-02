@@ -1710,9 +1710,10 @@ mod layout_html_tests {
         // Corpus 673 adds one accepted link-title-padding document. The pin to
         // spec 14e66c05 adds one more accepted document; every accepted HTML
         // result is compared with the authoritative path above. The pin to spec
-        // c3c2f80f adds one more, compared the same way.
+        // c3c2f80f adds one more, compared the same way. Spaced breaks
+        // (carve#4814) add corpus 132 and 132-5, now a lone `<hr>`.
         assert_eq!(
-            accepted, 81,
+            accepted, 83,
             "update the pinned acceptance count only after reviewing the exact-parity widening"
         );
     }

@@ -27,7 +27,10 @@ fn check(data: &str) {
             .collect();
         let expected = vector["expected"]["findings"].as_array().unwrap();
         assert_eq!(
-            actual.iter().map(|w| (w.line, w.column)).collect::<Vec<_>>(),
+            actual
+                .iter()
+                .map(|w| (w.line, w.column))
+                .collect::<Vec<_>>(),
             expected
                 .iter()
                 .map(|f| (
@@ -39,7 +42,10 @@ fn check(data: &str) {
         );
         for (warning, finding) in actual.iter().zip(expected) {
             for included in finding["includes"].as_array().unwrap() {
-                assert!(warning.message.contains(included.as_str().unwrap()), "{name}");
+                assert!(
+                    warning.message.contains(included.as_str().unwrap()),
+                    "{name}"
+                );
             }
         }
     }
@@ -47,9 +53,15 @@ fn check(data: &str) {
 
 #[test]
 fn shared_vectors() {
-    check(include_str!("fixtures/lint-rule-vectors/setext-heading-underline.json"));
-    check(include_str!("fixtures/lint-rule-vectors/heading-closing-hashes.json"));
-    check(include_str!("fixtures/lint-rule-vectors/indented-code-block.json"));
+    check(include_str!(
+        "fixtures/lint-rule-vectors/setext-heading-underline.json"
+    ));
+    check(include_str!(
+        "fixtures/lint-rule-vectors/heading-closing-hashes.json"
+    ));
+    check(include_str!(
+        "fixtures/lint-rule-vectors/indented-code-block.json"
+    ));
 }
 
 #[test]
@@ -91,6 +103,9 @@ fn crlf_lines_read_like_lf_lines() {
 #[test]
 fn a_closing_run_after_formatted_heading_text_is_reported() {
     assert_eq!(findings("## *h* ##\n"), [("heading-closing-hashes", 1, 8)]);
-    assert_eq!(findings("## [h](/x) ##\n"), [("heading-closing-hashes", 1, 12)]);
+    assert_eq!(
+        findings("## [h](/x) ##\n"),
+        [("heading-closing-hashes", 1, 12)]
+    );
     assert_eq!(findings("## `h` \\#\n"), []);
 }
