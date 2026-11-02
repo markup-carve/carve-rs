@@ -1721,9 +1721,16 @@ impl<'a> Walk<'a> {
             o.table_line = matches!(form, Form::Leaf(true))
                 .then_some(at)
                 .filter(|_| is_table_start(c.rest) || is_table_continuation(c.rest));
+            // An invisible line does not choose the next line's owner, so a
+            // `: ` line after it still follows the term (CARVE-P9-013).
+            let invisible = matches!(form, Form::Leaf(true))
+                && (c.rest.starts_with("%%")
+                    || parse_link_def_line(c.rest).is_some()
+                    || detect_abbreviation_def(c.rest).is_some());
             o.last = match form {
                 Form::Term => Last::Term,
                 Form::Dd(_) => Last::Dd,
+                _ if invisible && o.last == Last::Term => Last::Term,
                 _ => Last::Other,
             };
             if matches!(form, Form::Term) {

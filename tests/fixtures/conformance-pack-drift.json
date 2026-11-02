@@ -54,30 +54,6 @@
       ]
     },
     {
-      "ticket": "markup-carve/carve-rs#3534",
-      "cause": "untriaged drift exposed by carve #4819 pin in the fences family",
-      "cases": [
-        "fences-a46060654787"
-      ]
-    },
-    {
-      "ticket": "markup-carve/carve-rs#3534",
-      "cause": "untriaged drift exposed by carve #4819 pin in the lazy family",
-      "cases": [
-        "lazy-21cb87fd7067"
-      ]
-    },
-    {
-      "ticket": "markup-carve/carve#4790",
-      "cause": "spec pin c3c2f80f: description state across invisible leaves, carve-rs port pending",
-      "cases": [
-        "lazy-fc49faf4b6f8",
-        "ownership-aec21029593f",
-        "plus-a0f7cf7091d8",
-        "roundtrip-e3b6651f99d3"
-      ]
-    },
-    {
       "ticket": "markup-carve/carve#4810",
       "cause": "spec pin c3c2f80f: a bare slash span holding a path does not form, carve-rs port pending",
       "cases": [
