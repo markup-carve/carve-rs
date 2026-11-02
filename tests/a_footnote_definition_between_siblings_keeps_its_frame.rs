@@ -20,9 +20,13 @@ fn a_note_between_a_term_and_a_description_ends_the_term() {
 
 #[test]
 fn a_note_between_description_entries_splits_the_list() {
-    let two_lists = "<dl>\n  <dt>t</dt>\n  <dd>d</dd>\n</dl>\n<dl>\n  <dt>u</dt>\n  <dd>v</dd>\n</dl>";
+    let two_lists =
+        "<dl>\n  <dt>t</dt>\n  <dd>d</dd>\n</dl>\n<dl>\n  <dt>u</dt>\n  <dd>v</dd>\n</dl>";
     assert_eq!(carve::to_html(":: t\n: d\n[^g]: x\n:: u\n: v\n"), two_lists);
-    assert_eq!(carve::to_html(":: t\n: d\n%%\n[^g]: x\n:: u\n: v\n"), two_lists);
+    assert_eq!(
+        carve::to_html(":: t\n: d\n%%\n[^g]: x\n:: u\n: v\n"),
+        two_lists
+    );
     assert_eq!(
         carve::to_html("> :: t\n> : d\n> [^g]: x\n> :: u\n> : v\n"),
         "<blockquote>\n  <dl>\n    <dt>t</dt>\n    <dd>d</dd>\n  </dl>\n  <dl>\n    <dt>u</dt>\n    <dd>v</dd>\n  </dl>\n</blockquote>"
