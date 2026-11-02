@@ -970,29 +970,63 @@ pub(crate) fn line_block_payload_tail(source: &str) -> Option<bool> {
     if !source.contains(":::") {
         return None;
     }
-    let mut open = None;
-    let mut quoted = false;
-    let mut last_is_payload = false;
+    let mut scan = LineBlockTail::default();
     for line in source.lines() {
+        scan.step(line);
+    }
+    scan.tail()
+}
+
+/// Line-by-line state behind [`line_block_payload_tail`].
+#[derive(Default)]
+pub(crate) struct LineBlockTail {
+    open: Option<usize>,
+    quoted: bool,
+    host_col: usize,
+    last_is_payload: bool,
+}
+
+impl LineBlockTail {
+    pub(crate) fn step(&mut self, line: &str) {
         let mut local = trim_ascii_start(line);
         let line_quoted = local.starts_with('>');
         while let Some(rest) = strip_blockquote_prefix(local) {
             local = trim_ascii_start(rest);
         }
-        last_is_payload = false;
-        match open {
-            Some(len) if exact_colon_fence_len(local) == Some(len) => open = None,
-            Some(_) => last_is_payload = !is_blank_line(local),
+        let stanza_open = self.last_is_payload;
+        self.last_is_payload = false;
+        // A line that misses the line block's host ends it (PART 0 S1) unless
+        // it is lazy text for a stanza with content (S4, carve#4956).
+        if self.open.is_some()
+            && !self.quoted
+            && !line_quoted
+            && !is_blank_line(line)
+            && indent_columns(line) < self.host_col
+            && !(stanza_open && line_starts_paragraph(local))
+        {
+            self.open = None;
+        }
+        match self.open {
+            Some(len) if exact_colon_fence_len(local) == Some(len) => self.open = None,
+            Some(_) => self.last_is_payload = !is_blank_line(local),
             // A line block opened past list or description markers is still a
             // stanza of this body (carve#4748, row 910).
             None => {
                 let (host_quoted, tail) = innermost_host_tail(local);
-                open = detect_line_block_open(tail);
-                quoted = line_quoted || host_quoted;
+                self.open = detect_line_block_open(tail);
+                self.quoted = line_quoted || host_quoted;
+                self.host_col = if tail.len() < local.len() {
+                    line.len() - tail.len()
+                } else {
+                    0
+                };
             }
         }
     }
-    last_is_payload.then_some(quoted)
+
+    pub(crate) fn tail(&self) -> Option<bool> {
+        self.last_is_payload.then_some(self.quoted)
+    }
 }
 
 pub(in crate::parse) fn body_ends_with_an_attribute_line(source: &str) -> bool {

@@ -83,6 +83,25 @@ impl LeadFenceScan {
     }
 }
 
+/// Feeds the lines collected since the last call; a collected line that
+/// missed the block's host has closed it.
+fn marker_line_block_stanza_open(
+    scan: &mut (crate::parse::definition::LineBlockTail, usize),
+    content: &str,
+    lines: &[String],
+) -> bool {
+    if lines.len() < scan.1 {
+        scan.0 = crate::parse::definition::LineBlockTail::default();
+        scan.0.step(content);
+        scan.1 = 0;
+    }
+    for line in &lines[scan.1..] {
+        scan.0.step(strip_lazy(line));
+    }
+    scan.1 = lines.len();
+    scan.0.tail().is_some()
+}
+
 fn follows_plus_marker(lines: &[String]) -> bool {
     let run_start = lines
         .iter()
@@ -256,6 +275,11 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let marker_line_block = marker_content
         .map(innermost_marker_content)
         .is_some_and(|content| detect_line_block_open(content).is_some());
+    // Whether the marker-line line block still holds a stanza after `lines`.
+    let mut marker_line_block_scan = (crate::parse::definition::LineBlockTail::default(), 0);
+    if let Some(content) = marker_content.filter(|_| marker_line_block) {
+        marker_line_block_scan.0.step(content);
+    }
     let mut literal_colon = marker_content
         .and_then(detect_line_block_open)
         .map(|width| (width, strip_cols, strip_cols));
@@ -996,8 +1020,16 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         }
         let fence_owns_flush_left = (line.starts_with(LAZY)
             && (marker_colon.is_some() || !colon_open.is_empty()))
-            || (((marker_line_block && marker_colon.is_some())
-                || description_line_block.is_some())
+            || (marker_line_block
+                && marker_colon.is_some()
+                && indent < strip_cols
+                && line_starts_paragraph(line)
+                && marker_line_block_stanza_open(
+                    &mut marker_line_block_scan,
+                    marker_content.unwrap_or_default(),
+                    &lines,
+                ))
+            || (description_line_block.is_some()
                 && indent < strip_cols
                 && line_starts_paragraph(line)
                 && lines.last().is_some_and(|prior| !is_blank_line(prior)))

@@ -1436,6 +1436,35 @@ fn strip_all_quotes(text: &str) -> (&str, usize) {
     (rest, levels)
 }
 
+/// The first line after a run of `%%` lines, closed `%%%` spans and definition
+/// placeholders, or `from` when no visible, non-blank, non-`+` line follows.
+fn first_visible_after_invisible(cur: &LineCursor<'_>, from: usize) -> usize {
+    let mut at = from;
+    while let Some(line) = cur.lines.line(at) {
+        if is_document_definition_placeholder(line) || is_line_comment_any_column(line) {
+            at += 1;
+        } else if let Some(open) = detect_comment_fence_line_any_column(line) {
+            match (at + 1..cur.lines.len()).find(|&k| {
+                is_comment_fence_close(trim_ascii_start(cur.lines.at(k)), open.fence_len)
+            }) {
+                Some(close) => at = close + 1,
+                None => return from,
+            }
+        } else {
+            break;
+        }
+    }
+    if at == from
+        || cur
+            .lines
+            .line(at)
+            .map_or(true, |line| is_blank_line(line) || is_plus_marker(line))
+    {
+        return from;
+    }
+    at
+}
+
 /// Whether the quoted line at `prior` ended a nested quote on an accepted `+`.
 fn nested_plus_accepted(cur: &LineCursor<'_>, prior: usize) -> bool {
     let (previous, levels) =
@@ -1874,9 +1903,12 @@ impl<'a> QuoteBody<'a> {
             cur.pos += 1;
         }
         let attached_start = cur.pos;
+        // Invisible lines before the block stay in the quote; the block is the
+        // first visible line after them (carve#4449).
+        let block_start = first_visible_after_invisible(cur, attached_start);
         let mut end = attached_block_lines_classified(
             cur.lines,
-            cur.pos,
+            block_start,
             &mut cur.comment_closer_last_index,
             &mut cur.code_closer_last_index,
             options,
