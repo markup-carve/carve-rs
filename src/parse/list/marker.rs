@@ -589,17 +589,18 @@ pub(crate) fn attached_block_end(
                     .is_some_and(|&last| last > opener)
             });
             end = if may_close {
-                find_colon_fence_end(
+                find_colon_fence_end_bounded(
                     lines,
                     opener,
                     fence_len,
                     literal,
                     closer_index,
                     comment_closers,
+                    is_boundary,
                 )
             } else {
                 (opener + 1..lines.len())
-                    .find(|&at| is_blank_line(lines.at(at)))
+                    .find(|&at| is_blank_line(lines.at(at)) || is_boundary(lines.at(at), at))
                     .unwrap_or(lines.len())
             };
             continue;
