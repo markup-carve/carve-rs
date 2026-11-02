@@ -898,10 +898,18 @@ fn innermost_host_tail(mut line: &str) -> &str {
 }
 
 pub(crate) fn body_ends_in_line_block_payload(source: &str) -> bool {
+    line_block_payload_tail(source).is_some()
+}
+
+/// `Some(quoted)` when the body ends on a line-block payload line, with
+/// whether the line block was opened inside a quote.
+pub(crate) fn line_block_payload_tail(source: &str) -> Option<bool> {
     let mut open = None;
+    let mut quoted = false;
     let mut last_is_payload = false;
     for line in source.lines() {
         let mut local = trim_ascii_start(line);
+        let line_quoted = local.starts_with('>');
         while let Some(rest) = strip_blockquote_prefix(local) {
             local = trim_ascii_start(rest);
         }
@@ -911,10 +919,13 @@ pub(crate) fn body_ends_in_line_block_payload(source: &str) -> bool {
             Some(_) => last_is_payload = !is_blank_line(local),
             // A line block opened past list or description markers is still a
             // stanza of this body (carve#4748, row 910).
-            None => open = detect_line_block_open(innermost_host_tail(local)),
+            None => {
+                open = detect_line_block_open(innermost_host_tail(local));
+                quoted = line_quoted;
+            }
         }
     }
-    last_is_payload
+    last_is_payload.then_some(quoted)
 }
 
 pub(in crate::parse) fn body_ends_with_an_attribute_line(source: &str) -> bool {

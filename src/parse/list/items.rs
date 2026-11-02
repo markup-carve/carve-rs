@@ -2010,7 +2010,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         if bare_continuation {
             return None;
         }
-        if reached_wrapped_attribute_tail(stream) {
+        if reached_wrapped_attribute_tail(stream)
+            && !crate::parse::definition::body_ends_in_line_block_payload(&stream.source)
+        {
             return None;
         }
         if !nested_ends_with_open_paragraph_masked(

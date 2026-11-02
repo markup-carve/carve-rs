@@ -1127,6 +1127,11 @@ pub(crate) fn nested_ends_with_open_paragraph(
     if body_ends_with_wrapped_attribute(nested) || quoted_body_ends_with_a_blank_line(nested) {
         return false;
     }
+    // A payload line is stanza text whatever it looks like (PART 2 `line_block`).
+    // A quoted stanza is the quote's to continue, not this item's.
+    if crate::parse::definition::line_block_payload_tail(nested) == Some(false) {
+        return true;
+    }
     if !below_outer_column
         && !crate::parse::definition::body_ends_in_line_block_payload(nested)
         && (body_ends_with_an_attribute_line(nested)
