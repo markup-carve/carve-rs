@@ -315,11 +315,6 @@ fn prefixed_hosts() -> Vec<(&'static str, &'static str, &'static str)> {
 /// HTML block cannot begin after it and the parse reports the opener as an
 /// inline span. It is admitted because it IS the whole line, host prefix aside,
 /// which is what keeps a marker-shaped span inside running text out.
-///
-/// NOT byte-exact, and not because of the carrier mode: this target's import
-/// drops the checkbox off a task item with a LOOSE body whether a container is
-/// involved or not - `- [ ] XYZ\n  Body.\n\n  TAIL\n` comes back as `- XYZ`
-/// on an unchanged build. So the container is what is asserted here.
 #[test]
 fn a_container_opening_a_task_item_comes_back() {
     let source = "- [ ] ::: note\n  Body.\n  :::\n";
@@ -329,7 +324,8 @@ fn a_container_opening_a_task_item_comes_back() {
         "- [ ] <!-- carve: ::: note -->\n  Body.\n\n  <!-- carve: ::: -->\n"
     );
     let result = carve::migrate_markdown(&carrier);
-    assert_eq!(result.value, "- ::: note\n  Body.\n  :::\n");
+    // The writer puts the closer at its opener's column; both render alike.
+    assert_eq!(result.value, "- [ ] ::: note\n  Body.\n      :::\n");
     assert!(
         !result.value.contains("=html") && !result.value.contains("<!-- carve:"),
         "the container did not come back: {:?}",

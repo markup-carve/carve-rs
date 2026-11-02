@@ -46,6 +46,19 @@ fn task_marker_in_a_setext_heading_stays_text() {
 }
 
 #[test]
+fn a_loose_task_item_keeps_its_box() {
+    assert_eq!(markdown_to_carve("* [ ] foo\n\n* [ ] bar\n"), "* [ ] foo\n\n* [ ] bar\n");
+    assert_eq!(
+        rendered("* [ ] foo\n\n* [ ] bar\n"),
+        "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled aria-label=\"foo\"> <p>foo</p></li>\n  <li><input type=\"checkbox\" disabled aria-label=\"bar\"> <p>bar</p></li>\n</ul>\n"
+    );
+    assert_eq!(
+        markdown_to_carve("- [x] XYZ\n  Body.\n\n  TAIL\n"),
+        "- [x] XYZ\n  Body.\n\n  TAIL\n"
+    );
+}
+
+#[test]
 fn tabs_around_delimiter_cells_keep_the_table() {
     assert_eq!(
         rendered("|\tfoo\t|\tbar\t|\n|\t---\t|\t---\t|\n|\tbaz\t|\tquux\t|\n"),

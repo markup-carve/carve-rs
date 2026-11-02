@@ -2717,7 +2717,16 @@ impl Builder {
                 }));
             }
             Event::TaskListMarker(checked) => {
-                if let Some(Frame::ListItem { checked: slot, .. }) = self.frames.last_mut() {
+                // A loose item has opened its paragraph before the marker
+                // arrives; the box still belongs to the item.
+                let item = match self.frames.as_mut_slice() {
+                    [.., Frame::ListItem { checked: slot, .. }]
+                    | [.., Frame::ListItem { checked: slot, .. }, Frame::Paragraph(_)] => {
+                        Some(slot)
+                    }
+                    _ => None,
+                };
+                if let Some(slot) = item {
                     *slot = Some(checked);
                 }
             }
