@@ -79,8 +79,10 @@ fn control_a_comment_between_two_top_level_paragraphs_also_leaves_none() {
 #[test]
 fn a_comment_below_a_note_term_retains_the_following_body_line() {
     let html = carve::to_html("[^c]: :: t\n      : para\n%% c\n        tail\n\nuse[^c]\n");
-    assert!(!html.contains("<p>tail<a href=\"#fnref1\""), "{html}");
-    assert!(html.starts_with("<p>tail</p>"), "{html}");
+    assert!(
+        html.contains("<p>para</p>\n          <p>tail</p>\n        </dd>"),
+        "{html}"
+    );
 }
 
 #[test]

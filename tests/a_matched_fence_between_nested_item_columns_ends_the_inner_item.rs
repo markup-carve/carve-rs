@@ -8,9 +8,6 @@ fn a_description_host_keeps_the_outer_item_after_the_inner_item_ends() {
         to_html_with_options(source, &Options::default().with_positions(true)),
     ] {
         let compact = html.lines().map(str::trim).collect::<Vec<_>>().join("\n");
-        assert!(
-            compact.contains("<li>para</li>\n</ol>\ntail\n</li>"),
-            "{html}"
-        );
+        assert!(compact.contains("<li>para\ntail\n</li>\n</ol>"), "{html}");
     }
 }

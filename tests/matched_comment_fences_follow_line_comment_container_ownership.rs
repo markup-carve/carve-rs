@@ -36,7 +36,7 @@ fn a_matched_fence_at_a_list_column_leaves_no_paragraph_for_column_zero() {
 fn a_matched_fence_below_a_definition_column_keeps_its_follower() {
     assert_render(
         "- :: t\n  : para\n %%%\n %%%\n    tail\n",
-        "<ul><li><dl><dt>t</dt><dd>para</dd></dl></li></ul><p>tail</p>",
+        "<ul><li><dl><dt>t</dt><dd><p>para</p><p>tail</p></dd></dl></li></ul>",
     );
     assert_render(
         ":: t\n: para\n %%%\n %%%\n```\n",

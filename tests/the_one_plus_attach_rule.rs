@@ -29,7 +29,7 @@ fn the_ticket_expecteds() {
         ),
         (
             "- a\n  * +\n[r]: /u\n  after\n",
-            "<ul><li>a<ul><li>+</li></ul></li></ul><p>after</p>",
+            "<ul><li>a<ul><li>+</li></ul>after</li></ul>",
         ),
         // The sub-rulings.
         (

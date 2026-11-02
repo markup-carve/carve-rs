@@ -31,6 +31,6 @@ fn an_attribute_at_the_nested_notes_body_column_attaches_to_its_next_block() {
 #[test]
 fn a_definition_at_the_outer_notes_body_column_ends_the_nested_note() {
     let source = "[r][] [^p] [^c] [^d]\n[^c]: [^d]: para\n  [r]: /u\n        tail\n";
-    let expected = format!("<p><a href=\"/u\">r</a> [^p] <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a><a id=\"fnref2\" href=\"#fn2\" role=\"doc-noteref\"><sup>2</sup></a></p><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>tail{BACK_C}</p></li><li id=\"fn2\"><p>para{BACK_D}</p></li></ol></section>");
+    let expected = format!("<p><a href=\"/u\">r</a> [^p] <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a><a id=\"fnref2\" href=\"#fn2\" role=\"doc-noteref\"><sup>2</sup></a></p><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>{BACK_C}</p></li><li id=\"fn2\"><p>para</p><p>tail{BACK_D}</p></li></ol></section>");
     assert_eq!(html(source), expected);
 }

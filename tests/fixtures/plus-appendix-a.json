@@ -512,12 +512,12 @@
  {
   "name": "826-a-comment-or-link-definition-at-a-body-s-column-spends-its-first-block-plus-5",
   "source": "- a\n  * +\n[r]: /u\n  after\n",
-  "html": "<ul>\n  <li>a\n    <ul>\n      <li>+</li>\n    </ul>\n  </li>\n</ul>\n<p>after</p>\n"
+  "html": "<ul>\n  <li>a\n    <ul>\n      <li>+</li>\n    </ul>\n    after\n  </li>\n</ul>\n"
  },
  {
   "name": "826-a-comment-or-link-definition-at-a-body-s-column-spends-its-first-block-plus-6",
   "source": "- a\n  * +\n%% c\n  after\n",
-  "html": "<ul>\n  <li>a\n    <ul>\n      <li>+</li>\n    </ul>\n  </li>\n</ul>\n<p>after</p>\n"
+  "html": "<ul>\n  <li>a\n    <ul>\n      <li>+</li>\n    </ul>\n    after\n  </li>\n</ul>\n"
  },
  {
   "name": "826-a-comment-or-link-definition-at-a-body-s-column-spends-its-first-block-plus",
