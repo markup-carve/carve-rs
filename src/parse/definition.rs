@@ -52,18 +52,26 @@ pub(in crate::parse) fn place_hoisted_abbreviations(
     blocks: &mut Vec<BlockNode>,
     defs: impl IntoIterator<Item = AbbreviationDef>,
 ) {
-    for def in defs {
-        let at = def.pos.as_ref().map_or(blocks.len(), |pos| {
-            blocks
-                .iter()
-                .position(|block| {
-                    crate::ast_json::block_pos(block)
-                        .is_some_and(|other| other.start_line > pos.start_line)
-                })
-                .unwrap_or(blocks.len())
-        });
-        blocks.insert(at, BlockNode::AbbreviationDef(def));
+    let (mut placed, unplaced): (Vec<_>, Vec<_>) =
+        defs.into_iter().partition(|def| def.pos.is_some());
+    if !placed.is_empty() {
+        placed.sort_by_key(|def| def.pos.as_ref().map(|pos| pos.start_line));
+        let mut placed = placed.into_iter().peekable();
+        let mut merged = Vec::with_capacity(blocks.len() + placed.len());
+        for block in std::mem::take(blocks) {
+            if let Some(start) = crate::ast_json::block_pos(&block).map(|pos| pos.start_line) {
+                while let Some(def) =
+                    placed.next_if(|def| def.pos.as_ref().is_some_and(|pos| pos.start_line < start))
+                {
+                    merged.push(BlockNode::AbbreviationDef(def));
+                }
+            }
+            merged.push(block);
+        }
+        merged.extend(placed.map(BlockNode::AbbreviationDef));
+        *blocks = merged;
     }
+    blocks.extend(unplaced.into_iter().map(BlockNode::AbbreviationDef));
 }
 
 /// Put definitions back in authored order after a skipped one was appended
