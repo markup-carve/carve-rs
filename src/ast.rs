@@ -2370,7 +2370,7 @@ pub(crate) fn comment_only_paragraph(block: &BlockNode) -> bool {
         .iter()
         .any(|child| matches!(child, InlineNode::Comment(_)))
         && paragraph.children.iter().all(|child| match child {
-            InlineNode::Comment(_) | InlineNode::SoftBreak(_) | InlineNode::HardBreak(_) => true,
+            InlineNode::Comment(_) | InlineNode::SoftBreak(_) => true,
             InlineNode::Text(text) => text
                 .value
                 .bytes()

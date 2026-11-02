@@ -47,6 +47,8 @@ fn lists_skip_it_between_siblings() {
 #[test]
 fn a_following_text_line_keeps_the_paragraph() {
     assert_eq!(carve::to_html("{% c %}\nx\n").trim_end(), "<p>\nx</p>");
+    // A hard break is content.
+    assert_eq!(carve::to_html("{% c %}\\\n").trim_end(), "<p><br>\n</p>");
 }
 
 #[test]
