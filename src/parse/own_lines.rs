@@ -751,7 +751,9 @@ fn walk_traced(
             edits: Vec::new(),
         };
         c.measure();
-        walk.line(at, &mut c, &mut after_plus);
+        if !walk.skipped_line(at, &mut c) {
+            walk.line(at, &mut c, &mut after_plus);
+        }
         let written = result.len();
         result.push_str(&c.out);
         result.push_str(c.src);
@@ -1525,9 +1527,6 @@ impl<'a> Walk<'a> {
     }
 
     fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
-        if self.skipped_line(at, c) {
-            return;
-        }
         let tracing = self.trace.is_some();
         let line = self.first_line + at;
         let mut reached = 0;
