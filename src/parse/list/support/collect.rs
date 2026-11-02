@@ -1018,17 +1018,18 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             term_code_lazy_tail = false;
             term_code_closer_checked = true;
         }
+        let stanza_lazy = marker_line_block
+            && marker_colon.is_some()
+            && indent < strip_cols
+            && line_starts_paragraph(line)
+            && marker_line_block_stanza_open(
+                &mut marker_line_block_scan,
+                marker_content.unwrap_or_default(),
+                &lines,
+            );
         let fence_owns_flush_left = (line.starts_with(LAZY)
             && (marker_colon.is_some() || !colon_open.is_empty()))
-            || (marker_line_block
-                && marker_colon.is_some()
-                && indent < strip_cols
-                && line_starts_paragraph(line)
-                && marker_line_block_stanza_open(
-                    &mut marker_line_block_scan,
-                    marker_content.unwrap_or_default(),
-                    &lines,
-                ))
+            || stanza_lazy
             || (description_line_block.is_some()
                 && indent < strip_cols
                 && line_starts_paragraph(line)
@@ -1201,7 +1202,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         if degraded_descendant_fence && !cur.line_reached(cur.pos, indent, strip_cols) {
             break;
         }
-        if closed_comment_span_above && indent < strip_cols {
+        // A closed span in a line block leaves nothing for the stanza (carve#4956).
+        if closed_comment_span_above && indent < strip_cols && !stanza_lazy {
             break;
         }
         if indent >= strip_cols && comment_fence.is_none() && !is_line_comment_any_column(line) {

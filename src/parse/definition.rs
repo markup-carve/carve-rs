@@ -1206,6 +1206,8 @@ struct DefinitionBodyCollector<'s, 'o> {
     folded_into_quote: bool,
     nested_attribute_closed: bool,
     retained_below_comment: bool,
+    /// A lazy run is folding into a line-block stanza that held a `%%%` span.
+    stanza_fold: bool,
     retained_comment_column: usize,
     comment_state: BodyCommentState,
     open_colons: OpenBodyColons,
@@ -1296,6 +1298,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             folded_into_quote: false,
             nested_attribute_closed: false,
             retained_below_comment: false,
+            stanza_fold: false,
             retained_comment_column: 0,
             comment_state,
             open_colons: OpenBodyColons::from_source(seed),
@@ -1385,6 +1388,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         }
         if blank {
             self.retained_below_comment = false;
+            self.stanza_fold = false;
             self.paragraph_column = None;
             self.paragraph_marker_column = None;
         }
@@ -2074,6 +2078,10 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         }
         let keep = if caption_content(&owned).is_some() {
             format!("{LAZY}{owned}")
+        } else if self.folds_into_a_spanned_stanza() {
+            self.stanza_fold = true;
+            // The frame lets an unclosed `%%%` span end at this line (carve#4956).
+            format!("{LAZY}{}", trim_ascii_start(strip_lazy(line)))
         } else if opens_retained_fence {
             owned.clone()
         } else if fold_below_column_opener || below_owner {
@@ -2118,6 +2126,14 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         self.push(keep, cur.source_line(cur.pos), kept_col, false);
         cur.consume();
         BodyStep::Next
+    }
+
+    fn folds_into_a_spanned_stanza(&self) -> bool {
+        if self.stanza_fold {
+            return true;
+        }
+        self.lines.iter().any(|line| line.contains("%%%"))
+            && body_ends_inside_line_block(&self.body_so_far()) == Some(true)
     }
 
     /// A structural opener in the band below the body's column that still

@@ -1485,6 +1485,8 @@ struct QuoteBody<'a> {
     closed_div: bool,
     comment_run: Option<(usize, usize, usize)>,
     comment_lazy_lines: Vec<(usize, String, Option<isize>)>,
+    /// The line-block scan over `inner.lines`, advanced only by new lines.
+    stanza_scan: (crate::parse::definition::LineBlockTail, usize),
     // The comment run whose unmarked closer search already failed.
     in_fence: Option<FenceOpen>,
     opaque_tail: bool,
@@ -1577,6 +1579,7 @@ impl<'a> QuoteBody<'a> {
             closed_div: false,
             comment_run: None,
             comment_lazy_lines: Vec::new(),
+            stanza_scan: Default::default(),
             in_fence: None,
             opaque_tail: false,
             fence_count: 0,
@@ -2534,7 +2537,10 @@ impl<'a> QuoteBody<'a> {
     ) -> bool {
         // A matched comment span cannot hide a line that misses its quote
         // owner. Without a later closer the opener is only a line comment.
-        if let Some((run, depth, _)) = self.comment_run {
+        let stanza_fold = self.comment_run.is_some()
+            && line_starts_paragraph(trim_ascii_start(line))
+            && self.span_in_open_stanza();
+        if let Some((run, depth, _)) = self.comment_run.filter(|_| !stanza_fold) {
             if future_quoted_comment_closes(cur, depth + 1, 0, run)
                 || (!is_blank_line(line)
                     && !is_line_comment_any_column(line)
@@ -2645,6 +2651,20 @@ impl<'a> QuoteBody<'a> {
             }
         }
         false
+    }
+
+    /// A `%%%` span inside a line block leaves nothing, so a missed line ends it
+    /// and folds into the stanza that was open before it (carve#4956).
+    fn span_in_open_stanza(&mut self) -> bool {
+        let (scan, seen) = &mut self.stanza_scan;
+        if self.inner.lines.len() < *seen {
+            (*scan, *seen) = Default::default();
+        }
+        for line in &self.inner.lines[*seen..] {
+            scan.step(&line.text);
+        }
+        *seen = self.inner.lines.len();
+        scan.in_block() == Some(true)
     }
 
     /// A span the quote holds is open whether or not its closer follows
