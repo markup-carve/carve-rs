@@ -33,7 +33,6 @@ pub(super) struct RenderSession {
     pub(super) crossref_targets: Slot<RefCell<BTreeSet<String>>>,
     pub(super) footnote_labels: Slot<RefCell<BTreeSet<String>>>,
     pub(super) redundant_ids: Slot<RefCell<BTreeSet<String>>>,
-    pub(super) hyphen_breaks_are_unsafe: Slot<Cell<bool>>,
     pub(super) quoted_marker_lines: Slot<Cell<bool>>,
     pub(super) lazy_marker_lines: Slot<Cell<bool>>,
     pub(super) sentinels: Slot<RefCell<[Rc<String>; SENTINEL_COUNT]>>,
@@ -61,7 +60,6 @@ impl RenderSession {
             crossref_targets: Slot(RefCell::new(BTreeSet::new())),
             footnote_labels: Slot(RefCell::new(BTreeSet::new())),
             redundant_ids: Slot(RefCell::new(BTreeSet::new())),
-            hyphen_breaks_are_unsafe: Slot(Cell::new(false)),
             quoted_marker_lines: Slot(Cell::new(false)),
             lazy_marker_lines: Slot(Cell::new(false)),
             sentinels: Slot(RefCell::new(
@@ -91,23 +89,6 @@ impl RenderSession {
     }
 }
 
-pub(super) struct CellScope<'a, T: Copy> {
-    cell: &'a Cell<T>,
-    previous: T,
-}
-impl<'a, T: Copy> CellScope<'a, T> {
-    pub(super) fn replace(cell: &'a Cell<T>, value: T) -> Self {
-        Self {
-            cell,
-            previous: cell.replace(value),
-        }
-    }
-}
-impl<T: Copy> Drop for CellScope<'_, T> {
-    fn drop(&mut self) {
-        self.cell.set(self.previous);
-    }
-}
 pub(super) struct RefCellScope<'a, T> {
     cell: &'a RefCell<T>,
     previous: Option<T>,

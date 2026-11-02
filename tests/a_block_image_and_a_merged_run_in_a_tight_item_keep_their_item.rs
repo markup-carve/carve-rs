@@ -157,7 +157,7 @@ fn a_child_gains_no_marker_where_none_is_needed() {
             "- - | a |\n\n  ![z](i.png)\n",
             "- - | a |\n\n  ![z](i.png)\n",
         ),
-        ("- - ---\n\n  ![z](i.png)\n", "- - ---\n\n  ![z](i.png)\n"),
+        ("- - ---\n\n  ![z](i.png)\n", "- - ***\n\n  ![z](i.png)\n"),
         (
             "- - ```\n    c\n    ```\n\n  ![z](i.png)\n",
             "- - ```\n    c\n    ```\n\n  ![z](i.png)\n",

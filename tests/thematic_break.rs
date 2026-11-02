@@ -16,7 +16,7 @@ fn contiguous_col0_runs_are_breaks() {
 }
 
 #[test]
-fn authored_markers_survive_parse_ingest_and_write() {
+fn authored_markers_survive_parse_and_ingest_and_are_written_canonically() {
     for (marker, source) in [('-', "---"), ('*', "***"), ('_', "___")] {
         let doc = carve::parse(source);
         let json = carve::ast_json::to_json(&doc);
@@ -31,22 +31,20 @@ fn authored_markers_survive_parse_ingest_and_write() {
                 "authored marker absent from {json}"
             );
         }
-        assert_eq!(
-            carve::render_carve(&doc).expect("render"),
-            format!("{source}\n")
-        );
+        // PART 11 §6 (carve#4973): the marker is interchange only.
+        assert_eq!(carve::render_carve(&doc).expect("render"), "***\n");
     }
 
     let authored = r#"{"type":"document","srcByteLength":3,"children":[{"type":"thematic_break","marker":"_"}]}"#;
     let decoded = carve::ast_json::from_json(authored).expect("marker is accepted");
     let republished = carve::ast_json::to_json(&decoded);
     assert!(republished.contains(r#""marker":"_""#));
-    assert_eq!(carve::render_carve(&decoded).expect("render"), "___\n");
+    assert_eq!(carve::render_carve(&decoded).expect("render"), "***\n");
 
     let defaulted =
         r#"{"type":"document","srcByteLength":3,"children":[{"type":"thematic_break"}]}"#;
     let decoded = carve::ast_json::from_json(defaulted).expect("absent marker is accepted");
-    assert_eq!(carve::render_carve(&decoded).expect("render"), "---\n");
+    assert_eq!(carve::render_carve(&decoded).expect("render"), "***\n");
 
     let invalid = r#"{"type":"document","srcByteLength":3,"children":[{"type":"thematic_break","marker":"x"}]}"#;
     assert!(carve::ast_json::from_json(invalid).is_err());

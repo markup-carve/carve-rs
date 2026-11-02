@@ -55,7 +55,7 @@ fn a_leading_thematic_break_and_a_later_one_do_not_become_frontmatter() {
     let src = "***\n\na\n\n---\n\nb\n";
     assert_eq!(carve::to_html(src), "<hr>\n<p>a</p>\n<hr>\n<p>b</p>");
     let formatted = assert_round_trips(src);
-    assert_eq!(formatted, "***\n\na\n\n---\n\nb\n");
+    assert_eq!(formatted, "***\n\na\n\n***\n\nb\n");
     assert!(carve::parse(&formatted).frontmatter_raw.is_none());
 }
 
@@ -67,13 +67,13 @@ fn three_lines_are_enough_to_lose_the_whole_document() {
     let src = "***\n\n---\n";
     assert_eq!(carve::to_html(src), "<hr>\n<hr>");
     let formatted = assert_round_trips(src);
-    assert_eq!(formatted, "***\n\n---\n");
+    assert_eq!(formatted, "***\n\n***\n");
 }
 
 #[test]
-fn a_leading_break_alone_keeps_its_authored_marker() {
+fn a_leading_break_alone_is_written_canonically() {
     assert_eq!(assert_round_trips("***\n"), "***\n");
-    assert_eq!(assert_round_trips("---\n"), "---\n");
+    assert_eq!(assert_round_trips("---\n"), "***\n");
 }
 
 #[test]
@@ -91,10 +91,10 @@ fn a_leading_break_with_no_closer_after_it_keeps_its_authored_marker() {
 }
 
 #[test]
-fn breaks_keep_their_authored_spelling_everywhere_else() {
-    assert_eq!(assert_round_trips("a\n\n***\n\n---\n"), "a\n\n***\n\n---\n");
+fn breaks_are_written_canonically_everywhere_else() {
+    assert_eq!(assert_round_trips("a\n\n***\n\n---\n"), "a\n\n***\n\n***\n");
     // Inside a container the line is never at byte 0 either.
-    assert_eq!(assert_round_trips("> ***\n\n---\n"), "> ***\n\n---\n");
+    assert_eq!(assert_round_trips("> ***\n\n---\n"), "> ***\n\n***\n");
 }
 
 #[test]
@@ -116,7 +116,7 @@ fn a_closer_inside_verbatim_content_still_arms_the_fallback() {
 }
 
 #[test]
-fn a_leading_break_under_the_writers_own_frontmatter_keeps_its_authored_marker() {
+fn a_leading_break_under_the_writers_own_frontmatter_is_written_canonically() {
     // `render_carve` writes the frontmatter block itself, so the break is not on
     // line 1 and no fallback is owed even though a later `---` line exists. The
     // opener test only ever sees the body, so without the `parts` emptiness
@@ -127,7 +127,7 @@ fn a_leading_break_under_the_writers_own_frontmatter_keeps_its_authored_marker()
     let doc = carve::parse("---yaml\nt: 1\n---\n\n***\n\na\n\n---\n");
     assert_eq!(doc.frontmatter.len(), 1);
     let written = carve::render_carve(&doc).expect("within the render ceiling");
-    assert_eq!(written, "---yaml\nt: 1\n---\n\n***\n\na\n\n---\n");
+    assert_eq!(written, "---yaml\nt: 1\n---\n\n***\n\na\n\n***\n");
     // And it means what it said: one frontmatter block, two rules.
     assert_eq!(carve::to_html(&written), "<hr>\n<p>a</p>\n<hr>");
 }
@@ -169,7 +169,7 @@ fn an_attributed_leading_break_is_not_rewritten() {
     // rendered bytes rather than the node kind, so this is what keeps it from
     // rewriting a break it did not need to.
     let formatted = assert_round_trips("{.x}\n***\n\n---\n");
-    assert_eq!(formatted, "{.x}\n***\n\n---\n");
+    assert_eq!(formatted, "{.x}\n***\n\n***\n");
 }
 
 // ---------------------------------------------------------------------------

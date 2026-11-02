@@ -62,6 +62,9 @@ fn shared_vectors() {
     check(include_str!(
         "fixtures/lint-rule-vectors/indented-code-block.json"
     ));
+    check(include_str!(
+        "fixtures/lint-rule-vectors/thematic-break-spelling.json"
+    ));
 }
 
 #[test]

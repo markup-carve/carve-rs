@@ -58,7 +58,8 @@ fn a_promoted_dashed_paragraph_does_not_open_frontmatter() {
         "<p>---yaml\nk: v</p>\n<hr>",
         "the premise: the input has no frontmatter"
     );
-    assert_eq!(fmt(src), "\\-\\-\\-yaml\nk: v\n\n---\n\n[a]: /u\n");
+    // With the closer written `***` the head opens nothing and needs no escape.
+    assert_eq!(fmt(src), "---yaml\nk: v\n\n***\n\n[a]: /u\n");
     assert!(round_trips(src), "{}", fmt(src));
 }
 
@@ -71,7 +72,7 @@ fn a_footnote_definition_promotes_the_same_paragraph() {
     assert!(round_trips(src), "{}", fmt(src));
     // The HEAD is what moves (it is escaped), so the closer does not have to:
     // markup-carve/carve#1443 made the promoted run literal text.
-    assert_eq!(fmt(src), "\\-\\-\\-toml\nx\n\n---\n\n[^a]: n\n");
+    assert_eq!(fmt(src), "---toml\nx\n\n***\n\n[^a]: n\n");
 }
 
 #[test]
@@ -106,7 +107,7 @@ fn an_authored_star_break_at_the_head_needs_no_fallback() {
     // CONTROL for the narrowing. A `***` head cannot open a fence, so a later
     // `---` closes nothing and every authored marker survives.
     let src = "***\n\na\n\n---\n\nb\n";
-    assert_eq!(fmt(src), "***\n\na\n\n---\n\nb\n");
+    assert_eq!(fmt(src), "***\n\na\n\n***\n\nb\n");
     assert!(round_trips(src), "{}", fmt(src));
 }
 
@@ -116,7 +117,7 @@ fn a_star_break_elsewhere_survives_the_fallback() {
     // smaller still: the escaped head saves this document, so NO break moves -
     // neither the `---` nor the `___` - and every authored marker survives.
     let src = "[a]: /u\n\n---yaml\nk: v\n---\n\n___\n";
-    assert_eq!(fmt(src), "\\-\\-\\-yaml\nk: v\n\n---\n\n___\n\n[a]: /u\n");
+    assert_eq!(fmt(src), "---yaml\nk: v\n\n***\n\n***\n\n[a]: /u\n");
     assert!(round_trips(src), "{}", fmt(src));
 }
 
@@ -139,7 +140,7 @@ fn a_leading_break_with_no_closer_below_keeps_the_canonical_spelling() {
     // for exactly this. No mutation of the fallback moves this row - stated as a
     // control rather than offered as proof.
     let src = "---\n\na\n";
-    assert_eq!(fmt(src), "---\n\na\n");
+    assert_eq!(fmt(src), "***\n\na\n");
     assert!(round_trips(src), "{}", fmt(src));
 }
 
@@ -148,7 +149,7 @@ fn a_break_below_a_paragraph_keeps_the_canonical_spelling() {
     // CONTROL. Nothing is at byte 0 but the paragraph, so there is no opener to
     // collide with and §6 governs unchanged.
     let src = "p\n\n---\n\nq\n";
-    assert_eq!(fmt(src), "p\n\n---\n\nq\n");
+    assert_eq!(fmt(src), "p\n\n***\n\nq\n");
     assert!(round_trips(src), "{}", fmt(src));
 }
 
@@ -157,7 +158,7 @@ fn a_document_with_real_frontmatter_keeps_the_canonical_spelling() {
     // Its own frontmatter is written by the frontmatter writer, whose closer is
     // not a break - so the break below it is never at byte 0 and never respelled.
     let src = "---yaml\nk: v\n---\n\n---\n\np\n";
-    assert_eq!(fmt(src), "---yaml\nk: v\n---\n\n---\n\np\n");
+    assert_eq!(fmt(src), "---yaml\nk: v\n---\n\n***\n\np\n");
     assert!(round_trips(src), "{}", fmt(src));
 }
 
@@ -173,10 +174,6 @@ fn a_closer_that_is_not_a_break_keeps_the_canonical_spelling() {
     assert!(
         out.starts_with("\\-\\-\\-yaml"),
         "the promoted paragraph is escaped, not respelled: {out}"
-    );
-    assert!(
-        !out.contains("***"),
-        "no fallback is paid when it would not help: {out}"
     );
     assert!(round_trips(src), "{}", out);
 }

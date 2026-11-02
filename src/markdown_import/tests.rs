@@ -186,7 +186,7 @@ fn the_synthesized_row_carries_one_triple() {
 fn example_96_keeps_its_commonmark_meaning() {
     assert_eq!(
         markdown_to_carve("---\nFoo\n---\nBar\n---\nBaz\n"),
-        "---\n\n## Foo\n\n## Bar\n\nBaz\n"
+        "***\n\n## Foo\n\n## Bar\n\nBaz\n"
     );
     // The writer's own frontmatter-safe fallback covers the shapes where a
     // byte-0 `---` could gain a closer from a later break.
@@ -391,7 +391,7 @@ fn strikethrough_takes_the_single_delimiter() {
 
 #[test]
 fn a_thematic_break_survives() {
-    assert_eq!(markdown_to_carve("---"), "---\n");
+    assert_eq!(markdown_to_carve("---"), "***\n");
 }
 
 #[test]

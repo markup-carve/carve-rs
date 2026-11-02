@@ -14,6 +14,7 @@ mod delimited_table;
 mod reference_rules;
 mod source_rules;
 mod suppression;
+mod thematic_break;
 
 use crate::ast::*;
 use crate::ast_json::emphasis_type;
@@ -415,6 +416,7 @@ pub(crate) fn lint_with_recovery(source: &str, options: &Options<'_>) -> (Vec<Li
     collect_table_column_warnings(source, &mut out);
     delimited_table::collect(source, &doc, &to_byte, &mut out);
     consumed_key::collect(&doc, &to_byte, &mut out);
+    thematic_break::collect(source, &doc, &to_byte, &mut out);
     collect_table_span_marker_warnings(source, &doc.children, &to_byte, &mut out);
     for body in doc.footnote_defs.values() {
         collect_table_span_marker_warnings(source, body, &to_byte, &mut out);

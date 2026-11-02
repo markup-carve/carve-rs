@@ -190,9 +190,14 @@ fn canonical_tree(source: &str, dissolve_section_1c_wrappers: bool) -> String {
                 // without `preserve_order`), so key order is already the sorted
                 // order §1's comparison asks for.
                 let mut out = serde_json::Map::new();
+                let thematic = fields.get("type").and_then(|t| t.as_str()) == Some("thematic_break");
                 for (key, child) in fields {
                     // PART 11 §1 ignores the author's separator spelling for fmt.
                     if key == "pos" || key == "srcByteLength" || key == "separatorWidths" {
+                        continue;
+                    }
+                    // PART 11 §6 (carve#4973): fmt writes every break `***`.
+                    if thematic && key == "marker" {
                         continue;
                     }
                     if key == "type" && child.as_str() == Some("escaped_text") {

@@ -108,8 +108,7 @@ fn narrow_escalation(
         .asked_units
         .with(|cell| *cell.borrow_mut() = Some(HashSet::new()));
     // The control render also records where every unit sits, for the
-    // windowed probes below. A document whose break spelling needs the
-    // frontmatter fallback renders differently from its windows, so it keeps
+    // windowed probes below. A document whose bytes open frontmatter keeps
     // whole-document probes.
     let windows_fit = doc.frontmatter_raw.is_some()
         || !doc.frontmatter.is_empty()
@@ -253,7 +252,7 @@ impl Probe<'_> {
 
     fn render_window(&self, session: &RenderSession, window: &escape_window::Window) -> String {
         escape_window::render_pruned(session, window, || {
-            render_with_escapes_once(session, self.doc, EscapeMode::Conservative)
+            render_with_escapes(session, self.doc, EscapeMode::Conservative)
         })
     }
 

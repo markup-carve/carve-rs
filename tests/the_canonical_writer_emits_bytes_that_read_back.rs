@@ -74,7 +74,7 @@ fn control_a_plus_attached_block_opener_still_gets_no_marker() {
         ("- x\n+\n> q\n", "- x\n  > q\n"),
         ("- x\n+\n```\nc\n```\n", "- x\n  ```\n  c\n  ```\n"),
         ("- x\n+\n# H\n", "- x\n  # H\n"),
-        ("- x\n+\n---\n", "- x\n  ---\n"),
+        ("- x\n+\n---\n", "- x\n  ***\n"),
         (
             "- x\n+\n::: note\nb\n:::\n",
             "- x\n  ::: note\n  b\n  :::\n",
