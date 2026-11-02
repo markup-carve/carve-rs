@@ -821,9 +821,7 @@ impl<'a> Walk<'a> {
     ) -> Result<(), Refusal> {
         // An attribute run has no visible block and no column of its own.
         // Apply the attach gates to the line it leads, not to the attribute.
-        let mut next = self
-            .line_after_run(at + 1, host, column)
-            .map_or(at + 1, |(at, _)| at);
+        let mut next = self.first_visible_line(at + 1, host, column);
         if kind == Kind::Note {
             // A new note definition is invisible to this pending marker. Its
             // foldable body stays with that definition; the next block decides
@@ -899,6 +897,75 @@ impl<'a> Walk<'a> {
             return Err(Refusal::Sibling);
         }
         Ok(())
+    }
+
+    /// The first line past the invisible lines from `from` (CARVE-P9-013,
+    /// carve#4449). Off the marker column an invisible line is that next line.
+    fn first_visible_line(&self, from: usize, host: usize, column: usize) -> usize {
+        let view = |k: usize| -> &'a str {
+            trim_ws_start(
+                self.through_quotes(self.lines[k], host)
+                    .unwrap_or("\u{e000}"),
+            )
+        };
+        let run = |text: &str| -> Option<usize> {
+            let n = text.bytes().take_while(|&b| b == b'%').count();
+            (n >= 3 && is_ws_only(&text[n..])).then_some(n)
+        };
+        let misses = |k: usize| {
+            self.through_quotes(self.lines[k], host)
+                .is_none_or(|level| {
+                    let text = trim_ws_start(level);
+                    !is_ws_only(text) && doc_column(self.lines[k], text) < column
+                })
+        };
+        let mut k = from;
+        while k < self.lines.len() {
+            if self.through_quotes(self.lines[k], host).is_none() {
+                return k;
+            }
+            let rest = view(k);
+            if is_blank_line(self.lines[k]) || doc_column(self.lines[k], rest) != column {
+                return k;
+            }
+            if let Some(width) = run(rest).filter(|&width| {
+                (k + 1..self.lines.len()).any(|j| {
+                    let t = self.lines[j].trim_start_matches([' ', '\t', '>']);
+                    run(t) == Some(width)
+                })
+            }) {
+                k += 1;
+                while k < self.lines.len() && run(view(k)) != Some(width) && !misses(k) {
+                    k += 1;
+                }
+                if k < self.lines.len() && run(view(k)) == Some(width) {
+                    k += 1;
+                }
+            } else if parse_footnote_def_line(rest).is_some() {
+                k += 1;
+                while k < self.lines.len()
+                    && !is_blank_line(self.lines[k])
+                    && line_starts_paragraph(view(k))
+                    && parse_footnote_def_line(view(k)).is_none()
+                {
+                    k += 1;
+                }
+            } else if rest.starts_with("%%")
+                || parse_link_def_line(rest).is_some()
+                || detect_abbreviation_def(rest).is_some()
+            {
+                k += 1;
+            } else if let Some(len) = rest
+                .starts_with('{')
+                .then(|| standalone_attrs_block_len_iter((k..self.lines.len()).map(view)))
+                .flatten()
+            {
+                k += len;
+            } else {
+                return k;
+            }
+        }
+        k
     }
 
     /// The first line past the attribute and invisible lines from `from`, or

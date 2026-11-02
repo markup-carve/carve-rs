@@ -35,7 +35,7 @@ fn item_blocks(source: &str) -> Vec<String> {
 
 #[test]
 fn a_plus_attached_comment_is_a_block_comment() {
-    let blocks = item_blocks("- a\n+\n%% c\n\nx\n");
+    let blocks = item_blocks("- a\n+\n%% c\nb\n\nx\n");
 
     assert_eq!(blocks, vec!["paragraph", "comment(block=false)"]);
 }
@@ -51,7 +51,7 @@ fn it_matches_what_the_same_line_produces_at_top_level() {
 
     assert_eq!(top.content, "c");
     assert_eq!(
-        item_blocks("- a\n+\n%% c\n\nx\n")[1],
+        item_blocks("- a\n+\n%% c\nb\n\nx\n")[1],
         "comment(block=false)"
     );
 }
@@ -59,7 +59,7 @@ fn it_matches_what_the_same_line_produces_at_top_level() {
 #[test]
 fn a_plus_attached_comment_fence_is_a_block_comment_too() {
     // The other spelling of the same construct, which shares the arm.
-    let blocks = item_blocks("- a\n+\n%%%\nc\nd\n%%%\n\nx\n");
+    let blocks = item_blocks("- a\n+\n%%%\nc\nd\n%%%\nb\n\nx\n");
 
     assert_eq!(blocks, vec!["paragraph", "comment(block=true)"]);
 }
