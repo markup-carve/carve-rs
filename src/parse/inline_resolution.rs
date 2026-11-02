@@ -2082,6 +2082,8 @@ fn find_emphasis_close_walk(
     let mut shape_seen = splits_shape && from >= 2 && bytes[from - 2] == b'/';
     // An inner word delimiter closes nothing; the closer that follows declines.
     let mut holds_own_delimiter = false;
+    // The name run last measured for that test, as `mention_or_tag_name_run` returns it.
+    let mut name_run: Option<(usize, usize, usize)> = None;
     while j < bytes.len() {
         if opener_end.is_some_and(|end| j > end) {
             return None;
@@ -2377,10 +2379,14 @@ fn find_emphasis_close_walk(
             // comparison's is shielded, above.
             let next = flank_after(bytes, j + 1);
             if quote_state::alnum_at(bytes, next) {
-                if quote_state::alnum_before(bytes, flank_before(bytes, j))
-                    && !in_mention_or_tag_name(bytes, j)
-                {
-                    holds_own_delimiter = true;
+                if word_before(bytes, flank_before(bytes, j)) {
+                    let (_, _, name_end) = match name_run {
+                        Some(run) if run.0 <= j && j < run.1 => run,
+                        _ => *name_run.insert(mention_or_tag_name_run(bytes, j)),
+                    };
+                    if j >= name_end {
+                        holds_own_delimiter = true;
+                    }
                 }
                 j += 1;
                 continue;
@@ -2400,30 +2406,51 @@ fn find_emphasis_close_walk(
     None
 }
 
-/// Whether `at` lies in the name of a mention or tag, which R2's own-delimiter
-/// test does not read (carve#4810): `_@a_b_` forms.
-fn in_mention_or_tag_name(bytes: &[u8], at: usize) -> bool {
+/// Whether a letter or digit ends `bytes[..at]`, read past grapheme extenders.
+fn word_before(bytes: &[u8], at: usize) -> bool {
+    let mut end = at;
+    loop {
+        let mut start = end;
+        while start > 0 && bytes[start - 1] & 0xc0 == 0x80 {
+            start -= 1;
+        }
+        if end == 0 || !followed_by_grapheme_extender(bytes, start.saturating_sub(1)) {
+            return quote_state::alnum_before(bytes, end);
+        }
+        end = start.saturating_sub(1);
+    }
+}
+
+/// The run of name characters around `at` as `(start, end, name_end)`: a
+/// position in `start..name_end` lies in the name of a mention or tag, which
+/// R2's own-delimiter test does not read (carve#4810), so `_@a_b_` forms.
+fn mention_or_tag_name_run(bytes: &[u8], at: usize) -> (usize, usize, usize) {
     let is_name = |c: u8| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-' | b'.');
     let mut start = at;
     while start > 0 && is_name(bytes[start - 1]) {
         start -= 1;
     }
-    if start == 0 || !matches!(bytes[start - 1], b'@' | b'#') {
-        return false;
-    }
-    // A `_` before the sigil may be the span's own opener, so only a letter or digit refuses.
-    if start >= 2 && bytes[start - 2].is_ascii_alphanumeric() {
-        return false;
-    }
     let mut end = at;
     while end < bytes.len() && is_name(bytes[end]) {
         end += 1;
     }
+    let no_name = (start, end, start);
+    if start == 0 || !matches!(bytes[start - 1], b'@' | b'#') {
+        return no_name;
+    }
+    // A `_` before the sigil may be the span's own opener, so only a letter or digit refuses.
+    if start >= 2 && bytes[start - 2].is_ascii_alphanumeric() {
+        return no_name;
+    }
     let Ok(rest) = std::str::from_utf8(&bytes[start..end]) else {
-        return false;
+        return no_name;
     };
     let len = super::inline_links::name_run_len(rest);
-    at < start + len && rest[..len].bytes().any(|b| b.is_ascii_alphabetic())
+    if rest[..len].bytes().any(|b| b.is_ascii_alphabetic()) {
+        (start, end, start + len)
+    } else {
+        no_name
+    }
 }
 
 /// Whether the `]` at `close` ends a bracket a link or image could use: it

@@ -48,6 +48,9 @@ fn a_bare_span_holding_its_own_delimiter_does_not_form() {
         ("~a~b~ c\n", "<p>~a~b~ c</p>"),
         ("_a_é_\n", "<p>_a_é_</p>"),
         ("_1_2_\n", "<p>_1_2_</p>"),
+        ("/e\u{301}/b/\n", "<p>/e\u{301}/b/</p>"),
+        ("/a/e\u{301}/\n", "<p>/a/e\u{301}/</p>"),
+        ("_x a_b @c_d y_\n", "<p>_x a_b <span class=\"mention\"><strong>@c_d</strong></span> y_</p>"),
     ] {
         assert_eq!(to_html(source).trim(), expected, "{source:?}");
     }
