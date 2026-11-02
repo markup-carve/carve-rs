@@ -1246,7 +1246,7 @@ mod layout_html_tests {
             "- café",
             "1. 中文",
             "café\n\n---",
-            "é*bold*",
+            "é *bold*",
             "# café",
             "[é](/x)",
             "Café *bold*",

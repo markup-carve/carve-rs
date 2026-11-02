@@ -11,7 +11,11 @@ fn a_break_inside_any_block_keeps_the_run() {
         "{.a\n}{.b\n}\np\n",
         " {.a}{.b\n}\np\n",
     ] {
-        assert_eq!(to_html(source).trim(), r#"<p class="a b">p</p>"#, "{source}");
+        assert_eq!(
+            to_html(source).trim(),
+            r#"<p class="a b">p</p>"#,
+            "{source}"
+        );
     }
 }
 

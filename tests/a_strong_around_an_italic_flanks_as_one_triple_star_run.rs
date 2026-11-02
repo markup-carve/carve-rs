@@ -12,7 +12,7 @@ fn readback(source: &str) -> String {
 
 #[test]
 fn a_letter_like_follower_keeps_the_delimiter_spelling() {
-    for follower in ["é", "中", "\u{200b}", "😀", "!", " z"] {
+    for follower in ["\u{200b}", "😀", "!", " z"] {
         let source = format!("x */a/*{follower} y\n");
         assert_eq!(
             carve::to_markdown(&source),
@@ -24,7 +24,7 @@ fn a_letter_like_follower_keeps_the_delimiter_spelling() {
 
 #[test]
 fn a_letter_like_follower_reads_back_as_both_emphases() {
-    for follower in ["é", "中", "\u{200b}"] {
+    for follower in ["😀", "\u{200b}"] {
         let html = readback(&format!("x */a/*{follower} y\n"));
         assert!(
             html.contains("<em><strong>a</strong></em>")
@@ -36,23 +36,25 @@ fn a_letter_like_follower_reads_back_as_both_emphases() {
 
 #[test]
 fn a_letter_like_leader_keeps_the_delimiter_spelling() {
-    assert_eq!(carve::to_markdown("é*/a/* y\n"), "é***a*** y\n");
+    assert_eq!(carve::to_markdown("😀*/a/* y\n"), "😀***a*** y\n");
 }
 
 #[test]
 fn the_italic_around_a_strong_is_unchanged() {
-    assert_eq!(carve::to_markdown("x /*a*/é y\n"), "x ***a***é y\n");
+    assert_eq!(carve::to_markdown("x /*a*/😀 y\n"), "x ***a***😀 y\n");
 }
 
 #[test]
 fn literal_stars_around_an_italic_stay_escaped() {
     assert_eq!(carve::to_markdown("x */a/*a y\n"), "x \\**a*\\*a y\n");
+    // A Unicode letter guards as an ASCII one does (carve#4806).
+    assert_eq!(carve::to_markdown("x */a/*é y\n"), "x \\**a*\\*é y\n");
 }
 
 #[test]
 fn punctuation_content_against_a_letter_still_falls_back() {
     assert_eq!(
-        carve::to_markdown("x */!/*é y\n"),
+        carve::to_markdown("x {*/!/*}é y\n"),
         "x <strong>*!*</strong>é y\n"
     );
 }
