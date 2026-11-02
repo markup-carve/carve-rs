@@ -1709,9 +1709,10 @@ mod layout_html_tests {
         // Spec cc388b35 adds corpus 630-5; the unchanged scanner's exact shadow parity is checked above.
         // Corpus 673 adds one accepted link-title-padding document. The pin to
         // spec 14e66c05 adds one more accepted document; every accepted HTML
-        // result is compared with the authoritative path above.
+        // result is compared with the authoritative path above. The pin to spec
+        // c3c2f80f adds one more, compared the same way.
         assert_eq!(
-            accepted, 74,
+            accepted, 75,
             "update the pinned acceptance count only after reviewing the exact-parity widening"
         );
     }

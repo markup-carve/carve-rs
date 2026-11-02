@@ -80,14 +80,14 @@ fn djot_rejected_attribute_runs_keep_every_brace() {
     }
 }
 
-/// An empty Djot attribute block is preserved as a comment, which already separates the
-/// spans around it, so the emphasis beside it needs no braced form.
+/// An empty Djot attribute block is preserved as a comment, which counts as nothing for a
+/// bare guard (carve#4719), so the emphasis beside it is braced.
 #[test]
 fn djot_empty_attributes_leave_adjacent_emphasis_bare() {
     for (source, expected) in [
-        ("*a*{}*b*\n", "*a*{%%}*b*\n"),
-        ("_a_{}_b_\n", "/a/{%%}/b/\n"),
-        ("[x]{}*s*\n", "[x]{}*s*\n"),
+        ("*a*{}*b*\n", "{*a*}{%%}{*b*}\n"),
+        ("_a_{}_b_\n", "{/a/}{%%}{/b/}\n"),
+        ("[x]{}*s*\n", "[x]{}{*s*}\n"),
         ("{}\nhi\n", "%%\nhi\n"),
     ] {
         assert_eq!(carve::djot_to_carve(source), expected, "{source:?}");

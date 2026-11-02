@@ -1406,9 +1406,12 @@ impl InlineRun<'_, '_> {
     /// following character (CARVE-P3-021, carve#4551).
     fn flag_run_at(&self, i: usize) -> Option<usize> {
         let run = self.bounds.bracket_run_at(i);
-        let opens_region = i > 0 && run == Some(i - 1);
+        let flank_start = flank_before(self.bytes, i);
+        let opens_region = flank_start > 0 && run == Some(flank_start - 1);
         let n = self.bytes[i..].iter().take_while(|&&b| b == b'-').count();
-        let closes_region = run.is_some_and(|open| self.bounds.matches.get(open) == Some(&(i + n)));
+        let flank_end = flank_after(self.bytes, i + n);
+        let closes_region =
+            run.is_some_and(|open| self.bounds.matches.get(open) == Some(&flank_end));
         if closes_region {
             return None;
         }
@@ -1449,7 +1452,9 @@ impl InlineRun<'_, '_> {
             }
         }
         // Bold-italic, sub, highlight, then single-char emphasis
-        let guard_open = i > 0 && self.open_entry_at == Some(i - 1);
+        let guard_open = flank_before(self.bytes, i)
+            .checked_sub(1)
+            .is_some_and(|guard| self.open_entry_at == Some(guard));
         if let Some((node, consumed)) = match_emphasis(
             self.bytes,
             i,
@@ -2192,13 +2197,14 @@ pub(in crate::parse) fn flag_shaped_hyphen_run(text: &str, i: usize) -> Option<u
         return None;
     }
     let n = bytes[i..].iter().take_while(|&&b| b == b'-').count();
-    let after = text[i + n..].chars().next()?;
+    let end = flank_after(bytes, i + n);
+    let after = text[end..].chars().next()?;
     if is_flank_space(after)
-        || (after == '\\' && escape_renders_flank(text[i + n + 1..].chars().next()))
+        || (after == '\\' && escape_renders_flank(text[end + 1..].chars().next()))
     {
         return None;
     }
-    match text[..i].chars().next_back() {
+    match text[..flank_before(bytes, i)].chars().next_back() {
         None => Some(n),
         Some(before) if is_flank_space(before) => Some(n),
         Some(_) => None,

@@ -1756,7 +1756,8 @@ pub(in crate::parse) struct EmphasisMemo {
 
 /// Whether the `*/` at `at` can close the combined token (`biCloser`).
 pub(in crate::parse) fn combined_closer_at(bytes: &[u8], at: usize) -> bool {
-    !followed_by_grapheme_extender(bytes, at + 2) && !quote_state::alnum_at(bytes, at + 2)
+    let after = flank_after(bytes, at + 2);
+    !followed_by_grapheme_extender(bytes, after) && !quote_state::alnum_at(bytes, after)
 }
 
 /// The `*/` closing the combined `/*` token whose content starts at `start`.
@@ -1897,15 +1898,17 @@ fn guard_stands(bytes: &[u8], at: usize, from: usize, delim: u8) -> bool {
     if at == from {
         return true;
     }
-    let Some(guard) = at.checked_sub(1) else {
+    let Some(guard) = flank_before(bytes, at).checked_sub(1) else {
         return false;
     };
     let d = bytes[guard];
-    let before = guard.checked_sub(1).map(|b| bytes[b]);
+    let before = flank_before(bytes, guard).checked_sub(1).map(|b| bytes[b]);
     if d == delim || OpenKinds::is_open(d) || before == Some(d) || before == Some(b'\\') {
         return false;
     }
-    if quote_state::alnum_before(bytes, guard) || bytes.get(at).map_or(true, |&b| is_carve_ws(b)) {
+    if quote_state::alnum_before(bytes, flank_before(bytes, guard))
+        || bytes.get(at).map_or(true, |&b| is_carve_ws(b))
+    {
         return false;
     }
     if (before == Some(b'_') || (before == Some(b'/') && matches!(d, b'/' | b'_')))
@@ -1920,10 +1923,11 @@ fn guard_stands(bytes: &[u8], at: usize, from: usize, delim: u8) -> bool {
 /// or `/` before it is text.
 fn bare_opener_state(bytes: &[u8], at: usize) -> u8 {
     let ch = bytes[at];
-    let Some(&next) = bytes.get(at + 1) else {
+    let Some(&next) = bytes.get(flank_after(bytes, at + 1)) else {
         return 0;
     };
-    let before = at.checked_sub(1).map(|b| bytes[b]);
+    let flank_start = flank_before(bytes, at);
+    let before = flank_start.checked_sub(1).map(|b| bytes[b]);
     if is_carve_ws(next) || next == ch || before == Some(ch) || (ch == b'=' && next == b'>') {
         return 0;
     }
@@ -1931,7 +1935,7 @@ fn bare_opener_state(bytes: &[u8], at: usize) -> u8 {
         None => 1,
         Some(b'_') => 2,
         Some(b'/') if matches!(ch, b'/' | b'_') => 2,
-        _ if quote_state::alnum_before(bytes, at) => 0,
+        _ if quote_state::alnum_before(bytes, flank_start) => 0,
         _ => 1,
     }
 }
@@ -1940,8 +1944,10 @@ fn bare_opener_state(bytes: &[u8], at: usize) -> u8 {
 pub(in crate::parse) fn combined_shape_at(bytes: &[u8], at: usize) -> bool {
     bytes[at] == b'/'
         && bytes.get(at + 1) == Some(&b'*')
-        && bytes.get(at + 2).is_some_and(|&next| !is_carve_ws(next))
-        && !quote_state::alnum_before(bytes, at)
+        && bytes
+            .get(flank_after(bytes, at + 2))
+            .is_some_and(|&next| !is_carve_ws(next))
+        && !quote_state::alnum_before(bytes, flank_before(bytes, at))
 }
 
 /// Whether `pos` sits in a bracket run of this inline run. A kind open
@@ -2074,14 +2080,14 @@ fn find_emphasis_close_walk(
             // own closer matter, so the recursion stays off plain text.
             if (j == start
                 || guarded_at == Some(j)
-                || j.checked_sub(1).is_some_and(|prev| {
-                    !(quote_state::alnum_before(bytes, j)
+                || flank_before(bytes, j).checked_sub(1).is_some_and(|prev| {
+                    !(quote_state::alnum_before(bytes, prev + 1)
                         || matches!(bytes[prev], b'_' | b'/')
                         || bytes[prev] == ch)
                 }))
                 && matches!(ch, b'/' | b'_')
                 && bytes
-                    .get(j + 1)
+                    .get(flank_after(bytes, j + 1))
                     .is_some_and(|&next| !is_carve_ws(next) && next != ch)
                 && bounds
                     .braced_closers(bytes)
@@ -2267,7 +2273,9 @@ fn find_emphasis_close_walk(
         {
             // A `*/` after whitespace, a line break included, is content, and
             // the scan goes on to a later one (`biInner`).
-            if matches!(bytes[j - 1], b' ' | b'\t' | b'\n' | b'\r') {
+            if flank_before(bytes, j).checked_sub(1).map_or(true, |prev| {
+                matches!(bytes[prev], b' ' | b'\t' | b'\n' | b'\r')
+            }) {
                 j += 2;
                 continue;
             }
@@ -2288,7 +2296,10 @@ fn find_emphasis_close_walk(
                 j += 1;
                 continue;
             }
-            let prev = bytes.get(j.wrapping_sub(1)).copied().unwrap_or(b' ');
+            let prev = bytes
+                .get(flank_before(bytes, j).wrapping_sub(1))
+                .copied()
+                .unwrap_or(b' ');
             if is_carve_ws(prev) || (delim == b'=' && comparison_equals_at(bytes, j, &regions)) {
                 j += 1;
                 continue;
@@ -2297,7 +2308,8 @@ fn find_emphasis_close_walk(
             // followed by an alphanumeric. Applies to every delimiter.
             // An arrow's `=` may still close (`=b=>`, PART 9 §9); only a
             // comparison's is shielded, above.
-            if quote_state::alnum_at(bytes, j + 1) || followed_by_grapheme_extender(bytes, j + 1) {
+            let next = flank_after(bytes, j + 1);
+            if quote_state::alnum_at(bytes, next) || followed_by_grapheme_extender(bytes, next) {
                 j += 1;
                 continue;
             }

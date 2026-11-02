@@ -13,6 +13,14 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    // Categories added between spec d4c64561 and c3c2f80f.
+    "a-code-fence-with-invalid-metadata-keeps-its-language",
+    "a-quote-holding-only-braced-comments-is-not-a-caption-host",
+    "a-single-capital-with-a-dot-needs-two-spaces",
+    "abbreviations-skip-an-editorial-comment-and-an-unresolved-symbol",
+    "an-attached-colon-frame-stops-at-a-description-sibling",
+    "an-indented-caption-line-captions-its-host",
+    "unicode-letters-block-bare-emphasis",
     // Categories added between spec 7840b697 and d4c64561.
     "a-braced-comment-after-a-quote-does-not-change-its-direction",
     "a-comment-does-not-split-a-nested-list-boundary",
@@ -1350,28 +1358,7 @@ fn expected_corpus_size() -> usize {
 /// Empty is the normal end state: the pin catching up is what retires an entry,
 /// and the `assert_ne!` in `check_pair` is what forces the deletion rather than
 /// leaving a declaration that no longer declares anything.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
-    (
-        "704-a-non-ascii-letter-does-not-block-a-bare-delimiter",
-        "carve#4806: a Unicode letter or number now blocks a bare delimiter",
-        "<p>é*x* y and a*x* y\ny *x*é and y *x*a</p>",
-    ),
-    (
-        "792-a-glued-attribute-run-is-one-physical-line-2",
-        "carve#4078 superseding ruling: each glued block may wrap",
-        "<p class=\"a b\">p</p>",
-    ),
-    (
-        "792-a-glued-attribute-run-is-one-physical-line-3",
-        "carve#4078 superseding ruling: each glued block may wrap",
-        "<p class=\"a b\">p</p>",
-    ),
-    (
-        "792-a-glued-attribute-run-is-one-physical-line-4",
-        "carve#4078 superseding ruling: each glued block may wrap",
-        "",
-    ),
-];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 
 /// Pairs this engine renders differently from the pinned corpus because it has
 /// not reached the rule yet - the mirror of [`AHEAD_OF_PIN`].
@@ -1391,6 +1378,61 @@ const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
 /// declares anything.
 ///
 const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
+    // Corpus pairs the spec c3c2f80f pin moved past this engine. Each actual HTML is measured.
+    ("01-emphasis-6", "spec pin c3c2f80f: markup-carve/carve#4810 not ported yet", "<p><em>usr/local</em></p>"),
+    ("11-fenced-code-11", "spec pin c3c2f80f: markup-carve/carve#4807 not ported yet", "<p><code>js title=\"x\"\ncode</code></p>\n<pre><code></code></pre>"),
+    ("11-fenced-code-12", "spec pin c3c2f80f: markup-carve/carve#4807 not ported yet", "<p><code>php [Composer] \"x\"\ncode</code></p>\n<pre><code></code></pre>"),
+    ("132-thematic-break-requires-contiguous-markers", "spec pin c3c2f80f: markup-carve/carve#4814 not ported yet", "<ul>\n  <li>\n    <ul>\n      <li>*</li>\n    </ul>\n  </li>\n</ul>"),
+    ("132-thematic-break-requires-contiguous-markers-5", "spec pin c3c2f80f: markup-carve/carve#4814 not ported yet", "<ul>\n  <li>\n    <ul>\n      <li>-</li>\n    </ul>\n  </li>\n</ul>"),
+    ("15-heading-ids-4", "spec pin c3c2f80f: markup-carve/carve#4815 not ported yet", "<section id=\"Don-t-repeat-yourself\">\n  <h1>Don’t repeat yourself</h1>\n</section>\n<section id=\"Step-1-done\">\n  <h1>Step 1 → done…</h1>\n</section>"),
+    ("163-unresolved-footnote-reference-with-a-trailing-attribute-stays-literal", "spec pin c3c2f80f: markup-carve/carve#4816 not ported yet", "<p>Text[^a].</p>"),
+    ("20-smart-typography-arrows-and-symbols", "spec pin c3c2f80f: markup-carve/carve#4808 not ported yet", "<p>Flow: a → b ← c ↔ d ⇒ e; x ≠ y, p ≤ q, r ≥ s, ±1.\n© 2024, ®, ™. Dates like 1/2/2024 stay literal.</p>"),
+    ("258-code-fence-metadata-slots-must-be-a-space-too-4", "spec pin c3c2f80f: markup-carve/carve#4807 not ported yet", "<p><code>js\t\"T\"\nx</code></p>\n<pre><code></code></pre>"),
+    ("258-code-fence-metadata-slots-must-be-a-space-too-5", "spec pin c3c2f80f: markup-carve/carve#4807 not ported yet", "<p><code>js \t\"T\"\nx</code></p>\n<pre><code></code></pre>"),
+    ("258-code-fence-metadata-slots-must-be-a-space-too-6", "spec pin c3c2f80f: markup-carve/carve#4807 not ported yet", "<p><code>js\t \"T\"\nx</code></p>\n<pre><code></code></pre>"),
+    ("258-code-fence-metadata-slots-must-be-a-space-too-7", "spec pin c3c2f80f: markup-carve/carve#4807 not ported yet", "<p><code>js \"T\"\t[L]\nx</code></p>\n<pre><code></code></pre>"),
+    ("258-code-fence-metadata-slots-must-be-a-space-too-8", "spec pin c3c2f80f: markup-carve/carve#4807 not ported yet", "<p><code>js \"T\" \t[L]\nx</code></p>\n<pre><code></code></pre>"),
+    ("258-code-fence-metadata-slots-must-be-a-space-too-9", "spec pin c3c2f80f: markup-carve/carve#4807 not ported yet", "<p><code>js \"T\"\t [L]\nx</code></p>\n<pre><code></code></pre>"),
+    ("288-heading-index-plain-text-covers-visible-leaves-and-rejects-an-empty-key-3", "spec pin c3c2f80f: markup-carve/carve#4809 not ported yet", "<section id=\"a-65-b\">\n  <h1>a &amp;<span class=\"tag\"><strong>#65</strong></span>; b</h1>\n  <p><a href=\"#a-65-b\">a &amp;<span class=\"tag\"><strong>#65</strong></span>; b</a></p>\n</section>"),
+    ("386-the-doubled-run-is-the-canonical-arrow-in-both-families", "spec pin c3c2f80f: markup-carve/carve#4815 not ported yet", "<p>Canonical: ← → ↔ and ⇐ ⇒ ⇔</p>\n<p>Removed, now text: ← → ↔</p>\n<p>Not an arrow: key =&gt; value stays literal, and p ≤ q is a comparison.</p>"),
+    ("45-inline-extensions-6", "spec pin c3c2f80f: markup-carve/carve#4513 not ported yet", "<p><span class=\"ext-foo\">a [b</span> c]</p>"),
+    ("489-a-caption-s-placeholder-is-any-that-does-not-begin-a-tag-5", "spec pin c3c2f80f: markup-carve/carve#4809 not ported yet", "<figure>\n  <img src=\"p.png\" alt=\"p\">\n  <figcaption>Figure <span class=\"tag\"><strong>#1</strong></span> q</figcaption>\n</figure>"),
+    ("60-tag-requires-a-word-boundary-2", "spec pin c3c2f80f: markup-carve/carve#4809 not ported yet", "<p>Issue <span class=\"tag\"><strong>#123</strong></span> and <span class=\"tag\"><strong>#v2</strong></span> here.</p>"),
+    ("806-a-marker-folds-into-the-paragraph-a-first-block-plus-took", "spec pin c3c2f80f: markup-carve/carve#4545 not ported yet", "<ul>\n  <li>+\nb\n* w1</li>\n</ul>"),
+    ("806-a-marker-folds-into-the-paragraph-a-first-block-plus-took-2", "spec pin c3c2f80f: markup-carve/carve#4545 not ported yet", "<ol>\n  <li>+ w1\n- w2</li>\n</ol>"),
+    ("806-a-marker-folds-into-the-paragraph-a-first-block-plus-took-3", "spec pin c3c2f80f: markup-carve/carve#4545 not ported yet", "<ul>\n  <li>a\n    <ul>\n      <li>+ w1\n9. w2</li>\n    </ul>\n  </li>\n</ul>"),
+    ("822-an-id-dropped-with-an-unresolved-reference-reserves-nothing", "spec pin c3c2f80f: markup-carve/carve#4816 not ported yet", "<p>x[^n]</p>\n<section id=\"i\">\n  <h2>{<span class=\"tag\"><strong>#i</strong></span>}</h2>\n</section>"),
+    ("822-an-id-dropped-with-an-unresolved-reference-reserves-nothing-2", "spec pin c3c2f80f: markup-carve/carve#4816 not ported yet", "<p>x[^n]</p>\n<section id=\"i\">\n  <h2>i</h2>\n</section>"),
+    ("849-a-marker-the-left-boundary-refuses-is-an-ordinary-character", "spec pin c3c2f80f: markup-carve/carve#4815 not ported yet", "<p>b#→</p>"),
+    ("849-a-marker-the-left-boundary-refuses-is-an-ordinary-character-2", "spec pin c3c2f80f: markup-carve/carve#4815 not ported yet", "<p>b@→</p>"),
+    ("866-a-literal-bracket-run-is-a-typography-region-2", "spec pin c3c2f80f: markup-carve/carve#4813 not ported yet", "<p>a (–x) y</p>"),
+    ("868-a-list-marker-between-an-item-s-columns-is-a-sibling-only-on-every-axis", "spec pin c3c2f80f: markup-carve/carve#4545 not ported yet", "<ul>\n  <li>a\n- [ ] b</li>\n</ul>"),
+    ("868-a-list-marker-between-an-item-s-columns-is-a-sibling-only-on-every-axis-2", "spec pin c3c2f80f: markup-carve/carve#4545 not ported yet", "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled aria-label=\"a - b\"> a\n- b</li>\n</ul>"),
+    ("868-a-list-marker-between-an-item-s-columns-is-a-sibling-only-on-every-axis-3", "spec pin c3c2f80f: markup-carve/carve#4811 not ported yet", "<ol>\n  <li>a\na.  b</li>\n</ol>"),
+    ("868-a-list-marker-between-an-item-s-columns-is-a-sibling-only-on-every-axis-4", "spec pin c3c2f80f: markup-carve/carve#4811 not ported yet", "<ol>\n  <li>a\ni.  b</li>\n</ol>"),
+    ("868-a-list-marker-between-an-item-s-columns-is-a-sibling-only-on-every-axis-5", "spec pin c3c2f80f: markup-carve/carve#4811 not ported yet", "<ol type=\"a\">\n  <li>a\n1. b</li>\n</ol>"),
+    ("868-a-list-marker-between-an-item-s-columns-is-a-sibling-only-on-every-axis-6", "spec pin c3c2f80f: markup-carve/carve#4545 not ported yet", "<ul>\n  <li>x\n    <ul>\n      <li>a\n- [ ] b</li>\n    </ul>\n  </li>\n</ul>"),
+    ("869-a-braced-comment-line-after-a-plus-is-the-attached-paragraph", "spec pin c3c2f80f: markup-carve/carve#4799 not ported yet", "<ul>\n  <li></li>\n</ul>\n<section id=\"H\">\n  <h1>H</h1>\n</section>"),
+    ("872-every-list-item-measures-its-content-against-its-own-content-column-6", "spec pin c3c2f80f: markup-carve/carve#4545 not ported yet", "<ul>\n  <li>a\n    <ul>\n      <li>w</li>\n    </ul>\n    <ol>\n      <li>v\n- u</li>\n    </ol>\n  </li>\n</ul>"),
+    ("878-a-folded-marker-keeps-a-note-item-measured-from-its-source-column", "spec pin c3c2f80f: markup-carve/carve#4545 not ported yet", "<p>q</p>\n<p><a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <ul>\n        <li>a\n* z</li>\n      </ul>\n      <pre><code></code></pre>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
+    ("878-a-folded-marker-keeps-a-note-item-measured-from-its-source-column-3", "spec pin c3c2f80f: markup-carve/carve#4545 not ported yet", "<blockquote>\n  <ul>\n    <li>\n      <ul>\n        <li>a\n* z</li>\n      </ul>\n      <pre><code></code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p>q</p>"),
+    ("883-an-arrow-takes-its-hyphens-from-a-longer-run", "spec pin c3c2f80f: markup-carve/carve#4645 not ported yet", "<p>a←-b</p>\n<p>←→</p>"),
+    ("925-a-code-fence-with-invalid-metadata-keeps-its-language", "spec pin c3c2f80f: markup-carve/carve#4807 not ported yet", "<p><code>js {1,3}\na</code></p>\n<pre><code>\ntext *x*\n\n```py\nb\n</code></pre>\n<p>after</p>"),
+    ("925-a-code-fence-with-invalid-metadata-keeps-its-language-2", "spec pin c3c2f80f: markup-carve/carve#4807 not ported yet", "<p>~~~py {.x}\nb</p>\n<pre><code></code></pre>"),
+    ("925-a-code-fence-with-invalid-metadata-keeps-its-language-3", "spec pin c3c2f80f: markup-carve/carve#4807 not ported yet", "<p><code>js{1,3}\na</code></p>\n<pre><code></code></pre>"),
+    ("925-a-code-fence-with-invalid-metadata-keeps-its-language-4", "spec pin c3c2f80f: markup-carve/carve#4807 not ported yet", "<p><code>js \"T\" junk\na</code></p>\n<pre><code></code></pre>"),
+    ("925-a-code-fence-with-invalid-metadata-keeps-its-language-5", "spec pin c3c2f80f: markup-carve/carve#4807 not ported yet", "<p>para\n<code>js title=\"x\"\na</code></p>\n<pre><code></code></pre>"),
+    ("926-a-quote-holding-only-braced-comments-is-not-a-caption-host", "spec pin c3c2f80f: markup-carve/carve#4799 not ported yet", "<figure>\n  <blockquote><p></p></blockquote>\n  <figcaption>cap</figcaption>\n</figure>"),
+    ("926-a-single-capital-with-a-dot-needs-two-spaces", "spec pin c3c2f80f: markup-carve/carve#4811 not ported yet", "<ol type=\"A\" start=\"10\">\n  <li>\n    <ol type=\"A\" start=\"18\">\n      <li>\n        <ol type=\"A\" start=\"18\">\n          <li>Tolkien wrote it</li>\n        </ol>\n      </li>\n    </ol>\n  </li>\n</ol>"),
+    ("926-a-single-capital-with-a-dot-needs-two-spaces-10", "spec pin c3c2f80f: markup-carve/carve#4811 not ported yet", "<ol type=\"A\">\n  <li class=\"c\">x</li>\n</ol>"),
+    ("926-a-single-capital-with-a-dot-needs-two-spaces-11", "spec pin c3c2f80f: markup-carve/carve#4811 not ported yet", "<ol type=\"a\" start=\"5\">\n  <li>\n    <ol type=\"a\" start=\"7\">\n      <li>foo</li>\n    </ol>\n  </li>\n</ol>"),
+    ("926-a-single-capital-with-a-dot-needs-two-spaces-2", "spec pin c3c2f80f: markup-carve/carve#4811 not ported yet", "<ol type=\"A\">\n  <li>Smith said so</li>\n</ol>"),
+    ("926-a-single-capital-with-a-dot-needs-two-spaces-3", "spec pin c3c2f80f: markup-carve/carve#4811 not ported yet", "<p>para</p>\n<ol type=\"A\" start=\"16\">\n  <li>\n    <ol type=\"A\" start=\"19\">\n      <li>see below</li>\n    </ol>\n  </li>\n</ol>"),
+    ("926-a-single-capital-with-a-dot-needs-two-spaces-5", "spec pin c3c2f80f: markup-carve/carve#4811 not ported yet", "<ol type=\"A\">\n  <li>first</li>\n  <li>second</li>\n</ol>"),
+    ("926-a-single-capital-with-a-dot-needs-two-spaces-6", "spec pin c3c2f80f: markup-carve/carve#4811 not ported yet", "<ol type=\"I\">\n  <li>one</li>\n  <li>two</li>\n</ol>"),
+    ("926-a-single-capital-with-a-dot-needs-two-spaces-8", "spec pin c3c2f80f: markup-carve/carve#4811 not ported yet", "<ol type=\"a\">\n  <li>one</li>\n  <li>two</li>\n</ol>"),
+    ("927-an-attached-colon-frame-stops-at-a-description-sibling", "spec pin c3c2f80f: markup-carve/carve#4798 not ported yet", "<dl>\n  <dt>t</dt>\n  <dd>\n    <div>\n      <p>: b</p>\n    </div>\n  </dd>\n</dl>"),
+    ("927-an-attached-colon-frame-stops-at-a-description-sibling-3", "spec pin c3c2f80f: markup-carve/carve#4798 not ported yet", "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>a</p>\n    <div>\n      <p>: b</p>\n    </div>\n  </dd>\n</dl>"),
     // Newly reached corpus pairs at spec d4c64561. Each actual HTML is measured.
     ("910-a-line-block-in-a-description-item-takes-a-lazy-line-after-a-definition-shaped-payload-2", "spec pin d4c64561: engine port pending", "<dl>\n  <dt>t</dt>\n  <dd>\n    <blockquote>\n      <ul>\n        <li>\n          <div class=\"line-block\">\n            <p>{<span class=\"tag\"><strong>#i</strong></span>}</p>\n          </div>\n        </li>\n      </ul>\n    </blockquote>\n    <p>b</p>\n  </dd>\n</dl>"),
     ("911-a-fence-on-a-note-s-marker-line-item-reads-its-payload-at-the-item-s-content-column", "spec pin d4c64561: engine port pending", "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <ul>\n        <li>\n          <pre><code class=\"language-js\">    a\n    ```\n</code></pre>\n        </li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
@@ -1432,8 +1474,6 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     ("871-a-div-closes-only-on-a-run-of-its-own-width-3", "ruling at the 5643d59c pin not ported yet", "<blockquote>\n  <div>\n    <p>:::e\n::::\nq\n:::</p>\n  </div>\n</blockquote>\n<p>after</p>"),
     ("222-a-tab-as-the-first-character-of-a-definition-term", "new corpus pair at the 19f78369 spec pin, engine port pending", "<dl>\n  <dt>x</dt>\n</dl>"),
     ("439-a-colon-followed-by-only-whitespace-is-not-a-description-8", "new corpus pair at the 19f78369 spec pin, engine port pending", "<dl>\n  <dt>t</dt>\n  <dd>text</dd>\n</dl>\n<p>flush</p>"),
-    ("872-the-third-confirmation-round-s-model-findings-2", "new corpus pair at the 19f78369 spec pin, engine port pending", "<blockquote>\n  <ul>\n    <li></li>\n  </ul>\n  <ul>\n    <li>c</li>\n  </ul>\n</blockquote>\n<p>r<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>n<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
-    ("872-the-third-confirmation-round-s-model-findings", "new corpus pair at the 19f78369 spec pin, engine port pending", "<ul>\n  <li></li>\n</ul>\n<ul>\n  <li>child</li>\n</ul>\n<p>r<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>note<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
     ("873-a-plus-after-an-attached-block-reaches-its-host-through-quote-prefixes-2", "new corpus pair at the 19f78369 spec pin, engine port pending", "<blockquote>\n  <ul>\n    <li>a\n      <h1 id=\"h\">h</h1>\n    </li>\n  </ul>\n  <p>+</p>\n  <h1 id=\"h-2\">h</h1>\n</blockquote>"),
     ("878-a-folded-marker-keeps-a-note-item-measured-from-its-source-column-2", "new corpus pair at the 19f78369 spec pin, engine port pending", "<p>q</p>\n<p><a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <ul>\n        <li>\n          <ul>\n            <li>a\n* z\n              <h1 id=\"H\">H</h1>\n            </li>\n          </ul>\n        </li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
     ("880-an-own-line-plus-reaches-a-marker-line-quote-at-its-authored-column-3", "new corpus pair at the 7840b697 spec pin, engine port pending (markup-carve/carve#4697)", "<p><a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <blockquote>\n        <blockquote><p>a\n+\nb</p></blockquote>\n      </blockquote>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
