@@ -1465,20 +1465,29 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
     /// A flush-left comment fence that opens a span closing further down
     /// belongs to the surrounding container, not to this body.
     fn opens_comment_span_outside_body(&self, cur: &mut LineCursor<'_>, line: &str) -> bool {
-        let authored_opener_comment = cur.source_col(cur.pos).is_some_and(|comment_col| {
-            (0..cur.pos)
-                .rev()
-                .find(|&at| strip_description_prefix(trim_ascii_start(cur.lines.at(at))).is_some())
-                .is_some_and(|at| cur.source_col(at) == Some(comment_col))
-        });
-        ((!cur.in_item_body && !cur.sublists_carry_authored_base) || authored_opener_comment)
-            && detect_comment_fence_line_any_column(line).is_some_and(|open| {
-                cur.has_comment_closer_after(cur.pos + 1, open.fence_len)
-                    && !cur
-                        .lines
-                        .line(cur.pos + 1)
-                        .is_some_and(|next| is_comment_fence_close_any_column(next, open.fence_len))
+        // The shape test first: the opener walk below is linear in the body,
+        // so asking it of every line made a long lazy body quadratic.
+        let Some(open) = detect_comment_fence_line_any_column(line) else {
+            return false;
+        };
+        let authored_opener_comment = || {
+            cur.source_col(cur.pos).is_some_and(|comment_col| {
+                (0..cur.pos)
+                    .rev()
+                    .find(|&at| {
+                        #[cfg(test)]
+                        DEFINITION_OPENER_WALK_LINES.with(|work| work.set(work.get() + 1));
+                        strip_description_prefix(trim_ascii_start(cur.lines.at(at))).is_some()
+                    })
+                    .is_some_and(|at| cur.source_col(at) == Some(comment_col))
             })
+        };
+        ((!cur.in_item_body && !cur.sublists_carry_authored_base) || authored_opener_comment())
+            && cur.has_comment_closer_after(cur.pos + 1, open.fence_len)
+            && !cur
+                .lines
+                .line(cur.pos + 1)
+                .is_some_and(|next| is_comment_fence_close_any_column(next, open.fence_len))
     }
 
     /// Rule A (carve#3885): a comment below the body's column ends the body,
@@ -2136,6 +2145,36 @@ fn quote_opens_with_plus(line: &str) -> bool {
 #[cfg(test)]
 thread_local! {
     static DEFINITION_PAST_FENCE_SCAN_LINES: Cell<usize> = const { Cell::new(0) };
+}
+
+#[cfg(test)]
+thread_local! {
+    static DEFINITION_OPENER_WALK_LINES: Cell<usize> = const { Cell::new(0) };
+}
+
+#[cfg(test)]
+mod definition_opener_walk_work {
+    use super::DEFINITION_OPENER_WALK_LINES;
+
+    fn walked_for(payload: &str, count: usize) -> usize {
+        let mut source = format!("- - :: u\n    : ::: |\n      {payload}\n");
+        source.push_str(&"b\n".repeat(count));
+        DEFINITION_OPENER_WALK_LINES.with(|work| work.set(0));
+        let _ = crate::to_html(&source);
+        DEFINITION_OPENER_WALK_LINES.with(|work| work.get())
+    }
+
+    #[test]
+    fn lazy_lines_under_a_nested_stanza_skip_the_opener_walk() {
+        for payload in ["x", "{.k}", "[x]: /u"] {
+            let small = walked_for(payload, 64);
+            let large = walked_for(payload, 256);
+            assert!(
+                large <= small * 6,
+                "{payload}: four times the lazy lines used more than six times the walk: {small}, {large}"
+            );
+        }
+    }
 }
 
 #[cfg(test)]
