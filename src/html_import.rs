@@ -2773,30 +2773,9 @@ impl<'a> Importer<'a> {
                 let tag = tag.expect("a media fallback tag is an element name");
                 out.extend(self.media_fallback(handle, &tag, &path, depth + 1)?);
             } else {
-                let produced = self.block(handle, &path, depth + 1)?;
-                // Carve source has no boundary between two definition lists, so
-                // an attribute-less one following another joins it (carve#2369).
-                // `produced` can hold two itself: a leading `<dd>`'s list lands
-                // ahead of the list its `<dl>` builds.
-                for block in produced {
-                    match (out.last_mut(), block) {
-                        (
-                            Some(BlockNode::DefinitionList(previous)),
-                            BlockNode::DefinitionList(next),
-                        ) if next.attrs.is_none() => {
-                            previous.items.extend(next.items);
-                            previous.loose |= next.loose;
-                            self.diag(
-                                HtmlImportDiagnosticCode::ElementUnwrapped,
-                                "Merged <dl> into the definition list before it: Carve source has no boundary between two adjacent definition lists".into(),
-                                HtmlImportSeverity::Info,
-                                &path,
-                                handle,
-                            );
-                        }
-                        (_, block) => out.push(block),
-                    }
-                }
+                // Two definition lists stay two: the writer separates them with
+                // the three-blank boundary (carve#4759).
+                out.extend(self.block(handle, &path, depth + 1)?);
             }
         } else {
             inline.push(handle.clone());

@@ -6040,9 +6040,9 @@ mod tests {
     #[test]
     fn djot_empty_attributes_preserve_separate_emphasis_spans() {
         for (source, expected) in [
-            ("*a*{}*b*\n", "*a*{%%}*b*\n"),
-            ("_a_{}{}_b_\n", "/a/{%%}/b/\n"),
-            ("*a*{ }*b*\n", "*a*{%%}*b*\n"),
+            ("*a*{}*b*\n", "{*a*}{%%}{*b*}\n"),
+            ("_a_{}{}_b_\n", "{/a/}{%%}{/b/}\n"),
+            ("*a*{ }*b*\n", "{*a*}{%%}{*b*}\n"),
         ] {
             let value = migrate_djot(source).value;
             assert_eq!(value, expected);

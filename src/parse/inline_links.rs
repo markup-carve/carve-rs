@@ -1443,6 +1443,87 @@ pub(in crate::parse) fn decorated_braced_opener(bytes: &[u8], open: usize) -> bo
         && followed_by_grapheme_extender(bytes, open + 2)
 }
 
+/// A text and its braced comments, `(open, end)` each.
+type CommentSpans = (Vec<u8>, Vec<(usize, usize)>);
+
+thread_local! {
+    static COMMENT_SPANS: std::cell::RefCell<CommentSpans> =
+        const { std::cell::RefCell::new((Vec::new(), Vec::new())) };
+}
+
+/// The braced comments of `bytes` as `(open, end)`, outside escapes and
+/// verbatim spans, in source order.
+fn with_comment_spans<R>(bytes: &[u8], f: impl FnOnce(&[(usize, usize)]) -> R) -> R {
+    COMMENT_SPANS.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.0 != bytes {
+            let mut spans = Vec::new();
+            let mut i = 0;
+            while i < bytes.len() {
+                match bytes[i] {
+                    b'\\' => i += 2,
+                    b'`' => {
+                        let open = bytes[i..].iter().take_while(|&&b| b == b'`').count();
+                        let mut k = i + open;
+                        let mut closed = None;
+                        while k < bytes.len() {
+                            let run = bytes[k..].iter().take_while(|&&b| b == b'`').count();
+                            if run == open {
+                                closed = Some(k + run);
+                                break;
+                            }
+                            k += run.max(1);
+                        }
+                        let Some(end) = closed else { break };
+                        i = end;
+                    }
+                    b'{' if bytes.get(i + 1) == Some(&b'%')
+                        && !followed_by_grapheme_extender(bytes, i + 2) =>
+                    {
+                        let Some(close) = find_seq(bytes, i + 2, b"%}") else {
+                            break;
+                        };
+                        spans.push((i, close + 2));
+                        i = close + 2;
+                    }
+                    _ => i += 1,
+                }
+            }
+            *cache = (bytes.to_vec(), spans);
+        }
+        f(&cache.1)
+    })
+}
+
+/// A braced comment counts as nothing for every flank test (carve#4719): the
+/// index past the comments that start at `at`.
+pub(in crate::parse) fn flank_after(bytes: &[u8], at: usize) -> usize {
+    if bytes.get(at..at + 2) != Some(b"{%") {
+        return at;
+    }
+    with_comment_spans(bytes, |spans| {
+        let mut i = at;
+        while let Ok(k) = spans.binary_search_by_key(&i, |&(open, _)| open) {
+            i = spans[k].1;
+        }
+        i
+    })
+}
+
+/// The index before the comments that end at `at`.
+pub(in crate::parse) fn flank_before(bytes: &[u8], at: usize) -> usize {
+    if at < 2 || bytes.get(at - 2..at) != Some(b"%}") {
+        return at;
+    }
+    with_comment_spans(bytes, |spans| {
+        let mut i = at;
+        while let Ok(k) = spans.binary_search_by_key(&i, |&(_, end)| end) {
+            i = spans[k].0;
+        }
+        i
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(in crate::parse) fn match_emphasis(
     bytes: &[u8],
@@ -1484,18 +1565,20 @@ pub(in crate::parse) fn match_emphasis(
     // `*/`. Empty / space-bounded content is NOT bold-italic and falls through
     // to ordinary `/` emphasis below. The outer `/` also takes the bare
     // opener guard before the token and the bare closer guard after it.
+    let flank_start = flank_before(bytes, i);
     if c == b'/'
         && bytes.get(i + 1) == Some(&b'*')
-        && !quote_state::alnum_before(bytes, i)
-        && !i
+        && !quote_state::alnum_before(bytes, flank_start)
+        && !flank_start
             .checked_sub(1)
             .and_then(|before| bytes.get(before))
             .is_some_and(|before| !guard_open && matches!(before, b'_' | b'/'))
     {
         let start = i + 2;
+        let body = flank_after(bytes, start);
         // Opener guard: the first content byte must exist and not be whitespace.
-        if bytes.get(start).is_some_and(|b| !is_carve_ws(*b))
-            && !followed_by_grapheme_extender(bytes, start)
+        if bytes.get(body).is_some_and(|b| !is_carve_ws(*b))
+            && !followed_by_grapheme_extender(bytes, body)
         {
             if let Some(close) = bold_italic_close(bytes, start, no_close, bounds) {
                 if NESTING_DEPTH.with(|depth| depth.get() >= MAX_NESTING_DEPTH) {
@@ -1550,8 +1633,9 @@ pub(in crate::parse) fn match_emphasis(
         return None;
     }
     // Opener: next char must exist and not be whitespace (CARVE-P3-013) or delim
-    let after = bytes.get(i + 1).copied()?;
-    if is_carve_ws(after) || after == delim || followed_by_grapheme_extender(bytes, i + 1) {
+    let after_at = flank_after(bytes, i + 1);
+    let after = bytes.get(after_at).copied()?;
+    if is_carve_ws(after) || after == delim || followed_by_grapheme_extender(bytes, after_at) {
         return None;
     }
     // A `=` that is part of a multi-char smart-typography operator is consumed
@@ -1577,8 +1661,8 @@ pub(in crate::parse) fn match_emphasis(
             }
         }
     }
-    if i > 0 {
-        let prev = bytes[i - 1];
+    if flank_start > 0 {
+        let prev = bytes[flank_start - 1];
         // No same-type nesting: a delimiter adjacent to the same delimiter does
         // not open, so a doubled delimiter (`**x**`, `==x==`, `,,x,,`) is literal.
         if prev == delim {
@@ -1588,7 +1672,7 @@ pub(in crate::parse) fn match_emphasis(
         // alphanumeric or `_`, keeping paths/identifiers/numbers literal
         // (`a/b/c`, `foo*bar*baz`, `snake_case`, `x = 5`, `key=value`, `1,2,3`).
         // Use the forced `{X…X}` family for deliberate intraword emphasis.
-        if quote_state::alnum_before(bytes, i) {
+        if quote_state::alnum_before(bytes, flank_start) {
             return None;
         }
         // A `_` or `/` guard blocks the opener unless it is an open entry
@@ -1630,17 +1714,19 @@ pub(in crate::parse) fn match_emphasis(
 /// does not guard (carve#3973 X1).
 pub(in crate::parse) fn bare_opener_stands(bytes: &[u8], i: usize, guard_open: bool) -> bool {
     let delim = bytes[i];
-    let Some(&after) = bytes.get(i + 1) else {
+    let after_at = flank_after(bytes, i + 1);
+    let Some(&after) = bytes.get(after_at) else {
         return false;
     };
-    if is_carve_ws(after) || followed_by_grapheme_extender(bytes, i + 1) {
+    if is_carve_ws(after) || followed_by_grapheme_extender(bytes, after_at) {
         return false;
     }
-    let before = i.checked_sub(1).map(|at| bytes[at]);
+    let flank_start = flank_before(bytes, i);
+    let before = flank_start.checked_sub(1).map(|at| bytes[at]);
     if after == delim || before == Some(delim) || OpenKinds::is_open(delim) {
         return false;
     }
-    if quote_state::alnum_before(bytes, i) || (delim == b'=' && after == b'>') {
+    if quote_state::alnum_before(bytes, flank_start) || (delim == b'=' && after == b'>') {
         return false;
     }
     guard_open || !(before == Some(b'_') || (matches!(delim, b'/' | b'_') && before == Some(b'/')))

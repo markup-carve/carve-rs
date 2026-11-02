@@ -275,14 +275,14 @@ fn the_definition_list_walk_pays_into_the_importers_limits() {
 }
 
 /// A leading `<dd>` holding a list is emitted ahead of the list its `<dl>`
-/// builds, and the two join like sibling lists, so the tree matches the source
-/// the writer produces.
+/// builds, and the two stay apart behind the three-blank boundary
+/// (markup-carve/carve#4759), so the tree matches the source the writer produces.
 #[test]
-fn a_leading_description_list_joins_the_list_after_it() {
+fn a_leading_description_list_stays_apart_from_the_list_after_it() {
     let html = "<dl><dd><dl><dt>x</dt><dd>y</dd></dl></dd><dt>t</dt><dd>d</dd></dl>";
     let options = carve::HtmlImportOptions::default();
     let result = carve::html_to_carve(html, &options).unwrap();
-    assert_eq!(result.value, ":: x\n: y\n:: t\n: d\n");
+    assert_eq!(result.value, ":: x\n: y\n\n\n\n:: t\n: d\n");
     assert_eq!(
         carve::render_carve(&carve::parse(&result.value)).unwrap(),
         result.value
@@ -293,8 +293,11 @@ fn a_leading_description_list_joins_the_list_after_it() {
             .value
             .children
             .len(),
-        1
+        2
     );
-    assert!(result.report.diagnostics.iter().any(|d| d.message
-        == "Merged <dl> into the definition list before it: Carve source has no boundary between two adjacent definition lists"));
+    assert!(!result
+        .report
+        .diagnostics
+        .iter()
+        .any(|d| d.message.starts_with("Merged <dl>")));
 }

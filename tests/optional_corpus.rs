@@ -92,6 +92,32 @@ const DECLARED_UNIMPLEMENTED: &[(&str, &str, Option<&str>)] = &[];
 /// pin has caught up on fails and is deleted in the commit that moves the pin.
 const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 
+/// Cases the pinned corpus has moved past and this engine has not reached yet,
+/// the mirror of [`AHEAD_OF_PIN`] (as in `tests/corpus.rs`). Each entry fails in
+/// both directions the same way, so the port retires it.
+const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
+    (
+        "66-smart-typography-quotes-off-html",
+        "markup-carve/carve#4808: (c) and (r) are text, port pending",
+        "<p>He said \"hello\" and 'yes'; it's fine… a–b, c—d.</p>\n<p>Arrows → ← ↔ ⇒ and comparisons ≠ ≤ ≥ and © ® ™ ±.</p>\n<p>Typed “curly” ‘quotes’ and escaped \"plain\" stay literal.</p>\n<p>Code: <code>a--b \"q\" (c)</code>.</p>\n<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled aria-label=\"Don&apos;t &quot;guess&quot;… a–b\"> Don't \"guess\"… a–b</li>\n</ul>\n<section id=\"Don-t-guess-a-b\">\n  <h1>Don't \"guess\"… a–b</h1>\n  <p><a href=\"#Don-t-guess-a-b\">Don't \"guess\"… a–b</a></p>\n</section>",
+    ),
+    (
+        "66-smart-typography-quotes-off-markdown",
+        "markup-carve/carve#4808: (c) and (r) are text, port pending",
+        "He said \"hello\" and 'yes'; it's fine… a–b, c—d.\n\nArrows → ← ↔ ⇒ and comparisons ≠ ≤ ≥ and © ® ™ ±.\n\nTyped “curly” ‘quotes’ and escaped \\\"plain\\\" stay literal.\n\nCode: `a--b \"q\" (c)`.\n\n- [ ] Don't \"guess\"… a–b\n\n# Don't \"guess\"… a–b\n\n[Don't \"guess\"… a–b](#dont-guess-ab)",
+    ),
+    (
+        "66-smart-typography-quotes-off-plain",
+        "markup-carve/carve#4808: (c) and (r) are text, port pending",
+        "He said \"hello\" and 'yes'; it's fine… a–b, c—d.\n\nArrows → ← ↔ ⇒ and comparisons ≠ ≤ ≥ and © ® ™ ±.\n\nTyped “curly” ‘quotes’ and escaped \"plain\" stay literal.\n\nCode: a--b \"q\" (c).\n\n- Don't \"guess\"… a–b\n\nDon't \"guess\"… a–b\n\nDon't \"guess\"… a–b",
+    ),
+    (
+        "66-smart-typography-quotes-off-ansi",
+        "markup-carve/carve#4808: (c) and (r) are text, port pending",
+        "He said \"hello\" and 'yes'; it's fine… a–b, c—d.\n\nArrows → ← ↔ ⇒ and comparisons ≠ ≤ ≥ and © ® ™ ±.\n\nTyped “curly” ‘quotes’ and escaped \"plain\" stay literal.\n\nCode: \u{1b}[93ma--b \"q\" (c)\u{1b}[0m.\n\n\u{1b}[90m☐\u{1b}[0m Don't \"guess\"… a–b\n\n\u{1b}[1m\u{1b}[95mDon't \"guess\"… a–b\u{1b}[0m\n\u{1b}[95m══════════════════\u{1b}[0m\n\n\u{1b}[4m\u{1b}[34mDon't \"guess\"… a–b\u{1b}[0m",
+    ),
+];
+
 /// The floor a manifest emptied or halved cannot get past. It sits under the
 /// count today for the same reason the other floors in this repo do: the
 /// optional corpus is append-only, so a number below it can only be reached by
@@ -370,7 +396,12 @@ fn every_optional_corpus_case_is_compared_or_declared() {
 
         let (_, expected) = read_pair(slug, case.target);
 
-        if let Some((_, reason, stated)) = AHEAD_OF_PIN.iter().find(|(name, _, _)| *name == slug) {
+        let window = AHEAD_OF_PIN
+            .iter()
+            .map(|entry| ("AHEAD_OF_PIN", entry))
+            .chain(BEHIND_ON_PAIR.iter().map(|entry| ("BEHIND_ON_PAIR", entry)))
+            .find(|(_, (name, _, _))| *name == slug);
+        if let Some((list, (_, reason, stated))) = window {
             ahead += 1;
             if actual.trim() != stated.trim() {
                 failures.push(format!(
@@ -384,7 +415,7 @@ fn every_optional_corpus_case_is_compared_or_declared() {
             // is rewritten to exactly this value, and the entry must go.
             if expected.trim() == stated.trim() {
                 failures.push(format!(
-                    "{slug} now matches the pinned corpus: delete its AHEAD_OF_PIN entry"
+                    "{slug} now matches the pinned corpus: delete its {list} entry"
                 ));
             }
             continue;
@@ -426,7 +457,7 @@ fn every_optional_corpus_case_is_compared_or_declared() {
         compared + declared + ahead,
         reached,
         "{reached} case(s) reached, but {compared} compared + {declared} declared \
-         unimplemented + {ahead} ahead of the pin - the difference is cases nobody checked",
+         unimplemented + {ahead} ahead of or behind the pin - the difference is cases nobody checked",
     );
 }
 
@@ -475,12 +506,13 @@ fn ahead_of_pin_names_only_cases_the_manifest_states() {
         .collect();
     let orphaned: Vec<&str> = AHEAD_OF_PIN
         .iter()
+        .chain(BEHIND_ON_PAIR)
         .map(|(slug, _, _)| *slug)
         .filter(|slug| !stated.iter().any(|s| s == slug))
         .collect();
     assert!(
         orphaned.is_empty(),
-        "AHEAD_OF_PIN names case(s) the manifest does not state: {orphaned:?}",
+        "AHEAD_OF_PIN or BEHIND_ON_PAIR names case(s) the manifest does not state: {orphaned:?}",
     );
 }
 

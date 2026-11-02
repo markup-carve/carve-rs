@@ -1342,6 +1342,10 @@ impl Renderer<'_> {
             || b"~^".contains(&pair.kind)
             || pair.forced
             || scope
+            // An empty attribute block writes a comment, which counts as
+            // nothing for a bare guard (carve#4719).
+            || empty_attribute_after(bytes, pair.end)
+            || empty_attribute_before(bytes, pair.start)
             || content.starts_with('\0')
             || content.ends_with('\0')
             || (pair.start > 0 && word(bytes[pair.start - 1]))
@@ -1422,6 +1426,25 @@ pub(super) fn structural_prefix_end(line: &str) -> usize {
         }
     }
     at
+}
+
+fn empty_attribute_after(bytes: &[u8], at: usize) -> bool {
+    bytes.get(at) == Some(&b'{')
+        && bytes[at + 1..]
+            .iter()
+            .find(|&&b| b != b' ')
+            .is_some_and(|&b| b == b'}')
+}
+
+fn empty_attribute_before(bytes: &[u8], at: usize) -> bool {
+    if at == 0 || bytes[at - 1] != b'}' {
+        return false;
+    }
+    let mut open = at - 1;
+    while open > 0 && bytes[open - 1] == b' ' {
+        open -= 1;
+    }
+    open > 0 && bytes[open - 1] == b'{' && !super::inline_masks::is_escaped(bytes, open - 1)
 }
 
 #[cfg(test)]

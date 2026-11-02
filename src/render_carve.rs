@@ -788,9 +788,8 @@ fn render_with_escapes_once(
                     separated_from_previous = false;
                 }
                 if !writes_nothing(&text) && !matches!(child, BlockNode::Comment(_)) {
-                    // An attribute line already keeps the second list separate.
-                    separated_from_previous |= previous_definition_list
-                        && matches!(child, BlockNode::DefinitionList(list) if list.attrs.is_none());
+                    separated_from_previous |=
+                        previous_definition_list && matches!(child, BlockNode::DefinitionList(_));
                     previous_definition_list = matches!(child, BlockNode::DefinitionList(_));
                 }
                 text
@@ -1520,9 +1519,8 @@ fn render_blocks(
             separated_from_previous = false;
         }
         if !writes_nothing(&text) && !matches!(block, BlockNode::Comment(_)) {
-            // An attribute line already keeps the second list separate.
-            separated_from_previous |= previous_definition_list
-                && matches!(block, BlockNode::DefinitionList(list) if list.attrs.is_none());
+            separated_from_previous |=
+                previous_definition_list && matches!(block, BlockNode::DefinitionList(_));
             previous_definition_list = matches!(block, BlockNode::DefinitionList(_));
         }
         if !writes_nothing(&text) {
