@@ -140,9 +140,54 @@ fn note_paragraph_open(note: &NoteBody, rest: &str, options: &Options<'_>) -> bo
             return true;
         }
     }
-    let open = body_ends_with_open_paragraph(&lines.join("\n"), options);
+    // A nested note that still holds the last line is the deepest leaf; the
+    // probe below lifts it out and would answer for the outer note instead.
+    let body = open_nested_note_body(lines).unwrap_or_else(|| lines.join("\n"));
+    let open = body_ends_with_open_paragraph(&body, options);
     note.open_paragraph_at.set(open.then_some(lines.len()));
     open
+}
+
+/// Whether the nested note holding the last line has an open paragraph. Shares
+/// `note_paragraph_open`'s cache, so a long body is not reparsed per line.
+fn nested_note_paragraph_open(note: &NoteBody, options: &Options<'_>) -> bool {
+    let lines = &note.lines;
+    if lines.last().map_or(true, |last| is_blank_line(last)) {
+        return false;
+    }
+    if let Some(known) = note.open_paragraph_at.get() {
+        if known <= lines.len() && lines[known..].iter().all(|line| continues_paragraph(line)) {
+            note.open_paragraph_at.set(Some(lines.len()));
+            return true;
+        }
+    }
+    let open = open_nested_note_body(lines)
+        .is_some_and(|body| body_ends_with_open_paragraph(&body, options));
+    note.open_paragraph_at.set(open.then_some(lines.len()));
+    open
+}
+
+/// The body of the last nested note, when every line after its marker reaches
+/// that note's body column.
+fn open_nested_note_body(lines: &[String]) -> Option<String> {
+    let at = lines
+        .iter()
+        .rposition(|line| parse_footnote_def_line(trim_ascii_start(line)).is_some())?;
+    let floor = indent_columns(&lines[at]) + footnote_body_floor(trim_ascii_start(&lines[at]));
+    let tail = &lines[at + 1..];
+    if !tail
+        .iter()
+        .all(|line| is_blank_line(line) || line.starts_with(LAZY) || indent_columns(line) >= floor)
+    {
+        return None;
+    }
+    let (_, first) = parse_footnote_def_line(trim_ascii_start(&lines[at]))?;
+    let mut body = first.to_owned();
+    for line in tail {
+        body.push('\n');
+        body.push_str(&strip_leading_columns(line, floor));
+    }
+    Some(body)
 }
 
 /// A line that can only be paragraph text: it starts with a letter or digit
@@ -410,7 +455,6 @@ struct NoteHost {
     quote_indents: Vec<usize>,
     quote_depth: usize,
     note_floor: usize,
-    marker_note: bool,
     /// Content column of the innermost list item hosting the note, if any.
     list_floor: Option<usize>,
     /// The same, for the document level outside the note's quotes.
@@ -455,6 +499,8 @@ fn item_floor(frame: &ColumnFrame) -> Option<usize> {
 
 /// Comment and fence opacity of a container-hosted note body.
 struct HostedWalk {
+    /// The body column of a nested note a line may still be lazy in.
+    nested_note: Option<usize>,
     track: bool,
     marker_fence: Option<(FenceOpen, usize)>,
     opacity: BodyCommentState,
@@ -1948,9 +1994,6 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             note_floor: prefix_cols + footnote_body_floor(def.def_line),
             list_floor: item_floor(self.columns.current()),
             outer_list_floor: item_floor(&self.columns.frames[0]),
-            marker_note: detect_list_marker_full(inside).is_some_and(|marker| {
-                parse_footnote_def_line(marker.content.trim_start_matches(' ')).is_some()
-            }),
             description_host,
         };
         let i = self.hosted_first_block(&host, note, i, def.first);
@@ -1961,6 +2004,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         });
         let mut walk = HostedWalk {
             track,
+            nested_note: parse_footnote_def_line(trim_ascii_start(def.first))
+                .map(|_| footnote_body_floor(trim_ascii_start(def.first))),
             marker_fence: marker_line_fence(def.first),
             opacity: BodyCommentState::new(),
             admitted_fence: None,
@@ -2221,16 +2266,6 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         walk.lazy_open = false;
         let dedented = strip_leading_columns(line, host.note_floor);
-        let in_marker_fence = walk
-            .marker_fence
-            .is_some_and(|(_, column)| indent_columns(&dedented) >= column);
-        if host.marker_note
-            && walk.opacity.code.is_none()
-            && !in_marker_fence
-            && parse_footnote_def_line(trim_ascii_start(line)).is_some()
-        {
-            return Flow::Stop;
-        }
         if trim_ascii(line) == "+"
             && self
                 .decision_at(self.first_source_line + *i)
@@ -2307,7 +2342,33 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         {
             walk.opacity.comment = None;
         }
-        note.push_with(dedented, Some(self.first_source_line + *i), |_| col);
+        // At the outer note's body column a plain line is lazy in the nested
+        // note's open paragraph (PART 0 S4); the body pass reads LAZY as that.
+        let column = indent_columns(&dedented);
+        let text = trim_ascii_start(&dedented);
+        let below_nested = walk.nested_note.is_some_and(|floor| column < floor);
+        let lazy_in_nested = below_nested
+            && walk.opacity.code.is_none()
+            && walk.opacity.comment.is_none()
+            && !interrupts_paragraph_with_rest(text, &self.lines[*i + 1..])
+            && !is_colon_fence_opener_shape(text)
+            && !exact_colon_fence_len(text).is_some_and(|run| run >= 3)
+            && parse_link_def_line(text).is_none()
+            && parse_footnote_def_line(text).is_none()
+            && !opens_code_fence(text)
+            && nested_note_paragraph_open(note, self.options);
+        if walk.opacity.code.is_none() && parse_footnote_def_line(text).is_some() {
+            walk.nested_note = Some(column + footnote_body_floor(text));
+        } else if below_nested && !lazy_in_nested {
+            // Any other line short of the nested body closes that note.
+            walk.nested_note = None;
+        }
+        let kept = if lazy_in_nested {
+            format!("{LAZY}{text}")
+        } else {
+            dedented
+        };
+        note.push_with(kept, Some(self.first_source_line + *i), |_| col);
         *i += 1;
         Flow::Next
     }

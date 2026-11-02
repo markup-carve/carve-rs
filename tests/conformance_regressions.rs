@@ -850,3 +850,40 @@ fn a_hyphen_run_with_no_closing_angle_is_still_a_dash() {
     assert_eq!(html("pages 1--10"), "<p>pages 1–10</p>");
     assert_eq!(html("a --- b"), "<p>a — b</p>");
 }
+
+#[test]
+fn a_block_at_the_outer_note_body_after_a_nested_note_stays_in_the_outer_note() {
+    let rendered =
+        html("- [^a]: text\n    [^b]: inner\n    ~~~\n    code\n    ~~~\nafter [^a] [^b]\n");
+    let first_note = &rendered[rendered.find("id=\"fn1\"").expect("note 1")
+        ..rendered.find("id=\"fn2\"").expect("note 2")];
+    assert!(first_note.contains("<pre><code>code"), "{rendered}");
+    assert!(rendered.contains("<p>after "), "{rendered}");
+}
+
+#[test]
+fn prose_at_the_outer_note_body_folds_into_the_nested_note_paragraph() {
+    let rendered = html("- [^a]: text\n    [^b]: inner\n    one\n    two\n\nx [^a] [^b]\n");
+    assert!(rendered.contains("<p>inner\none\ntwo"), "{rendered}");
+}
+
+#[test]
+fn a_line_below_a_closed_block_in_a_nested_note_is_a_document_paragraph() {
+    let rendered = html(
+        "- [^a]: text\n    [^b]: inner\n      ~~~\n      one\n      ~~~\nbelow\n\n[^a] [^b]\n",
+    );
+    assert!(rendered.contains("<p>below</p>"), "{rendered}");
+}
+
+#[test]
+fn a_quote_after_a_caption_inherits_no_container() {
+    let rendered = html("> - t\n^ p\n>   # h\nl\n");
+    assert!(rendered.contains("<h1 id=\"h\">h</h1>"), "{rendered}");
+    assert!(rendered.ends_with("<p>l</p>"), "{rendered}");
+}
+
+#[test]
+fn a_lazy_line_between_a_nested_note_and_its_host_keeps_the_nested_paragraph_open() {
+    let rendered = html("- [^a]: text\n    [^b]: inner\n     one\n    zero\n\nx [^a] [^b]\n");
+    assert!(rendered.contains("<p>inner\none\nzero"), "{rendered}");
+}

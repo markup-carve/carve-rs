@@ -1135,6 +1135,23 @@ impl<'a> Walk<'a> {
         }
     }
 
+    fn lazy_refused(&self, reached: usize, col: usize, rest: &str) -> bool {
+        self.missed_term_refuses(reached, rest) || self.caption_ends_quote(reached, col, rest)
+    }
+
+    /// A caption at its owner's block column attaches to a quote and ends it (CARVE-P2-008).
+    fn caption_ends_quote(&self, reached: usize, col: usize, rest: &str) -> bool {
+        is_caption(rest)
+            && col == self.frames[reached].col
+            && self
+                .frames
+                .get(reached + 1)
+                .is_some_and(|f| f.kind == Kind::Quote)
+            && !self.frames[reached + 1..]
+                .iter()
+                .any(|f| f.kind == Kind::Note)
+    }
+
     fn top(&mut self) -> &mut Frame {
         self.frames.last_mut().expect("the document frame stays")
     }
@@ -1455,11 +1472,11 @@ impl<'a> Walk<'a> {
         let top_para = self.frames.last().expect("frame").para;
         // PART 0 [B-term-keep]: past a missed quote or note a marker leaves a term,
         // and past a quote a separator too (carve#4300).
-        let term_refuses = self.missed_term_refuses(reached, c.rest);
+        let lazy_refused = self.lazy_refused(reached, c.col, c.rest);
         if missed
             && !c.rest.is_empty()
             && top_para
-            && !term_refuses
+            && !lazy_refused
             && !form.interrupts()
             && !matches!(form, Form::Dd(_))
             && !(matches!(form, Form::Item(..))
