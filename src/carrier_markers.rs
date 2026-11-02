@@ -1457,6 +1457,9 @@ pub(crate) fn restore_nested_list_styles(carve: &str, lift: &CarrierLift) -> Opt
             };
             if line.contains(&lift.token) {
                 if rest.starts_with([' ', '\t']) {
+                    if delimiter == b'.' {
+                        *line = format!("{prefix} {rest}");
+                    }
                     continue;
                 }
                 break;

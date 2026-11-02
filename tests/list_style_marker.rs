@@ -311,7 +311,7 @@ fn style_carrier_on_an_item_opening_line_reports_loss() {
 
 #[test]
 fn nested_style_token_does_not_end_the_outer_styled_list() {
-    let source = "- host\n\n  i.  outer one\n\n     a.  inner one\n     b.  inner two\n  ii.  outer two\n  iii.  outer three\n";
+    let source = "- host\n\n  i.  outer one\n\n      a.  inner one\n      b.  inner two\n  ii.  outer two\n  iii.  outer three\n";
     let markdown =
         carve::to_markdown_with_options(source, &Options::default().with_roundtrip(true));
     let imported = carve::migrate_markdown(&markdown);

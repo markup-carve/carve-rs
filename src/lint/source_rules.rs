@@ -1235,14 +1235,9 @@ impl<'s, 'r> ListScan<'s, 'r> {
         let (ln, index, column) = (l.ln, l.index, l.column);
         let rows = self.rows;
         let items = &self.scan.items;
-        if !(l.containing.is_none()
-            && ln > 1
+        if !(ln > 1
             && !self.scan.ignored.contains(&ln)
             && self.marker_shaped.is_match(l.view)
-            && quoted_view(rows[index - 1].text, l.owner.map_or(0, |i| i.quotes))
-                .0
-                .trim()
-                .is_empty()
             && !out
                 .iter()
                 .any(|w| w.rule == "ordered-list-split-by-indent" && w.line == ln))
@@ -1257,7 +1252,7 @@ impl<'s, 'r> ListScan<'s, 'r> {
                 items
                     .iter()
                     .filter(|i| {
-                        i.first < ln
+                        i.last < ln
                             && i.quotes == opened.quotes
                             && i.base < opened.base
                             && opened.base < i.content
@@ -1268,8 +1263,17 @@ impl<'s, 'r> ListScan<'s, 'r> {
                     .max_by_key(|i| i.content)
             });
         if let Some(host) = host {
+            let after_blank = quoted_view(rows[index - 1].text, l.owner.map_or(0, |i| i.quotes))
+                .0
+                .trim()
+                .is_empty();
+            let where_ = if after_blank {
+                " after a blank line"
+            } else {
+                ""
+            };
             let len = self.marker_shaped.find(l.view).unwrap().len() - 1;
-            emit(out, rows, ln, l.at, len, "list-marker-below-content-column", &format!("This list marker starts at column {column} after a blank line, below the content column {} of the list item above, so it starts a separate list instead of nesting. Indent it to column {} to nest it under the item, or start it at column {} to put it at the item's own level.", host.content, host.content, host.base));
+            emit(out, rows, ln, l.at, len, "list-marker-below-content-column", &format!("This list marker starts at column {column}{where_}, below the content column {} of the list item above, so it starts a separate list instead of nesting. Indent it to column {} to nest it under the item, or start it at column {} to put it at the item's own level.", host.content, host.content, host.base));
         }
     }
 

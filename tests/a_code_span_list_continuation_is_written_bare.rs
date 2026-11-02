@@ -32,7 +32,9 @@ fn a_line_below_an_item_or_description_keeps_its_guard() {
     // (carve#4545); the round trip still has to hold.
     for marker in ["1. x", "a) x", "- [ ] x"] {
         for quote in ["", "> "] {
-            round_trips(&format!("{quote}- lead\n{quote}  a `b\n{quote} {marker}`\n"));
+            round_trips(&format!(
+                "{quote}- lead\n{quote}  a `b\n{quote} {marker}`\n"
+            ));
         }
     }
     for quote in ["", "> "] {

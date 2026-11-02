@@ -59,5 +59,8 @@ fn an_indented_block_after_a_caret_and_bullet_line_opens() {
         html("^ p\n- x\n  > q\n"),
         "<p>^ p\n- x</p>\n<blockquote><p>q</p></blockquote>"
     );
-    assert_eq!(html("- ^ c\n 1. x\n"), "<ul>\n  <li>^ c</li>\n</ul>\n<ol>\n  <li>x</li>\n</ol>");
+    assert_eq!(
+        html("- ^ c\n 1. x\n"),
+        "<ul>\n  <li>^ c</li>\n</ul>\n<ol>\n  <li>x</li>\n</ol>"
+    );
 }

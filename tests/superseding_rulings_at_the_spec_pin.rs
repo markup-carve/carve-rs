@@ -48,8 +48,14 @@ fn an_arrow_needs_its_exact_run() {
 
 #[test]
 fn single_hyphen_arrows_and_c_and_r_are_text() {
-    assert_eq!(html("a<-b x->y a<->b"), "<p>a&lt;-b x-&gt;y a&lt;-&gt;b</p>");
-    assert_eq!(html("(a), (b) and (c) (r) (tm)"), "<p>(a), (b) and (c) (r) ™</p>");
+    assert_eq!(
+        html("a<-b x->y a<->b"),
+        "<p>a&lt;-b x-&gt;y a&lt;-&gt;b</p>"
+    );
+    assert_eq!(
+        html("(a), (b) and (c) (r) (tm)"),
+        "<p>(a), (b) and (c) (r) ™</p>"
+    );
 }
 
 #[test]
@@ -65,7 +71,10 @@ fn a_marker_between_an_items_columns_reads_as_at_the_marker_column() {
         html("- a\n * b\n"),
         "<ul>\n  <li>a</li>\n</ul>\n<ul>\n  <li>b</li>\n</ul>"
     );
-    assert_eq!(html("- a\n - b\n"), "<ul>\n  <li>a</li>\n  <li>b</li>\n</ul>");
+    assert_eq!(
+        html("- a\n - b\n"),
+        "<ul>\n  <li>a</li>\n  <li>b</li>\n</ul>"
+    );
     assert!(html("- a\n - [ ] b\n").contains("<ul class=\"task-list\">"));
 }
 
@@ -76,7 +85,10 @@ fn a_letter_or_roman_marker_with_a_dot_needs_two_spaces() {
         html("a.  one\nb.  two\n"),
         "<ol type=\"a\">\n  <li>one</li>\n  <li>two</li>\n</ol>"
     );
-    assert_eq!(html("a) x\n"), "<ol type=\"a\" data-delim=\")\">\n  <li>x</li>\n</ol>");
+    assert_eq!(
+        html("a) x\n"),
+        "<ol type=\"a\" data-delim=\")\">\n  <li>x</li>\n</ol>"
+    );
     assert_eq!(to_carve("a.  one\nb.  two\n"), "a.  one\nb.  two\n");
     assert_eq!(to_carve("iv.  x\n    y\n"), "iv.  x\n     y\n");
 }
@@ -112,7 +124,11 @@ fn a_recovered_fence_reports_fence_title_syntax() {
             assert!(findings[0].message.contains(hint), "{source}");
         }
     }
-    for source in ["```raw\nx\n```\n", "```raw \"t\"\nx\n```\n", "```=html\nx\n```\n"] {
+    for source in [
+        "```raw\nx\n```\n",
+        "```raw \"t\"\nx\n```\n",
+        "```=html\nx\n```\n",
+    ] {
         assert!(lint_carve(source).is_empty(), "{source}");
     }
 }
