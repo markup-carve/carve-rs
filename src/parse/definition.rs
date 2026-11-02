@@ -152,10 +152,6 @@ pub(in crate::parse) fn clear_prepass_abbreviations() {
     PREPASS_ABBREVIATIONS.with(|cell| cell.borrow_mut().clear());
 }
 
-pub(in crate::parse) fn has_prepass_abbreviations() -> bool {
-    PREPASS_ABBREVIATIONS.with(|cell| !cell.borrow().is_empty())
-}
-
 pub(in crate::parse) fn take_prepass_abbreviations() -> Vec<(usize, AbbreviationDef)> {
     PREPASS_ABBREVIATIONS.with(|cell| std::mem::take(&mut *cell.borrow_mut()))
 }
@@ -176,6 +172,60 @@ pub(in crate::parse) fn hoist_document_abbreviation(
         def.pos = span_of(cur, at, at + 1, options);
         hoist_abbreviation(def);
     }
+}
+
+/// The authored span of a container definition on 1-based `line`, from its `*`.
+pub(in crate::parse) fn container_abbreviation_pos(lines: &[&str], line: usize, abbr: &str) -> Pos {
+    let text = lines.get(line - 1).copied().unwrap_or("");
+    let lead = text
+        .find(&format!("*[{abbr}]:"))
+        .map_or(0, |at| text[..at].chars().count());
+    Pos {
+        start_line: line,
+        end_line: line,
+        start_column: lead + 1,
+        end_column: text.chars().count() + 1,
+        start_offset: 0,
+        end_offset: 0,
+        file: None,
+    }
+}
+
+/// The prepass's container definitions as nodes; `authored` maps a body line to
+/// its 1-based source line.
+pub(in crate::parse) fn prepass_abbreviation_nodes(
+    source: &str,
+    positions: bool,
+    authored: impl Fn(usize) -> Option<usize>,
+) -> Vec<AbbreviationDef> {
+    let defs = take_prepass_abbreviations();
+    let lines: Vec<&str> = if positions && !defs.is_empty() {
+        source.lines().collect()
+    } else {
+        Vec::new()
+    };
+    defs.into_iter()
+        .map(|(line, mut def)| {
+            def.pos = positions
+                .then(|| {
+                    authored(line).map(|line| container_abbreviation_pos(&lines, line, &def.abbr))
+                })
+                .flatten();
+            def
+        })
+        .collect()
+}
+
+/// Hoist the prepass's container definitions through the sibling-gap list.
+pub(in crate::parse) fn hoist_prepass_abbreviations(
+    source: &str,
+    positions: bool,
+    authored: impl Fn(usize) -> Option<usize>,
+) -> bool {
+    let defs = prepass_abbreviation_nodes(source, positions, authored);
+    let any = !defs.is_empty();
+    defs.into_iter().for_each(hoist_abbreviation);
+    any
 }
 
 /// Hoist a definition read inside a container to the document (carve#4865).

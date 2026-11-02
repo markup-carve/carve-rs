@@ -859,23 +859,6 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
     parse_with_options_mode_and_index(source, options, mode).0
 }
 
-/// The authored span of a container definition on 1-based `line`, from its `*`.
-fn container_abbreviation_pos(source: &str, line: usize, abbr: &str) -> Pos {
-    let text = source.lines().nth(line - 1).unwrap_or("");
-    let lead = text
-        .find(&format!("*[{abbr}]:"))
-        .map_or(0, |at| text[..at].chars().count());
-    Pos {
-        start_line: line,
-        end_line: line,
-        start_column: lead + 1,
-        end_column: text.chars().count() + 1,
-        start_offset: 0,
-        end_offset: 0,
-        file: None,
-    }
-}
-
 fn parse_with_options_mode_and_index(
     source: &str,
     options: &Options<'_>,
@@ -988,17 +971,9 @@ fn parse_with_options_mode_and_index(
                 .or(def.line);
         }
     }
-    let prepass_abbreviations: Vec<AbbreviationDef> = take_prepass_abbreviations()
-        .into_iter()
-        .map(|(line, mut def)| {
-            let authored = body.line_map.get(line).and_then(|mapped| *mapped);
-            def.pos = options
-                .positions
-                .then(|| authored.map(|line| container_abbreviation_pos(original, line, &def.abbr)))
-                .flatten();
-            def
-        })
-        .collect();
+    let prepass_abbreviations = prepass_abbreviation_nodes(original, options.positions, |line| {
+        body.line_map.get(line).and_then(|mapped| *mapped)
+    });
     // A definition written inside a footnote body is document-level metadata,
     // and a definition at the top level WINS over one of the same label there -
     // measured on carve-js and carve-php, which both resolve `[t][r]` to the

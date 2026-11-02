@@ -3391,11 +3391,14 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     } else {
         (String::new(), BTreeMap::new())
     };
-    // The document reader hoists container abbreviations (carve#4865).
-    if has_prepass_abbreviations() {
-        return None;
-    }
-    let has_link_defs = !link_defs.is_empty();
+    let body_lines_before = source[..body.as_ptr() as usize - source.as_ptr() as usize]
+        .bytes()
+        .filter(|byte| *byte == b'\n')
+        .count();
+    let hoisted_abbreviations = hoist_prepass_abbreviations(source, options.positions, |line| {
+        Some(body_lines_before + line + 1)
+    });
+    let has_link_defs = !link_defs.is_empty() || hoisted_abbreviations;
     let body_source = if has_link_defs {
         stripped_body.as_str()
     } else {
@@ -3572,10 +3575,9 @@ fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Doc
     let mut budget = probe_budget_for(mapped.source.len());
     let (body_source, mut link_defs) =
         extract_link_defs_guarded(&mapped.source, &options, &mut budget);
-    // The document reader hoists container abbreviations (carve#4865).
-    if has_prepass_abbreviations() {
-        return None;
-    }
+    hoist_prepass_abbreviations(source, options.positions, |line| {
+        mapped.line_map.get(line).and_then(|authored| *authored)
+    });
     for def in link_defs.values_mut() {
         if let Some(line) = def.line {
             def.line = mapped
@@ -3757,11 +3759,14 @@ pub(super) fn parse_document_with_custom_options(
     } else {
         (String::new(), BTreeMap::new())
     };
-    // The document reader hoists container abbreviations (carve#4865).
-    if has_prepass_abbreviations() {
-        return None;
-    }
-    let has_link_defs = !link_defs.is_empty();
+    let body_lines_before = source[..body.as_ptr() as usize - source.as_ptr() as usize]
+        .bytes()
+        .filter(|byte| *byte == b'\n')
+        .count();
+    let hoisted_abbreviations = hoist_prepass_abbreviations(source, options.positions, |line| {
+        Some(body_lines_before + line + 1)
+    });
+    let has_link_defs = !link_defs.is_empty() || hoisted_abbreviations;
     let body_source = if has_link_defs {
         stripped_body.as_str()
     } else {
@@ -4063,10 +4068,9 @@ fn parse_document_with_footnotes_options(
     let mut budget = probe_budget_for(mapped.source.len());
     let (body_source, mut link_defs) =
         extract_link_defs_guarded(&mapped.source, options, &mut budget);
-    // The document reader hoists container abbreviations (carve#4865).
-    if has_prepass_abbreviations() {
-        return None;
-    }
+    hoist_prepass_abbreviations(source, options.positions, |line| {
+        mapped.line_map.get(line).and_then(|authored| *authored)
+    });
     for def in link_defs.values_mut() {
         if let Some(line) = def.line {
             def.line = mapped
