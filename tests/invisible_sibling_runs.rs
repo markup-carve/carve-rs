@@ -35,7 +35,10 @@ fn abbreviation_between_siblings_keeps_one_list_and_its_definition() {
     let document = carve::parse(source);
     assert_eq!(document.children.len(), 2);
     assert!(matches!(document.children[0], carve::BlockNode::List(_)));
-    assert!(matches!(document.children[1], carve::BlockNode::AbbreviationDef(_)));
+    assert!(matches!(
+        document.children[1],
+        carve::BlockNode::AbbreviationDef(_)
+    ));
 }
 
 #[test]
