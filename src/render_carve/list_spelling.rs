@@ -330,7 +330,9 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
     let delim = node.delim.unwrap_or('.');
     let bullet = node.bullet_char.unwrap_or('-');
     let items = node.items.as_ptr() as usize;
+    let list_followed_by_marker = ctx.item_followed_by_marker;
     for (idx, item) in node.items.iter().enumerate() {
+        ctx.item_followed_by_marker = list_followed_by_marker || idx + 1 < node.items.len();
         let escape_window::Visit::Render(recorded) = escape_window::visit(session, items, idx)
         else {
             if node.ordered {
@@ -523,6 +525,7 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
         }
         escape_window::leave(session, recorded);
     }
+    ctx.item_followed_by_marker = list_followed_by_marker;
     ctx.list_depth -= 1;
     trim_end_non_nbsp(&out).to_string()
 }
@@ -616,7 +619,9 @@ pub(super) fn render_definition_list(
             }
             out.push(format!(":: {rendered}"));
         }
-        for def in &item.definitions {
+        for (def_index, def) in item.definitions.iter().enumerate() {
+            let last_description =
+                index + 1 == items.len() && def_index + 1 == item.definitions.len();
             // An EMPTY description whose line carries a hoisted definition is one
             // the author wrote that definition on: write it back there
             // (markup-carve/carve#805). Without this the line came out as a bare
@@ -636,6 +641,7 @@ pub(super) fn render_definition_list(
                 }
             }
             let body = trim_non_nbsp(&at_item_content_column(ctx, |ctx| {
+                ctx.join_trailing_comments = last_description && ctx.item_followed_by_marker;
                 render_blocks(session, def, ctx, None)
             }))
             .to_string();
