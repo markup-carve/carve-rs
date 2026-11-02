@@ -571,7 +571,7 @@
     },
     {
       "name": "item-first-block-indented",
-      "description": "A first-block plus attaches the following item content-column block (CARVE-P9-067).",
+      "description": "A first-block plus attaches the following block at the item content column (CARVE-P9-067).",
       "source": "- +\n  x\n",
       "expected": {
         "findings": []
@@ -730,72 +730,186 @@
     },
     {
       "name": "document-unclaimed-before-list",
-      "description": "The top-level twin of corpus 630-4: a plus no open container claims is reported (carve#3421).",
+      "description": "A plus read as a letter by PART 0 S2 is quiet (carve#4648).",
       "source": "q\n+\n- s\n",
       "expected": {
-        "findings": [
-          {
-            "line": 2,
-            "column": 1,
-            "includes": [
-              "+"
-            ]
-          }
-        ]
+        "findings": []
       }
     },
     {
       "name": "quote-unclaimed-indented",
-      "description": "A plus past the quote's marker column is claimed by no open container; it is reported and stays text in the quote (corpus 630-5, carve#3421).",
+      "description": "A plus read as a letter by PART 0 S2 is quiet (carve#4648).",
       "source": "> q\n>   +\n> para\n",
       "expected": {
-        "findings": [
-          {
-            "line": 2,
-            "column": 5,
-            "includes": [
-              "remains text"
-            ]
-          }
-        ]
+        "findings": []
       }
     },
     {
       "name": "document-unclaimed-before-table",
-      "description": "A plus no open container claims is reported when a table follows it (carve#3421).",
+      "description": "A plus read as a letter by PART 0 S2 is quiet (carve#4648).",
       "source": "q\n+\n| a |\n",
       "expected": {
-        "findings": [
-          {
-            "line": 2,
-            "column": 1,
-            "includes": [
-              "+"
-            ]
-          }
-        ]
+        "findings": []
       }
     },
     {
       "name": "document-unclaimed-before-heading",
-      "description": "A plus no open container claims is reported when a heading follows it (carve#3421).",
+      "description": "A plus read as a letter by PART 0 S2 is quiet (carve#4648).",
       "source": "q\n+\n# h\n",
       "expected": {
-        "findings": [
-          {
-            "line": 2,
-            "column": 1,
-            "includes": [
-              "+"
-            ]
-          }
-        ]
+        "findings": []
       }
     },
     {
       "name": "document-unclaimed-between-text-lines",
       "description": "A plus no open container claims between two text lines is paragraph text and is not reported (carve#3421).",
       "source": "q\n+\npara\n",
+      "expected": {
+        "findings": []
+      }
+    },
+    {
+      "name": "item-stacked-quote-first-block-end",
+      "description": "A first-block plus in a quote stacked on an item marker (carve#3992).",
+      "source": "- > +\n",
+      "expected": {
+        "findings": [
+          {
+            "line": 1,
+            "column": 5,
+            "includes": [
+              "end of the document"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "item-stacked-quote-first-block-blank",
+      "description": "A blank line refuses the stacked first-block plus (carve#3992).",
+      "source": "- > +\n\npara\n",
+      "expected": {
+        "findings": [
+          {
+            "line": 1,
+            "column": 5,
+            "includes": [
+              "blank line"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "nested-item-stacked-quote-first-block-end",
+      "description": "The stacked form in a nested item (carve#3992).",
+      "source": "- a\n  - > +\n",
+      "expected": {
+        "findings": [
+          {
+            "line": 2,
+            "column": 7,
+            "includes": [
+              "end of the document"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "task-stacked-quote-first-block-end",
+      "description": "The stacked form on a task item (carve#3992).",
+      "source": "- [ ] > +\n",
+      "expected": {
+        "findings": [
+          {
+            "line": 1,
+            "column": 9,
+            "includes": [
+              "end of the document"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "quote-stacked-item-first-block-end",
+      "description": "An item stacked in a quote takes the first-block form (carve#3992).",
+      "source": "> - +\n",
+      "expected": {
+        "findings": [
+          {
+            "line": 1,
+            "column": 5,
+            "includes": [
+              "end of the document",
+              "stays empty"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "description-stacked-quote-first-block-end",
+      "description": "A first-block plus in a quote on a description marker line (carve#3992).",
+      "source": ":: t\n: > +\n",
+      "expected": {
+        "findings": [
+          {
+            "line": 2,
+            "column": 5,
+            "includes": [
+              "end of the document"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "description-stacked-quote-first-block-blank",
+      "description": "A blank line refuses it (carve#3992).",
+      "source": ":: t\n: > +\n\npara\n",
+      "expected": {
+        "findings": [
+          {
+            "line": 2,
+            "column": 5,
+            "includes": [
+              "blank line"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "description-stacked-item-first-block-end",
+      "description": "An item stacked on a description marker line (carve#3992).",
+      "source": ":: t\n: - +\n",
+      "expected": {
+        "findings": [
+          {
+            "line": 2,
+            "column": 5,
+            "includes": [
+              "end of the document",
+              "stays empty"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "item-stacked-quote-first-block-paragraph",
+      "description": "The stacked first-block plus attaches a paragraph at the item's content column.",
+      "source": "- > +\n  x\n",
+      "expected": {
+        "findings": []
+      }
+    },
+    {
+      "name": "plus-text-at-description-content-column",
+      "description": "A plus at a description's content column is text under rule A, not a refusal.",
+      "source": ":: t\n: d\n  +\n\np\n",
       "expected": {
         "findings": []
       }

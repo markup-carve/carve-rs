@@ -83,12 +83,16 @@ fn check(data: &str, rule: &str) {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
-fn shared_vectors() {
+fn list_marker_vectors() {
     check(
         include_str!("fixtures/lint-rule-vectors/list-marker-below-content-column.json"),
         "list-marker-below-content-column",
     );
+}
+
+#[test]
+#[ignore = "rule A ledger: carve-rs#3524"]
+fn ordered_split_vectors() {
     check(
         include_str!("fixtures/lint-rule-vectors/ordered-list-split-by-indent.json"),
         "ordered-list-split-by-indent",
