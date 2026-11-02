@@ -267,6 +267,8 @@ pub(in crate::parse) struct LineCursor<'a> {
     pub(in crate::parse) literal_code: LiteralCodeLookup,
     /// Last consumed comment closer and the column of its opener.
     pub(in crate::parse) closed_comment_location: Option<(usize, usize)>,
+    /// The line that ended an item's comment span by missing the item (carve#4770).
+    pub(in crate::parse) comment_span_missed_at: Option<usize>,
     /// The last collected item body closed its marker-line colon container.
     pub(in crate::parse) marker_colon_closed: bool,
     pub(in crate::parse) code_closer_last_index: Option<HashMap<u8, Vec<usize>>>,
@@ -309,6 +311,7 @@ impl<'a> LineCursor<'a> {
             literal_comments: None,
             literal_code: LiteralCodeLookup::default(),
             closed_comment_location: None,
+            comment_span_missed_at: None,
             marker_colon_closed: false,
             code_closer_last_index: None,
         }

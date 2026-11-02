@@ -341,6 +341,24 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let mut lead_fence_scan = LeadFenceScan::default();
     let mut nested_blank_run: Option<usize> = None;
     run_indented_body!(cur.lines, cur.pos, container, |line, admission| {
+        // PART 0 S1 and the recovery table (carve#4770): a nonblank line that
+        // misses this item ends a span the item opened, even with its closer
+        // ahead. The re-parsed body then degrades the opener to a `%%` line.
+        let held_span = if span_reached_this_frame {
+            comment_fence.map(|(run, _)| run)
+        } else {
+            marker_comment_span
+        };
+        if held_span.is_some_and(|run| !is_comment_fence_close_any_column(line, run))
+            && !admission.blank
+            && !is_line_comment_any_column(line)
+            && detect_comment_fence_line_any_column(line).is_none()
+            && !line.starts_with(LAZY)
+            && indent_columns(line) < strip_cols
+        {
+            cur.comment_span_missed_at = Some(cur.pos);
+            break;
+        }
         // Marker-line descendants can take an early collection arm below.
         // Close their stanza before any arm can skip the ordinary tracker.
         if marker_line_block
@@ -1099,6 +1117,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                     || detect_comment_fence_line_any_column(line).is_some()
             })
             && !closes_a_held_comment_span(&lines, line)
+            && !(held_span.is_some() && is_line_comment_any_column(line))
             && !caption_follower
         {
             break;
