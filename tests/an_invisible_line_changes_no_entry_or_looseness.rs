@@ -72,5 +72,9 @@ fn a_blank_then_a_comment_span_then_a_paragraph_loosens_the_item() {
 fn the_writer_keeps_a_tight_item_tight_across_a_comment_after_a_sub_list() {
     let source = "- - x\n  %%%\n  y\n";
     let formatted = carve::to_carve(source);
-    assert_eq!(carve::to_html(&formatted), carve::to_html(source), "{formatted}");
+    assert_eq!(
+        carve::to_html(&formatted),
+        carve::to_html(source),
+        "{formatted}"
+    );
 }
