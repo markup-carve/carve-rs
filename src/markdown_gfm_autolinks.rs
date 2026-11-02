@@ -214,7 +214,7 @@ fn raw_html_end(
         return Some(at + tag.end());
     }
     static ANGLE: OnceLock<Regex> = OnceLock::new();
-    let angle = ANGLE.get_or_init(|| Regex::new(r#"^<(?:[A-Za-z][A-Za-z0-9+.-]{1,31}:[^<>\s]*|[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+)>"#).unwrap());
+    let angle = ANGLE.get_or_init(|| Regex::new(r#"^<(?:[A-Za-z][A-Za-z0-9+.-]{1,31}:[^<>\x00-\x20]*|[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+)>"#).unwrap());
     angle.find(tail).map(|matched| at + matched.end())
 }
 
