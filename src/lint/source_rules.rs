@@ -262,6 +262,7 @@ pub(super) fn collect(
     collect_ordered_splits(doc, &rows, out);
     let mut scan = BlockScan::new(source, doc, &rows, to_byte, out);
     collect_authoring(&rows, doc, &scan, caption_looking, out);
+    collect_shaped_spans(&rows, doc, &scan.shaped_spans, out);
     collect_description_separators(
         &rows,
         &scan.definition_hosts,
@@ -416,6 +417,21 @@ fn collect_authoring(
             emit(out, rows, line, authored_first_nonspace(row.text), 1, "list-marker-without-blank-line", "This list marker is part of the preceding paragraph; add a blank line before the list.");
         }
         if is_paragraph {
+            let end_line = paragraphs[&line];
+            for (offset, _) in view.match_indices("<!--") {
+                let start = prefix + offset;
+                if !source_visible(row, start, 4, scan) {
+                    continue;
+                }
+                let closed = has_visible(row, start + 4, "-->", scan)
+                    || ((line + 1)..=end_line).any(|next| {
+                        rows.get(next - 1)
+                            .is_some_and(|r| has_visible(r, 0, "-->", scan))
+                    });
+                if closed {
+                    emit(out, rows, line, start, 4, "html-comment-renders-as-text", "This HTML comment renders as visible text. Use %% for one line or %%% for a comment block.");
+                }
+            }
             if trimmed.starts_with('|') && !trimmed.trim_end_matches([' ', '\t']).ends_with('|') {
                 let previous_table_shaped = index > 0
                     && paragraphs.contains_key(&(line - 1))
@@ -597,6 +613,8 @@ struct BlockScan<'d> {
     payload: BTreeSet<usize>,
     text_runs: Vec<(usize, usize)>,
     emphasis_runs: Vec<(usize, usize)>,
+    // Emphasis and strong spans shaped like a C comment or a file glob (carve#4815).
+    shaped_spans: Vec<(usize, &'static str)>,
     opaque_runs: Vec<(usize, usize)>,
 }
 
@@ -693,7 +711,14 @@ impl<'d> BlockScan<'d> {
             }
             if let InlineNode::Emphasis(emphasis) = node {
                 if let Some(pos) = &emphasis.pos {
-                    emphasis_spans.push((to_byte(pos.start_offset), to_byte(pos.end_offset)));
+                    let (start, end) = (to_byte(pos.start_offset), to_byte(pos.end_offset));
+                    emphasis_spans.push((start, end));
+                    if let Some(rule) = source
+                        .get(start..end)
+                        .and_then(|raw| shaped_span_rule(emphasis.kind, raw))
+                    {
+                        self.shaped_spans.push((start, rule));
+                    }
                 }
             }
             if matches!(
@@ -709,6 +734,70 @@ impl<'d> BlockScan<'d> {
         self.text_runs = merged_spans(text_spans);
         self.emphasis_runs = merged_spans(emphasis_spans);
         self.opaque_runs = merged_spans(opaque_spans);
+    }
+}
+
+fn shaped_span_rule(kind: EmphasisKind, raw: &str) -> Option<&'static str> {
+    let bytes = raw.as_bytes();
+    let (inner_first, inner_last) = (
+        bytes.get(1).copied(),
+        bytes
+            .len()
+            .checked_sub(2)
+            .and_then(|i| bytes.get(i))
+            .copied(),
+    );
+    let wraps = |delimiter: u8, inner: u8| {
+        bytes.len() >= 2
+            && bytes[0] == delimiter
+            && bytes[bytes.len() - 1] == delimiter
+            && (inner_first == Some(inner) || inner_last == Some(inner))
+    };
+    match kind {
+        EmphasisKind::Italic if wraps(b'/', b'*') => Some("comment-shaped-emphasis"),
+        EmphasisKind::Strong if wraps(b'*', b'/') => Some("comment-shaped-emphasis"),
+        EmphasisKind::Strong if raw.starts_with("*.") && raw.ends_with('*') => {
+            Some("glob-shaped-strong")
+        }
+        _ => None,
+    }
+}
+
+fn collect_shaped_spans(
+    rows: &[Line<'_>],
+    doc: &Document,
+    spans: &[(usize, &'static str)],
+    out: &mut Vec<LintWarning>,
+) {
+    // Footnote bodies are not checked, as in carve-js.
+    let note_lines: BTreeSet<usize> = doc
+        .footnote_defs
+        .values()
+        .flatten()
+        .filter_map(block_pos)
+        .flat_map(|pos| pos.start_line..=pos.end_line)
+        .collect();
+    for &(start, rule) in spans {
+        let Some(index) = rows.iter().rposition(|row| row.start <= start) else {
+            continue;
+        };
+        if note_lines.contains(&(index + 1)) {
+            continue;
+        }
+        let message = if rule == "glob-shaped-strong" {
+            "This strong span looks like a file glob; escape the asterisk if you meant a glob."
+        } else {
+            "This emphasis looks like a C comment; use Carve comment syntax if you meant a comment."
+        };
+        emit(
+            out,
+            rows,
+            index + 1,
+            start - rows[index].start,
+            1,
+            rule,
+            message,
+        );
     }
 }
 

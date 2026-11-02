@@ -56,6 +56,29 @@ pub(crate) enum MarkdownLossKind {
     CarrierMarkersDamaged,
     CarrierMarkerDropped,
     RawCodeFallback,
+    /// An HTML comment block imported as a Carve comment (carve#4812).
+    HtmlComment,
+}
+
+/// A block that holds exactly one HTML comment, as a Carve comment: `%%` for one
+/// line, `%%%` for more (carve#4812). A carrier comment stays raw HTML.
+fn html_comment_block(source: &str) -> Option<Comment> {
+    let body = source
+        .trim_matches([' ', '\t'])
+        .strip_prefix("<!--")?
+        .strip_suffix("-->")?;
+    if body.contains("<!--")
+        || body.contains("-->")
+        || source.trim_start().starts_with("<!-- carve:")
+    {
+        return None;
+    }
+    Some(Comment {
+        block: body.contains('\n'),
+        delimited: false,
+        content: body.trim().to_string(),
+        pos: None,
+    })
 }
 
 /// A raw span whose content ends a line in whitespace, which CARVE-P2-025
@@ -3064,6 +3087,13 @@ impl Builder {
                 );
                 if inline_in_tight_item {
                     self.raw_inline(content);
+                } else if let Some(comment) = html_comment_block(&content) {
+                    self.losses.push(MarkdownImportLoss {
+                        message: "Imported a Markdown HTML comment as a Carve comment.".into(),
+                        line: Some(self.current_line),
+                        kind: MarkdownLossKind::HtmlComment,
+                    });
+                    self.block(BlockNode::Comment(comment));
                 } else {
                     self.block(BlockNode::RawBlock(RawBlock {
                         attrs: None,
