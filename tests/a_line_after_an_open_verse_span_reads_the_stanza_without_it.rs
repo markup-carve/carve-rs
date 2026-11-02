@@ -55,3 +55,9 @@ fn a_blank_ended_nested_stanza_takes_no_lazy_line() {
     let html = carve::to_html("- - ::: |\n    x\n\n    %%%\nb\n");
     assert!(html.trim_end().ends_with("</ul>\n<p>b</p>"), "{html}");
 }
+
+#[test]
+fn a_closed_span_in_a_nested_stanza_keeps_the_lazy_line() {
+    let html = carve::to_html("- - ::: |\n    x\n    %%%\n    y\n    %%%\nb\n");
+    assert!(html.contains("<p>x<br>\nb</p>"), "{html}");
+}
