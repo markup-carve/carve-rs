@@ -2220,9 +2220,8 @@ fn render_item_blocks(
         // comment spells no paragraph for the blank to part, so the re-parsed
         // list stays tight and the HTML is byte-identical.
         //
-        // Only the `%% text` form. A `%%%` fence opener already closes the
-        // sub-list, and a `{% text %}` delimited comment is not written at a
-        // column that re-attaches - both measured, both left alone.
+        // The `%% text` and `{% text %}` forms. A `%%%` fence opener already
+        // closes the sub-list.
         //
         // Unless a paragraph follows: the blank then sits above it and loosens
         // the item (§17 L1b), and the re-parse keeps the comment in this item.
@@ -2235,8 +2234,17 @@ fn render_item_blocks(
         };
         if !separated
             && matches!(prev, Some(BlockNode::List(_)))
-            && matches!(block, BlockNode::Comment(comment) if !comment.block && !comment.delimited)
+            && matches!(block, BlockNode::Comment(comment) if !comment.block)
             && !blank_loosens
+        {
+            out.push('\n');
+        }
+        // A `{% %}` line is paragraph text, so it would join an open paragraph
+        // above it or the block below it (carve#4799); a blank keeps it apart.
+        let delimited = |block: Option<&BlockNode>| matches!(block, Some(BlockNode::Comment(comment)) if comment.delimited);
+        if !separated
+            && ((delimited(prev) && !matches!(block, BlockNode::Comment(_)))
+                || (delimited(Some(block)) && prev.is_some_and(an_open_paragraph_reaches_down)))
         {
             out.push('\n');
         }

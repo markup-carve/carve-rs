@@ -359,6 +359,25 @@ pub(in crate::parse) fn parse_blocks(
         } else {
             parse_block(cur, options, &mut item_bodies)
         };
+        // Pending attributes float past it to the next visible block.
+        if let Some(comments) = parsed
+            .as_deref()
+            .and_then(crate::ast::comment_only_paragraph_blocks)
+        {
+            for comment in comments {
+                out.push(comment);
+                if let Some(extents) = cur.block_extents.as_mut() {
+                    extents.push((start_line, cur.pos));
+                }
+                if pending_attrs.is_none() {
+                    if let Some(starts) = cur.block_starts.as_mut() {
+                        starts.push(start_line);
+                    }
+                }
+            }
+            cur.last_block_start = Some(start_line);
+            continue;
+        }
         if let Some(node) = parsed {
             if let Some(extents) = cur.block_extents.as_mut() {
                 extents.push((start_line, cur.pos));

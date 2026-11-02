@@ -654,6 +654,40 @@ fn braced_comments_only(text: &str) -> bool {
     true
 }
 
+/// The end of the paragraph of only braced comments that starts at line `k`
+/// of `len`, where `view` gives each line's text past its indentation.
+/// In an item a list marker interrupts it; elsewhere the marker is its text.
+pub(crate) fn comment_only_para_end<'a>(
+    len: usize,
+    k: usize,
+    in_item: bool,
+    view: &dyn Fn(usize) -> &'a str,
+) -> Option<usize> {
+    let mut end = k + 1;
+    while end < len && !is_blank_line(view(end)) {
+        let rest = view(end);
+        if detect_list_marker_full(rest).is_some() {
+            if in_item {
+                break;
+            }
+            return None;
+        }
+        if !line_starts_paragraph(rest)
+            || rest.starts_with("%%")
+            || parse_link_def_line(rest).is_some()
+            || parse_footnote_def_line(rest).is_some()
+            || detect_abbreviation_def(rest).is_some()
+            || (rest.starts_with('{')
+                && standalone_attrs_block_len_iter([rest].into_iter()).is_some())
+        {
+            break;
+        }
+        end += 1;
+    }
+    let para: Vec<&str> = (k..end).map(view).collect();
+    braced_comments_only(&para.join("\n")).then_some(end)
+}
+
 /// The source the block readers see after the ownership walk, with the column
 /// edits that map a position in it back to the authored source.
 #[derive(Clone)]
@@ -1124,37 +1158,13 @@ impl<'a> Walk<'a> {
         k
     }
 
-    /// The end of the paragraph of only braced comments that starts at `k`.
-    /// In an item a list marker interrupts it; elsewhere the marker is its text.
     fn comment_only_para_end(
         &self,
         k: usize,
         in_item: bool,
         view: &dyn Fn(usize) -> &'a str,
     ) -> Option<usize> {
-        let mut end = k + 1;
-        while end < self.lines.len() && !is_blank_line(view(end)) {
-            let rest = view(end);
-            if detect_list_marker_full(rest).is_some() {
-                if in_item {
-                    break;
-                }
-                return None;
-            }
-            if !line_starts_paragraph(rest)
-                || rest.starts_with("%%")
-                || parse_link_def_line(rest).is_some()
-                || parse_footnote_def_line(rest).is_some()
-                || detect_abbreviation_def(rest).is_some()
-                || (rest.starts_with('{')
-                    && standalone_attrs_block_len_iter([rest].into_iter()).is_some())
-            {
-                break;
-            }
-            end += 1;
-        }
-        let para: Vec<&str> = (k..end).map(view).collect();
-        braced_comments_only(&para.join("\n")).then_some(end)
+        comment_only_para_end(self.lines.len(), k, in_item, view)
     }
 
     /// The first line past the attribute and invisible lines from `from`, or

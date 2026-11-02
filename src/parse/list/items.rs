@@ -225,12 +225,14 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     ) -> Self {
         let base_indent = first_marker.indent;
         let item_head = cur.pos;
+        let item_shows = !invisible_item_lead(first_marker.content)
+            && !comment_only_item_lead(cur.lines, item_head, first_marker.content);
         Self {
             cur,
             options,
             deferred,
             base_indent,
-            item_shows: !invisible_item_lead(first_marker.content),
+            item_shows,
             item_head,
             is_task: first_marker.checked.is_some(),
             is_ordered: first_marker.ordered,
@@ -294,6 +296,12 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     }
 
     fn push_item(&mut self, item: ItemOpen<'l>, children: Vec<BlockNode>) {
+        let children = children
+            .into_iter()
+            .flat_map(|child| {
+                crate::ast::comment_only_paragraph_blocks(&child).unwrap_or_else(|| vec![child])
+            })
+            .collect();
         let pos = span_of(self.cur, item.at, self.cur.pos, self.options);
         self.items.push(ListItem {
             attrs: item.attrs,
@@ -523,6 +531,35 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         if skipped_abbreviation {
             return NEXT;
         }
+        if trim_ascii_start(line).starts_with("{%") {
+            // A paragraph of only braced comments joins the item as its comments (carve#4799).
+            let lines = self.cur.pos - extent..self.cur.pos;
+            let text: Vec<&str> = lines
+                .clone()
+                .map(|k| trim_ascii(self.cur.lines.at(k)))
+                .collect();
+            let joined = text.join("\n");
+            let children = if self.options.positions {
+                let anchors = lines
+                    .zip(&text)
+                    .map(|(k, line)| inline_anchor_for_line(self.cur, k, line))
+                    .collect();
+                parse_inline_lines_with_anchor(&joined, self.options, anchors)
+            } else {
+                parse_inline_with_options(&joined, self.options)
+            };
+            let paragraph = BlockNode::Paragraph(Paragraph {
+                attrs: None,
+                children,
+                at_content_column: false,
+                block_image: false,
+                pos: None,
+            });
+            if let Some(comments) = crate::ast::comment_only_paragraph_blocks(&paragraph) {
+                self.items[last_item].children.extend(comments);
+            }
+            return NEXT;
+        }
         let children = item_body(self.deferred, last_item, nested, None, false, self.options);
         self.items[last_item].children.extend(children);
         NEXT
@@ -541,10 +578,20 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             }
             return Some(1);
         }
-        (!is_footnote_definition_placeholder(line)
-            && (is_line_comment_any_column(line) || is_definition_placeholder(line))
-            || (self.cur.at_document_level && detect_abbreviation_def(line).is_some()))
-        .then_some(1)
+        if (!is_footnote_definition_placeholder(line)
+            && (is_line_comment_any_column(line) || is_definition_placeholder(line)))
+            || (self.cur.at_document_level && detect_abbreviation_def(line).is_some())
+        {
+            return Some(1);
+        }
+        // A paragraph of only braced comments reads as a `%%` line (carve#4799).
+        let lines = self.cur.lines;
+        let view = |k: usize| trim_ascii_start(lines.line(k).unwrap_or(""));
+        trim_ascii_start(line)
+            .starts_with("{%")
+            .then(|| comment_only_para_end(lines.len(), at, self.cur.in_item_body, &view))
+            .flatten()
+            .map(|end| end - at)
     }
 
     fn comment_precedes_a_sibling(&mut self, line: &str) -> bool {
@@ -1162,7 +1209,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         }
         self.item_head = self.cur.pos;
         self.content_col = self.item_content_col(&marker);
-        self.item_shows = !invisible_item_lead(marker.content);
+        self.item_shows = !invisible_item_lead(marker.content)
+            && !comment_only_item_lead(self.cur.lines, self.cur.pos, marker.content);
         // A new item carries none of the previous item's fence state.
         self.item_open_fence = None;
         self.item_unopened_fence_span = false;
@@ -3076,6 +3124,20 @@ fn walk_chunk(stream: &mut MappedSource) {
     }
     stream.set_source(walked);
     stream.marker_tail = None;
+}
+
+/// Whether the item at `at` opens with a paragraph of only braced comments,
+/// which shows nothing (carve#4799).
+fn comment_only_item_lead(lines: CursorLines<'_>, at: usize, content: &str) -> bool {
+    let content = trim_ascii_start(content);
+    let view = |k: usize| {
+        if k == at {
+            content
+        } else {
+            trim_ascii_start(lines.line(k).unwrap_or(""))
+        }
+    };
+    content.starts_with("{%") && comment_only_para_end(lines.len(), at, true, &view).is_some()
 }
 
 fn invisible_item_lead(content: &str) -> bool {

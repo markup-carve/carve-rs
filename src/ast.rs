@@ -2339,3 +2339,42 @@ pub(crate) fn publishes_nothing(block: &BlockNode) -> bool {
             | BlockNode::LinkReferenceDefinition(_)
     )
 }
+
+/// A paragraph holding only braced comments renders nothing, as a `%%` line
+/// does (PART 9 §21a, carve#4799), so the parser emits its comments as block
+/// comments instead, which the writer keeps.
+#[inline(never)]
+pub(crate) fn comment_only_paragraph_blocks(block: &BlockNode) -> Option<Vec<BlockNode>> {
+    let BlockNode::Paragraph(paragraph) = block else {
+        return None;
+    };
+    comment_only_paragraph(block).then(|| {
+        paragraph
+            .children
+            .iter()
+            .filter_map(|child| match child {
+                InlineNode::Comment(comment) => Some(BlockNode::Comment(comment.clone())),
+                _ => None,
+            })
+            .collect()
+    })
+}
+
+#[inline(never)]
+pub(crate) fn comment_only_paragraph(block: &BlockNode) -> bool {
+    let BlockNode::Paragraph(paragraph) = block else {
+        return false;
+    };
+    paragraph
+        .children
+        .iter()
+        .any(|child| matches!(child, InlineNode::Comment(_)))
+        && paragraph.children.iter().all(|child| match child {
+            InlineNode::Comment(_) | InlineNode::SoftBreak(_) => true,
+            InlineNode::Text(text) => text
+                .value
+                .bytes()
+                .all(|b| matches!(b, b' ' | b'\t' | b'\n' | b'\r')),
+            _ => false,
+        })
+}

@@ -561,9 +561,10 @@ fn direct_root_list_read(
                 .find(|line| !is_blank_line(line))
                 // A comment below the content column closes the item, not the
                 // list (CARVE-P9-051), and only the tree parser reads past it.
+                // A `{%` line may be a comment-only paragraph (carve#4799).
                 .is_some_and(|line| {
                     let line = trim_ascii(line);
-                    line == "+" || line.starts_with("%%")
+                    line == "+" || line.starts_with("%%") || line.starts_with("{%")
                 })
     })
 }
@@ -576,6 +577,23 @@ fn read_local_list_like_line(
     let node = *parse_block(cur, options, &mut item_bodies)
         .expect("a list-like line is not a consumed comment");
     (node, item_bodies)
+}
+
+/// Pushes `node`, or the comments of a paragraph of only braced comments
+/// (carve#4799), and returns how many nodes it pushed.
+#[inline(never)]
+fn push_emitted(out: &mut Vec<BlockNode>, node: BlockNode) -> usize {
+    match crate::ast::comment_only_paragraph_blocks(&node) {
+        Some(comments) => {
+            let count = comments.len();
+            out.extend(comments);
+            count
+        }
+        None => {
+            out.push(node);
+            1
+        }
+    }
 }
 
 fn has_pending_leading_attrs(
@@ -715,18 +733,18 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
     let mut source_lines = Vec::new();
     macro_rules! emit {
         ($line:expr, $node:expr) => {{
-            let node = $node;
+            let count = push_emitted(&mut out, $node);
             if let Some(extents) = extents.as_deref_mut() {
-                extents.push((current_block_start.get(), cur.pos));
+                extents.extend(std::iter::repeat((current_block_start.get(), cur.pos)).take(count));
             }
             if options.positions {
-                block_start_indices.push(current_block_start.get());
+                block_start_indices
+                    .extend(std::iter::repeat(current_block_start.get()).take(count));
             }
             #[cfg(feature = "experimental-event-parser-options")]
             if options.source_lines {
-                source_lines.push($line);
+                source_lines.extend(std::iter::repeat($line).take(count));
             }
-            out.push(node);
         }};
     }
     let mut leading_attrs: Vec<(usize, Attrs, Option<Pos>)> = Vec::new();
