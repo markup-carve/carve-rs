@@ -35,7 +35,8 @@ fn first_list(html: &str) -> String {
 #[test]
 fn a_definition_attached_by_a_continuation_marker_leaves_no_line() {
     let html = carve::to_html("- a\n+\n[r]: /u\n\nsee [t][r]\n");
-    assert_eq!(first_list(&html), "<ul>\n  <li>a</li>\n</ul>");
+    // A blank after the invisible line refuses the `+`, so it stays a letter (carve#4449).
+    assert_eq!(first_list(&html), "<ul>\n  <li>a\n+</li>\n</ul>");
     // The definition is still COLLECTED - the item keeping no trace of it is
     // the other half of the same rule.
     assert!(
@@ -47,7 +48,8 @@ fn a_definition_attached_by_a_continuation_marker_leaves_no_line() {
 #[test]
 fn a_comment_attached_by_a_continuation_marker_leaves_no_line() {
     let html = carve::to_html("- a\n+\n%% c\n\nx\n");
-    assert_eq!(first_list(&html), "<ul>\n  <li>a</li>\n</ul>");
+    // A blank after the invisible line refuses the `+`, so it stays a letter (carve#4449).
+    assert_eq!(first_list(&html), "<ul>\n  <li>a\n+</li>\n</ul>");
 }
 
 #[test]

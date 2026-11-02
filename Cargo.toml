@@ -88,6 +88,10 @@ name = "a_refused_plus_is_escaped_above_an_outer_block"
 path = "tests/a_refused_plus_is_escaped_above_an_outer_block.rs"
 
 [[test]]
+name = "a_refused_plus_skips_invisible_lines"
+path = "tests/a_refused_plus_skips_invisible_lines.rs"
+
+[[test]]
 name = "a_lazy_caption_keeps_its_column"
 path = "tests/a_lazy_caption_keeps_its_column.rs"
 
