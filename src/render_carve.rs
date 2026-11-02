@@ -2130,6 +2130,7 @@ fn render_item_blocks(
     // opening below the paragraph above it. See `needs_a_blank_line_above`.
     let mut a_sub_list_already_opened = false;
     let mut moved_marker: Option<&BlockNode> = None;
+    let mut last_shown: Option<&BlockNode> = None;
     let list = blocks.as_ptr() as usize;
     let last_visible = blocks.iter().rposition(is_visible_block);
     for (index, block) in blocks.iter().enumerate() {
@@ -2147,6 +2148,15 @@ fn render_item_blocks(
         escape_window::leave(session, recorded);
         if writes_nothing(&rendered) {
             continue;
+        }
+        // An invisible line between two sub-lists does not keep them apart on
+        // re-parse (carve-rs#3774).
+        let merges_with = match prev {
+            Some(previous) if !is_visible_block(previous) => last_shown,
+            previous => previous,
+        };
+        if is_visible_block(block) {
+            last_shown = Some(block);
         }
         let follows_definition_list =
             prior_definition_list && matches!(block, BlockNode::DefinitionList(_));
@@ -2184,7 +2194,9 @@ fn render_item_blocks(
             && folds_into_an_open_paragraph(block, &rendered);
         let continues_a_run_at_the_marker_column = prev.is_some() && prev_at_marker_column;
         if matches!(block, BlockNode::List(_)) {
-            if !separated && prev.is_some_and(|previous| adjacent_blocks_merge(previous, block)) {
+            if !separated
+                && merges_with.is_some_and(|previous| adjacent_blocks_merge(previous, block))
+            {
                 out.push_str(&hard_list_boundary_in_a_tight_item(session, &rendered));
             } else if !separated
                 && needs_a_blank_line_above(prev, prev_at_marker_column, a_sub_list_already_opened)
