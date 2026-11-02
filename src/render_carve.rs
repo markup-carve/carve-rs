@@ -2053,18 +2053,14 @@ fn guard_literal_plus_after_nested_list(
     block: &BlockNode,
     rendered: &mut String,
 ) {
-    // A plus below a nested task fence is literal at one column beyond the
-    // outer item's content column. At that column the spec reader keeps the
-    // paragraph beside the task item, without adding an idle escape.
+    // A literal plus below a nested task fence is written escaped at the outer
+    // item's content column (CARVE-P11-079 (c)).
     if matches!(previous, Some(BlockNode::List(list)) if list.items.last().is_some_and(|item|
         item.checked.is_some() && matches!(item.children.last(), Some(BlockNode::CodeBlock(_)))))
         && matches!(block, BlockNode::Paragraph(_))
+        && (rendered == "+" || rendered.starts_with("+\n"))
     {
-        if rendered == "+" || rendered.starts_with("+\n") {
-            rendered.insert(0, ' ');
-        } else if rendered == "\\+" || rendered.starts_with("\\+\n") {
-            rendered.replace_range(..2, " +");
-        }
+        rendered.insert(0, '\\');
     }
 }
 
@@ -2273,6 +2269,13 @@ fn render_item_blocks(
                 }
                 prev = Some(block);
                 prev_at_marker_column = false;
+                continue;
+            }
+            // A `+` before an invisible line attaches nothing and stays literal
+            // text (carve#4449), so a comment stays at the content column and
+            // leaves the run as it found it (carve-rs#3757).
+            if matches!(block, BlockNode::Comment(comment) if !comment.delimited) {
+                out.push_str(&rendered);
                 continue;
             }
             out.push_str(&at_marker_column(session, "+"));
@@ -2886,44 +2889,22 @@ fn render_footnote_def_source(
     let prefix = format!("[^{}]: ", write_flat_bracket_run(label));
     let mut def_lines = vec![format!("{prefix}{}", lines.next().unwrap_or_default())];
     // A list opened on this definition's marker line keeps its authored
-    // marker column on following lines (CARVE-P9-083).
+    // marker column on following lines (CARVE-P9-083), and so does every block
+    // after it (CARVE-P11-079 (c)).
     let marker_column = " ".repeat(prefix.len());
-    let marker_line_list = matches!(blocks, [BlockNode::List(_)]);
-    // With later blocks only a fence opened on that line stays at it: its payload
-    // and closer read the item's content column (carve#4755).
-    let mut marker_fence = matches!(blocks, [BlockNode::List(_), ..])
-        .then(|| first_child_fence(&blocks[0]))
-        .flatten();
+    let marker_line_list = matches!(blocks, [BlockNode::List(_), ..]);
     for line in lines {
         // TWO spaces, the body's own column (PART 9 §16). A wider indent is legal
         // continuation but leaves the body's blocks at a relative column above
         // zero, and an indented block opener does not open a block - so a table
         // or a quote written at three came back as a paragraph.
-        if marker_line_list || marker_fence.is_some() {
+        if marker_line_list {
             def_lines.push(format!("{marker_column}{line}"));
         } else {
             def_lines.push(format!("  {line}"));
         }
-        if let Some((fence, len)) = marker_fence {
-            let text = line.trim_matches(' ');
-            if text.len() >= len && text.bytes().all(|b| b == fence) {
-                marker_fence = None;
-            }
-        }
     }
     def_lines.join("\n")
-}
-
-/// The fence character and length a chain of lists opens on its marker line.
-fn first_child_fence(block: &BlockNode) -> Option<(u8, usize)> {
-    match block {
-        BlockNode::List(list) => first_child_fence(list.items.first()?.children.first()?),
-        BlockNode::CodeBlock(code) => {
-            let fence = safe_fence(&code.content, 3);
-            Some((*fence.as_bytes().first()?, fence.len()))
-        }
-        _ => None,
-    }
 }
 
 /// An inline sequence with every include directive isolated into a single text
