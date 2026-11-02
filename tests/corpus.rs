@@ -1388,6 +1388,7 @@ const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 ///
 const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     // Corpus pairs the spec 5889a6fe pin moved past this engine. Each actual HTML is measured.
+    ("855-invisible-lines-after-a-plus-are-skipped-and-the-first-visible-line-decides-4", "spec pin 5889a6fe: markup-carve/carve#4862 not ported yet", "<ul>\n  <li>+</li>\n</ul>\n<p>text</p>"),
     ("154-an-over-indented-definition-attaches-an-under-indented-one-folds", "spec pin 5889a6fe: markup-carve/carve#4861 not ported yet", "<ul>\n  <li>one\n    <dl>\n      <dt>term\n:  def</dt>\n    </dl>\n  </li>\n</ul>"),
     ("156-wrapped-definition-term-continuation-below-the-content-column-strips-leading-whitespace", "spec pin 5889a6fe: markup-carve/carve#4861 not ported yet", "<ul>\n  <li>one\n    <dl>\n      <dt>term\nwrapped</dt>\n    </dl>\n  </li>\n</ul>"),
     ("156-wrapped-definition-term-continuation-below-the-content-column-strips-leading-whitespace-2", "spec pin 5889a6fe: markup-carve/carve#4861 not ported yet", "<ul>\n  <li>one\n    <dl>\n      <dt>term\nwrapped</dt>\n    </dl>\n  </li>\n</ul>"),
@@ -1492,7 +1493,6 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     ("86-list-lazy-continuation-9", "spec pin 5889a6fe: markup-carve/carve#4863 not ported yet", "<ul>\n  <li>item\n:::note\nbody\n:::\ntail</li>\n</ul>"),
     ("889-a-term-continuation-in-a-description-keeps-spaces-past-the-body-column", "spec pin 5889a6fe: markup-carve/carve#4861 not ported yet", "<dl>\n  <dt>t</dt>\n  <dd>\n    <dl>\n      <dt>t\nu</dt>\n    </dl>\n  </dd>\n</dl>"),
     ("889-a-term-continuation-in-a-description-keeps-spaces-past-the-body-column-2", "spec pin 5889a6fe: markup-carve/carve#4861 not ported yet", "<dl>\n  <dt>t</dt>\n  <dd>\n    <dl>\n      <dt>t\n  u</dt>\n    </dl>\n  </dd>\n</dl>"),
-    ("928-a-multi-line-paragraph-of-only-braced-comments-is-an-invisible-line", "spec pin 5889a6fe: markup-carve/carve#4799 not ported yet", "<ul>\n  <li></li>\n</ul>\n<section id=\"H\">\n  <h1>H</h1>\n</section>"),
     ("928-a-multi-line-paragraph-of-only-braced-comments-is-an-invisible-line-2", "spec pin 5889a6fe: markup-carve/carve#4799 not ported yet", "<ul>\n  <li><p></p>\n    <p>Body.</p>\n  </li>\n</ul>"),
     ("928-a-multi-line-paragraph-of-only-braced-comments-is-an-invisible-line-3", "spec pin 5889a6fe: markup-carve/carve#4799 not ported yet", "<ul>\n  <li>a</li>\n</ul>\n<p></p>\n<ul>\n  <li>b</li>\n</ul>"),
     ("930-a-line-that-misses-a-nested-host-ends-it-when-a-comment-closer-lies-ahead-3", "spec pin 5889a6fe: markup-carve/carve#4770 not ported yet", "<ul>\n  <li>a\n    <blockquote><p>n\nzz</p></blockquote>\n  </li>\n</ul>"),
@@ -1502,7 +1502,6 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     ("933-a-list-marker-in-an-item-ends-a-comment-only-paragraph", "spec pin 5889a6fe: markup-carve/carve#4890 not ported yet", "<ul>\n  <li><p>p</p>\n    <ul>\n      <li>a</li>\n    </ul>\n    <p></p>\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"),
     ("933-a-list-marker-in-an-item-ends-a-comment-only-paragraph-2", "spec pin 5889a6fe: markup-carve/carve#4890 not ported yet", "<ul>\n  <li><p>p</p>\n    <ul>\n      <li>a</li>\n    </ul>\n    <p></p>\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"),
     ("933-a-list-marker-in-an-item-ends-a-comment-only-paragraph-3", "spec pin 5889a6fe: markup-carve/carve#4890 not ported yet", "<ul>\n  <li><p>p</p>\n    <p></p>\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"),
-    ("933-a-list-marker-in-an-item-ends-a-comment-only-paragraph-4", "spec pin 5889a6fe: markup-carve/carve#4890 not ported yet", "<ul>\n  <li></li>\n  <li>b</li>\n</ul>"),
     // Corpus pairs the spec c3c2f80f pin moved past this engine. Each actual HTML is measured.
     ("132-thematic-break-requires-contiguous-markers", "spec pin c3c2f80f: markup-carve/carve#4814 not ported yet", "<ul>\n  <li>\n    <ul>\n      <li>*</li>\n    </ul>\n  </li>\n</ul>"),
     ("132-thematic-break-requires-contiguous-markers-5", "spec pin c3c2f80f: markup-carve/carve#4814 not ported yet", "<ul>\n  <li>\n    <ul>\n      <li>-</li>\n    </ul>\n  </li>\n</ul>"),
