@@ -849,8 +849,8 @@ thread_local! {
 /// (markup-carve/carve#1280).
 pub(crate) fn body_ends_with_open_paragraph(body: &str, options: &Options<'_>) -> bool {
     // A payload line is stanza text whatever it looks like (PART 2 `line_block`).
-    if crate::parse::definition::body_ends_in_line_block_payload(body) {
-        return true;
+    if let Some(open) = crate::parse::definition::body_ends_inside_line_block(body) {
+        return open;
     }
     if body_ends_with_an_attribute_line(body)
         || body_ends_with_wrapped_attribute(body)

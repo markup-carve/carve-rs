@@ -14,7 +14,6 @@ fn a_hosted_stanza_takes_the_lazy_line() {
         ("- x\n\n  > ::: |\n  > %% c\n  b\n", "<p><br>\nb</p>"),
         ("> - ::: |\n>   {.k}\nb\n", "<p>{.k}<br>\nb</p>"),
         ("- - > ::: |\n    > {.k}\nb\n", "<p>{.k}<br>\nb</p>"),
-        ("- > ::: |\n  > %%%\n  > c\n  > %%%\nb\n", "<p>b</p>"),
         ("> :::: note\n> ::: |\n> y\nb\n", "<p>y<br>\nb</p>"),
         ("- > :::: note\n  > ::: |\n  > y\nb\n", "<p>y<br>\nb</p>"),
     ] {
@@ -25,6 +24,15 @@ fn a_hosted_stanza_takes_the_lazy_line() {
             "{source}\n{html}"
         );
     }
+}
+
+// carve#4956 ruling: a span leaves nothing, so a block with no stanza takes no lazy line.
+#[test]
+fn a_span_only_stanza_takes_no_lazy_line() {
+    assert_eq!(
+        to_html("- > ::: |\n  > %%%\n  > c\n  > %%%\nb\n").trim_end(),
+        "<ul>\n  <li>\n    <blockquote>\n      <div class=\"line-block\">\n\n      </div>\n    </blockquote>\n  </li>\n</ul>\n<p>b</p>"
+    );
 }
 
 #[test]
