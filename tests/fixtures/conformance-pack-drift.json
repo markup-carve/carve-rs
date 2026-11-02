@@ -236,32 +236,6 @@
       ]
     },
     {
-      "ticket": "markup-carve/carve#4865",
-      "cause": "spec pin 5889a6fe: an abbreviation definition is a definition in every container, carve-rs port pending",
-      "cases": [
-        "attributes-2b77986c20cb",
-        "fences-5298a3c5198a",
-        "fences-61820d5e8b7e",
-        "fences-900fe3f717f6",
-        "fences-98cdc3a3c5c7",
-        "fences-ab67c75d44e7",
-        "fences-ad8511225b81",
-        "fences-b1ae7ea781f2",
-        "fences-e9d18724d7c8",
-        "fences-f760c17ace84",
-        "fences-f81745ba0db3",
-        "fences-fc4b51c6f69d",
-        "roundtrip-0b08e6652d63",
-        "roundtrip-19ea25c89bf1",
-        "roundtrip-541319632f96",
-        "roundtrip-6075ab465795",
-        "roundtrip-8c2b25f9c090",
-        "roundtrip-9a648d1ed12f",
-        "roundtrip-9c334d5b1459",
-        "roundtrip-e62305f7bd97"
-      ]
-    },
-    {
       "ticket": "markup-carve/carve#4860",
       "cause": "spec pin 4577df8f: a list marker opens a list in every marker body, carve-rs port pending",
       "cases": [

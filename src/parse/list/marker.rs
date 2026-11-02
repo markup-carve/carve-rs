@@ -648,7 +648,8 @@ pub(crate) fn attached_block_past_invisible(
             is_line_comment_any_column(last)
                 || (!last.starts_with([' ', '\t'])
                     && (parse_link_def_line(last).is_some()
-                        || parse_footnote_def_line(last).is_some()))
+                        || parse_footnote_def_line(last).is_some()
+                        || detect_abbreviation_def(last).is_some()))
         })
         && lines.line(end).is_some_and(|next| !is_boundary(next, end))
     {
@@ -721,7 +722,10 @@ pub(crate) fn parse_continuation_block(
     // Definitions belong to the attached block. Nested lists manage their own markers.
     let mut next_visible = cur.pos;
     while let Some(line) = cur.lines.line(next_visible) {
-        if is_document_definition_placeholder(line) || is_line_comment_any_column(line) {
+        if is_document_definition_placeholder(line)
+            || is_document_abbreviation(line)
+            || is_line_comment_any_column(line)
+        {
             next_visible += 1;
         } else if let Some(open) = detect_comment_fence_line_any_column(line) {
             // A comment span the walk skipped before the block (carve#4449).
@@ -740,6 +744,8 @@ pub(crate) fn parse_continuation_block(
         let line = cur.lines.at(cur.pos);
         if is_document_definition_placeholder(line) {
             cur.consume();
+        } else if is_document_abbreviation(line) {
+            hoist_document_abbreviation(cur, options);
         } else if !comments_precede_block {
             break;
         } else {

@@ -45,7 +45,7 @@ fn a_definition_body_that_renders_to_nothing_closes_on_its_own_line() {
 fn an_abbreviation_definition_inside_a_div() {
     assert_eq!(
         html(":::\n*[HTML]: HyperText Markup Language\n\nbody\n:::\n"),
-        "<div>\n  <p>*[HTML]: HyperText Markup Language</p>\n  <p>body</p>\n</div>"
+        "<div>\n  <p>body</p>\n</div>"
     );
 }
 

@@ -786,12 +786,16 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             }
         }
         let line = cur.peek().unwrap();
-        if ABBREVIATIONS {
+        if ABBREVIATIONS || !at_document_level {
             if let Some(mut definition) = detect_abbreviation_def(line) {
                 let at = cur.pos;
                 cur.consume();
                 definition.pos = span_of(&cur, at, cur.pos, options);
-                emit!(_block_source_line, BlockNode::AbbreviationDef(definition));
+                if at_document_level {
+                    emit!(_block_source_line, BlockNode::AbbreviationDef(definition));
+                } else {
+                    hoist_abbreviation(definition);
+                }
                 continue;
             }
         }
@@ -1066,7 +1070,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             if DEFINITIONS && is_definition_placeholder(next) {
                 break;
             }
-            if ABBREVIATIONS
+            if (ABBREVIATIONS || !at_document_level)
                 && !paragraph_lines.is_empty()
                 && detect_abbreviation_def(next).is_some()
             {
@@ -3387,6 +3391,10 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     } else {
         (String::new(), BTreeMap::new())
     };
+    // The document reader hoists container abbreviations (carve#4865).
+    if has_prepass_abbreviations() {
+        return None;
+    }
     let has_link_defs = !link_defs.is_empty();
     let body_source = if has_link_defs {
         stripped_body.as_str()
@@ -3564,6 +3572,10 @@ fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Doc
     let mut budget = probe_budget_for(mapped.source.len());
     let (body_source, mut link_defs) =
         extract_link_defs_guarded(&mapped.source, &options, &mut budget);
+    // The document reader hoists container abbreviations (carve#4865).
+    if has_prepass_abbreviations() {
+        return None;
+    }
     for def in link_defs.values_mut() {
         if let Some(line) = def.line {
             def.line = mapped
@@ -3745,6 +3757,10 @@ pub(super) fn parse_document_with_custom_options(
     } else {
         (String::new(), BTreeMap::new())
     };
+    // The document reader hoists container abbreviations (carve#4865).
+    if has_prepass_abbreviations() {
+        return None;
+    }
     let has_link_defs = !link_defs.is_empty();
     let body_source = if has_link_defs {
         stripped_body.as_str()
@@ -4047,6 +4063,10 @@ fn parse_document_with_footnotes_options(
     let mut budget = probe_budget_for(mapped.source.len());
     let (body_source, mut link_defs) =
         extract_link_defs_guarded(&mapped.source, options, &mut budget);
+    // The document reader hoists container abbreviations (carve#4865).
+    if has_prepass_abbreviations() {
+        return None;
+    }
     for def in link_defs.values_mut() {
         if let Some(line) = def.line {
             def.line = mapped

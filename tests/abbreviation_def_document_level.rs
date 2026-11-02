@@ -56,46 +56,47 @@ fn document_level_definition_expands_later_text() {
 }
 
 #[test]
-fn block_quote_definition_shape_is_paragraph_text() {
+fn block_quote_definition_defines_in_the_document() {
+    // carve#4865: a definition in every container, with document scope.
     assert_eq!(
         to_html("> *[HTML]: Hyper Text\n\nThe HTML spec.").trim(),
-        "<blockquote><p>*[HTML]: Hyper Text</p></blockquote>\n<p>The HTML spec.</p>"
+        "<blockquote>\n\n</blockquote>\n<p>The <abbr title=\"Hyper Text\">HTML</abbr> spec.</p>"
     );
 
     let doc = parse("> *[HTML]: Hyper Text\n\nThe HTML spec.");
-    assert_eq!(types(&doc.children), vec!["block_quote", "paragraph"]);
-    assert!(!has_abbreviation_def_anywhere(&doc.children));
+    assert_eq!(types(&doc.children)[0], "block_quote");
+    assert!(has_abbreviation_def_anywhere(&doc.children));
 }
 
 #[test]
-fn list_item_definition_shape_is_paragraph_text() {
+fn list_item_definition_defines_in_the_document() {
     assert_eq!(
         to_html("- *[HTML]: Hyper Text\n\nThe HTML spec.").trim(),
-        "<ul>\n  <li>*[HTML]: Hyper Text</li>\n</ul>\n<p>The HTML spec.</p>"
+        "<ul>\n  <li></li>\n</ul>\n<p>The <abbr title=\"Hyper Text\">HTML</abbr> spec.</p>"
     );
 }
 
 #[test]
-fn div_definition_shape_is_paragraph_text() {
+fn div_definition_defines_in_the_document() {
     assert_eq!(
         to_html(":::\n*[HTML]: Hyper Text\n\nbody\n:::\n\nThe HTML spec.").trim(),
-        "<div>\n  <p>*[HTML]: Hyper Text</p>\n  <p>body</p>\n</div>\n<p>The HTML spec.</p>"
+        "<div>\n  <p>body</p>\n</div>\n<p>The <abbr title=\"Hyper Text\">HTML</abbr> spec.</p>"
     );
 }
 
 #[test]
-fn container_definition_line_holds_an_open_paragraph() {
+fn container_definition_line_is_invisible() {
     assert_eq!(
         to_html("> *[A]: b\nc").trim(),
-        "<blockquote><p>*[A]: b\nc</p></blockquote>"
+        "<blockquote>\n\n</blockquote>\n<p>c</p>"
     );
 }
 
 #[test]
-fn nested_definition_line_does_not_interrupt_an_open_paragraph() {
+fn nested_definition_line_interrupts_an_open_paragraph() {
     assert_eq!(
         to_html("- x\n  *[A]: b").trim(),
-        "<ul>\n  <li>x\n*[A]: b</li>\n</ul>"
+        "<ul>\n  <li>x</li>\n</ul>"
     );
 }
 

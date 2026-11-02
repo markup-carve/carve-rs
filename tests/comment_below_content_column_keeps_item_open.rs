@@ -46,9 +46,9 @@ fn a_visible_block_in_the_same_place_still_ends_the_item() {
 }
 
 #[test]
-fn an_abbreviation_line_reaching_an_item_is_text_but_one_below_it_defines() {
-    // The second line misses the item under the later carve#4412 ruling.
-    let expected = "<ul>\n  <li>a\n*[HTML]: x\nb</li>\n</ul>";
+fn an_abbreviation_line_reaching_an_item_defines_like_one_below_it() {
+    // A definition in every container (carve#4865); `b` misses the item.
+    let expected = "<ul>\n  <li>a</li>\n</ul>\n<p>b</p>";
     assert_eq!(html("- a\n  *[HTML]: x\nb\n"), expected);
     assert_eq!(
         html("- a\n *[HTML]: x\nb\n"),

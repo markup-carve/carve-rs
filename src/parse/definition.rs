@@ -32,16 +32,38 @@ pub(in crate::parse) fn append_skipped_sibling_abbreviations(
             if defs.is_empty() {
                 return;
             }
-            doc.children
-                .extend(std::mem::take(defs).into_iter().map(|mut def| {
+            place_hoisted_abbreviations(
+                &mut doc.children,
+                std::mem::take(defs).into_iter().map(|mut def| {
                     if let (Some(pos), Some(starts)) = (&mut def.pos, line_starts) {
                         apply_offsets(pos, starts);
                     }
-                    BlockNode::AbbreviationDef(def)
-                }));
+                    def
+                }),
+            );
             order_abbreviation_blocks(&mut doc.children, source);
         }
     });
+}
+
+/// Place hoisted definitions after the top-level block they stood among, or at
+/// the end when they carry no position.
+pub(in crate::parse) fn place_hoisted_abbreviations(
+    blocks: &mut Vec<BlockNode>,
+    defs: impl IntoIterator<Item = AbbreviationDef>,
+) {
+    for def in defs {
+        let at = def.pos.as_ref().map_or(blocks.len(), |pos| {
+            blocks
+                .iter()
+                .position(|block| {
+                    crate::ast_json::block_pos(block)
+                        .is_some_and(|other| other.start_line > pos.start_line)
+                })
+                .unwrap_or(blocks.len())
+        });
+        blocks.insert(at, BlockNode::AbbreviationDef(def));
+    }
 }
 
 /// Put definitions back in authored order after a skipped one was appended
@@ -106,6 +128,54 @@ pub(in crate::parse) fn record_skipped_sibling_abbreviation(
         return;
     };
     def.pos = span_of(cur, cur.pos, cur.pos + 1, options);
+    SKIPPED_SIBLING_ABBREVIATIONS.with(|cell| {
+        if let Some(defs) = cell.borrow_mut().last_mut() {
+            defs.push(def);
+        }
+    });
+}
+
+thread_local! {
+    static PREPASS_ABBREVIATIONS: std::cell::RefCell<Vec<(usize, AbbreviationDef)>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// A container definition the link prepass cut out, with its body line.
+pub(in crate::parse) fn record_prepass_abbreviation(line: usize, def: AbbreviationDef) {
+    PREPASS_ABBREVIATIONS.with(|cell| cell.borrow_mut().push((line, def)));
+}
+
+pub(in crate::parse) fn clear_prepass_abbreviations() {
+    PREPASS_ABBREVIATIONS.with(|cell| cell.borrow_mut().clear());
+}
+
+pub(in crate::parse) fn has_prepass_abbreviations() -> bool {
+    PREPASS_ABBREVIATIONS.with(|cell| !cell.borrow().is_empty())
+}
+
+pub(in crate::parse) fn take_prepass_abbreviations() -> Vec<(usize, AbbreviationDef)> {
+    PREPASS_ABBREVIATIONS.with(|cell| std::mem::take(&mut *cell.borrow_mut()))
+}
+
+/// A column-0 definition a `+` skips: it defines in the document (carve#4449).
+pub(in crate::parse) fn is_document_abbreviation(line: &str) -> bool {
+    detect_abbreviation_def(line).is_some()
+}
+
+/// Consume the definition at the cursor and hoist it to the document.
+pub(in crate::parse) fn hoist_document_abbreviation(
+    cur: &mut LineCursor<'_>,
+    options: &Options<'_>,
+) {
+    let at = cur.pos;
+    if let Some(mut def) = cur.peek().and_then(detect_abbreviation_def) {
+        cur.consume();
+        def.pos = span_of(cur, at, at + 1, options);
+        hoist_abbreviation(def);
+    }
+}
+
+/// Hoist a definition read inside a container to the document (carve#4865).
+pub(in crate::parse) fn hoist_abbreviation(def: AbbreviationDef) {
     SKIPPED_SIBLING_ABBREVIATIONS.with(|cell| {
         if let Some(defs) = cell.borrow_mut().last_mut() {
             defs.push(def);
@@ -624,8 +694,17 @@ pub(in crate::parse) fn parse_definition_list(
                 while cur.peek().is_some_and(is_blank_line) {
                     cur.consume();
                 }
+                // The `+` attaches past invisible lines (carve#4449).
+                let mut first_visible = cur.pos;
+                while cur.lines.line(first_visible).is_some_and(|line| {
+                    is_document_definition_placeholder(line)
+                        || is_document_abbreviation(line)
+                        || is_line_comment_any_column(line)
+                }) {
+                    first_visible += 1;
+                }
                 // A list marker inside an attached colon block is its content.
-                let attached_list = cur.peek().is_some_and(|line| {
+                let attached_list = cur.lines.line(first_visible).is_some_and(|line| {
                     is_list_marker(line)
                         || detect_container_open(line).is_some()
                         || detect_line_block_open(line).is_some()
@@ -644,14 +723,19 @@ pub(in crate::parse) fn parse_definition_list(
                     Some(decision)
                         if decision.owner == Some(continuation_marker::Kind::Description) =>
                     {
-                        attached_block_past_invisible(
+                        let end = attached_block_past_invisible(
                             lines,
-                            cur.pos,
+                            first_visible,
                             &mut cur.comment_closer_last_index,
                             &mut cur.code_closer_last_index,
                             options,
                             &mut boundary,
-                        )
+                        );
+                        if end > first_visible {
+                            end
+                        } else {
+                            cur.pos
+                        }
                     }
                     _ => cur.pos,
                 };

@@ -634,17 +634,20 @@ pub(in crate::parse) fn parse_block(
     if !line.starts_with([' ', '\t']) && detect_container_open(line).is_some() {
         return Some(parse_container(cur, options));
     }
-    if cur.at_document_level {
-        if let Some(mut abbr) = detect_abbreviation_def(line) {
-            let abbr_at = cur.pos;
-            cur.consume();
-            // Its own line, the same way the block image below takes one. #517
-            // started publishing this node and it went out with no span at all,
-            // which PART 12 §4 allows only for a node that was reassembled and has
-            // no honest one - a definition the author wrote on line 1 has one.
-            abbr.pos = span_of(cur, abbr_at, abbr_at + 1, options);
+    if let Some(mut abbr) = detect_abbreviation_def(line) {
+        let abbr_at = cur.pos;
+        cur.consume();
+        // Its own line, the same way the block image below takes one. #517
+        // started publishing this node and it went out with no span at all,
+        // which PART 12 §4 allows only for a node that was reassembled and has
+        // no honest one - a definition the author wrote on line 1 has one.
+        abbr.pos = span_of(cur, abbr_at, abbr_at + 1, options);
+        if cur.at_document_level {
             return Some(Box::new(BlockNode::AbbreviationDef(abbr)));
         }
+        // A definition in every container, with document scope (carve#4865).
+        hoist_abbreviation(abbr);
+        return None;
     }
     if let Some(mut img) = detect_block_image(line) {
         if image_is_block(cur) {

@@ -1425,7 +1425,10 @@ fn strip_all_quotes(text: &str) -> (&str, usize) {
 fn first_visible_after_invisible(cur: &LineCursor<'_>, from: usize) -> usize {
     let mut at = from;
     while let Some(line) = cur.lines.line(at) {
-        if is_document_definition_placeholder(line) || is_line_comment_any_column(line) {
+        if is_document_definition_placeholder(line)
+            || is_document_abbreviation(line)
+            || is_line_comment_any_column(line)
+        {
             at += 1;
         } else if let Some(open) = detect_comment_fence_line_any_column(line) {
             match (at + 1..cur.lines.len()).find(|&k| {
@@ -2388,6 +2391,7 @@ impl<'a> QuoteBody<'a> {
             && cursor_lines.line(attach_end - 1).is_some_and(|last| {
                 is_definition_placeholder(without_blockquote_prefixes(trim_ascii_start(last)))
                     || is_line_comment_any_column(last)
+                    || is_document_abbreviation(last)
                     || (!last.starts_with([' ', '\t'])
                         && (parse_link_def_line(last).is_some()
                             || parse_footnote_def_line(last).is_some()))

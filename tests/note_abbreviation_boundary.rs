@@ -8,12 +8,12 @@ fn document_abbreviation_after_a_description_hosted_note_is_registered() {
 }
 
 #[test]
-fn abbreviation_spelling_inside_a_note_body_remains_text() {
+fn abbreviation_inside_a_note_body_defines_in_the_document() {
+    // carve#4865: a definition in every container, with document scope.
     let source = "[^n]: note text\n  *[A]: b\n\nSee [^n] A.\n";
     let html = carve::to_html(source);
-    assert!(html.contains("<p>note text\n*[A]: b"), "{html}");
-    assert!(html.contains(" A.</p>"), "{html}");
-    assert!(!html.contains("<abbr"), "{html}");
+    assert!(html.contains("<p>note text<a"), "{html}");
+    assert!(html.contains("<abbr title=\"b\">A</abbr>.</p>"), "{html}");
 }
 
 #[test]

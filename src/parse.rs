@@ -859,6 +859,23 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
     parse_with_options_mode_and_index(source, options, mode).0
 }
 
+/// The authored span of a container definition on 1-based `line`, from its `*`.
+fn container_abbreviation_pos(source: &str, line: usize, abbr: &str) -> Pos {
+    let text = source.lines().nth(line - 1).unwrap_or("");
+    let lead = text
+        .find(&format!("*[{abbr}]:"))
+        .map_or(0, |at| text[..at].chars().count());
+    Pos {
+        start_line: line,
+        end_line: line,
+        start_column: lead + 1,
+        end_column: text.chars().count() + 1,
+        start_offset: 0,
+        end_offset: 0,
+        file: None,
+    }
+}
+
 fn parse_with_options_mode_and_index(
     source: &str,
     options: &Options<'_>,
@@ -971,6 +988,17 @@ fn parse_with_options_mode_and_index(
                 .or(def.line);
         }
     }
+    let prepass_abbreviations: Vec<AbbreviationDef> = take_prepass_abbreviations()
+        .into_iter()
+        .map(|(line, mut def)| {
+            let authored = body.line_map.get(line).and_then(|mapped| *mapped);
+            def.pos = options
+                .positions
+                .then(|| authored.map(|line| container_abbreviation_pos(original, line, &def.abbr)))
+                .flatten();
+            def
+        })
+        .collect();
     // A definition written inside a footnote body is document-level metadata,
     // and a definition at the top level WINS over one of the same label there -
     // measured on carve-js and carve-php, which both resolve `[t][r]` to the
@@ -984,26 +1012,34 @@ fn parse_with_options_mode_and_index(
     }
     let ((mut footnote_defs, mut children), link_defs, needs_late_link_resolution) =
         with_active_link_defs(link_defs, || {
-            let footnote_defs: BTreeMap<String, Vec<BlockNode>> = footnote_defs_src
-                .into_iter()
-                .map(|(label, source)| {
-                    let children = if source.source.trim_end_matches([' ', '\t', '\n']) == "{empty}"
-                    {
-                        Vec::new()
-                    } else {
-                        parse_mapped_source(&source, options)
-                    };
-                    (label, children)
-                })
-                .collect();
+            let (footnote_defs, note_abbreviations) = with_skipped_sibling_abbreviations(|| {
+                footnote_defs_src
+                    .into_iter()
+                    .map(|(label, source)| {
+                        let children =
+                            if source.source.trim_end_matches([' ', '\t', '\n']) == "{empty}" {
+                                Vec::new()
+                            } else {
+                                parse_mapped_source(&source, options)
+                            };
+                        (label, children)
+                    })
+                    .collect::<BTreeMap<String, Vec<BlockNode>>>()
+            });
             let (mut children, skipped_abbreviations) = with_skipped_sibling_abbreviations(|| {
                 parse_mapped_source_at_document_level(&body, options)
             });
-            let had_skipped_abbreviations = !skipped_abbreviations.is_empty();
-            children.extend(
+            let skipped_abbreviations: Vec<_> = note_abbreviations
+                .into_iter()
+                .chain(skipped_abbreviations)
+                .collect();
+            let had_skipped_abbreviations =
+                !skipped_abbreviations.is_empty() || !prepass_abbreviations.is_empty();
+            place_hoisted_abbreviations(
+                &mut children,
                 skipped_abbreviations
                     .into_iter()
-                    .map(BlockNode::AbbreviationDef),
+                    .chain(prepass_abbreviations),
             );
             if had_skipped_abbreviations {
                 order_abbreviation_blocks(&mut children, original);
