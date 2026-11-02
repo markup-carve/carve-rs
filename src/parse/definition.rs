@@ -955,13 +955,16 @@ pub(crate) struct LineBlockTail {
     host_col: usize,
     last_is_payload: bool,
     span: Option<usize>,
+    base: usize,
 }
 
 impl LineBlockTail {
     pub(crate) fn step(&mut self, line: &str) {
         let mut local = trim_ascii_start(line);
         let line_quoted = local.starts_with('>');
+        let mut lead = indent_columns(line);
         while let Some(rest) = strip_blockquote_prefix(local) {
+            lead = indent_columns(rest);
             local = trim_ascii_start(rest);
         }
         let stanza_open = self.last_is_payload;
@@ -992,7 +995,9 @@ impl LineBlockTail {
                     self.last_is_payload = stanza_open;
                     return;
                 }
-            } else if let Some(run) = crate::parse::verse::verse_comment_run(local) {
+            } else if let Some(run) =
+                crate::parse::verse::verse_comment_run(local).filter(|_| lead == self.base)
+            {
                 self.span = Some(run);
                 self.last_is_payload = stanza_open;
                 return;
@@ -1014,6 +1019,13 @@ impl LineBlockTail {
                     line.len() - tail.len()
                 } else {
                     0
+                };
+                // Verse indentation is relative to the opener, so only a `%`
+                // at its column opens a span (`parse_line_block`).
+                self.base = if self.host_col > 0 {
+                    self.host_col
+                } else {
+                    lead
                 };
             }
         }

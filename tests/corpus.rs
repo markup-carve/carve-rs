@@ -1398,7 +1398,6 @@ const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     // Corpus pairs the spec 04ab7a96 pin moved past this engine. Each actual HTML is measured.
     ("867-an-indented-comment-block-in-a-line-block-leaves-nothing-4", "ruling at the 5643d59c pin not ported yet", "<div class=\"line-block\">\n  <p>&nbsp;&nbsp;%%%<br>\nx</p>\n</div>"),
-    ("939-a-line-after-a-comment-block-in-a-line-block-reads-the-stanza-without-it-3", "spec pin 04ab7a96: markup-carve/carve#4956 not ported yet", "<ul>\n  <li>\n    <div class=\"line-block\">\n      <p>x</p>\n    </div>\n  </li>\n</ul>"),
     ("939-a-line-after-a-comment-block-in-a-line-block-reads-the-stanza-without-it-4", "spec pin 04ab7a96: markup-carve/carve#4956 not ported yet", "<blockquote>\n  <div class=\"line-block\">\n    <p>x</p>\n  </div>\n</blockquote>\n<p>b</p>"),
     ("939-a-line-after-a-comment-block-in-a-line-block-reads-the-stanza-without-it-6", "spec pin 04ab7a96: markup-carve/carve#4956 not ported yet", "<dl>\n  <dt>t</dt>\n  <dd>\n    <div class=\"line-block\">\n      <p>x</p>\n    </div>\n  </dd>\n</dl>"),
     // Corpus pairs the spec 4577df8f pin moved past this engine. Each actual HTML is measured.
