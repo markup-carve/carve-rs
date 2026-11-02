@@ -300,7 +300,6 @@ fn is_footnote_definition_placeholder(line: &str) -> bool {
         && untagged_placeholder_suffix(line).is_some_and(|(_, footnote)| footnote)
 }
 
-
 /// Only the marker a definition left at its container's column - NOT the one a
 /// document-column definition left, which is an I5 interrupter instead.
 fn is_collected_definition_placeholder(line: &str) -> bool {
