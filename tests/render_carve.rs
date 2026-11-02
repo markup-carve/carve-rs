@@ -277,6 +277,10 @@ fn corpus_formatter_semantic_idempotent_and_reparseable_inner() {
     // fixed row runs the whole sweep.
     const NOT_PORTED_AT_PIN: &[(&str, &str)] = &[
         (
+            "911-a-fence-on-a-note-s-marker-line-item-reads-its-payload-at-the-item-s-content-column-4",
+            "markup-carve/carve-rs#3534",
+        ),
+        (
             "743-a-later-term-after-a-shifted-separator-opens-in-the-outer-item",
             "markup-carve/carve-rs#3535",
         ),

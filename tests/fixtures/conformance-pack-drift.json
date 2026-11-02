@@ -6,7 +6,6 @@
       "cause": "untriaged day-one drift in the fences family",
       "cases": [
         "fences-1d7384b2e284",
-        "fences-350b56897079",
         "fences-5e87d36367a5",
         "fences-97b499ad9a5e",
         "fences-f413c9695b09"
@@ -63,6 +62,54 @@
       "cause": "pin move to carve 5643d59c: rulings on first-block plus and note shapes this engine has not reached",
       "cases": [
         "notes-e344b261ace5"
+      ]
+    },
+    {
+      "ticket": "markup-carve/carve-rs#3534",
+      "cause": "untriaged drift exposed by carve #4819 pin in the attributes family",
+      "cases": [
+        "attributes-039947672a58"
+      ]
+    },
+    {
+      "ticket": "markup-carve/carve-rs#3534",
+      "cause": "untriaged drift exposed by carve #4819 pin in the fences family",
+      "cases": [
+        "fences-12567203d079",
+        "fences-a46060654787"
+      ]
+    },
+    {
+      "ticket": "markup-carve/carve-rs#3534",
+      "cause": "untriaged drift exposed by carve #4819 pin in the lazy family",
+      "cases": [
+        "lazy-21cb87fd7067"
+      ]
+    },
+    {
+      "ticket": "markup-carve/carve-rs#3534",
+      "cause": "untriaged drift exposed by carve #4819 pin in the ownership family",
+      "cases": [
+        "ownership-31696bef6f5e",
+        "ownership-aec21029593f",
+        "ownership-fed027499f76"
+      ]
+    },
+    {
+      "ticket": "markup-carve/carve-rs#3534",
+      "cause": "untriaged drift exposed by carve #4819 pin in the plus family",
+      "cases": [
+        "plus-a0f7cf7091d8"
+      ]
+    },
+    {
+      "ticket": "markup-carve/carve-rs#3534",
+      "cause": "untriaged drift exposed by carve #4819 pin in the roundtrip family",
+      "cases": [
+        "roundtrip-2ca215ed4cc3",
+        "roundtrip-600b6e265ced",
+        "roundtrip-95c287319027",
+        "roundtrip-ef2690538ca4"
       ]
     }
   ]
