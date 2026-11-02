@@ -1536,7 +1536,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         if below_comment
             && state.below_comment_span.is_none()
             && state.note_fence.is_none()
-            && detect_comment_fence_line_any_column(line).is_none()
+            // §28: an opener with no closer ahead is a `%%` line for this question too.
+            && detect_comment_fence_line_any_column(line).map_or(true, |open| {
+                !closes_a_held_comment_span(&note.lines, line)
+                    && !self
+                        .comment_fence_closers
+                        .get(&open.fence_len)
+                        .is_some_and(|&last| last > *i)
+            })
         {
             return Some(Flow::Stop);
         }

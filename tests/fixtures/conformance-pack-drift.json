@@ -33,13 +33,6 @@
       ]
     },
     {
-      "ticket": "markup-carve/carve-rs#3534",
-      "cause": "untriaged day-one drift in the roundtrip family",
-      "cases": [
-        "roundtrip-50e7fa11ce58"
-      ]
-    },
-    {
       "ticket": "markup-carve/carve#4033",
       "cause": "an unclosed fence's trailing blank run in a description body: the pin's model predates carve main, and the model reads a reopened item fence differently",
       "cases": [
