@@ -596,7 +596,9 @@ pub(crate) fn attached_block_end(
                     literal,
                     closer_index,
                     comment_closers,
-                    is_boundary,
+                    &mut |line, at| {
+                        detect_list_marker_full(line).is_some() && is_boundary(line, at)
+                    },
                 );
                 continue;
             }
