@@ -103,7 +103,7 @@ fn a_matched_fence_after_a_footnote_comment_keeps_its_payload_outside_the_note()
 fn an_indented_retained_footnote_fence_uses_its_authored_column() {
     let rendered = carve::to_html("[^c]: para\n%% c\n  ```\n  x\n  ```\nsee [^c]\n");
     assert!(rendered.contains("<pre><code>x\n</code></pre>"));
-    assert!(rendered.starts_with("<pre><code>x\n</code></pre>\n<p>see <a "));
+    assert!(rendered.contains("<p>para</p>\n      <pre><code>x\n</code></pre>"));
 }
 
 #[test]

@@ -5,11 +5,11 @@ fn a_matched_comment_below_the_child_column_keeps_the_list_item() {
     for (source, expected) in [
         (
             ":: t\n: - para\n %%%\n c\n %%%\n    tail\n",
-            "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>para</li>\n    </ul>\n  </dd>\n</dl>\n<p>tail</p>",
+            "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>para\n        tail\n      </li>\n    </ul>\n  </dd>\n</dl>",
         ),
         (
             ":: t\n: - para\n   %%%\n   c\n   %%%\n    tail\n",
-            "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>para</li>\n    </ul>\n    <p>tail</p>\n  </dd>\n</dl>",
+            "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>para\n        tail\n      </li>\n    </ul>\n  </dd>\n</dl>",
         ),
         (
             "[^c]: 1. para\n   %%%\n   c\n   %%%\n         tail\nsee [^c]\n",
@@ -28,7 +28,7 @@ fn a_matched_comment_below_the_child_column_keeps_the_list_item() {
 #[test]
 fn a_matched_fence_between_item_columns_ends_the_inner_item() {
     let source = "- 1. para\n    %%%\n    c\n    %%%\n     tail\n";
-    let expected = "<ol>\n      <li>para</li>\n    </ol>\n    tail";
+    let expected = "<ol>\n      <li>para\n        tail\n      </li>\n    </ol>";
     for html in [
         to_html(source),
         to_html_with_options(source, &Options::default().with_positions(true)),

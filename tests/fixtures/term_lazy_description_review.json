@@ -497,32 +497,32 @@
   {
     "id": "review-99",
     "source": "- :: t\n  : d\n  %%%\n  hidden\n  %%%\n    ```\n    code\n    ```\n- tail\n",
-    "html": "<ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li><li>tail</li></ul>"
+    "html": "<ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li><li>tail</li></ul>"
   },
   {
     "id": "review-100",
     "source": "- :: t\n  : d\n  %%%\n  hidden\n  %%%\n    ```\n    code\n    ```\ntail\n",
-    "html": "<ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li></ul><p>tail</p>"
+    "html": "<ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li></ul><p>tail</p>"
   },
   {
     "id": "review-101",
     "source": "- :: t\n  : d\n  %%%\n  hidden\n  %%%\n    ```\n    code\n    ```\n",
-    "html": "<ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li></ul>"
+    "html": "<ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li></ul>"
   },
   {
     "id": "review-102",
     "source": "- :: t\n  : d\n  %%%\n  hidden\n  %%%\n     ```\n     code\n     ```\n- tail\n",
-    "html": "<ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li><li>tail</li></ul>"
+    "html": "<ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li><li>tail</li></ul>"
   },
   {
     "id": "review-103",
     "source": "- :: t\n  : d\n  %%%\n  hidden\n  %%%\n     ```\n     code\n     ```\ntail\n",
-    "html": "<ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li></ul><p>tail</p>"
+    "html": "<ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li></ul><p>tail</p>"
   },
   {
     "id": "review-104",
     "source": "- :: t\n  : d\n  %%%\n  hidden\n  %%%\n     ```\n     code\n     ```\n",
-    "html": "<ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li></ul>"
+    "html": "<ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li></ul>"
   },
   {
     "id": "review-105",
@@ -542,77 +542,77 @@
   {
     "id": "review-108",
     "source": "- :: t\n  : d\n  %%%\n  %%%\n    ```\n    code\n    ```\n- tail\n",
-    "html": "<ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li><li>tail</li></ul>"
+    "html": "<ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li><li>tail</li></ul>"
   },
   {
     "id": "review-109",
     "source": "- :: t\n  : d\n  %%%\n  %%%\n    ```\n    code\n    ```\ntail\n",
-    "html": "<ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li></ul><p>tail</p>"
+    "html": "<ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li></ul><p>tail</p>"
   },
   {
     "id": "review-110",
     "source": "- :: t\n  : d\n  %%%\n  %%%\n    ```\n    code\n    ```\n",
-    "html": "<ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li></ul>"
+    "html": "<ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li></ul>"
   },
   {
     "id": "review-111",
     "source": "- :: t\n  : d\n  %%%\n  %%%\n     ```\n     code\n     ```\n- tail\n",
-    "html": "<ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li><li>tail</li></ul>"
+    "html": "<ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li><li>tail</li></ul>"
   },
   {
     "id": "review-112",
     "source": "- :: t\n  : d\n  %%%\n  %%%\n     ```\n     code\n     ```\ntail\n",
-    "html": "<ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li></ul><p>tail</p>"
+    "html": "<ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li></ul><p>tail</p>"
   },
   {
     "id": "review-113",
     "source": "- :: t\n  : d\n  %%%\n  %%%\n     ```\n     code\n     ```\n",
-    "html": "<ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li></ul>"
+    "html": "<ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li></ul>"
   },
   {
     "id": "review-114",
     "source": "- :: t\n  : d\n %%%\n hidden\n %%%\n   ```\n   code\n   ```\n- tail\n",
-    "html": "<ul><li><dl><dt>t</dt><dd>d</dd></dl></li></ul><pre><code>code\n</code></pre><ul><li>tail</li></ul>"
+    "html": "<ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li><li>tail</li></ul>"
   },
   {
     "id": "review-115",
     "source": "- :: t\n  : d\n %%%\n hidden\n %%%\n   ```\n   code\n   ```\ntail\n",
-    "html": "<ul><li><dl><dt>t</dt><dd>d</dd></dl></li></ul><pre><code>code\n</code></pre><p>tail</p>"
+    "html": "<ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li></ul><p>tail</p>"
   },
   {
     "id": "review-116",
     "source": "- :: t\n  : d\n %%%\n hidden\n %%%\n   ```\n   code\n   ```\n",
-    "html": "<ul><li><dl><dt>t</dt><dd>d</dd></dl></li></ul><pre><code>code\n</code></pre>"
+    "html": "<ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li></ul>"
   },
   {
     "id": "review-117",
     "source": "- :: t\n  : d\n %%%\n hidden\n %%%\n    ```\n    code\n    ```\n- tail\n",
-    "html": "<ul><li><dl><dt>t</dt><dd>d</dd></dl></li></ul><pre><code>code\n</code></pre><ul><li>tail</li></ul>"
+    "html": "<ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li><li>tail</li></ul>"
   },
   {
     "id": "review-118",
     "source": "- :: t\n  : d\n %%%\n hidden\n %%%\n    ```\n    code\n    ```\ntail\n",
-    "html": "<ul><li><dl><dt>t</dt><dd>d</dd></dl></li></ul><pre><code>code\n</code></pre><p>tail</p>"
+    "html": "<ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li></ul><p>tail</p>"
   },
   {
     "id": "review-119",
     "source": "- :: t\n  : d\n %%%\n hidden\n %%%\n    ```\n    code\n    ```\n",
-    "html": "<ul><li><dl><dt>t</dt><dd>d</dd></dl></li></ul><pre><code>code\n</code></pre>"
+    "html": "<ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li></ul>"
   },
   {
     "id": "review-120",
     "source": "- :: t\n  : d\n %%%\n hidden\n %%%\n     ```\n     code\n     ```\n- tail\n",
-    "html": "<ul><li><dl><dt>t</dt><dd>d</dd></dl></li></ul><pre><code>code\n</code></pre><ul><li>tail</li></ul>"
+    "html": "<ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li><li>tail</li></ul>"
   },
   {
     "id": "review-121",
     "source": "- :: t\n  : d\n %%%\n hidden\n %%%\n     ```\n     code\n     ```\ntail\n",
-    "html": "<ul><li><dl><dt>t</dt><dd>d</dd></dl></li></ul><pre><code>code\n</code></pre><p>tail</p>"
+    "html": "<ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li></ul><p>tail</p>"
   },
   {
     "id": "review-122",
     "source": "- :: t\n  : d\n %%%\n hidden\n %%%\n     ```\n     code\n     ```\n",
-    "html": "<ul><li><dl><dt>t</dt><dd>d</dd></dl></li></ul><pre><code>code\n</code></pre>"
+    "html": "<ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li></ul>"
   },
   {
     "id": "review-123",
@@ -632,32 +632,32 @@
   {
     "id": "review-126",
     "source": "> - :: t\n>   : d\n>   %%%\n>   hidden\n>   %%%\n>     ```\n>     code\n>     ```\n> - tail\n",
-    "html": "<blockquote><ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li><li>tail</li></ul></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li><li>tail</li></ul></blockquote>"
   },
   {
     "id": "review-127",
     "source": "> - :: t\n>   : d\n>   %%%\n>   hidden\n>   %%%\n>     ```\n>     code\n>     ```\n> tail\n",
-    "html": "<blockquote><ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li></ul><p>tail</p></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li></ul><p>tail</p></blockquote>"
   },
   {
     "id": "review-128",
     "source": "> - :: t\n>   : d\n>   %%%\n>   hidden\n>   %%%\n>     ```\n>     code\n>     ```\n",
-    "html": "<blockquote><ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li></ul></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li></ul></blockquote>"
   },
   {
     "id": "review-129",
     "source": "> - :: t\n>   : d\n>   %%%\n>   hidden\n>   %%%\n>      ```\n>      code\n>      ```\n> - tail\n",
-    "html": "<blockquote><ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li><li>tail</li></ul></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li><li>tail</li></ul></blockquote>"
   },
   {
     "id": "review-130",
     "source": "> - :: t\n>   : d\n>   %%%\n>   hidden\n>   %%%\n>      ```\n>      code\n>      ```\n> tail\n",
-    "html": "<blockquote><ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li></ul><p>tail</p></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li></ul><p>tail</p></blockquote>"
   },
   {
     "id": "review-131",
     "source": "> - :: t\n>   : d\n>   %%%\n>   hidden\n>   %%%\n>      ```\n>      code\n>      ```\n",
-    "html": "<blockquote><ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li></ul></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li></ul></blockquote>"
   },
   {
     "id": "review-132",
@@ -677,77 +677,77 @@
   {
     "id": "review-135",
     "source": "> - :: t\n>   : d\n>   %%%\n>   %%%\n>     ```\n>     code\n>     ```\n> - tail\n",
-    "html": "<blockquote><ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li><li>tail</li></ul></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li><li>tail</li></ul></blockquote>"
   },
   {
     "id": "review-136",
     "source": "> - :: t\n>   : d\n>   %%%\n>   %%%\n>     ```\n>     code\n>     ```\n> tail\n",
-    "html": "<blockquote><ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li></ul><p>tail</p></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li></ul><p>tail</p></blockquote>"
   },
   {
     "id": "review-137",
     "source": "> - :: t\n>   : d\n>   %%%\n>   %%%\n>     ```\n>     code\n>     ```\n",
-    "html": "<blockquote><ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li></ul></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li></ul></blockquote>"
   },
   {
     "id": "review-138",
     "source": "> - :: t\n>   : d\n>   %%%\n>   %%%\n>      ```\n>      code\n>      ```\n> - tail\n",
-    "html": "<blockquote><ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li><li>tail</li></ul></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li><li>tail</li></ul></blockquote>"
   },
   {
     "id": "review-139",
     "source": "> - :: t\n>   : d\n>   %%%\n>   %%%\n>      ```\n>      code\n>      ```\n> tail\n",
-    "html": "<blockquote><ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li></ul><p>tail</p></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li></ul><p>tail</p></blockquote>"
   },
   {
     "id": "review-140",
     "source": "> - :: t\n>   : d\n>   %%%\n>   %%%\n>      ```\n>      code\n>      ```\n",
-    "html": "<blockquote><ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li></ul></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li></ul></blockquote>"
   },
   {
     "id": "review-141",
     "source": "> - :: t\n>   : d\n>  %%%\n>  hidden\n>  %%%\n>    ```\n>    code\n>    ```\n> - tail\n",
-    "html": "<blockquote><ul><li><dl><dt>t</dt><dd>d</dd></dl></li></ul><pre><code>code\n</code></pre><ul><li>tail</li></ul></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li><li>tail</li></ul></blockquote>"
   },
   {
     "id": "review-142",
     "source": "> - :: t\n>   : d\n>  %%%\n>  hidden\n>  %%%\n>    ```\n>    code\n>    ```\n> tail\n",
-    "html": "<blockquote><ul><li><dl><dt>t</dt><dd>d</dd></dl></li></ul><pre><code>code\n</code></pre><p>tail</p></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li></ul><p>tail</p></blockquote>"
   },
   {
     "id": "review-143",
     "source": "> - :: t\n>   : d\n>  %%%\n>  hidden\n>  %%%\n>    ```\n>    code\n>    ```\n",
-    "html": "<blockquote><ul><li><dl><dt>t</dt><dd>d</dd></dl></li></ul><pre><code>code\n</code></pre></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>t</dt><dd>d</dd></dl><pre><code>code\n</code></pre></li></ul></blockquote>"
   },
   {
     "id": "review-144",
     "source": "> - :: t\n>   : d\n>  %%%\n>  hidden\n>  %%%\n>     ```\n>     code\n>     ```\n> - tail\n",
-    "html": "<blockquote><ul><li><dl><dt>t</dt><dd>d</dd></dl></li></ul><pre><code>code\n</code></pre><ul><li>tail</li></ul></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li><li>tail</li></ul></blockquote>"
   },
   {
     "id": "review-145",
     "source": "> - :: t\n>   : d\n>  %%%\n>  hidden\n>  %%%\n>     ```\n>     code\n>     ```\n> tail\n",
-    "html": "<blockquote><ul><li><dl><dt>t</dt><dd>d</dd></dl></li></ul><pre><code>code\n</code></pre><p>tail</p></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li></ul><p>tail</p></blockquote>"
   },
   {
     "id": "review-146",
     "source": "> - :: t\n>   : d\n>  %%%\n>  hidden\n>  %%%\n>     ```\n>     code\n>     ```\n",
-    "html": "<blockquote><ul><li><dl><dt>t</dt><dd>d</dd></dl></li></ul><pre><code>code\n</code></pre></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li></ul></blockquote>"
   },
   {
     "id": "review-147",
     "source": "> - :: t\n>   : d\n>  %%%\n>  hidden\n>  %%%\n>      ```\n>      code\n>      ```\n> - tail\n",
-    "html": "<blockquote><ul><li><dl><dt>t</dt><dd>d</dd></dl></li></ul><pre><code>code\n</code></pre><ul><li>tail</li></ul></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li><li>tail</li></ul></blockquote>"
   },
   {
     "id": "review-148",
     "source": "> - :: t\n>   : d\n>  %%%\n>  hidden\n>  %%%\n>      ```\n>      code\n>      ```\n> tail\n",
-    "html": "<blockquote><ul><li><dl><dt>t</dt><dd>d</dd></dl></li></ul><pre><code>code\n</code></pre><p>tail</p></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li></ul><p>tail</p></blockquote>"
   },
   {
     "id": "review-149",
     "source": "> - :: t\n>   : d\n>  %%%\n>  hidden\n>  %%%\n>      ```\n>      code\n>      ```\n",
-    "html": "<blockquote><ul><li><dl><dt>t</dt><dd>d</dd></dl></li></ul><pre><code>code\n</code></pre></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>t</dt><dd><p>d</p><pre><code>code\n</code></pre></dd></dl></li></ul></blockquote>"
   },
   {
     "id": "review-150",

@@ -236,32 +236,10 @@
       ]
     },
     {
-      "ticket": "markup-carve/carve#4862",
-      "cause": "spec pin 5889a6fe: comments and one-line definitions close no indentation container, carve-rs port pending",
-      "cases": [
-        "attributes-2b77986c20cb",
-        "fences-0f3cd4f4afa1",
-        "fences-0f97ddc61064",
-        "fences-12567203d079",
-        "fences-6bc0ef499ad3",
-        "fences-ff7cb8098738",
-        "notes-141a19fe4d26",
-        "notes-2e4eb2b5337e",
-        "notes-ad837470e80a",
-        "notes-c4395f59a509",
-        "notes-cbc6b5f84405",
-        "notes-deb41a7e6a8b",
-        "ownership-0b450abbd040",
-        "ownership-fed027499f76",
-        "roundtrip-06b8bec64416",
-        "roundtrip-6195169377bd",
-        "roundtrip-6c679719a4ee"
-      ]
-    },
-    {
       "ticket": "markup-carve/carve#4865",
       "cause": "spec pin 5889a6fe: an abbreviation definition is a definition in every container, carve-rs port pending",
       "cases": [
+        "attributes-2b77986c20cb",
         "fences-5298a3c5198a",
         "fences-61820d5e8b7e",
         "fences-900fe3f717f6",

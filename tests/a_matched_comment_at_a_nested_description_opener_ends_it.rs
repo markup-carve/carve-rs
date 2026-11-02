@@ -7,6 +7,9 @@ fn a_matched_comment_at_the_nested_opener_ends_the_description() {
         to_html(source),
         to_html_with_options(source, &Options::default().with_positions(true)),
     ] {
-        assert!(html.contains("</dl>\n    <p>tail</p>"), "{html}");
+        assert!(
+            html.contains("<p>para\nmore</p>\n        <p>tail</p>\n      </dd>"),
+            "{html}"
+        );
     }
 }

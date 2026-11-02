@@ -50,6 +50,6 @@ fn a_marker_line_fence_over_a_definition() {
 fn a_comment_with_no_open_fence_still_keeps_the_item() {
     assert_eq!(
         carve::to_html("- a\n%% c\n  b\n"),
-        "<ul>\n  <li>a</li>\n</ul>\n<p>b</p>"
+        "<ul>\n  <li>a\n    b\n  </li>\n</ul>"
     );
 }

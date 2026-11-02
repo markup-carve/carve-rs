@@ -21,9 +21,10 @@ fn a_definition_below_the_nested_floor_ends_the_note() {
     let fn1 = html.find("id=\"fn1\"").expect("outer note");
     let fn2 = html.find("id=\"fn2\"").expect("inner note");
     let tail = html.find("TAILWORD").expect("trailing line is published");
+    // carve#4862: the definition closes no note, so the line reaches `[^g]`.
     assert!(
-        tail > fn1 && tail < fn2,
-        "trailing line belongs to the outer note: {html}"
+        tail > fn1 && tail > fn2,
+        "trailing line belongs to the nested note: {html}"
     );
     assert!(
         html.contains("href=\"/url\""),

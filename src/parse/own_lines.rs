@@ -306,6 +306,38 @@ fn strip_quote_levels(line: &str, depth: usize) -> Option<&str> {
     Some(rest)
 }
 
+fn trim_line_end(rest: &str) -> &str {
+    rest.trim_end_matches([' ', '\t', '\r'])
+}
+
+/// `line` past its indentation and every leading quote marker.
+fn unquoted(line: &str) -> &str {
+    let lead = line.len() - line.trim_start_matches([' ', '\t', '>']).len();
+    let rest = match line[..lead].rfind('>') {
+        Some(gt) => line[gt + 1..].strip_prefix(' ').unwrap_or(&line[gt + 1..]),
+        None => line,
+    };
+    indent_rest(rest)
+}
+
+/// `%% #region` or `%% #endregion` (CARVE-P11-073).
+fn is_region_marker(text: &str) -> bool {
+    let Some(tail) = text.strip_prefix("%%") else {
+        return false;
+    };
+    let tail = tail.trim_start_matches([' ', '\t']);
+    let Some(tail) = tail
+        .strip_prefix("#region")
+        .or_else(|| tail.strip_prefix("#endregion"))
+    else {
+        return false;
+    };
+    !tail
+        .bytes()
+        .next()
+        .is_some_and(|b| b.is_ascii_alphanumeric() || b == b'_')
+}
+
 fn trim_ws_start(rest: &str) -> &str {
     rest.trim_start_matches([' ', '\t'])
 }
@@ -530,6 +562,10 @@ struct Walk<'a> {
     attr_rest: Option<(usize, usize)>,
     /// The invisible lines between an accepted `+` and its block (carve#4449).
     skipped: Option<Skipped>,
+    /// The first visible line past the current invisible run (carve#4862).
+    next_visible: usize,
+    /// The closer line of a `%%%` span whose opener the walk moved.
+    moved_span_end: Option<usize>,
 }
 
 struct Skipped {
@@ -552,6 +588,8 @@ struct Cursor<'s> {
     out: String,
     src: &'s str,
     col: usize,
+    /// The measured column; `col` differs when the walk stands a line deeper.
+    authored_col: usize,
     attachment_shift: usize,
     rest: &'s str,
     /// `(codepoint after the rewritten run, codepoints removed)` per rewrite.
@@ -562,6 +600,7 @@ impl<'s> Cursor<'s> {
     fn measure(&mut self) {
         let (col, len) = indent_cols(self.src);
         self.col = col;
+        self.authored_col = col;
         self.rest = &self.src[len..];
     }
 
@@ -584,7 +623,7 @@ impl<'s> Cursor<'s> {
 
     fn lead_at(&mut self, col: usize, spaces: bool) {
         let authored = &self.src[..self.src.len() - self.rest.len()];
-        if col == self.col && !(spaces && self.out.is_empty() && authored.contains('\t')) {
+        if col == self.authored_col && !(spaces && self.out.is_empty() && authored.contains('\t')) {
             self.out.push_str(authored);
         } else {
             self.out.extend(std::iter::repeat(' ').take(col));
@@ -765,6 +804,8 @@ fn walk_traced(
         refused: Vec::new(),
         attached: None,
         skipped: None,
+        next_visible: 0,
+        moved_span_end: None,
     };
     if let Some(trace) = walk.trace.as_mut() {
         // INPUT: frontmatter lines are read before ownership.
@@ -796,6 +837,7 @@ fn walk_traced(
             out: String::new(),
             src: line,
             col: 0,
+            authored_col: 0,
             attachment_shift: 0,
             rest: line,
             edits: Vec::new(),
@@ -1608,6 +1650,7 @@ impl<'a> Walk<'a> {
         reached = self.item_after_missed_quote_term(reached, c.col, c.rest);
         // The attachment test measured through quote prefixes. Keep that owner.
         reached = self.attached_item_after_quote(at, c, reached);
+        reached = self.stand_invisible_line(at, c, reached, plus.is_some());
         // A lone `+` nothing took is a plain letter and ends nothing (carve#4396).
         // Payload stays as written.
         if self.decide
@@ -1904,6 +1947,108 @@ impl<'a> Walk<'a> {
             }
         }
         self.emit_applied(at, record, None);
+    }
+
+    /// A comment or one-line definition closes no indentation frame: the next
+    /// visible line picks the owner (CARVE-P9-013, carve#4862).
+    fn stand_invisible_line(
+        &mut self,
+        at: usize,
+        c: &mut Cursor<'_>,
+        reached: usize,
+        plus: bool,
+    ) -> usize {
+        if self.moved_span_end.is_some_and(|end| at <= end) {
+            // The rest of a matched `%%%` span moves with its opener.
+            c.col = self.frames.last().expect("frame").col;
+            return self.frames.len() - 1;
+        }
+        if plus
+            || reached == self.frames.len() - 1
+            || self.frames.last().expect("frame").kind == Kind::Fence
+            || !self.transparent_line(c.rest, at)
+        {
+            return reached;
+        }
+        // A line that misses an open fence's owner ends that fence first (S1),
+        // so it is read where it stands.
+        let deeper = self.next_visible_reach(at, reached);
+        if deeper == reached {
+            return reached;
+        }
+        c.col = self.frames[deeper].col;
+        self.moved_span_end = self.comment_span_end(trim_line_end(c.rest), at);
+        deeper
+    }
+
+    fn transparent_line(&self, rest: &str, k: usize) -> bool {
+        let text = trim_line_end(rest);
+        if is_region_marker(text) || parse_footnote_def_line(text).is_some() {
+            return false;
+        }
+        self.comment_span_end(text, k).is_some()
+            || text.starts_with("%%")
+            || parse_link_def_line(text).is_some()
+            || detect_abbreviation_def(text).is_some()
+    }
+
+    /// The last line of the `%%%` span `text` opens on line `k`: its closer,
+    /// or the last line when none follows (F1, carve#4907).
+    fn comment_span_end(&self, text: &str, k: usize) -> Option<usize> {
+        let run = comment_run(text)?;
+        let lines = &self.lines;
+        let runs = self.runs.get_or_init(|| closer_runs(lines));
+        let last = self.lines.len() - 1;
+        if runs.last_comment.get(&run).map_or(true, |&j| j <= k) {
+            return Some(last);
+        }
+        (k + 1..self.lines.len())
+            .find(|&j| {
+                comment_run(trim_line_end(self.lines[j]).trim_start_matches([' ', '\t', '>']))
+                    == Some(run)
+            })
+            .or(Some(last))
+    }
+
+    /// How deep the next visible line reaches through the indentation frames
+    /// below `from`.
+    fn next_visible_reach(&mut self, at: usize, from: usize) -> usize {
+        if self.next_visible <= at {
+            let own = self.comment_span_end(trim_line_end(unquoted(self.lines[at])), at);
+            let mut k = own.unwrap_or(at) + 1;
+            while k < self.lines.len() {
+                let text = trim_line_end(unquoted(self.lines[k]));
+                if !text.is_empty() {
+                    if let Some(span) = self.comment_span_end(text, k) {
+                        k = span;
+                    } else if !self.transparent_line(text, k) {
+                        break;
+                    }
+                }
+                k += 1;
+            }
+            self.next_visible = k;
+        }
+        if self.next_visible >= self.lines.len() {
+            return from;
+        }
+        let depth = self.frames[1..=from]
+            .iter()
+            .filter(|f| f.kind == Kind::Quote)
+            .count();
+        let Some(stands) = strip_quote_levels(self.lines[self.next_visible], depth) else {
+            return from;
+        };
+        let (col, _) = indent_cols(stands);
+        let mut deepest = from;
+        for k in from + 1..self.frames.len() {
+            let f = &self.frames[k];
+            if !matches!(f.kind, Kind::Item | Kind::Dd | Kind::Note) || col < f.col {
+                break;
+            }
+            deepest = k;
+        }
+        deepest
     }
 
     /// The list the readers open at a folded marker is read from the body column,

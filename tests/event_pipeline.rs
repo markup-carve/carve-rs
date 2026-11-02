@@ -1141,8 +1141,10 @@ fn indented_root_text_preserves_the_full_ast() {
 #[test]
 fn nested_list_abbreviation_line_stays_in_list_item() {
     for source in [
-        "> - a\n>\n>   a\n> *[X]: y\n>\n>   more\n",
-        "::: note\n- a\n\n  a\n*[X]: y\n\n  more\n:::\n",
+        // At the item column: since carve#4862 the walk moves a column-0
+        // definition there, and the event route takes no moved line.
+        "> - a\n>\n>   a\n>   *[X]: y\n>\n>   more\n",
+        "::: note\n- a\n\n  a\n  *[X]: y\n\n  more\n:::\n",
     ] {
         let (candidate, admitted) = parse_experimental_event_blocks(source);
         assert!(admitted, "{source:?}");
