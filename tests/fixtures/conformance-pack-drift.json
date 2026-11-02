@@ -65,16 +65,8 @@
     },
     {
       "ticket": "markup-carve/carve-rs#3534",
-      "cause": "untriaged drift exposed by carve #4819 pin in the attributes family",
-      "cases": [
-        "attributes-039947672a58"
-      ]
-    },
-    {
-      "ticket": "markup-carve/carve-rs#3534",
       "cause": "untriaged drift exposed by carve #4819 pin in the fences family",
       "cases": [
-        "fences-12567203d079",
         "fences-a46060654787"
       ]
     },
@@ -89,26 +81,7 @@
       "ticket": "markup-carve/carve-rs#3534",
       "cause": "untriaged drift exposed by carve #4819 pin in the ownership family",
       "cases": [
-        "ownership-31696bef6f5e",
-        "ownership-aec21029593f",
-        "ownership-fed027499f76"
-      ]
-    },
-    {
-      "ticket": "markup-carve/carve-rs#3534",
-      "cause": "untriaged drift exposed by carve #4819 pin in the plus family",
-      "cases": [
-        "plus-a0f7cf7091d8"
-      ]
-    },
-    {
-      "ticket": "markup-carve/carve-rs#3534",
-      "cause": "untriaged drift exposed by carve #4819 pin in the roundtrip family",
-      "cases": [
-        "roundtrip-2ca215ed4cc3",
-        "roundtrip-600b6e265ced",
-        "roundtrip-95c287319027",
-        "roundtrip-ef2690538ca4"
+        "ownership-31696bef6f5e"
       ]
     }
   ]

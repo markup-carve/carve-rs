@@ -266,12 +266,11 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 self.pending_blank = false;
                 self.blank_run = 0;
             }
-            // Every nonblank line ends the preceding blank run, except a
-            // comment outside every item: PART 0 S1 erases it from layout
-            // (CARVE-P9-014). One inside an item is that item's content.
-            let blank_run_before = if trim_ascii_start(line).starts_with("%%")
+            // Invisible lines outside an item do not interrupt a blank run.
+            // A three-blank boundary is still hard when a definition or
+            // comment appears between the blanks (PART 0 S1, carve#4716).
+            let blank_run_before = if self.invisible_extent(self.cur.pos, line).is_some()
                 && indent_columns(line) < self.content_col
-                && !self.cur.in_item_body
             {
                 self.blank_run
             } else {
@@ -454,34 +453,45 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             return END;
         }
         let last_item = self.items.len() - 1;
+        let skipped_abbreviation =
+            self.cur.at_document_level && detect_abbreviation_def(line).is_some();
         let nested = MappedSource::new_line_at(
             line.to_string(),
             self.cur.source_line(self.cur.pos),
             self.cur.source_col(self.cur.pos),
         );
         let extent = self.invisible_extent(self.cur.pos, line).unwrap_or(1);
+        if skipped_abbreviation {
+            record_skipped_sibling_abbreviation(self.cur, self.options);
+        }
         for _ in 0..extent {
             self.cur.consume();
+        }
+        if skipped_abbreviation {
+            return NEXT;
         }
         let children = item_body(self.deferred, last_item, nested, None, false, self.options);
         self.items[last_item].children.extend(children);
         NEXT
     }
 
-    /// How many lines the comment at `at` covers: a closed `%%%` span is one extent.
-    /// An empty span is `None`: the Djot importer writes it to split a list.
+    /// How many lines the invisible run at `at` covers. An empty closed
+    /// comment span is still invisible between siblings (CARVE-P9-013).
     fn invisible_extent(&self, at: usize, line: &str) -> Option<usize> {
         if let Some(open) = detect_comment_fence_line_any_column(line) {
             let mut end = at + 1;
             while let Some(next) = self.cur.lines.line(end) {
                 if is_comment_fence_close_any_column(next, open.fence_len) {
-                    return (end > at + 1).then_some(end + 1 - at);
+                    return Some(end + 1 - at);
                 }
                 end += 1;
             }
             return Some(1);
         }
-        (is_line_comment_any_column(line) && !is_definition_placeholder(line)).then_some(1)
+        (is_line_comment_any_column(line)
+            || is_definition_placeholder(line)
+            || (self.cur.at_document_level && detect_abbreviation_def(line).is_some()))
+        .then_some(1)
     }
 
     fn comment_precedes_a_sibling(&mut self, line: &str) -> bool {

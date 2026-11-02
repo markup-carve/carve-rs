@@ -972,7 +972,18 @@ fn parse_with_options_mode_and_index(
                     (label, children)
                 })
                 .collect();
-            let children = parse_mapped_source_at_document_level(&body, options);
+            let (mut children, skipped_abbreviations) = with_skipped_sibling_abbreviations(|| {
+                parse_mapped_source_at_document_level(&body, options)
+            });
+            let had_skipped_abbreviations = !skipped_abbreviations.is_empty();
+            children.extend(
+                skipped_abbreviations
+                    .into_iter()
+                    .map(BlockNode::AbbreviationDef),
+            );
+            if had_skipped_abbreviations {
+                order_abbreviation_blocks(&mut children, original);
+            }
             (footnote_defs, children)
         });
     let original_line_starts = options
@@ -1661,12 +1672,18 @@ fn parse_unpositioned_mapped_source(
 }
 
 fn needs_positioned_mapped_body(source: &MappedSource) -> bool {
-    source.sublists_carry_authored_base
+    (source.sublists_carry_authored_base
         && source.source.contains(":::")
         && source.source.lines().any(|line| {
             line.starts_with([' ', '\t'])
                 && strip_blockquote_prefix(trim_ascii_start(line)).is_some()
-        })
+        }))
+        || (source.source.contains(":: ")
+            && source.line_map.windows(2).any(|pair| {
+                pair[0]
+                    .zip(pair[1])
+                    .is_some_and(|(current, next)| next > current + 1)
+            }))
 }
 
 #[cfg(all(test, feature = "experimental-event-parser-options"))]
