@@ -874,6 +874,7 @@ fn escaping_is_redundant(
 
 fn comparable_document(mut doc: Document) -> Document {
     strip_redundant_heading_ids(&mut doc);
+    strip_break_markers(&mut doc);
     doc.source_len = 0;
     doc.ingest_payload_len = 0;
     strip_positions(&mut doc);
@@ -891,6 +892,27 @@ fn comparable_document(mut doc: Document) -> Document {
         }
     }
     doc
+}
+
+/// The writer spells every break `***` (PART 11 §6), so the marker is not
+/// part of the tree a readback must reproduce.
+fn strip_break_markers(doc: &mut Document) {
+    use crate::include_walk::{visit_block_children, SubtreeVisitor};
+    struct Strip;
+    impl SubtreeVisitor for Strip {
+        fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
+            for block in blocks {
+                if let BlockNode::ThematicBreak(rule) = block {
+                    rule.marker = None;
+                }
+                visit_block_children(block, self);
+            }
+        }
+    }
+    Strip.blocks(&mut doc.children);
+    for blocks in doc.footnote_defs.values_mut() {
+        Strip.blocks(blocks);
+    }
 }
 
 fn strip_redundant_heading_ids(doc: &mut Document) {
