@@ -513,6 +513,7 @@ pub(in crate::parse) fn parse_inline_context_with_pairs(
         return vec![InlineNode::text(text.to_string())];
     }
     let bytes = text.as_bytes();
+    let _comment_spans = CommentSpanRunGuard::enter(bytes);
     // A `[` only opens an inline link, reference link, or span when a `](`,
     // `][`, or `]{` follows (there is no bare shortcut-reference form). If none
     // occur, those attempts -- each an O(n) bracket scan -- can be skipped, so a

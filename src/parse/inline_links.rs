@@ -1,4 +1,6 @@
 use super::*;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 pub(in crate::parse) fn skip_link_title_padding(bytes: &[u8], mut at: usize) -> usize {
     while bytes.get(at) == Some(&b' ') {
@@ -1444,14 +1446,40 @@ pub(in crate::parse) fn decorated_braced_opener(bytes: &[u8], open: usize) -> bo
 }
 
 /// A text (its address, length and bytes) and its braced comments, `(open, end)` each.
-type CommentSpans = ((usize, usize), Vec<u8>, Vec<(usize, usize)>);
+type CommentSpans = ((usize, usize), Vec<u8>, Rc<[(usize, usize)]>);
 
 /// Nested inline runs alternate between texts, so a few are kept.
 const COMMENT_SPAN_TEXTS: usize = 8;
 
 thread_local! {
-    static COMMENT_SPANS: std::cell::RefCell<Vec<CommentSpans>> =
-        const { std::cell::RefCell::new(Vec::new()) };
+    static COMMENT_SPANS: RefCell<Vec<CommentSpans>> = const { RefCell::new(Vec::new()) };
+    static COMMENT_SPAN_RUNS: RefCell<Vec<CommentSpanRun>> = const { RefCell::new(Vec::new()) };
+}
+
+/// A run's text and, once a flank test asked, its braced comments.
+type CommentSpanRun = ((usize, usize), Option<Rc<[(usize, usize)]>>);
+
+/// Marks `bytes` as the text of the current inline run. The borrow keeps its
+/// address from being reused, so flank tests need not compare the bytes each
+/// time, which is quadratic over a long paragraph of comments.
+pub(in crate::parse) struct CommentSpanRunGuard<'a>(std::marker::PhantomData<&'a [u8]>);
+
+impl<'a> CommentSpanRunGuard<'a> {
+    pub(in crate::parse) fn enter(bytes: &'a [u8]) -> Self {
+        COMMENT_SPAN_RUNS.with(|runs| {
+            runs.borrow_mut()
+                .push(((bytes.as_ptr() as usize, bytes.len()), None));
+        });
+        Self(std::marker::PhantomData)
+    }
+}
+
+impl Drop for CommentSpanRunGuard<'_> {
+    fn drop(&mut self) {
+        COMMENT_SPAN_RUNS.with(|runs| {
+            runs.borrow_mut().pop();
+        });
+    }
 }
 
 fn comment_spans(bytes: &[u8]) -> Vec<(usize, usize)> {
@@ -1490,9 +1518,7 @@ fn comment_spans(bytes: &[u8]) -> Vec<(usize, usize)> {
     spans
 }
 
-/// The braced comments of `bytes` as `(open, end)`, outside escapes and
-/// verbatim spans, in source order.
-fn with_comment_spans<R>(bytes: &[u8], f: impl FnOnce(&[(usize, usize)]) -> R) -> R {
+fn cached_comment_spans(bytes: &[u8]) -> Rc<[(usize, usize)]> {
     COMMENT_SPANS.with(|cache| {
         let mut cache = cache.borrow_mut();
         let key = (bytes.as_ptr() as usize, bytes.len());
@@ -1508,11 +1534,24 @@ fn with_comment_spans<R>(bytes: &[u8], f: impl FnOnce(&[(usize, usize)]) -> R) -
             }
             None => {
                 cache.truncate(COMMENT_SPAN_TEXTS - 1);
-                cache.insert(0, (key, bytes.to_vec(), comment_spans(bytes)));
+                cache.insert(0, (key, bytes.to_vec(), comment_spans(bytes).into()));
             }
         }
-        f(&cache[0].2)
+        Rc::clone(&cache[0].2)
     })
+}
+
+/// The braced comments of `bytes` as `(open, end)`, outside escapes and
+/// verbatim spans, in source order.
+fn with_comment_spans<R>(bytes: &[u8], f: impl FnOnce(&[(usize, usize)]) -> R) -> R {
+    let key = (bytes.as_ptr() as usize, bytes.len());
+    let spans = COMMENT_SPAN_RUNS.with(|runs| match runs.borrow_mut().last_mut() {
+        Some((at, spans)) if *at == key => {
+            Rc::clone(spans.get_or_insert_with(|| cached_comment_spans(bytes)))
+        }
+        _ => cached_comment_spans(bytes),
+    });
+    f(&spans)
 }
 
 /// A braced comment counts as nothing for every flank test (carve#4719): the
