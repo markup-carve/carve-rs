@@ -194,7 +194,6 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
         {
             break;
         }
-        report_unclaimed_document_plus(cur, line);
         if image_opener
             && !lines.is_empty()
             && caption_content(line).is_some()
@@ -258,40 +257,6 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
         block_image: false,
         pos,
     })
-}
-
-/// `q` / `+` / `- s`: no open container claims a document-level `+`, which lint
-/// reports when a block follows it and not before paragraph text (carve#3421).
-fn report_unclaimed_document_plus(cur: &mut LineCursor<'_>, line: &str) {
-    if !cur.at_document_level
-        || cur.colon_view.is_some()
-        || !continuation_marker::is_refused_letter(line)
-    {
-        return;
-    }
-    let Some(follower) = cur.lines.line(cur.pos + 1) else {
-        return;
-    };
-    let Some(source_line) = cur.source_line(cur.pos) else {
-        return;
-    };
-    let block = !follower.starts_with([' ', '\t'])
-        && (detect_list_marker_full(follower).is_some()
-            || !follower.starts_with('%') && {
-                cur.pos += 1;
-                let interrupts = interrupts_paragraph_in_band(cur, follower, false);
-                cur.pos -= 1;
-                interrupts
-            });
-    if block {
-        note_lint_event(LintEvent::Marker {
-            line: source_line,
-            column: 1,
-            host: "document",
-            reason: "unclaimed",
-            first_block: false,
-        });
-    }
 }
 
 /// Whether `line`, seen while accumulating a paragraph, ends it and starts a

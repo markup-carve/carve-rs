@@ -976,18 +976,25 @@ impl<'a> Walk<'a> {
         Some(rest)
     }
 
-    /// A marker no container claims names the list item it stands above, if any.
-    fn no_host_reason(&self, at: usize, plus: &str) -> Refusal {
-        let line = self.lines[at];
-        let prefix = &line[..line.len() - plus.len()];
-        let sibling = self.lines.get(at + 1).is_some_and(|next| {
-            next.strip_prefix(prefix)
-                .is_some_and(|rest| detect_list_marker_full(rest).is_some())
-        });
-        if sibling {
-            Refusal::Sibling
-        } else {
-            Refusal::WrongColumn
+    /// A `+` no marker column reached is a letter (PART 0 S2, carve#4648). Lint still
+    /// names the two shapes that read as a mistaken marker.
+    fn stray_plus(
+        &self,
+        at: usize,
+        owner: usize,
+        col: usize,
+        column: usize,
+    ) -> Option<(Option<Kind>, Refusal)> {
+        let frame = &self.frames[owner];
+        match frame.kind {
+            Kind::Quote if col == 0 => self
+                .attaches_at(Kind::Item, at, column, owner + 1)
+                .err()
+                .map(|reason| (Some(Kind::Quote), reason)),
+            Kind::Item | Kind::Note if col == frame.col => {
+                Some((Some(frame.kind), Refusal::WrongColumn))
+            }
+            _ => None,
         }
     }
 
@@ -1061,6 +1068,19 @@ impl<'a> Walk<'a> {
         self.accepted.push((self.first_line + at, decision));
     }
 
+    /// A `+` nothing took: a letter either way, reported only with a refusal.
+    fn refuse_letter(
+        &mut self,
+        at: usize,
+        column: usize,
+        refusal: Option<(Option<Kind>, Refusal)>,
+    ) {
+        self.refuse_line = true;
+        if let Some((host, reason)) = refusal {
+            self.refuse_plus(at, column, host, reason, false);
+        }
+    }
+
     fn refuse_plus(
         &mut self,
         at: usize,
@@ -1070,11 +1090,6 @@ impl<'a> Walk<'a> {
         first_block: bool,
     ) {
         self.refuse_line = true;
-        // A `+` no open container claims is reported by the paragraph reader,
-        // and only before a block (carve#3421).
-        if host.is_none() && self.frames.len() == 1 {
-            return;
-        }
         let quote_depth = self.frames.iter().filter(|f| f.kind == Kind::Quote).count();
         self.refused.push(continuation_marker::Refused {
             line: self.first_line + at,
@@ -1359,10 +1374,9 @@ impl<'a> Walk<'a> {
             && !(self.frames.last().expect("frame").kind == Kind::Fence
                 && reached == self.frames.len() - 1)
         {
-            let (host, reason) =
-                refused_by.unwrap_or_else(|| (None, self.no_host_reason(at, c.rest)));
             let column = doc_column(self.lines[at], c.rest);
-            self.refuse_plus(at, column, host, reason, false);
+            let refusal = refused_by.or_else(|| self.stray_plus(at, reached, c.col, column));
+            self.refuse_letter(at, column, refusal);
         }
         if let Some(k) = plus {
             if self.decide {

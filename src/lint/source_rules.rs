@@ -143,6 +143,9 @@ struct Item {
     quotes: usize,
     deepest: usize,
     marker_line_note: bool,
+    /// Column pair of the nearest earlier item of the same list this marker
+    /// stands past the marker column of and below the content column of.
+    below_earlier: Option<(usize, usize)>,
     paragraph_lines: BTreeSet<usize>,
     text_starts: BTreeSet<(usize, usize)>,
 }
@@ -754,8 +757,18 @@ impl<'d> BlockWalker<'d, '_> {
                 out.push(super::warning(d.pos.clone(), to_byte, "footnotes-placement-in-container", "This contained footnotes marker does not place the endnotes. Move it to document level.".into()));
             }
             BlockNode::List(list) => {
+                let mut earlier: Vec<(usize, usize)> = Vec::new();
                 for item in &list.items {
-                    if let Some(item) = self.list_item(item) {
+                    if let Some(mut item) = self.list_item(item) {
+                        item.below_earlier = earlier
+                            .iter()
+                            .rev()
+                            .find(|(base, content)| *base < item.base && item.base < *content)
+                            .copied();
+                        // One entry per distinct pair keeps a long list linear.
+                        let pair = (item.base, item.content);
+                        earlier.retain(|seen| *seen != pair);
+                        earlier.push(pair);
                         self.scan.items.push(item);
                     }
                 }
@@ -895,6 +908,7 @@ impl<'d> BlockWalker<'d, '_> {
             quotes: row.text[..at].matches('>').count(),
             deepest,
             marker_line_note: self.note_marker.is_match(marker_tail),
+            below_earlier: None,
             paragraph_lines,
             text_starts,
         })
@@ -1110,7 +1124,9 @@ impl<'s, 'r> ListScan<'s, 'r> {
         for (index, row) in rows.iter().enumerate() {
             let line = self.row(index, row);
             self.check_folded_marker(&line, out);
-            self.check_separated_marker(&line, out);
+            if !self.check_sibling_marker(&line, out) {
+                self.check_separated_marker(&line, out);
+            }
             self.check_block_opener(&line, out);
         }
         self.list_lines
@@ -1175,6 +1191,37 @@ impl<'s, 'r> ListScan<'s, 'r> {
             let len = self.marker_shaped.find(l.view).unwrap().len() - 1;
             emit(out, self.rows, ln, l.at, len, "list-marker-below-content-column", &format!("This list marker starts at column {column}, below the list item's content column {}, so it folds into the item's paragraph as text. Indent it to column {} to nest it under the item, or start it at column {} to begin a new item at the item's own level.", host.content, host.content, host.base));
         }
+    }
+
+    /// A same-kind marker past an earlier item's marker column reads as a sibling
+    /// (PART 0 S4), before and after a blank line (carve#4835).
+    fn check_sibling_marker(&self, l: &ListRow<'_>, out: &mut Vec<LintWarning>) -> bool {
+        let (ln, column) = (l.ln, l.column);
+        if self.scan.ignored.contains(&ln) || !self.marker_shaped.is_match(l.view) {
+            return false;
+        }
+        let items = &self.scan.items;
+        let Some((base, content)) = items[items.partition_point(|item| item.first < ln)..]
+            .iter()
+            .take_while(|item| item.first == ln)
+            .filter(|item| item.base == column)
+            .find_map(|item| item.below_earlier)
+        else {
+            return false;
+        };
+        let after_blank = l.index > 0
+            && quoted_view(self.rows[l.index - 1].text, l.owner.map_or(0, |i| i.quotes))
+                .0
+                .trim()
+                .is_empty();
+        let where_ = if after_blank {
+            " after a blank line"
+        } else {
+            ""
+        };
+        let len = self.marker_shaped.find(l.view).unwrap().len() - 1;
+        emit(out, self.rows, ln, l.at, len, "list-marker-below-content-column", &format!("This list marker starts at column {column}{where_}, below the content column {content} of the list item above, so it is a sibling item, not a nested one. Indent it to column {content} to nest it under the item, or start it at column {base} to line it up with the item."));
+        true
     }
 
     fn check_separated_marker(&self, l: &ListRow<'_>, out: &mut Vec<LintWarning>) {
