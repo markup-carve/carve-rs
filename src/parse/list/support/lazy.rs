@@ -176,7 +176,7 @@ pub(crate) fn collect_trailing_lazy_through_framed(
         if indent <= list_base
             && strip_description_prefix(trim_ascii_start(line)).is_some()
             && term_options
-                .is_some_and(|options| body_ends_in_definition_list(&nested.source, options))
+                .is_some_and(|options| body_chain_ends_in_definition_list(&nested.source, options))
         {
             break;
         }

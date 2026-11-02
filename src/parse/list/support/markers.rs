@@ -758,6 +758,13 @@ pub(crate) fn body_ends_in_definition_list(body: &str, options: &Options<'_>) ->
     ends_in_definition_list(last.as_ref(), nested_tail)
 }
 
+/// Whether the body's last block chain, through containers and items, ends in
+/// a definition list. A separator line is no plain text, so it never continues
+/// such a term lazily (PART 0 B-term-keep).
+pub(crate) fn body_chain_ends_in_definition_list(body: &str, options: &Options<'_>) -> bool {
+    ends_in_definition_list(probe_blocks(body, options).pop().as_ref(), true)
+}
+
 fn ends_in_definition_list(block: Option<&BlockNode>, nested: bool) -> bool {
     match block {
         Some(BlockNode::DefinitionList(_)) => true,
@@ -1113,25 +1120,10 @@ pub(crate) fn nested_ends_with_open_paragraph_masked(
 
 pub(crate) fn nested_ends_with_open_paragraph(
     nested: &str,
-    trailing_below_column: bool,
+    _trailing_below_column: bool,
     below_outer_column: bool,
     options: &Options<'_>,
 ) -> bool {
-    // The fragment probe loses its marker host. A term at the end of an open
-    // colon body is a block there, so a following flush-left line cannot fold
-    // into a paragraph inside that body.
-    if !trailing_below_column
-        && colon_fences_left_open(nested) > 0
-        && nested
-            .lines()
-            .rev()
-            .find(|line| !is_blank_line(line))
-            .is_some_and(|line| {
-                !line.starts_with(LAZY) && is_definition_list_start(trim_ascii_start(line))
-            })
-    {
-        return false;
-    }
     if body_ends_with_wrapped_attribute(nested) || quoted_body_ends_with_a_blank_line(nested) {
         return false;
     }

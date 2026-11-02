@@ -948,6 +948,8 @@ pub(in crate::parse) struct BodyCommentState {
     pub(in crate::parse) code: Option<FenceOpen>,
     pub(in crate::parse) comment: Option<usize>,
     pub(in crate::parse) at_block_start: bool,
+    /// An open line block: its payload lines open nothing (PART 2 `line_block`).
+    pub(in crate::parse) line_block: Option<usize>,
 }
 
 impl BodyCommentState {
@@ -956,6 +958,7 @@ impl BodyCommentState {
             code: None,
             comment: None,
             at_block_start: true,
+            line_block: None,
         }
     }
 
@@ -979,12 +982,29 @@ impl BodyCommentState {
             self.at_block_start = true;
             return;
         }
+        let mut unquoted = line;
+        while let Some(rest) = strip_blockquote_prefix(unquoted) {
+            unquoted = trim_ascii_start(rest);
+        }
+        if let Some(run) = self.line_block {
+            if exact_colon_fence_len(unquoted) == Some(run) {
+                self.line_block = None;
+                self.at_block_start = true;
+            }
+            return;
+        }
         let opener = if self.at_block_start {
             trim_ascii_start(innermost_marker_content(line))
         } else {
             line
         };
         self.at_block_start = false;
+        if let Some(run) = detect_line_block_open(opener).or_else(|| {
+            detect_line_block_open(trim_ascii_start(innermost_marker_content(unquoted)))
+        }) {
+            self.line_block = Some(run);
+            return;
+        }
         if let Some(open) = detect_fence_open(opener) {
             self.code = Some(open);
             return;

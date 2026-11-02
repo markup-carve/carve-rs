@@ -1748,11 +1748,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         // line was consumed as a definition and vanished from
         // the code block.
         let in_marker_fence = advance_marker_fence(&mut state.marker_fence, trimmed, &note.lines);
+        // A line block's payload is inline content whatever its shape (PART 2 `line_block`).
+        let in_line_block = state.note_fence.is_none() && note.comment_state.line_block.is_some();
         if let Some(open) = state.note_fence {
             if is_fence_close(trimmed, open) {
                 state.note_fence = None;
             }
         } else if let Some(open) = detect_fence_open(trimmed)
+            .filter(|_| !in_line_block)
             .map(|mut open| {
                 open.content_col = indent_columns(line);
                 open
@@ -1769,6 +1772,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         {
             state.note_fence = Some(open);
         } else if !in_marker_fence
+            && !in_line_block
             && (!state.open_term || indent_columns(trimmed) == 0)
             && self.hoist_note_link_def(note_link_def_candidate(trimmed, note), *i)
         {
@@ -2264,6 +2268,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             && walk.admitted_fence.is_none()
             && walk.opacity.comment.is_none()
             && walk.opacity.code.is_none()
+            && note.comment_state.line_block.is_none()
             && self.hoist_note_link_def(definition_text, *i)
         {
             note.push_with(
@@ -2287,7 +2292,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         } else {
             None
         };
-        if walk.opacity.comment.is_none() {
+        if walk.opacity.comment.is_none() && note.comment_state.line_block.is_none() {
             self.track_admitted_fence(host, walk, line, *i);
         }
         let was_comment = walk.opacity.comment.is_some();
