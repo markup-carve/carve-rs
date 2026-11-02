@@ -418,9 +418,10 @@ pub(in crate::parse) fn fold_term(
 fn previous_definition_line_invisible(cur: &LineCursor<'_>) -> bool {
     cur.pos.checked_sub(1).is_some_and(|at| {
         let line = cur.lines.at(at);
-        is_line_comment_any_column(line)
-            || is_definition_placeholder(line)
-            || detect_comment_fence_line_any_column(line).is_some()
+        !is_footnote_definition_placeholder(line)
+            && (is_line_comment_any_column(line)
+                || is_definition_placeholder(line)
+                || detect_comment_fence_line_any_column(line).is_some())
     })
 }
 
@@ -469,6 +470,9 @@ fn definition_sibling_after_invisible(
                 at += 1;
             }
             continue;
+        }
+        if is_footnote_definition_placeholder(line) {
+            return None;
         }
         if is_line_comment_any_column(line)
             || is_definition_placeholder(line)

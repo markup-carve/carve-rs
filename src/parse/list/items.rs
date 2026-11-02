@@ -488,8 +488,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             }
             return Some(1);
         }
-        (is_line_comment_any_column(line)
-            || is_definition_placeholder(line)
+        (!is_footnote_definition_placeholder(line)
+            && (is_line_comment_any_column(line) || is_definition_placeholder(line))
             || (self.cur.at_document_level && detect_abbreviation_def(line).is_some()))
         .then_some(1)
     }
