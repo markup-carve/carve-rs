@@ -286,7 +286,190 @@ pub(super) fn collect(
     collect_recovered_code_fences(&rows, &scan.code_openers, out);
     let recovered_metadata = collect_container_fences(&rows, &mut scan.fences, out);
     collect_version(source, doc, &rows, out);
+    collect_markdown_habits(doc, &rows, out);
     recovered_metadata
+}
+
+/// The child block sequences of one block, so siblings can be compared.
+fn child_sequences(block: &BlockNode) -> Vec<&[BlockNode]> {
+    match block {
+        BlockNode::BlockQuote(b) => vec![&b.children],
+        BlockNode::Admonition(a) => vec![&a.children],
+        BlockNode::Directive(d) => vec![&d.children],
+        BlockNode::Div(d) => vec![&d.children],
+        BlockNode::Section(d) => vec![&d.children],
+        BlockNode::List(l) => l.items.iter().map(|i| i.children.as_slice()).collect(),
+        BlockNode::DefinitionList(d) => d
+            .items
+            .iter()
+            .flat_map(|i| i.definitions.iter().map(|d| d.children.as_slice()))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+const SETEXT_MESSAGE: &str = "Carve has no underline heading: this run is not a heading underline. Write the heading with a leading \"#\" instead.";
+
+/// A `---`/`===` run under a paragraph line, or a `-`/`=` run under a heading's text.
+fn setext_run(text: &str, marker: u8) -> Option<(usize, usize)> {
+    let mut at = 0;
+    let bytes = text.as_bytes();
+    loop {
+        while at < bytes.len() && matches!(bytes[at], b' ' | b'\t') {
+            at += 1;
+        }
+        if bytes.get(at) == Some(&b'>') {
+            at += 1;
+        } else {
+            break;
+        }
+    }
+    let run = bytes[at..].iter().take_while(|b| **b == marker).count();
+    let rest = &text[at + run..];
+    (run >= 3 && rest.trim_matches([' ', '\t', '\r']).is_empty()).then_some((at, run))
+}
+
+/// Markdown habits that render differently with no error (carve#4814).
+fn collect_markdown_habits(doc: &Document, rows: &[Line<'_>], out: &mut Vec<LintWarning>) {
+    let mut sequences: Vec<&[BlockNode]> = vec![&doc.children];
+    for body in doc.footnote_defs.values() {
+        sequences.push(body);
+    }
+    while let Some(sequence) = sequences.pop() {
+        for (i, block) in sequence.iter().enumerate() {
+            sequences.extend(child_sequences(block));
+            match block {
+                BlockNode::Heading(h) => heading_closing_hashes(h, rows, out),
+                BlockNode::Paragraph(p) => {
+                    let Some(pos) = &p.pos else { continue };
+                    for ln in pos.start_line + 1..=pos.end_line {
+                        if let Some((at, run)) =
+                            rows.get(ln - 1).and_then(|r| setext_run(r.text, b'='))
+                        {
+                            emit(
+                                out,
+                                rows,
+                                ln,
+                                at,
+                                run,
+                                "setext-heading-underline",
+                                SETEXT_MESSAGE,
+                            );
+                        }
+                    }
+                }
+                BlockNode::ThematicBreak(t) => {
+                    let (Some(pos), Some(BlockNode::Paragraph(prev))) =
+                        (&t.pos, i.checked_sub(1).and_then(|j| sequence.get(j)))
+                    else {
+                        continue;
+                    };
+                    if prev.pos.as_ref().map(|p| p.end_line + 1) != Some(pos.start_line) {
+                        continue;
+                    }
+                    if let Some((at, run)) = rows
+                        .get(pos.start_line - 1)
+                        .and_then(|r| setext_run(r.text, b'-'))
+                    {
+                        emit(
+                            out,
+                            rows,
+                            pos.start_line,
+                            at,
+                            run,
+                            "setext-heading-underline",
+                            SETEXT_MESSAGE,
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    indented_code_blocks(&doc.children, rows, out);
+}
+
+fn heading_closing_hashes(h: &Heading, rows: &[Line<'_>], out: &mut Vec<LintWarning>) {
+    let Some(pos) = &h.pos else { return };
+    let Some(InlineNode::Text(last)) = h.children.last() else {
+        return;
+    };
+    let value = last.value.trim_end_matches('#');
+    if value.len() == last.value.len() || !value.ends_with([' ', '\t']) {
+        return;
+    }
+    if value.trim_end_matches([' ', '\t']).is_empty() && h.children.len() < 2 {
+        return;
+    }
+    let Some(row) = rows.get(pos.end_line - 1) else {
+        return;
+    };
+    let text = row.text.trim_end_matches([' ', '\t', '\r']);
+    let run = text.len() - text.trim_end_matches('#').len();
+    let before = &text[..text.len() - run];
+    if run == 0 || !before.ends_with([' ', '\t']) || before.trim_end_matches([' ', '\t']).is_empty()
+    {
+        return;
+    }
+    let hashes = &text[text.len() - run..];
+    emit(
+        out,
+        rows,
+        pos.end_line,
+        text.len() - run,
+        run,
+        "heading-closing-hashes",
+        &format!("The closing \"{hashes}\" run is heading text in Carve, not a closing marker. Delete it."),
+    );
+}
+
+/// A top-level paragraph after a blank line, indented four spaces: Markdown's indented code.
+fn indented_code_blocks(top: &[BlockNode], rows: &[Line<'_>], out: &mut Vec<LintWarning>) {
+    let span = |b: &BlockNode| block_pos(b).map(|p| (p.start_line, p.end_line));
+    // A paragraph written flush under a list, with no blank line, still reads as that list's text.
+    let follows_list = |i: usize| {
+        let mut j = i;
+        while j > 0 {
+            j -= 1;
+            match &top[j] {
+                BlockNode::List(_) => return true,
+                BlockNode::Paragraph(_)
+                    if j > 0
+                        && span(&top[j]).map(|s| s.0) == span(&top[j - 1]).map(|s| s.1 + 1) => {}
+                _ => return false,
+            }
+        }
+        false
+    };
+    for (i, block) in top.iter().enumerate() {
+        let BlockNode::Paragraph(p) = block else {
+            continue;
+        };
+        let Some(ln) = p.pos.as_ref().map(|p| p.start_line) else {
+            continue;
+        };
+        if ln < 2 || follows_list(i) {
+            continue;
+        }
+        if !rows.get(ln - 2).is_some_and(|r| r.text.trim().is_empty()) {
+            continue;
+        }
+        let Some(row) = rows.get(ln - 1) else {
+            continue;
+        };
+        let indent = row.text.bytes().take_while(|b| *b == b' ').count();
+        if indent >= 4 && row.text[indent..].starts_with(|c: char| !c.is_whitespace()) {
+            emit(
+                out,
+                rows,
+                ln,
+                indent,
+                row.text.len() - indent,
+                "indented-code-block",
+                "Four-space indentation does not make a code block in Carve; this renders as a paragraph. Use a ``` fence.",
+            );
+        }
+    }
 }
 
 fn collect_authoring(

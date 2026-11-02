@@ -1477,11 +1477,10 @@ pub(in crate::parse) fn detect_thematic_break(line: &str) -> bool {
 }
 
 pub(in crate::parse) fn thematic_break_marker(line: &str) -> Option<char> {
-    // Grammar (spec §262): a col-0 run of 3+ of the SAME `-`/`*`/`_`,
-    // CONTIGUOUS (no internal spaces), followed only by trailing whitespace.
-    // No leading indent. So `***`/`----`/`___` are breaks, but `* * *` (spaces)
-    // and ` ***` (indented) fall through to list/paragraph. A mixed run (`-*-`)
-    // is not a break either.
+    // Grammar thematic_break: a col-0 run of 3+ of the SAME `-`/`*`/`_`,
+    // followed only by trailing whitespace. A `-` or `*` run may instead be
+    // spaced by single spaces (`* * *`, carve#4814); a wider gap, a leading
+    // indent or a mixed run is not a break.
     let bytes = line.as_bytes();
     let marker = match bytes.first() {
         Some(&b @ (b'-' | b'*' | b'_')) => b,
@@ -1492,6 +1491,12 @@ pub(in crate::parse) fn thematic_break_marker(line: &str) -> Option<char> {
     while i < bytes.len() && bytes[i] == marker {
         count += 1;
         i += 1;
+    }
+    if count == 1 && marker != b'_' {
+        while i + 1 < bytes.len() && bytes[i] == b' ' && bytes[i + 1] == marker {
+            count += 1;
+            i += 2;
+        }
     }
     if count < 3 {
         return None;

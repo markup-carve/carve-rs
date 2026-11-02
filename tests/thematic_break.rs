@@ -1,9 +1,8 @@
-//! A thematic break (spec §262) is a col-0 run of 3+ of the SAME `-`/`*`/`_`,
-//! CONTIGUOUS (no internal spaces) and followed only by trailing whitespace.
-//! No leading indent. Matches the executable-spec oracle, carve-js and
-//! carve-php. Spaced forms (`* * *`) fall through to a list, indented forms
-//! (` ***`) to a paragraph; a mixed run (`-*-`) or fewer than three is never a
-//! break.
+//! A thematic break (spec §262) is a col-0 run of 3+ of the SAME `-`/`*`/`_`
+//! followed only by trailing whitespace. A `-` or `*` run may be spaced by
+//! single spaces (`* * *`, carve#4814). No leading indent: indented forms
+//! (` ***`) fall through to a paragraph; a mixed run (`-*-`) or fewer than
+//! three is never a break.
 
 #[test]
 fn contiguous_col0_runs_are_breaks() {
@@ -54,17 +53,11 @@ fn authored_markers_survive_parse_ingest_and_write() {
 }
 
 #[test]
-fn spaced_runs_are_not_breaks() {
-    // Internal spaces disqualify the break: `* * *`/`- - -` parse as a nested
-    // list, `_ _ _` as a paragraph.
-    assert_eq!(
-        carve::to_html("* * *"),
-        "<ul>\n  <li>\n    <ul>\n      <li>*</li>\n    </ul>\n  </li>\n</ul>"
-    );
-    assert_eq!(
-        carve::to_html("- - -"),
-        "<ul>\n  <li>\n    <ul>\n      <li>-</li>\n    </ul>\n  </li>\n</ul>"
-    );
+fn spaced_runs_are_breaks_only_for_star_and_hyphen() {
+    // carve#4814: single spaces between `*` or `-` markers still make a break;
+    // `_ _ _` stays a paragraph.
+    assert_eq!(carve::to_html("* * *").trim(), "<hr>");
+    assert_eq!(carve::to_html("- - -").trim(), "<hr>");
     assert_eq!(carve::to_html("_ _ _"), "<p>_ _ _</p>");
 }
 

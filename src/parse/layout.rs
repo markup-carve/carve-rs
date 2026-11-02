@@ -560,7 +560,7 @@ fn render_layout_body(
             wrote = true;
             continue;
         }
-        if line.starts_with("- ") {
+        if line.starts_with("- ") && thematic_break_marker(line).is_none() {
             i = render_layout_list(lines, i, 0, depth, options, out, &mut accepted)?;
             wrote = true;
             continue;
