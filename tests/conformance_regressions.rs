@@ -762,11 +762,7 @@ fn unterminated_comment_fence_degrades_to_line_comment() {
         "before\n\n%%%%\nsecret\n%%%\n\nafter\n",
         "before\n\n%%%\nsecret\n%%%%\n\nafter\n",
     ] {
-        assert_eq!(
-            html(src),
-            "<p>before</p>\n<p>secret</p>\n<p>after</p>",
-            "{src:?}"
-        );
+        assert_eq!(html(src), "<p>before</p>", "{src:?}");
     }
 }
 

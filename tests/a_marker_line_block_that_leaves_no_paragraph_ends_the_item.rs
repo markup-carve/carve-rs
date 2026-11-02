@@ -80,7 +80,7 @@ fn a_comment_fence_ends_the_item() {
     // at document level, the derivation `- ``` ` already got.
     assert_eq!(
         html("- %%%\nc\n%%%\ntail\n"),
-        "<ul>\n  <li></li>\n</ul>\n<p>c</p>\n<p>tail</p>"
+        "<ul>\n  <li></li>\n</ul>\n<p>c</p>"
     );
 }
 

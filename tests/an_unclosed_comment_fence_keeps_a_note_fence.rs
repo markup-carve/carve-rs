@@ -5,10 +5,6 @@ fn an_unclosed_comment_fence_ends_the_note_like_a_line_comment() {
         "[^c]: - para\n %%%\n```\n",
         "[^c]: > para\n %%%\n```\n",
     ] {
-        assert_eq!(
-            carve::to_html(source),
-            "<pre><code></code></pre>",
-            "{source:?}"
-        );
+        assert_eq!(carve::to_html(source), "", "{source:?}");
     }
 }

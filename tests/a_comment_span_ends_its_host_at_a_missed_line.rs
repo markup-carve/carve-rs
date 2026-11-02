@@ -17,7 +17,7 @@ fn both_paths(src: &str) -> String {
 fn a_quote_ends_at_a_line_that_misses_it_with_the_closer_unmarked_below() {
     assert_eq!(
         both_paths("> %%%\n> n\nzz\n%%%\n"),
-        "<blockquote><p>n</p></blockquote>\n<p>zz</p>"
+        "<blockquote>\n\n</blockquote>\n<p>zz</p>"
     );
 }
 
@@ -25,7 +25,7 @@ fn a_quote_ends_at_a_line_that_misses_it_with_the_closer_unmarked_below() {
 fn a_nested_quote_ends_both_quotes_at_that_line() {
     assert_eq!(
         both_paths("> > %%%\n> > n\nzz\n%%%\n"),
-        "<blockquote>\n  <blockquote><p>n</p></blockquote>\n</blockquote>\n<p>zz</p>"
+        "<blockquote>\n  <blockquote>\n\n  </blockquote>\n</blockquote>\n<p>zz</p>"
     );
 }
 
@@ -33,7 +33,7 @@ fn a_nested_quote_ends_both_quotes_at_that_line() {
 fn a_quote_holding_a_list_ends_at_that_line() {
     assert_eq!(
         both_paths("> %%%\n> - a\nzz\n%%%\n"),
-        "<blockquote>\n  <ul>\n    <li>a</li>\n  </ul>\n</blockquote>\n<p>zz</p>"
+        "<blockquote>\n\n</blockquote>\n<p>zz</p>"
     );
 }
 
@@ -57,7 +57,7 @@ fn a_blank_before_a_closer_below_the_item_keeps_the_span() {
 fn a_quote_search_stops_at_a_blank_line() {
     assert_eq!(
         both_paths("> %%%\n> n\nzz\n\n%%%\n"),
-        "<blockquote><p>n\nzz</p></blockquote>"
+        "<blockquote>\n\n</blockquote>\n<p>zz</p>"
     );
 }
 
@@ -65,6 +65,6 @@ fn a_quote_search_stops_at_a_blank_line() {
 fn without_a_closer_the_line_folds_into_the_quote() {
     assert_eq!(
         both_paths("> %%%\n> n\nzz\n"),
-        "<blockquote><p>n\nzz</p></blockquote>"
+        "<blockquote>\n\n</blockquote>\n<p>zz</p>"
     );
 }

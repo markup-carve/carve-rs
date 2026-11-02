@@ -51,8 +51,8 @@ fn a_percent_leading_content_joins_the_inline_marker() {
         ("> x %%%\n", "> x %%%\n"),
         ("- - x %%%\n", "- - x %%%\n"),
         ("::: |\na %%%\nb\n:::\n", "::: |\na %%%\nb\n:::\n"),
-        ("::: |\na\n%%%\nb\n:::\n", "::: |\na\n%%%\nb\n:::\n"),
-        ("::: |\n%%%\n:::\n", "::: |\n%%%\n:::\n"),
+        ("::: |\na\n%%%\nb\n:::\n", "::: |\na\n%%%\nb\n%%%\n:::\n"),
+        ("::: |\n%%%\n:::\n", "::: |\n%%%\n\n%%%\n:::\n"),
     ] {
         assert_eq!(fmt(src), want, "source: {src:?}");
         round_trips(src);
@@ -79,10 +79,10 @@ fn a_content_that_opens_with_anything_else_keeps_its_separator() {
 #[test]
 fn block_comment_lines_keep_their_separator() {
     let src = "%%%\nx\n%% %\n";
-    assert_eq!(carve::to_html(src), "<p>x</p>");
+    assert_eq!(carve::to_html(src), "");
     assert_eq!(
         fmt(src),
-        "%% %\n\nx\n\n%% %\n",
+        "%%%\nx\n%% %\n%%%\n",
         "the block arm must not join - see the module docs"
     );
     // The joined spelling is a different document, which is the whole point.

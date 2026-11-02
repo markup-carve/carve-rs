@@ -361,24 +361,6 @@ pub(crate) fn resolve_ordered_first(
     (first.start, first.ol_type)
 }
 
-pub(crate) fn has_indexed_comment_closer_after(
-    lines: CursorLines<'_>,
-    comment_closers: &mut Option<HashMap<usize, usize>>,
-    start: usize,
-    fence_len: usize,
-) -> bool {
-    if let Some(answer) = lines.comment_after(start, fence_len) {
-        return answer;
-    }
-    if comment_closers.is_none() {
-        *comment_closers = Some(build_comment_closer_last_index(&lines));
-    }
-    comment_closers
-        .as_ref()
-        .and_then(|index| index.get(&fence_len).copied())
-        .is_some_and(|last| last >= start)
-}
-
 /// Length of the block attached by `+` within the caller's bounded slice.
 /// Leading attributes belong to that block. Fences and colon containers
 /// use their line extent directly; other blocks are parsed to find the end.
@@ -426,7 +408,7 @@ pub(crate) fn attached_one_block_lines(slice: CursorLines<'_>, options: &Options
 pub(crate) fn self_delimiting_block_end(
     slice: CursorLines<'_>,
     start: usize,
-    comment_closers: &mut Option<HashMap<usize, usize>>,
+    _comment_closers: &mut Option<HashMap<usize, usize>>,
 ) -> Option<usize> {
     let line = slice.line(start)?;
     if let Some(open) = detect_fence_open(line) {
@@ -440,16 +422,12 @@ pub(crate) fn self_delimiting_block_end(
         return Some(slice.len());
     }
     if let Some(open) = detect_comment_fence_line(line) {
-        if has_indexed_comment_closer_after(slice, comment_closers, start + 1, open.fence_len) {
-            if let Some(close) = (start + 1..slice.len())
+        // An unclosed span runs to the end of its container (carve#4907).
+        return Some(
+            (start + 1..slice.len())
                 .find(|&j| is_comment_fence_close(slice.at(j), open.fence_len))
-            {
-                return Some(close + 1);
-            }
-        }
-        // §28: with no closer ahead it is not a fence, it is a `%%` line
-        // comment - one line, and the lines after it are just lines.
-        return Some(start + 1);
+                .map_or(slice.len(), |close| close + 1),
+        );
     }
     if let Some(fence_len) = detect_line_block_open(line) {
         return Some(find_line_block_end(slice, start, fence_len));
@@ -561,14 +539,10 @@ pub(crate) fn attached_block_end(
             continue;
         }
         if let Some(open) = detect_comment_fence_line(line) {
-            if has_indexed_comment_closer_after(lines, comment_closers, end + 1, open.fence_len) {
-                if let Some(close) = (end + 1..lines.len())
-                    .find(|&j| is_comment_fence_close(lines.at(j), open.fence_len))
-                {
-                    end = close + 1;
-                    continue;
-                }
-            }
+            end = (end + 1..lines.len())
+                .find(|&j| is_comment_fence_close(lines.at(j), open.fence_len))
+                .map_or(lines.len(), |close| close + 1);
+            continue;
         }
         // A colon fence is a self-delimiting block; skip the whole region so a
         // `+` inside it is content, not the parent's boundary. An unterminated
@@ -754,10 +728,7 @@ pub(crate) fn parse_continuation_block(
             let close = (next_visible + 1..cur.lines.len()).find(|&k| {
                 is_comment_fence_close(trim_ascii_start(cur.lines.at(k)), open.fence_len)
             });
-            match close {
-                Some(close) => next_visible = close + 1,
-                None => break,
-            }
+            next_visible = close.map_or(cur.lines.len(), |close| close + 1);
         } else {
             break;
         }

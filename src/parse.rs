@@ -2226,13 +2226,10 @@ fn code_closer_exists_after(
         .is_some_and(|last| last > start + 1)
 }
 
+#[cfg(test)]
 fn build_comment_closer_last_index(lines: &[&str]) -> HashMap<usize, usize> {
-    #[cfg(test)]
-    COMMENT_INDEX_LINES.with(|count| count.set(count.get() + lines.len()));
     let mut last_index = HashMap::new();
     for (idx, line) in lines.iter().enumerate() {
-        // Any column: the consumption sites read an indented fence, so the
-        // index that tells them whether a closer exists has to see one too.
         if let Some(open) = detect_comment_fence_line_any_column(line) {
             last_index.insert(open.fence_len, idx);
         }

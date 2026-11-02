@@ -8,7 +8,7 @@ fn html(source: &str) -> String {
 
 #[test]
 fn a_flush_comment_after_a_nested_note_marker_leaves_no_body_open() {
-    assert_eq!(html("[^c]: [^d]: para\n%%%\n        tail\n"), "<p>tail</p>");
+    assert_eq!(html("[^c]: [^d]: para\n%%%\n        tail\n"), "");
 }
 
 #[test]

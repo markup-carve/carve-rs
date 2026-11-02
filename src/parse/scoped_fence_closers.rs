@@ -1,10 +1,13 @@
+#[cfg(test)]
 use super::detect_comment_fence_line_any_column;
+#[cfg(test)]
 use std::collections::HashMap;
 use std::ops::Range;
 
 pub(super) struct ScopedFenceClosers {
     leaves: usize,
     code_runs: Vec<[usize; 2]>,
+    #[cfg(test)]
     comments: HashMap<usize, Vec<usize>>,
 }
 
@@ -12,6 +15,7 @@ impl ScopedFenceClosers {
     pub(super) fn new<'a>(lines: impl ExactSizeIterator<Item = &'a str>) -> Self {
         let leaves = lines.len().max(1).next_power_of_two();
         let mut code_runs = vec![[0; 2]; leaves * 2];
+        #[cfg(test)]
         let mut comments: HashMap<usize, Vec<usize>> = HashMap::new();
         for (index, line) in lines.enumerate() {
             let bytes = line.trim_start().as_bytes();
@@ -24,6 +28,7 @@ impl ScopedFenceClosers {
                     code_runs[leaves + index][usize::from(character == b'~')] = run;
                 }
             }
+            #[cfg(test)]
             if let Some(open) = detect_comment_fence_line_any_column(line) {
                 comments.entry(open.fence_len).or_default().push(index);
             }
@@ -36,6 +41,7 @@ impl ScopedFenceClosers {
         Self {
             leaves,
             code_runs,
+            #[cfg(test)]
             comments,
         }
     }
@@ -69,6 +75,7 @@ impl ScopedFenceClosers {
         false
     }
 
+    #[cfg(test)]
     pub(super) fn comment_in(&self, range: Range<usize>, width: usize) -> bool {
         let Some(positions) = self.comments.get(&width) else {
             return false;

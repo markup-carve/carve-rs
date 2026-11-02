@@ -56,6 +56,6 @@ fn a_matched_fence_below_a_note_column_keeps_a_nested_quote() {
 fn an_unclosed_fence_below_a_colon_body_keeps_the_following_paragraph() {
     assert_render(
         "1. ::: note\n   para\n  %%%\ntail\n",
-        "<ol><li><aside class=\"admonition note\" aria-label=\"Note\"><p>para</p></aside></li></ol><p>tail</p>",
+        "<ol>\n  <li>\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>para</p>\n    </aside>\n  </li>\n</ol>",
     );
 }

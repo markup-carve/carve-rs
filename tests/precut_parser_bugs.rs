@@ -81,9 +81,9 @@ fn line_after_note_comment_remains_in_unreferenced_note() {
 
 #[test]
 fn three_percent_comment_does_not_hide_nested_colon() {
+    // carve#4907: the unclosed span hides the nested colon line.
     let html = carve::to_html("- tail\n  %%%\n   ::::\n");
-    assert!(html.contains("<div>"), "{html}");
-    assert!(!html.contains("::::"), "{html}");
+    assert_eq!(html, "<ul>\n  <li>tail</li>\n</ul>");
 
     let control = carve::to_html("- tail\n  %%\n   ::::\n");
     assert!(control.contains("<div>"), "{control}");
@@ -101,12 +101,12 @@ fn definition_interrupts_unclosed_code_in_list_paragraph() {
 
 #[test]
 fn marker_line_comment_does_not_hide_indented_quote() {
+    // carve#4907: the marker-line span hides the quote; `l` misses the item.
     let html = carve::to_html("- %%%\n   > x\nl\n");
-    assert!(html.contains("<blockquote>"), "{html}");
-    assert!(html.contains("x\nl"), "{html}");
+    assert_eq!(html, "<ul>\n  <li></li>\n</ul>\n<p>l</p>");
 
     let control = carve::to_html("- %%%\n  > x\nl\n");
-    assert!(control.contains("<blockquote>"), "{control}");
+    assert_eq!(control, "<ul>\n  <li></li>\n</ul>\n<p>l</p>");
 }
 
 #[test]

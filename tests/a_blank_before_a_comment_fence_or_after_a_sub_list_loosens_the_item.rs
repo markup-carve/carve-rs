@@ -9,14 +9,16 @@ fn loose(source: &str) -> bool {
 
 #[test]
 fn a_blank_before_a_comment_fence_loosens_the_next_paragraph() {
+    let source = "- o\n  :: t\n  : x\n\n\n\n  %%%\n  c\n  %%%\n  : d\n";
+    assert!(loose(source), "{source:?} -> {}", carve::to_html(source));
+    // carve#4907: an unclosed span hides the paragraph, so nothing loosens.
     for source in [
         "- o\n  :: t\n  : x\n\n\n\n  %%%\n  : d\n",
-        "- o\n  :: t\n  : x\n\n\n\n  %%%\n  c\n  %%%\n  : d\n",
         "- o\n  :: t\n  : x\n\n\n\n  %%%%\n  %%%\n  y\n",
         "- o\n  > q\n\n\n\n  %%%\n  y\n",
         "1. o\n   ```\n   c\n   ```\n\n   %%% c\n   y\n",
     ] {
-        assert!(loose(source), "{source:?} -> {}", carve::to_html(source));
+        assert!(!loose(source), "{source:?} -> {}", carve::to_html(source));
     }
 }
 
@@ -24,11 +26,13 @@ fn a_blank_before_a_comment_fence_loosens_the_next_paragraph() {
 fn a_blank_after_a_sub_list_loosens_a_paragraph_behind_a_comment() {
     for source in [
         "- o\n  - s\n\n  %% c\n  y\n",
-        "- o\n  - s\n\n  %%%\n  y\n",
         "> - o\n>   - s\n>\n>   %%%\n>   c\n>   %%%\n>   y\n",
     ] {
         assert!(loose(source), "{source:?} -> {}", carve::to_html(source));
     }
+    // carve#4907: the unclosed span hides `y`.
+    let source = "- o\n  - s\n\n  %%%\n  y\n";
+    assert!(!loose(source), "{source:?} -> {}", carve::to_html(source));
 }
 
 #[test]

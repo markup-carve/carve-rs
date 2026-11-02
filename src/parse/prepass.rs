@@ -674,8 +674,12 @@ impl<'a, 'o> TermScan<'a, 'o> {
     }
 
     fn comment_closer(&self, index: usize, fence_len: usize) -> Option<usize> {
-        let at = self.comment_runs.get(&fence_len)?;
-        at.get(at.partition_point(|&k| k <= index)).copied()
+        // An unclosed span hides the rest of the document here (carve#4907).
+        let closer = self
+            .comment_runs
+            .get(&fence_len)
+            .and_then(|at| at.get(at.partition_point(|&k| k <= index)).copied());
+        Some(closer.unwrap_or(self.lines.len() - 1))
     }
 
     fn marker_admitted(&mut self, start: usize) -> bool {
@@ -1881,12 +1885,8 @@ pub(in crate::parse) fn extract_link_defs_with_guard_full(
     // before the state is entered - see comment_fence_closes.
     let all_lines: Vec<&str> = source.lines().collect();
     let recent_list_marker = list_marker_since_blank(&all_lines);
-    let comment_closers = comment_fence_close_index(&all_lines);
     let closer_maxima = fence_closer_suffix_maxima(&all_lines);
     let folded_into_term = term_folded_lines(&all_lines, &closer_maxima, options);
-    // See the note in `extract_footnote_defs`: lazy, so a document with no
-    // container-scoped comment fence pays nothing for it.
-    let mut container_closers: Option<ContainerCommentClosers> = None;
     // See `extract_footnote_defs`: the line the `after_term` gate asks about.
     let mut previous_line = PreviousLine::default();
     let mut last_folded_marker = false;
@@ -2024,6 +2024,11 @@ pub(in crate::parse) fn extract_link_defs_with_guard_full(
         };
         // Top-level and unindented only - see the note in extract_footnote_defs
         // for why a nested opener is refused rather than guessed at.
+        if in_comment_fence.is_some_and(|open| {
+            !closes_open_comment_fence(line, open) && misses_comment_owner(line, open)
+        }) {
+            in_comment_fence = None;
+        }
         if let Some(open) = in_comment_fence {
             end_prepass_paragraph_at(&folded_into_term, line_index);
             // ANY column, at or shallower than the opener's quote depth - see the note in
@@ -2046,19 +2051,12 @@ pub(in crate::parse) fn extract_link_defs_with_guard_full(
             // The same scopes as the footnote prepass above: the fence is gated
             // by the column it REACHES, and its span is bounded by the container
             // holding it rather than by the delimiter's own column.
-            if comment_fence_scope_closes(
-                scope,
-                &all_lines,
-                line_index,
-                open.fence_len,
-                &columns,
-                &comment_closers,
-                &mut container_closers,
-            ) {
+            {
                 end_prepass_paragraph_at(&folded_into_term, line_index);
                 in_comment_fence = Some(OpenCommentFence {
                     fence_len: open.fence_len,
                     quote_depth: scope.quote_depth(),
+                    floor: scope.floor(),
                 });
                 body.push(std::borrow::Cow::Borrowed(line));
                 continue;

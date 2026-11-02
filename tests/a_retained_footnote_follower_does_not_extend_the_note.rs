@@ -13,7 +13,7 @@ fn a_closerless_comment_fence_below_a_note_retains_no_follower() {
             to_html(source),
             to_html_with_options(source, &Options::default().with_positions(true)),
         ] {
-            assert_eq!(html.trim(), "<p>c\ntail</p>", "{source:?}");
+            assert_eq!(html.trim(), "", "{source:?}");
         }
     }
 }

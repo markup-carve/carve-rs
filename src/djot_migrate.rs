@@ -652,7 +652,8 @@ fn convert_djot_document(
     // Carve has no empty footnote body: `[^b]:` alone is a paragraph, not a
     // definition, so an empty Djot body needs a body that renders nothing - a
     // comment. It travels as a NUL token so the text escaper cannot reach it and
-    // turn the comment into a literal `%%%%` the reader was never shown.
+    // turn the comment into a literal `%%` the reader was never shown. A bare
+    // `%%%%` would open a comment span that hides the rest (carve#4907).
     let footnotes =
         normalize_djot_footnotes(&inline, Some(stripped_definitions), &inherited, &empty_note);
     let references = normalize::references(&footnotes);
@@ -928,7 +929,7 @@ fn convert_djot_document(
         },
         omit_quote_delimiters,
     );
-    let converted = converted.replace(&empty_note, "%%%%");
+    let converted = converted.replace(&empty_note, "%%");
     let converted = if item_attributes.is_empty() {
         converted
     } else {

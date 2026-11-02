@@ -165,22 +165,6 @@ impl<'a> CursorLines<'a> {
         }
     }
 
-    pub(in crate::parse) fn comment_after(self, start: usize, width: usize) -> Option<bool> {
-        if !reuse_colon_views() {
-            return None;
-        }
-        match self {
-            Self::Slice(_) => None,
-            Self::Colon {
-                source, view, base, ..
-            } => Some(
-                view.source
-                    .fence_closers()
-                    .comment_in(base + start..base + source.len(), width),
-            ),
-        }
-    }
-
     pub(in crate::parse) fn line(self, index: usize) -> Option<&'a str> {
         match self {
             Self::Slice(lines) => lines.get(index).copied(),
@@ -384,32 +368,13 @@ impl<'a> LineCursor<'a> {
         self.reached.and_then(|flags| flags.get(pos).copied())
     }
 
-    /// Is there a comment-fence closer of exactly `fence_len` at or after `start`?
-    ///
-    /// A closer must match the opener width EXACTLY, so ANY later line carrying a
-    /// fence of that width IS a valid closer: the question is exactly "last index
-    /// for this width >= start". One pass builds the width -> last index map and
-    /// every lookup after that is O(1).
-    ///
-    /// There used to be a per-width negative cache in front of this map. It could
-    /// never change an outcome: the map already answers in O(1), and its own hit
-    /// condition (a second opener of the same width after a proven-no-closer
-    /// point) is unreachable, because a second line of the same width IS a closer
-    /// for the first.
+    /// Whether a `%%%` opener at `start - 1` opens a span.
     pub(in crate::parse) fn has_comment_closer_after(
         &mut self,
-        start: usize,
-        fence_len: usize,
+        _start: usize,
+        _fence_len: usize,
     ) -> bool {
-        if let Some(possible) = self.lines.comment_after(start, fence_len) {
-            return possible;
-        }
-        if self.comment_closer_last_index.is_none() {
-            self.comment_closer_last_index = Some(build_comment_closer_last_index(&self.lines));
-        }
-        self.comment_closer_last_index
-            .as_ref()
-            .and_then(|last_index| last_index.get(&fence_len).copied())
-            .is_some_and(|last| last >= start)
+        // A `%%%` opener opens with no closer lookahead (carve#4907).
+        true
     }
 }

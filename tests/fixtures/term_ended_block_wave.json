@@ -187,27 +187,27 @@
   {
     "id": "degraded-0-%%%-# heading",
     "source": "- :: term\n  %%%\n   # heading\n",
-    "html": "<ul><li><dl><dt>term</dt></dl><h1 id=\"heading\">heading</h1></li></ul>"
+    "html": "<ul><li><dl><dt>term</dt></dl></li></ul>"
   },
   {
     "id": "degraded-0-%%%-> quote",
     "source": "- :: term\n  %%%\n   > quote\n",
-    "html": "<ul><li><dl><dt>term</dt></dl><blockquote><p>quote</p></blockquote></li></ul>"
+    "html": "<ul><li><dl><dt>term</dt></dl></li></ul>"
   },
   {
     "id": "degraded-0-%%%-| a |",
     "source": "- :: term\n  %%%\n   | a |\n",
-    "html": "<ul><li><dl><dt>term</dt></dl><table><tbody><tr><td>a</td></tr></tbody></table></li></ul>"
+    "html": "<ul><li><dl><dt>term</dt></dl></li></ul>"
   },
   {
     "id": "degraded-0-%%%-::: box",
     "source": "- :: term\n  %%%\n   ::: box\n",
-    "html": "<ul><li><dl><dt>term</dt></dl><div class=\"box\"></div></li></ul>"
+    "html": "<ul><li><dl><dt>term</dt></dl></li></ul>"
   },
   {
     "id": "degraded-0-%%%-```",
     "source": "- :: term\n  %%%\n   ```\n",
-    "html": "<ul><li><dl><dt>term</dt></dl><pre><code></code></pre></li></ul>"
+    "html": "<ul><li><dl><dt>term</dt></dl></li></ul>"
   },
   {
     "id": "comment-1-2-False",
@@ -397,27 +397,27 @@
   {
     "id": "degraded-1-%%%-# heading",
     "source": "> - :: term\n>   %%%\n>    # heading\n",
-    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><h1 id=\"heading\">heading</h1></li></ul></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>term</dt></dl></li></ul></blockquote>"
   },
   {
     "id": "degraded-1-%%%-> quote",
     "source": "> - :: term\n>   %%%\n>    > quote\n",
-    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><blockquote><p>quote</p></blockquote></li></ul></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>term</dt></dl></li></ul></blockquote>"
   },
   {
     "id": "degraded-1-%%%-| a |",
     "source": "> - :: term\n>   %%%\n>    | a |\n",
-    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><table><tbody><tr><td>a</td></tr></tbody></table></li></ul></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>term</dt></dl></li></ul></blockquote>"
   },
   {
     "id": "degraded-1-%%%-::: box",
     "source": "> - :: term\n>   %%%\n>    ::: box\n",
-    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><div class=\"box\"></div></li></ul></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>term</dt></dl></li></ul></blockquote>"
   },
   {
     "id": "degraded-1-%%%-```",
     "source": "> - :: term\n>   %%%\n>    ```\n",
-    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><pre><code></code></pre></li></ul></blockquote>"
+    "html": "<blockquote><ul><li><dl><dt>term</dt></dl></li></ul></blockquote>"
   },
   {
     "id": "comment-2-2-False",
@@ -607,27 +607,27 @@
   {
     "id": "degraded-2-%%%-# heading",
     "source": "> > - :: term\n> >   %%%\n> >    # heading\n",
-    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl><h1 id=\"heading\">heading</h1></li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl></li></ul></blockquote></blockquote>"
   },
   {
     "id": "degraded-2-%%%-> quote",
     "source": "> > - :: term\n> >   %%%\n> >    > quote\n",
-    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl><blockquote><p>quote</p></blockquote></li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl></li></ul></blockquote></blockquote>"
   },
   {
     "id": "degraded-2-%%%-| a |",
     "source": "> > - :: term\n> >   %%%\n> >    | a |\n",
-    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl><table><tbody><tr><td>a</td></tr></tbody></table></li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl></li></ul></blockquote></blockquote>"
   },
   {
     "id": "degraded-2-%%%-::: box",
     "source": "> > - :: term\n> >   %%%\n> >    ::: box\n",
-    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl><div class=\"box\"></div></li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl></li></ul></blockquote></blockquote>"
   },
   {
     "id": "degraded-2-%%%-```",
     "source": "> > - :: term\n> >   %%%\n> >    ```\n",
-    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl><pre><code></code></pre></li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl></li></ul></blockquote></blockquote>"
   },
   {
     "id": "malformed-126",

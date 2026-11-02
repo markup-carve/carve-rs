@@ -122,10 +122,11 @@ fn an_opener_with_no_closer_ahead_still_opens_nothing() {
         format!("- head\n\n    %%%\n    {PAYLOAD}\n"),
         format!("see[^f]\n\n[^f]: head\n\n  %%%\n  {PAYLOAD}\n"),
     ] {
+        // carve#4907 replaced the degradation: the span now hides its payload.
         let html = both_paths(&src);
         assert!(
-            html.contains(PAYLOAD),
-            "the payload was hidden: {src:?}: {html}"
+            !html.contains(PAYLOAD),
+            "the payload was shown: {src:?}: {html}"
         );
     }
 }

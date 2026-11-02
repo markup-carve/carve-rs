@@ -54,8 +54,9 @@ fn a_fence_below_the_item_s_column_ends_nothing() {
     // The other control: a fence the item never saw. Written BELOW the content
     // column it reaches no container, so it is lazy text of the item's
     // paragraph and the line under it stays where it was.
+    // carve#4907: it now opens a span that hides `b`.
     let html = to_html("- a\n %%% x\n b");
-    assert_eq!(html, "<ul>\n  <li>a</li>\n</ul>\n<p>b</p>", "{html}");
+    assert_eq!(html, "<ul>\n  <li>a</li>\n</ul>", "{html}");
 }
 
 #[test]
