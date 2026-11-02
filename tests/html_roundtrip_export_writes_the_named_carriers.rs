@@ -575,7 +575,7 @@ fn a_malformed_carrier_is_not_this_engines_to_reassemble() {
         assert!(!out.contains("data-char"), "{out}");
         assert!(!out.contains("data-marker"), "{out}");
     }
-    assert_eq!(safe(r#"<hr data-char="=">"#), "---\n");
+    assert_eq!(safe(r#"<hr data-char="=">"#), "***\n");
     assert_eq!(safe(r#"<p><span data-carve-escaped>ab</span></p>"#), "ab\n");
 }
 

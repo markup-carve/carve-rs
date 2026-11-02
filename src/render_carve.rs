@@ -5,7 +5,7 @@ use crate::ast_json::block_pos;
 use crate::render::MAX_RENDER_DEPTH;
 use crate::render_text::{trim_end_non_nbsp, trim_non_nbsp};
 mod session;
-use session::{CellScope, RenderSession};
+use session::RenderSession;
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::rc::Rc;
@@ -623,25 +623,6 @@ fn footnote_def_line(doc: &Document, label: &str, blocks: &[BlockNode]) -> Optio
         .map(|pos| (pos.start_line, pos.start_column))
 }
 
-/// Render, and fall back to a break spelling that cannot be read as frontmatter
-/// when the finished bytes would be.
-fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: EscapeMode) -> String {
-    let authored = render_with_escapes_once(session, doc, escape_mode);
-    if doc.frontmatter_raw.is_some()
-        || !doc.frontmatter.is_empty()
-        || !crate::parse::opens_frontmatter(&authored)
-    {
-        return authored;
-    }
-    let _marker = CellScope::replace(&session.hyphen_breaks_are_unsafe, true);
-    let fallback = render_with_escapes_once(session, doc, escape_mode);
-    if crate::parse::opens_frontmatter(&fallback) {
-        authored
-    } else {
-        fallback
-    }
-}
-
 fn reference_target_matches(
     target: Option<&(String, Option<String>, Option<Attrs>)>,
     href: &str,
@@ -696,11 +677,7 @@ fn reference_targets(doc: &Document) -> HashMap<String, (String, Option<String>,
         .collect()
 }
 
-fn render_with_escapes_once(
-    session: &RenderSession,
-    doc: &Document,
-    escape_mode: EscapeMode,
-) -> String {
+fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: EscapeMode) -> String {
     session.begin_pass();
     let mut ctx = CarveContext {
         reference_targets: reference_targets(doc),
@@ -875,14 +852,7 @@ fn render_with_escapes_once(
             previous_emitted = block;
         }
     }
-    // THE FALLBACK SPELLING IS DECIDED IN `render_with_escapes`, on the finished
-    // bytes, not here. It used to be decided here, from the FIRST RENDERED
-    // BLOCK, and that could only see the shape where the break itself opens the
-    // document - so a hoisted definition promoting a `---yaml`-shaped PARAGRAPH
-    // to byte 0 walked straight past it (carve-rs#819).
-    //
-    // What stays here is the ORDER: §7 puts hoisted definitions after the body,
-    // which is the decision that does the promoting.
+    // §7 puts hoisted definitions after the body.
     if !rendered.is_empty() {
         parts.push(rendered.join("\n\n"));
     }
@@ -904,6 +874,7 @@ fn escaping_is_redundant(
 
 fn comparable_document(mut doc: Document) -> Document {
     strip_redundant_heading_ids(&mut doc);
+    strip_break_markers(&mut doc);
     doc.source_len = 0;
     doc.ingest_payload_len = 0;
     strip_positions(&mut doc);
@@ -921,6 +892,27 @@ fn comparable_document(mut doc: Document) -> Document {
         }
     }
     doc
+}
+
+/// The writer spells every break `***` (PART 11 §6), so the marker is not
+/// part of the tree a readback must reproduce.
+fn strip_break_markers(doc: &mut Document) {
+    use crate::include_walk::{visit_block_children, SubtreeVisitor};
+    struct Strip;
+    impl SubtreeVisitor for Strip {
+        fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
+            for block in blocks {
+                if let BlockNode::ThematicBreak(rule) = block {
+                    rule.marker = None;
+                }
+                visit_block_children(block, self);
+            }
+        }
+    }
+    Strip.blocks(&mut doc.children);
+    for blocks in doc.footnote_defs.values_mut() {
+        Strip.blocks(blocks);
+    }
 }
 
 fn strip_redundant_heading_ids(doc: &mut Document) {
@@ -2550,22 +2542,9 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
                 &body,
             )
         }
-        // PART 11 §6 writes the marker the author used, now that the AST
-        // records it (carve#976, carve-rs#843). Only the HYPHEN spelling can be
-        // read back as a frontmatter fence, so it is the only one the fallback
-        // moves, and only for a document whose emitted bytes would really be
-        // misread - see `render_with_escapes`, where that is decided.
-        BlockNode::ThematicBreak(rule) => {
-            let mut marker = rule.marker.unwrap_or('-');
-            if marker == '-'
-                && session
-                    .hyphen_breaks_are_unsafe
-                    .with(|unsafe_| unsafe_.get())
-            {
-                marker = '*';
-            }
-            with_block_attrs(&rule.attrs, &marker.to_string().repeat(3))
-        }
+        // PART 11 §6 (carve#4973): every break is written `***`; the recorded
+        // marker is interchange only, and `***` never opens frontmatter.
+        BlockNode::ThematicBreak(rule) => with_block_attrs(&rule.attrs, "***"),
         BlockNode::Table(table) => {
             if let Some(source) = render_delimited_table(table, session, ctx) {
                 return with_block_attrs(&table.attrs, &format!("{{table}}\n{source}"));

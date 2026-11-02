@@ -160,6 +160,8 @@ fn every_off_span_target_is_reported_and_named_by_its_wire_type() {
         let warnings = lint_carve(src);
         let expected = if *node_type == "underline" {
             vec!["markdown-italic-underline", OUTSIDE_SPAN]
+        } else if *node_type == "thematic_break" {
+            vec![OUTSIDE_SPAN, "thematic-break-spelling"]
         } else {
             vec![OUTSIDE_SPAN]
         };

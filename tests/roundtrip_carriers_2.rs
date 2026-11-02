@@ -387,8 +387,8 @@ fn definition_carriers_keep_nested_lists_and_outer_attributes() {
 #[test]
 fn marker_placeholders_preserve_breaks_and_list_equation_figures() {
     for (source, restored) in [
-        ("{.x}\n---\n", "{.x}\n---\n"),
-        ("{.x}\n***\n", "{.x}\n---\n"),
+        ("{.x}\n---\n", "{.x}\n***\n"),
+        ("{.x}\n***\n", "{.x}\n***\n"),
         ("- {.x}\n  $$`x`\n  ^ Cap\n", "- {.x}\n  $$`x`\n  ^ Cap\n"),
         ("- $$`x`\n  ^ Cap\n", "- $$`x`\n  ^ Cap\n"),
     ] {

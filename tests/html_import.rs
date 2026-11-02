@@ -229,7 +229,20 @@ struct AheadOfPin {
 // `]` where the fixture escapes the `[`. Both spellings conform, so the entry
 // died to a canonical-form decision rather than to a fix: the fixture is the
 // cross-engine contract for importer output, and this engine now writes it.
-const AHEAD_OF_PIN: &[AheadOfPin] = &[];
+const AHEAD_OF_PIN: &[AheadOfPin] = &[
+    AheadOfPin {
+        fixture: "derived-endnotes-section",
+        reason: "carve#4973: a plain <hr> is written `***`; the fixture moves at carve a6fd8b69",
+        carve: Some("***\n\n{loose}\n1. Note text.\n"),
+        ast: None,
+    },
+    AheadOfPin {
+        fixture: "empty-paragraph",
+        reason: "carve#4973: a plain <hr> is written `***`; the fixture moves at carve a6fd8b69",
+        carve: Some("a\n\nb\n\nc\n\n{#h}\n***\n"),
+        ast: None,
+    },
+];
 
 /// The two fields that record WHERE a node was written rather than what it is.
 ///
@@ -1232,7 +1245,7 @@ fn an_attributed_empty_paragraph_is_dropped_with_a_row() {
         &HtmlImportOptions::default(),
     )
     .unwrap();
-    assert_eq!(result.value, "a\n\nb\n\n{#h}\n---\n");
+    assert_eq!(result.value, "a\n\nb\n\n{#h}\n***\n");
     let rows: Vec<(&str, &str, &str)> = result
         .report
         .diagnostics
