@@ -653,9 +653,15 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 // wrong, and it is what made the comment special-casing this
                 // guard once needed redundant.
                 let threshold = strip_cols;
+                // A blank reaches every frame, so a closer below the column still
+                // closes a span this frame opened at its own column (PART 9 §28).
                 let continues = k < cur.lines.len()
                     && (indent_columns(cur.lines.at(k)) >= threshold
-                        || (comment_fence.is_some() && cur.lines.at(k).starts_with(LAZY)));
+                        || (comment_fence.is_some() && cur.lines.at(k).starts_with(LAZY))
+                        || comment_fence.is_some_and(|(run, column)| {
+                            column == strip_cols
+                                && is_comment_fence_close_any_column(cur.lines.at(k), run)
+                        }));
                 if !continues {
                     // Descendants may own these blanks as fence payload. Copy
                     // them without advancing the outer separator cursor.

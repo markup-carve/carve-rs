@@ -1472,6 +1472,8 @@ struct QuoteBody<'a> {
     closed_div: bool,
     comment_run: Option<(usize, usize, usize)>,
     comment_lazy_lines: Vec<(usize, String, Option<isize>)>,
+    // The comment run whose unmarked closer search already failed.
+    no_unmarked_closer: Option<(usize, usize, usize)>,
     in_fence: Option<FenceOpen>,
     opaque_tail: bool,
     fence_count: usize,
@@ -1562,6 +1564,7 @@ impl<'a> QuoteBody<'a> {
             closed_div: false,
             comment_run: None,
             comment_lazy_lines: Vec::new(),
+            no_unmarked_closer: None,
             in_fence: None,
             opaque_tail: false,
             fence_count: 0,
@@ -2516,7 +2519,12 @@ impl<'a> QuoteBody<'a> {
         // A matched comment span cannot hide a line that misses its quote
         // owner. Without a later closer the opener is only a line comment.
         if let Some((run, depth, _)) = self.comment_run {
-            if future_quoted_comment_closes(cur, depth + 1, 0, run) {
+            if future_quoted_comment_closes(cur, depth + 1, 0, run)
+                || (!is_blank_line(line)
+                    && !is_line_comment_any_column(line)
+                    && detect_comment_fence_line_any_column(line).is_none()
+                    && self.unmarked_closer_ahead(cur, run))
+            {
                 return true;
             }
         }
@@ -2621,6 +2629,29 @@ impl<'a> QuoteBody<'a> {
             }
         }
         false
+    }
+
+    /// The quote's own closer search (PART 0 recovery table, carve#4770): an
+    /// exact-width closer ahead, marked or not, before a blank line. A failed
+    /// search fails for every later line of the same run.
+    fn unmarked_closer_ahead(&mut self, cur: &LineCursor<'_>, run: usize) -> bool {
+        if self.no_unmarked_closer == self.comment_run {
+            return false;
+        }
+        let found = (cur.pos + 1..cur.lines.len())
+            .map(|at| {
+                let mut text = trim_ascii_start(cur.lines.at(at));
+                while let Some(rest) = strip_blockquote_prefix(text) {
+                    text = trim_ascii_start(rest);
+                }
+                text
+            })
+            .find(|text| is_blank_line(text) || is_comment_fence_close(text, run))
+            .is_some_and(|text| !is_blank_line(text));
+        if !found {
+            self.no_unmarked_closer = self.comment_run;
+        }
+        found
     }
 
     fn fold_lazy_line(&mut self, cur: &mut LineCursor<'a>, line: &str) {
