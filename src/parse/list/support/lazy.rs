@@ -15,6 +15,10 @@ pub(crate) fn fold_lazy_run_and_resume_in_band(
     let mut staged = LineBuffer::default().into_source();
     let mut flush_separator_follows_other_block = false;
     loop {
+        // The line ended the item's comment span and the item (carve#4770).
+        if cur.comment_span_missed_at == Some(cur.pos) {
+            break;
+        }
         if cur
             .peek()
             .is_some_and(|line| indent_columns(line) == 0 && detect_fence_open(line).is_some())
