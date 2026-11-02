@@ -21,6 +21,7 @@ impl Drop for SkippedSiblingAbbreviationsGuard {
     }
 }
 
+#[cfg(feature = "experimental-event-parser")]
 pub(in crate::parse) fn append_skipped_sibling_abbreviations(
     doc: &mut Document,
     line_starts: Option<&CodepointLineStarts>,

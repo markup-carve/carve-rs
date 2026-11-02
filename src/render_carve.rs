@@ -783,11 +783,11 @@ fn render_with_escapes_once(
                     separated_from_previous =
                         previous_list.is_some_and(|previous| lists_would_merge(previous, list));
                     previous_list = Some(list);
-                } else if !writes_nothing(&text) {
+                } else if !writes_nothing(&text) && !matches!(child, BlockNode::Comment(_)) {
                     previous_list = None;
                     separated_from_previous = false;
                 }
-                if !writes_nothing(&text) {
+                if !writes_nothing(&text) && !matches!(child, BlockNode::Comment(_)) {
                     // An attribute line already keeps the second list separate.
                     separated_from_previous |= previous_definition_list
                         && matches!(child, BlockNode::DefinitionList(list) if list.attrs.is_none());
@@ -1515,11 +1515,11 @@ fn render_blocks(
             separated_from_previous =
                 previous_list.is_some_and(|previous| lists_would_merge(previous, list));
             previous_list = Some(list);
-        } else if !writes_nothing(&text) {
+        } else if !writes_nothing(&text) && !matches!(block, BlockNode::Comment(_)) {
             previous_list = None;
             separated_from_previous = false;
         }
-        if !writes_nothing(&text) {
+        if !writes_nothing(&text) && !matches!(block, BlockNode::Comment(_)) {
             // An attribute line already keeps the second list separate.
             separated_from_previous |= previous_definition_list
                 && matches!(block, BlockNode::DefinitionList(list) if list.attrs.is_none());
@@ -2073,6 +2073,7 @@ fn render_item_blocks(
     ctx.block_depth += 1;
     let mut out = String::new();
     let mut prev: Option<&BlockNode> = None;
+    let mut prior_definition_list = false;
     let mut prev_at_marker_column = false;
     // Whether a sub-list has already opened at this item's content column - the
     // condition under which a later bullet written there joins it instead of
@@ -2092,6 +2093,11 @@ fn render_item_blocks(
         escape_window::leave(session, recorded);
         if writes_nothing(&rendered) {
             continue;
+        }
+        let follows_definition_list =
+            prior_definition_list && matches!(block, BlockNode::DefinitionList(_));
+        if !matches!(block, BlockNode::Comment(_)) {
+            prior_definition_list = matches!(block, BlockNode::DefinitionList(_));
         }
         let mut separated = false;
         if let Some(prev_block) = prev {
@@ -2140,6 +2146,12 @@ fn render_item_blocks(
             prev = Some(block);
             prev_at_marker_column = false;
             a_sub_list_already_opened = true;
+            continue;
+        }
+        if !separated && follows_definition_list {
+            out.push_str(&hard_list_boundary_in_a_tight_item(session, &rendered));
+            prev = Some(block);
+            prev_at_marker_column = false;
             continue;
         }
         // A LINE comment written at this item's content column lands ON the

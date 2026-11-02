@@ -348,7 +348,7 @@ fn scan_block_attributes(source: &str, code_mask: &str, mask: &mut [u8]) -> Bloc
                     if line.attribute_indent < line.previous_item_width {
                         found
                             .list_boundary_comments
-                            .insert(at, format!("%%%\n{}%%%", line.line_prefix));
+                            .insert(at, format!("\n{}\n{}", line.line_prefix, line.line_prefix));
                     }
                 }
                 for byte in &mut mask[at..end] {
