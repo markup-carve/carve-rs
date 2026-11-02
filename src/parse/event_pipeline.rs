@@ -579,6 +579,23 @@ fn read_local_list_like_line(
     (node, item_bodies)
 }
 
+/// Pushes `node`, or the comments of a paragraph of only braced comments
+/// (carve#4799), and returns how many nodes it pushed.
+#[inline(never)]
+fn push_emitted(out: &mut Vec<BlockNode>, node: BlockNode) -> usize {
+    match crate::ast::comment_only_paragraph_blocks(&node) {
+        Some(comments) => {
+            let count = comments.len();
+            out.extend(comments);
+            count
+        }
+        None => {
+            out.push(node);
+            1
+        }
+    }
+}
+
 fn has_pending_leading_attrs(
     leading_attrs: &[(usize, Attrs, Option<Pos>)],
     out: &[BlockNode],
@@ -716,35 +733,17 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
     let mut source_lines = Vec::new();
     macro_rules! emit {
         ($line:expr, $node:expr) => {{
-            let node = $node;
-            // A paragraph of only braced comments is its comments (carve#4799).
-            if crate::ast::comment_only_paragraph(&node) {
-                let comments = crate::ast::comment_only_paragraph_blocks(&node).unwrap_or_default();
-                for _ in 0..comments.len() {
-                    if let Some(extents) = extents.as_deref_mut() {
-                        extents.push((current_block_start.get(), cur.pos));
-                    }
-                    if options.positions {
-                        block_start_indices.push(current_block_start.get());
-                    }
-                    #[cfg(feature = "experimental-event-parser-options")]
-                    if options.source_lines {
-                        source_lines.push($line);
-                    }
-                }
-                out.extend(comments);
-            } else {
-                if let Some(extents) = extents.as_deref_mut() {
-                    extents.push((current_block_start.get(), cur.pos));
-                }
-                if options.positions {
-                    block_start_indices.push(current_block_start.get());
-                }
-                #[cfg(feature = "experimental-event-parser-options")]
-                if options.source_lines {
-                    source_lines.push($line);
-                }
-                out.push(node);
+            let count = push_emitted(&mut out, $node);
+            if let Some(extents) = extents.as_deref_mut() {
+                extents.extend(std::iter::repeat((current_block_start.get(), cur.pos)).take(count));
+            }
+            if options.positions {
+                block_start_indices
+                    .extend(std::iter::repeat(current_block_start.get()).take(count));
+            }
+            #[cfg(feature = "experimental-event-parser-options")]
+            if options.source_lines {
+                source_lines.extend(std::iter::repeat($line).take(count));
             }
         }};
     }
