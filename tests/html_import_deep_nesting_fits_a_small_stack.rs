@@ -52,20 +52,20 @@ fn parsed_element_depth(html: &str) -> usize {
 /// Each shape at the deepest nesting the depth guard accepts, and one level past it.
 ///
 /// The guard counts importer depth, and one level of a shape spends more than one
-/// unit of it, so the deepest real nesting is the accepted count below, not 128.
+/// unit of it, so the deepest real nesting is the accepted count below, not 200.
 #[test]
 fn deep_block_containers_fit_a_two_mib_stack() {
     // (name, open, close, elements per level, deepest accepted count)
     let shapes = [
-        ("div", "<div>", "</div>", 1, 63),
-        ("blockquote", "<blockquote>", "</blockquote>", 1, 63),
-        ("ul", "<ul><li>", "</li></ul>", 2, 63),
-        ("ol", "<ol><li>", "</li></ol>", 2, 63),
-        ("section", "<section>", "</section>", 1, 63),
-        ("figure", "<figure>", "</figure>", 1, 63),
-        ("details", "<details>", "</details>", 1, 63),
-        ("dl", "<dl><dd>", "</dd></dl>", 2, 42),
-        ("td", "<table><tr><td>", "</td></tr></table>", 3, 32),
+        ("div", "<div>", "</div>", 1, 100),
+        ("blockquote", "<blockquote>", "</blockquote>", 1, 100),
+        ("ul", "<ul><li>", "</li></ul>", 2, 100),
+        ("ol", "<ol><li>", "</li></ol>", 2, 100),
+        ("section", "<section>", "</section>", 1, 100),
+        ("figure", "<figure>", "</figure>", 1, 100),
+        ("details", "<details>", "</details>", 1, 100),
+        ("dl", "<dl><dd>", "</dd></dl>", 2, 67),
+        ("td", "<table><tr><td>", "</td></tr></table>", 3, 50),
     ];
     for (name, open, close, per_level, accepted) in shapes {
         let deepest = nested(open, close, accepted);
@@ -105,9 +105,9 @@ fn deep_block_containers_fit_a_two_mib_stack() {
 
 #[test]
 fn deep_inline_spans_fit_a_two_mib_stack() {
-    let html = format!("<p>{}</p>", nested("<span>", "</span>", 128));
+    let html = format!("<p>{}</p>", nested("<span>", "</span>", 200));
     assert!(
-        parsed_element_depth(&html) >= 128,
+        parsed_element_depth(&html) >= 200,
         "{}",
         parsed_element_depth(&html)
     );
@@ -156,9 +156,10 @@ fn a_block_holding_table_cell_fits_a_two_mib_stack() {
 
 #[test]
 fn the_effective_depth_boundary_is_unchanged() {
-    for (open, close, accepted, refused) in
-        [("<div>", "</div>", 63, 64), ("<span>", "</span>", 127, 128)]
-    {
+    for (open, close, accepted, refused) in [
+        ("<div>", "</div>", 100, 101),
+        ("<span>", "</span>", 200, 201),
+    ] {
         assert_eq!(
             on_small_stack(
                 nested(open, close, accepted),

@@ -186,12 +186,12 @@ fn template_content_is_charged_to_both_import_limits() {
         ..Default::default()
     };
     let low_depth = HtmlImportOptions {
-        max_depth: 4,
+        max_depth: 3,
         ..Default::default()
     };
     let enough = HtmlImportOptions {
         max_nodes: 6,
-        max_depth: 5,
+        max_depth: 4,
         ..Default::default()
     };
     assert!(carve::html_to_ast(html, &low_nodes).is_err());
