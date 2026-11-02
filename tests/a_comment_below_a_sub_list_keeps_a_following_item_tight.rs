@@ -4,7 +4,11 @@
 
 fn round_trips(src: &str) {
     let first = carve::to_carve(src);
-    assert_eq!(carve::to_html(&first), carve::to_html(src), "HTML moved: {src:?} -> {first:?}");
+    assert_eq!(
+        carve::to_html(&first),
+        carve::to_html(src),
+        "HTML moved: {src:?} -> {first:?}"
+    );
     assert_eq!(carve::to_carve(&first), first, "not a fixpoint: {src:?}");
 }
 
@@ -28,7 +32,10 @@ fn the_reported_shapes_keep_their_html() {
 
 #[test]
 fn a_following_sibling_takes_no_separator() {
-    assert_eq!(carve::to_carve("- - s\n  %% c\n- s\n"), "- - s\n  %% c\n- s\n");
+    assert_eq!(
+        carve::to_carve("- - s\n  %% c\n- s\n"),
+        "- - s\n  %% c\n- s\n"
+    );
     assert_eq!(
         carve::to_carve("- o\n  - - s\n  %% c\n  - s\n"),
         "- o\n  - - s\n    %% c\n  - s\n"
