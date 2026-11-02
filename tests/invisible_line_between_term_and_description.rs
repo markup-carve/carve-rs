@@ -13,8 +13,14 @@ fn comment_between_term_and_description_keeps_the_quote_continuation() {
 
 #[test]
 fn one_line_definitions_between_term_and_description_keep_the_quote_continuation() {
-    assert_eq!(carve::to_html(":: t\n[r]: /u\n:  > a\n   > b\n"), QUOTED_BODY);
-    assert_eq!(carve::to_html(":: t\n*[A]: x\n:  > a\n   > b\n"), QUOTED_BODY);
+    assert_eq!(
+        carve::to_html(":: t\n[r]: /u\n:  > a\n   > b\n"),
+        QUOTED_BODY
+    );
+    assert_eq!(
+        carve::to_html(":: t\n*[A]: x\n:  > a\n   > b\n"),
+        QUOTED_BODY
+    );
 }
 
 #[test]
