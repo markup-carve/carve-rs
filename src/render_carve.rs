@@ -2068,6 +2068,27 @@ fn guard_literal_plus_after_nested_list(
     }
 }
 
+fn next_visible_is_paragraph_shaped(blocks: &[BlockNode]) -> bool {
+    blocks
+        .iter()
+        .find(|block| {
+            !matches!(
+                block,
+                BlockNode::Comment(_)
+                    | BlockNode::AbbreviationDef(_)
+                    | BlockNode::LinkReferenceDefinition(_)
+            )
+        })
+        .is_some_and(|block| match block {
+            BlockNode::Paragraph(_) | BlockNode::BlockImage(_) => true,
+            BlockNode::Figure(figure) => matches!(
+                *figure.target,
+                FigureTarget::Image(_) | FigureTarget::Paragraph(_)
+            ),
+            _ => false,
+        })
+}
+
 fn render_item_blocks(
     session: &RenderSession,
     blocks: &[BlockNode],
@@ -2182,9 +2203,13 @@ fn render_item_blocks(
         // Only the `%% text` form. A `%%%` fence opener already closes the
         // sub-list, and a `{% text %}` delimited comment is not written at a
         // column that re-attaches - both measured, both left alone.
+        //
+        // Unless a paragraph follows: the blank then sits above it and loosens
+        // the item (§17 L1b), and the re-parse keeps the comment in this item.
         if !separated
             && matches!(prev, Some(BlockNode::List(_)))
             && matches!(block, BlockNode::Comment(comment) if !comment.block && !comment.delimited)
+            && !next_visible_is_paragraph_shaped(&blocks[index + 1..])
         {
             out.push('\n');
         }

@@ -2883,6 +2883,9 @@ fn item_chunk_tree_looseness(
     let mut previous_end = 0;
     let mut previous_start = 0;
     let mut previous_child = None;
+    // Lines an invisible child spans since the anchor, such as a `%%%` that
+    // has no closer and so is one comment line (PART 9 §28).
+    let mut invisible_spans: Vec<(usize, usize)> = Vec::new();
     for (child, &(start, end)) in children.iter().zip(extents) {
         let mut opaque_trailing = 0usize;
         let mut visible_trailing = 0usize;
@@ -2904,42 +2907,54 @@ fn item_chunk_tree_looseness(
                 && lines
                     .get(start)
                     .is_some_and(|line| trim_ascii_start(line).starts_with('+')));
-        let search_start = if lines.get(previous_end..start).is_some_and(|span| {
-            span.iter()
-                .any(|line| is_definition_placeholder(line) || gap_attribute_line(line))
-        }) {
-            previous_start
-        } else {
-            previous_end
-        };
-        let blank_before_invisible = (search_start..start)
-            .rev()
-            .find(|&line| {
-                !lines.get(line).is_some_and(|text| {
-                    is_definition_placeholder(text)
-                        || is_line_comment_any_column(text)
-                        || gap_attribute_line(text)
-                })
-            })
-            .is_some_and(|line| {
-                lines.get(line).is_some_and(|text| is_blank_line(text))
-                    && opaque_blank_lines.binary_search(&line).is_err()
+        // Read only for a paragraph, so a run of comments is not rescanned.
+        let blank_before_invisible = || {
+            let reach_into_anchor = lines.get(previous_end..start).is_some_and(|span| {
+                span.iter()
+                    .any(|line| is_definition_placeholder(line) || gap_attribute_line(line))
             });
+            let in_invisible_child = |line: usize| {
+                let at = invisible_spans.partition_point(|&(from, _)| from <= line);
+                at > 0 && line < invisible_spans[at - 1].1
+            };
+            // Inside the anchor's extent only its trailing blanks are read: a
+            // sub-list's extent holds the blank written after it.
+            (previous_start..start)
+                .rev()
+                .find(|&line| {
+                    if line < previous_end && !reach_into_anchor {
+                        return true;
+                    }
+                    !in_invisible_child(line)
+                        && !lines.get(line).is_some_and(|text| {
+                            is_definition_placeholder(text)
+                                || is_line_comment_any_column(text)
+                                || gap_attribute_line(text)
+                        })
+                })
+                .is_some_and(|line| {
+                    lines.get(line).is_some_and(|text| is_blank_line(text))
+                        && opaque_blank_lines.binary_search(&line).is_err()
+                })
+        };
         if block_is_paragraph_shaped(child)
-            && (trailing_blank || blank_before_invisible || discarded_outer_blank)
             && (previous_end > 0 || start > 1)
             && item_shown
+            && (trailing_blank || discarded_outer_blank || blank_before_invisible())
         {
             return true;
         }
         // Invisible nodes do not consume a visible gap. Keep the preceding
         // visible block as the search anchor so a blank before a comment can
         // still loosen the next paragraph.
-        if !block_renders_nothing(child) {
+        if block_renders_nothing(child) {
+            invisible_spans.push((start, end));
+        } else {
             item_shown = true;
             previous_start = start;
             previous_end = end;
             previous_child = Some(child);
+            invisible_spans.clear();
         }
     }
     false
