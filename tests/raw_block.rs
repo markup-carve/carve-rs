@@ -47,7 +47,7 @@ fn eq_with_space_before_format_is_not_raw() {
 fn removed_raw_keyword_form_is_not_raw() {
     assert_eq!(
         carve::to_html("```raw html\n<b>x</b>\n```"),
-        "<p><code>raw html\n&lt;b&gt;x&lt;/b&gt;</code></p>\n<pre><code></code></pre>"
+        "<pre><code class=\"language-raw\">&lt;b&gt;x&lt;/b&gt;\n</code></pre>"
     );
 }
 

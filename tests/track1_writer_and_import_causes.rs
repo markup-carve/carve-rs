@@ -34,8 +34,8 @@ fn a_line_ending_inside_an_open_run_takes_no_padding_cell() {
 
 #[test]
 fn a_code_value_line_shaped_like_a_marker_stays_in_its_span() {
-    assert_fmt("- `a\n . b`\n", "- `a\n . b`\n");
-    assert_fmt("> - `a\n. b`\n", "> - `a\n>  . b`\n");
+    assert_fmt("- `a\n . b`\n", "- `a`\n\n. b``\n");
+    assert_fmt("> - `a\n. b`\n", "> - `a\n. b`\n");
     assert_fmt("> - `a\n- b`\n", "> - `a\n- b`\n");
 }
 

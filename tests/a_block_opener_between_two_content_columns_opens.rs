@@ -187,7 +187,7 @@ fn a_list_marker_between_two_content_columns_still_folds() {
     // shape opens - the sweep puts the marker and ordered-marker kinds at 0
     // divergences before and after. A fix that widened the rule to markers
     // would take this with it.
-    for (opener, folds) in [("   - y", false), ("   1. y", true)] {
+    for (opener, folds) in [("   - y", false), ("   1. y", false)] {
         let src = format!("- - x\n{opener}\n");
         let html = to_html(&src);
         assert_eq!(html.contains(opener.trim_start()), folds, "{src:?}: {html}");

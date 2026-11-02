@@ -70,7 +70,7 @@ fn source_rules_report_the_shared_triggers() {
             "fence-opener-fallback",
             "``` php extra bad info\ncode\n```\n",
         ),
-        ("raw-block-syntax", "```raw html\nx\n```\n"),
+        ("fence-title-syntax", "```raw html\nx\n```\n"),
         ("blockquote-marker-without-space", ">quoted\n"),
         ("blockquote-marker-without-space", ">+\n"),
         ("block-marker-as-text", "  ::: note\n"),
@@ -145,7 +145,7 @@ fn fence_diagnostics_respect_the_owner_and_closer_column() {
     for source in [
         "::: note\n::: tip\nx\n:::\n",
         "::: note\nx\n\n    :::\n",
-        "a. ::: note\n   x\n",
+        "a.  ::: note\n    x\n",
     ] {
         assert!(
             lint_carve(source)
@@ -181,7 +181,7 @@ fn cell_marker_advice_requires_a_real_unpadded_cell_prefix() {
 fn quoted_markup_gets_the_specific_warning_and_marker_span() {
     assert!(lint_carve("> ```raw html\n> x\n> ```\n")
         .iter()
-        .any(|w| w.rule == "raw-block-syntax"));
+        .any(|w| w.rule == "fence-title-syntax" && w.message.contains("```=html")));
     assert!(lint_carve("> # T {#id}\n")
         .iter()
         .any(|w| w.rule == "heading-trailing-attribute"));

@@ -82,11 +82,9 @@ fn arrow_operator_still_wins_at_its_own_position() {
     // `<-->` is ONE token, the canonical bidirectional arrow
     // (markup-carve/carve#1442), rather than `<-` followed by `->`.
     assert_eq!(carve::to_html("x <--> y\n"), "<p>x \u{2194} y</p>");
-    // `<--->` is not `<-->`, so tokenizing runs left to right from where the
-    // longest match at each position leaves off: `<-` (deprecated but still an
-    // arrow), then `-->` (canonical). The hyphens never reach the run pass, so
-    // the flag guard never sees them.
-    assert_eq!(carve::to_html("x <---> y\n"), "<p>x \u{2190}\u{2192} y</p>");
+    // An arrow needs its exact run (carve#4645): `<--->` is an em dash between
+    // `<` and `>`.
+    assert_eq!(carve::to_html("x <---> y\n"), "<p>x &lt;—&gt; y</p>");
 }
 
 #[test]

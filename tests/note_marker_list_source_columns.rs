@@ -6,7 +6,7 @@ fn html(source: &str) -> String {
 fn a_fence_below_a_note_marker_line_items_source_column_leaves_the_item() {
     assert_eq!(
         html("[^3]: - a\n   * z\n    ~~~\nq\n\n[^3]\n"),
-        "<p>q</p>\n<p><a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <ul>\n        <li>a\n* z</li>\n      </ul>\n      <pre><code></code></pre>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
+        "<p>q</p>\n<p><a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <ul>\n        <li>a</li>\n      </ul>\n      <ul>\n        <li>z</li>\n      </ul>\n      <pre><code></code></pre>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
     );
 }
 
@@ -26,7 +26,7 @@ fn ownership_walk_keeps_the_fences_authored_column() {
         .iter()
         .find(|node| node["type"] == "footnote")
         .unwrap();
-    let code = &note["children"][1];
+    let code = &note["children"][2];
     assert_eq!(code["type"], "code_block");
     assert_eq!(code["pos"]["startLine"], 3);
     assert_eq!(code["pos"]["startColumn"], 5);

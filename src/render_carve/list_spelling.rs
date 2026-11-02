@@ -339,7 +339,13 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
                 ordered_marker(counter, node.ol_type)
             };
             counter += 1;
-            format!("{marker}{delim} ")
+            // A letter or roman marker with `.` takes two spaces (carve#4811).
+            let gap = if delim == '.' && marker.bytes().any(|b| b.is_ascii_alphabetic()) {
+                "  "
+            } else {
+                " "
+            };
+            format!("{marker}{delim}{gap}")
         } else if item.checked.is_some() {
             format!("{bullet} {} ", task_marker(item))
         } else {
@@ -349,7 +355,8 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
         let item_attrs = render_attrs(&item.attrs);
         if !item_attrs.is_empty() {
             prefix = if node.ordered {
-                format!("{}{item_attrs} ", prefix.trim_end())
+                let gap = &prefix[prefix.trim_end().len()..];
+                format!("{}{item_attrs}{gap}", prefix.trim_end())
             } else if item.checked.is_some() {
                 format!("{bullet}{item_attrs} {} ", task_marker(item))
             } else {

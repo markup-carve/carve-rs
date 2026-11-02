@@ -64,7 +64,7 @@ pub(in crate::parse) fn parse_mention(text: &str, pos: usize) -> Option<(Mention
     }
     let rest = text.get(pos + 1..)?;
     let len = name_run_len(rest);
-    if len == 0 {
+    if !rest[..len].bytes().any(|b| b.is_ascii_alphabetic()) {
         return None;
     }
     Some((
@@ -86,7 +86,7 @@ pub(in crate::parse) fn parse_tag(text: &str, pos: usize) -> Option<(Tag, usize)
     }
     let rest = text.get(pos + 1..)?;
     let len = name_run_len(rest);
-    if len == 0 {
+    if !rest[..len].bytes().any(|b| b.is_ascii_alphabetic()) {
         return None;
     }
     Some((
@@ -460,10 +460,11 @@ pub(crate) fn reference_label_has_source_spelling(label: &str) -> bool {
         && reference_label_close(run.as_bytes(), 0) == Some(run.len() - 1)
 }
 
-/// Read `[...]` content for an inline extension: the content runs to the
-/// first unescaped `]` and does NOT balance nested brackets.
+/// Read `[...]` content for an inline extension: the content runs to the `]`
+/// at bracket depth zero, or with an unbalanced `[` to the first unescaped `]`
+/// (carve#4513). Only escapes hide a bracket from the count.
 /// Returns the content and the index just past the closing `]`.
-pub(in crate::parse) fn read_to_first_bracket(
+pub(in crate::parse) fn read_extension_content(
     bytes: &[u8],
     start: usize,
 ) -> Option<(String, usize)> {
@@ -471,20 +472,34 @@ pub(in crate::parse) fn read_to_first_bracket(
         return None;
     }
     let content_start = start + 1;
+    let mut depth = 0usize;
+    let mut first_close = None;
+    let mut close = None;
     let mut i = content_start;
     while i < bytes.len() {
         match bytes[i] {
-            b']' => {
-                let text = std::str::from_utf8(&bytes[content_start..i])
-                    .ok()?
-                    .to_string();
-                return Some((text, i + 1));
+            b'\\' => {
+                i += 2;
+                continue;
             }
-            b'\\' if bytes.get(i + 1).is_some_and(u8::is_ascii_punctuation) => i += 2,
-            _ => i += 1,
+            b'[' => depth += 1,
+            b']' => {
+                first_close.get_or_insert(i);
+                if depth == 0 {
+                    close = Some(i);
+                    break;
+                }
+                depth -= 1;
+            }
+            _ => {}
         }
+        i += 1;
     }
-    None
+    let close = close.or(first_close)?;
+    let text = std::str::from_utf8(&bytes[content_start..close])
+        .ok()?
+        .to_string();
+    Some((text, close + 1))
 }
 
 /// The body of the bracketed run `text` opens with, if the run closes inside it.

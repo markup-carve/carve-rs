@@ -148,7 +148,7 @@ fn malformed_quotes_drop_container_metadata_but_not_code_fence_payloads() {
             assert!(!html.contains(":::"));
             assert!(!html.contains("admonition-title"));
         } else {
-            assert!(html.starts_with("<p>"));
+            assert!(html.starts_with("<pre>"));
         }
     }
     assert_eq!(

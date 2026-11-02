@@ -42,9 +42,9 @@ fn a_different_delimiter_at_an_indented_column_starts_a_new_list() {
 }
 
 #[test]
-fn a_marker_left_of_the_list_column_still_folds() {
+fn a_marker_left_of_the_list_column_opens_a_new_list() {
     assert_eq!(
         both_paths("  * a\n - x\n"),
-        "<ul>\n  <li>a\n- x</li>\n</ul>"
+        "<ul>\n  <li>a</li>\n</ul>\n<ul>\n  <li>x</li>\n</ul>"
     );
 }

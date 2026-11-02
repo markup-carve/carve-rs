@@ -76,14 +76,14 @@ fn a_destination_paren_is_found_across_adjacent_text_nodes() {
     assert_eq!(split, whole);
 }
 
-/// Corpus 45-inline-extensions-6: an extension's reader stops at the first
-/// `]`, so a `[` in its content pairs with nothing and needs no escape.
+/// An extension's content is bracketed content (carve#4513): a `[` in it pairs
+/// or takes an escape, and corpus 45-inline-extensions-6 is a balanced pair.
 #[test]
 fn inline_extension_content_has_no_lone_bracket() {
     let written = ingested(
         r#"{"type":"inline_extension","name":"foo","content":[{"type":"text","value":"a [b"}]},{"type":"text","value":" c]"}"#,
     );
-    assert_eq!(written, ":foo[a [b] c]\n");
+    assert_eq!(written, ":foo[a \\[b] c]\n");
     assert_eq!(to_carve(":foo[a [b] c]\n"), ":foo[a [b] c]\n");
 }
 

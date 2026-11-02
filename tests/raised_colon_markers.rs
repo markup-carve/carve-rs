@@ -28,8 +28,9 @@ fn bullet_ordered_and_task_markers_fold_at_each_column() {
                 " ".repeat(column)
             );
             let html = to_html(&source);
-            // A task marker differs from `- head` on an axis, so it folds (carve#4545).
-            if column == 1 && marker == "- second" {
+            // Past the item's columns the div's paragraph takes the marker; between
+            // them it is a sibling or a new list, never lazy (carve#4545).
+            if column == 1 {
                 assert!(html.contains("<p>a</p>\n    </div>"), "{source}");
                 assert!(!html.contains(&format!("<p>a\n{marker}</p>")), "{source}");
             } else {

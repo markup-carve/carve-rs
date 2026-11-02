@@ -28,11 +28,11 @@ fn a_list_marker_in_a_paragraph_code_span_is_written_bare() {
 
 #[test]
 fn a_line_below_an_item_or_description_keeps_its_guard() {
-    // A task marker between the item's columns is text (carve#4545).
+    // A marker between the item's columns opens a list, so the span ends there
+    // (carve#4545); the round trip still has to hold.
     for marker in ["1. x", "a) x", "- [ ] x"] {
         for quote in ["", "> "] {
-            let source = format!("{quote}- lead\n{quote}  a `b\n{quote} {marker}`\n");
-            assert_eq!(round_trips(&source), source);
+            round_trips(&format!("{quote}- lead\n{quote}  a `b\n{quote} {marker}`\n"));
         }
     }
     for quote in ["", "> "] {

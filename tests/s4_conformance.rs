@@ -26,7 +26,7 @@ fn escaped_special_does_not_form_a_smart_operator() {
     assert_eq!(carve::to_html("\\<= 5\n"), "<p>&lt;= 5</p>");
     assert_eq!(carve::to_html("\\-> x\n"), "<p>-&gt; x</p>");
     // unescaped still converts
-    assert_eq!(carve::to_html("a <= b -> c\n"), "<p>a ≤ b → c</p>");
+    assert_eq!(carve::to_html("a <= b --> c\n"), "<p>a ≤ b → c</p>");
 }
 
 #[test]

@@ -3177,6 +3177,10 @@ fn try_extension_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<Bl
 pub(crate) fn lint_opens_code_fence(line: &str) -> bool {
     detect_fence_open(line).is_some()
 }
+/// See [`block::recovered_fence_format`].
+pub(crate) fn lint_recovered_fence_format(line: &str) -> Option<Option<&str>> {
+    recovered_fence_format(line)
+}
 /// Byte ranges of a table row's cells within `row`, split with the parser's own
 /// pipe rules (escapes and verbatim runs do not split).
 pub(crate) fn lint_table_cell_ranges(row: &str) -> Vec<(usize, usize)> {

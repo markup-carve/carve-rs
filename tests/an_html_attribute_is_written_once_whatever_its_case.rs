@@ -4,7 +4,7 @@
 #[test]
 fn a_structural_attribute_wins_and_names_fold_by_case() {
     for (source, html) in [
-        ("{type=text}\na. alpha\n", "<ol type=\"a\">\n  <li>alpha</li>\n</ol>"),
+        ("{type=text}\na.  alpha\n", "<ol type=\"a\">\n  <li>alpha</li>\n</ol>"),
         ("{start=9}\n3. x\n", "<ol start=\"3\">\n  <li>x</li>\n</ol>"),
         ("{start=9}\n1. x\n", "<ol start=\"9\">\n  <li>x</li>\n</ol>"),
         ("![a](/u.png){alt=z}\n", "<img src=\"/u.png\" alt=\"a\">"),

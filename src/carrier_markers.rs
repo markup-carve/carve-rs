@@ -375,7 +375,10 @@ fn list_style(payload: &str, start: Option<usize>) -> Option<OrderedListType> {
     }
     let sample = markers
         .iter()
-        .map(|marker| format!("{marker} item\n"))
+        .map(|marker| {
+            let gap = if marker.ends_with('.') { "  " } else { " " };
+            format!("{marker}{gap}item\n")
+        })
         .collect::<String>();
     let parsed = crate::parse::parse(&sample);
     match parsed.children.as_slice() {
@@ -1463,7 +1466,13 @@ pub(crate) fn restore_nested_list_styles(carve: &str, lift: &CarrierLift) -> Opt
                 || rest.as_bytes().get(width) != Some(&delimiter)
                 || !matches!(rest.as_bytes().get(width + 1), Some(b' ' | b'\t'))
             {
-                if rest.is_empty() || rest.starts_with([' ', '\t']) {
+                if rest.is_empty() {
+                    continue;
+                }
+                if rest.starts_with([' ', '\t']) {
+                    if delimiter == b'.' {
+                        *line = format!("{prefix} {rest}");
+                    }
                     continue;
                 }
                 break;
@@ -1472,10 +1481,11 @@ pub(crate) fn restore_nested_list_styles(carve: &str, lift: &CarrierLift) -> Opt
                 break;
             }
             *line = format!(
-                "{}{}{}{}",
+                "{}{}{}{}{}",
                 prefix,
                 crate::render_carve::ordered_marker(counter, Some(style)),
                 delimiter as char,
+                dot_marker_gap(delimiter),
                 &rest[width + 1..]
             );
             counter = counter.saturating_add(1);
@@ -1529,7 +1539,15 @@ fn restore_list_styles(lines: &[RestoredLine]) -> Vec<RestoredLine> {
                 || rest.as_bytes().get(width) != Some(&delimiter)
                 || !matches!(rest.as_bytes().get(width + 1), Some(b' ' | b'\t'))
             {
-                if rest.is_empty() || rest.starts_with([' ', '\t']) {
+                if rest.is_empty() {
+                    continue;
+                }
+                if rest.starts_with([' ', '\t']) {
+                    if delimiter == b'.' {
+                        let widened = format!(" {rest}");
+                        item.lead = marker.lead.clone();
+                        item.text = widened;
+                    }
                     continue;
                 }
                 break;
@@ -1539,9 +1557,10 @@ fn restore_list_styles(lines: &[RestoredLine]) -> Vec<RestoredLine> {
             }
             item.lead = marker.lead.clone();
             item.text = format!(
-                "{}{}{}",
+                "{}{}{}{}",
                 crate::render_carve::ordered_marker(counter, Some(style)),
                 delimiter as char,
+                dot_marker_gap(delimiter),
                 &rest[width + 1..]
             );
             counter = counter.saturating_add(1);
@@ -1553,6 +1572,15 @@ fn restore_list_styles(lines: &[RestoredLine]) -> Vec<RestoredLine> {
         .enumerate()
         .filter_map(|(at, line)| (!remove[at]).then_some(line))
         .collect()
+}
+
+/// A restored letter or roman marker with `.` takes a second space (carve#4811).
+fn dot_marker_gap(delimiter: u8) -> &'static str {
+    if delimiter == b'.' {
+        " "
+    } else {
+        ""
+    }
 }
 
 fn restore_fence_markers(lines: &[RestoredLine]) -> Vec<RestoredLine> {

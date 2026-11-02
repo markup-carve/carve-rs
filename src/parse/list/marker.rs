@@ -141,6 +141,15 @@ pub(crate) fn detect_ordered_full(
     // invalid block.
     let (content, attrs) = marker_tail(line, i + 1)?;
     let marker = &line[marker_start..i];
+    // A letter or roman marker with `.` needs two spaces, so initials stay text
+    // (carve#4811).
+    if delim == b'.'
+        && marker.bytes().all(|b| b.is_ascii_alphabetic())
+        && !content.is_empty()
+        && !line[..content.as_ptr() as usize - line.as_ptr() as usize].ends_with("  ")
+    {
+        return None;
+    }
     if marker.bytes().all(|b| b.is_ascii_digit()) {
         return Some((
             content,

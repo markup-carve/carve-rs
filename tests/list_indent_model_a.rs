@@ -65,13 +65,12 @@ fn task_child_nests_at_the_bullet_content_column() {
 }
 
 #[test]
-fn unordered_child_below_the_ordered_content_column_folds() {
-    // `- b` at col 2 is below the `10. ` content column (4); under symmetric §10
-    // a bullet does not interrupt, so it folds as lazy continuation (it would
-    // nest only at or past the content column).
+fn unordered_child_below_the_ordered_content_column_opens_a_new_list() {
+    // `- b` at col 2 is below the `10. ` content column (4), so it reads as at
+    // the marker column and opens a list of its own (carve#4545).
     assert_eq!(
         carve::to_html("10. a\n  - b"),
-        "<ol start=\"10\">\n  <li>a\n- b</li>\n</ol>"
+        "<ol start=\"10\">\n  <li>a</li>\n</ol>\n<ul>\n  <li>b</li>\n</ul>"
     );
 }
 
