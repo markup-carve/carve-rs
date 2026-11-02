@@ -901,13 +901,18 @@ pub(in crate::parse) fn body_ends_with_an_unnoded_interrupter(source: &str) -> b
 
 /// Does the body end on a payload line of a line block no closer has ended?
 /// That line is stanza text whatever it looks like (PART 2 `line_block`).
-fn innermost_host_tail(mut line: &str) -> &str {
+fn innermost_host_tail(mut line: &str) -> (bool, &str) {
+    let mut quoted = false;
     loop {
         let tail = innermost_marker_tail(line).1;
-        let Some((rest, _)) = strip_definition_marker(tail) else {
-            return tail;
-        };
-        line = trim_ascii_start(rest);
+        if let Some((rest, _)) = strip_definition_marker(tail) {
+            line = trim_ascii_start(rest);
+        } else if let Some(rest) = strip_blockquote_prefix(tail) {
+            quoted = true;
+            line = trim_ascii_start(rest);
+        } else {
+            return (quoted, tail);
+        }
     }
 }
 
@@ -918,6 +923,9 @@ pub(crate) fn body_ends_in_line_block_payload(source: &str) -> bool {
 /// `Some(quoted)` when the body ends on a line-block payload line, with
 /// whether the line block was opened inside a quote.
 pub(crate) fn line_block_payload_tail(source: &str) -> Option<bool> {
+    if !source.contains(":::") {
+        return None;
+    }
     let mut open = None;
     let mut quoted = false;
     let mut last_is_payload = false;
@@ -934,8 +942,9 @@ pub(crate) fn line_block_payload_tail(source: &str) -> Option<bool> {
             // A line block opened past list or description markers is still a
             // stanza of this body (carve#4748, row 910).
             None => {
-                open = detect_line_block_open(innermost_host_tail(local));
-                quoted = line_quoted;
+                let (host_quoted, tail) = innermost_host_tail(local);
+                open = detect_line_block_open(tail);
+                quoted = line_quoted || host_quoted;
             }
         }
     }

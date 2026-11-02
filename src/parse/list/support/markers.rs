@@ -1078,7 +1078,7 @@ pub(crate) fn nested_ends_with_open_paragraph(
     }
     // A payload line is stanza text whatever it looks like (PART 2 `line_block`).
     // A quoted stanza is the quote's to continue, not this item's.
-    if crate::parse::definition::line_block_payload_tail(nested) == Some(false) {
+    if crate::parse::definition::line_block_payload_tail(nested).is_some() {
         return true;
     }
     if !below_outer_column
@@ -1155,12 +1155,32 @@ pub(crate) fn colon_fences_left_open(nested: &str) -> usize {
     let mut comment_closers = None;
     for (index, line) in lines.iter().copied().enumerate() {
         let trimmed = trim_ascii_start(line);
-        let (offset, content) = if index == 0 || (code.is_none() && index >= verse_end) {
+        let (offset, mut content) = if index == 0 || (code.is_none() && index >= verse_end) {
             innermost_marker_tail(trimmed)
         } else {
             (0, trimmed)
         };
-        let column = indent_columns(line) + offset;
+        let mut column = indent_columns(line) + offset;
+        // A stanza opened on a description's marker line closes at that body's column.
+        if let Some(rest) = strip_description_prefix(content)
+            .filter(|rest| detect_line_block_open(trim_ascii_start(rest)).is_some())
+        {
+            column += content.len() - rest.len();
+            content = rest;
+        }
+        // A quote opened on a marker line measures its body from its own
+        // prefix, as the stripped lines below it are.
+        if offset > 0 {
+            if let Some(rest) = strip_blockquote_prefix(content) {
+                let mut local = rest;
+                while let Some(rest) = strip_blockquote_prefix(trim_ascii_start(local)) {
+                    local = rest;
+                }
+                let (inner, tail) = innermost_marker_tail(trim_ascii_start(local));
+                column = indent_columns(local) + inner;
+                content = tail;
+            }
+        }
         if offset > 0 {
             host_floor = column;
         }
@@ -1296,7 +1316,10 @@ pub(crate) fn block_ends_with_open_paragraph(
         // about: the fence closes the paragraph inside it, and a dedented line
         // after it ends the item (like code/table). One line of body decides it
         // two ways, which is why `colon_open` is read from the SOURCE.
-        Some(BlockNode::LineBlock(line)) if colon_open > 0 => line.children.last().is_some_and(|child| matches!(child, BlockNode::Paragraph(paragraph) if paragraph.children.iter().rev().find(|inline| !matches!(inline, InlineNode::SoftBreak(_) | InlineNode::HardBreak(_))).is_some_and(|inline| !matches!(inline, InlineNode::Comment(_))))),
+        // A comment payload line keeps the stanza open (PART 2 `line_block`).
+        Some(BlockNode::LineBlock(line)) if colon_open > 0 => {
+            matches!(line.children.last(), Some(BlockNode::Paragraph(_)))
+        }
         Some(BlockNode::Directive(d)) if colon_open > 0 => block_ends_with_open_paragraph(
             last_open_child(&d.children, skip_comments),
             colon_open - 1,

@@ -387,6 +387,10 @@ pub(in crate::parse) fn split_trailing_attrs(
     if !probe.eof() {
         return None;
     }
+    // An unclosed line block's payload line is stanza text (PART 2 `line_block`).
+    if crate::parse::definition::body_ends_in_line_block_payload(&nested.source) {
+        return None;
+    }
     // WHERE THE RUN WAS WRITTEN, for §15 A4's diagnostic - taken BEFORE the
     // maps are truncated below, since after that the split-off lines have no
     // entries left to read. A set lifted off a chunk and never placed is

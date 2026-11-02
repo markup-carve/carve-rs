@@ -265,14 +265,7 @@ impl NestedFenceReplay {
     }
 
     fn verdict(&mut self, lines: &[SourceLine], cur: &LineCursor<'_>) -> Option<bool> {
-        if self.chain.is_empty() {
-            self.chain.push(NestedLevel::default());
-        }
-        while self.scanned < lines.len() {
-            let at = self.scanned;
-            self.scanned += 1;
-            self.replay(lines, at, cur);
-        }
+        self.advance(lines, cur);
         let deepest = self.chain.last()?;
         // A one-line read cannot see a quote an item hosts.
         if deepest.hosted
@@ -301,6 +294,25 @@ impl NestedFenceReplay {
             || deepest.by_colon
             || deepest.host_comment.is_some())
         .then_some(false)
+    }
+
+    fn advance(&mut self, lines: &[SourceLine], cur: &LineCursor<'_>) {
+        if self.chain.is_empty() {
+            self.chain.push(NestedLevel::default());
+        }
+        while self.scanned < lines.len() {
+            let at = self.scanned;
+            self.scanned += 1;
+            self.replay(lines, at, cur);
+        }
+    }
+
+    /// Whether the deepest level ends on a payload line of a hosted line block.
+    fn stanza_open(&mut self, lines: &[SourceLine], cur: &LineCursor<'_>) -> bool {
+        self.advance(lines, cur);
+        self.chain
+            .last()
+            .is_some_and(|deepest| deepest.host_verse.is_some() && deepest.para)
     }
 
     fn replay(&mut self, lines: &[SourceLine], at: usize, cur: &LineCursor<'_>) {
@@ -1982,6 +1994,8 @@ impl<'a> QuoteBody<'a> {
             self.table = TableRun::default();
         } else if let Some(width) = detect_line_block_open(stripped) {
             self.literal_quote_body = Some(width);
+            // A div's opener right above leaves the stanza's paragraph open.
+            self.closed_div = false;
             self.para_open = ParaOpen::from_line("x", false);
             self.opaque_tail = false;
             self.table = TableRun::default();
@@ -2506,7 +2520,11 @@ impl<'a> QuoteBody<'a> {
                 return true;
             }
         }
-        if self.attrs_closed_last {
+        // An attribute-shaped payload line of a hosted line block is stanza
+        // text and leaves the stanza open (PART 2 `line_block`).
+        if self.attrs_closed_last
+            && !(self.may_hold_fence && self.nested_replay.stanza_open(&self.inner.lines, cur))
+        {
             return true;
         }
         let fenced_below = if self.may_hold_fence {
