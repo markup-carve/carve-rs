@@ -24,3 +24,20 @@ fn a_later_item_definition_beats_an_earlier_note_one() {
         "second"
     );
 }
+
+#[test]
+fn a_probed_container_definition_is_hoisted_once() {
+    for source in [
+        "- a\n  - b\n    *[A]: x\n\nA\n",
+        ":: t\n:  - b\n     *[A]: x\n\nA\n",
+        "- a\n  :: t\n  :  *[A]: x\n\nA\n",
+    ] {
+        let doc = carve::parse(source);
+        let count = doc
+            .children
+            .iter()
+            .filter(|block| matches!(block, carve::ast::BlockNode::AbbreviationDef(_)))
+            .count();
+        assert_eq!(count, 1, "{source:?}");
+    }
+}

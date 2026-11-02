@@ -239,6 +239,10 @@ pub(in crate::parse) fn hoist_prepass_abbreviations(
 
 /// Hoist a definition read inside a container to the document (carve#4865).
 pub(in crate::parse) fn hoist_abbreviation(def: AbbreviationDef) {
+    // A throwaway parse publishes nothing.
+    if probing() {
+        return;
+    }
     SKIPPED_SIBLING_ABBREVIATIONS.with(|cell| {
         if let Some(defs) = cell.borrow_mut().last_mut() {
             defs.push(def);
