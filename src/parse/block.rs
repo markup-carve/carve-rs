@@ -2347,6 +2347,9 @@ fn find_colon_fence_end_with<'a>(
                     continue;
                 }
                 Some(_) => {}
+                // A lazy line ends an unclosed verse span (S1, carve#4956).
+                None if literal
+                    && (idx + 1..lines.len()).any(|at| measured(at).starts_with(LAZY)) => {}
                 // An unclosed span hides the block's own closer (carve#4907).
                 None => {
                     for at in idx + 1..lines.len() {

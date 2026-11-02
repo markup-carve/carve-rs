@@ -47,7 +47,11 @@ fn a_description_or_quote_stanza_takes_the_missed_line() {
 #[test]
 fn a_marker_after_a_quoted_span_still_ends_the_quote() {
     let html = carve::to_html("> - ::: |\n>   x\n>   %%%\n- b\n");
-    assert!(html.trim_end().ends_with("</blockquote>\n<ul>\n  <li>b</li>\n</ul>"), "{html}");
+    assert!(
+        html.trim_end()
+            .ends_with("</blockquote>\n<ul>\n  <li>b</li>\n</ul>"),
+        "{html}"
+    );
 }
 
 #[test]
@@ -60,4 +64,20 @@ fn a_blank_ended_nested_stanza_takes_no_lazy_line() {
 fn a_closed_span_in_a_nested_stanza_keeps_the_lazy_line() {
     let html = carve::to_html("- - ::: |\n    x\n    %%%\n    y\n    %%%\nb\n");
     assert!(html.contains("<p>x<br>\nb</p>"), "{html}");
+}
+
+#[test]
+fn the_block_closer_after_the_missed_line_still_closes() {
+    for source in [
+        ":: t\n: ::: |\n  x\n  %%%\nb\n  :::\n  q\n",
+        "- ::: |\n  x\n  %%%\nb\n  :::\n  q\n",
+        "> ::: |\n> x\n> %%%\nb\n> :::\n> q\n",
+    ] {
+        let html = carve::to_html(source);
+        assert!(html.contains("<p>x<br>\nb</p>\n"), "{source:?}\n{html}");
+        assert!(
+            !html.contains(":::") && !html.contains("<br>\nq"),
+            "{source:?}\n{html}"
+        );
+    }
 }
