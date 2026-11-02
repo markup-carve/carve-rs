@@ -342,7 +342,8 @@ fn collect_markdown_habits(doc: &Document, rows: &[Line<'_>], out: &mut Vec<Lint
                 BlockNode::Heading(h) => heading_closing_hashes(h, rows, out),
                 BlockNode::Paragraph(p) => {
                     let Some(pos) = &p.pos else { continue };
-                    for ln in pos.start_line + 1..=pos.end_line {
+                    let payload = opaque_inner_lines(&p.children);
+                    for ln in (pos.start_line + 1..=pos.end_line).filter(|l| !payload.contains(l)) {
                         if let Some((at, run)) =
                             rows.get(ln - 1).and_then(|r| setext_run(r.text, b'='))
                         {
@@ -387,6 +388,28 @@ fn collect_markdown_habits(doc: &Document, rows: &[Line<'_>], out: &mut Vec<Lint
         }
     }
     indented_code_blocks(&doc.children, rows, out);
+}
+
+/// Lines inside a code, math, raw or comment span after its first line.
+fn opaque_inner_lines(children: &[InlineNode]) -> BTreeSet<usize> {
+    let mut lines = BTreeSet::new();
+    let mut pending: Vec<_> = children.iter().map(|inline| (inline, 0)).collect();
+    while let Some((node, depth)) = pending.pop() {
+        if matches!(
+            node,
+            InlineNode::Code(_)
+                | InlineNode::Math(_)
+                | InlineNode::RawInline(_)
+                | InlineNode::LiteralInline(_)
+                | InlineNode::Comment(_)
+        ) {
+            if let Some(pos) = node.pos() {
+                lines.extend(pos.start_line + 1..=pos.end_line);
+            }
+        }
+        push_inline_children(node, depth, &mut pending);
+    }
+    lines
 }
 
 fn heading_closing_hashes(h: &Heading, rows: &[Line<'_>], out: &mut Vec<LintWarning>) {

@@ -109,3 +109,12 @@ fn a_closing_run_after_formatted_heading_text_is_reported() {
     );
     assert_eq!(findings("## `h` \\#\n"), []);
 }
+
+#[test]
+fn an_equals_run_inside_a_code_span_is_not_an_underline() {
+    assert_eq!(findings("Title `\n===\n` b\n"), []);
+    assert_eq!(
+        findings("Title\n===\n"),
+        [("setext-heading-underline", 2, 1)]
+    );
+}
