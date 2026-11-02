@@ -494,7 +494,8 @@ impl NestedFenceReplay {
             here.host_verse = None;
             here.para = false;
         } else {
-            here.para = !is_blank_line(text) && !is_line_comment_any_column(text);
+            // A comment payload line leaves the stanza open (PART 2 `line_block`).
+            here.para = !is_blank_line(text);
         }
         here.colon_absorption = false;
         here.by_colon = true;
