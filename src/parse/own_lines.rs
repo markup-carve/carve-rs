@@ -312,7 +312,7 @@ fn is_cont_marker(rest: &str) -> bool {
 }
 
 /// Whether a note's marker-line content is a chain of items or notes measured
-/// from its source column. One ending in a code fence keeps the body column.
+/// from its source column.
 fn note_child_at_source(rest: &str) -> bool {
     let mut text = rest;
     let mut chained = false;
@@ -322,7 +322,7 @@ fn note_child_at_source(rest: &str) -> bool {
             .map(|marker| marker.content)
             .or_else(|| parse_footnote_def_line(line).map(|(_, body)| body));
         let Some(next) = next else {
-            return (chained || quote_marker(line).is_some()) && detect_fence_open(line).is_none();
+            return chained || quote_marker(line).is_some();
         };
         text = next;
         chained = true;

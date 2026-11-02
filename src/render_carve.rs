@@ -2846,22 +2846,44 @@ fn render_footnote_def_source(
     let prefix = format!("[^{}]: ", write_flat_bracket_run(label));
     let mut def_lines = vec![format!("{prefix}{}", lines.next().unwrap_or_default())];
     // A list opened on this definition's marker line keeps its authored
-    // marker column on following lines. A fence opened on that line is the
-    // exception: its content and closer read the note body column.
-    let marker_line_list = matches!(blocks, [BlockNode::List(list)] if !matches!(list.items.first().and_then(|item| item.children.first()), Some(BlockNode::CodeBlock(_))));
-    let continuation = if marker_line_list {
-        " ".repeat(prefix.len())
-    } else {
-        "  ".to_string()
-    };
+    // marker column on following lines (CARVE-P9-083).
+    let marker_column = " ".repeat(prefix.len());
+    let marker_line_list = matches!(blocks, [BlockNode::List(_)]);
+    // With later blocks only a fence opened on that line stays at it: its payload
+    // and closer read the item's content column (carve#4755).
+    let mut marker_fence = matches!(blocks, [BlockNode::List(_), ..])
+        .then(|| first_child_fence(&blocks[0]))
+        .flatten();
     for line in lines {
         // TWO spaces, the body's own column (PART 9 §16). A wider indent is legal
         // continuation but leaves the body's blocks at a relative column above
         // zero, and an indented block opener does not open a block - so a table
         // or a quote written at three came back as a paragraph.
-        def_lines.push(format!("{continuation}{line}"));
+        if marker_line_list || marker_fence.is_some() {
+            def_lines.push(format!("{marker_column}{line}"));
+        } else {
+            def_lines.push(format!("  {line}"));
+        }
+        if let Some((fence, len)) = marker_fence {
+            let text = line.trim_matches(' ');
+            if text.len() >= len && text.bytes().all(|b| b == fence) {
+                marker_fence = None;
+            }
+        }
     }
     def_lines.join("\n")
+}
+
+/// The fence character and length a chain of lists opens on its marker line.
+fn first_child_fence(block: &BlockNode) -> Option<(u8, usize)> {
+    match block {
+        BlockNode::List(list) => first_child_fence(list.items.first()?.children.first()?),
+        BlockNode::CodeBlock(code) => {
+            let fence = safe_fence(&code.content, 3);
+            Some((*fence.as_bytes().first()?, fence.len()))
+        }
+        _ => None,
+    }
 }
 
 /// An inline sequence with every include directive isolated into a single text

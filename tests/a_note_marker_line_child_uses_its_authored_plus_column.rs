@@ -46,7 +46,7 @@ fn formatting_keeps_marker_line_children_at_their_authored_columns() {
         "[^f]: - i\n      +\n      x\n\n[^f]\n",
         "[^long]: 1. i\n         +\n         x\n\n[^long]\n",
         "[^f]: - - a\n        # H\n\n[^f]\n",
-        "[^f]: - ```js\n    x\n    ```\n\n[^f]\n",
+        "[^f]: - ```js\n        x\n        ```\n\n[^f]\n",
     ] {
         let formatted = to_carve(source);
         assert_eq!(to_html(&formatted), to_html(source), "{formatted}");
