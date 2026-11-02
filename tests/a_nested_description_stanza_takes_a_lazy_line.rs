@@ -7,7 +7,11 @@ use carve::to_html;
 #[test]
 fn a_definition_shaped_payload_keeps_the_stanza_at_depth_two() {
     for payload in ["{.k}", "[x]: /u", "[^2]: n"] {
-        for (host, column) in [("- - :: u\n    : ", 6), ("- - - :: u\n      : ", 8), ("1. - :: u\n     : ", 7)] {
+        for (host, column) in [
+            ("- - :: u\n    : ", 6),
+            ("- - - :: u\n      : ", 8),
+            ("1. - :: u\n     : ", 7),
+        ] {
             let source = format!("{host}::: |\n{}{payload}\nb\n", " ".repeat(column));
             let html = to_html(&source);
             assert!(
