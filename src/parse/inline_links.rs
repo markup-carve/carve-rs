@@ -628,20 +628,6 @@ pub(in crate::parse) fn skip_editorial_comment(bytes: &[u8], start: usize) -> Op
     {
         return None;
     }
-    // A `{#id}` after a bracketed construct or another attribute block can
-    // belong to that construct. If a later link label contains `#}`, treating
-    // the attribute opener as a comment hides that link from bracket pairing.
-    // An opening delimiter (for example `[{#i}...#}]`) is not an attribute
-    // host; there the editorial comment remains opaque.
-    if start > 0 && matches!(bytes[start - 1], b']' | b'}') {
-        let first_brace = bytes[start + 2..]
-            .iter()
-            .position(|&byte| byte == b'}')
-            .map(|offset| start + 2 + offset);
-        if read_attrs_at(bytes, start, first_brace).is_some() {
-            return None;
-        }
-    }
     let mut i = start + 2;
     while i + 1 < bytes.len() {
         if bytes[i] == b'#' && bytes[i + 1] == b'}' {
@@ -695,6 +681,60 @@ impl CrossrefScan {
 
 /// Sentinel in a bracket-match table meaning "this `[` has no matching `]`".
 pub(in crate::parse) const NO_BRACKET_MATCH: usize = usize::MAX;
+
+fn bare_emphasis_slot(byte: u8) -> Option<usize> {
+    Some(match byte {
+        b'*' => 0,
+        b'/' => 1,
+        b'_' => 2,
+        b'~' => 3,
+        b'=' => 4,
+        _ => return None,
+    })
+}
+
+fn observe_non_bracket_attribute_host(
+    bytes: &[u8],
+    i: usize,
+    in_alt: bool,
+    host_end: &mut usize,
+    bare_open: &mut [Option<usize>; 5],
+    braced_open: &mut [Option<usize>; DELIM_BRACE_SLOTS],
+) {
+    if in_alt {
+        return;
+    }
+    let byte = bytes[i];
+    if byte == b'{' {
+        if let Some(slot) = bytes.get(i + 1).and_then(|&b| delim_brace_slot(b)) {
+            if slot != delim_brace_slot(b'#').unwrap() {
+                braced_open[slot] = Some(i);
+            }
+        }
+    } else if byte == b'}' && i > 0 {
+        if let Some(slot) = delim_brace_slot(bytes[i - 1]) {
+            if let Some(open) = braced_open[slot].take() {
+                if i > open + 2 {
+                    *host_end = i + 1;
+                }
+            }
+        }
+    }
+    if let Some(slot) = bare_emphasis_slot(byte) {
+        match bare_open[slot] {
+            Some(open)
+                if i > open + 1
+                    && !bytes[open + 1].is_ascii_whitespace()
+                    && !bytes[i - 1].is_ascii_whitespace()
+                    && bare_opener_state(bytes, open) != 0 =>
+            {
+                *host_end = i + 1;
+                bare_open[slot] = None;
+            }
+            _ => bare_open[slot] = Some(i),
+        }
+    }
+}
 
 /// How many bytes the per-bracket rescans in [`compute_bracket_matches`] may
 /// walk in one text, as a multiple of its length. A DoS guard: past it the
@@ -873,6 +913,7 @@ fn compute_bracket_runs_with_alt(
         HashMap::new()
     };
     let last_comment_close = bytes.windows(2).rposition(|w| w == b"#}");
+    let last_close_brace = bytes.iter().rposition(|&b| b == b'}');
     let closed_span_end = |at: usize| -> (usize, Option<usize>) {
         let len = bytes[at..].iter().take_while(|&&b| b == b'`').count();
         let closes = last_run_start
@@ -931,10 +972,27 @@ fn compute_bracket_runs_with_alt(
         // Per open bracket, whether it is (inside) an image alt.
         let mut alt: Vec<bool> = Vec::new();
         let mut last_bang = usize::MAX;
+        // Only a structural closing bracket, or an attribute already attached
+        // to one, can host the next glued attribute block. Literal `]` and `}`
+        // must leave `{#...#}` opaque as an editorial comment.
+        let mut attribute_host_end = usize::MAX;
+        // Bare emphasis and braced inline constructs can also host attributes.
+        // Remember actual opener positions, rather than assuming a `}` is a
+        // host: a standalone `{.c}` after text remains literal.
+        let mut bare_open: [Option<usize>; 5] = [None; 5];
+        let mut braced_open: [Option<usize>; DELIM_BRACE_SLOTS] = [None; DELIM_BRACE_SLOTS];
         let mut slot_budget = BRACKET_RESCAN_BUDGET * bytes.len() + 64;
         let mut i = 0;
         while i < bytes.len() {
             let in_alt = alt.last().copied().unwrap_or(false);
+            let attached_attr_end = if !in_alt && attribute_host_end == i && bytes[i] == b'{' {
+                read_attrs_at(bytes, i, last_close_brace).map(|(_, end)| end)
+            } else {
+                None
+            };
+            if let Some(end) = attached_attr_end {
+                attribute_host_end = end;
+            }
             match bytes[i] {
                 b'\\' if i + 1 < bytes.len() => {
                     fill_run(&mut run_at, &stack, i, i + 2);
@@ -945,6 +1003,7 @@ fn compute_bracket_runs_with_alt(
                         spans.push((i + len, end));
                         fill_run(&mut run_at, &stack, i, end);
                         i = end;
+                        attribute_host_end = end;
                     }
                     (len, None) => {
                         fill_run(&mut run_at, &stack, i, i + len);
@@ -953,6 +1012,11 @@ fn compute_bracket_runs_with_alt(
                         i += len;
                     }
                 },
+                b'{' if attached_attr_end.is_some() && bytes.get(i + 1) == Some(&b'#') => {
+                    let end = attached_attr_end.unwrap();
+                    fill_run(&mut run_at, &stack, i, end);
+                    i = end;
+                }
                 b'{' if comment_end(i).is_some() => {
                     let end = comment_end(i).unwrap_or(i + 1);
                     fill_run(&mut run_at, &stack, i, end);
@@ -967,11 +1031,13 @@ fn compute_bracket_runs_with_alt(
                     let end = crossref_end.end(bytes, i).unwrap_or(i + 1);
                     fill_run(&mut run_at, &stack, i, end);
                     i = end;
+                    attribute_host_end = end;
                 }
                 b'<' if scanned_autolink_end(bytes, i).is_some() => {
                     let end = scanned_autolink_end(bytes, i).unwrap_or(i);
                     fill_run(&mut run_at, &stack, i, end + 1);
                     i = end + 1;
+                    attribute_host_end = i;
                 }
                 b'[' if atomic.contains_key(&i) => {
                     let close = atomic[&i];
@@ -980,6 +1046,7 @@ fn compute_bracket_runs_with_alt(
                     fill_run(&mut run_at[..close], &[i], i + 1, close);
                     matches[i] = close;
                     i = close + 1;
+                    attribute_host_end = i;
                 }
                 b']' if freed.contains(&i) => {
                     run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
@@ -995,16 +1062,20 @@ fn compute_bracket_runs_with_alt(
                     i += 1;
                 }
                 b']' => {
+                    let mut closed = false;
                     if let Some(open) = stack.pop() {
                         matches[open] = i;
+                        attribute_host_end = i + 1;
+                        closed = true;
                     }
                     alt.pop();
                     run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
                     i += 1;
-                    if !stack.is_empty() {
+                    if closed {
                         if let Some(end) = nested_destination_slot_end(bytes, i, &mut slot_budget) {
                             fill_run(&mut run_at, &stack, i, end);
                             i = end;
+                            attribute_host_end = end;
                         }
                     }
                 }
@@ -1012,6 +1083,14 @@ fn compute_bracket_runs_with_alt(
                     if byte == b'!' {
                         last_bang = i;
                     }
+                    observe_non_bracket_attribute_host(
+                        bytes,
+                        i,
+                        in_alt,
+                        &mut attribute_host_end,
+                        &mut bare_open,
+                        &mut braced_open,
+                    );
                     run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
                     i += 1;
                 }

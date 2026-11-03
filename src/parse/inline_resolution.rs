@@ -1961,7 +1961,7 @@ fn guard_stands(bytes: &[u8], at: usize, from: usize, delim: u8) -> bool {
 
 /// Whether the bare delimiter at `at` opens: 0 no, 1 yes, 2 only if the `_`
 /// or `/` before it is text.
-fn bare_opener_state(bytes: &[u8], at: usize) -> u8 {
+pub(in crate::parse) fn bare_opener_state(bytes: &[u8], at: usize) -> u8 {
     let ch = bytes[at];
     let Some(&next) = bytes.get(flank_after(bytes, at + 1)) else {
         return 0;
