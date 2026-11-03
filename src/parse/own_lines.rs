@@ -578,6 +578,7 @@ struct Skipped {
     host: usize,
     at: usize,
     end: usize,
+    column: usize,
     fenced: Vec<usize>,
     lead: String,
 }
@@ -659,7 +660,7 @@ impl<'s> Cursor<'s> {
 }
 
 /// A line a note definition's body folds as plain text.
-fn foldable_plain_line(rest: &str) -> bool {
+pub(in crate::parse) fn foldable_plain_line(rest: &str) -> bool {
     let text = rest.trim_end_matches([' ', '\t', '\r']);
     line_starts_paragraph(rest)
         && !rest.starts_with("%%")
@@ -1085,6 +1086,7 @@ impl<'a> Walk<'a> {
             host,
             at,
             end,
+            column,
             fenced,
             lead,
         });
@@ -1111,6 +1113,10 @@ impl<'a> Walk<'a> {
         } else {
             rest
         };
+        // Off the marker column a skipped note's `+` is a letter of its body, as the gate read it (carve#5034).
+        if is_plus_marker(rest) && doc_column(line, rest) != skipped.column {
+            self.refuse_line = true;
+        }
         let (host, from, end) = (skipped.host, skipped.at, skipped.end);
         if at + 1 == end {
             if self.frames[host].plus == Some(from) {
