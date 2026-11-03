@@ -32,15 +32,8 @@ fn opener_at_document_column_zero_opens_fence() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn indented_document_openers_do_not_open_fences() {
-    for indent in 1..=4 {
-        let src = format!("{} ```\nx\n{} ```", " ".repeat(indent), " ".repeat(indent));
-        assert!(
-            code_blocks(&src).is_empty(),
-            "{indent}-space indented opener parsed as fenced code"
-        );
-    }
+    crate::common::assert_rule_a_pins("fenced_code_columns::indented_document_openers_do_not_open_fences");
 }
 
 #[test]

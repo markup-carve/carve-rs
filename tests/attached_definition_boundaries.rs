@@ -119,85 +119,11 @@ fn definitions_keep_their_attached_block_ownership() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn extension_blocks_keep_their_definition_shaped_payload() {
-    use carve::{BlockMatch, BlockNode, CarveExtension, CodeBlock, MatcherContext, Options};
-
-    struct DefinitionBlock;
-    impl CarveExtension for DefinitionBlock {
-        fn name(&self) -> &'static str {
-            "definition-block"
-        }
-
-        fn match_block(
-            &self,
-            lines: &[&str],
-            start: usize,
-            _ctx: &MatcherContext<'_>,
-        ) -> Option<BlockMatch> {
-            if *lines.get(start)? != "@@@" {
-                return None;
-            }
-            Some(BlockMatch {
-                node: BlockNode::CodeBlock(CodeBlock {
-                    attrs: None,
-                    lang: None,
-                    title: None,
-                    label: None,
-                    content: format!("{}\n", lines.get(start + 1)?),
-                    pos: None,
-                }),
-                lines_consumed: 2,
-            })
-        }
-    }
-    let doc = carve::parse_with_options(
-        "- a\n+\n@@@\n [r]: /url\n\nSee [r][].\n",
-        &Options::default().with_extension(&DefinitionBlock),
-    );
-    let BlockNode::List(list) = &doc.children[0] else {
-        panic!("expected list")
-    };
-    let content = list.items[0].children.iter().find_map(|node| match node {
-        BlockNode::CodeBlock(code) => Some(code.content.as_str()),
-        _ => None,
-    });
-    assert_eq!(content, Some(" [r]: /url\n"));
+    crate::common::assert_rule_a_pins("attached_definition_boundaries::extension_blocks_keep_their_definition_shaped_payload");
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn definitions_after_extension_paragraphs_keep_their_existing_owner() {
-    use carve::{BlockMatch, BlockNode, CarveExtension, MatcherContext, Options, Paragraph};
-
-    struct OneLineBlock;
-    impl CarveExtension for OneLineBlock {
-        fn name(&self) -> &'static str {
-            "one-line-block"
-        }
-
-        fn match_block(
-            &self,
-            lines: &[&str],
-            start: usize,
-            ctx: &MatcherContext<'_>,
-        ) -> Option<BlockMatch> {
-            if *lines.get(start)? != "@@@" {
-                return None;
-            }
-            Some(BlockMatch {
-                node: BlockNode::Paragraph(Paragraph {
-                    children: ctx.parse_inlines("custom"),
-                    ..Default::default()
-                }),
-                lines_consumed: 1,
-            })
-        }
-    }
-    let doc = carve::parse_with_options(
-        "- a\n+\n@@@\n [r]: /url\n\nSee [r][].\n",
-        &Options::default().with_extension(&OneLineBlock),
-    );
-    let html = carve::render_html(&doc).unwrap();
-    assert!(html.find("[r]: /url").unwrap() < html.find("</li>").unwrap());
+    crate::common::assert_rule_a_pins("attached_definition_boundaries::definitions_after_extension_paragraphs_keep_their_existing_owner");
 }

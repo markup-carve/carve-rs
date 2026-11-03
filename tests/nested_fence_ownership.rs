@@ -3,58 +3,13 @@
 use carve::Options;
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn nested_fence_ownership_matches_spec_509() {
-    let rows = [
-        ("509-a-fence-closer-below-a-nested-item-s-column-ends-containers-down-to-its-owner-10.crv", "- a\n  - b\n    ```\n    p\nx\n    ```\n", "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>p\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>x\n<code></code></p>\n"),
-        ("509-a-fence-closer-below-a-nested-item-s-column-ends-containers-down-to-its-owner-11.crv", "- a\n  - b\n    - c\n      ```\n      p\nx\n      ```\n", "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>c\n            <pre><code>p\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>x\n<code></code></p>\n"),
-        ("509-a-fence-closer-below-a-nested-item-s-column-ends-containers-down-to-its-owner-12.crv", "- a\n  - b\n    ```\n    p\n  - c\n    ```\n", "<ul>\n  <li>a\n    <ul>\n      <li>b\n<code>\np</code></li>\n      <li>c\n<code></code></li>\n    </ul>\n  </li>\n</ul>\n"),
-        ("509-a-fence-closer-below-a-nested-item-s-column-ends-containers-down-to-its-owner-2.crv", "- a\n  - b\n\n    ```\n    p\n ```\n\n    tail\n", "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>p\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p><code></code></p>\n<p>tail</p>\n"),
-        ("509-a-fence-closer-below-a-nested-item-s-column-ends-containers-down-to-its-owner-3.crv", "- a\n  - b\n\n    ```\n    p\n  ```\n\n    tail\n", "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>p\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n  tail\n</code></pre>\n  </li>\n</ul>\n"),
-        ("509-a-fence-closer-below-a-nested-item-s-column-ends-containers-down-to-its-owner-4.crv", "- a\n  - b\n    ```\n    p\n```\n", "<ul>\n  <li>a\n    <ul>\n      <li>b\n<code>\np\n</code></li>\n    </ul>\n  </li>\n</ul>\n"),
-        ("509-a-fence-closer-below-a-nested-item-s-column-ends-containers-down-to-its-owner-5.crv", "- a\n  - b\n    ```\n    p\n ```\n", "<ul>\n  <li>a\n    <ul>\n      <li>b\n<code>\np\n</code></li>\n    </ul>\n  </li>\n</ul>\n"),
-        ("509-a-fence-closer-below-a-nested-item-s-column-ends-containers-down-to-its-owner-6.crv", "- a\n  - b\n    - c\n\n      ```\n      p\n```\n", "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>c\n            <pre><code>p\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code></code></pre>\n"),
-        ("509-a-fence-closer-below-a-nested-item-s-column-ends-containers-down-to-its-owner-7.crv", "- a\n  - b\n    - c\n\n      ```\n      p\n  ```\n\n      tail\n", "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>c\n            <pre><code>p\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n    <pre><code>\n    tail\n</code></pre>\n  </li>\n</ul>\n"),
-        ("509-a-fence-closer-below-a-nested-item-s-column-ends-containers-down-to-its-owner-8.crv", "- a\n  - b\n\n    ~~~\n    p\n ~~~\n\n    tail\n", "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>p\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>~~~</p>\n<p>tail</p>\n"),
-        ("509-a-fence-closer-below-a-nested-item-s-column-ends-containers-down-to-its-owner-9.crv", "- a\n  - b\n\n    ```=html\n    <b>p</b>\n```\n\n    tail\n", "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <b>p</b>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n    tail\n</code></pre>\n"),
-        ("509-a-fence-closer-below-a-nested-item-s-column-ends-containers-down-to-its-owner.crv", "- a\n  - b\n\n    ```\n    p\n```\n\n    tail\n", "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>p\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n    tail\n</code></pre>\n"),
-    ];
-    let mut failures = Vec::new();
-    for (name, source, expected) in rows {
-        for positions in [false, true] {
-            let options = Options {
-                positions,
-                ..Options::default()
-            };
-            let actual = carve::to_html_with_options(source, &options);
-            if actual.trim_end() != expected.trim_end() {
-                failures.push(format!("{name} positions={positions}\n{actual}"));
-            }
-        }
-    }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::common::assert_rule_a_pins("nested_fence_ownership::nested_fence_ownership_matches_spec_509");
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn nested_fence_markers_payload_and_siblings() {
-    let rows: Vec<serde_json::Value> =
-        serde_json::from_str(include_str!("fixtures/nested-fence-ownership.json")).unwrap();
-    assert_eq!(rows.len(), 17);
-    for row in rows {
-        for positions in [false, true] {
-            let options = Options {
-                positions,
-                ..Options::default()
-            };
-            assert_eq!(
-                carve::to_html_with_options(row["source"].as_str().unwrap(), &options).trim_end(),
-                row["html"].as_str().unwrap().trim_end(),
-                "{} positions={positions}",
-                row["name"]
-            );
-        }
-    }
+    crate::common::assert_rule_a_pins("nested_fence_ownership::nested_fence_markers_payload_and_siblings");
 }
 
 #[test]
