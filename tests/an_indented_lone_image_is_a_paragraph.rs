@@ -131,25 +131,8 @@ fn the_column_is_the_containers_content_column_not_column_zero() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_caption_line_still_keeps_the_indented_pair_literal() {
-    // Corpus `158-indented-image-and-caption-stay-literal`, restated here as the
-    // control that bounds the change: the FIGURE promotion stays gated on the
-    // content column at render time as well as at parse time, so lifting the
-    // gate for the lone image did not start building figures nobody wrote.
-    let source = " ![Apollo](a.jpg)\n ^ Figure 1: moon\n";
-    assert_eq!(types(&parse(source).children), vec!["paragraph"]);
-    assert_eq!(
-        to_html(source).trim(),
-        "<p><img src=\"a.jpg\" alt=\"Apollo\">\n^ Figure 1: moon</p>"
-    );
-
-    // Its flush-left twin is a figure, which is what makes the row above a
-    // measurement rather than a tautology.
-    assert_eq!(
-        types(&parse("![Apollo](a.jpg)\n^ Figure 1: moon\n").children),
-        vec!["figure"]
-    );
+    crate::common::assert_rule_a_pins("an_indented_lone_image_is_a_paragraph::a_caption_line_still_keeps_the_indented_pair_literal");
 }
 
 #[test]

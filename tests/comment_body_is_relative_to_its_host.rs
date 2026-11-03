@@ -2,21 +2,20 @@
 
 use carve::{to_carve, to_html};
 
+// Under rule A a span opened below the item's column is a document-level block.
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_below_column_body_loses_only_the_available_host_prefix() {
     assert_eq!(
         to_carve("- a\n %%% n\n x\n %%%\n tail\n"),
-        "- a\n  %%%\n  n\n  x\n  %%%\n  tail\n"
+        "- a\n\n%%%\nn\n x\n%%%\n\ntail\n"
     );
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn the_nested_form_agrees_too() {
     assert_eq!(
         to_carve("- - a\n %%% c\n x\n %%%\n b\n"),
-        "- - a\n    %%%\n    c\n    x\n    %%%\n    b\n"
+        "- - a\n\n%%%\nc\n x\n%%%\n\nb\n"
     );
 }
 
@@ -26,24 +25,17 @@ fn a_document_body_keeps_its_indentation() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_matched_comment_body_keeps_its_complete_extent() {
-    assert_eq!(
-        to_carve("- a\n  %%%\n x\n  %%%\n"),
-        "- a\n  %%%\n  x\n  %%%\n"
-    );
-    assert_eq!(
-        to_html(&to_carve("- a\n  %%%\n x\n  %%%\n")),
-        "<ul>\n  <li>a</li>\n</ul>"
+    crate::common::assert_rule_a_pins(
+        "comment_body_is_relative_to_its_host::a_matched_comment_body_keeps_its_complete_extent",
     );
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_tab_straddling_the_host_column_keeps_its_residual_columns() {
     assert_eq!(
         to_carve("- a\n %%% n\n\tx\n %%%\n tail\n"),
-        "- a\n  %%%\n  n\n    x\n  %%%\n  tail\n"
+        "- a\n\n%%%\nn\n\tx\n%%%\n\ntail\n"
     );
 }
 

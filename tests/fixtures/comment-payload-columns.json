@@ -52,28 +52,28 @@
     "name": "ordered below",
     "source": "1. item\n  %%%\n  hidden\n   %%%\ntail\n",
     "expected": [
-      "hidden"
+      "  hidden"
     ]
   },
   {
     "name": "unordered below",
     "source": "- a\n %%% n\n x\n %%%\n tail\n",
     "expected": [
-      "n\nx"
+      "n\n x"
     ]
   },
   {
     "name": "below with deeper payload",
     "source": "- a\n %%% n\n    x\n %%%\n tail\n",
     "expected": [
-      "n\n  x"
+      "n\n    x"
     ]
   },
   {
     "name": "partial tab",
     "source": "- a\n %%% n\n\tx\n %%%\n tail\n",
     "expected": [
-      "n\n  x"
+      "n\n\tx"
     ]
   },
   {
@@ -151,35 +151,35 @@
     "name": "nested below unordered",
     "source": "- a\n  - b\n %%%\n  x\n %%%\n",
     "expected": [
-      "x"
+      "  x"
     ]
   },
   {
     "name": "nested below ordered",
     "source": "1. a\n    - b\n  %%%\n    x\n  %%%\n",
     "expected": [
-      "x"
+      "    x"
     ]
   },
   {
     "name": "nested block-shaped payload # h",
     "source": "- a\n  - b\n %%%\n # h\n %%%\n",
     "expected": [
-      "# h"
+      " # h"
     ]
   },
   {
     "name": "nested block-shaped payload - x",
     "source": "- a\n  - b\n %%%\n - x\n %%%\n",
     "expected": [
-      "- x"
+      " - x"
     ]
   },
   {
     "name": "nested block-shaped payload > q",
     "source": "- a\n  - b\n %%%\n > q\n %%%\n",
     "expected": [
-      "> q"
+      " > q"
     ]
   },
   {
@@ -193,14 +193,14 @@
     "name": "nested below-column blank payload",
     "source": "- a\n  - b\n %%%\n\n      y\n %%%\n",
     "expected": [
-      "\n  y"
+      "\n      y"
     ]
   },
   {
     "name": "nested below-column interior blank payload",
     "source": "- a\n  - b\n %%%\n  x\n\n      y\n %%%\n",
     "expected": [
-      "x\n\n  y"
+      "  x\n\n      y"
     ]
   }
 ]

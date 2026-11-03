@@ -103,12 +103,8 @@ fn colon_shapes_inside_opaque_blocks_do_not_close_the_host() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_verse_dedent_does_not_leave_a_stale_colon_owner() {
-    let source = "> - ::: |\n>   literal\n>\n> paragraph\n>   :::\n- tail\n";
-    let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
-    assert_eq!(ast["children"].as_array().unwrap().len(), 1, "{ast}");
-    assert!(carve::to_html(source).contains("- tail"));
+    crate::common::assert_rule_a_pins("a_closed_colon_in_a_quoted_item_releases_ownership::a_verse_dedent_does_not_leave_a_stale_colon_owner");
 }
 
 #[test]

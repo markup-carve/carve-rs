@@ -155,13 +155,17 @@ fn a_nested_quote_and_a_colon_host_keep_the_same_fold() {
         .contains("<blockquote><p>q</p></blockquote>\n  <h1 id=\"h\">h</h1>"));
 }
 
+// Under rule A the span below the description's column ends the description;
+// its payload keeps the column past the document prefix (PART 17).
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_comment_fence_below_the_definition_column_retains_the_body() {
     use carve::ast::BlockNode;
     let doc = carve::parse(":: t\n: > q\n %%%\n secret\n %%%\n");
     assert!(matches!(&doc.children[0], BlockNode::DefinitionList(_)));
-    assert_eq!(doc.children.len(), 1);
+    assert!(
+        matches!(&doc.children[1..], [BlockNode::Comment(c)] if c.content == " secret"),
+        "{doc:?}"
+    );
     assert_eq!(
         carve::to_html(":: t\n: > q\n %%%\n secret\n %%%\n"),
         "<dl>\n  <dt>t</dt>\n  <dd>\n    <blockquote><p>q</p></blockquote>\n  </dd>\n</dl>"

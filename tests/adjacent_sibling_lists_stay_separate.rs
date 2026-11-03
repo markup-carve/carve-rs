@@ -30,35 +30,16 @@ fn top_kinds(source: &str) -> String {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn two_ordered_lists_are_separated_by_the_hard_boundary() {
-    let source = "1. a\n\n  1. b\n";
-    assert_eq!(top_kinds(source), "list,list");
-    assert_eq!(
-        carve::render_carve(&carve::parse(source)).unwrap(),
-        "1. a\n\n\n\n1. b\n"
-    );
-    assert_eq!(
-        top_kinds(&carve::render_carve(&carve::parse(source)).unwrap()),
-        "list,list",
-    );
+    crate::common::assert_rule_a_pins("adjacent_sibling_lists_stay_separate::two_ordered_lists_are_separated_by_the_hard_boundary");
 }
 
 /// The offset this replaced could not do this: stepping +1 per list put the
 /// second at one space and the third at two, and a bullet's content column is
 /// 2, so the third NESTED inside the second.
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_third_list_is_separated_the_same_way_at_the_same_column() {
-    let source = "1. a\n\n  1. b\n\n   1. c\n";
-    assert_eq!(
-        carve::render_carve(&carve::parse(source)).unwrap(),
-        "1. a\n\n\n\n1. b\n\n\n\n1. c\n",
-    );
-    assert_eq!(
-        top_kinds(&carve::render_carve(&carve::parse(source)).unwrap()),
-        "list,list,list",
-    );
+    crate::common::assert_rule_a_pins("adjacent_sibling_lists_stay_separate::a_third_list_is_separated_the_same_way_at_the_same_column");
 }
 
 /// The reader gets each list back at the column it was written at, rather than

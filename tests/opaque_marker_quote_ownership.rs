@@ -18,27 +18,15 @@ fn a_marker_line_opaque_quote_preserves_authored_ownership() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_closed_quoted_comment_preserves_lazy_payload_indentation() {
-    let source = "- > %%%\n  > x\n    > y\n  > %%%\n";
-    let document = carve::parse(source);
-    let json: serde_json::Value = serde_json::from_str(&carve::to_json(&document)).unwrap();
-    assert_eq!(
-        json["children"][0]["items"][0]["children"][0]["children"][0]["content"],
-        "x\n  > y"
+    crate::common::assert_rule_a_pins(
+        "opaque_marker_quote_ownership::a_closed_quoted_comment_preserves_lazy_payload_indentation",
     );
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_nested_closed_quoted_comment_preserves_lazy_payload_indentation() {
-    let source = "- > > %%%\n  > > x\n      > y\n  > > %%%\n";
-    let json: serde_json::Value =
-        serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
-    assert_eq!(
-        json["children"][0]["items"][0]["children"][0]["children"][0]["children"][0]["content"],
-        "x\n    > y"
-    );
+    crate::common::assert_rule_a_pins("opaque_marker_quote_ownership::a_nested_closed_quoted_comment_preserves_lazy_payload_indentation");
 }
 
 #[test]

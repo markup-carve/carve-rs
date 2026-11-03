@@ -1952,7 +1952,7 @@ impl<'a> Walk<'a> {
                 }
                 c.lead_in(canon, shift, matches!(form, Form::Term | Form::Dd(_)));
                 let owner = self.frames.len() - 1;
-                self.apply(owner, col, form, canon, closed == 0, at, c);
+                self.apply(owner, col, form, canon, true, at, c);
                 // A description a `+` filled stays open for a sibling (carve#4408).
                 if fills_dd {
                     self.frames[owner].last = Last::Dd;

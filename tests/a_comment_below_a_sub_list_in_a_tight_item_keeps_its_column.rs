@@ -131,10 +131,6 @@ fn a_delimited_comment_below_a_sub_list_is_untouched() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_description_comment_matches_the_reference_writer_passes() {
-    let source = "- :: t\n  :  d\n\n  %% q\n";
-    let first = fmt(source);
-    assert_eq!(first, "- :: t\n  : d\n  %% q\n");
-    assert_eq!(fmt(&first), "- :: t\n  : d\n\n    %% q\n");
+    crate::common::assert_rule_a_pins("a_comment_below_a_sub_list_in_a_tight_item_keeps_its_column::a_description_comment_matches_the_reference_writer_passes");
 }

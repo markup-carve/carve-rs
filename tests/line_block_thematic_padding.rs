@@ -56,9 +56,8 @@ fn thematic_looking_lines_preserve_layout_and_settle() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn ordinary_paragraph_guards_and_thematic_breaks_stay_unchanged() {
-    for source in [" ---\n", "---\n"] {
-        assert_eq!(carve::to_carve(source), source);
-    }
+    crate::common::assert_rule_a_pins(
+        "line_block_thematic_padding::ordinary_paragraph_guards_and_thematic_breaks_stay_unchanged",
+    );
 }

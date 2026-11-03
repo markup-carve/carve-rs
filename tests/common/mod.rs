@@ -134,3 +134,23 @@ pub fn exact_test_name(module_path: &str, test: &str) -> String {
 }
 
 pub(crate) mod footnote_fanout;
+
+/// Asserts a test's inputs against `fixtures/rule_a_ledger_pins.json`: rule A
+/// (carve#3885) retired the reading the test was written for, so its inputs are
+/// pinned to the spec model's HTML, and where it checked the writer, to output
+/// that renders the same in the model.
+pub fn assert_rule_a_pins(key: &str) {
+    let pins: serde_json::Value =
+        serde_json::from_str(include_str!("../fixtures/rule_a_ledger_pins.json")).unwrap();
+    for pin in pins[key].as_array().expect("pinned inputs") {
+        let source = pin["source"].as_str().unwrap();
+        assert_eq!(
+            carve::to_html(source).trim(),
+            pin["html"].as_str().unwrap(),
+            "{source:?}"
+        );
+        if let Some(carve) = pin["carve"].as_str() {
+            assert_eq!(carve::to_carve(source).trim(), carve, "{source:?}");
+        }
+    }
+}
