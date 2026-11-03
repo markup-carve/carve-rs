@@ -364,6 +364,8 @@ struct NoteBody {
     positions: bool,
     /// `lines.len()` when the body last read as ending in an open paragraph.
     open_paragraph_at: Cell<Option<usize>>,
+    /// The code fence the trailing quoted run leaves open, with its quote depth.
+    quoted_fence: Option<(FenceOpen, usize)>,
 }
 
 impl NoteBody {
@@ -381,6 +383,7 @@ impl NoteBody {
         if self.positions {
             self.col_map.push(col(&line));
         }
+        self.quoted_fence = next_quoted_fence(self.quoted_fence, &line);
         self.lines.push(line);
         self.line_map.push(source_line);
     }
@@ -1031,6 +1034,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             },
             positions: self.positions,
             open_paragraph_at: Cell::new(None),
+            quoted_fence: next_quoted_fence(None, def.first),
         };
         let body_indent = footnote_body_floor(raw_def_line);
         let container = IndentContainer {
@@ -2816,22 +2820,55 @@ fn marker_line_fence(line: &str) -> Option<(FenceOpen, usize)> {
 
 fn note_link_def_candidate<'a>(line: &'a str, note: &NoteBody) -> &'a str {
     let text = trim_ascii_start(line);
-    if !text.starts_with('>') {
+    let unquoted = without_blockquote_prefixes(text);
+    if unquoted.len() == text.len()
+        || parse_link_def_line(unquoted).is_none()
+        || note
+            .quoted_fence
+            .is_some_and(|(_, fence_depth)| quote_depth(text) >= fence_depth)
+    {
         return text;
     }
-    // A definition after an open quote paragraph is paragraph text. A new
-    // quote, or one whose previous block ended, admits a definition at its
-    // content column just like any other note-body container.
-    let paragraph_open = note.lines.last().is_some_and(|previous| {
-        strip_blockquote_prefix(trim_ascii_start(previous)).is_some_and(|content| {
-            !is_blank_line(content) && !item_block_opener(trim_ascii_start(content))
-        })
-    });
-    if paragraph_open {
-        text
-    } else {
-        without_blockquote_prefixes(text)
+    // A quoted definition defines beside an open quote paragraph too (PART 9R R1a).
+    unquoted
+}
+
+fn quote_depth(mut text: &str) -> usize {
+    let mut depth = 0;
+    while let Some(rest) = strip_blockquote_prefix(trim_ascii_start(text)) {
+        text = rest;
+        depth += 1;
     }
+    depth
+}
+
+fn strip_quote_levels(mut text: &str, levels: usize) -> Option<&str> {
+    for _ in 0..levels {
+        text = strip_blockquote_prefix(trim_ascii_start(text))?;
+    }
+    Some(text)
+}
+
+/// The quoted code fence still open after `line`, with its quote depth.
+fn next_quoted_fence(open: Option<(FenceOpen, usize)>, line: &str) -> Option<(FenceOpen, usize)> {
+    if !trim_ascii_start(line).starts_with('>') {
+        return None;
+    }
+    let line_depth = quote_depth(line);
+    if let Some((fence, fence_depth)) = open {
+        // A deeper quoted line is the fence's payload, never its closer.
+        if line_depth > fence_depth {
+            return open;
+        }
+        if line_depth == fence_depth {
+            let closes = strip_quote_levels(line, fence_depth)
+                .is_some_and(|body| is_fence_close(body, fence));
+            return (!closes).then_some((fence, fence_depth));
+        }
+        // A shallower line ended the fence's quote and may open a fence of its own.
+    }
+    detect_fence_open(without_blockquote_prefixes(trim_ascii_start(line)))
+        .map(|fence| (fence, line_depth))
 }
 
 /// Does the note body end on a comment that is still open at line `at`?
