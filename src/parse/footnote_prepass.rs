@@ -430,6 +430,8 @@ struct IndentedNote<'a> {
     first: &'a str,
     container: IndentContainer,
     body_indent: usize,
+    def_column: usize,
+    span_note_end: Option<(usize, bool)>,
     note_fence: Option<FenceOpen>,
     // A fence on a list item's marker line in the body: its payload is never
     // a definition, though the body's own fence state does not track it.
@@ -1047,6 +1049,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 first: def.first,
                 container,
                 body_indent,
+                def_column: indent_columns(raw_def_line),
+                span_note_end: None,
                 // A marker starts the body, so a fence on it opens (PART 0 O1).
                 note_fence: detect_fence_open(def.first).map(|mut open| {
                     open.content_col = body_indent;
@@ -1723,10 +1727,26 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             };
         // A blank inside a live span is payload; a comment line below the
         // column still closes it (PART 9 §28, carve#4996).
-        let resumes = resumes
-            || (after_run < lines.len()
-                && note.comment_state.comment.is_some()
-                && trim_ascii_start(strip_lazy(lines[after_run])).starts_with("%%"));
+        let span_resumes = !resumes
+            && after_run < lines.len()
+            && note.comment_state.comment.is_some()
+            && trim_ascii_start(strip_lazy(lines[after_run])).starts_with("%%");
+        // The run still separates the host's blocks when nothing visible of
+        // the note follows it (§17 L1c, carve-rs#3798).
+        if span_resumes && {
+            // Every blank run up to the same end shares the answer, so the scan stays linear.
+            let (end, separates) = match state.span_note_end {
+                Some((end, separates)) if end >= after_run => (end, separates),
+                _ => span_note_end(lines, after_run, state.def_column, state.body_indent),
+            };
+            state.span_note_end = Some((end, separates));
+            separates
+        } {
+            for at in *i..after_run {
+                self.keep_line(at);
+            }
+        }
+        let resumes = resumes || span_resumes;
         if !resumes {
             // The run still reaches an open fence that ends with the note.
             if note.holds_open_fence() {
@@ -2875,4 +2895,27 @@ pub(in crate::parse) fn parse_footnote_def_line(line: &str) -> Option<(&str, &st
         return None;
     }
     Some((label, body))
+}
+
+/// The first line from `from` that ends a note holding a live `%%%` span
+/// (nonblank, not `%%`-led, left of `body_indent`), and whether it stands
+/// left of the note's marker column `def_column`, so nothing of the host
+/// follows a blank before it. The end of the lines also separates.
+fn span_note_end(
+    lines: &[&str],
+    from: usize,
+    def_column: usize,
+    body_indent: usize,
+) -> (usize, bool) {
+    for (at, line) in lines.iter().enumerate().skip(from) {
+        let line = strip_lazy(line);
+        if is_blank_line(line) || trim_ascii_start(line).starts_with("%%") {
+            continue;
+        }
+        let column = indent_columns(line);
+        if column < body_indent {
+            return (at, column < def_column);
+        }
+    }
+    (lines.len(), true)
 }
