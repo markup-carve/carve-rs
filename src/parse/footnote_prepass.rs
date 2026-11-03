@@ -2816,22 +2816,41 @@ fn marker_line_fence(line: &str) -> Option<(FenceOpen, usize)> {
 
 fn note_link_def_candidate<'a>(line: &'a str, note: &NoteBody) -> &'a str {
     let text = trim_ascii_start(line);
-    if !text.starts_with('>') {
+    if !text.starts_with('>') || quoted_fence_left_open(&note.lines, quote_depth(text)) {
         return text;
     }
-    // A definition after an open quote paragraph is paragraph text. A new
-    // quote, or one whose previous block ended, admits a definition at its
-    // content column just like any other note-body container.
-    let paragraph_open = note.lines.last().is_some_and(|previous| {
-        strip_blockquote_prefix(trim_ascii_start(previous)).is_some_and(|content| {
-            !is_blank_line(content) && !item_block_opener(trim_ascii_start(content))
-        })
-    });
-    if paragraph_open {
-        text
-    } else {
-        without_blockquote_prefixes(text)
+    // A quoted definition defines beside an open quote paragraph too (PART 9R R1a).
+    without_blockquote_prefixes(text)
+}
+
+fn quote_depth(mut text: &str) -> usize {
+    let mut depth = 0;
+    while let Some(rest) = strip_blockquote_prefix(trim_ascii_start(text)) {
+        text = rest;
+        depth += 1;
     }
+    depth
+}
+
+/// Does the quoted run ending the note body leave a fence open at `depth`?
+fn quoted_fence_left_open(lines: &[String], depth: usize) -> bool {
+    let start = lines
+        .iter()
+        .rposition(|line| !trim_ascii_start(line).starts_with('>'))
+        .map_or(0, |at| at + 1);
+    let mut open: Option<(FenceOpen, usize)> = None;
+    for line in &lines[start..] {
+        let line_depth = quote_depth(line);
+        let body = without_blockquote_prefixes(trim_ascii_start(line));
+        if let Some((fence, fence_depth)) = open {
+            if line_depth < fence_depth || is_fence_close(body, fence) {
+                open = None;
+            }
+            continue;
+        }
+        open = detect_fence_open(body).map(|fence| (fence, line_depth));
+    }
+    open.is_some_and(|(_, fence_depth)| depth >= fence_depth)
 }
 
 /// Does the note body end on a comment that is still open at line `at`?
