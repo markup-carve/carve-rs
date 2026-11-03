@@ -58,10 +58,10 @@ fn a_marker_left_of_the_hosting_item_column_continues_the_list() {
 }
 
 #[test]
-fn a_description_note_after_a_lazy_term_line_registers() {
+fn a_description_note_registers_after_a_term() {
     assert_eq!(
-        html(":: t\nu\n:  [^q]: n\n\nx[^q]\n"),
-        format!("<dl>\n  <dt>t\nu</dt>\n  <dd></dd>\n</dl>\n{REF}\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>n<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>")
+        html(":: t\n:  [^q]: n\n\nx[^q]\n"),
+        format!("<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>\n{REF}\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>n<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>")
     );
 }
 
@@ -98,5 +98,15 @@ fn a_line_leaving_a_quote_hosted_note_at_the_item_column_folds() {
             "<ul>\n  <li>\n    <blockquote>\n\n    </blockquote>\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>\n{REF}\n{}",
             NOTE.replace("<p>note<", "<p>n<")
         )
+    );
+}
+
+#[test]
+fn a_separator_after_a_line_below_a_term_hosts_no_note() {
+    // A term is one line (carve#4861): `u` opens a paragraph, and the
+    // separator line below it is that paragraph's text.
+    assert_eq!(
+        html(":: t\nu\n:  [^q]: n\n\nx[^q]\n"),
+        "<dl>\n  <dt>t</dt>\n</dl>\n<p>u\n:  [^q]: n</p>\n<p>x[^q]</p>"
     );
 }

@@ -57,7 +57,7 @@
   {
     "id": "quote-leaf-1---14",
     "source": "> - a\n>   :: t\n> tail\n",
-    "html": "<blockquote><ul><li>a\n      <dl><dt>t\ntail</dt></dl></li></ul></blockquote>"
+    "html": "<blockquote><ul><li>a\n      <dl><dt>t</dt></dl></li></ul><p>tail</p></blockquote>"
   },
   {
     "id": "quote-leaf-1---15",
@@ -162,7 +162,7 @@
   {
     "id": "quote-leaf-1-1.-38",
     "source": "> 1. a\n>    :: t\n> tail\n",
-    "html": "<blockquote><ol><li>a\n      <dl><dt>t\ntail</dt></dl></li></ol></blockquote>"
+    "html": "<blockquote><ol><li>a\n      <dl><dt>t</dt></dl></li></ol><p>tail</p></blockquote>"
   },
   {
     "id": "quote-leaf-1-1.-39",

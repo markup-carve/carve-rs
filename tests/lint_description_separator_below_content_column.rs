@@ -105,12 +105,21 @@ fn ignores_literal_and_payload_lines() {
         "- a\n  :: term\n \\: detail\n",
         "- a\n  :: term\n ::: note\n",
         "- a\n  :: term\n  ```\n  : detail\n  ```\n",
+    ] {
+        assert!(findings(source).is_empty(), "{source:?}");
+    }
+}
+
+#[test]
+fn a_span_opened_on_a_term_line_does_not_reach_the_next_line() {
+    // A term is one line (carve#4861), so the separator below it is a real one.
+    for source in [
         "- a\n  :: term `code\n : detail`\n",
         "- a\n  :: term $`math\n : detail`\n",
         "- a\n  :: term `<span\n : detail>`{=html}\n",
         "- a\n  :: term !`literal\n : detail`\n",
         "- a\n  :: term {% hidden\n : detail %}\n",
     ] {
-        assert!(findings(source).is_empty(), "{source:?}");
+        assert!(!findings(source).is_empty(), "{source:?}");
     }
 }

@@ -166,12 +166,12 @@ fn a_heading_stops_before_the_trailing_run_its_content_drops() {
 
 #[test]
 fn a_definition_term_stops_at_its_last_placed_child() {
-    // A folded term line ending in a space, where the term's own `code` child
-    // already stops in the right place. It used to end at 8.
-    let source = ":: `a\nb \n:  d\n";
+    // A term line ending in a space, where the term's own `code` child already
+    // stops in the right place. A term is one line (carve#4861).
+    let source = ":: `a` \n:  d\n";
 
-    assert_eq!(nth(source, "code", 0), (3, 7));
-    assert_eq!(nth(source, "definition_term", 0), (0, 7));
+    assert_eq!(nth(source, "code", 0), (3, 6));
+    assert_eq!(nth(source, "definition_term", 0), (0, 6));
 }
 
 #[test]

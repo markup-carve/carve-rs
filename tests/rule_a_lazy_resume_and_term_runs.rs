@@ -53,18 +53,19 @@ fn a_line_at_the_sub_lists_column_after_a_lazy_line_and_a_blank_stays_in_it() {
 }
 
 #[test]
-fn a_term_led_sub_list_takes_its_column_back_after_a_lazy_line() {
+fn a_term_led_sub_list_does_not_take_its_column_back_after_a_separator() {
     check(
         "- * :: t\n: d\n\n    x\n",
-        "<ul>\n  <li>\n    <ul>\n      <li>\n        <dl>\n          <dt>t\n: d</dt>\n        </dl>\n        <p>x</p>\n      </li>\n    </ul>\n  </li>\n</ul>",
+        "<ul>\n  <li>\n    <ul>\n      <li>\n        <dl>\n          <dt>t</dt>\n        </dl>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>: d</p>\n<p>x</p>",
     );
 }
 
 #[test]
-fn a_blank_after_a_lazy_term_line_loosens_the_outer_item() {
+fn a_separator_below_a_term_led_sub_list_ends_both_lists() {
+    // A term is one line (carve#4861).
     check(
         "- * :: t\n: d\n\n  x\n",
-        "<ul>\n  <li>\n    <ul>\n      <li>\n        <dl>\n          <dt>t\n: d</dt>\n        </dl>\n      </li>\n    </ul>\n    <p>x</p>\n  </li>\n</ul>",
+        "<ul>\n  <li>\n    <ul>\n      <li>\n        <dl>\n          <dt>t</dt>\n        </dl>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>: d</p>\n<p>x</p>",
     );
 }
 

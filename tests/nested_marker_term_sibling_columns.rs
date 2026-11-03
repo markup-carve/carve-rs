@@ -1,9 +1,12 @@
 use carve::{to_html, to_html_with_options, Options};
 
+// A term is one line (carve#4861): the separator below a nested marker-line
+// term is text in whichever item it reaches, and the later term opens there.
+
 #[test]
 fn a_definition_sibling_returns_to_its_authored_item_column() {
     let source = "- - - :: t\n   : a\n    :: sibling\n    tail\n";
-    let expected = "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>\n            <dl>\n              <dt>t\n: a</dt>\n            </dl>\n          </li>\n        </ul>\n        <dl>\n          <dt>sibling\ntail</dt>\n        </dl>\n      </li>\n    </ul>\n  </li>\n</ul>";
+    let expected = "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>\n            <dl>\n              <dt>t</dt>\n            </dl>\n          </li>\n        </ul>\n      </li>\n    </ul>\n    : a\n    <dl>\n      <dt>sibling</dt>\n    </dl>\n    tail\n  </li>\n</ul>";
     assert_eq!(to_html(source), expected);
     assert_eq!(
         to_html_with_options(source, &Options::default().with_positions(true)),
@@ -12,41 +15,36 @@ fn a_definition_sibling_returns_to_its_authored_item_column() {
 }
 
 #[test]
-fn a_below_column_term_shape_stays_in_the_open_term() {
+fn a_below_column_separator_ends_the_lists() {
     let source = "- * :: t\n : a\n :: sibling\n tail\n";
-    let expected = "<ul>\n  <li>\n    <ul>\n      <li>\n        <dl>\n          <dt>t\n: a</dt>\n        </dl>\n      </li>\n    </ul>\n  </li>\n</ul>\n<dl>\n  <dt>sibling\ntail</dt>\n</dl>";
+    let expected = "<ul>\n  <li>\n    <ul>\n      <li>\n        <dl>\n          <dt>t</dt>\n        </dl>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>: a</p>\n<dl>\n  <dt>sibling</dt>\n</dl>\n<p>tail</p>";
     assert_eq!(to_html(source), expected);
 }
 
 #[test]
-fn text_past_the_deepest_term_column_keeps_its_residual_space() {
+fn a_term_past_the_deepest_term_column_after_a_separator_opens_a_new_list() {
     let source = "- * :: t\n : a\n     :: sibling\n     tail\n";
-    let html = to_html(source);
-    assert!(
-        html.contains("<dt>t\n: a</dt>\n          <dt>sibling\ntail</dt>"),
-        "{html}"
-    );
+    let expected = "<ul>\n  <li>\n    <ul>\n      <li>\n        <dl>\n          <dt>t</dt>\n        </dl>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>: a</p>\n<dl>\n  <dt>sibling</dt>\n</dl>\n<p>tail</p>";
+    assert_eq!(to_html(source), expected);
 }
 
 #[test]
 fn an_outer_item_reclaims_a_term_between_its_child_columns() {
     let source = "- host\n  - * :: t\n   : a\n   :: sibling\n   tail\n";
-    let html = to_html(source);
-    assert!(html.contains("<dt>t\n: a</dt>"), "{html}");
-    assert!(html.contains("<dt>sibling\ntail</dt>"), "{html}");
-    let sibling = html.find("<dt>sibling").unwrap();
-    let child_end = html.find("</ul>\n    <dl>").unwrap();
-    assert!(child_end < sibling, "{html}");
+    let expected = "<ul>\n  <li>host\n    <ul>\n      <li>\n        <ul>\n          <li>\n            <dl>\n              <dt>t</dt>\n            </dl>\n          </li>\n        </ul>\n      </li>\n    </ul>\n    : a\n    <dl>\n      <dt>sibling</dt>\n    </dl>\n    tail\n  </li>\n</ul>";
+    assert_eq!(to_html(source), expected);
 }
 
 #[test]
-fn list_markers_follow_the_ladder_columns_after_a_lazy_term_line() {
-    let between = to_html("- * :: t\n : a\n   - sibling\n   tail\n");
-    assert!(between.contains("<dt>t\n: a</dt>"), "{between}");
-    assert!(between.contains("<li>sibling\ntail</li>"), "{between}");
-
-    let at_child = to_html("- * :: t\n : a\n    - sibling\n    tail\n");
-    assert!(at_child.contains("<dt>t\n: a</dt>"), "{at_child}");
-    assert!(at_child.contains("</dl>\n        <ul>"), "{at_child}");
-    assert!(at_child.contains("<li>sibling\ntail</li>"), "{at_child}");
+fn list_markers_after_a_below_column_separator_are_paragraph_text() {
+    for source in [
+        "- * :: t\n : a\n   - sibling\n   tail\n",
+        "- * :: t\n : a\n    - sibling\n    tail\n",
+    ] {
+        assert_eq!(
+            to_html(source),
+            "<ul>\n  <li>\n    <ul>\n      <li>\n        <dl>\n          <dt>t</dt>\n        </dl>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>: a\n- sibling\ntail</p>",
+            "{source:?}"
+        );
+    }
 }

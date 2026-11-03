@@ -10,7 +10,7 @@ fn check(source: &str, expected: &str) {
 fn a_sibling_term_one_column_past_the_child_marker_opens_in_the_task_item() {
     check(
         "* [ ] - :: t\n       : a\n       :: sibling\n       tail\n",
-        "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <ul>\n      <li>\n        <dl>\n          <dt>t\n: a</dt>\n        </dl>\n      </li>\n    </ul>\n    <dl>\n      <dt>sibling\ntail</dt>\n    </dl>\n  </li>\n</ul>",
+        "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <ul>\n      <li>\n        <dl>\n          <dt>t</dt>\n        </dl>\n      </li>\n    </ul>\n    : a\n    <dl>\n      <dt>sibling</dt>\n    </dl>\n    tail\n  </li>\n</ul>",
     );
 }
 
@@ -18,7 +18,7 @@ fn a_sibling_term_one_column_past_the_child_marker_opens_in_the_task_item() {
 fn a_sibling_term_one_column_below_the_child_marker_opens_in_the_task_item() {
     check(
         "* [ ] - :: t\n     : a\n     :: sibling\n     tail\n",
-        "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <ul>\n      <li>\n        <dl>\n          <dt>t\n: a</dt>\n        </dl>\n      </li>\n    </ul>\n    <dl>\n      <dt>sibling\ntail</dt>\n    </dl>\n  </li>\n</ul>",
+        "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <ul>\n      <li>\n        <dl>\n          <dt>t</dt>\n        </dl>\n      </li>\n    </ul>\n    : a\n    <dl>\n      <dt>sibling</dt>\n    </dl>\n    tail\n  </li>\n</ul>",
     );
 }
 

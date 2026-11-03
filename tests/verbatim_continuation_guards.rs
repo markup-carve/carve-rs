@@ -182,7 +182,7 @@ fn definition_term_refusals_identify_the_verbatim_node() {
                 assert_eq!(error.node_type(), kind);
                 assert_eq!(
                     error.reason(),
-                    "a block marker on a continuation line ends the definition term"
+                    "a definition term is one line, so its value cannot hold a line break"
                 );
             }
             other => panic!("unexpected refusal: {other}"),

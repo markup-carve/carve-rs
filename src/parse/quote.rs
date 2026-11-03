@@ -2633,24 +2633,6 @@ impl<'a> QuoteBody<'a> {
         {
             return true;
         }
-        let term_open = if self.may_have_term
-            && self
-                .inner
-                .lines
-                .last()
-                .is_some_and(|last| !is_blank_line(&last.text))
-            && !is_blank_line(line)
-            && !is_definition_list_start(trim_ascii_start(line))
-            && strip_description_prefix(trim_ascii_start(line)).is_none()
-            && (!item_block_opener(trim_ascii_start(line))
-                || indent_columns(line) > 0
-                || detect_fence_open(trim_ascii_start(line)).is_some())
-        {
-            self.open_entry.advance(&self.inner.lines);
-            self.open_entry.half == Some(DefHalf::Term)
-        } else {
-            false
-        };
         // The replay reads a description body as quoted text; its own base
         // closes the paragraph too.
         let quoted_open = if self.closed_div {
@@ -2676,10 +2658,9 @@ impl<'a> QuoteBody<'a> {
                 let (leaf, levels) = strip_all_quotes(innermost_marker_content(&source.text));
                 levels > 0 && (is_blank_line(leaf) || detect_fence_open(leaf).is_some())
             });
-        if !(term_open || quoted_open)
+        if !quoted_open
             || empty_marker_leaf
             || is_blank_line(line)
-            || (term_open && detect_list_marker_full(line).is_some_and(|marker| marker.indent == 0))
             || (caption_content(line).is_some() && cur.carried_reach(cur.pos) != Some(false))
             || {
                 let line_owned = line.to_string();

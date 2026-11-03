@@ -587,6 +587,35 @@ pub(super) fn roman_marker(mut n: usize) -> String {
     }
 }
 
+/// A term's inlines, and each comment that starts a line of it: those are
+/// written on lines of their own below the term.
+fn split_term_comments(term: &[InlineNode]) -> (Vec<InlineNode>, Vec<&InlineNode>) {
+    let mut inline: Vec<InlineNode> = Vec::new();
+    let mut comments = Vec::new();
+    for node in term {
+        let own_line = match (node, inline.last()) {
+            (InlineNode::Comment(comment), Some(previous)) if !comment.delimited => {
+                matches!(previous, InlineNode::SoftBreak(_))
+                    || comment
+                        .pos
+                        .as_ref()
+                        .zip(previous.pos())
+                        .is_some_and(|(at, previous)| at.start_line > previous.end_line)
+            }
+            _ => false,
+        };
+        if own_line {
+            if matches!(inline.last(), Some(InlineNode::SoftBreak(_))) {
+                inline.pop();
+            }
+            comments.push(node);
+        } else if comments.is_empty() || !matches!(node, InlineNode::SoftBreak(_)) {
+            inline.push(node.clone());
+        }
+    }
+    (inline, comments)
+}
+
 /// Every entry writes its own description line, so consecutive `::` lines never
 /// end up sharing one: a `<dl>` writes back as ONE list with the grouping it
 /// parsed from, and no term acquires the next entry's description.
@@ -606,10 +635,10 @@ pub(super) fn render_definition_list(
             continue;
         };
         for term in &item.terms {
-            // A comment opening a line must stay past the term's column, or it
-            // would end the term (carve#2411).
+            let (inline, comments) = split_term_comments(term);
             let outer_term = std::mem::replace(&mut ctx.in_term, true);
-            let rendered = render_inlines(session, term, ctx);
+            // A term is one line like a heading (carve#4861), so a break collapses to a space.
+            let rendered = super::collapse_breaks(&render_inlines(session, &inline, ctx));
             ctx.in_term = outer_term;
             if rendered.is_empty() {
                 crate::render_carve_error::record_unspellable(
@@ -618,6 +647,9 @@ pub(super) fn render_definition_list(
                 );
             }
             out.push(format!(":: {rendered}"));
+            for comment in comments {
+                out.push(render_inlines(session, std::slice::from_ref(comment), ctx));
+            }
         }
         for (def_index, def) in item.definitions.iter().enumerate() {
             let last_description =

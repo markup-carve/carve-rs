@@ -13,10 +13,10 @@ fn separator_at_document_column_ends_the_item() {
 }
 
 #[test]
-fn separator_one_column_in_folds_into_the_term() {
+fn separator_one_column_in_ends_the_item() {
     assert_eq!(
         html("- a\n  :: m\n : l\n"),
-        "<ul>\n  <li>a\n    <dl>\n      <dt>m\n: l</dt>\n    </dl>\n  </li>\n</ul>"
+        "<ul>\n  <li>a\n    <dl>\n      <dt>m</dt>\n    </dl>\n  </li>\n</ul>\n<p>: l</p>"
     );
 }
 
@@ -40,7 +40,7 @@ fn marker_line_term_uses_the_item_content_column() {
 fn wider_item_uses_its_own_content_column() {
     assert_eq!(
         html("10. a\n    :: m\n   : l\n    : d\n"),
-        "<ol start=\"10\">\n  <li>a\n    <dl>\n      <dt>m\n: l</dt>\n      <dd>d</dd>\n    </dl>\n  </li>\n</ol>"
+        "<ol start=\"10\">\n  <li>a\n    <dl>\n      <dt>m</dt>\n    </dl>\n  </li>\n</ol>\n<p>: l\n: d</p>"
     );
 }
 
@@ -53,10 +53,11 @@ fn separator_below_an_open_description_folds_into_it() {
 }
 
 #[test]
-fn quoted_lazy_separator_stays_with_the_term() {
+fn quoted_separator_below_the_item_column_ends_the_item() {
+    // A term is one line (carve#4861).
     assert_eq!(
         html("> - a\n>   :: m\n>  : l\n"),
-        "<blockquote>\n  <ul>\n    <li>a\n      <dl>\n        <dt>m\n: l</dt>\n      </dl>\n    </li>\n  </ul>\n</blockquote>"
+        "<blockquote>\n  <ul>\n    <li>a\n      <dl>\n        <dt>m</dt>\n      </dl>\n    </li>\n  </ul>\n  <p>: l</p>\n</blockquote>"
     );
 }
 

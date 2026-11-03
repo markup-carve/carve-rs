@@ -12,8 +12,12 @@ fn caret_at_definition_term_column_ends_term() {
     assert!(html.contains("<dt>term</dt>"), "{html}");
     assert!(html.contains("<p>^ caption</p>"), "{html}");
 
+    // A term is one line (carve#4861).
     let plain = carve::to_html(":: term\nplain\n");
-    assert!(plain.contains("<dt>term\nplain</dt>"), "{plain}");
+    assert!(
+        plain.contains("<dt>term</dt>\n</dl>\n<p>plain</p>"),
+        "{plain}"
+    );
 }
 
 #[test]

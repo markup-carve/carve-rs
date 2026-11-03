@@ -17,7 +17,11 @@ fn the_released_item_paragraph_allows_later_markers() {
     let source = "- * :: t\n  : a\n   :: sibling\n   tail\n";
     let html = to_html(source);
     assert!(html.contains("</ul>\n    : a\n    <dl>"), "{html}");
-    assert!(html.contains("<dt>sibling\ntail</dt>"), "{html}");
+    // A term is one line (carve#4861).
+    assert!(
+        html.contains("<dt>sibling</dt>\n    </dl>\n    tail"),
+        "{html}"
+    );
     assert_eq!(
         to_html_with_options(source, &Options::default().with_positions(true)),
         html
@@ -33,7 +37,7 @@ fn the_open_description_keeps_only_the_lines_it_owns() {
     let source = "- * :: t\n    : a\n :: sibling\n tail\n";
     let html = to_html(source);
     assert!(
-        html.contains("</ul>\n<dl>\n  <dt>sibling\ntail</dt>"),
+        html.contains("</ul>\n<dl>\n  <dt>sibling</dt>\n</dl>\n<p>tail</p>"),
         "{html}"
     );
 

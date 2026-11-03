@@ -26,12 +26,6 @@ fn fixtures() -> Value {
                 row["source"] = Value::from(letter_dot.replace_all(source, "$1  $2").into_owned());
             }
         }
-        // The pin expects a one-line term marker (carve#4861), declared ahead of
-        // the pinned carve-js, which still folds the wrapped term like carve-rs.
-        if id == "definition-list-wrapped-term" {
-            row["carrierFragments"] =
-                serde_json::json!(["<!-- carve: :: A term that\nwraps onto the next line -->"]);
-        }
     }
     fixtures
 }
