@@ -156,7 +156,6 @@ fn a_line_block_takes_a_lazy_line_whatever_its_payload() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3523"]
 fn below_column_comments_keep_definition_bands_and_fences() {
     let rows: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/comment_fence_review_wave.json")).unwrap();
