@@ -160,7 +160,6 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
     let mut reference_caption_claimed = false;
     let mut lines: Vec<&str> = Vec::new();
     let mut line_indices = Vec::new();
-    let mut suppress_colon_interrupt = false;
     // PART 10 I2: a code include line at a block start ends at its own line.
     let code_include = cur
         .peek()
@@ -190,7 +189,6 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
                 || interrupts_paragraph(cur, &line_owned)
                 || (cur.colon_view.is_some_and(|view| view.marker_hosted)
                     && strip_blockquote_prefix(trim_ascii_start(line)).is_some()))
-            && !(suppress_colon_interrupt && is_suppressed_colon_fence_line(&line_owned))
         {
             break;
         }
@@ -203,7 +201,6 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
         }
         cur.consume();
         let trimmed = trim_ascii_end(trim_ascii_start(line));
-        suppress_colon_interrupt |= is_invalid_colon_fence_opener_text(strip_lazy(trimmed));
         reference_caption_claimed |=
             reference_caption_candidate && lines.len() == 1 && caption_content(line).is_some();
         line_indices.push(cur.pos - 1);

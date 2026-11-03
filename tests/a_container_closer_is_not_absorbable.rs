@@ -141,9 +141,10 @@ fn control_the_top_level_paragraph_still_absorbs() {
     // closer to protect, so §12's absorption applies in full and the paragraph
     // swallows the fence-shaped line and the one after it. This is the shape the
     // fix must leave alone - it is where absorption is correct.
+    // carve#4863 ruling: a colon line is read on its own.
     assert_eq!(
         html(":::note\nbody\n:::\ntail\n"),
-        "<p>:::note\nbody\n:::\ntail</p>"
+        "<p>:::note\nbody</p>\n<div>\n  <p>tail</p>\n</div>"
     );
 }
 
@@ -170,8 +171,9 @@ fn control_absorption_still_works_inside_the_container() {
     // So absorption is intact INSIDE the container - what the fix removed is
     // only its reach over the one line that closes the container. Matches the
     // oracle byte-for-byte.
+    // carve#4863 ruling: a colon line is read on its own.
     assert_eq!(
         html("::: note\n:::oops\n::::\n:::\n"),
-        "<aside class=\"admonition note\" aria-label=\"Note\">\n  <p>:::oops\n::::\n:::</p>\n</aside>"
+        "<aside class=\"admonition note\" aria-label=\"Note\">\n  <p>:::oops</p>\n  <div>\n    <div>\n\n    </div>\n  </div>\n</aside>"
     );
 }

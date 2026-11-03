@@ -25,9 +25,10 @@ fn a_marker_missing_a_description_folds() {
 
 #[test]
 fn an_indented_invalid_opener_absorbs_the_bare_run() {
+    // carve#4863 ruling: a colon line is read on its own.
     assert_eq!(
         html("- m\n   :::e\n   :::\nl\n"),
-        "<ul> <li>m :::e ::: l</li> </ul>"
+        "<ul> <li>m :::e <div> </div> </li> </ul> <p>l</p>"
     );
 }
 
@@ -40,9 +41,10 @@ fn a_div_closer_in_a_quote_ends_the_div() {
 }
 
 #[test]
+// carve#4863 ruling: a colon line is read on its own.
 fn a_longer_run_in_a_quoted_div_stays_text() {
     assert_eq!(
         html("> :::\n> ::::e\n> ::::\n> ::::\nl\n"),
-        "<blockquote> <div> <p>::::e :::: :::: l</p> </div> </blockquote>"
+        "<blockquote> <div> <p>::::e</p> <div> </div> </div> </blockquote> <p>l</p>"
     );
 }

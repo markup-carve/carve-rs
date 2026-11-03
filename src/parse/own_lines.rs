@@ -915,12 +915,6 @@ fn colon_opener(rest: &str) -> bool {
         || detect_quote_block_open(rest).is_some()
 }
 
-/// A colon run that opens nothing: an open paragraph absorbs it.
-fn absorbs_colon(rest: &str) -> bool {
-    let rest = rest.trim_end_matches([' ', '\t']);
-    colon_run(rest) >= 3 && !colon_opener(rest)
-}
-
 impl<'a> Walk<'a> {
     /// The owner path of frames `1..=depth`: `doc/item:1/quote:2`.
     fn path(&self, depth: usize) -> String {
@@ -1878,7 +1872,7 @@ impl<'a> Walk<'a> {
                 } else {
                     owner.canon
                 };
-                owner.absorbs = (owner.para && owner.absorbs) || absorbs_colon(c.rest);
+                owner.absorbs = owner.para && owner.absorbs;
                 owner.para = true;
                 owner.last = Last::Para;
                 // As for a lazy line, only the item's own column moves.
@@ -2045,7 +2039,7 @@ impl<'a> Walk<'a> {
             let (canon, shift) = lone
                 .marker
                 .map_or((0, 0), |(_, canon)| (canon, lone.marker_shift));
-            let absorbs = absorbs_colon(c.rest);
+            let absorbs = false;
             c.lead_in(canon, shift, false);
             let f = self.top();
             f.absorbs = absorbs;
@@ -2264,7 +2258,7 @@ impl<'a> Walk<'a> {
         if is_cont_marker(trim_ascii_start(innermost_marker_content(c.rest))) {
             self.refuse_line = true;
         }
-        let absorbs = absorbs_colon(c.rest);
+        let absorbs = false;
         let col = c.col;
         c.lead(col);
         let f = &mut self.frames[frame];
@@ -2304,7 +2298,7 @@ impl<'a> Walk<'a> {
                 }
             }
             let col = c.col;
-            let absorbs = absorbs_colon(c.rest);
+            let absorbs = false;
             c.lead(col);
             let f = &mut self.frames[frame];
             f.absorbs = absorbs;

@@ -27,8 +27,8 @@ fn inline_attributes_on_typed_openers_are_dropped() {
 fn a_missing_kind_does_not_identify_a_container() {
     for src in ["::: {.x}\nb\n:::", ":::{k=v}\nb"] {
         let html = carve::to_html(src);
-        assert!(html.starts_with("<p>"));
-        assert!(!html.contains("<div"));
+        // carve#4863 ruling: the bare closer below the paragraph opens a div of its own.
+        assert!(html.starts_with(&format!("<p>{}", src.lines().next().unwrap())));
     }
     assert!(carve::to_html("::: box {.x}\nb").starts_with("<div class=\"box\">"));
 }

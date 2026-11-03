@@ -594,15 +594,10 @@ impl NestedFenceReplay {
         if here.closes_colon(text) {
             return;
         }
-        let absorption_text = if is_blank_line(text) {
-            text
-        } else {
-            match self.replay_hosted(pos, text, lazy_paragraph) {
-                Some(inner) => inner,
-                None => return,
-            }
-        };
-        self.replay_unhosted(pos, text, after_comment, absorption_text);
+        if !is_blank_line(text) && self.replay_hosted(pos, text, lazy_paragraph).is_none() {
+            return;
+        }
+        self.replay_unhosted(pos, text, after_comment);
     }
 
     /// A line short of the deepest quote continues that quote's open
@@ -717,13 +712,7 @@ impl NestedFenceReplay {
         here.by_fence = true;
     }
 
-    fn replay_unhosted(
-        &mut self,
-        pos: ReplayAt<'_, '_>,
-        text: &str,
-        after_comment: bool,
-        absorption_text: &str,
-    ) {
+    fn replay_unhosted(&mut self, pos: ReplayAt<'_, '_>, text: &str, after_comment: bool) {
         let here = &mut self.chain[pos.level];
         if let Some(open) = detect_fence_open(text) {
             // A fence opens with or without a closer (carve#4018).
@@ -735,7 +724,7 @@ impl NestedFenceReplay {
             here.by_fence = true;
             return;
         }
-        here.replay_text(pos, text, after_comment, absorption_text);
+        here.replay_text(pos, text, after_comment);
     }
 }
 
@@ -953,13 +942,7 @@ impl NestedLevel {
 
     /// Replays a line no fence or host took: comments, colon fences, and
     /// finally the one-line paragraph reading.
-    fn replay_text(
-        &mut self,
-        pos: ReplayAt<'_, '_>,
-        text: &str,
-        after_comment: bool,
-        absorption_text: &str,
-    ) {
+    fn replay_text(&mut self, pos: ReplayAt<'_, '_>, text: &str, after_comment: bool) {
         if let Some(comment) = detect_comment_fence_line(text) {
             let len = comment.fence_len;
             if closer_ahead(pos.lines, pos.at, pos.level, |l| {
@@ -996,9 +979,7 @@ impl NestedLevel {
         }
         let mut paragraph = ParaOpen::from_line(text, self.colon_absorption);
         self.para = paragraph.get();
-        self.colon_absorption = self.para
-            && (self.colon_absorption
-                || is_invalid_colon_fence_opener_text(trim_ascii_start(absorption_text)));
+        self.colon_absorption = self.para && self.colon_absorption;
     }
 }
 
@@ -2258,9 +2239,6 @@ impl<'a> QuoteBody<'a> {
         }
         if needs_depth && self.para_open.get() {
             self.paragraph_depth = Some(paragraph_depth);
-            if is_invalid_colon_fence_opener_text(strip_all_quotes(stripped).0) {
-                self.absorption_depth = Some(paragraph_depth);
-            }
         } else if needs_depth || (self.paragraph_depth.is_some() && !self.para_open.get()) {
             self.paragraph_depth = None;
             self.absorption_depth = None;
@@ -2721,18 +2699,6 @@ impl<'a> QuoteBody<'a> {
     }
 
     fn fold_lazy_line(&mut self, cur: &mut LineCursor<'a>, line: &str) {
-        if is_invalid_colon_fence_opener_text(trim_ascii_start(strip_lazy(line)))
-            && self.para_open.get()
-        {
-            let depth = self.paragraph_depth.or_else(|| {
-                self.inner
-                    .lines
-                    .last()
-                    .map(|prior| strip_all_quotes(&prior.text).1)
-            });
-            self.paragraph_depth = depth;
-            self.absorption_depth = depth;
-        }
         let source_line = cur.source_line(cur.pos);
         // A lazy continuation line carries no quote marker, so nothing was
         // stripped from it beyond what an outer container already took.

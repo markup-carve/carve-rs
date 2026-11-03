@@ -28,7 +28,11 @@ fn a_container_opener_interrupts_after_a_glued_fence() {
 
 #[test]
 fn a_bare_fence_still_folds_after_a_glued_fence() {
-    assert_eq!(html(":::note\ntext\n:::"), "<p>:::note\ntext\n:::</p>");
+    // carve#4863 ruling: a colon line is read on its own.
+    assert_eq!(
+        html(":::note\ntext\n:::"),
+        "<p>:::note\ntext</p>\n<div>\n\n</div>"
+    );
 }
 
 #[test]
@@ -62,5 +66,9 @@ fn the_split_holds_in_an_item_lead_paragraph() {
 
 #[test]
 fn an_item_lead_paragraph_still_folds_a_bare_fence() {
-    assert_eq!(html("- :::]\n  :::"), "<ul>\n  <li>:::]\n:::</li>\n</ul>");
+    // carve#4863 ruling: a colon line is read on its own.
+    assert_eq!(
+        html("- :::]\n  :::"),
+        "<ul>\n  <li>:::]\n    <div>\n\n    </div>\n  </li>\n</ul>"
+    );
 }

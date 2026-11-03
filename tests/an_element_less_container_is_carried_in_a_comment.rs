@@ -213,7 +213,8 @@ fn a_document_with_no_element_less_container_gains_no_comment_either_way() {
 #[test]
 fn a_container_this_target_spells_takes_no_marker() {
     for source in [
-        "::: {.warning}\nx\n:::\n",
+        // carve#4863: a bare `:::` below it would open a div of its own.
+        "::: {.warning}\nx\n",
         "{header-rows=1}\n::: list-table\n- - A\n  - B\n- - one\n  - x\n:::\n",
     ] {
         let out = markdown(source, true);

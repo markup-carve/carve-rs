@@ -2781,7 +2781,7 @@ fn blocks_with_slot_inner(
                             && !rows[n]
                             && !content.starts_with(['>', ':', '`', '~', '{'])
                     }))
-                && !block_body.starts_with(":::")
+                && !(block_body.starts_with(":::") && djot_div_line(block_body))
                 && !thematic(block_body)
                 && !rows[n])
                 .then_some(depth.max(quote_paragraph_depth.unwrap_or(depth)));
@@ -3083,7 +3083,7 @@ fn blocks_with_slot_inner(
             in_quote = quoted(&text[payload_start..]).0 > 0;
             let item_body = &text[payload_start..];
             let div_width = item_body.bytes().take_while(|b| *b == b':').count();
-            let item_div = div_width >= 3;
+            let item_div = div_width >= 3 && djot_div_line(item_body);
             if item_div {
                 divs.push((
                     div_width,
@@ -3112,7 +3112,7 @@ fn blocks_with_slot_inner(
             }
         }
         let width = text.bytes().take_while(|b| *b == b':').count();
-        if width >= 3 && visible.starts_with(':') {
+        if width >= 3 && visible.starts_with(':') && (paragraph || djot_div_line(text)) {
             let bare = text[width..].trim().is_empty();
             if let Some(starts) = div_closers.get(&line_offsets[n]) {
                 drop_orphan_attribute_line(&mut result);
@@ -6748,4 +6748,12 @@ mod collapsed_key_controls {
             mask_code_and_destinations(source)
         );
     }
+}
+
+/// Djot opens a div only on a bare run or a run and one class word; any other
+/// colon line is paragraph text (carve#4863).
+fn djot_div_line(text: &str) -> bool {
+    cached_regex!(r"^:{3,}(?:[ \t]+[A-Za-z0-9_-]+)?[ \t]*\r?$")
+        .unwrap()
+        .is_match(text)
 }

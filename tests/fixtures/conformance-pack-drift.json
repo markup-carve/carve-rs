@@ -33,54 +33,6 @@
       ]
     },
     {
-      "ticket": "markup-carve/carve-rs#3789",
-      "cause": "a bare ::: line below an invalid colon opener paragraph folds into it; a folded term hid it before carve#4861",
-      "cases": [
-        "fences-928c6a41873e"
-      ]
-    },
-    {
-      "ticket": "markup-carve/carve#4863",
-      "cause": "spec pin 5889a6fe: a colon line is read on its own, carve-rs port pending",
-      "cases": [
-        "attributes-66be205227d0",
-        "attributes-8b839fc5ff06",
-        "fences-01e705489a74",
-        "fences-0799b9ba8940",
-        "fences-254365032f73",
-        "fences-446d4b4ba382",
-        "fences-4c32d7caf800",
-        "fences-5a308c692b48",
-        "fences-d6cfa613e7a2",
-        "fences-e2513f1f9dcb",
-        "lazy-05102c16fd6b",
-        "lazy-15d485a8fca8",
-        "lazy-1e1bd15d621b",
-        "lazy-205b50c540d7",
-        "lazy-70aa70a1b480",
-        "lazy-7aa90645069c",
-        "lazy-97d163271cbb",
-        "lazy-ace803d61560",
-        "lazy-af889e0f6079",
-        "lazy-b7fe4d612776",
-        "lazy-e3acd72732ec",
-        "lazy-ec889f5ccadc",
-        "lazy-f30815100869",
-        "lazy-f597d6220684",
-        "ownership-40c20db2b5d3",
-        "ownership-63c1524cc494",
-        "ownership-8bde9da7bec8",
-        "ownership-db0010860b50",
-        "ownership-ee8799f90f75",
-        "ownership-ff5cc03b4493",
-        "roundtrip-2d2b309ad4e8",
-        "roundtrip-a8c50768505b",
-        "roundtrip-eb4a9261d4bc",
-        "roundtrip-efc5e477da95",
-        "roundtrip-f99cb96d3074"
-      ]
-    },
-    {
       "ticket": "markup-carve/carve#4865",
       "cause": "spec pin 5889a6fe: an abbreviation definition is a definition in every container, carve-rs port pending",
       "cases": [
