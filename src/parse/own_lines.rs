@@ -1912,7 +1912,7 @@ impl<'a> Walk<'a> {
                 }
                 c.lead_in(canon, shift, matches!(form, Form::Term | Form::Dd(_)));
                 let owner = self.frames.len() - 1;
-                self.apply(owner, col, form, canon, at, c);
+                self.apply(owner, col, form, canon, closed == 0, at, c);
                 // A description a `+` filled stays open for a sibling (carve#4408).
                 if fills_dd {
                     self.frames[owner].last = Last::Dd;
@@ -2119,12 +2119,14 @@ impl<'a> Walk<'a> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn apply(
         &mut self,
         owner: usize,
         col: usize,
         form: Form,
         canon: usize,
+        in_host: bool,
         at: usize,
         c: &mut Cursor<'_>,
     ) {
@@ -2169,7 +2171,12 @@ impl<'a> Walk<'a> {
                 let mut f = Frame::new(Kind::Fence);
                 f.col = o_col;
                 f.canon = o_canon;
-                f.cut = col.saturating_sub(canon);
+                // A comment payload is host-relative; the opener's indentation sets no base (CARVE-P9-060).
+                f.cut = if matches!(closer, Closer::Comment(_)) && in_host {
+                    o_col.saturating_sub(o_canon)
+                } else {
+                    col.saturating_sub(canon)
+                };
                 f.closer = Some(closer);
                 f.open_col = col;
                 f.line_block = line_block;
@@ -2367,12 +2374,12 @@ impl<'a> Walk<'a> {
             let col = c.col;
             self.note_opener(frame, &form, 0, at, c);
             c.lead(0);
-            return self.apply(frame, col, form, 0, at, c);
+            return self.apply(frame, col, form, 0, true, at, c);
         }
         let col = start + c.col;
         let m = c.col;
         c.lead(m);
-        self.apply(frame, col, form, canon + m, at, c);
+        self.apply(frame, col, form, canon + m, false, at, c);
     }
 
     /// Whether the line after `at`, read under the frames up to `owner`, stands at `col` or past it.
