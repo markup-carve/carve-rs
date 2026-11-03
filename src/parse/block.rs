@@ -1889,21 +1889,6 @@ pub(in crate::parse) fn opens_colon_body_paragraph(
     }
 }
 
-pub(in crate::parse) fn is_invalid_colon_fence_opener_text(line: &str) -> bool {
-    let trimmed = trim_ascii_start(line);
-    let fence_len = trimmed.bytes().take_while(|b| *b == b':').count();
-    if fence_len < 3 {
-        return false;
-    }
-    if exact_colon_fence_len(trimmed).is_some() {
-        return false;
-    }
-    detect_container_open(trimmed).is_none()
-        && detect_line_block_open(trimmed).is_none()
-        && detect_hardbreaks_block_open(trimmed).is_none()
-        && detect_quote_block_open(trimmed).is_none()
-}
-
 #[cfg(test)]
 thread_local! {
     pub(in crate::parse) static COLON_COPIED_BYTES: Cell<usize> = const { Cell::new(0) };
@@ -2594,7 +2579,7 @@ impl<'a> ParaOpen<'a> {
                     && !interrupts_paragraph_with_rest(innermost, &[])));
         let verdict = Verdict {
             open,
-            opens_absorption: open && is_invalid_colon_fence_opener_text(innermost),
+            opens_absorption: false,
         };
         *answer = Some(verdict);
         verdict

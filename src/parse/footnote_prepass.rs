@@ -981,8 +981,13 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         &mut self,
         i: usize,
         scan: &LineScan<'a>,
-        def: DefinitionLine<'a>,
+        mut def: DefinitionLine<'a>,
     ) -> usize {
+        // A link definition on the marker line is hoisted like one on a body line.
+        if self.hoist_note_link_def(def.first, i) {
+            static PLACEHOLDER: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+            def.first = PLACEHOLDER.get_or_init(super::definition_placeholder);
+        }
         let stripped = &scan.stripped;
         let in_container = !stripped.structural.is_empty();
         let normalized_label = label_key(def.label);

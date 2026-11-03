@@ -198,7 +198,6 @@ struct BlockLead {
 /// The item's lead paragraph while its lazy lines are gathered.
 struct LeadParagraph {
     lines: Vec<String>,
-    suppress_colon_interrupt: bool,
     // The first raw line a failed wrapped-attribute lookahead has not
     // already proved cannot start one. Without this floor, a run of
     // unclosed `{.a` lines scans the whole remaining item once per line.
@@ -2608,7 +2607,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         };
         let mut lead = LeadParagraph {
             lines: vec![paragraph_content.to_string()],
-            suppress_colon_interrupt: is_invalid_colon_fence_opener_text(content),
             attrs_scan_floor: self.cur.pos,
             anchors: self
                 .options
@@ -2730,10 +2728,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // block relative to it (#1705). Ordinary over-indented prose is
         // still lazy paragraph text.
         let over_indented = trim_ascii_start(next);
-        let absorbed =
-            lead.suppress_colon_interrupt && is_suppressed_colon_fence_line(over_indented);
-        if !absorbed
-            && item_block_opener(over_indented)
+        if item_block_opener(over_indented)
             && self
                 .item_unclosed_fence_base
                 .map_or(true, |base| base == indent)
@@ -2750,7 +2745,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // A sibling/nesting marker above the content column was already
         // handled above; only a genuine lazy interrupt ends the fold.
         let next_owned = next.to_string();
-        if !absorbed && interrupts_lazy_continuation_as_container(self.cur, &next_owned) {
+        if interrupts_lazy_continuation_as_container(self.cur, &next_owned) {
             return false;
         }
         // CARVE-P2-020: a caption continuation keeps its indentation.
@@ -2767,7 +2762,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         if let Some(anchors) = &mut lead.anchors {
             anchors.push(inline_anchor_for_line(self.cur, self.cur.pos, inline_line));
         }
-        lead.suppress_colon_interrupt |= is_invalid_colon_fence_opener_text(inline_line);
         lead.lines.push(inline_line.to_string());
         self.cur.consume();
     }
@@ -2794,10 +2788,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             }
         };
         let fence_open = detect_fence_open(&dedented);
-        let interrupts = (wrapped_attr_interrupts
+        let interrupts = wrapped_attr_interrupts
             || interrupts_paragraph_as_container(self.cur, &dedented)
-            || fence_open.is_some())
-            && !(lead.suppress_colon_interrupt && is_suppressed_colon_fence_line(&dedented));
+            || fence_open.is_some();
         if interrupts {
             return false;
         }
@@ -2810,7 +2803,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             anchors.push(inline_anchor_for_line(self.cur, self.cur.pos, &dedented));
         }
         track_collected_fence(&mut self.item_open_fence, &dedented, true, indent);
-        lead.suppress_colon_interrupt |= is_invalid_colon_fence_opener_text(&dedented);
         lead.lines.push(dedented);
         self.cur.consume();
         true

@@ -24,9 +24,10 @@ fn html(src: &str) -> String {
 
 #[test]
 fn the_flush_left_line_folds_because_the_fence_opened_nothing() {
+    // carve#4863 ruling: a colon line is read on its own.
     assert_eq!(
         html("- item\n  :::note\n  body\n  :::\ntail\n"),
-        "<ul>\n  <li>item\n:::note\nbody\n:::\ntail</li>\n</ul>"
+        "<ul>\n  <li>item\n:::note\nbody\n    <div>\n\n    </div>\n  </li>\n</ul>\n<p>tail</p>"
     );
 }
 
@@ -44,9 +45,10 @@ fn a_valid_opener_closes_the_item_instead() {
 
 #[test]
 fn a_lazy_line_one_column_in_folds_too() {
+    // carve#4863 ruling: a colon line is read on its own.
     assert_eq!(
         html("- item\n  :::note\n  body\n  :::\n tail\n"),
-        "<ul>\n  <li>item\n:::note\nbody\n:::\ntail</li>\n</ul>"
+        "<ul>\n  <li>item\n:::note\nbody\n    <div>\n\n    </div>\n  </li>\n</ul>\n<p>tail</p>"
     );
 }
 
@@ -57,9 +59,10 @@ fn the_malformed_fence_may_be_the_paragraphs_first_line() {
     // even though the column-1 shape above was right - the two went through
     // different branches, which is the shape of defect a single corpus document
     // does not catch.
+    // carve#4863 ruling: a colon line is read on its own.
     assert_eq!(
         html("- :::note\n  body\n  :::\ntail\n"),
-        "<ul>\n  <li>:::note\nbody\n:::\ntail</li>\n</ul>"
+        "<ul>\n  <li>:::note\nbody\n    <div>\n\n    </div>\n  </li>\n</ul>\n<p>tail</p>"
     );
 }
 
@@ -67,9 +70,10 @@ fn the_malformed_fence_may_be_the_paragraphs_first_line() {
 fn it_folds_inside_a_block_quote() {
     // The quote's prefix matches on the lazy line but the item's indentation
     // does not - the partial match S4 is written for.
+    // carve#4863 ruling: a colon line is read on its own.
     assert_eq!(
         html("> - item\n>   :::note\n>   body\n>   :::\n> tail\n"),
-        "<blockquote>\n  <ul>\n    <li>item\n:::note\nbody\n:::\ntail</li>\n  </ul>\n</blockquote>"
+        "<blockquote>\n  <ul>\n    <li>item\n:::note\nbody\n      <div>\n\n      </div>\n    </li>\n  </ul>\n  <p>tail</p>\n</blockquote>"
     );
 }
 
@@ -78,9 +82,10 @@ fn a_wider_bare_fence_is_absorbed_too() {
     // §12: "the absorption is not width-tagged". A malformed opener has no
     // length to match against, so after `:::note` a `::::` is absorbed as
     // readily as a `:::`.
+    // carve#4863 ruling: a colon line is read on its own.
     assert_eq!(
         html("- item\n  :::note\n  body\n  ::::\ntail\n"),
-        "<ul>\n  <li>item\n:::note\nbody\n::::\ntail</li>\n</ul>"
+        "<ul>\n  <li>item\n:::note\nbody\n    <div>\n\n    </div>\n  </li>\n</ul>\n<p>tail</p>"
     );
 }
 
