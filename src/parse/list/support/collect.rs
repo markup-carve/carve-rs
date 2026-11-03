@@ -213,6 +213,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     // instead, which the parallel-to-`lines` invariant below forbids.
     let building_maps = cur.line_map.is_some();
     let mut lines: Vec<String> = Vec::new();
+    let mut held_comment_span = HeldCommentSpan::new();
     let mut line_map = Vec::new();
     let mut col_map: Vec<Option<isize>> = Vec::new();
     // See `MappedSource::reached`.
@@ -1170,7 +1171,10 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 || cur
                     .closed_comment_location
                     .is_some_and(|(at, _)| at + 1 == cur.pos));
-        let paragraph_before_comment = (comment_boundary || after_retaining_comment)
+        // A comment line inside a span the body holds is payload, never past a paragraph.
+        let in_held_span = held_comment_span.holds(&lines, line);
+        let paragraph_before_comment = !in_held_span
+            && (comment_boundary || after_retaining_comment)
             && (lines[..lines.len() - trailing_comment_lines]
                 .iter()
                 .rposition(|line| !is_blank_line(line) && !is_line_comment_any_column(line))
@@ -1204,6 +1208,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 is_comment_fence_close_any_column(line, run)
                     || detect_comment_fence_line_any_column(line).is_some()
             })
+            && !in_held_span
             && !closes_a_held_comment_span(&lines, line)
             && !(held_span.is_some() && is_line_comment_any_column(line))
             && !caption_follower
@@ -1246,7 +1251,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         // line and stays, exactly as it does under `%%` (markup-carve/carve#1920,
         // corpus 446). One frame in, the carried flag says the line reached an
         // ancestor and not this container, and the frame still ends there.
-        if degraded_comment_fence && indent < strip_cols {
+        // Under F1 that opener still holds its span, so a comment line stays its payload.
+        if degraded_comment_fence && indent < strip_cols && !in_held_span {
             break;
         }
         if degraded_descendant_fence && !cur.line_reached(cur.pos, indent, strip_cols) {
@@ -1264,7 +1270,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         if fence.is_some() && indent < strip_cols && !fence_owns_flush_left {
             break;
         }
-        if !colon_open.is_empty() && indent < strip_cols && !fence_owns_flush_left {
+        if !colon_open.is_empty() && indent < strip_cols && !fence_owns_flush_left && !in_held_span
+        {
             break;
         }
         if marker_colon_retained_para
