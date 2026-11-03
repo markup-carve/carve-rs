@@ -2053,7 +2053,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             {
                 break;
             }
-            if lead.nested_definition_ended_paragraph {
+            // A definition on the marker line opens no paragraph, but a block
+            // collected below it can.
+            if lead.nested_definition_ended_paragraph && !stream.source.contains('\n') {
                 break;
             }
             let before = stream.source.len();
