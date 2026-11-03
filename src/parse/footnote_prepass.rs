@@ -2240,6 +2240,19 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         if self.is_marker_column_plus(host, walk, *i) {
             return false;
         }
+        // An accepted `+` the layout gave to another host continues that host.
+        if is_plus_marker(trim_ascii_start(without_blockquote_prefixes(
+            trim_ascii_start(raw),
+        ))) && self
+            .decision_at(self.first_source_line + *i)
+            .is_some_and(|decision| {
+                decision
+                    .owner
+                    .is_some_and(|owner| owner != continuation_marker::Kind::Footnote)
+            })
+        {
+            return false;
+        }
         let inside = host.content(raw);
         let rest = trim_ascii_start(
             inside.unwrap_or_else(|| without_blockquote_prefixes(trim_ascii_start(raw))),
