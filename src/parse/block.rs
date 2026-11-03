@@ -933,6 +933,8 @@ pub(in crate::parse) struct BodyCommentState {
     pub(in crate::parse) at_block_start: bool,
     /// An open line block: its payload lines open nothing (PART 2 `line_block`).
     pub(in crate::parse) line_block: Option<usize>,
+    /// A `%%%` span open in that line block's payload.
+    line_block_span: Option<usize>,
 }
 
 impl BodyCommentState {
@@ -942,6 +944,7 @@ impl BodyCommentState {
             comment: None,
             at_block_start: true,
             line_block: None,
+            line_block_span: None,
         }
     }
 
@@ -970,9 +973,15 @@ impl BodyCommentState {
             unquoted = trim_ascii_start(rest);
         }
         if let Some(run) = self.line_block {
-            if exact_colon_fence_len(unquoted) == Some(run) {
+            if let Some(span) = self.line_block_span {
+                if is_comment_fence_close(unquoted, span) {
+                    self.line_block_span = None;
+                }
+            } else if exact_colon_fence_len(unquoted) == Some(run) {
                 self.line_block = None;
                 self.at_block_start = true;
+            } else if let Some(open) = detect_comment_fence_line(unquoted) {
+                self.line_block_span = Some(open.fence_len);
             }
             return;
         }
@@ -1006,6 +1015,38 @@ pub(in crate::parse) fn body_open_comment_run<S: AsRef<str>>(
         state.observe(raw.as_ref());
     }
     state.comment
+}
+
+/// Is a comment-shaped line inside a `%%%` span the collected lines still hold,
+/// a comment block's or a line block's? Such a line is the span's payload or
+/// closer at any column (PART 0 S1, PART 9 §28). Reads only the lines added
+/// since the last call, so the body must only grow.
+pub(in crate::parse) struct HeldCommentSpan {
+    seen: usize,
+    state: BodyCommentState,
+}
+
+impl HeldCommentSpan {
+    pub(in crate::parse) fn new() -> Self {
+        Self {
+            seen: 0,
+            state: BodyCommentState::new(),
+        }
+    }
+
+    pub(in crate::parse) fn holds<S: AsRef<str>>(&mut self, body_lines: &[S], line: &str) -> bool {
+        if detect_comment_fence_line_any_column(line).is_none() {
+            return false;
+        }
+        if body_lines.len() < self.seen {
+            *self = Self::new();
+        }
+        for raw in &body_lines[self.seen..] {
+            self.state.observe(raw.as_ref());
+        }
+        self.seen = body_lines.len();
+        self.state.comment.is_some() || self.state.line_block_span.is_some()
+    }
 }
 
 /// Is `line` the closer of a comment span the collected lines still hold?

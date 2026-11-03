@@ -1572,6 +1572,21 @@ impl<'a> Walk<'a> {
         }
     }
 
+    /// Whether the line stays in the innermost fence's payload. A comment-shaped
+    /// line below the column inside an open `%%%` span is that span's payload,
+    /// and its exact run the closer (PART 0 S1, PART 9 §28).
+    fn in_open_payload(&self, missed: bool, reached: usize, rest: &str) -> bool {
+        let inner = self.frames.last().expect("document frame");
+        let comment_line = || {
+            (inner.family == "comment" || inner.span.is_some_and(|(ch, _)| ch == b'%'))
+                && comment_run(rest).is_some()
+                && self.frames[reached + 1..]
+                    .iter()
+                    .all(|f| f.kind != Kind::Quote)
+        };
+        inner.kind == Kind::Fence && (!missed || comment_line())
+    }
+
     fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
         let tracing = self.trace.is_some();
         let line = self.first_line + at;
@@ -1673,8 +1688,9 @@ impl<'a> Walk<'a> {
         if missed && self.close_comment_below_host(at, line, reached, c, tracing) {
             return;
         }
+        let in_payload = self.in_open_payload(missed, reached, c.rest);
         let inner = self.frames.last().expect("document frame");
-        if inner.kind == Kind::Fence && !missed {
+        if in_payload {
             // S1: an open payload tests its closer first (B-<family>-keep, -end).
             let target = c.col.saturating_sub(inner.cut).max(inner.canon);
             let (closer, span, line_block) = (inner.closer, inner.span, inner.line_block);
@@ -1728,9 +1744,7 @@ impl<'a> Walk<'a> {
                         };
                         (widest.get(at + 1).copied().unwrap_or(0) >= len).then_some((ch, len))
                     }
-                    None => comment_run(rest)
-                        .filter(|run| runs.last_comment.get(run).is_some_and(|&j| j > at))
-                        .map(|run| (b'%', run)),
+                    None => comment_run(rest).map(|run| (b'%', run)),
                 };
                 if new_span.is_some() {
                     self.top().span = new_span;
@@ -1912,7 +1926,7 @@ impl<'a> Walk<'a> {
                 }
                 c.lead_in(canon, shift, matches!(form, Form::Term | Form::Dd(_)));
                 let owner = self.frames.len() - 1;
-                self.apply(owner, col, form, canon, at, c);
+                self.apply(owner, col, form, canon, closed == 0, at, c);
                 // A description a `+` filled stays open for a sibling (carve#4408).
                 if fills_dd {
                     self.frames[owner].last = Last::Dd;
@@ -2119,12 +2133,14 @@ impl<'a> Walk<'a> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn apply(
         &mut self,
         owner: usize,
         col: usize,
         form: Form,
         canon: usize,
+        in_host: bool,
         at: usize,
         c: &mut Cursor<'_>,
     ) {
@@ -2169,7 +2185,12 @@ impl<'a> Walk<'a> {
                 let mut f = Frame::new(Kind::Fence);
                 f.col = o_col;
                 f.canon = o_canon;
-                f.cut = col.saturating_sub(canon);
+                // A comment payload is host-relative; the opener's indentation sets no base (CARVE-P9-060).
+                f.cut = if matches!(closer, Closer::Comment(_)) && in_host {
+                    o_col.saturating_sub(o_canon)
+                } else {
+                    col.saturating_sub(canon)
+                };
                 f.closer = Some(closer);
                 f.open_col = col;
                 f.line_block = line_block;
@@ -2367,12 +2388,12 @@ impl<'a> Walk<'a> {
             let col = c.col;
             self.note_opener(frame, &form, 0, at, c);
             c.lead(0);
-            return self.apply(frame, col, form, 0, at, c);
+            return self.apply(frame, col, form, 0, true, at, c);
         }
         let col = start + c.col;
         let m = c.col;
         c.lead(m);
-        self.apply(frame, col, form, canon + m, at, c);
+        self.apply(frame, col, form, canon + m, false, at, c);
     }
 
     /// Whether the line after `at`, read under the frames up to `owner`, stands at `col` or past it.
@@ -2520,12 +2541,9 @@ impl<'a> Walk<'a> {
             let len = rest.bytes().take_while(|&b| b == ch).count();
             return Form::Fence(Closer::Fence(ch, len), true, false);
         }
+        // A `%%%` opener always opens its span (F1, carve#4907).
         if let Some(run) = comment_run(rest) {
-            let lines = &self.lines;
-            let runs = self.runs.get_or_init(|| closer_runs(lines));
-            if runs.last_comment.get(&run).is_some_and(|&j| j > at) {
-                return Form::Fence(Closer::Comment(run), true, false);
-            }
+            return Form::Fence(Closer::Comment(run), true, false);
         }
         if rest.starts_with("%%") {
             return Form::Leaf(true);
