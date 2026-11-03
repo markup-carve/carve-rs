@@ -266,7 +266,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let mut surviving_definition_body_column = open_definition_body_column;
     let mut after_definition_blank = false;
     let mut marker_definition_has_description = !marker_is_definition_term;
-    let mut definition_band_inline_run = None;
     let mut marker_description_is_paragraph = false;
     let mut nested_paragraph_column = None;
     let mut carried_lazy_owner = nested_item_columns.lazy_paragraph_owner.take();
@@ -671,7 +670,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             }
             marker_note_intermediate_quote_open = false;
             nested_paragraph_column = None;
-            definition_band_inline_run = None;
             marker_colon_retained_para = false;
             if comment_fence.is_none() && fence.is_none() {
                 marker_term_open = false;
@@ -1116,33 +1114,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             .pos
             .checked_sub(1)
             .is_some_and(|at| effective_comment_line_at(cur, at));
-        let definition_comment_band = marker_is_definition_term
-            && marker_definition_has_description
-            && fence.is_none()
-            && comment_fence.is_none()
-            && (indent > marker_base || detect_fence_open(trim_ascii_start(line)).is_some())
-            && indent < strip_cols
-            && prior_comment;
-        let definition_band_inline_closer = definition_band_inline_run.is_some_and(|run| {
-            if last_backtick_run_starts(line.as_bytes()).contains_key(&run) {
-                definition_band_inline_run = None;
-                trim_ascii_start(line)
-                    .bytes()
-                    .take_while(|&byte| byte == b'`')
-                    .count()
-                    == run
-            } else {
-                false
-            }
-        });
-        if definition_comment_band {
-            let content = trim_ascii_start(line);
-            let run = content.bytes().take_while(|&byte| byte == b'`').count();
-            if run >= 3 && !last_backtick_run_starts(&content.as_bytes()[run..]).contains_key(&run)
-            {
-                definition_band_inline_run = Some(run);
-            }
-        }
         // A CLOSER IS PART OF THE SPAN, NOT A DEDENT. See
         // `body_open_comment_run`: this dedent ends the container, and a comment
         // delimiter closing a span these lines already hold is not one.
@@ -1204,8 +1175,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && !(marker_note_intermediate_quote_open
                 && line_starts_paragraph(line)
                 && !item_block_opener(line))
-            && !definition_comment_band
-            && !definition_band_inline_closer
             && !fence_owns_flush_left
             && !spanned_stanza_lazy
             && !comment_fence.is_some_and(|(run, _)| {
@@ -1244,8 +1213,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         }
         if (definition_ended_paragraph || closed_code_leaf)
             && indent < strip_cols
-            && !definition_comment_band
-            && !definition_band_inline_closer
             && !comment_fence.is_some_and(|(run, _)| is_comment_fence_close_any_column(line, run))
         {
             break;
@@ -1656,9 +1623,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             {
                 indent
             }
-            _ if lazy_list_marker || definition_comment_band || definition_band_inline_closer => {
-                indent
-            }
+            _ if lazy_list_marker => indent,
             (true, Some(_))
                 if comment_payload
                     && marker_is_definition_term
@@ -1782,11 +1747,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 && !separator_at_nested_marker
                 && !separator_in_own_item
                 && !separator_for_nested_item
-            || definition_band_inline_closer
-            || (definition_comment_band
-                && detect_fence_open(trim_ascii_start(line)).is_none()
-                && !is_definition_list_start(trim_ascii_start(line))
-                && strip_description_prefix(trim_ascii_start(line)).is_none())
             || (marker_colon_retained_para && indent < strip_cols))
             && !sliced.starts_with(LAZY)
         {
