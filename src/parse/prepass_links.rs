@@ -188,6 +188,7 @@ pub(in crate::parse) struct PreviousLine {
     in_definition_list: bool,
     after_blank: bool,
     after_term: bool,
+    after_term_line: bool,
 }
 
 impl PreviousLine {
@@ -198,10 +199,12 @@ impl PreviousLine {
         }
         let bare = strip_container_prefixes(line, false).bare;
         let opens = opens_definition_entry_bare(bare);
-        // A lazy line continues the term or description above it.
+        // A lazy line continues the description above it. A term is one line
+        // (carve#4861), so a line after a term ends the entry.
         if !opens
             && !self.after_blank
             && self.after_term
+            && !self.after_term_line
             && !super::paragraph::interrupts_paragraph_with_rest(bare, &[])
             && detect_list_marker_full(trim_ascii_start(without_blockquote_prefixes(line)))
                 .is_none()
@@ -215,6 +218,7 @@ impl PreviousLine {
         }
         self.after_blank = false;
         self.after_term = opens && self.in_definition_list;
+        self.after_term_line = self.after_term && trim_ascii_start(bare).starts_with("::");
     }
 
     pub(in crate::parse) fn after_term(&self) -> bool {

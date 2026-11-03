@@ -15,5 +15,5 @@ fn check(source: &str, expected: &str) {
 
 #[test]
 fn exact_html() {
-    check(":: t\n:: ", "<dl>\n  <dt>t\n::</dt>\n</dl>\n");
+    check(":: t\n:: ", "<dl>\n  <dt>t</dt>\n</dl>\n<p>::</p>\n");
 }

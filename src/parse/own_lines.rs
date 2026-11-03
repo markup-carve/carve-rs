@@ -77,7 +77,6 @@ struct Frame {
     closer: Option<Closer>,
     open_col: usize,
     run: usize,
-    term_cut: usize,
     /// The open paragraph absorbed an invalid colon opener (CARVE-P9-016).
     absorbs: bool,
     line_block: bool,
@@ -129,7 +128,6 @@ impl Frame {
             closer: None,
             open_col: 0,
             run: 0,
-            term_cut: 0,
             absorbs: false,
             line_block: false,
             span: None,
@@ -1442,7 +1440,7 @@ impl<'a> Walk<'a> {
     }
 
     fn lazy_refused(&self, reached: usize, col: usize, rest: &str) -> bool {
-        self.missed_term_refuses(reached, rest) || self.caption_ends_quote(reached, col, rest)
+        self.caption_ends_quote(reached, col, rest)
     }
 
     /// A caption at its owner's block column attaches to a quote and ends it (CARVE-P2-008).
@@ -1527,43 +1525,6 @@ impl<'a> Walk<'a> {
             self.emit(at, record);
         }
         true
-    }
-
-    fn missed_term_refuses(&self, reached: usize, rest: &str) -> bool {
-        if self.frames.last().expect("frame").last != Last::Term {
-            return false;
-        }
-        let missed_frames = &self.frames[reached + 1..];
-        if detect_list_marker_full(rest).is_some() {
-            missed_frames
-                .iter()
-                .any(|f| matches!(f.kind, Kind::Quote | Kind::Note))
-        } else {
-            rest.strip_prefix(':')
-                .is_some_and(|t| t.starts_with(' ') && !t.trim().is_empty())
-                && missed_frames.iter().any(|f| f.kind == Kind::Quote)
-        }
-    }
-
-    fn item_after_missed_quote_term(&self, reached: usize, col: usize, rest: &str) -> usize {
-        if !self.frames.last().is_some_and(|f| f.last == Last::Term)
-            || !rest
-                .strip_prefix(':')
-                .is_some_and(|tail| tail.starts_with(' '))
-            || !self.frames[reached + 1..]
-                .iter()
-                .any(|f| f.kind == Kind::Quote)
-        {
-            return reached;
-        }
-        (reached + 1..self.frames.len())
-            .find(|&k| {
-                self.frames[k].kind == Kind::Item
-                    && self.frames[k]
-                        .marker
-                        .is_some_and(|(marker, _)| marker == col)
-            })
-            .unwrap_or(reached)
     }
 
     fn attached_item_after_quote(&self, at: usize, c: &mut Cursor<'_>, reached: usize) -> usize {
@@ -1654,7 +1615,6 @@ impl<'a> Walk<'a> {
             }
             reached = k;
         }
-        reached = self.item_after_missed_quote_term(reached, c.col, c.rest);
         // The attachment test measured through quote prefixes. Keep that owner.
         reached = self.attached_item_after_quote(at, c, reached);
         reached = self.stand_invisible_line(at, c, reached, plus.is_some());
@@ -1778,8 +1738,6 @@ impl<'a> Walk<'a> {
             return;
         }
         let top_para = self.frames.last().expect("frame").para;
-        // PART 0 [B-term-keep]: past a missed quote or note a marker leaves a term,
-        // and past a quote a separator too (carve#4300).
         let lazy_refused = self.lazy_refused(reached, c.col, c.rest);
         if missed
             && !c.rest.is_empty()
@@ -1912,15 +1870,9 @@ impl<'a> Walk<'a> {
             }
             Form::Text => {
                 let owner = self.top();
-                // A term's continuation moves with the term, so a later `:` body still follows it.
-                let term = owner.para && owner.last == Last::Term;
-                let cut = if term {
-                    owner.term_cut
-                } else {
-                    owner
-                        .cut
-                        .max(owner.closed_list.map_or(0, |(_, shift)| shift))
-                };
+                let cut = owner
+                    .cut
+                    .max(owner.closed_list.map_or(0, |(_, shift)| shift));
                 let target = if owner.para || !closed_column || plus_follower {
                     c.col.saturating_sub(cut).max(owner.canon)
                 } else {
@@ -1928,16 +1880,14 @@ impl<'a> Walk<'a> {
                 };
                 owner.absorbs = (owner.para && owner.absorbs) || absorbs_colon(c.rest);
                 owner.para = true;
-                if !term {
-                    owner.last = Last::Para;
-                }
+                owner.last = Last::Para;
                 // As for a lazy line, only the item's own column moves.
                 let shift = if target == owner.canon {
                     owner.shift
                 } else {
                     0
                 };
-                c.lead_in(target, shift, term);
+                c.lead_in(target, shift, false);
             }
             form => {
                 let (canon, shift) = (self.top().canon, self.top().shift);
@@ -2159,10 +2109,6 @@ impl<'a> Walk<'a> {
                     Form::Dd(_) => Last::Dd,
                     _ => Last::Other,
                 };
-            }
-            if matches!(form, Form::Term) {
-                o.para = true;
-                o.term_cut = col.saturating_sub(canon);
             }
         }
         if let Form::Attr(lines) = form {
@@ -2500,9 +2446,8 @@ impl<'a> Walk<'a> {
             return Form::Note(close + 2 + spaces);
         }
         if let Some((width, head, axes)) = list_marker(rest) {
-            // A term is not a paragraph a marker continues.
             // §10 I2: under an open paragraph a marker opens only in a marker body (carve#4860).
-            if owner_para && !owner_kind.is_marker_body() && owner_last != Last::Term {
+            if owner_para && !owner_kind.is_marker_body() {
                 return Form::Text;
             }
             return Form::Item(width, head, axes);

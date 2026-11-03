@@ -22,7 +22,7 @@ fn corpus_620_separator_at_outer_marker_column_ends_the_item() {
 fn marker_line_term_uses_the_item_content_column_at_every_host() {
     assert_eq!(
         html("- :: t\n :  head\n"),
-        "<ul>\n  <li>\n    <dl>\n      <dt>t\n:  head</dt>\n    </dl>\n  </li>\n</ul>"
+        "<ul>\n  <li>\n    <dl>\n      <dt>t</dt>\n    </dl>\n  </li>\n</ul>\n<p>:  head</p>"
     );
     assert_eq!(
         html("- :: t\n  :  head\n"),
@@ -31,14 +31,15 @@ fn marker_line_term_uses_the_item_content_column_at_every_host() {
     assert!(html("- intro\n  :: t\n:  head\n").ends_with("</ul>\n<p>:  head</p>"));
     assert!(html("1. :: t\n:  head\n").ends_with("</ol>\n<p>:  head</p>"));
     assert!(html("> - :: t\n> :  head\n").contains("</ul>\n  <p>:  head</p>\n</blockquote>"));
-    assert!(html("> - :: t\n>  :  head\n").contains("<dt>t\n:  head</dt>"));
+    assert!(html("> - :: t\n>  :  head\n").contains("</ul>\n  <p>:  head</p>\n</blockquote>"));
     assert!(html("> - :: t\n>   :  head\n").contains("<dd>head</dd>"));
 }
 
 #[test]
-fn a_separator_inside_the_marker_column_stays_in_the_open_term_after_lazy_text() {
+fn a_separator_after_lazy_text_below_a_marker_line_term_is_paragraph_text() {
+    // A term is one line (carve#4861).
     assert_eq!(
         html("- :: term\nflush block\n : body\n"),
-        "<ul>\n  <li>\n    <dl>\n      <dt>term\nflush block\n: body</dt>\n    </dl>\n  </li>\n</ul>"
+        "<ul>\n  <li>\n    <dl>\n      <dt>term</dt>\n    </dl>\n  </li>\n</ul>\n<p>flush block\n: body</p>"
     );
 }

@@ -218,11 +218,12 @@ fn two_columns_in_folds_as_well() {
 }
 
 #[test]
-fn an_under_indented_description_folds_into_the_term() {
-    // CARVE-P2-017: one column below the definition list folds into its term.
+fn an_under_indented_description_ends_the_item() {
+    // A term is one line (carve#4861), so a separator one column below the
+    // definition list is text after the list.
     assert_eq!(
         carve::to_html("- one\n  :: term\n :  def\n"),
-        "<ul>\n  <li>one\n    <dl>\n      <dt>term\n:  def</dt>\n    </dl>\n  </li>\n</ul>"
+        "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n    </dl>\n  </li>\n</ul>\n<p>:  def</p>"
     );
 }
 
@@ -233,10 +234,11 @@ fn a_below_column_term_and_separator_each_fold_into_their_owner() {
         carve::to_html("- - a\n :: term"),
         "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n    </ul>\n  </li>\n</ul>\n<dl>\n  <dt>term</dt>\n</dl>"
     );
-    // The separator below the definition list's column folds into its term.
+    // A term is one line (carve#4861): the separator below the definition
+    // list's column ends the item.
     assert_eq!(
         carve::to_html("- one\n  :: term\n :  def\n"),
-        "<ul>\n  <li>one\n    <dl>\n      <dt>term\n:  def</dt>\n    </dl>\n  </li>\n</ul>"
+        "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n    </dl>\n  </li>\n</ul>\n<p>:  def</p>"
     );
 }
 

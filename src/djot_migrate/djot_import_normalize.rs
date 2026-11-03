@@ -6222,10 +6222,11 @@ mod tests {
     #[test]
     fn djot_definition_term_lazy_continuation_is_dedented() {
         let result = migrate_djot(": apple\n fruit\n\n  Body\n\n: orange\n");
-        assert!(result.value.contains(":: apple\nfruit\n"));
+        // A Carve term is one line (carve#4861), so the wrapped term joins.
+        assert!(result.value.contains(":: apple fruit\n"));
         assert_eq!(
             migrate_djot(": apple\n fruit\n\n  Body\n\n  - sub\n  - list\n\n: orange\n").value,
-            "{loose}\n:: apple\nfruit\n\n:  Body\n\n   - sub\n   - list\n\n:: orange\n:  %%\n"
+            "{loose}\n:: apple fruit\n\n:  Body\n\n   - sub\n   - list\n\n:: orange\n:  %%\n"
         );
     }
 

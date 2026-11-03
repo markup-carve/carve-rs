@@ -204,187 +204,17 @@ fn definition_entry_at(line: &str, marker_hosted: bool, column: usize) -> Option
     })
 }
 
-/// Fold a term's continuation lines and parse its inline content.
-///
-/// A term folds a following plain line as a soft break, so a wrapped term line
-/// does not strand the definition; a blank line, a new marker (`::` / `:  `), a
-/// list marker or a block opener ends it. A comment past the container column
-/// stays a comment and does not end the term (carve#2411). As in a paragraph,
-/// inline content never reaches across it, so each run of lines between
-/// comments is parsed on its own.
-pub(in crate::parse) fn fold_term(
-    cur: &mut LineCursor,
+/// Parse a term's inline content. A term is one line, like a heading
+/// (carve#4861): the next line is read on its own.
+fn term_inlines(
     options: &Options<'_>,
-    first: String,
-    first_anchor: Option<Option<(usize, isize)>>,
-    entry_column: usize,
-    marker_hosted: bool,
+    text: &str,
+    anchor: Option<Option<(usize, isize)>>,
 ) -> Vec<InlineNode> {
-    enum Part {
-        Run(String, Option<Vec<Option<(usize, isize)>>>),
-        Comment(Comment),
-        InvisibleComment(Option<Pos>),
+    match anchor {
+        Some(anchor) => parse_inline_lines_with_anchor(text, options, vec![anchor]),
+        None => parse_inline_with_options(text, options),
     }
-    let mut parts = vec![Part::Run(first, first_anchor.map(|anchor| vec![anchor]))];
-    while let Some(next) = cur.peek() {
-        if next.starts_with([' ', '\t'])
-            && trim_ascii_start(next).starts_with("%%")
-            && !is_definition_placeholder(next)
-        {
-            let comment_start = cur.pos;
-            match take_comment_block(cur, options) {
-                CommentBlock::Consumed(Some(node)) => {
-                    if let BlockNode::Comment(comment) = *node {
-                        parts.push(Part::Comment(comment));
-                    }
-                    continue;
-                }
-                CommentBlock::Consumed(None) => {
-                    parts.push(Part::InvisibleComment(span_of(
-                        cur,
-                        comment_start,
-                        cur.pos,
-                        options,
-                    )));
-                    continue;
-                }
-                CommentBlock::NotAComment => {}
-            }
-        }
-        let Some(next) = cur.peek() else { break };
-        if cur.at_document_level
-            && detect_abbreviation_def(next).is_some()
-            && (definition_sibling_after_invisible(cur, marker_hosted, entry_column, true, true)
-                .is_some()
-                || definition_sibling_after_invisible(
-                    cur,
-                    marker_hosted,
-                    entry_column,
-                    false,
-                    false,
-                )
-                .is_some())
-        {
-            break;
-        }
-        // A description marker left of the body column returns to the outer
-        // description. Nested body collection can retain its residual indent
-        // without a LAZY frame; that indent must not turn the marker into term
-        // text. A framed line belongs to the list-item lazy rule instead.
-        if !next.starts_with(LAZY)
-            && cur.carried_reach(cur.pos) == Some(false)
-            && strip_definition_marker(trim_ascii_start(next)).is_some()
-        {
-            break;
-        }
-        let same_column_entry = !next.starts_with(LAZY)
-            && definition_entry_at(strip_lazy(next), marker_hosted, entry_column).is_some_and(
-                |line| is_definition_list_start(line) || strip_definition_marker(line).is_some(),
-            );
-        if is_blank_line(next)
-            || next.starts_with(ITEM_PARAGRAPH)
-            || (!next.starts_with(LAZY) && is_definition_list_start(next))
-            || strip_lazy(next)
-                .strip_prefix(":: ")
-                .is_some_and(|rest| is_blank_line(rest) && rest.contains('\t'))
-            || (!next.starts_with(LAZY) && strip_definition_marker(strip_lazy(next)).is_some())
-            || same_column_entry
-            || is_list_marker(next)
-            // A term takes no caption: a caret line that misses the column is lazy text.
-            || (caption_content(next).is_some() && cur.carried_reach(cur.pos) != Some(false))
-        {
-            break;
-        }
-        let owned = next.to_string();
-        // A term's continuation is a position for INLINE CONTENT, so §7 does
-        // not recognize `*[A]: b` there unless the sibling lookahead above has
-        // proved that the line separates two markers at document level. Asked
-        // as a paragraph without that proof, `:: t` / `*[A]: b` lost the
-        // author's second line and defined an abbreviation (carve-rs#2096).
-        // A code opener at the container column ends a term even without a
-        // closer (CARVE-P2-028). Paragraph continuation requires a closer.
-        if detect_fence_open(&owned).is_some() || interrupts_paragraph_as_container(cur, &owned) {
-            break;
-        }
-        // A term's continuation line is a CONTENT LINE, so its trailing
-        // whitespace run does not reach the output - the same rule the term's
-        // FIRST line follows (markup-carve/carve#926, markup-carve/carve#1289).
-        // Spaces INSIDE a verbatim run end at its closing delimiter, so an
-        // all-space `` `  ` `` term is untouched by a trim that only ever sees
-        // the end of a line.
-        let text = strip_lazy(&owned);
-        let text = if owned.starts_with(LAZY)
-            && !owned.starts_with(LAZY_INDENT)
-            && cur.carried_reach(cur.pos) != Some(true)
-        {
-            trim_ascii_start(text)
-        } else {
-            text
-        };
-        let line = trim_ascii_end(text).to_string();
-        let anchor = options
-            .positions
-            .then(|| inline_anchor_for_line(cur, cur.pos, &owned));
-        match parts.last_mut() {
-            Some(Part::Run(text, anchors)) => {
-                text.push('\n');
-                text.push_str(&line);
-                if let (Some(anchors), Some(anchor)) = (anchors.as_mut(), anchor) {
-                    anchors.push(anchor);
-                }
-            }
-            _ => parts.push(Part::Run(line, anchor.map(|anchor| vec![anchor]))),
-        }
-        cur.consume();
-    }
-    let mut children = Vec::new();
-    let mut boundaries = Vec::new();
-    for (index, part) in parts.into_iter().enumerate() {
-        if index > 0 {
-            let target = match &part {
-                Part::InvisibleComment(pos) => pos.clone(),
-                _ => None,
-            };
-            boundaries.push((children.len(), target));
-            children.push(InlineNode::SoftBreak(Break { pos: None }));
-        }
-        match part {
-            Part::Comment(comment) => children.push(InlineNode::Comment(comment)),
-            Part::InvisibleComment(_) => {}
-            Part::Run(text, Some(anchors)) => {
-                children.extend(parse_inline_lines_with_anchor(&text, options, anchors));
-            }
-            Part::Run(text, None) => children.extend(parse_inline_with_options(&text, options)),
-        }
-    }
-    // A part-boundary break is placed once both its neighbours exist: from the
-    // preceding sibling's end to the following sibling's start, the span the
-    // fold's own in-part breaks already publish (carve#2469).
-    for (index, target) in boundaries {
-        let pos = index
-            .checked_sub(1)
-            .and_then(|previous| children.get(previous))
-            .and_then(InlineNode::pos)
-            .zip(
-                children
-                    .get(index + 1)
-                    .and_then(InlineNode::pos)
-                    .or(target.as_ref()),
-            )
-            .map(|(prev, next)| Pos {
-                start_line: prev.end_line,
-                end_line: next.start_line,
-                start_column: prev.end_column,
-                end_column: next.start_column,
-                start_offset: prev.end_offset,
-                end_offset: next.start_offset,
-                file: prev.file.clone(),
-            });
-        if let InlineNode::SoftBreak(br) = &mut children[index] {
-            br.pos = pos;
-        }
-    }
-    children
 }
 
 /// Find a compatible marker beyond lines that emit no visible block. Their
@@ -500,22 +330,12 @@ pub(in crate::parse) fn parse_definition_list(
         let term_source_line = cur.source_line(cur.pos);
         let term_start = cur.pos;
         cur.consume();
-        // A term folds a following plain line like a heading (soft break), so a
-        // wrapped term line does not strand the definition. A blank line, a new
-        // marker (`::` / `:  `), a list marker, or a block opener ends the term.
         let anchor = options
             .positions
             .then(|| inline_anchor_for_line(cur, term_start, term));
-        let children = fold_term(
-            cur,
-            options,
-            trim_ascii_end(term).to_string(),
-            anchor,
-            list_column,
-            marker_hosted,
-        );
-        // The span covers the `:: ` marker and every line the term folded, the
-        // same way a heading's covers its `#`.
+        let children = term_inlines(options, trim_ascii_end(term), anchor);
+        // The span covers the `:: ` marker and the term line, the same way a
+        // heading's covers its `#`.
         let mut terms = vec![DefinitionTerm {
             attrs: source_line_attrs(None, term_source_line, options),
             children,
@@ -553,14 +373,7 @@ pub(in crate::parse) fn parse_definition_list(
             let anchor = options
                 .positions
                 .then(|| inline_anchor_for_line(cur, next_start, next_term));
-            let children = fold_term(
-                cur,
-                options,
-                trim_ascii_end(next_term).to_string(),
-                anchor,
-                list_column,
-                marker_hosted,
-            );
+            let children = term_inlines(options, trim_ascii_end(next_term), anchor);
             terms.push(DefinitionTerm {
                 attrs: source_line_attrs(None, next_source_line, options),
                 children,

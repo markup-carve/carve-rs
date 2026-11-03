@@ -385,6 +385,7 @@ fn convert_root_definition_lists(source: &str, empty_term: &str) -> String {
     let _paragraph_cache = ParagraphCacheScope::new(source);
     let mut lines: Vec<String> = source.split('\n').map(str::to_owned).collect();
     let mut removed_blanks = HashSet::new();
+    let mut joined_term_lines = HashSet::new();
     let masked_source = mask_code_and_destinations(source);
     let masked: Vec<&str> = masked_source.split('\n').collect();
     let fence_starts = std::cell::RefCell::new(HashSet::new());
@@ -581,31 +582,40 @@ fn convert_root_definition_lists(source: &str, empty_term: &str) -> String {
                 while stack.last().is_some_and(|frame| frame.source >= indent) {
                     finish_definition_frame(stack.pop().unwrap(), &mut lines, empty_term);
                 }
-                if index > 0 {
-                    lines[index - 1].push('\n');
+                if let Some(previous) = (0..index)
+                    .rev()
+                    .find(|line| !joined_term_lines.contains(line))
+                {
+                    lines[previous].push('\n');
                 }
                 if stack.is_empty() {
                     continue;
                 }
             } else {
-                stack.last_mut().unwrap().term_end = index;
-                if visible
-                    && marker
-                    && indent > stack.last().unwrap().source
-                    && cached_regex!(r"^(?:[-*+][ \t]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)][ \t]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\)[ \t])").unwrap().is_match(continuation)
+                // A Carve term is one line (carve#4861), so a wrapped Djot term
+                // joins its line; a hard break's backslash goes. A reference
+                // definition stays a line of its own.
+                if cached_regex!(r"^\[[^\]\n]+\]:(?:[ \t]|$)")
+                    .unwrap()
+                    .is_match(continuation)
                 {
-                    let literal = cached_regex!(r"^([-*+])").unwrap().replace(continuation, "\\$1");
-                    let literal = cached_regex!(r"^([0-9A-Za-z]+)([.)])([ \t])").unwrap().replace(&literal, "$1\\$2$3");
-                    lines[index] = cached_regex!(r"^\(").unwrap().replace(&literal, "\\(").into_owned();
+                    lines[index] = format!(
+                        "{}{}",
+                        " ".repeat(stack.last().unwrap().target),
+                        continuation
+                    );
                     continue;
                 }
-                if !cached_regex!(r"^(?:[#>|{]|:{3,}|[`~]{3,}|[-*+] |(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)] )").unwrap().is_match(continuation) {
-                    let literal = if visible && !marker {
-                        cached_regex!(r"^([ivxlcdmIVXLCDM]+)([.)])([ \t])").unwrap().replace(continuation, "$1\\$2$3").into_owned()
-                    } else { continuation.to_owned() };
-                    let literal = if visible && (literal.starts_with(": ") || literal.starts_with(":\t") || literal == ":") { format!("\\{literal}") } else { literal };
-                    lines[index] = format!("{}{}", " ".repeat(stack.last().unwrap().target), literal);
-                }
+                let term_end = stack.last().unwrap().term_end;
+                let joined = lines[term_end].trim_end_matches([' ', '\t']);
+                let slashes = joined.len() - joined.trim_end_matches('\\').len();
+                let joined = if slashes % 2 == 1 {
+                    &joined[..joined.len() - 1]
+                } else {
+                    joined
+                };
+                lines[term_end] = format!("{joined} {}", continuation.to_owned());
+                joined_term_lines.insert(index);
                 continue;
             }
         }
@@ -646,7 +656,10 @@ fn convert_root_definition_lists(source: &str, empty_term: &str) -> String {
     lines
         .into_iter()
         .enumerate()
-        .filter_map(|(index, line)| (!removed_blanks.contains(&index)).then_some(line))
+        .filter_map(|(index, line)| {
+            (!removed_blanks.contains(&index) && !joined_term_lines.contains(&index))
+                .then_some(line)
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }

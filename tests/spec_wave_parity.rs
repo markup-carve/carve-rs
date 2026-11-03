@@ -145,8 +145,7 @@ fn a_hosted_colon_body_opens_blocks_past_its_column() {
 }
 
 #[test]
-#[ignore = "spec pin 5889a6fe: markup-carve/carve#4861 not ported yet"]
-fn a_quoted_term_takes_a_plain_lazy_line() {
+fn a_quoted_term_takes_no_lazy_line() {
     corpus_category("569-");
     corpus_category("82-blockquote-lazy-continuation-5");
 }

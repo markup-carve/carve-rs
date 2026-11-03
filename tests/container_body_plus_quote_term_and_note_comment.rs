@@ -15,16 +15,17 @@ fn a_plus_ends_an_unclosed_description_fence_before_its_block() {
 }
 
 #[test]
-fn a_second_lazy_line_continues_a_term_two_quotes_deep() {
+fn lazy_lines_after_a_term_two_quotes_deep_are_a_paragraph() {
     let source = "> > :: m\nl\nt\n";
-    let expected = "<blockquote>\n  <blockquote>\n    <dl>\n      <dt>m\nl\nt</dt>\n    </dl>\n  </blockquote>\n</blockquote>";
+    let expected = "<blockquote>\n  <blockquote>\n    <dl>\n      <dt>m</dt>\n    </dl>\n  </blockquote>\n</blockquote>\n<p>l\nt</p>";
     assert_eq!(carve::to_html(source).trim_end(), expected);
 }
 
 #[test]
-fn a_lazy_run_continues_a_term_three_quotes_deep() {
+fn a_lazy_run_after_a_term_three_quotes_deep_is_a_paragraph() {
+    // A term is one line (carve#4861).
     let source = "> > > :: m\nl\nt\nu\n";
-    let expected = "<blockquote>\n  <blockquote>\n    <blockquote>\n      <dl>\n        <dt>m\nl\nt\nu</dt>\n      </dl>\n    </blockquote>\n  </blockquote>\n</blockquote>";
+    let expected = "<blockquote>\n  <blockquote>\n    <blockquote>\n      <dl>\n        <dt>m</dt>\n      </dl>\n    </blockquote>\n  </blockquote>\n</blockquote>\n<p>l\nt\nu</p>";
     assert_eq!(carve::to_html(source).trim_end(), expected);
 }
 

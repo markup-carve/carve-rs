@@ -112,7 +112,9 @@ fn raw_empty_terms_retract_descendant_loss_reports() {
 }
 
 #[test]
-fn a_break_only_term_is_not_an_empty_term() {
+fn a_break_only_term_has_no_carve_spelling() {
+    // A term is one line (carve#4861), so a term holding only a line break
+    // cannot be written; the import refuses rather than write an empty term.
     for mode in [
         HtmlImportMode::Safe,
         HtmlImportMode::Semantic,
@@ -122,15 +124,10 @@ fn a_break_only_term_is_not_an_empty_term() {
             mode,
             ..Default::default()
         };
-        let imported =
-            html_to_carve("<dl><dt><br></dt><dd>definition body</dd></dl>", &options).unwrap();
-        assert_eq!(
-            to_html(&imported.value),
-            "<dl>\n  <dt><br>\n</dt>\n  <dd>definition body</dd>\n</dl>"
+        assert!(
+            html_to_carve("<dl><dt><br></dt><dd>definition body</dd></dl>", &options).is_err()
         );
-        assert!(imported.report.diagnostics.is_empty());
     }
-    stable("<dl><dt><br></dt><dd>definition body</dd></dl>");
 }
 
 #[test]

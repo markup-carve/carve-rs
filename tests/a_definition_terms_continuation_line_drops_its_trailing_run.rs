@@ -17,6 +17,9 @@
 //! second. Stripping at the SOURCE layer, where the line ends, is what
 //! separates them: the all-space run does not sit at the end of its line, the
 //! closing backtick does.
+//!
+//! A term is one line since markup-carve/carve#4861, so the second line is now
+//! a paragraph's, and the paragraph drops its trailing run the same way.
 
 fn html(src: &str) -> String {
     carve::to_html(src).trim().to_string()
@@ -28,7 +31,7 @@ fn the_continuation_lines_trailing_space_is_dropped() {
     // run spans the break and carries a NEWLINE, not the dropped space.
     assert_eq!(
         html(":: `a\nb \n:  d\n"),
-        "<dl>\n  <dt><code>a\nb</code></dt>\n  <dd>d</dd>\n</dl>"
+        "<dl>\n  <dt><code>a</code></dt>\n</dl>\n<p>b\n:  d</p>"
     );
 }
 
@@ -49,7 +52,7 @@ fn a_consecutive_terms_continuation_line_drops_it_too() {
     // both are pinned - fixing only the first leaves this row keeping the space.
     assert_eq!(
         html(":: x\n:: `a\nb \n:  d\n"),
-        "<dl>\n  <dt>x</dt>\n  <dt><code>a\nb</code></dt>\n  <dd>d</dd>\n</dl>"
+        "<dl>\n  <dt>x</dt>\n  <dt><code>a</code></dt>\n</dl>\n<p>b\n:  d</p>"
     );
 }
 
@@ -76,7 +79,7 @@ fn control_interior_whitespace_is_untouched() {
     // the middle of a line, and the break itself, are content.
     assert_eq!(
         html(":: a  b\nc  d\n:  e\n"),
-        "<dl>\n  <dt>a  b\nc  d</dt>\n  <dd>e</dd>\n</dl>"
+        "<dl>\n  <dt>a  b</dt>\n</dl>\n<p>c  d\n:  e</p>"
     );
 }
 
@@ -93,6 +96,6 @@ fn the_rule_is_the_clause_not_the_verbatim_run() {
     // copied - this engine follows the clause on both rows.
     assert_eq!(
         html(":: a\nb \n:  d\n"),
-        "<dl>\n  <dt>a\nb</dt>\n  <dd>d</dd>\n</dl>"
+        "<dl>\n  <dt>a</dt>\n</dl>\n<p>b\n:  d</p>"
     );
 }
