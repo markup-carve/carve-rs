@@ -11,7 +11,8 @@ fn empty_aligned_markdown_headers_have_a_source_form() {
         "|   |   |   |\n|---|:--|---|\n| 2 | 3 | 4 |\n",
     ] {
         let written = try_markdown_to_carve(source).unwrap();
-        assert!(written.contains("|:---|"), "{written:?}");
+        // carve#4974: an empty left-aligned header is written as a native `|=<` cell.
+        assert!(written.contains("|=< |"), "{written:?}");
         assert_eq!(to_carve(&written), written);
         assert!(carve::to_html(&written).contains("text-align: left"));
     }

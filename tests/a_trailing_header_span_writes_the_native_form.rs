@@ -53,9 +53,10 @@ fn a_leading_span_keeps_the_delimiter_row() {
 }
 
 #[test]
-fn a_real_cell_after_a_header_span_keeps_the_delimiter_row() {
+fn a_real_cell_after_a_header_span_is_written_natively() {
+    // carve#4974 ruling A: only an orphan or aligned placeholder keeps a separator row.
     let src = "| H | < | < | K |\n|---|---|---|---|\n| p | q | s | t |\n";
-    assert!(fmt(src).contains("|---|---|---|---|"));
+    assert_eq!(fmt(src), "|= H | < | < |= K |\n| p | q | s | t |\n");
 }
 
 #[test]
