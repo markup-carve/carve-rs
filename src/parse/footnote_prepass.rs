@@ -2833,9 +2833,10 @@ fn note_link_def_candidate<'a>(line: &'a str, note: &NoteBody) -> &'a str {
     unquoted
 }
 
-fn quote_depth(text: &str) -> usize {
+fn quote_depth(mut text: &str) -> usize {
     let mut depth = 0;
-    while strip_quote_levels(text, depth + 1).is_some() {
+    while let Some(rest) = strip_blockquote_prefix(trim_ascii_start(text)) {
+        text = rest;
         depth += 1;
     }
     depth
