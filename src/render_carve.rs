@@ -4894,6 +4894,10 @@ fn render_block_comment_min(session: &RenderSession, content: &str, shortest: us
         }
     }
     let fence = "%".repeat(shortest.max(longest + 1));
+    // An empty payload line would be a blank that loosens an enclosing list (carve#5022).
+    if content.is_empty() {
+        return format!("{fence}\n{fence}");
+    }
     format!("{fence}\n{}\n{fence}", protect_verbatim(session, content))
 }
 

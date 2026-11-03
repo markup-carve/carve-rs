@@ -52,7 +52,7 @@ fn a_percent_leading_content_joins_the_inline_marker() {
         ("- - x %%%\n", "- - x %%%\n"),
         ("::: |\na %%%\nb\n:::\n", "::: |\na %%%\nb\n:::\n"),
         ("::: |\na\n%%%\nb\n:::\n", "::: |\na\n%%%\nb\n%%%\n:::\n"),
-        ("::: |\n%%%\n:::\n", "::: |\n%%%\n\n%%%\n:::\n"),
+        ("::: |\n%%%\n:::\n", "::: |\n%%%\n%%%\n:::\n"),
     ] {
         assert_eq!(fmt(src), want, "source: {src:?}");
         round_trips(src);
