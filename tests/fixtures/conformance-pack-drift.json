@@ -105,14 +105,6 @@
         "roundtrip-9c334d5b1459",
         "roundtrip-e62305f7bd97"
       ]
-    },
-    {
-      "ticket": "markup-carve/carve-rs#3776",
-      "cause": "carve#4907 F1 port follow-up: a column-0 closer of a span opened on a nested item's marker line",
-      "cases": [
-        "ownership-410ecffd1fdc",
-        "ownership-6beddda1d2d6"
-      ]
     }
   ]
 }

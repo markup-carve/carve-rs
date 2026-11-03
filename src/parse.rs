@@ -155,6 +155,7 @@ pub(crate) enum LintEvent {
         reason: &'static str,
         first_block: bool,
     },
+    Opener(own_lines::OverindentedOpener),
 }
 
 pub(crate) fn collecting_lint_events<T>(f: impl FnOnce() -> T) -> (T, Vec<LintEvent>) {
@@ -898,6 +899,9 @@ fn parse_with_options_mode_and_index(
         .as_ref()
         .map_or(normalized.as_ref(), |o| o.source.as_str());
     let _continuation_markers = continuation_marker::Guard::install(owned.as_ref());
+    for opener in owned.iter().flat_map(|o| &o.overindented) {
+        note_lint_event(LintEvent::Opener(opener.clone()));
+    }
     let _source_ending = SourceEndingGuard::install(source);
     // PICK THE DEFINITION PLACEHOLDERS FOR THIS DOCUMENT before anything reads
     // them. Every entry point funnels through here, and the guard restores the

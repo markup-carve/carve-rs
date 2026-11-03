@@ -11,6 +11,7 @@
 
 mod consumed_key;
 mod delimited_table;
+mod marker_before_attributes;
 mod reference_rules;
 mod source_rules;
 mod suppression;
@@ -417,6 +418,7 @@ pub(crate) fn lint_with_recovery(source: &str, options: &Options<'_>) -> (Vec<Li
     delimited_table::collect(source, &doc, &to_byte, &mut out);
     consumed_key::collect(&doc, &to_byte, &mut out);
     thematic_break::collect(source, &doc, &to_byte, &mut out);
+    marker_before_attributes::collect(source, &doc, &to_byte, &mut out);
     collect_table_span_marker_warnings(source, &doc.children, &to_byte, &mut out);
     for body in doc.footnote_defs.values() {
         collect_table_span_marker_warnings(source, body, &to_byte, &mut out);
@@ -563,6 +565,28 @@ fn collect_parser_events(
                     *column,
                     "continuation-marker-refused",
                     format!("This + attaches nothing because {explanation}. {effect}"),
+                    1,
+                )
+            }
+            LintEvent::Opener(opener) => {
+                // PART 0 S3: an opener past its owner's content column still opens there.
+                let past = opener.authored_column - opener.content_column;
+                let owner = match opener.owner {
+                    "doc" => "the document",
+                    "quote" => "its block quote",
+                    "note" => "its footnote body",
+                    "dd" => "its description",
+                    _ => "its fenced container",
+                };
+                let kind = opener.kind;
+                (
+                    opener.line,
+                    opener.column,
+                    "block-opener-overindented",
+                    format!(
+                        "This {kind} is indented {past} column{} past the content column of {owner}, and it still opens a {kind}, measured from its own line. Remove the indentation to make the structure explicit, or escape the opener to keep the line as text.",
+                        if past == 1 { "" } else { "s" }
+                    ),
                     1,
                 )
             }
