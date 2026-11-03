@@ -496,17 +496,18 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         // ahead. The re-parsed body then degrades the opener to a `%%` line.
         // A line that misses the descendant holding an open span ends the span
         // there (PART 0 S1), so the blanks before it separate blocks again.
-        if let Some((run, column)) = comment_fence.filter(|&(_, column)| column > strip_cols) {
+        if let Some((_, column)) = comment_fence.filter(|&(_, column)| column > strip_cols) {
             let host = nested_item_columns
                 .iter()
                 .map(|&(_, content)| content)
                 .filter(|&content| content <= column)
                 .max()
                 .unwrap_or(column);
+            // A comment-shaped line stays payload at any column (PART 9 §28, carve#5021).
             if !admission.blank
                 && !line.starts_with(LAZY)
                 && indent_columns(line) < host
-                && !is_comment_fence_close_any_column(line, run)
+                && !trim_ascii_start(line).starts_with("%%")
             {
                 comment_fence = None;
                 comment_fence_strip = None;
