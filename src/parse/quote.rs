@@ -1505,6 +1505,7 @@ struct QuoteBody<'a> {
     comment_lazy_lines: Vec<(usize, String, Option<isize>)>,
     /// The line-block scan over `inner.lines`, advanced only by new lines.
     stanza_scan: (crate::parse::definition::LineBlockTail, usize),
+    lead_span_scan: DescriptionLeadSpanScan,
     // The comment run whose unmarked closer search already failed.
     in_fence: Option<FenceOpen>,
     opaque_tail: bool,
@@ -1600,6 +1601,7 @@ impl<'a> QuoteBody<'a> {
             comment_run: None,
             comment_lazy_lines: Vec::new(),
             stanza_scan: Default::default(),
+            lead_span_scan: Default::default(),
             in_fence: None,
             opaque_tail: false,
             fence_count: 0,
@@ -2564,6 +2566,16 @@ impl<'a> QuoteBody<'a> {
                     && !is_line_comment_any_column(line)
                     && detect_comment_fence_line_any_column(line).is_none()
                     && self.unmarked_closer_ahead(cur, run))
+            {
+                return true;
+            }
+        }
+        // A description-lead span leaves no paragraph for the line that ends it (carve#4998).
+        if !is_blank_line(line) && !trim_ascii_start(strip_lazy(line)).starts_with("%%") {
+            let lines = &self.inner.lines;
+            if self
+                .lead_span_scan
+                .open_by(lines.len(), |at| &lines[at].text)
             {
                 return true;
             }

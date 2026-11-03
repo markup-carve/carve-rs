@@ -631,6 +631,10 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         if self.pending_blank && indent < content_col {
             return Some(END);
         }
+        // The line ended the item's comment span and the item (carve#4770, carve#4998).
+        if self.cur.comment_span_missed_at == Some(self.cur.pos) && indent < content_col {
+            return Some(END);
+        }
         // The item holds an OPEN fenced body and this line is below its
         // content column, so §24 closes the item and the list here
         // rather than folding the line in (#950). The collector below

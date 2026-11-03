@@ -1423,7 +1423,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         let Some(open) = detect_comment_fence_line_any_column(line) else {
             return false;
         };
-        if body_open_comment_run(&self.lines).is_some() {
+        if self.comment_state.comment.is_some() {
             return false;
         }
         let authored_opener_comment = || {
@@ -1451,8 +1451,8 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
     fn take_below_column_comment(&mut self, cur: &mut LineCursor<'_>, line: &str) -> BodyStep {
         // Inside a held span a `%%` line is payload, not a line that misses
         // the body (carve#4907).
-        let payload = body_open_comment_run(&self.lines).is_some();
-        if !payload && !closes_a_held_comment_span(&self.lines, line) {
+        let payload = self.comment_state.comment.is_some();
+        if !payload {
             return BodyStep::Stop;
         }
         let kept = trim_ascii_start(line).to_owned();
@@ -2076,6 +2076,19 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
                     == ContainerLine::Content =>
             {
                 self.folded_a_lazy_line = false;
+                for _ in 0..look {
+                    let blank = cur.lines.at(cur.pos);
+                    self.push_sliced(cur, blank, self.content_column);
+                    cur.consume();
+                }
+                BodyStep::Next
+            }
+            // A blank inside a live span is payload; a comment line below the
+            // column still closes it (PART 9 §28, carve#4996).
+            Some(after)
+                if trim_ascii_start(strip_lazy(after)).starts_with("%%")
+                    && self.comment_state.comment.is_some() =>
+            {
                 for _ in 0..look {
                     let blank = cur.lines.at(cur.pos);
                     self.push_sliced(cur, blank, self.content_column);

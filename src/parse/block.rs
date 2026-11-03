@@ -935,6 +935,9 @@ pub(in crate::parse) struct BodyCommentState {
     pub(in crate::parse) line_block: Option<usize>,
     /// A `%%%` span open in that line block's payload.
     line_block_span: Option<usize>,
+    /// Nonblank lines as (column, is a description term or lead), each shadowing
+    /// the earlier ones at or right of its column.
+    entries: Vec<(usize, bool)>,
 }
 
 impl BodyCommentState {
@@ -945,11 +948,47 @@ impl BodyCommentState {
             at_block_start: true,
             line_block: None,
             line_block_span: None,
+            entries: Vec::new(),
         }
+    }
+
+    /// A description or note marker line opens a body, so a span on it is the
+    /// body's (carve-php#4508, carve#4996): the line past its lead.
+    fn after_body_lead<'l>(&self, line: &'l str, col: usize) -> Option<&'l str> {
+        if let Some(rest) = line.strip_prefix("[^") {
+            let close = rest.find(']')?;
+            let after = rest[close + 1..].strip_prefix(':')?;
+            let text = after.trim_start_matches(' ');
+            return (close > 0 && text.len() < after.len() && !text.trim().is_empty())
+                .then_some(text);
+        }
+        let after = line.strip_prefix(':')?;
+        let text = after.trim_start_matches(' ');
+        if text.len() == after.len() || text.is_empty() || text.starts_with('\t') {
+            return None;
+        }
+        let above = self
+            .entries
+            .iter()
+            .rev()
+            .find(|&&(above, _)| above <= col)?;
+        (above.0 == col && above.1).then_some(text)
     }
 
     pub(in crate::parse) fn observe(&mut self, raw: &str) {
         let line = trim_ascii_start(strip_lazy(raw));
+        let lead = if line.is_empty() {
+            None
+        } else {
+            let col = indent_columns(strip_lazy(raw));
+            let lead = self.after_body_lead(line, col);
+            while self.entries.last().is_some_and(|&(above, _)| above >= col) {
+                self.entries.pop();
+            }
+            self.entries
+                .push((col, line.starts_with(": ") || line.starts_with(":: ")));
+            lead
+        };
         if let Some(open) = self.code {
             if is_fence_close(line, open) {
                 self.code = None;
@@ -985,7 +1024,9 @@ impl BodyCommentState {
             }
             return;
         }
-        let opener = if self.at_block_start {
+        let opener = if let Some(text) = lead {
+            trim_ascii_start(innermost_marker_content(text))
+        } else if self.at_block_start {
             trim_ascii_start(innermost_marker_content(line))
         } else {
             line
