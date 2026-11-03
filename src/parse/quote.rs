@@ -2119,6 +2119,7 @@ impl<'a> QuoteBody<'a> {
                 break;
             }
         }
+        let first_pushed = self.inner.lines.len();
         while cur.pos < end {
             let next = cur.lines.at(cur.pos);
             let kept = if strip_follower_marker {
@@ -2133,7 +2134,7 @@ impl<'a> QuoteBody<'a> {
             );
             cur.pos += 1;
         }
-        self.inner.push_synthetic_blank();
+        self.separate_attached_block(first_pushed);
         self.para_open = ParaOpen::Closed;
     }
 
@@ -2497,6 +2498,7 @@ impl<'a> QuoteBody<'a> {
             &mut |next, _| is_blank_line(next),
         );
         let start = cur.pos;
+        let first_pushed = self.inner.lines.len();
         while cur.pos < end {
             self.inner.push_at(
                 cur.lines.at(cur.pos).to_string(),
@@ -2506,10 +2508,23 @@ impl<'a> QuoteBody<'a> {
             cur.consume();
         }
         if end > start {
-            self.inner.push_synthetic_blank();
+            self.separate_attached_block(first_pushed);
             return true;
         }
         false
+    }
+
+    /// Ends an attached block with a blank, unless the block leaves a code
+    /// fence open: there the blank would be payload the source never held
+    /// (CARVE-P9-067, carve#5051).
+    fn separate_attached_block(&mut self, first: usize) {
+        let attached: Vec<&str> = self.inner.lines[first..]
+            .iter()
+            .map(|line| line.text.as_str())
+            .collect();
+        if !body_lines_hold_open_code_fence(&attached) {
+            self.inner.push_synthetic_blank();
+        }
     }
 
     // An accepted physical marker attaches one block to the surviving quote.
@@ -2620,19 +2635,10 @@ impl<'a> QuoteBody<'a> {
             }
             // `inner` always holds the quote's first content line, so a
             // leading blank separates the attached block from it.
-            // A trailing blank inside a fence left open would become its payload.
-            let open_fence = attached.lines.first().and_then(|first| {
-                detect_fence_open(trim_ascii_start(&first.text)).filter(|&open| {
-                    !attached.lines[1..]
-                        .iter()
-                        .any(|line| is_fence_close(trim_ascii_start(&line.text), open))
-                })
-            });
             self.inner.push_synthetic_blank();
+            let first = self.inner.lines.len();
             self.inner.lines.extend(attached.lines);
-            if open_fence.is_none() {
-                self.inner.push_synthetic_blank();
-            }
+            self.separate_attached_block(first);
             self.para_open = ParaOpen::Closed;
             self.table = TableRun::default();
             self.last_nested = false;
