@@ -14,7 +14,10 @@ fn flat(source: &str) -> String {
 #[test]
 fn a_closer_below_the_column_closes_a_lead_line_span() {
     let cases = [
-        (":: u\n: %%%\n%%%\nc\n", "<dl><dt>u</dt><dd></dd></dl><p>c</p>"),
+        (
+            ":: u\n: %%%\n%%%\nc\n",
+            "<dl><dt>u</dt><dd></dd></dl><p>c</p>",
+        ),
         (
             "- a\n  :: u\n  : %%%\n%%%\nc\n",
             "<ul><li>a<dl><dt>u</dt><dd></dd></dl></li></ul><p>c</p>",
@@ -23,7 +26,10 @@ fn a_closer_below_the_column_closes_a_lead_line_span() {
             "- a\n  - %%%\n    %% c\n%%%\nc\n",
             "<ul><li>a<ul><li></li></ul></li></ul><p>c</p>",
         ),
-        ("- a\n\n  [^n]: %%%\n%%%\nc\n", "<ul><li>a</li></ul><p>c</p>"),
+        (
+            "- a\n\n  [^n]: %%%\n%%%\nc\n",
+            "<ul><li>a</li></ul><p>c</p>",
+        ),
     ];
     for (source, html) in cases {
         assert_eq!(flat(source), html, "{source:?}");
