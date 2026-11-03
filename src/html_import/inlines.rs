@@ -178,7 +178,7 @@ impl<'a> Importer<'a> {
                 runs.push(String::new());
                 continue;
             };
-            self.enter(child_depth)?;
+            self.enter_node(child_depth, &child)?;
             if let NodeData::Text { contents } = &child.data {
                 runs.last_mut().unwrap().push_str(&contents.borrow());
                 continue;
@@ -352,7 +352,7 @@ impl<'a> Importer<'a> {
         path: &str,
         depth: usize,
     ) -> Result<Vec<InlineNode>, HtmlImportError> {
-        self.enter(depth)?;
+        self.enter_node(depth, h)?;
         if let NodeData::Text { contents } = &h.data {
             return Ok(vec![InlineNode::text(collapse(&contents.borrow()))]);
         }

@@ -282,8 +282,9 @@ pub struct HtmlImportOptions {
     pub list_table_for_block_cells: bool,
 }
 
-/// Hard depth ceiling for HTML import, independent of caller options.
-pub const MAX_HTML_IMPORT_DEPTH: usize = 128;
+/// Hard depth ceiling for HTML import, independent of caller options: the
+/// parser's nesting cap, so a document nested to it imports back.
+pub const MAX_HTML_IMPORT_DEPTH: usize = crate::parse::MAX_NESTING_DEPTH;
 
 impl Default for HtmlImportOptions {
     fn default() -> Self {
@@ -676,6 +677,19 @@ impl<'a> Importer<'a> {
         if depth > self.opts.max_depth.min(MAX_HTML_IMPORT_DEPTH) {
             return Err(HtmlImportError::DepthLimit);
         }
+        self.charge_node()
+    }
+
+    /// A text or comment leaf charges `max_nodes` but is no nesting level: a
+    /// block holding 199 inline elements is the parser's cap of 200.
+    fn enter_node(&mut self, depth: usize, h: &Handle) -> Result<(), HtmlImportError> {
+        if matches!(h.data, NodeData::Text { .. } | NodeData::Comment { .. }) {
+            return self.charge_node();
+        }
+        self.enter(depth)
+    }
+
+    fn charge_node(&mut self) -> Result<(), HtmlImportError> {
         self.nodes += 1;
         if self.nodes > self.opts.max_nodes {
             return Err(HtmlImportError::NodeLimit);
@@ -1435,7 +1449,7 @@ impl<'a> Importer<'a> {
                 current.clone()
             };
             for child in source.children.borrow().iter() {
-                self.enter(current_depth + 1)?;
+                self.enter_node(current_depth + 1, child)?;
                 pending.push((child.clone(), current_depth + 1));
             }
         }
@@ -2958,7 +2972,7 @@ impl<'a> Importer<'a> {
             // comment beside it inline (markup-carve/carve-rs#2029).
             for (handle, path) in inline.iter().zip(inline_paths.iter()) {
                 // Charged as the inline walk would have charged it.
-                self.enter(depth + 1)?;
+                self.enter_node(depth + 1, handle)?;
                 if Self::is_active_tag(handle) {
                     let tag = Self::tag(handle).unwrap_or_default();
                     self.diag(
