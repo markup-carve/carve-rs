@@ -508,8 +508,10 @@ impl NestedFenceReplay {
         }
         let trimmed = trim_ascii_start(text);
         let indent = indent_columns(text);
-        let mut opens_span = false;
-        if let Some(comment) = detect_comment_fence_line(trimmed) {
+        // A span opens with or without a closer (carve#4907).
+        let comment = detect_comment_fence_line(trimmed);
+        let opens_span = comment.is_some();
+        if let Some(comment) = comment {
             self.literal_comment_openers.insert(pos.at);
             let len = comment.fence_len;
             let collected = self
@@ -517,10 +519,13 @@ impl NestedFenceReplay {
                 .entry(level)
                 .or_default()
                 .closes_after(pos.lines, pos.at, level, len);
-            if collected || future_quoted_comment_closes(pos.cur, level + 1, indent, len) {
-                self.chain[level].host_comment = Some((len, indent, !collected));
-                opens_span = true;
-            }
+            self.chain[level].host_comment =
+                if collected || future_quoted_comment_closes(pos.cur, level + 1, indent, len) {
+                    Some((len, indent, !collected))
+                } else {
+                    // No closer: the span holds every line its host still owns.
+                    Some((len, floor, false))
+                };
         }
         if let Some(open) = detect_fence_open(trimmed) {
             if literal_code_closes(
@@ -1516,6 +1521,8 @@ struct QuoteBody<'a> {
     /// The line-block scan over `inner.lines`, advanced only by new lines.
     stanza_scan: (crate::parse::definition::LineBlockTail, usize),
     lead_span_scan: DescriptionLeadSpanScan,
+    /// `body_owning`'s stack of (indentation, line index) over `inner.lines`.
+    shallower_lines: (Vec<(usize, usize)>, usize),
     // The comment run whose unmarked closer search already failed.
     in_fence: Option<FenceOpen>,
     opaque_tail: bool,
@@ -1613,6 +1620,7 @@ impl<'a> QuoteBody<'a> {
             comment_lazy_lines: Vec::new(),
             stanza_scan: Default::default(),
             lead_span_scan: Default::default(),
+            shallower_lines: Default::default(),
             in_fence: None,
             opaque_tail: false,
             fence_count: 0,
@@ -1816,10 +1824,60 @@ impl<'a> QuoteBody<'a> {
         } else if self.in_fence.is_none() {
             self.comment_run = detect_comment_fence_line_any_column(comment_text)
                 .map(|open| (open.fence_len, comment_depth, self.inner.lines.len()));
-            self.comment_host = (self.comment_run.is_some()
-                && comment_depth == 0
-                && detect_list_marker_full(trim_ascii_start(stripped)).is_some())
-            .then(|| prepass_quote_scope(stripped).1);
+            self.comment_host = if self.comment_run.is_none() || comment_depth != 0 {
+                None
+            } else if detect_list_marker_full(trim_ascii_start(stripped)).is_some() {
+                Some(prepass_quote_scope(stripped).1)
+            } else {
+                self.body_owning(indent_columns(stripped))
+            };
+        }
+    }
+
+    /// The content column of the item or description body that owns a line at
+    /// `column`, read from the nearest shallower marker line above it (PART 0 S1).
+    fn body_owning(&mut self, column: usize) -> Option<usize> {
+        if column == 0 {
+            return None;
+        }
+        // Lines by strictly rising indentation: the nearest shallower line
+        // above any later line is on this stack, so each line is pushed once.
+        let (stack, seen) = &mut self.shallower_lines;
+        if self.inner.lines.len() < *seen {
+            stack.clear();
+            *seen = 0;
+        }
+        for (at, line) in self.inner.lines.iter().enumerate().skip(*seen) {
+            if line.text.starts_with(LAZY) || is_blank_line(&line.text) {
+                continue;
+            }
+            let indent = indent_columns(&line.text);
+            while stack.last().is_some_and(|&(above, _)| above >= indent) {
+                stack.pop();
+            }
+            stack.push((indent, at));
+        }
+        *seen = self.inner.lines.len();
+        let &(_, at) = stack.iter().rev().find(|&&(indent, _)| indent < column)?;
+        let mut rest = self.inner.lines[at].text.as_str();
+        let mut base = 0;
+        let mut owner = None;
+        loop {
+            let width = if detect_list_marker_full(rest).is_some() {
+                marker_content_col(rest)
+            } else {
+                definition_body_content_col(rest)
+            };
+            let Some(width) = width.filter(|&width| base + width <= column) else {
+                return owner;
+            };
+            owner = Some(base + width);
+            rest = trim_ascii_start(rest);
+            rest = match detect_list_marker_full(rest) {
+                Some(marker) => marker.content,
+                None => strip_definition_marker(rest).map_or("", |(body, _)| body),
+            };
+            base += width;
         }
     }
 
