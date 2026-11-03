@@ -82,6 +82,9 @@ struct Frame {
     line_block: bool,
     /// A fence or comment span open inside a line-block payload.
     span: Option<(u8, usize)>,
+    /// The line block's stanza holds a verse line; a `%%%` span leaves it as
+    /// it stood (CARVE-P9-047, carve#4956).
+    verse: bool,
     /// Columns added on output, so a block in a task item past its marker-line
     /// child lands where the item reader measures that child.
     shift: usize,
@@ -131,6 +134,7 @@ impl Frame {
             absorbs: false,
             line_block: false,
             span: None,
+            verse: false,
             shift: 0,
             marker_shift: 0,
             source_shift: 0,
@@ -1513,12 +1517,13 @@ impl<'a> Walk<'a> {
         form: &Form,
         block: Option<Frame>,
     ) -> bool {
-        let Some(block) = block else {
+        let Some(mut block) = block else {
             return false;
         };
         // An open stanza takes this plain lazy line on its own. A later line
         // cannot decide whether the current line belongs to the stanza.
         if !matches!(form, Form::Text)
+            || !block.verse
             || at == 0
             || self.lines[at - 1].trim().is_empty()
             || self.first_line + at - 1 <= block.line
@@ -1529,6 +1534,10 @@ impl<'a> Walk<'a> {
             .lines
             .get(at + 1)
             .is_some_and(|next| !is_blank_line(next) && indent_cols(next).0 >= block.open_col);
+        // The line misses the span's owner and ends it (PART 0 S1).
+        if block.span.is_some_and(|(ch, _)| ch == b'%') {
+            block.span = None;
+        }
         self.frames.push(block);
         // A stanza's final lazy line is read at the frame's reader column,
         // not with its authored indentation preserved as inline hard space.
@@ -1575,6 +1584,15 @@ impl<'a> Walk<'a> {
             closed.first().is_some_and(|f| f.kind != Kind::Quote)
         } else {
             closed.iter().any(|f| f.kind != Kind::Quote)
+        }
+    }
+
+    /// A line-block payload line sets whether the stanza holds verse; a `%%%`
+    /// span open before or on it leaves the stanza as it stood (CARVE-P9-047).
+    fn track_verse(&mut self, line_block: bool, before: Option<(u8, usize)>, verse: bool) {
+        let top = self.top();
+        if line_block && before.or(top.span).map_or(true, |(ch, _)| ch != b'%') {
+            top.verse = verse;
         }
     }
 
@@ -1718,6 +1736,7 @@ impl<'a> Walk<'a> {
                 self.emit(at, record);
             }
             if c.rest.is_empty() {
+                self.track_verse(line_block, span, false);
                 return;
             }
             if let Some((ch, len)) = span {
@@ -1756,6 +1775,7 @@ impl<'a> Walk<'a> {
                     self.top().span = new_span;
                 }
             }
+            self.track_verse(line_block, span, true);
             return;
         }
         let missed_line_block =

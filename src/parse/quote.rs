@@ -1574,6 +1574,8 @@ struct QuoteBody<'a> {
     // No replay without a fence to find: every level of a quote ladder would
     // otherwise walk its whole body once.
     may_hold_fence: bool,
+    // `inner`'s length when a `+` block left a code fence open as its last line.
+    attached_fence_end: Option<usize>,
     // The last quoted line was read on a description body's base.
     description_line: bool,
     literal_quote_body: Option<usize>,
@@ -1646,6 +1648,7 @@ impl<'a> QuoteBody<'a> {
             nested_replay: NestedFenceReplay::default(),
             plus_scan: (0, false),
             may_hold_fence: false,
+            attached_fence_end: None,
             description_line: false,
             literal_quote_body: None,
             last_quoted_at: None,
@@ -2518,11 +2521,16 @@ impl<'a> QuoteBody<'a> {
     /// fence open: there the blank would be payload the source never held
     /// (CARVE-P9-067, carve#5051).
     fn separate_attached_block(&mut self, first: usize) {
-        let attached: Vec<&str> = self.inner.lines[first..]
+        let lines = &self.inner.lines;
+        let above = lines[..first]
             .iter()
+            .rev()
             .map(|line| line.text.as_str())
-            .collect();
-        if !body_lines_hold_open_code_fence(&attached) {
+            .find(|text| !is_blank_line(text));
+        let attached = || lines[first..].iter().map(|line| line.text.as_str());
+        if fence_left_open(above, attached()) {
+            self.attached_fence_end = Some(self.inner.lines.len());
+        } else if !body_lines_hold_open_code_fence(&attached().collect::<Vec<_>>()) {
             self.inner.push_synthetic_blank();
         }
     }
@@ -2744,6 +2752,11 @@ impl<'a> QuoteBody<'a> {
             {
                 return true;
             }
+        }
+        // A line the `+` block did not take ends the fence it left open, and
+        // no paragraph is open for it (PART 9 §17 L3).
+        if !is_blank_line(line) && self.attached_fence_end == Some(self.inner.lines.len()) {
+            return true;
         }
         // A description-lead span leaves no paragraph for the line that ends it (carve#4998).
         if !is_blank_line(line) && !trim_ascii_start(strip_lazy(line)).starts_with("%%") {
@@ -3056,4 +3069,54 @@ pub(in crate::parse) fn boxed_blockquote_node(
     } else {
         Box::new(BlockNode::BlockQuote(quote))
     }
+}
+
+/// Whether `lines` end inside a code fence, opened at the top or behind list
+/// and description markers. A nested fence ends at a line below its column.
+/// `above` is the line before them; a `: ` line is a description only after a
+/// term or another description.
+fn fence_left_open<'l>(above: Option<&str>, lines: impl Iterator<Item = &'l str>) -> bool {
+    let mut open: Option<(FenceOpen, usize)> = None;
+    let mut described = above.is_some_and(|line| {
+        let line = trim_ascii_start(line);
+        is_definition_list_start(line) || strip_definition_marker(line).is_some()
+    });
+    for text in lines {
+        if let Some((fence, column)) = open {
+            if is_blank_line(text) || indent_columns(text) >= column {
+                if is_fence_close(trim_ascii_start(text), fence) {
+                    open = None;
+                }
+                continue;
+            }
+        }
+        if is_definition_list_start(text) {
+            described = true;
+        } else if !is_blank_line(text)
+            && indent_columns(text) == 0
+            && strip_definition_marker(text).is_none()
+        {
+            described = false;
+        }
+        open = hosted_fence_open(text, described);
+    }
+    open.is_some()
+}
+
+/// The code fence `line` opens behind its list and description markers, with
+/// the column a line must reach to stay inside it.
+fn hosted_fence_open(line: &str, described: bool) -> Option<(FenceOpen, usize)> {
+    let mut column = indent_columns(line);
+    let mut rest = trim_ascii_start(line);
+    if described && column == 0 {
+        if let Some((body, width)) = strip_definition_marker(rest) {
+            column = width;
+            rest = body;
+        }
+    }
+    while let Some(marker) = detect_list_marker_full(rest) {
+        column += marker_content_col(rest)?;
+        rest = marker.content;
+    }
+    detect_fence_open(rest).map(|open| (open, column))
 }
