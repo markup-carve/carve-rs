@@ -322,6 +322,14 @@ impl NestedFenceReplay {
                 .any(|level| !level.hosts.is_empty() || level.description_body.is_some())
     }
 
+    /// Whether the deepest level holds an open paragraph and no open item.
+    fn paragraph_outside_items(&mut self, lines: &[SourceLine], cur: &LineCursor<'_>) -> bool {
+        self.advance(lines, cur);
+        self.chain
+            .last()
+            .is_some_and(|deepest| deepest.para && deepest.hosts.is_empty())
+    }
+
     /// Whether the deepest level ends on a payload line of a hosted line block.
     fn stanza_open(&mut self, lines: &[SourceLine], cur: &LineCursor<'_>) -> bool {
         self.advance(lines, cur);
@@ -1502,6 +1510,8 @@ struct QuoteBody<'a> {
     div_code_fence: Option<FenceOpen>,
     closed_div: bool,
     comment_run: Option<(usize, usize, usize)>,
+    // The content column of the item whose marker line opened `comment_run`.
+    comment_host: Option<usize>,
     comment_lazy_lines: Vec<(usize, String, Option<isize>)>,
     /// The line-block scan over `inner.lines`, advanced only by new lines.
     stanza_scan: (crate::parse::definition::LineBlockTail, usize),
@@ -1599,6 +1609,7 @@ impl<'a> QuoteBody<'a> {
             div_code_fence: None,
             closed_div: false,
             comment_run: None,
+            comment_host: None,
             comment_lazy_lines: Vec::new(),
             stanza_scan: Default::default(),
             lead_span_scan: Default::default(),
@@ -1749,9 +1760,38 @@ impl<'a> QuoteBody<'a> {
                 && (trimmed.starts_with('>')
                     || innermost_marker_content(trimmed).starts_with(":: "));
         }
-        if stripped.contains("%%%") {
+        self.end_span_missing_its_item(stripped);
+        // A marker folded into the open paragraph is text, so its `%%%` opens no span.
+        if stripped.contains("%%%") && (opens || !marker) {
             self.note_comment_run(stripped);
         }
+    }
+
+    /// A line left of the item whose marker line opened the span ends it.
+    fn end_span_missing_its_item(&mut self, stripped: &str) {
+        let (Some((run, depth, _)), Some(host)) = (self.comment_run, self.comment_host) else {
+            return;
+        };
+        if is_blank_line(stripped)
+            || trim_ascii_start(stripped).starts_with('>')
+            || indent_columns(stripped) >= host
+            || closes_open_comment_fence(
+                stripped,
+                OpenCommentFence {
+                    fence_len: run,
+                    quote_depth: depth,
+                    floor: 0,
+                },
+            )
+        {
+            return;
+        }
+        for (index, text, column) in self.comment_lazy_lines.drain(..) {
+            self.inner.lines[index].text = text;
+            self.inner.lines[index].stripped = column;
+        }
+        self.comment_run = None;
+        self.comment_host = None;
     }
 
     fn note_comment_run(&mut self, stripped: &str) {
@@ -1776,6 +1816,10 @@ impl<'a> QuoteBody<'a> {
         } else if self.in_fence.is_none() {
             self.comment_run = detect_comment_fence_line_any_column(comment_text)
                 .map(|open| (open.fence_len, comment_depth, self.inner.lines.len()));
+            self.comment_host = (self.comment_run.is_some()
+                && comment_depth == 0
+                && detect_list_marker_full(trim_ascii_start(stripped)).is_some())
+            .then(|| prepass_quote_scope(stripped).1);
         }
     }
 
@@ -2635,9 +2679,14 @@ impl<'a> QuoteBody<'a> {
         } else {
             fenced_below.unwrap_or_else(|| self.para_open.get())
         };
-        // A marker folded into an open paragraph is text, not a closed leaf.
+        // A marker folded into an open paragraph is text, not a closed leaf. A nested
+        // line is read alone, so the replay's itemless open paragraph overrides it.
         if (self.item_opened_at.is_some() && self.item_opened_at == self.last_quoted_at
-            || self.last_nested)
+            || self.last_nested
+                && !(fenced_below == Some(true)
+                    && self
+                        .nested_replay
+                        .paragraph_outside_items(&self.inner.lines, cur)))
             && self.inner.lines.last().is_some_and(|last| {
                 !last.text.starts_with(LAZY)
                     && detect_list_marker_full(strip_all_quotes(&last.text).0).is_some()
