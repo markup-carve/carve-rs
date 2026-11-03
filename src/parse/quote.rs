@@ -230,6 +230,10 @@ pub(in crate::parse) struct NestedFenceReplay {
 pub(in crate::parse) struct NestedLevel {
     hosts: Vec<(usize, usize, bool)>,
     term_columns: HashSet<usize>,
+    /// Content column of the description body a line last opened.
+    description_body: Option<usize>,
+    /// A term or description is open, so a `: ` line is a description.
+    entry_open: bool,
     /// The fence a quoted host holds open, as (opener, the host's content column,
     /// the opener's own column, and whether this is a payload span). The two columns differ when the opener is
     /// SHIFTED past its host, and a closer at either one ends it.
@@ -307,6 +311,25 @@ impl NestedFenceReplay {
         }
     }
 
+    /// Whether the deepest open paragraph is a list item's, a description's or
+    /// a note's (PART 0 S3, carve#4860).
+    fn paragraph_in_body(&mut self, lines: &[SourceLine], cur: &LineCursor<'_>) -> bool {
+        self.advance(lines, cur);
+        self.chain.last().is_some_and(|deepest| deepest.para)
+            && self
+                .chain
+                .iter()
+                .any(|level| !level.hosts.is_empty() || level.description_body.is_some())
+    }
+
+    /// Whether the deepest level holds an open paragraph and no open item.
+    fn paragraph_outside_items(&mut self, lines: &[SourceLine], cur: &LineCursor<'_>) -> bool {
+        self.advance(lines, cur);
+        self.chain
+            .last()
+            .is_some_and(|deepest| deepest.para && deepest.hosts.is_empty())
+    }
+
     /// Whether the deepest level ends on a payload line of a hosted line block.
     fn stanza_open(&mut self, lines: &[SourceLine], cur: &LineCursor<'_>) -> bool {
         self.advance(lines, cur);
@@ -329,6 +352,15 @@ impl NestedFenceReplay {
             cur,
         };
         loop {
+            // A line left of a description body ends it, lazy or not.
+            if let Some(level) = self.chain.get_mut(pos.level) {
+                if level
+                    .description_body
+                    .is_some_and(|body| indent_columns(text) < body)
+                {
+                    level.description_body = None;
+                }
+            }
             if self.replay_held(pos, text) {
                 return;
             }
@@ -476,6 +508,7 @@ impl NestedFenceReplay {
         }
         let trimmed = trim_ascii_start(text);
         let indent = indent_columns(text);
+        let mut opens_span = false;
         if let Some(comment) = detect_comment_fence_line(trimmed) {
             self.literal_comment_openers.insert(pos.at);
             let len = comment.fence_len;
@@ -486,6 +519,7 @@ impl NestedFenceReplay {
                 .closes_after(pos.lines, pos.at, level, len);
             if collected || future_quoted_comment_closes(pos.cur, level + 1, indent, len) {
                 self.chain[level].host_comment = Some((len, indent, !collected));
+                opens_span = true;
             }
         }
         if let Some(open) = detect_fence_open(trimmed) {
@@ -505,8 +539,9 @@ impl NestedFenceReplay {
         if (indent == floor || indent == column) && exact_colon_fence_len(trimmed) == Some(width) {
             here.host_verse = None;
             here.para = false;
-        } else {
-            // A comment payload line leaves the stanza open (PART 2 `line_block`).
+        } else if !opens_span {
+            // A comment payload line leaves the stanza open (PART 2 `line_block`),
+            // but a `%%%` span leaves it as it stood before (carve#4956).
             here.para = !is_blank_line(text);
         }
         here.colon_absorption = false;
@@ -570,15 +605,10 @@ impl NestedFenceReplay {
         if here.closes_colon(text) {
             return;
         }
-        let absorption_text = if is_blank_line(text) {
-            text
-        } else {
-            match self.replay_hosted(pos, text, lazy_paragraph) {
-                Some(inner) => inner,
-                None => return,
-            }
-        };
-        self.replay_unhosted(pos, text, after_comment, absorption_text);
+        if !is_blank_line(text) && self.replay_hosted(pos, text, lazy_paragraph).is_none() {
+            return;
+        }
+        self.replay_unhosted(pos, text, after_comment);
     }
 
     /// A line short of the deepest quote continues that quote's open
@@ -693,13 +723,7 @@ impl NestedFenceReplay {
         here.by_fence = true;
     }
 
-    fn replay_unhosted(
-        &mut self,
-        pos: ReplayAt<'_, '_>,
-        text: &str,
-        after_comment: bool,
-        absorption_text: &str,
-    ) {
+    fn replay_unhosted(&mut self, pos: ReplayAt<'_, '_>, text: &str, after_comment: bool) {
         let here = &mut self.chain[pos.level];
         if let Some(open) = detect_fence_open(text) {
             // A fence opens with or without a closer (carve#4018).
@@ -711,7 +735,7 @@ impl NestedFenceReplay {
             here.by_fence = true;
             return;
         }
-        here.replay_text(pos, text, after_comment, absorption_text);
+        here.replay_text(pos, text, after_comment);
     }
 }
 
@@ -773,7 +797,9 @@ impl NestedLevel {
         column: usize,
         sibling: bool,
     ) -> (&'t str, usize, bool) {
-        let inside_item = self.hosts.last().is_some_and(|&(_, _, item)| item);
+        // A marker opens a list in every marker body (PART 0 S3, carve#4860).
+        let inside_body =
+            !self.hosts.is_empty() || self.description_body.is_some_and(|body| column >= body);
         let mut inner = trim_ascii_start(text);
         let mut col = column;
         let mut block_start = false;
@@ -783,7 +809,7 @@ impl NestedLevel {
                     .hosts
                     .last()
                     .is_some_and(|&(_, content, _)| col < content);
-                if self.para && (!inside_item || below_host) && !sibling {
+                if self.para && (!inside_body || below_host) && !sibling {
                     break;
                 }
                 let next = col + marker_content_col(inner).expect("matched list marker");
@@ -798,7 +824,15 @@ impl NestedLevel {
             }
             if parse_footnote_def_line(inner).is_some() {
                 self.hosts.push((col, col + 2, false));
+            } else if let Some((_, width)) = strip_definition_marker(inner) {
+                if self.entry_open {
+                    self.description_body = Some(col + width);
+                }
             }
+            self.entry_open = is_definition_list_start(inner)
+                || (self.entry_open
+                    && (strip_definition_marker(inner).is_some()
+                        || (self.para && line_starts_paragraph(inner))));
             break;
         }
         (inner, col, block_start)
@@ -919,13 +953,7 @@ impl NestedLevel {
 
     /// Replays a line no fence or host took: comments, colon fences, and
     /// finally the one-line paragraph reading.
-    fn replay_text(
-        &mut self,
-        pos: ReplayAt<'_, '_>,
-        text: &str,
-        after_comment: bool,
-        absorption_text: &str,
-    ) {
+    fn replay_text(&mut self, pos: ReplayAt<'_, '_>, text: &str, after_comment: bool) {
         if let Some(comment) = detect_comment_fence_line(text) {
             let len = comment.fence_len;
             if closer_ahead(pos.lines, pos.at, pos.level, |l| {
@@ -962,9 +990,7 @@ impl NestedLevel {
         }
         let mut paragraph = ParaOpen::from_line(text, self.colon_absorption);
         self.para = paragraph.get();
-        self.colon_absorption = self.para
-            && (self.colon_absorption
-                || is_invalid_colon_fence_opener_text(trim_ascii_start(absorption_text)));
+        self.colon_absorption = self.para && self.colon_absorption;
     }
 }
 
@@ -1487,7 +1513,12 @@ struct QuoteBody<'a> {
     div_code_fence: Option<FenceOpen>,
     closed_div: bool,
     comment_run: Option<(usize, usize, usize)>,
+    // The content column of the item whose marker line opened `comment_run`.
+    comment_host: Option<usize>,
     comment_lazy_lines: Vec<(usize, String, Option<isize>)>,
+    /// The line-block scan over `inner.lines`, advanced only by new lines.
+    stanza_scan: (crate::parse::definition::LineBlockTail, usize),
+    lead_span_scan: DescriptionLeadSpanScan,
     // The comment run whose unmarked closer search already failed.
     in_fence: Option<FenceOpen>,
     opaque_tail: bool,
@@ -1515,6 +1546,8 @@ struct QuoteBody<'a> {
     // shape, for the same reason (markup-carve/carve-rs#1050).
     attrs_block_rest: usize,
     attrs_nested_run: bool,
+    /// Lines scanned for a lone `+` since the last blank, and whether one was seen.
+    plus_scan: (usize, bool),
     attrs_closed_last: bool,
     unclosed_nested_attribute: bool,
     // The first line index the block lookahead is still worth running on. A scan
@@ -1579,7 +1612,10 @@ impl<'a> QuoteBody<'a> {
             div_code_fence: None,
             closed_div: false,
             comment_run: None,
+            comment_host: None,
             comment_lazy_lines: Vec::new(),
+            stanza_scan: Default::default(),
+            lead_span_scan: Default::default(),
             in_fence: None,
             opaque_tail: false,
             fence_count: 0,
@@ -1594,6 +1630,7 @@ impl<'a> QuoteBody<'a> {
             last_nested: false,
             nested_verdict: None,
             nested_replay: NestedFenceReplay::default(),
+            plus_scan: (0, false),
             may_hold_fence: false,
             description_line: false,
             literal_quote_body: None,
@@ -1726,9 +1763,38 @@ impl<'a> QuoteBody<'a> {
                 && (trimmed.starts_with('>')
                     || innermost_marker_content(trimmed).starts_with(":: "));
         }
-        if stripped.contains("%%%") {
+        self.end_span_missing_its_item(stripped);
+        // A marker folded into the open paragraph is text, so its `%%%` opens no span.
+        if stripped.contains("%%%") && (opens || !marker) {
             self.note_comment_run(stripped);
         }
+    }
+
+    /// A line left of the item whose marker line opened the span ends it.
+    fn end_span_missing_its_item(&mut self, stripped: &str) {
+        let (Some((run, depth, _)), Some(host)) = (self.comment_run, self.comment_host) else {
+            return;
+        };
+        if is_blank_line(stripped)
+            || trim_ascii_start(stripped).starts_with('>')
+            || indent_columns(stripped) >= host
+            || closes_open_comment_fence(
+                stripped,
+                OpenCommentFence {
+                    fence_len: run,
+                    quote_depth: depth,
+                    floor: 0,
+                },
+            )
+        {
+            return;
+        }
+        for (index, text, column) in self.comment_lazy_lines.drain(..) {
+            self.inner.lines[index].text = text;
+            self.inner.lines[index].stripped = column;
+        }
+        self.comment_run = None;
+        self.comment_host = None;
     }
 
     fn note_comment_run(&mut self, stripped: &str) {
@@ -1753,6 +1819,10 @@ impl<'a> QuoteBody<'a> {
         } else if self.in_fence.is_none() {
             self.comment_run = detect_comment_fence_line_any_column(comment_text)
                 .map(|open| (open.fence_len, comment_depth, self.inner.lines.len()));
+            self.comment_host = (self.comment_run.is_some()
+                && comment_depth == 0
+                && detect_list_marker_full(trim_ascii_start(stripped)).is_some())
+            .then(|| prepass_quote_scope(stripped).1);
         }
     }
 
@@ -2221,9 +2291,6 @@ impl<'a> QuoteBody<'a> {
         }
         if needs_depth && self.para_open.get() {
             self.paragraph_depth = Some(paragraph_depth);
-            if is_invalid_colon_fence_opener_text(strip_all_quotes(stripped).0) {
-                self.absorption_depth = Some(paragraph_depth);
-            }
         } else if needs_depth || (self.paragraph_depth.is_some() && !self.para_open.get()) {
             self.paragraph_depth = None;
             self.absorption_depth = None;
@@ -2538,7 +2605,10 @@ impl<'a> QuoteBody<'a> {
     ) -> bool {
         // A matched comment span cannot hide a line that misses its quote
         // owner. Without a later closer the opener is only a line comment.
-        if let Some((run, depth, _)) = self.comment_run {
+        let stanza_fold = self.comment_run.is_some()
+            && line_starts_paragraph(trim_ascii_start(line))
+            && self.span_in_open_stanza();
+        if let Some((run, depth, _)) = self.comment_run.filter(|_| !stanza_fold) {
             if future_quoted_comment_closes(cur, depth + 1, 0, run)
                 || (!is_blank_line(line)
                     && !is_line_comment_any_column(line)
@@ -2547,6 +2617,26 @@ impl<'a> QuoteBody<'a> {
             {
                 return true;
             }
+        }
+        // A description-lead span leaves no paragraph for the line that ends it (carve#4998).
+        if !is_blank_line(line) && !trim_ascii_start(strip_lazy(line)).starts_with("%%") {
+            let lines = &self.inner.lines;
+            if self
+                .lead_span_scan
+                .open_by(lines.len(), |at| &lines[at].text)
+            {
+                return true;
+            }
+        }
+        // A quote in a marker body, or holding one, ends at an unmarked list
+        // marker: the marker opens a list there or closes the body (PART 0 S3, carve#4860).
+        if !line.starts_with(LAZY)
+            && is_list_marker(line)
+            && (cur.in_marker_body()
+                || self.nested_replay.paragraph_in_body(&self.inner.lines, cur))
+            && !self.follows_quote_plus()
+        {
+            return true;
         }
         // An attribute-shaped payload line of a hosted line block is stanza
         // text and leaves the stanza open (PART 2 `line_block`).
@@ -2584,24 +2674,6 @@ impl<'a> QuoteBody<'a> {
         {
             return true;
         }
-        let term_open = if self.may_have_term
-            && self
-                .inner
-                .lines
-                .last()
-                .is_some_and(|last| !is_blank_line(&last.text))
-            && !is_blank_line(line)
-            && !is_definition_list_start(trim_ascii_start(line))
-            && strip_description_prefix(trim_ascii_start(line)).is_none()
-            && (!item_block_opener(trim_ascii_start(line))
-                || indent_columns(line) > 0
-                || detect_fence_open(trim_ascii_start(line)).is_some())
-        {
-            self.open_entry.advance(&self.inner.lines);
-            self.open_entry.half == Some(DefHalf::Term)
-        } else {
-            false
-        };
         // The replay reads a description body as quoted text; its own base
         // closes the paragraph too.
         let quoted_open = if self.closed_div {
@@ -2611,9 +2683,14 @@ impl<'a> QuoteBody<'a> {
         } else {
             fenced_below.unwrap_or_else(|| self.para_open.get())
         };
-        // A marker folded into an open paragraph is text, not a closed leaf.
+        // A marker folded into an open paragraph is text, not a closed leaf. A nested
+        // line is read alone, so the replay's itemless open paragraph overrides it.
         if (self.item_opened_at.is_some() && self.item_opened_at == self.last_quoted_at
-            || self.last_nested)
+            || self.last_nested
+                && !(fenced_below == Some(true)
+                    && self
+                        .nested_replay
+                        .paragraph_outside_items(&self.inner.lines, cur)))
             && self.inner.lines.last().is_some_and(|last| {
                 !last.text.starts_with(LAZY)
                     && detect_list_marker_full(strip_all_quotes(&last.text).0).is_some()
@@ -2627,10 +2704,9 @@ impl<'a> QuoteBody<'a> {
                 let (leaf, levels) = strip_all_quotes(innermost_marker_content(&source.text));
                 levels > 0 && (is_blank_line(leaf) || detect_fence_open(leaf).is_some())
             });
-        if !(term_open || quoted_open)
+        if !quoted_open
             || empty_marker_leaf
             || is_blank_line(line)
-            || (term_open && detect_list_marker_full(line).is_some_and(|marker| marker.indent == 0))
             || (caption_content(line).is_some() && cur.carried_reach(cur.pos) != Some(false))
             || {
                 let line_owned = line.to_string();
@@ -2651,6 +2727,39 @@ impl<'a> QuoteBody<'a> {
         false
     }
 
+    /// A `%%%` span inside a line block leaves nothing, so a missed line ends it
+    /// and folds into the stanza that was open before it (carve#4956).
+    fn span_in_open_stanza(&mut self) -> bool {
+        let (scan, seen) = &mut self.stanza_scan;
+        if self.inner.lines.len() < *seen {
+            (*scan, *seen) = Default::default();
+        }
+        for line in &self.inner.lines[*seen..] {
+            scan.step(&line.text);
+        }
+        *seen = self.inner.lines.len();
+        scan.in_block() == Some(true)
+    }
+
+    /// A lone `+` since the last blank attaches the block after it to the
+    /// quote, so an unmarked marker there is the quote's (§17 L3).
+    fn follows_quote_plus(&mut self) -> bool {
+        let (mut scanned, mut held) = self.plus_scan;
+        if self.inner.lines.len() < scanned {
+            (scanned, held) = (0, false);
+        }
+        for line in self.inner.lines.iter().skip(scanned) {
+            let text = strip_all_quotes(trim_ascii_start(strip_lazy(&line.text))).0;
+            if is_blank_line(text) {
+                held = false;
+            } else if is_plus_marker(trim_ascii_start(text)) {
+                held = true;
+            }
+        }
+        self.plus_scan = (self.inner.lines.len(), held);
+        held
+    }
+
     /// A span the quote holds is open whether or not its closer follows
     /// (carve#4907).
     fn unmarked_closer_ahead(&mut self, _cur: &LineCursor<'_>, _run: usize) -> bool {
@@ -2658,18 +2767,6 @@ impl<'a> QuoteBody<'a> {
     }
 
     fn fold_lazy_line(&mut self, cur: &mut LineCursor<'a>, line: &str) {
-        if is_invalid_colon_fence_opener_text(trim_ascii_start(strip_lazy(line)))
-            && self.para_open.get()
-        {
-            let depth = self.paragraph_depth.or_else(|| {
-                self.inner
-                    .lines
-                    .last()
-                    .map(|prior| strip_all_quotes(&prior.text).1)
-            });
-            self.paragraph_depth = depth;
-            self.absorption_depth = depth;
-        }
         let source_line = cur.source_line(cur.pos);
         // A lazy continuation line carries no quote marker, so nothing was
         // stripped from it beyond what an outer container already took.

@@ -463,6 +463,7 @@ pub(super) fn parse_nested_mapped_blocks(
     cur.in_quoted_body = scope.in_quoted_body || source.in_quoted_body;
     cur.reached = Some(source.reached.as_slice());
     cur.sublists_carry_authored_base = positioned && source.sublists_carry_authored_base;
+    cur.in_note_or_description = source.sublists_carry_authored_base;
     cur.marker_tail = source.marker_tail;
     let mut observed = Vec::new();
     let record_extents = extents.is_some();

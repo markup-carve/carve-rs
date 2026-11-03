@@ -3,7 +3,7 @@ fn a_separator_below_an_item_term_closes_the_item() {
     let source = "- :: term\nflush block\n[l](u)\n: A definition wrapped\nonto the next line.\n";
     assert_eq!(
         carve::to_html(source),
-        "<ul>\n  <li>\n    <dl>\n      <dt>term\nflush block\n<a href=\"u\">l</a></dt>\n    </dl>\n  </li>\n</ul>\n<p>: A definition wrapped\nonto the next line.</p>"
+        "<ul>\n  <li>\n    <dl>\n      <dt>term</dt>\n    </dl>\n  </li>\n</ul>\n<p>flush block\n<a href=\"u\">l</a>\n: A definition wrapped\nonto the next line.</p>"
     );
 }
 

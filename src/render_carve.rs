@@ -5130,6 +5130,12 @@ fn guard_code_lines(
     ctx: &mut CarveContext,
     node_type: &'static str,
 ) -> String {
+    if ctx.in_term && written.contains(['\n', '\r']) {
+        crate::render_carve_error::record_unspellable(
+            node_type,
+            "a definition term is one line, so its value cannot hold a line break",
+        );
+    }
     if ctx.line_block_depth > 0 || !written.contains('\n') {
         return written.to_owned();
     }

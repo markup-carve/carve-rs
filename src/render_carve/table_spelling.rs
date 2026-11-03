@@ -135,27 +135,17 @@ pub(super) fn render_table(
         );
         return String::new();
     }
+    // carve#4974 ruling A: only an orphan placeholder or a placeholder carrying
+    // an alignment lacks a native spelling that keeps the tree.
     let needs_delimiter = header_row
-        && node.rows[0].cells.iter().any(|cell| {
-            cell.children.is_empty()
-                && cell.blocks.is_none()
-                && cell.align == Some(TableAlign::Left)
-        })
-        || header_row
-            && node.rows.first().is_some_and(|row| {
-                let first_span = row.cells.iter().position(|cell| cell.span.is_some());
-                match first_span {
-                    None => false,
-                    Some(index) => {
-                        // Native only for a trailing run of colspans after a
-                        // real header cell; every other span shape needs the
-                        // delimiter.
-                        !(index >= 1
-                            && row.cells[index..]
-                                .iter()
-                                .all(|cell| cell.span == Some(TableCellSpan::Colspan)))
-                    }
-                }
+        && node.rows[0]
+            .cells
+            .iter()
+            .enumerate()
+            .any(|(index, cell)| match cell.span {
+                Some(TableCellSpan::Rowspan) => true,
+                Some(TableCellSpan::Colspan) => index == 0 || cell.align.is_some(),
+                None => false,
             });
 
     // CARVE-P12-069: each `cell_wrap` puts the part after it on its row's
@@ -627,16 +617,16 @@ pub(super) fn render_table_cell(
         content.push('\\');
     }
     let empty = content.is_empty();
-    if empty
-        && header_default_without_delimiter
-        && (cell.align == Some(TableAlign::Left) || cell.valign == Some(TableVerticalAlign::Top))
-    {
+    // `|=< |` is an empty left-aligned header; only an unmarked `|< |` reads as a span.
+    let marked_header = cell.header && mark_header;
+    if empty && header_default_without_delimiter && cell.valign == Some(TableVerticalAlign::Top) {
         crate::render_carve_error::record_unspellable(
             "table_cell",
             "an empty header alignment default needs a delimiter row",
         );
     }
-    let align = if suppress_align || empty && cell.align == Some(TableAlign::Left) {
+    let align = if suppress_align || empty && cell.align == Some(TableAlign::Left) && !marked_header
+    {
         ""
     } else {
         align_marker(cell.align)
@@ -654,7 +644,7 @@ pub(super) fn render_table_cell(
     };
     let prefix = format!(
         "{}{}{}{}{}",
-        if cell.header && mark_header { "=" } else { "" },
+        if marked_header { "=" } else { "" },
         align,
         inherited_horizontal,
         valign,

@@ -96,13 +96,12 @@ fn the_first_block_form_works_on_the_narrow_width() {
 }
 
 #[test]
-fn a_colon_line_below_a_folding_term_is_the_body() {
-    // The line the two predicates used to disagree about: the term folds its
-    // wrapped line, and the one-space colon line then breaks the fold and opens
-    // the body rather than falling out of the loop as a stray paragraph.
+fn a_colon_line_below_a_wrapped_line_is_paragraph_text() {
+    // A term is one line (carve#4861): the wrapped line opens a paragraph, and
+    // the colon line below it continues that paragraph.
     assert_eq!(
         html(":: term\nwrapped on\n: definition\n"),
-        "<dl>\n  <dt>term\nwrapped on</dt>\n  <dd>definition</dd>\n</dl>"
+        "<dl>\n  <dt>term</dt>\n</dl>\n<p>wrapped on\n: definition</p>"
     );
 }
 

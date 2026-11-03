@@ -2,8 +2,8 @@
 //! line carrying nothing but whitespace opens no description
 //! (markup-carve/carve#1830).
 //!
-//! It is a plain line under whatever is open, which folds it as a soft break
-//! and drops the line's own trailing run. That makes the space spellings
+//! It is a plain line: after a term, which is one line (carve#4861), it opens
+//! a paragraph, and it drops the line's own trailing run. That makes the space spellings
 //! identical to the bare `:` line and to the tab spelling rather than merely
 //! similar.
 //!
@@ -17,7 +17,7 @@
 //! carve-php is the reference reading and agrees on every shape below.
 
 /// Whitespace-collapsed, because the interesting difference is the STRUCTURE:
-/// whether the colon folded into the open block or became a paragraph beside a
+/// whether the colon folded into an open block or became a paragraph beside a
 /// closed list.
 fn flat(source: &str) -> String {
     carve::to_html(source)
@@ -26,10 +26,10 @@ fn flat(source: &str) -> String {
         .join(" ")
 }
 
-const FOLDED: &str = "<dl> <dt>t : x</dt> </dl>";
+const FOLDED: &str = "<dl> <dt>t</dt> </dl> <p>: x</p>";
 
 #[test]
-fn a_colon_plus_spaces_folds_into_the_term() {
+fn a_colon_plus_spaces_is_a_paragraph_after_the_term() {
     for source in [":: t\n: \nx\n", ":: t\n:  \nx\n", ":: t\n:   \nx\n"] {
         assert_eq!(flat(source), FOLDED, "source: {source:?}");
     }
@@ -41,7 +41,10 @@ fn a_colon_plus_spaces_folds_into_the_term() {
 #[test]
 fn it_reads_exactly_as_the_tab_and_bare_spellings_do() {
     assert_eq!(flat(":: t\n:\t\nx\n"), FOLDED);
-    assert_eq!(flat(":: t\n:\n\nx\n"), "<dl> <dt>t :</dt> </dl> <p>x</p>");
+    assert_eq!(
+        flat(":: t\n:\n\nx\n"),
+        "<dl> <dt>t</dt> </dl> <p>:</p> <p>x</p>"
+    );
     assert_eq!(flat(":: t\n:\nx\n"), FOLDED);
 }
 
@@ -124,20 +127,18 @@ fn it_is_a_paragraph_with_no_term_open_above_it() {
     assert_eq!(flat(": \nx\n"), "<p>: x</p>");
 }
 
-/// THE TERM MARKER IS UNTOUCHED. `::` plus whitespace still closes the list,
-/// and `::` followed straight by a tab still folds - this engine already read
-/// both the way carve-php does, and narrowing the description marker must not
-/// reach them.
+/// An empty term marker opens nothing, whatever whitespace follows it, so it
+/// starts a paragraph after the one-line term.
 #[test]
 fn the_term_marker_keeps_its_own_readings() {
     assert_eq!(
         carve::to_html(":: t\n:: \nx\n"),
-        "<dl>\n  <dt>t\n::\nx</dt>\n</dl>"
+        "<dl>\n  <dt>t</dt>\n</dl>\n<p>::\nx</p>"
     );
     assert_eq!(
         flat(":: t\n:: \t\nx\n"),
         "<dl> <dt>t</dt> </dl> <p>:: x</p>"
     );
-    assert_eq!(flat(":: t\n::\t\nx\n"), "<dl> <dt>t :: x</dt> </dl>");
-    assert_eq!(flat(":: t\n::\nx\n"), "<dl> <dt>t :: x</dt> </dl>");
+    assert_eq!(flat(":: t\n::\t\nx\n"), "<dl> <dt>t</dt> </dl> <p>:: x</p>");
+    assert_eq!(flat(":: t\n::\nx\n"), "<dl> <dt>t</dt> </dl> <p>:: x</p>");
 }

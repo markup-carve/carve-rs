@@ -102,6 +102,130 @@ fn marker_line_block_stanza_open(
     scan.0.tail().is_some()
 }
 
+/// Feeds the lines collected since the last call; whether they end in an
+/// open stanza of a line block that held a `%%%` span, a nested block included.
+fn collected_spanned_stanza_open(
+    scan: &mut (crate::parse::definition::LineBlockTail, usize),
+    lines: &[String],
+) -> bool {
+    if lines.len() < scan.1 {
+        *scan = Default::default();
+    }
+    for line in &lines[scan.1..] {
+        scan.0.step(strip_lazy(line));
+    }
+    scan.1 = lines.len();
+    scan.0.in_block() == Some(true) && scan.0.held_span()
+}
+
+/// An open `%%%` span on a description's lead line (`: %%%`).
+#[derive(Clone, Copy)]
+struct LeadSpan {
+    run: usize,
+    owner: usize,
+    depth: usize,
+}
+
+/// Feeds the lines collected since the last call; whether they end inside a
+/// `%%%` span opened on a description's lead line. The span leaves nothing
+/// (CARVE-P9-047), so a line that ends it under S1 has no paragraph to fold
+/// into (carve#4998). Quote markers count toward a line's column.
+#[derive(Default)]
+pub(crate) struct DescriptionLeadSpanScan {
+    at: usize,
+    span: Option<LeadSpan>,
+}
+
+impl DescriptionLeadSpanScan {
+    pub(crate) fn open<S: AsRef<str>>(&mut self, lines: &[S]) -> bool {
+        self.open_by(lines.len(), |at| lines[at].as_ref())
+    }
+
+    pub(crate) fn open_by<'s>(&mut self, len: usize, line_at: impl Fn(usize) -> &'s str) -> bool {
+        if self.at > len {
+            *self = Self::default();
+        }
+        while self.at < len {
+            let line = line_at(self.at);
+            self.at += 1;
+            if self.span.is_none() && !line.contains("%%%") {
+                continue;
+            }
+            let (col, rest, quotes) = quote_free_measure(line);
+            if let Some(span) = self.span {
+                let closes = comment_fence_run(rest).is_some_and(|run| run == span.run);
+                let ends = if closes {
+                    true
+                } else if quotes.len() > span.depth {
+                    quotes[span.depth] < span.owner
+                } else {
+                    (!rest.is_empty()
+                        && !rest.starts_with("%%")
+                        && (col < span.owner || line.starts_with(LAZY)))
+                        || quotes.len() < span.depth
+                };
+                if ends {
+                    self.span = None;
+                }
+                continue;
+            }
+            let Some(body) = rest.strip_prefix(':') else {
+                continue;
+            };
+            let after = body.trim_start_matches(' ');
+            if after.len() == body.len() {
+                continue;
+            }
+            let Some(run) = comment_fence_run(after) else {
+                continue;
+            };
+            let lead = rest.len() - after.len();
+            // The entry above: the nearest line at or left of this column is its term.
+            for above in (0..self.at - 1).rev().map(&line_at) {
+                let (above_col, above_rest, _) = quote_free_measure(above);
+                if above_rest.is_empty() || above_col > col {
+                    continue;
+                }
+                if above_col == col
+                    && (above_rest.starts_with(": ") || above_rest.starts_with(":: "))
+                {
+                    self.span = Some(LeadSpan {
+                        run,
+                        owner: col + lead,
+                        depth: quotes.len(),
+                    });
+                }
+                break;
+            }
+        }
+        self.span.is_some()
+    }
+}
+
+fn comment_fence_run(rest: &str) -> Option<usize> {
+    let run = rest.bytes().take_while(|&b| b == b'%').count();
+    (run >= 3).then_some(run)
+}
+
+/// A line's column, counting quote markers, its text after them, and the
+/// column of each quote marker.
+fn quote_free_measure(line: &str) -> (usize, &str, Vec<usize>) {
+    let mut rest = strip_lazy(line);
+    let mut base = 0;
+    let mut quotes = Vec::new();
+    loop {
+        let col = indent_columns(rest);
+        let text = rest.trim_start_matches([' ', '\t']);
+        let Some(after) = text.strip_prefix('>') else {
+            return (base + col, text, quotes);
+        };
+        quotes.push(base + col);
+        let width = if after.starts_with(' ') { 2 } else { 1 };
+        base += col + width;
+        rest = &text[width..];
+    }
+}
+
 fn follows_plus_marker(lines: &[String]) -> bool {
     let run_start = lines
         .iter()
@@ -197,6 +321,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     // instead, which the parallel-to-`lines` invariant below forbids.
     let building_maps = cur.line_map.is_some();
     let mut lines: Vec<String> = Vec::new();
+    let mut held_comment_span = HeldCommentSpan::new();
+    let mut body_code_fence = OpenCodeFenceScan::default();
     let mut line_map = Vec::new();
     let mut col_map: Vec<Option<isize>> = Vec::new();
     // See `MappedSource::reached`.
@@ -248,7 +374,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let mut surviving_definition_body_column = open_definition_body_column;
     let mut after_definition_blank = false;
     let mut marker_definition_has_description = !marker_is_definition_term;
-    let mut definition_band_inline_run = None;
     let mut marker_description_is_paragraph = false;
     let mut nested_paragraph_column = None;
     let mut carried_lazy_owner = nested_item_columns.lazy_paragraph_owner.take();
@@ -277,6 +402,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         .is_some_and(|content| detect_line_block_open(content).is_some());
     // Whether the marker-line line block still holds a stanza after `lines`.
     let mut marker_line_block_scan = (crate::parse::definition::LineBlockTail::default(), 0);
+    let mut collected_stanza_scan = (crate::parse::definition::LineBlockTail::default(), 0);
     if let Some(content) = marker_content.filter(|_| marker_line_block) {
         marker_line_block_scan.0.step(content);
     }
@@ -363,16 +489,50 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         });
     let mut lead_fence_scan = LeadFenceScan::default();
     let mut nested_blank_run: Option<usize> = None;
+    let mut lead_span_scan = DescriptionLeadSpanScan::default();
     run_indented_body!(cur.lines, cur.pos, container, |line, admission| {
         // PART 0 S1 and the recovery table (carve#4770): a nonblank line that
         // misses this item ends a span the item opened, even with its closer
         // ahead. The re-parsed body then degrades the opener to a `%%` line.
+        // A line that misses the descendant holding an open span ends the span
+        // there (PART 0 S1), so the blanks before it separate blocks again.
+        if let Some((_, column)) = comment_fence.filter(|&(_, column)| column > strip_cols) {
+            let host = nested_item_columns
+                .iter()
+                .map(|&(_, content)| content)
+                .filter(|&content| content <= column)
+                .max()
+                .unwrap_or(column);
+            // A comment-shaped line stays payload at any column (PART 9 §28, carve#5021).
+            if !admission.blank
+                && !line.starts_with(LAZY)
+                && indent_columns(line) < host
+                && !trim_ascii_start(line).starts_with("%%")
+            {
+                comment_fence = None;
+                comment_fence_strip = None;
+                let mut at = lines.len();
+                while at > 0 && is_blank_line(&lines[at - 1]) {
+                    at -= 1;
+                    if opaque_blank_lines.last() == Some(&at) {
+                        opaque_blank_lines.pop();
+                    }
+                }
+            }
+        }
         let held_span = if span_reached_this_frame {
             comment_fence.map(|(run, _)| run)
         } else {
             marker_comment_span
         };
+        // A span in a line block leaves nothing: the line that ends it folds
+        // into the stanza open before it (carve#4956).
+        let spanned_stanza_lazy = !admission.blank
+            && indent_columns(line) < strip_cols
+            && line_starts_paragraph(line)
+            && collected_spanned_stanza_open(&mut collected_stanza_scan, &lines);
         if held_span.is_some_and(|run| !is_comment_fence_close_any_column(line, run))
+            && !spanned_stanza_lazy
             && !admission.blank
             && !is_line_comment_any_column(line)
             && detect_comment_fence_line_any_column(line).is_none()
@@ -402,6 +562,14 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         // Handle this before the special lazy and marker-line branches below:
         // the span left no paragraph for any of them to continue.
         if nested_item_columns.closed_marker_comment_span && indent_columns(line) < strip_cols {
+            break;
+        }
+        if indent_columns(line) < strip_cols
+            && !admission.blank
+            && !trim_ascii_start(strip_lazy(line)).starts_with("%%")
+            && lead_span_scan.open(&lines)
+        {
+            cur.comment_span_missed_at = Some(cur.pos);
             break;
         }
         if admission.blank {
@@ -620,7 +788,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             }
             marker_note_intermediate_quote_open = false;
             nested_paragraph_column = None;
-            definition_band_inline_run = None;
             marker_colon_retained_para = false;
             if comment_fence.is_none() && fence.is_none() {
                 marker_term_open = false;
@@ -681,10 +848,19 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 let continues = k < cur.lines.len()
                     && (indent_columns(cur.lines.at(k)) >= threshold
                         || (comment_fence.is_some() && cur.lines.at(k).starts_with(LAZY))
+                        // A `%%` line misses no owner, so it stays span payload (S1).
+                        || (comment_fence.is_some()
+                            && trim_ascii_start(cur.lines.at(k)).starts_with("%%"))
                         || comment_fence.is_some_and(|(run, column)| {
                             column == strip_cols
                                 && is_comment_fence_close_any_column(cur.lines.at(k), run)
-                        }));
+                        })
+                        // A blank inside a descendant's live span is payload; a
+                        // comment line below the column still closes it (carve#4996).
+                        || (trim_ascii_start(strip_lazy(cur.lines.at(k))).starts_with("%%")
+                            && body_open_comment_run(&lines).is_some())
+                        || marker_comment_span
+                            .is_some_and(|run| is_comment_fence_close_any_column(cur.lines.at(k), run)));
                 if !continues {
                     // Descendants may own these blanks as fence payload. Copy
                     // them without advancing the outer separator cursor.
@@ -966,6 +1142,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && comment_fence.is_none()
             && marker_colon.is_none()
             && description_line_block.is_none()
+            && !marker_comment_span.is_some_and(|run| is_comment_fence_close_any_column(line, run))
             && cur.pos.checked_sub(1).is_some_and(|at| {
                 indent_columns(cur.lines.at(at)) >= strip_cols
                     && is_line_comment_any_column(cur.lines.at(at))
@@ -1018,17 +1195,18 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             term_code_lazy_tail = false;
             term_code_closer_checked = true;
         }
+        let stanza_lazy = marker_line_block
+            && marker_colon.is_some()
+            && indent < strip_cols
+            && line_starts_paragraph(line)
+            && marker_line_block_stanza_open(
+                &mut marker_line_block_scan,
+                marker_content.unwrap_or_default(),
+                &lines,
+            );
         let fence_owns_flush_left = (line.starts_with(LAZY)
             && (marker_colon.is_some() || !colon_open.is_empty()))
-            || (marker_line_block
-                && marker_colon.is_some()
-                && indent < strip_cols
-                && line_starts_paragraph(line)
-                && marker_line_block_stanza_open(
-                    &mut marker_line_block_scan,
-                    marker_content.unwrap_or_default(),
-                    &lines,
-                ))
+            || stanza_lazy
             || (description_line_block.is_some()
                 && indent < strip_cols
                 && line_starts_paragraph(line)
@@ -1043,6 +1221,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 && (is_line_comment_any_column(line)
                     || !interrupts_lazy_continuation_as_container(cur, line)))
             || (!colon_open.is_empty()
+                && fence.is_none()
                 && indent < strip_cols
                 && !is_list_marker(line)
                 && lines.last().is_some_and(|prior| {
@@ -1052,7 +1231,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                         && detect_comment_fence_line_any_column(prior).is_none()
                         && detect_fence_open(trim_ascii_start(prior)).is_none()
                 })
-                && !interrupts_lazy_continuation_as_container(cur, line));
+                && !interrupts_lazy_continuation_as_container(cur, line)
+                // A code fence opened deeper in the div holds the prior line.
+                && !body_code_fence.holds_open_fence(&lines));
         if nested_fence.is_some() && indent < strip_cols {
             *fence = nested_fence;
             break;
@@ -1061,33 +1242,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             .pos
             .checked_sub(1)
             .is_some_and(|at| effective_comment_line_at(cur, at));
-        let definition_comment_band = marker_is_definition_term
-            && marker_definition_has_description
-            && fence.is_none()
-            && comment_fence.is_none()
-            && (indent > marker_base || detect_fence_open(trim_ascii_start(line)).is_some())
-            && indent < strip_cols
-            && prior_comment;
-        let definition_band_inline_closer = definition_band_inline_run.is_some_and(|run| {
-            if last_backtick_run_starts(line.as_bytes()).contains_key(&run) {
-                definition_band_inline_run = None;
-                trim_ascii_start(line)
-                    .bytes()
-                    .take_while(|&byte| byte == b'`')
-                    .count()
-                    == run
-            } else {
-                false
-            }
-        });
-        if definition_comment_band {
-            let content = trim_ascii_start(line);
-            let run = content.bytes().take_while(|&byte| byte == b'`').count();
-            if run >= 3 && !last_backtick_run_starts(&content.as_bytes()[run..]).contains_key(&run)
-            {
-                definition_band_inline_run = Some(run);
-            }
-        }
         // A CLOSER IS PART OF THE SPAN, NOT A DEDENT. See
         // `body_open_comment_run`: this dedent ends the container, and a comment
         // delimiter closing a span these lines already hold is not one.
@@ -1120,7 +1274,10 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 || cur
                     .closed_comment_location
                     .is_some_and(|(at, _)| at + 1 == cur.pos));
-        let paragraph_before_comment = (comment_boundary || after_retaining_comment)
+        // A comment line inside a span the body holds is payload, never past a paragraph.
+        let in_held_span = held_comment_span.holds(&lines, line);
+        let paragraph_before_comment = !in_held_span
+            && (comment_boundary || after_retaining_comment)
             && (lines[..lines.len() - trailing_comment_lines]
                 .iter()
                 .rposition(|line| !is_blank_line(line) && !is_line_comment_any_column(line))
@@ -1146,15 +1303,16 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && !(marker_note_intermediate_quote_open
                 && line_starts_paragraph(line)
                 && !item_block_opener(line))
-            && !definition_comment_band
-            && !definition_band_inline_closer
             && !fence_owns_flush_left
+            && !spanned_stanza_lazy
             && !comment_fence.is_some_and(|(run, _)| {
                 is_comment_fence_close_any_column(line, run)
                     || detect_comment_fence_line_any_column(line).is_some()
             })
+            && !in_held_span
             && !closes_a_held_comment_span(&lines, line)
             && !(held_span.is_some() && is_line_comment_any_column(line))
+            && !marker_comment_span.is_some_and(|run| is_comment_fence_close_any_column(line, run))
             && !caption_follower
         {
             break;
@@ -1184,8 +1342,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         }
         if (definition_ended_paragraph || closed_code_leaf)
             && indent < strip_cols
-            && !definition_comment_band
-            && !definition_band_inline_closer
             && !comment_fence.is_some_and(|(run, _)| is_comment_fence_close_any_column(line, run))
         {
             break;
@@ -1195,13 +1351,16 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         // line and stays, exactly as it does under `%%` (markup-carve/carve#1920,
         // corpus 446). One frame in, the carried flag says the line reached an
         // ancestor and not this container, and the frame still ends there.
-        if degraded_comment_fence && indent < strip_cols {
+        // Under F1 that opener still holds its span, so a comment line stays its payload.
+        if degraded_comment_fence && indent < strip_cols && !in_held_span {
             break;
         }
         if degraded_descendant_fence && !cur.line_reached(cur.pos, indent, strip_cols) {
             break;
         }
-        if closed_comment_span_above && indent < strip_cols {
+        // A closed span in a line block leaves nothing for the stanza (carve#4956).
+        if closed_comment_span_above && indent < strip_cols && !stanza_lazy && !spanned_stanza_lazy
+        {
             break;
         }
         if indent >= strip_cols && comment_fence.is_none() && !is_line_comment_any_column(line) {
@@ -1211,7 +1370,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         if fence.is_some() && indent < strip_cols && !fence_owns_flush_left {
             break;
         }
-        if !colon_open.is_empty() && indent < strip_cols && !fence_owns_flush_left {
+        if !colon_open.is_empty() && indent < strip_cols && !fence_owns_flush_left && !in_held_span
+        {
             break;
         }
         if marker_colon_retained_para
@@ -1389,8 +1549,10 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             break;
         }
         let was_in_comment_span = comment_fence_strip.is_some();
+        let mut closed_marker_span = false;
         if let Some(width) = marker_comment_span {
             if is_comment_fence_close_any_column(line, width) {
+                closed_marker_span = true;
                 marker_comment_span = None;
                 closed_comment_span_above = true;
                 nested_item_columns.closed_marker_comment_span = true;
@@ -1402,7 +1564,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && colon_open.is_empty()
             && detect_comment_fence_line_any_column(line).is_none()
         {
-            if let Some((open, opener_column)) = detect_comment_fence_opener_at_any_column(line) {
+            if let Some((open, opener_column)) = marker_line_comment_opener(line) {
                 if opener_column >= strip_cols
                     && cur.has_comment_closer_after(cur.pos + 1, open.fence_len)
                 {
@@ -1417,8 +1579,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 closed_comment_span_above |= span_reached_this_frame;
                 span_reached_this_frame = false;
             }
-        } else if let Some(open) =
-            detect_comment_fence_line_any_column(line).filter(|_| fence.is_none())
+        } else if let Some(open) = detect_comment_fence_line_any_column(line)
+            .filter(|_| fence.is_none() && !closed_marker_span)
         {
             let closes = if let Some((_, _, floor)) = literal_colon {
                 if cur.literal_comments.is_none() {
@@ -1590,9 +1752,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             {
                 indent
             }
-            _ if lazy_list_marker || definition_comment_band || definition_band_inline_closer => {
-                indent
-            }
+            _ if lazy_list_marker => indent,
             (true, Some(_))
                 if comment_payload
                     && marker_is_definition_term
@@ -1716,11 +1876,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 && !separator_at_nested_marker
                 && !separator_in_own_item
                 && !separator_for_nested_item
-            || definition_band_inline_closer
-            || (definition_comment_band
-                && detect_fence_open(trim_ascii_start(line)).is_none()
-                && !is_definition_list_start(trim_ascii_start(line))
-                && strip_description_prefix(trim_ascii_start(line)).is_none())
             || (marker_colon_retained_para && indent < strip_cols))
             && !sliced.starts_with(LAZY)
         {
@@ -2044,20 +2199,41 @@ pub(crate) fn open_code_fence_opener<S: AsRef<str>>(lines: &[S]) -> Option<usize
     let mut open = None;
     let mut opener = 0;
     for (at, line) in lines.iter().enumerate() {
-        let line = line.as_ref();
-        let mut text = trim_ascii_start(line);
-        if open.is_none() {
-            if let Some(marker) = detect_list_marker_full(text) {
-                text = innermost_marker_content(marker.content);
-            }
-        }
         let was_open = open.is_some();
-        track_collected_fence(&mut open, text, true, indent_columns(line));
+        track_body_code_fence(&mut open, line.as_ref());
         if !was_open && open.is_some() {
             opener = at;
         }
     }
     open.map(|_| opener)
+}
+
+fn track_body_code_fence(open: &mut Option<FenceOpen>, line: &str) {
+    let mut text = trim_ascii_start(line);
+    if open.is_none() {
+        if let Some(marker) = detect_list_marker_full(text) {
+            text = innermost_marker_content(marker.content);
+        }
+    }
+    track_collected_fence(open, text, true, indent_columns(line));
+}
+
+/// [`body_lines_hold_open_code_fence`] over a body that only grows, read
+/// incrementally so a per-line question stays linear.
+#[derive(Default)]
+pub(crate) struct OpenCodeFenceScan {
+    scanned: usize,
+    open: Option<FenceOpen>,
+}
+
+impl OpenCodeFenceScan {
+    pub(crate) fn holds_open_fence<S: AsRef<str>>(&mut self, lines: &[S]) -> bool {
+        for line in &lines[self.scanned..] {
+            track_body_code_fence(&mut self.open, line.as_ref());
+        }
+        self.scanned = lines.len();
+        self.open.is_some()
+    }
 }
 
 pub(crate) fn track_collected_fence(
@@ -2160,4 +2336,22 @@ pub(crate) fn chunk_ends_in_closed_comment_span(chunk: &MappedSource) -> bool {
     // its own line, so the two can never disagree - and a span still open at
     // the chunk's end is what the degraded test above already reports.
     closed_at_end
+}
+
+/// A `%%%` opener on a list, description or note marker line inside the item.
+fn marker_line_comment_opener(line: &str) -> Option<(CommentFenceOpen, usize)> {
+    if let Some(found) = detect_comment_fence_opener_at_any_column(line) {
+        return Some(found);
+    }
+    let lead = trim_ascii_start(line);
+    let col = advance_columns(&line[..line.len() - lead.len()], 0);
+    let body = if let Some(rest) = lead.strip_prefix(": ") {
+        rest
+    } else {
+        let (_, body) = crate::parse::footnote_prepass::parse_footnote_def_line(lead)?;
+        body
+    };
+    let rest = trim_ascii_start(body);
+    let col = advance_columns(&lead[..lead.len() - rest.len()], col);
+    detect_comment_fence_line(rest).map(|open| (open, col))
 }

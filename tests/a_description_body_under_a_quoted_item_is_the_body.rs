@@ -167,10 +167,11 @@ fn a_fence_shaped_lazy_line_keeps_its_column() {
 /// The same limit for a TERM-shaped lazy line: `::` is not the description
 /// marker this band is about, and it stays where it was written.
 #[test]
-fn a_term_shaped_unmarked_line_folds_into_the_open_term() {
+fn a_term_shaped_unmarked_line_opens_a_term_and_the_next_line_a_paragraph() {
+    // A term is one line (carve#4861).
     assert_html(
         "> - :: t\n    :: u\ntail\n",
-        "<blockquote><ul><li><dl><dt>t</dt></dl></li></ul></blockquote><dl><dt>u tail</dt></dl>",
+        "<blockquote><ul><li><dl><dt>t</dt></dl></li></ul></blockquote><dl><dt>u</dt></dl><p>tail</p>",
     );
 }
 

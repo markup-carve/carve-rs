@@ -134,6 +134,8 @@ struct ListScan<'a, 'l, 'o> {
     item_shows: bool,
     // The current item's marker line, which bounds the look-back at a sibling.
     item_head: usize,
+    // The run of a `%%%` span opened on that marker line, which a closer below pairs with.
+    item_head_span: Option<usize>,
     // An empty first-block item has no paragraph for a below-column line to continue.
     last_item_bare_continuation: bool,
     // The same S4 state for an item whose marker-line content is only a
@@ -198,7 +200,6 @@ struct BlockLead {
 /// The item's lead paragraph while its lazy lines are gathered.
 struct LeadParagraph {
     lines: Vec<String>,
-    suppress_colon_interrupt: bool,
     // The first raw line a failed wrapped-attribute lookahead has not
     // already proved cannot start one. Without this floor, a run of
     // unclosed `{.a` lines scans the whole remaining item once per line.
@@ -227,6 +228,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         let item_head = cur.pos;
         let item_shows = !invisible_item_lead(first_marker.content)
             && !comment_only_item_lead(cur.lines, item_head, first_marker.content);
+        let item_head_span = head_span_run(first_marker.content);
         Self {
             cur,
             options,
@@ -234,6 +236,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             base_indent,
             item_shows,
             item_head,
+            item_head_span,
             is_task: first_marker.checked.is_some(),
             is_ordered: first_marker.ordered,
             first_dialect: ol_dialect(ol_type),
@@ -347,19 +350,16 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 return skipped;
             }
             if let Some(open) = detect_comment_fence_line_any_column(line) {
-                let mut opener = k;
-                loop {
-                    if opener <= from + 1 {
-                        return false;
-                    }
-                    opener -= 1;
-                    if detect_comment_fence_line_any_column(lines.at(opener))
+                let opener = (from + 1..k).rev().find(|&o| {
+                    detect_comment_fence_line_any_column(lines.at(o))
                         .is_some_and(|o| o.fence_len == open.fence_len)
-                    {
-                        break;
-                    }
+                });
+                match opener {
+                    Some(opener) => k = opener,
+                    // A closer of the marker line's span: its payload above stays in the scan.
+                    None if self.item_head_span == Some(open.fence_len) => {}
+                    None => return false,
                 }
-                k = opener;
             } else if !(is_line_comment_any_column(line)
                 || (is_definition_placeholder(line) && !is_footnote_definition_placeholder(line))
                 || parse_link_def_line(trim_ascii_start(line)).is_some()
@@ -630,6 +630,10 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // is the item's true column (`- `=2, `1. `=3, `10. `=4), NOT a
         // fixed base+2 -- an ordered item's body sits deeper.
         if self.pending_blank && indent < content_col {
+            return Some(END);
+        }
+        // The line ended the item's comment span and the item (carve#4770, carve#4998).
+        if self.cur.comment_span_missed_at == Some(self.cur.pos) && indent < content_col {
             return Some(END);
         }
         // The item holds an OPEN fenced body and this line is below its
@@ -1209,6 +1213,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             self.pending_blank = false;
         }
         self.item_head = self.cur.pos;
+        self.item_head_span = head_span_run(marker.content);
         self.content_col = self.item_content_col(&marker);
         self.item_shows = !invisible_item_lead(marker.content)
             && !comment_only_item_lead(self.cur.lines, self.cur.pos, marker.content);
@@ -2048,7 +2053,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             {
                 break;
             }
-            if lead.nested_definition_ended_paragraph {
+            // A definition on the marker line opens no paragraph, but a block
+            // collected below it can.
+            if lead.nested_definition_ended_paragraph && !stream.source.contains('\n') {
                 break;
             }
             let before = stream.source.len();
@@ -2608,7 +2615,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         };
         let mut lead = LeadParagraph {
             lines: vec![paragraph_content.to_string()],
-            suppress_colon_interrupt: is_invalid_colon_fence_opener_text(content),
             attrs_scan_floor: self.cur.pos,
             anchors: self
                 .options
@@ -2730,10 +2736,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // block relative to it (#1705). Ordinary over-indented prose is
         // still lazy paragraph text.
         let over_indented = trim_ascii_start(next);
-        let absorbed =
-            lead.suppress_colon_interrupt && is_suppressed_colon_fence_line(over_indented);
-        if !absorbed
-            && item_block_opener(over_indented)
+        if item_block_opener(over_indented)
             && self
                 .item_unclosed_fence_base
                 .map_or(true, |base| base == indent)
@@ -2750,7 +2753,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // A sibling/nesting marker above the content column was already
         // handled above; only a genuine lazy interrupt ends the fold.
         let next_owned = next.to_string();
-        if !absorbed && interrupts_lazy_continuation_as_container(self.cur, &next_owned) {
+        if interrupts_lazy_continuation_as_container(self.cur, &next_owned) {
             return false;
         }
         // CARVE-P2-020: a caption continuation keeps its indentation.
@@ -2767,7 +2770,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         if let Some(anchors) = &mut lead.anchors {
             anchors.push(inline_anchor_for_line(self.cur, self.cur.pos, inline_line));
         }
-        lead.suppress_colon_interrupt |= is_invalid_colon_fence_opener_text(inline_line);
         lead.lines.push(inline_line.to_string());
         self.cur.consume();
     }
@@ -2794,10 +2796,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             }
         };
         let fence_open = detect_fence_open(&dedented);
-        let interrupts = (wrapped_attr_interrupts
+        let interrupts = wrapped_attr_interrupts
             || interrupts_paragraph_as_container(self.cur, &dedented)
-            || fence_open.is_some())
-            && !(lead.suppress_colon_interrupt && is_suppressed_colon_fence_line(&dedented));
+            || fence_open.is_some();
         if interrupts {
             return false;
         }
@@ -2810,7 +2811,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             anchors.push(inline_anchor_for_line(self.cur, self.cur.pos, &dedented));
         }
         track_collected_fence(&mut self.item_open_fence, &dedented, true, indent);
-        lead.suppress_colon_interrupt |= is_invalid_colon_fence_opener_text(&dedented);
         lead.lines.push(dedented);
         self.cur.consume();
         true
@@ -3057,6 +3057,11 @@ fn rebase_quoted_fence_payload(stream: &mut MappedSource, marker_leaf: &str) {
         }
         let leading = indent_columns(line);
         let stripped = trim_ascii_start(line);
+        // A line without a quote prefix ends the quote, and with it the fence.
+        if open.is_some() && strip_blockquote_prefix(stripped).is_none() {
+            lines.extend(stream.source.split('\n').skip(at).map(str::to_string));
+            break;
+        }
         if open.is_some()
             && payload_column.is_none()
             && strip_blockquote_prefix(stripped).is_some_and(|body| {
@@ -3139,6 +3144,10 @@ fn comment_only_item_lead(lines: CursorLines<'_>, at: usize, content: &str) -> b
         }
     };
     content.starts_with("{%") && comment_only_para_end(lines.len(), at, true, &view).is_some()
+}
+
+fn head_span_run(content: &str) -> Option<usize> {
+    detect_comment_fence_line_any_column(content).map(|open| open.fence_len)
 }
 
 fn invisible_item_lead(content: &str) -> bool {

@@ -24,6 +24,13 @@ pub(super) enum Kind {
     Colon,
 }
 
+impl Kind {
+    /// A list item, description body or footnote body (PART 0 S3, carve#4860).
+    fn is_marker_body(self) -> bool {
+        matches!(self, Kind::Item | Kind::Dd | Kind::Note)
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Last {
     None,
@@ -70,7 +77,6 @@ struct Frame {
     closer: Option<Closer>,
     open_col: usize,
     run: usize,
-    term_cut: usize,
     /// The open paragraph absorbed an invalid colon opener (CARVE-P9-016).
     absorbs: bool,
     line_block: bool,
@@ -122,7 +128,6 @@ impl Frame {
             closer: None,
             open_col: 0,
             run: 0,
-            term_cut: 0,
             absorbs: false,
             line_block: false,
             span: None,
@@ -553,6 +558,7 @@ struct Walk<'a> {
     refuse_line: bool,
     accepted: Vec<(usize, continuation_marker::Decision)>,
     refused: Vec<continuation_marker::Refused>,
+    overindented: Vec<OverindentedOpener>,
     /// The frames at the last accepted `+`, its host's quote depth and marker
     /// column, and the line its block starts on.
     attached: Option<AttachedBlock>,
@@ -737,6 +743,19 @@ pub(crate) struct OwnedSource {
     pub(in crate::parse) letter: Option<char>,
     pub(in crate::parse) accepted: Vec<(usize, continuation_marker::Decision)>,
     pub(in crate::parse) refused: Vec<continuation_marker::Refused>,
+    pub(in crate::parse) overindented: Vec<OverindentedOpener>,
+}
+
+/// An opener S3 reads past its owner's content column (carve#3992).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct OverindentedOpener {
+    pub(crate) line: usize,
+    /// 1-based codepoint column of the opener in the authored line.
+    pub(crate) column: usize,
+    pub(crate) kind: &'static str,
+    pub(crate) owner: &'static str,
+    pub(crate) content_column: usize,
+    pub(crate) authored_column: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -802,6 +821,7 @@ fn walk_traced(
         refuse_line: false,
         accepted: Vec::new(),
         refused: Vec::new(),
+        overindented: Vec::new(),
         attached: None,
         skipped: None,
         next_visible: 0,
@@ -871,6 +891,7 @@ fn walk_traced(
             letter: letter.filter(|_| wrote_letter),
             accepted: std::mem::take(&mut walk.accepted),
             refused: std::mem::take(&mut walk.refused),
+            overindented: std::mem::take(&mut walk.overindented),
         });
     (owned, walk.trace)
 }
@@ -908,12 +929,6 @@ fn colon_opener(rest: &str) -> bool {
         || detect_line_block_open(rest).is_some()
         || detect_hardbreaks_block_open(rest).is_some()
         || detect_quote_block_open(rest).is_some()
-}
-
-/// A colon run that opens nothing: an open paragraph absorbs it.
-fn absorbs_colon(rest: &str) -> bool {
-    let rest = rest.trim_end_matches([' ', '\t']);
-    colon_run(rest) >= 3 && !colon_opener(rest)
 }
 
 impl<'a> Walk<'a> {
@@ -1435,7 +1450,7 @@ impl<'a> Walk<'a> {
     }
 
     fn lazy_refused(&self, reached: usize, col: usize, rest: &str) -> bool {
-        self.missed_term_refuses(reached, rest) || self.caption_ends_quote(reached, col, rest)
+        self.caption_ends_quote(reached, col, rest)
     }
 
     /// A caption at its owner's block column attaches to a quote and ends it (CARVE-P2-008).
@@ -1522,43 +1537,6 @@ impl<'a> Walk<'a> {
         true
     }
 
-    fn missed_term_refuses(&self, reached: usize, rest: &str) -> bool {
-        if self.frames.last().expect("frame").last != Last::Term {
-            return false;
-        }
-        let missed_frames = &self.frames[reached + 1..];
-        if detect_list_marker_full(rest).is_some() {
-            missed_frames
-                .iter()
-                .any(|f| matches!(f.kind, Kind::Quote | Kind::Note))
-        } else {
-            rest.strip_prefix(':')
-                .is_some_and(|t| t.starts_with(' ') && !t.trim().is_empty())
-                && missed_frames.iter().any(|f| f.kind == Kind::Quote)
-        }
-    }
-
-    fn item_after_missed_quote_term(&self, reached: usize, col: usize, rest: &str) -> usize {
-        if !self.frames.last().is_some_and(|f| f.last == Last::Term)
-            || !rest
-                .strip_prefix(':')
-                .is_some_and(|tail| tail.starts_with(' '))
-            || !self.frames[reached + 1..]
-                .iter()
-                .any(|f| f.kind == Kind::Quote)
-        {
-            return reached;
-        }
-        (reached + 1..self.frames.len())
-            .find(|&k| {
-                self.frames[k].kind == Kind::Item
-                    && self.frames[k]
-                        .marker
-                        .is_some_and(|(marker, _)| marker == col)
-            })
-            .unwrap_or(reached)
-    }
-
     fn attached_item_after_quote(&self, at: usize, c: &mut Cursor<'_>, reached: usize) -> usize {
         let Some(attached) = self.attached.as_ref().filter(|a| a.from == at) else {
             return reached;
@@ -1592,6 +1570,21 @@ impl<'a> Walk<'a> {
         } else {
             closed.iter().any(|f| f.kind != Kind::Quote)
         }
+    }
+
+    /// Whether the line stays in the innermost fence's payload. A comment-shaped
+    /// line below the column inside an open `%%%` span is that span's payload,
+    /// and its exact run the closer (PART 0 S1, PART 9 §28).
+    fn in_open_payload(&self, missed: bool, reached: usize, rest: &str) -> bool {
+        let inner = self.frames.last().expect("document frame");
+        let comment_line = || {
+            (inner.family == "comment" || inner.span.is_some_and(|(ch, _)| ch == b'%'))
+                && comment_run(rest).is_some()
+                && self.frames[reached + 1..]
+                    .iter()
+                    .all(|f| f.kind != Kind::Quote)
+        };
+        inner.kind == Kind::Fence && (!missed || comment_line())
     }
 
     fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
@@ -1647,7 +1640,6 @@ impl<'a> Walk<'a> {
             }
             reached = k;
         }
-        reached = self.item_after_missed_quote_term(reached, c.col, c.rest);
         // The attachment test measured through quote prefixes. Keep that owner.
         reached = self.attached_item_after_quote(at, c, reached);
         reached = self.stand_invisible_line(at, c, reached, plus.is_some());
@@ -1693,8 +1685,12 @@ impl<'a> Walk<'a> {
         if self.carry_attr_continuation(at, line, reached, c, tracing) {
             return;
         }
+        if missed && self.close_comment_below_host(at, line, reached, c, tracing) {
+            return;
+        }
+        let in_payload = self.in_open_payload(missed, reached, c.rest);
         let inner = self.frames.last().expect("document frame");
-        if inner.kind == Kind::Fence && !missed {
+        if in_payload {
             // S1: an open payload tests its closer first (B-<family>-keep, -end).
             let target = c.col.saturating_sub(inner.cut).max(inner.canon);
             let (closer, span, line_block) = (inner.closer, inner.span, inner.line_block);
@@ -1748,9 +1744,7 @@ impl<'a> Walk<'a> {
                         };
                         (widest.get(at + 1).copied().unwrap_or(0) >= len).then_some((ch, len))
                     }
-                    None => comment_run(rest)
-                        .filter(|run| runs.last_comment.get(run).is_some_and(|&j| j > at))
-                        .map(|run| (b'%', run)),
+                    None => comment_run(rest).map(|run| (b'%', run)),
                 };
                 if new_span.is_some() {
                     self.top().span = new_span;
@@ -1771,8 +1765,6 @@ impl<'a> Walk<'a> {
             return;
         }
         let top_para = self.frames.last().expect("frame").para;
-        // PART 0 [B-term-keep]: past a missed quote or note a marker leaves a term,
-        // and past a quote a separator too (carve#4300).
         let lazy_refused = self.lazy_refused(reached, c.col, c.rest);
         if missed
             && !c.rest.is_empty()
@@ -1780,10 +1772,11 @@ impl<'a> Walk<'a> {
             && !lazy_refused
             && !form.interrupts()
             && !matches!(form, Form::Dd(_))
-            // A marker that misses an item is a sibling or a new list, never lazy
-            // text: leading space stops no line form (PART 0 S3, carve#4545).
+            // A marker that a marker body owns, or that misses one, opens a list
+            // (PART 0 S3, carve#4545, carve#4860).
             && !(matches!(form, Form::Item(..))
-                && self.frames[reached + 1..].iter().any(|f| f.kind == Kind::Item))
+                && (self.frames[reached].kind.is_marker_body()
+                    || self.frames[reached + 1..].iter().any(|f| f.kind.is_marker_body())))
         {
             if self.decide && matches!(form, Form::Item(..)) {
                 self.decide_folded_marker(at, c.rest, reached);
@@ -1904,39 +1897,36 @@ impl<'a> Walk<'a> {
             }
             Form::Text => {
                 let owner = self.top();
-                // A term's continuation moves with the term, so a later `:` body still follows it.
-                let term = owner.para && owner.last == Last::Term;
-                let cut = if term {
-                    owner.term_cut
-                } else {
-                    owner
-                        .cut
-                        .max(owner.closed_list.map_or(0, |(_, shift)| shift))
-                };
+                let cut = owner
+                    .cut
+                    .max(owner.closed_list.map_or(0, |(_, shift)| shift));
                 let target = if owner.para || !closed_column || plus_follower {
                     c.col.saturating_sub(cut).max(owner.canon)
                 } else {
                     owner.canon
                 };
-                owner.absorbs = (owner.para && owner.absorbs) || absorbs_colon(c.rest);
+                owner.absorbs = owner.para && owner.absorbs;
                 owner.para = true;
-                if !term {
-                    owner.last = Last::Para;
-                }
+                owner.last = Last::Para;
                 // As for a lazy line, only the item's own column moves.
                 let shift = if target == owner.canon {
                     owner.shift
                 } else {
                     0
                 };
-                c.lead_in(target, shift, term);
+                c.lead_in(target, shift, false);
             }
             form => {
                 let (canon, shift) = (self.top().canon, self.top().shift);
                 let col = c.col;
+                if !plus_follower {
+                    let owner = self.frames.len() - 1;
+                    let content = self.frames[owner].col;
+                    self.note_opener(owner, &form, content, at, c);
+                }
                 c.lead_in(canon, shift, matches!(form, Form::Term | Form::Dd(_)));
                 let owner = self.frames.len() - 1;
-                self.apply(owner, col, form, canon, at, c);
+                self.apply(owner, col, form, canon, closed == 0, at, c);
                 // A description a `+` filled stays open for a sibling (carve#4408).
                 if fills_dd {
                     self.frames[owner].last = Last::Dd;
@@ -1947,6 +1937,36 @@ impl<'a> Walk<'a> {
             }
         }
         self.emit_applied(at, record, None);
+    }
+
+    /// A comment closer below its host's column still closes the span (PART 9 §28).
+    fn close_comment_below_host(
+        &mut self,
+        at: usize,
+        line: usize,
+        reached: usize,
+        c: &mut Cursor<'_>,
+        tracing: bool,
+    ) -> bool {
+        let inner = self.frames.last().expect("document frame");
+        let closes = inner.kind == Kind::Fence
+            && inner.span.is_none()
+            && !c.rest.is_empty()
+            && matches!(inner.closer, Some(cl @ Closer::Comment(_)) if cl.closes(c.rest, c.col, inner.open_col));
+        if !closes {
+            return false;
+        }
+        let inner = self.frames.pop();
+        self.top().last = last_after_closer(inner.as_ref());
+        let (canon, shift) = (self.frames[reached].canon, self.frames[reached].shift);
+        c.lead_in(canon, shift, false);
+        if tracing {
+            let record =
+                TraceRecord::new(line, "S1", self.deepest(), Some("CARVE-P0-005"), "closer")
+                    .cell(Some("B-comment-end".into()));
+            self.emit(at, record);
+        }
+        true
     }
 
     /// A comment or one-line definition closes no indentation frame: the next
@@ -2087,7 +2107,7 @@ impl<'a> Walk<'a> {
             let (canon, shift) = lone
                 .marker
                 .map_or((0, 0), |(_, canon)| (canon, lone.marker_shift));
-            let absorbs = absorbs_colon(c.rest);
+            let absorbs = false;
             c.lead_in(canon, shift, false);
             let f = self.top();
             f.absorbs = absorbs;
@@ -2113,12 +2133,14 @@ impl<'a> Walk<'a> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn apply(
         &mut self,
         owner: usize,
         col: usize,
         form: Form,
         canon: usize,
+        in_host: bool,
         at: usize,
         c: &mut Cursor<'_>,
     ) {
@@ -2152,10 +2174,6 @@ impl<'a> Walk<'a> {
                     _ => Last::Other,
                 };
             }
-            if matches!(form, Form::Term) {
-                o.para = true;
-                o.term_cut = col.saturating_sub(canon);
-            }
         }
         if let Form::Attr(lines) = form {
             if lines > 1 {
@@ -2167,7 +2185,12 @@ impl<'a> Walk<'a> {
                 let mut f = Frame::new(Kind::Fence);
                 f.col = o_col;
                 f.canon = o_canon;
-                f.cut = col.saturating_sub(canon);
+                // A comment payload is host-relative; the opener's indentation sets no base (CARVE-P9-060).
+                f.cut = if matches!(closer, Closer::Comment(_)) && in_host {
+                    o_col.saturating_sub(o_canon)
+                } else {
+                    col.saturating_sub(canon)
+                };
                 f.closer = Some(closer);
                 f.open_col = col;
                 f.line_block = line_block;
@@ -2310,7 +2333,7 @@ impl<'a> Walk<'a> {
         if is_cont_marker(trim_ascii_start(innermost_marker_content(c.rest))) {
             self.refuse_line = true;
         }
-        let absorbs = absorbs_colon(c.rest);
+        let absorbs = false;
         let col = c.col;
         c.lead(col);
         let f = &mut self.frames[frame];
@@ -2350,7 +2373,7 @@ impl<'a> Walk<'a> {
                 }
             }
             let col = c.col;
-            let absorbs = absorbs_colon(c.rest);
+            let absorbs = false;
             c.lead(col);
             let f = &mut self.frames[frame];
             f.absorbs = absorbs;
@@ -2363,13 +2386,14 @@ impl<'a> Walk<'a> {
         }
         if self.frames[frame].kind == Kind::Quote {
             let col = c.col;
+            self.note_opener(frame, &form, 0, at, c);
             c.lead(0);
-            return self.apply(frame, col, form, 0, at, c);
+            return self.apply(frame, col, form, 0, true, at, c);
         }
         let col = start + c.col;
         let m = c.col;
         c.lead(m);
-        self.apply(frame, col, form, canon + m, at, c);
+        self.apply(frame, col, form, canon + m, false, at, c);
     }
 
     /// Whether the line after `at`, read under the frames up to `owner`, stands at `col` or past it.
@@ -2417,6 +2441,56 @@ impl<'a> Walk<'a> {
             }
             tail = inner;
         }
+    }
+
+    /// Record an opener past a non-item owner's content column; list items and
+    /// markers have their own lint rules. A table reports at its first row.
+    fn note_opener(
+        &mut self,
+        owner: usize,
+        form: &Form,
+        content: usize,
+        at: usize,
+        c: &Cursor<'_>,
+    ) {
+        let rest = trim_line_end(c.rest);
+        let kind = match form {
+            Form::Quote => "block quote",
+            Form::Colon(..) => "colon fence",
+            Form::Fence(Closer::Comment(_), ..) => return,
+            Form::Fence(_, _, true) => "line block",
+            Form::Fence(..) => "code fence",
+            Form::Term => "definition term",
+            Form::Leaf(_) if is_heading(rest) => "heading",
+            Form::Leaf(_) if detect_thematic_break(rest) => "thematic break",
+            Form::Leaf(_) if is_table_start(rest) => "table row",
+            _ => return,
+        };
+        let frame = &self.frames[owner];
+        if kind == "table row" && at > 0 && frame.table_line == Some(at - 1) {
+            return;
+        }
+        let owner_name = match frame.kind {
+            Kind::Doc => "doc",
+            Kind::Quote => "quote",
+            Kind::Note => "note",
+            Kind::Dd => "dd",
+            Kind::Colon => "colon",
+            Kind::Item | Kind::Fence => return,
+        };
+        if c.col <= content {
+            return;
+        }
+        let line = self.lines[at];
+        let column = line[..line.len() - c.rest.len()].chars().count() + 1;
+        self.overindented.push(OverindentedOpener {
+            line: self.first_line + at,
+            column,
+            kind,
+            owner: owner_name,
+            content_column: content,
+            authored_column: c.col,
+        });
     }
 
     fn classify(&mut self, rest: &str, owner: usize, at: usize) -> Form {
@@ -2467,12 +2541,9 @@ impl<'a> Walk<'a> {
             let len = rest.bytes().take_while(|&b| b == ch).count();
             return Form::Fence(Closer::Fence(ch, len), true, false);
         }
+        // A `%%%` opener always opens its span (F1, carve#4907).
         if let Some(run) = comment_run(rest) {
-            let lines = &self.lines;
-            let runs = self.runs.get_or_init(|| closer_runs(lines));
-            if runs.last_comment.get(&run).is_some_and(|&j| j > at) {
-                return Form::Fence(Closer::Comment(run), true, false);
-            }
+            return Form::Fence(Closer::Comment(run), true, false);
         }
         if rest.starts_with("%%") {
             return Form::Leaf(true);
@@ -2492,8 +2563,8 @@ impl<'a> Walk<'a> {
             return Form::Note(close + 2 + spaces);
         }
         if let Some((width, head, axes)) = list_marker(rest) {
-            // A term is not a paragraph a marker continues.
-            if owner_para && owner_kind != Kind::Item && owner_last != Last::Term {
+            // §10 I2: under an open paragraph a marker opens only in a marker body (carve#4860).
+            if owner_para && !owner_kind.is_marker_body() {
                 return Form::Text;
             }
             return Form::Item(width, head, axes);

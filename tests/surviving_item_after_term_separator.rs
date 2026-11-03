@@ -1,28 +1,27 @@
 #[test]
-fn a_heading_at_the_surviving_item_column_leaves_a_nested_term() {
+fn a_heading_after_a_separator_below_a_nested_term_is_outside_the_list() {
+    // A term is one line (carve#4861): the separator ends both lists.
     let source = "- * :: t\n: a\n  # H\n  tail\n";
     assert_eq!(
         carve::to_html(source),
-        "<ul>\n  <li>\n    <ul>\n      <li>\n        <dl>\n          <dt>t\n: a</dt>\n        </dl>\n      </li>\n    </ul>\n    <h1 id=\"H\">H</h1>\n    tail\n  </li>\n</ul>"
+        "<ul>\n  <li>\n    <ul>\n      <li>\n        <dl>\n          <dt>t</dt>\n        </dl>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>: a</p>\n<section id=\"H\">\n  <h1>H</h1>\n  <p>tail</p>\n</section>"
     );
 }
 
 #[test]
-fn a_shifted_heading_opens_on_its_own_base() {
+fn a_shifted_heading_after_the_separator_is_outside_the_list() {
     let source = "- - :: t\n: a\n   # H\n   tail\n";
-    assert!(
-        carve::to_html(source).contains("</dl>\n      </li>\n    </ul>\n    <h1 id=\"H\">H</h1>")
-    );
+    assert!(carve::to_html(source).contains("</ul>\n<p>: a</p>\n<section id=\"H\">"));
 }
 
 #[test]
-fn another_block_opener_uses_the_same_surviving_item() {
+fn another_block_opener_after_the_separator_is_outside_the_list() {
     let source = "- * :: t\n: a\n  ---\n  tail\n";
-    assert!(carve::to_html(source).contains("</dl>\n      </li>\n    </ul>\n    <hr>\n    tail"));
+    assert!(carve::to_html(source).ends_with("</ul>\n<p>: a</p>\n<hr>\n<p>tail</p>"));
 }
 
 #[test]
-fn a_heading_below_every_item_column_stays_in_the_term() {
+fn a_heading_below_every_item_column_is_outside_the_list() {
     let source = "- * :: t\n: a\n # H\n tail\n";
-    assert!(carve::to_html(source).contains("</ul>\n<section id=\"H\">\n  <h1>H</h1>"));
+    assert!(carve::to_html(source).contains("</ul>\n<p>: a</p>\n<section id=\"H\">\n  <h1>H</h1>"));
 }

@@ -936,6 +936,11 @@ pub(in crate::parse) struct BodyCommentState {
     pub(in crate::parse) at_block_start: bool,
     /// An open line block: its payload lines open nothing (PART 2 `line_block`).
     pub(in crate::parse) line_block: Option<usize>,
+    /// A `%%%` span open in that line block's payload.
+    line_block_span: Option<usize>,
+    /// Nonblank lines as (column, is a description term or lead), each shadowing
+    /// the earlier ones at or right of its column.
+    entries: Vec<(usize, bool)>,
 }
 
 impl BodyCommentState {
@@ -945,11 +950,48 @@ impl BodyCommentState {
             comment: None,
             at_block_start: true,
             line_block: None,
+            line_block_span: None,
+            entries: Vec::new(),
         }
+    }
+
+    /// A description or note marker line opens a body, so a span on it is the
+    /// body's (carve-php#4508, carve#4996): the line past its lead.
+    fn after_body_lead<'l>(&self, line: &'l str, col: usize) -> Option<&'l str> {
+        if let Some(rest) = line.strip_prefix("[^") {
+            let close = rest.find(']')?;
+            let after = rest[close + 1..].strip_prefix(':')?;
+            let text = after.trim_start_matches(' ');
+            return (close > 0 && text.len() < after.len() && !text.trim().is_empty())
+                .then_some(text);
+        }
+        let after = line.strip_prefix(':')?;
+        let text = after.trim_start_matches(' ');
+        if text.len() == after.len() || text.is_empty() || text.starts_with('\t') {
+            return None;
+        }
+        let above = self
+            .entries
+            .iter()
+            .rev()
+            .find(|&&(above, _)| above <= col)?;
+        (above.0 == col && above.1).then_some(text)
     }
 
     pub(in crate::parse) fn observe(&mut self, raw: &str) {
         let line = trim_ascii_start(strip_lazy(raw));
+        let lead = if line.is_empty() {
+            None
+        } else {
+            let col = indent_columns(strip_lazy(raw));
+            let lead = self.after_body_lead(line, col);
+            while self.entries.last().is_some_and(|&(above, _)| above >= col) {
+                self.entries.pop();
+            }
+            self.entries
+                .push((col, line.starts_with(": ") || line.starts_with(":: ")));
+            lead
+        };
         if let Some(open) = self.code {
             if is_fence_close(line, open) {
                 self.code = None;
@@ -973,13 +1015,21 @@ impl BodyCommentState {
             unquoted = trim_ascii_start(rest);
         }
         if let Some(run) = self.line_block {
-            if exact_colon_fence_len(unquoted) == Some(run) {
+            if let Some(span) = self.line_block_span {
+                if is_comment_fence_close(unquoted, span) {
+                    self.line_block_span = None;
+                }
+            } else if exact_colon_fence_len(unquoted) == Some(run) {
                 self.line_block = None;
                 self.at_block_start = true;
+            } else if let Some(open) = detect_comment_fence_line(unquoted) {
+                self.line_block_span = Some(open.fence_len);
             }
             return;
         }
-        let opener = if self.at_block_start {
+        let opener = if let Some(text) = lead {
+            trim_ascii_start(innermost_marker_content(text))
+        } else if self.at_block_start {
             trim_ascii_start(innermost_marker_content(line))
         } else {
             line
@@ -1009,6 +1059,38 @@ pub(in crate::parse) fn body_open_comment_run<S: AsRef<str>>(
         state.observe(raw.as_ref());
     }
     state.comment
+}
+
+/// Is a comment-shaped line inside a `%%%` span the collected lines still hold,
+/// a comment block's or a line block's? Such a line is the span's payload or
+/// closer at any column (PART 0 S1, PART 9 §28). Reads only the lines added
+/// since the last call, so the body must only grow.
+pub(in crate::parse) struct HeldCommentSpan {
+    seen: usize,
+    state: BodyCommentState,
+}
+
+impl HeldCommentSpan {
+    pub(in crate::parse) fn new() -> Self {
+        Self {
+            seen: 0,
+            state: BodyCommentState::new(),
+        }
+    }
+
+    pub(in crate::parse) fn holds<S: AsRef<str>>(&mut self, body_lines: &[S], line: &str) -> bool {
+        if detect_comment_fence_line_any_column(line).is_none() {
+            return false;
+        }
+        if body_lines.len() < self.seen {
+            *self = Self::new();
+        }
+        for raw in &body_lines[self.seen..] {
+            self.state.observe(raw.as_ref());
+        }
+        self.seen = body_lines.len();
+        self.state.comment.is_some() || self.state.line_block_span.is_some()
+    }
 }
 
 /// Is `line` the closer of a comment span the collected lines still hold?
@@ -1892,21 +1974,6 @@ pub(in crate::parse) fn opens_colon_body_paragraph(
     }
 }
 
-pub(in crate::parse) fn is_invalid_colon_fence_opener_text(line: &str) -> bool {
-    let trimmed = trim_ascii_start(line);
-    let fence_len = trimmed.bytes().take_while(|b| *b == b':').count();
-    if fence_len < 3 {
-        return false;
-    }
-    if exact_colon_fence_len(trimmed).is_some() {
-        return false;
-    }
-    detect_container_open(trimmed).is_none()
-        && detect_line_block_open(trimmed).is_none()
-        && detect_hardbreaks_block_open(trimmed).is_none()
-        && detect_quote_block_open(trimmed).is_none()
-}
-
 #[cfg(test)]
 thread_local! {
     pub(in crate::parse) static COLON_COPIED_BYTES: Cell<usize> = const { Cell::new(0) };
@@ -2350,6 +2417,9 @@ fn find_colon_fence_end_with<'a>(
                     continue;
                 }
                 Some(_) => {}
+                // A lazy line ends an unclosed verse span (S1, carve#4956).
+                None if literal
+                    && (idx + 1..lines.len()).any(|at| measured(at).starts_with(LAZY)) => {}
                 // An unclosed span hides the block's own closer (carve#4907).
                 None => {
                     for at in idx + 1..lines.len() {
@@ -2594,7 +2664,7 @@ impl<'a> ParaOpen<'a> {
                     && !interrupts_paragraph_with_rest(innermost, &[])));
         let verdict = Verdict {
             open,
-            opens_absorption: open && is_invalid_colon_fence_opener_text(innermost),
+            opens_absorption: false,
         };
         *answer = Some(verdict);
         verdict

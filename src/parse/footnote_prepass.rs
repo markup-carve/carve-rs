@@ -143,7 +143,7 @@ fn note_paragraph_open(note: &NoteBody, rest: &str, options: &Options<'_>) -> bo
     // A nested note that still holds the last line is the deepest leaf; the
     // probe below lifts it out and would answer for the outer note instead.
     let body = open_nested_note_body(lines).unwrap_or_else(|| lines.join("\n"));
-    let open = body_ends_with_open_paragraph(&body, options);
+    let open = marker_body_ends_with_open_paragraph(&body, options);
     note.open_paragraph_at.set(open.then_some(lines.len()));
     open
 }
@@ -162,7 +162,7 @@ fn nested_note_paragraph_open(note: &NoteBody, options: &Options<'_>) -> bool {
         }
     }
     let open = open_nested_note_body(lines)
-        .is_some_and(|body| body_ends_with_open_paragraph(&body, options));
+        .is_some_and(|body| marker_body_ends_with_open_paragraph(&body, options));
     note.open_paragraph_at.set(open.then_some(lines.len()));
     open
 }
@@ -364,6 +364,8 @@ struct NoteBody {
     positions: bool,
     /// `lines.len()` when the body last read as ending in an open paragraph.
     open_paragraph_at: Cell<Option<usize>>,
+    /// The code fence the trailing quoted run leaves open, with its quote depth.
+    quoted_fence: Option<(FenceOpen, usize)>,
 }
 
 impl NoteBody {
@@ -381,6 +383,7 @@ impl NoteBody {
         if self.positions {
             self.col_map.push(col(&line));
         }
+        self.quoted_fence = next_quoted_fence(self.quoted_fence, &line);
         self.lines.push(line);
         self.line_map.push(source_line);
     }
@@ -430,6 +433,8 @@ struct IndentedNote<'a> {
     first: &'a str,
     container: IndentContainer,
     body_indent: usize,
+    def_column: usize,
+    span_note_end: Option<(usize, bool)>,
     note_fence: Option<FenceOpen>,
     // A fence on a list item's marker line in the body: its payload is never
     // a definition, though the body's own fence state does not track it.
@@ -442,12 +447,14 @@ struct IndentedNote<'a> {
     open_term: bool,
     retained_below_comment: bool,
     below_comment_span: Option<usize>,
+    // Content columns of the items holding the note, and the one holding the
+    // span: a line left of that item ends the span (PART 0 S1).
+    host_items: Vec<usize>,
+    span_floor: Option<usize>,
     // A matched comment is one invisible extent. Its closer leaves no open
     // paragraph for a later line below this note's body column to continue.
     closed_comment_paragraph: bool,
     lazy_open: bool,
-    /// The definition line starts at column 0, so no container hosts the note.
-    flush_def: bool,
     marker_line_note: bool,
 }
 
@@ -457,9 +464,8 @@ struct NoteHost {
     quote_indents: Vec<usize>,
     quote_depth: usize,
     note_floor: usize,
-    /// Content column of the innermost list item hosting the note, if any.
-    list_floor: Option<usize>,
-    /// The same, for the document level outside the note's quotes.
+    /// Content column of the item hosting the note at the document level,
+    /// outside the note's quotes.
     outer_list_floor: Option<usize>,
     /// A task box keeps the note at its literal column (carve#4352).
     behind_task_box: bool,
@@ -495,12 +501,13 @@ fn behind_task_box(raw_def_line: &str) -> bool {
     false
 }
 
-fn note_opens_with_term(note: &NoteBody) -> bool {
-    note.lines
+fn item_columns(frame: &ColumnFrame) -> Vec<usize> {
+    frame
+        .cols
         .iter()
-        .rev()
-        .find(|line| !line.starts_with(LAZY))
-        .is_some_and(|line| term_start_column(line).is_some())
+        .copied()
+        .filter(|col| !frame.body_columns.contains(col))
+        .collect()
 }
 
 fn item_floor(frame: &ColumnFrame) -> Option<usize> {
@@ -992,8 +999,13 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         &mut self,
         i: usize,
         scan: &LineScan<'a>,
-        def: DefinitionLine<'a>,
+        mut def: DefinitionLine<'a>,
     ) -> usize {
+        // A link definition on the marker line is hoisted like one on a body line.
+        if self.hoist_note_link_def(def.first, i) {
+            static PLACEHOLDER: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+            def.first = PLACEHOLDER.get_or_init(super::definition_placeholder);
+        }
         let stripped = &scan.stripped;
         let in_container = !stripped.structural.is_empty();
         let normalized_label = label_key(def.label);
@@ -1022,6 +1034,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             },
             positions: self.positions,
             open_paragraph_at: Cell::new(None),
+            quoted_fence: next_quoted_fence(None, def.first),
         };
         let body_indent = footnote_body_floor(raw_def_line);
         let container = IndentContainer {
@@ -1040,6 +1053,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 first: def.first,
                 container,
                 body_indent,
+                def_column: indent_columns(raw_def_line),
+                span_note_end: None,
                 // A marker starts the body, so a fence on it opens (PART 0 O1).
                 note_fence: detect_fence_open(def.first).map(|mut open| {
                     open.content_col = body_indent;
@@ -1050,9 +1065,10 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 open_term: term_start_column(def.first).is_some(),
                 retained_below_comment: false,
                 below_comment_span: None,
+                host_items: item_columns(&self.columns.frames[0]),
+                span_floor: None,
                 closed_comment_paragraph: false,
                 lazy_open: false,
-                flush_def: indent_columns(raw_def_line) == 0,
                 // A note on its outer note's marker line takes the lazy lines that note gave up.
                 marker_line_note: i == 1,
             };
@@ -1270,6 +1286,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             .collect();
         let attached_refs: Vec<&str> = attached.iter().map(String::as_str).collect();
         let first_visible_at = first_visible_note_line(&attached_refs).unwrap_or(0);
+        // A list marker ends an attached paragraph; the body then opens its
+        // list there (PART 0 S3, carve#4860).
+        let lead_is_paragraph = attached_refs
+            .get(first_visible_at)
+            .is_some_and(|line| line_starts_paragraph(trim_ascii_start(line)));
+        let ends_at_marker = |at: usize, raw: &str| {
+            at > first_visible_at && lead_is_paragraph && is_list_marker(trim_ascii_start(raw))
+        };
         let mut comment_closers = None;
         let mut closer_index = None;
         let mut end = attached_block_past_invisible(
@@ -1282,6 +1306,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 let raw = lines[start + at];
                 is_blank_line(line)
                     || is_plus_marker(line)
+                    || ends_at_marker(at, raw)
                     || (at > first_visible_at
                         && marker_col > 0
                         && indent_columns(raw) <= marker_col
@@ -1298,6 +1323,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 &mut |line, at| {
                     is_blank_line(line)
                         || is_plus_marker(line)
+                        || ends_at_marker(at, lines[start + at])
                         || (at > first_visible_at
                             && marker_col > 0
                             && indent_columns(lines[start + at]) <= marker_col
@@ -1464,10 +1490,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 &self.columns,
                 self.document_colon_open.get(*i).copied().unwrap_or(false),
             )
-            // §10 I2: under a note's paragraph a marker is text, unless an
-            // item hosts the note and the marker may continue that list.
-            // A marker below a term ends the note (corpus 855).
-            && ((state.flush_def && !state.open_term) || !is_list_marker(rest))
+            // A list marker that misses a marker body closes it (PART 0 S3, carve#4860).
+            && !is_list_marker(rest)
             && !opens_code_fence(rest)
             && (lazy_open || note_paragraph_open(note, rest, self.options))
         {
@@ -1595,6 +1619,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         i: &mut usize,
     ) -> Flow {
         let closes_held_span = closes_a_held_comment_span(&note.lines, line);
+        if let Some(width) = state.below_comment_span {
+            if !is_blank_line(line)
+                && state.span_floor.is_some_and(|floor| column < floor)
+                && !is_comment_fence_close_any_column(line, width)
+            {
+                return Flow::Stop;
+            }
+        }
         if state.below_comment_span.is_none()
             && !closes_held_span
             && !state.retained_below_comment
@@ -1616,6 +1648,12 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             detect_comment_fence_line_any_column(line).filter(|_| !closes_held_span)
         {
             state.below_comment_span = Some(open.fence_len);
+            state.span_floor = state
+                .host_items
+                .iter()
+                .copied()
+                .filter(|&item| item <= column)
+                .max();
         }
         let matched_span_line = matched_span_line || state.below_comment_span.is_some();
         let kept =
@@ -1702,6 +1740,28 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 ContainerLine::OwnedContinuation => is_plus_marker(lines[after_run]),
                 _ => false,
             };
+        // A blank inside a live span is payload; a comment line below the
+        // column still closes it (PART 9 §28, carve#4996).
+        let span_resumes = !resumes
+            && after_run < lines.len()
+            && note.comment_state.comment.is_some()
+            && trim_ascii_start(strip_lazy(lines[after_run])).starts_with("%%");
+        // The run still separates the host's blocks when nothing visible of
+        // the note follows it (§17 L1c, carve-rs#3798).
+        if span_resumes && {
+            // Every blank run up to the same end shares the answer, so the scan stays linear.
+            let (end, separates) = match state.span_note_end {
+                Some((end, separates)) if end >= after_run => (end, separates),
+                _ => span_note_end(lines, after_run, state.def_column, state.body_indent),
+            };
+            state.span_note_end = Some((end, separates));
+            separates
+        } {
+            for at in *i..after_run {
+                self.keep_line(at);
+            }
+        }
+        let resumes = resumes || span_resumes;
         if !resumes {
             // The run still reaches an open fence that ends with the note.
             if note.holds_open_fence() {
@@ -2024,7 +2084,6 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             quote_depth: quote_indents.len(),
             quote_indents,
             note_floor: prefix_cols + footnote_body_floor(def.def_line),
-            list_floor: item_floor(self.columns.current()),
             outer_list_floor: item_floor(&self.columns.frames[0]),
             description_host,
             behind_task_box: behind_task_box(raw_def_line),
@@ -2110,13 +2169,26 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                     .and_then(|raw| host.content(raw))
                     .is_some_and(|line| !is_blank_line(line)),
         );
-        let attached: Vec<String> = lines[i..]
+        let mut attached: Vec<String> = lines[i..]
             .iter()
             .map_while(|raw| host.content(raw).filter(|line| !is_blank_line(line)))
             .map(|line| strip_leading_columns(line, host.note_floor.saturating_sub(2)))
             .collect();
         if attached.is_empty() {
             return i;
+        }
+        // A list marker ends an attached paragraph; the note then opens its
+        // list there (PART 0 S3, carve#4860).
+        let attached_refs: Vec<&str> = attached.iter().map(String::as_str).collect();
+        let lead = first_visible_note_line(&attached_refs).unwrap_or(0);
+        if line_starts_paragraph(trim_ascii_start(&attached[lead])) {
+            if let Some(at) = attached
+                .iter()
+                .skip(lead + 1)
+                .position(|line| is_list_marker(trim_ascii_start(line)))
+            {
+                attached.truncate(lead + 1 + at);
+            }
         }
         let attached_refs: Vec<&str> = attached.iter().map(String::as_str).collect();
         let count = attached_one_block_lines(CursorLines::Slice(&attached_refs), self.options);
@@ -2238,6 +2310,19 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         if self.is_marker_column_plus(host, walk, *i) {
             return false;
         }
+        // An accepted `+` the layout gave to another host continues that host.
+        if is_plus_marker(trim_ascii_start(without_blockquote_prefixes(
+            trim_ascii_start(raw),
+        ))) && self
+            .decision_at(self.first_source_line + *i)
+            .is_some_and(|decision| {
+                decision
+                    .owner
+                    .is_some_and(|owner| owner != continuation_marker::Kind::Footnote)
+            })
+        {
+            return false;
+        }
         let inside = host.content(raw);
         let rest = trim_ascii_start(
             inside.unwrap_or_else(|| without_blockquote_prefixes(trim_ascii_start(raw))),
@@ -2256,16 +2341,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             && !exact_colon_fence_len(rest).is_some_and(|run| run >= 3)
             && parse_link_def_line(rest).is_none()
             && parse_footnote_def_line(rest).is_none()
-            // §10 I2: a marker below a hosting item's content column continues
-            // that list; at or past it, or under a description, it is text
-            // under the note's paragraph.
-            && !(is_list_marker(rest)
-                && inside.is_some_and(|line| {
-                    host.list_floor
-                        .is_some_and(|floor| indent_columns(line) < floor)
-                }))
-            // A marker below a term ends the note (corpus 846, 855).
-            && !(is_list_marker(rest) && note_opens_with_term(note))
+            // A list marker that misses a marker body closes it (PART 0 S3, carve#4860).
+            && !is_list_marker(rest)
             // Outside the note's quotes, a marker or a quote left of an outer
             // item's content column leaves the item.
             && !(inside.is_none()
@@ -2754,22 +2831,55 @@ fn marker_line_fence(line: &str) -> Option<(FenceOpen, usize)> {
 
 fn note_link_def_candidate<'a>(line: &'a str, note: &NoteBody) -> &'a str {
     let text = trim_ascii_start(line);
-    if !text.starts_with('>') {
+    let unquoted = without_blockquote_prefixes(text);
+    if unquoted.len() == text.len()
+        || parse_link_def_line(unquoted).is_none()
+        || note
+            .quoted_fence
+            .is_some_and(|(_, fence_depth)| quote_depth(text) >= fence_depth)
+    {
         return text;
     }
-    // A definition after an open quote paragraph is paragraph text. A new
-    // quote, or one whose previous block ended, admits a definition at its
-    // content column just like any other note-body container.
-    let paragraph_open = note.lines.last().is_some_and(|previous| {
-        strip_blockquote_prefix(trim_ascii_start(previous)).is_some_and(|content| {
-            !is_blank_line(content) && !item_block_opener(trim_ascii_start(content))
-        })
-    });
-    if paragraph_open {
-        text
-    } else {
-        without_blockquote_prefixes(text)
+    // A quoted definition defines beside an open quote paragraph too (PART 9R R1a).
+    unquoted
+}
+
+fn quote_depth(mut text: &str) -> usize {
+    let mut depth = 0;
+    while let Some(rest) = strip_blockquote_prefix(trim_ascii_start(text)) {
+        text = rest;
+        depth += 1;
     }
+    depth
+}
+
+fn strip_quote_levels(mut text: &str, levels: usize) -> Option<&str> {
+    for _ in 0..levels {
+        text = strip_blockquote_prefix(trim_ascii_start(text))?;
+    }
+    Some(text)
+}
+
+/// The quoted code fence still open after `line`, with its quote depth.
+fn next_quoted_fence(open: Option<(FenceOpen, usize)>, line: &str) -> Option<(FenceOpen, usize)> {
+    if !trim_ascii_start(line).starts_with('>') {
+        return None;
+    }
+    let line_depth = quote_depth(line);
+    if let Some((fence, fence_depth)) = open {
+        // A deeper quoted line is the fence's payload, never its closer.
+        if line_depth > fence_depth {
+            return open;
+        }
+        if line_depth == fence_depth {
+            let closes = strip_quote_levels(line, fence_depth)
+                .is_some_and(|body| is_fence_close(body, fence));
+            return (!closes).then_some((fence, fence_depth));
+        }
+        // A shallower line ended the fence's quote and may open a fence of its own.
+    }
+    detect_fence_open(without_blockquote_prefixes(trim_ascii_start(line)))
+        .map(|fence| (fence, line_depth))
 }
 
 /// Does the note body end on a comment that is still open at line `at`?
@@ -2833,4 +2943,27 @@ pub(in crate::parse) fn parse_footnote_def_line(line: &str) -> Option<(&str, &st
         return None;
     }
     Some((label, body))
+}
+
+/// The first line from `from` that ends a note holding a live `%%%` span
+/// (nonblank, not `%%`-led, left of `body_indent`), and whether it stands
+/// left of the note's marker column `def_column`, so nothing of the host
+/// follows a blank before it. The end of the lines also separates.
+fn span_note_end(
+    lines: &[&str],
+    from: usize,
+    def_column: usize,
+    body_indent: usize,
+) -> (usize, bool) {
+    for (at, line) in lines.iter().enumerate().skip(from) {
+        let line = strip_lazy(line);
+        if is_blank_line(line) || trim_ascii_start(line).starts_with("%%") {
+            continue;
+        }
+        let column = indent_columns(line);
+        if column < body_indent {
+            return (at, column < def_column);
+        }
+    }
+    (lines.len(), true)
 }

@@ -129,17 +129,20 @@ fn authored_metadata_and_nested_valid_fences_during_djot_migration() {
     let source = "::: tip Bad X\n\n::: note\nx\n:::\n:::\n";
     assert_eq!(
         to_html(&carve::djot_to_carve(source)),
-        "<p>::: tip Bad X</p>\n<div class=\"note\">\n  <p>x</p>\n</div>\n<p>:::</p>"
+        // carve#4863: the rejected opener is paragraph text, so the last bare run opens a div.
+        "<p>::: tip Bad X</p>\n<div class=\"note\">\n  <p>x</p>\n</div>\n<div>\n\n</div>"
     );
 }
 
 #[test]
 fn line_and_hardbreak_fences_keep_their_own_migrated_closer() {
-    for opener in ["::: |", "::: \\"] {
+    // carve#4863: every colon line in the rejected opener's paragraph is text, and
+    // Djot reads the second opener there as `:::` and a hard break.
+    for (opener, written) in [("::: |", "::: |"), ("::: \\", ":::\\")] {
         let source = format!("::: tip Bad X\n{opener}\nl\n:::\nout\n:::\n");
         assert_eq!(
             carve::djot_to_carve(&source),
-            format!("\\::: tip Bad X\n{opener}\nl\n:::\nout\n\\:::\n")
+            format!("\\::: tip Bad X\n\\{written}\nl\n\\:::\nout\n\\:::\n")
         );
     }
 }

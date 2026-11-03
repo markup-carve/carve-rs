@@ -848,6 +848,16 @@ thread_local! {
 /// and looking past it would find one that was never written
 /// (markup-carve/carve#1280).
 pub(crate) fn body_ends_with_open_paragraph(body: &str, options: &Options<'_>) -> bool {
+    body_ends_with_open_paragraph_in(body, options, false)
+}
+
+/// [`body_ends_with_open_paragraph`] for a description or footnote body, where
+/// a list marker opens a list (PART 0 S3, carve#4860).
+pub(crate) fn marker_body_ends_with_open_paragraph(body: &str, options: &Options<'_>) -> bool {
+    body_ends_with_open_paragraph_in(body, options, true)
+}
+
+fn body_ends_with_open_paragraph_in(body: &str, options: &Options<'_>, marker_body: bool) -> bool {
     // A payload line is stanza text whatever it looks like (PART 2 `line_block`).
     if let Some(open) = crate::parse::definition::body_ends_inside_line_block(body) {
         return open;
@@ -899,7 +909,11 @@ pub(crate) fn body_ends_with_open_paragraph(body: &str, options: &Options<'_>) -
     }
     #[cfg(test)]
     PARAGRAPH_BODY_PROBES.with(|count| count.set(count.get() + 1));
-    let blocks = probe_blocks(body, options);
+    let blocks = if marker_body {
+        probe_marker_body_blocks(body, options)
+    } else {
+        probe_blocks(body, options)
+    };
     block_ends_with_open_paragraph(blocks.last(), colon_fences_left_open(body), false)
 }
 
@@ -1009,7 +1023,12 @@ pub(crate) fn quoted_body_ends_with_an_invisible_line(body: &str) -> bool {
         }
     }
     let dequote = |line: &str| trim_ascii_start(&residue(line).1).to_string();
-    if is_definition_placeholder(&dequote(last)) {
+    let last_line = dequote(last);
+    // A quoted link definition below prose ends that paragraph before the prepass collects it.
+    if is_definition_placeholder(&last_line)
+        || (body.trim_end().contains('\n')
+            && crate::parse::prepass_links::parse_link_def_line(&last_line).is_some())
+    {
         return true;
     }
     let dequoted: Vec<String> = body.lines().map(dequote).collect();
@@ -1078,8 +1097,8 @@ pub(crate) fn nested_ends_with_open_paragraph(
     }
     // A payload line is stanza text whatever it looks like (PART 2 `line_block`).
     // A quoted stanza is the quote's to continue, not this item's.
-    if crate::parse::definition::line_block_payload_tail(nested).is_some() {
-        return true;
+    if let Some(open) = crate::parse::definition::body_ends_inside_line_block(nested) {
+        return open;
     }
     if !below_outer_column
         && !crate::parse::definition::body_ends_in_line_block_payload(nested)
@@ -1288,17 +1307,12 @@ pub(crate) fn block_ends_with_open_paragraph(
             colon_open,
             skip_comments,
         ),
-        // A definition list has no explicit closer either: its last item stays
-        // open -- a term still awaiting its `:  ` definition, or a definition
-        // whose body ends in a paragraph. A following flush-left `:  ` line (at
-        // any column at or below the term) attaches as a `<dd>`, and lazy body
-        // text folds into the open definition. This is the lenient def-attach
-        // rule shared with carve-php / carve-js: a definition marker is not
-        // subject to the column-0-exits rule that ends a list item.
+        // A definition list's last description stays open when its body ends in
+        // a paragraph, so lazy body text folds into it. A term is one line and
+        // leaves no paragraph (carve#4861).
         Some(BlockNode::DefinitionList(dl)) => match dl.items.last() {
             None => false,
-            // Bare term, no definition yet: open (awaiting `:  def`).
-            Some(item) if item.definitions.is_empty() => true,
+            Some(item) if item.definitions.is_empty() => false,
             // Otherwise the last definition's body must end in an open paragraph.
             Some(item) => block_ends_with_open_paragraph(
                 item.definitions

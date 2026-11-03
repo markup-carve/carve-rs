@@ -59,11 +59,10 @@ fn a_line_one_column_short_releases_the_nested_term() {
         .split("</dt>")
         .next()
         .unwrap();
-    assert!(
-        term.contains(": a") && !term.contains(":: sibling"),
-        "{html}"
-    );
-    assert!(html.contains("<dt>sibling"), "{html}");
+    // A term is one line (carve#4861): `: a` is the task item's text.
+    assert_eq!(term, "t", "{html}");
+    assert!(html.contains("</ul>\n    : a\n    <dl>"), "{html}");
+    assert!(html.contains("<dt>sibling</dt>"), "{html}");
 }
 
 #[test]
@@ -77,9 +76,8 @@ fn a_line_one_column_past_releases_the_nested_term() {
         .split("</dt>")
         .next()
         .unwrap();
-    assert!(
-        term.contains(": a") && !term.contains(":: sibling"),
-        "{html}"
-    );
-    assert!(html.contains("<dt>sibling"), "{html}");
+    // A term is one line (carve#4861): `: a` is the task item's text.
+    assert_eq!(term, "t", "{html}");
+    assert!(html.contains("</ul>\n    : a\n    <dl>"), "{html}");
+    assert!(html.contains("<dt>sibling</dt>"), "{html}");
 }

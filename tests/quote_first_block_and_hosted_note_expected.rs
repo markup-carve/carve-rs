@@ -21,8 +21,8 @@ fn a_stacked_quote_first_block_reads_its_follower_at_the_raw_column() {
 #[test]
 fn a_flush_marker_under_a_description_hosted_note_folds_into_it() {
     let html = to_html("R[^a].\n\n:: t\n: [^a]: first\n- i\n");
-    assert!(html.contains("<p>first\n- i<a href=\"#fnref1\""), "{html}");
-    assert!(!html.contains("<ul>"), "{html}");
+    assert!(html.contains("<p>first<a href=\"#fnref1\""), "{html}");
+    assert!(html.contains("</dl>\n<ul>\n  <li>i</li>\n</ul>"), "{html}");
 }
 
 #[test]
@@ -31,7 +31,7 @@ fn a_fence_after_a_note_sub_list_stays_in_the_note() {
         "R[^a].\n\n- [^a]: first\n   - i\n    ```\n    code\n    ```\n",
     ));
     assert!(
-        html.contains("<p>first- i</p><pre><code>code</code></pre>"),
+        html.contains("<li><ul><li>i</li></ul><pre><code>code</code></pre></li></ul>"),
         "{html}"
     );
 }

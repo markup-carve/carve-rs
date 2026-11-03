@@ -33,9 +33,10 @@ fn an_absorbed_bare_fence_leaves_the_quoted_paragraph_open() {
     // The quote analogue of the item fixture: `:::note` is not an opener (no
     // space before the type word), so the `:::` below it is absorbed and `tail`
     // folds into the paragraph the quote still holds open.
+    // carve#4863 ruling: a colon line is read on its own.
     assert_eq!(
         html("> quote\n> :::note\n> body\n> :::\ntail\n"),
-        "<blockquote><p>quote\n:::note\nbody\n:::\ntail</p></blockquote>"
+        "<blockquote>\n  <p>quote\n:::note\nbody</p>\n  <div>\n\n  </div>\n</blockquote>\n<p>tail</p>"
     );
 }
 
@@ -57,13 +58,14 @@ fn the_absorption_is_not_width_tagged() {
     // §12: "THE ABSORPTION IS NOT WIDTH-TAGGED, unlike the closer rule it
     // resembles". A malformed opener has no length to match, so a `::::` under
     // `:::note` is absorbed as readily as a `:::` and the paragraph stays open.
+    // carve#4863 ruling: a colon line is read on its own.
     assert_eq!(
         html("> quote\n> :::note\n> body\n> ::::\ntail\n"),
-        "<blockquote><p>quote\n:::note\nbody\n::::\ntail</p></blockquote>"
+        "<blockquote>\n  <p>quote\n:::note\nbody</p>\n  <div>\n\n  </div>\n</blockquote>\n<p>tail</p>"
     );
     assert_eq!(
         html("> quote\n> :::note\n> body\n> ::::\n> :::\ntail\n"),
-        "<blockquote><p>quote\n:::note\nbody\n::::\n:::\ntail</p></blockquote>"
+        "<blockquote>\n  <p>quote\n:::note\nbody</p>\n  <div>\n    <div>\n\n    </div>\n  </div>\n</blockquote>\n<p>tail</p>"
     );
 }
 
@@ -73,9 +75,10 @@ fn the_malformed_fence_may_be_the_quotes_first_line() {
     // fence-shaped text. The item form of this went through its own branch and
     // was wrong there while the second-line form was right, which is the shape a
     // single fixture does not catch.
+    // carve#4863 ruling: a colon line is read on its own.
     assert_eq!(
         html("> :::note\n> :::\ntail\n"),
-        "<blockquote><p>:::note\n:::\ntail</p></blockquote>"
+        "<blockquote>\n  <p>:::note</p>\n  <div>\n\n  </div>\n</blockquote>\n<p>tail</p>"
     );
 }
 
@@ -84,9 +87,10 @@ fn an_attribute_shaped_opener_absorbs_too() {
     // §12's own example of a line that fails the opener test: the opener takes a
     // type word, so `::: {.x}` is prose. A different way to fail the same test,
     // reaching the same absorption.
+    // carve#4863 ruling: a colon line is read on its own.
     assert_eq!(
         html("> quote\n> ::: {.x}\n> :::\ntail\n"),
-        "<blockquote><p>quote\n::: {.x}\n:::\ntail</p></blockquote>"
+        "<blockquote>\n  <p>quote\n::: {.x}</p>\n  <div>\n\n  </div>\n</blockquote>\n<p>tail</p>"
     );
 }
 
@@ -95,9 +99,10 @@ fn a_glued_label_shaped_opener_absorbs_too() {
     // `:::]` is fence-shaped and not a label (`[` opens one, `]` does not), so
     // it fails the opener test like `:::note` -- the carve-rs#496 shape, reached
     // through the quote.
+    // carve#4863 ruling: a colon line is read on its own.
     assert_eq!(
         html("> quote\n> :::]\n> :::\ntail\n"),
-        "<blockquote><p>quote\n:::]\n:::\ntail</p></blockquote>"
+        "<blockquote>\n  <p>quote\n:::]</p>\n  <div>\n\n  </div>\n</blockquote>\n<p>tail</p>"
     );
 }
 
@@ -108,9 +113,10 @@ fn quoted_prose_after_the_absorbed_fence_keeps_it_open() {
     // already right. It is here because it is the shape a reader reaches for to
     // check the fix and would otherwise conclude from -- the absorbed line does
     // not end the paragraph for the lines after it either.
+    // carve#4863 ruling: a colon line is read on its own.
     assert_eq!(
         html("> quote\n> :::note\n> body\n> :::\n> more\ntail\n"),
-        "<blockquote><p>quote\n:::note\nbody\n:::\nmore\ntail</p></blockquote>"
+        "<blockquote>\n  <p>quote\n:::note\nbody</p>\n  <div>\n    <p>more\ntail</p>\n  </div>\n</blockquote>"
     );
 }
 
@@ -171,9 +177,10 @@ fn a_nested_quote_marker_does_not_take_the_line_out_of_the_outer_one() {
     // carve-php 876e312 byte-for-byte. The oracle goes one step further and
     // folds `tail` into the div; this fix moves the shape toward that answer
     // without reaching it, and does not decide the remaining step.
+    // carve#4863 ruling: a colon line is read on its own.
     assert_eq!(
         html("> :::note\n> > :::\ntail\n"),
-        "<blockquote>\n  <p>:::note</p>\n  <blockquote>\n    <div>\n\n    </div>\n  </blockquote>\n  <p>tail</p>\n</blockquote>"
+        "<blockquote>\n  <p>:::note</p>\n  <blockquote>\n    <div>\n\n    </div>\n  </blockquote>\n</blockquote>\n<p>tail</p>"
     );
 }
 
@@ -227,9 +234,10 @@ fn it_holds_at_quote_depth_two() {
     // S4 folds into the innermost open paragraph "regardless of how many
     // containers the line failed to match" (carve#506): `tail` matches neither
     // quote prefix and still folds into the inner one's paragraph.
+    // carve#4863 ruling: a colon line is read on its own.
     assert_eq!(
         html("> > quote\n> > :::note\n> > body\n> > :::\ntail\n"),
-        "<blockquote>\n  <blockquote><p>quote\n:::note\nbody\n:::\ntail</p></blockquote>\n</blockquote>"
+        "<blockquote>\n  <blockquote>\n    <p>quote\n:::note\nbody</p>\n    <div>\n\n    </div>\n  </blockquote>\n</blockquote>\n<p>tail</p>"
     );
 }
 
@@ -239,8 +247,9 @@ fn the_top_level_paragraph_was_already_right() {
     // and its own `suppress_colon_interrupt`) already implemented §12, which is
     // why the defect was quote-only and why the fix spells the rule from the
     // same two helpers rather than a fourth time.
+    // carve#4863 ruling: a colon line is read on its own.
     assert_eq!(
         html(":::note\nbody\n:::\ntail\n"),
-        "<p>:::note\nbody\n:::\ntail</p>"
+        "<p>:::note\nbody</p>\n<div>\n  <p>tail</p>\n</div>"
     );
 }

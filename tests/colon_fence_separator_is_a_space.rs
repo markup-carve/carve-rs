@@ -40,7 +40,12 @@ fn assert_opened_nothing(label: &str, out: &str) {
         !out.contains("<aside"),
         "{label}: opened an admonition: {out}"
     );
-    assert!(!out.contains("<div"), "{label}: opened a div: {out}");
+    // carve#4863 ruling: the bare `:::` below a malformed opener opens a div
+    // of its own, so only the opener line's paragraph is checked here.
+    assert!(
+        out.starts_with("<p>:::"),
+        "{label}: opened a container: {out}"
+    );
 }
 
 #[test]

@@ -188,7 +188,7 @@ fn a_refused_quoted_plus_does_not_pull_a_fence_into_the_quote() {
 #[test]
 fn a_description_body_keeps_its_marker_after_nested_lists() {
     let source = ":: term\n:  detail\n  - a\n    1. ordered\n      * [ ] task\n+\n- item\n";
-    let expected = "<dl>\n  <dt>term</dt>\n  <dd>\n    <p>detail\n- a\n1. ordered\n* [ ] task</p>\n    <ul>\n      <li>item</li>\n    </ul>\n  </dd>\n</dl>";
+    let expected = "<dl>\n  <dt>term</dt>\n  <dd>detail</dd>\n</dl>\n<ul>\n  <li>a\n    <ol>\n      <li>ordered</li>\n    </ol>\n    <ul class=\"task-list\">\n      <li><input type=\"checkbox\" disabled aria-label=\"task +\"> task\n+</li>\n    </ul>\n  </li>\n  <li>item</li>\n</ul>";
     assert_eq!(carve::to_html(source).trim_end(), expected);
 }
 
@@ -227,7 +227,7 @@ fn a_quote_refuses_a_plus_followed_by_a_sibling_list_opener() {
         ),
         (
             "- a\n  > q\n+\n  - b",
-            "<ul>\n  <li>a\n    <blockquote><p>q\n+\n- b</p></blockquote>\n  </li>\n</ul>",
+            "<ul>\n  <li>a\n    <blockquote><p>q\n+</p></blockquote>\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>",
         ),
     ] {
         assert_eq!(carve::to_html(source).trim_end(), expected, "{source}");

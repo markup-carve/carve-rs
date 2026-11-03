@@ -22,7 +22,7 @@ fn exact_html() {
     );
     check(
         "- :: t\n:  ",
-        "<ul>\n  <li>\n    <dl>\n      <dt>t\n:</dt>\n    </dl>\n  </li>\n</ul>\n",
+        "<ul>\n  <li>\n    <dl>\n      <dt>t</dt>\n    </dl>\n  </li>\n</ul>\n<p>:</p>\n",
     );
     check("- - ```\n    x\n\n[^1]: a", "<ul>\n  <li>\n    <ul>\n      <li>\n        <pre><code>x\n\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n");
 }

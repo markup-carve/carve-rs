@@ -113,13 +113,11 @@ fn below_the_content_column_a_marker_still_folds() {
 
 #[test]
 fn a_marker_on_a_quote_lazy_continuation_is_still_text() {
-    // carve-js#1200, which this does NOT overturn: the quote's open paragraph
-    // claims the line before the item's content column does. The sublist arm is
-    // waived for the lazy-continuation predicate precisely so this keeps
-    // answering the old way, and this engine was always on the right side of it.
+    // carve#4860: a quote inside a marker body ends at an unmarked list marker,
+    // so the marker at the item's content column opens a sublist there.
     assert_eq!(
         flat("- > q\n  - s\ntail\n"),
-        "<ul> <li> <blockquote><p>q - s tail</p></blockquote> </li> </ul>"
+        "<ul> <li> <blockquote><p>q</p></blockquote> <ul> <li>s tail</li> </ul> </li> </ul>"
     );
 }
 

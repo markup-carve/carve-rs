@@ -5,7 +5,7 @@ const ITEM_CONTROL: &str = "<aside class=\"admonition note\" aria-label=\"Note\"
 const ORDERED_ITEM_CONTROL: &str = "<aside class=\"admonition note\" aria-label=\"Note\">\n  <ol>\n    <li>para</li>\n    <li></li>\n  </ol>\n  <pre><code>code\n::::\n:::\nafter *b*\n</code></pre>\n</aside>";
 const NESTED_ITEM_CONTROL: &str = "<aside class=\"admonition note\" aria-label=\"Note\">\n  <ul>\n    <li>para\n      <ul>\n        <li></li>\n      </ul>\n    </li>\n  </ul>\n  <pre><code>code\n::::\n:::\nafter *b*\n</code></pre>\n</aside>";
 const QUOTED_PLAIN_COMMENT: &str = "<aside class=\"admonition note\" aria-label=\"Note\">\n  <blockquote><p>para\n-</p></blockquote>\n  <pre><code>code\n::::\n:::\nafter *b*\n</code></pre>\n</aside>";
-const QUOTED_ITEM_THEN_ITEM: &str = "<aside class=\"admonition note\" aria-label=\"Note\">\n  <blockquote>\n    <ul>\n      <li>para\n-</li>\n    </ul>\n  </blockquote>\n  <pre><code>code\n::::\n:::\nafter *b*\n</code></pre>\n</aside>";
+const QUOTED_ITEM_THEN_ITEM: &str = "<aside class=\"admonition note\" aria-label=\"Note\">\n  <blockquote>\n    <ul>\n      <li>para</li>\n    </ul>\n  </blockquote>\n  <ul>\n    <li></li>\n  </ul>\n  <pre><code>code\n::::\n:::\nafter *b*\n</code></pre>\n</aside>";
 
 #[test]
 fn an_item_line_under_a_plain_paragraph_stays_lazy_in_the_closer_scan() {

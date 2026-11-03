@@ -188,10 +188,12 @@ pub(in crate::parse) fn marker_follows_sibling(body: &[impl AsRef<str>], line: &
 /// declines to suppress, so an unrecognised shape can only collect the way the
 /// engine did before this guard - never delete an author's line unasked.
 ///
-/// THE RUN IS BOUNDED BY THE LAST BLANK LINE, soundly: a blank closes every
-/// paragraph in every container, so one still open at the end of `body` began
-/// after the last blank. Losing the container frame above it can only cost a
-/// suppression, which is the safe direction again.
+/// THE RUN IS BOUNDED BY THE LAST BLANK LINE: a blank closes every paragraph in
+/// every container, so one still open at the end of `body` began after the last
+/// blank. A run that starts indented continues a container opened above the
+/// blank, so the run reaches back to the nearest line at column 0; parsed
+/// without that frame, `  p` is a root paragraph and a sibling `- [d]: /u`
+/// would seem to fold into it.
 ///
 /// The run is taken from `body`, the document THIS PASS has extracted so far,
 /// not from the raw source: a definition already collected is gone from the
@@ -229,6 +231,32 @@ pub(in crate::parse) fn paragraph_continuation_probe(
     .0
 }
 
+/// `None` when the walk back to the column-0 line would overspend `budget`.
+fn container_run_start(body: &[impl AsRef<str>], budget: &mut usize) -> Option<usize> {
+    let start = body
+        .iter()
+        .rposition(|written| is_blank_line(written.as_ref()))
+        .map_or(0, |blank| blank + 1);
+    if start == 0 || start >= body.len() || indent_columns(body[start].as_ref()) == 0 {
+        return Some(start);
+    }
+    let mut spent = 0usize;
+    let mut at = start;
+    while at > 0 {
+        at -= 1;
+        let written = body[at].as_ref();
+        spent = spent.saturating_add(written.len() + 1);
+        if spent > *budget {
+            return None;
+        }
+        if !is_blank_line(written) && indent_columns(written) == 0 {
+            break;
+        }
+    }
+    *budget -= spent;
+    Some(at)
+}
+
 pub(in crate::parse) fn paragraph_continuation_probe_with_start(
     body: &[impl AsRef<str>],
     line: &str,
@@ -241,9 +269,11 @@ pub(in crate::parse) fn paragraph_continuation_probe_with_start(
     let run_start = if collect_notes {
         0
     } else {
-        body.iter()
-            .rposition(|written| is_blank_line(written.as_ref()))
-            .map_or(0, |blank| blank + 1)
+        let Some(start) = container_run_start(body, budget) else {
+            *unaffordable = true;
+            return (false, ProbeRootBoundary::default());
+        };
+        start
     };
     let run = &body[run_start..];
     if run.is_empty() {
@@ -2047,6 +2077,20 @@ pub(in crate::parse) fn extract_link_defs_with_guard_full(
             //
             // carve-js has never registered from inside a comment and carve-php
             // stopped (carve-php#698); this brings the third engine into line.
+            body.push(std::borrow::Cow::Borrowed(line));
+            continue;
+        } else if let Some(open) = stripped
+            .description
+            .then(|| detect_comment_fence_line(trim_ascii_start(stripped.bare)))
+            .flatten()
+        {
+            // A span on a description's lead line is held by the body.
+            end_prepass_paragraph_at(&folded_into_term, line_index);
+            in_comment_fence = Some(OpenCommentFence {
+                fence_len: open.fence_len,
+                quote_depth: prepass_quote_scope(line).0,
+                floor: description_fence_content_column(line, &stripped, &columns),
+            });
             body.push(std::borrow::Cow::Borrowed(line));
             continue;
         } else if let Some((open, scope)) = detect_comment_fence_opener_scoped(line, &columns) {

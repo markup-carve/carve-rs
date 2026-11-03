@@ -49,12 +49,18 @@ flush
             r####"<blockquote>
   <dl>
     <dt>t</dt>
-    <dd>d
-- <code>
-x
-flush</code></dd>
+    <dd>
+      <p>d</p>
+      <ul>
+        <li>
+          <pre><code>x
+</code></pre>
+        </li>
+      </ul>
+    </dd>
   </dl>
 </blockquote>
+<p>flush</p>
 "####,
         ),
         (

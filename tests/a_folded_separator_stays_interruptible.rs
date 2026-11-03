@@ -45,9 +45,11 @@ fn separator_at_item_column_starts_item_text() {
 }
 
 #[test]
-fn separator_below_item_column_stays_in_term() {
+fn separator_below_item_column_ends_the_item() {
+    // A term is one line (carve#4861), so the separator below the item's
+    // column is text after the list.
     assert_eq!(
         html("- a\n   :: m\n : l\n"),
-        "<ul><li>a <dl><dt>m : l</dt></dl></li></ul>"
+        "<ul><li>a <dl><dt>m</dt></dl></li></ul><p>: l</p>"
     );
 }

@@ -2061,6 +2061,9 @@ fn rewrite_djot_block_line(
     let (_, indent_bytes) = leading_indent(rest);
     let content = &rest[indent_bytes..];
     if content.trim().is_empty() {
+        while containers.last().is_some_and(|top| top.1) {
+            containers.pop();
+        }
         return;
     }
     let mut container_view = lines[index].as_str();
@@ -2076,13 +2079,30 @@ fn rewrite_djot_block_line(
     } else {
         None
     };
-    let close = width.is_some()
+    // A rejected opener is paragraph text in Djot (carve#4863): every colon line
+    // up to the next blank is text too, so it neither opens nor closes.
+    let bare = width.is_some()
         && authored
             .trim_end_matches([' ', '\t'])
             .bytes()
-            .all(|b| b == b':')
-        && containers.last().is_some_and(|top| Some(top.0) == width);
-    let invalid = if close {
+            .all(|b| b == b':');
+    if bare
+        && containers.last().is_some_and(|top| top.1)
+        && containers
+            .iter()
+            .rev()
+            .find(|c| !c.1)
+            .is_some_and(|c| Some(c.0) == width)
+    {
+        while containers.last().is_some_and(|top| top.1) {
+            containers.pop();
+        }
+    }
+    let in_rejected = width.is_some() && containers.last().is_some_and(|top| top.1);
+    let close = bare && containers.last().is_some_and(|top| Some(top.0) == width);
+    let invalid = if in_rejected {
+        true
+    } else if close {
         containers.pop().unwrap().1
     } else {
         let invalid = unmasked && crate::parse::lint_invalid_container_metadata(authored);

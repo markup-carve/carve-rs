@@ -1,6 +1,7 @@
-//! A list-shaped line folded into a body's paragraph opens no item (PART 9 §10
-//! I2), and a block quote does not rebase (CARVE-P0-004). A block at a quoted
-//! description body's column leaves no paragraph open (CARVE-P0-011, P0-012).
+//! A list marker past a body's column opens a list in that body
+//! (markup-carve/carve#4860), and a block quote does not rebase (CARVE-P0-004).
+//! A block at a quoted description body's column leaves no paragraph open
+//! (CARVE-P0-011, P0-012).
 
 fn html(source: &str) -> String {
     carve::to_html(source)
@@ -14,7 +15,7 @@ fn html(source: &str) -> String {
 fn a_heading_past_the_description_column_opens_after_a_folded_marker() {
     assert_eq!(
         html(":: t\n: d\n  - para\n    # H\nx\n"),
-        "<dl><dt>t</dt><dd><p>d - para</p><h1 id=\"H\">H</h1></dd></dl><p>x</p>"
+        "<dl><dt>t</dt><dd><p>d</p><ul><li>para <h1 id=\"H\">H</h1></li></ul></dd></dl><p>x</p>"
     );
 }
 
@@ -22,7 +23,7 @@ fn a_heading_past_the_description_column_opens_after_a_folded_marker() {
 fn an_attribute_line_past_the_description_column_ends_the_paragraph() {
     assert_eq!(
         html(":: t\n: d\n  - para\n    {#k}\nx\n"),
-        "<dl><dt>t</dt><dd>d - para</dd></dl><p>x</p>"
+        "<dl><dt>t</dt><dd><p>d</p><ul><li>para</li></ul></dd></dl><p>x</p>"
     );
 }
 
@@ -31,7 +32,7 @@ fn a_heading_past_the_footnote_column_opens_after_a_folded_marker() {
     let got = html("[^n]: d\n  - para\n    # H\nx\n\n[^n]\n");
     assert!(got.starts_with("<p>x</p>"), "{got}");
     assert!(
-        got.contains("<li id=\"fn1\"><p>d - para</p><h1 id=\"H\">H</h1><p><a href=\"#fnref1\""),
+        got.contains("<li id=\"fn1\"><p>d</p><ul><li>para <h1 id=\"H\">H</h1></li></ul><p><a href=\"#fnref1\""),
         "{got}"
     );
 }
@@ -40,7 +41,7 @@ fn a_heading_past_the_footnote_column_opens_after_a_folded_marker() {
 fn the_definition_spelling_still_registers() {
     assert_eq!(
         html(":: t\n: d\n  - para\n    [r]: /u\nx\n\n[r][]\n"),
-        "<dl><dt>t</dt><dd>d - para</dd></dl><p>x</p><p><a href=\"/u\">r</a></p>"
+        "<dl><dt>t</dt><dd><p>d</p><ul><li>para</li></ul></dd></dl><p>x</p><p><a href=\"/u\">r</a></p>"
     );
 }
 

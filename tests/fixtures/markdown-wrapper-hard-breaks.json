@@ -20,8 +20,8 @@
     "source": ":: word  \\\n: definition\n"
   },
   {
-    "html": "<p><strong>term\nnext <br></strong></p>\n<p>definition</p>\n",
-    "markdown": "**term\nnext <br>**\n\ndefinition\n",
+    "html": "<p><strong>term</strong></p>\n<p>next<br />\n: definition</p>\n",
+    "markdown": "**term**\n\nnext\\\n: definition\n",
     "source": ":: term\nnext \\\n: definition\n"
   },
   {

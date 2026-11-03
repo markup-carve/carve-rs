@@ -155,6 +155,7 @@ pub(crate) enum LintEvent {
         reason: &'static str,
         first_block: bool,
     },
+    Opener(own_lines::OverindentedOpener),
 }
 
 pub(crate) fn collecting_lint_events<T>(f: impl FnOnce() -> T) -> (T, Vec<LintEvent>) {
@@ -624,6 +625,19 @@ fn probe_blocks(source: &str, options: &Options<'_>) -> Vec<BlockNode> {
     parse_blocks_with_options(source, options)
 }
 
+/// [`probe_blocks`] for a description or footnote body, where a list marker at
+/// the body's column opens a list (PART 0 S3, carve#4860).
+fn probe_marker_body_blocks(source: &str, options: &Options<'_>) -> Vec<BlockNode> {
+    let _probing = ProbeGuard::enter();
+    let mut lines = LineBuffer::default();
+    for line in source.split('\n') {
+        lines.push_reached_at(line.to_string(), None, None);
+    }
+    let mut body = lines.into_source();
+    body.sublists_carry_authored_base = true;
+    parse_mapped_source(&body, options)
+}
+
 /// [`probe_blocks`] for a fragment that stands at the DOCUMENT level.
 ///
 /// The level is not a detail the caller may leave at its default: an
@@ -659,6 +673,7 @@ fn probe_blocks_at_document_level_with_start(
                 at_document_level: true,
                 in_item_body: false,
                 in_quoted_body: false,
+                in_note_or_description: false,
             },
             pending,
         );
@@ -884,6 +899,9 @@ fn parse_with_options_mode_and_index(
         .as_ref()
         .map_or(normalized.as_ref(), |o| o.source.as_str());
     let _continuation_markers = continuation_marker::Guard::install(owned.as_ref());
+    for opener in owned.iter().flat_map(|o| &o.overindented) {
+        note_lint_event(LintEvent::Opener(opener.clone()));
+    }
     let _source_ending = SourceEndingGuard::install(source);
     // PICK THE DEFINITION PLACEHOLDERS FOR THIS DOCUMENT before anything reads
     // them. Every entry point funnels through here, and the guard restores the
@@ -1220,7 +1238,9 @@ fn extract_nested_footnote_defs(
             Some(&parent.line_map),
             options,
         );
-        let body = compose_mapped_source(body, &parent);
+        let mut body = compose_mapped_source(body, &parent);
+        // Still a note body: a list marker opens a list in it (PART 0 S3, carve#4860).
+        body.sublists_carry_authored_base = parent.sublists_carry_authored_base;
         defs.insert(label.clone(), body);
 
         for (nested_label, nested_source) in nested {
@@ -1425,6 +1445,7 @@ fn parse_blocks_with_options_at_level_into(
             at_document_level,
             in_item_body,
             in_quoted_body: false,
+            in_note_or_description: false,
         },
         pending,
     )
@@ -1435,6 +1456,8 @@ struct ParseScope {
     at_document_level: bool,
     in_item_body: bool,
     in_quoted_body: bool,
+    /// A description or footnote body (PART 0 S3, carve#4860).
+    in_note_or_description: bool,
 }
 
 /// The same parse, told which of `source`'s lines reached the content column of
@@ -1517,6 +1540,7 @@ fn parse_blocks_with_options_at_level_into_reached_recording(
     // Quote X2 also applies in the unpositioned fast path. Losing this bit
     // makes a separator under an open quoted term look like a document line.
     cursor.in_quoted_body = scope.in_quoted_body;
+    cursor.in_note_or_description = scope.in_note_or_description;
     cursor.reached = Some(reached);
     cursor.marker_tail = marker_tail;
     if extents.is_some() {
@@ -1662,6 +1686,7 @@ fn parse_unpositioned_mapped_source(
                 at_document_level,
                 in_item_body,
                 in_quoted_body,
+                in_note_or_description: false,
             },
             extents.as_deref_mut(),
             pending,
@@ -1699,6 +1724,7 @@ fn parse_unpositioned_mapped_source(
             at_document_level,
             in_item_body,
             in_quoted_body: in_quoted_body || source.in_quoted_body,
+            in_note_or_description: source.sublists_carry_authored_base,
         },
         pending,
         extents,
@@ -1805,6 +1831,7 @@ fn parse_positioned_mapped_source(
                 at_document_level,
                 in_item_body,
                 in_quoted_body,
+                in_note_or_description: false,
             },
             extents.is_some().then_some(&mut event_extents),
             pending,
@@ -1855,6 +1882,7 @@ fn parse_positioned_mapped_source_standard(
     cursor.in_quoted_body = in_quoted_body || source.in_quoted_body;
     cursor.reached = Some(source.reached.as_slice());
     cursor.sublists_carry_authored_base = source.sublists_carry_authored_base;
+    cursor.in_note_or_description = source.sublists_carry_authored_base;
     cursor.marker_tail = source.marker_tail;
     if extents.is_some() {
         cursor.block_extents = Some(Vec::new());
