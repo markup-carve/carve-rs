@@ -628,6 +628,20 @@ pub(in crate::parse) fn skip_editorial_comment(bytes: &[u8], start: usize) -> Op
     {
         return None;
     }
+    // A `{#id}` after a bracketed construct or another attribute block can
+    // belong to that construct. If a later link label contains `#}`, treating
+    // the attribute opener as a comment hides that link from bracket pairing.
+    // An opening delimiter (for example `[{#i}...#}]`) is not an attribute
+    // host; there the editorial comment remains opaque.
+    if start > 0 && matches!(bytes[start - 1], b']' | b'}') {
+        let first_brace = bytes[start + 2..]
+            .iter()
+            .position(|&byte| byte == b'}')
+            .map(|offset| start + 2 + offset);
+        if read_attrs_at(bytes, start, first_brace).is_some() {
+            return None;
+        }
+    }
     let mut i = start + 2;
     while i + 1 < bytes.len() {
         if bytes[i] == b'#' && bytes[i + 1] == b'}' {

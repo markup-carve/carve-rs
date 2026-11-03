@@ -1247,18 +1247,16 @@ impl InlineRun<'_, '_> {
         }
         let attr_extent = self.sink.pos(i, next);
         let last = self.sink.out.last_mut().unwrap();
-        // A reference link carries `raw_ref` (its literal source) in
-        // case it stays unresolved. Merge the block into the link's
-        // attrs (used when it resolves) AND append the block's
-        // literal text to `raw_ref` (used when it reverts), so a
-        // resolved `[t][r]{.a}{.b}` gets class="a b" while an
-        // unresolved `[t][missing]{.a}{.b}` keeps both blocks literal.
-        if let InlineNode::Link(l) = last {
-            if let Some(raw) = l.raw_ref.as_mut() {
-                if let Ok(lit) = std::str::from_utf8(&bytes[i..next]) {
-                    raw.push_str(lit);
-                }
-            }
+        // A reference link or image carries `raw_ref` for the unresolved
+        // path. The first attribute block may already be in that source;
+        // append every later block as it attaches to the same node.
+        let raw_ref = match last {
+            InlineNode::Link(link) => link.raw_ref.as_mut(),
+            InlineNode::Image(image) => image.raw_ref.as_mut(),
+            _ => None,
+        };
+        if let (Some(raw), Ok(lit)) = (raw_ref, std::str::from_utf8(&bytes[i..next])) {
+            raw.push_str(lit);
         }
         if let InlineNode::Footnote(f) = last {
             if f.inline.is_none() {
