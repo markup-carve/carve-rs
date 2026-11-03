@@ -5,16 +5,13 @@
       "ticket": "markup-carve/carve-rs#3534",
       "cause": "untriaged day-one drift in the fences family",
       "cases": [
-        "fences-5e87d36367a5",
-        "fences-97b499ad9a5e",
-        "fences-f413c9695b09"
+        "fences-5e87d36367a5"
       ]
     },
     {
       "ticket": "markup-carve/carve-rs#3534",
       "cause": "untriaged day-one drift in the lazy family",
       "cases": [
-        "lazy-d714a9768baa",
         "lazy-fec6f2fc03b0"
       ]
     },
