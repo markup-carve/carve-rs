@@ -442,6 +442,10 @@ struct IndentedNote<'a> {
     open_term: bool,
     retained_below_comment: bool,
     below_comment_span: Option<usize>,
+    // Content columns of the items holding the note, and the one holding the
+    // span: a line left of that item ends the span (PART 0 S1).
+    host_items: Vec<usize>,
+    span_floor: Option<usize>,
     // A matched comment is one invisible extent. Its closer leaves no open
     // paragraph for a later line below this note's body column to continue.
     closed_comment_paragraph: bool,
@@ -490,6 +494,15 @@ fn behind_task_box(raw_def_line: &str) -> bool {
         line = marker.content;
     }
     false
+}
+
+fn item_columns(frame: &ColumnFrame) -> Vec<usize> {
+    frame
+        .cols
+        .iter()
+        .copied()
+        .filter(|col| !frame.body_columns.contains(col))
+        .collect()
 }
 
 fn item_floor(frame: &ColumnFrame) -> Option<usize> {
@@ -1044,6 +1057,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 open_term: term_start_column(def.first).is_some(),
                 retained_below_comment: false,
                 below_comment_span: None,
+                host_items: item_columns(&self.columns.frames[0]),
+                span_floor: None,
                 closed_comment_paragraph: false,
                 lazy_open: false,
                 // A note on its outer note's marker line takes the lazy lines that note gave up.
@@ -1585,6 +1600,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         i: &mut usize,
     ) -> Flow {
         let closes_held_span = closes_a_held_comment_span(&note.lines, line);
+        if let Some(width) = state.below_comment_span {
+            if !is_blank_line(line)
+                && state.span_floor.is_some_and(|floor| column < floor)
+                && !is_comment_fence_close_any_column(line, width)
+            {
+                return Flow::Stop;
+            }
+        }
         if state.below_comment_span.is_none()
             && !closes_held_span
             && !state.retained_below_comment
@@ -1606,6 +1629,12 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             detect_comment_fence_line_any_column(line).filter(|_| !closes_held_span)
         {
             state.below_comment_span = Some(open.fence_len);
+            state.span_floor = state
+                .host_items
+                .iter()
+                .copied()
+                .filter(|&item| item <= column)
+                .max();
         }
         let matched_span_line = matched_span_line || state.below_comment_span.is_some();
         let kept =
