@@ -134,6 +134,8 @@ struct ListScan<'a, 'l, 'o> {
     item_shows: bool,
     // The current item's marker line, which bounds the look-back at a sibling.
     item_head: usize,
+    // The run of a `%%%` span opened on that marker line, which a closer below pairs with.
+    item_head_span: Option<usize>,
     // An empty first-block item has no paragraph for a below-column line to continue.
     last_item_bare_continuation: bool,
     // The same S4 state for an item whose marker-line content is only a
@@ -226,6 +228,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         let item_head = cur.pos;
         let item_shows = !invisible_item_lead(first_marker.content)
             && !comment_only_item_lead(cur.lines, item_head, first_marker.content);
+        let item_head_span = head_span_run(first_marker.content);
         Self {
             cur,
             options,
@@ -233,6 +236,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             base_indent,
             item_shows,
             item_head,
+            item_head_span,
             is_task: first_marker.checked.is_some(),
             is_ordered: first_marker.ordered,
             first_dialect: ol_dialect(ol_type),
@@ -346,19 +350,16 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 return skipped;
             }
             if let Some(open) = detect_comment_fence_line_any_column(line) {
-                let mut opener = k;
-                loop {
-                    if opener <= from + 1 {
-                        return false;
-                    }
-                    opener -= 1;
-                    if detect_comment_fence_line_any_column(lines.at(opener))
+                let opener = (from + 1..k).rev().find(|&o| {
+                    detect_comment_fence_line_any_column(lines.at(o))
                         .is_some_and(|o| o.fence_len == open.fence_len)
-                    {
-                        break;
-                    }
+                });
+                match opener {
+                    Some(opener) => k = opener,
+                    // A closer of the marker line's span: its payload above stays in the scan.
+                    None if self.item_head_span == Some(open.fence_len) => {}
+                    None => return false,
                 }
-                k = opener;
             } else if !(is_line_comment_any_column(line)
                 || (is_definition_placeholder(line) && !is_footnote_definition_placeholder(line))
                 || parse_link_def_line(trim_ascii_start(line)).is_some()
@@ -1212,6 +1213,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             self.pending_blank = false;
         }
         self.item_head = self.cur.pos;
+        self.item_head_span = head_span_run(marker.content);
         self.content_col = self.item_content_col(&marker);
         self.item_shows = !invisible_item_lead(marker.content)
             && !comment_only_item_lead(self.cur.lines, self.cur.pos, marker.content);
@@ -3135,6 +3137,10 @@ fn comment_only_item_lead(lines: CursorLines<'_>, at: usize, content: &str) -> b
         }
     };
     content.starts_with("{%") && comment_only_para_end(lines.len(), at, true, &view).is_some()
+}
+
+fn head_span_run(content: &str) -> Option<usize> {
+    detect_comment_fence_line_any_column(content).map(|open| open.fence_len)
 }
 
 fn invisible_item_lead(content: &str) -> bool {

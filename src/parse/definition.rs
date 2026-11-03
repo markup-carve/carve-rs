@@ -784,9 +784,12 @@ impl LineBlockTail {
         }
         let stanza_open = self.last_is_payload;
         self.last_is_payload = false;
+        // A comment-shaped line in an open span is payload at any column (carve#5021).
+        let span_comment = self.span.is_some() && local.starts_with("%%");
         // A line that misses the line block's host ends it (PART 0 S1) unless
         // it is lazy text for a stanza with content (S4, carve#4956).
         if self.open.is_some()
+            && !span_comment
             && !self.quoted
             && !line_quoted
             && !is_blank_line(line)
@@ -798,6 +801,7 @@ impl LineBlockTail {
         // A `%%%` span leaves nothing: the stanza reads as it stood before the
         // span opened, and a line that missed the host ended it (carve#4956).
         let missed = !is_blank_line(line)
+            && !span_comment
             && (indent_columns(line) < self.host_col || (self.quoted && !line_quoted));
         if self.open.is_some() && exact_colon_fence_len(local) != self.open {
             if let Some(run) = self.span {
