@@ -214,6 +214,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let building_maps = cur.line_map.is_some();
     let mut lines: Vec<String> = Vec::new();
     let mut held_comment_span = HeldCommentSpan::new();
+    let mut body_code_fence = OpenCodeFenceScan::default();
     let mut line_map = Vec::new();
     let mut col_map: Vec<Option<isize>> = Vec::new();
     // See `MappedSource::reached`.
@@ -1094,6 +1095,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 && (is_line_comment_any_column(line)
                     || !interrupts_lazy_continuation_as_container(cur, line)))
             || (!colon_open.is_empty()
+                && fence.is_none()
                 && indent < strip_cols
                 && !is_list_marker(line)
                 && lines.last().is_some_and(|prior| {
@@ -1103,7 +1105,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                         && detect_comment_fence_line_any_column(prior).is_none()
                         && detect_fence_open(trim_ascii_start(prior)).is_none()
                 })
-                && !interrupts_lazy_continuation_as_container(cur, line));
+                && !interrupts_lazy_continuation_as_container(cur, line)
+                // A code fence opened deeper in the div holds the prior line.
+                && !body_code_fence.holds_open_fence(&lines));
         if nested_fence.is_some() && indent < strip_cols {
             *fence = nested_fence;
             break;
@@ -2106,20 +2110,41 @@ pub(crate) fn open_code_fence_opener<S: AsRef<str>>(lines: &[S]) -> Option<usize
     let mut open = None;
     let mut opener = 0;
     for (at, line) in lines.iter().enumerate() {
-        let line = line.as_ref();
-        let mut text = trim_ascii_start(line);
-        if open.is_none() {
-            if let Some(marker) = detect_list_marker_full(text) {
-                text = innermost_marker_content(marker.content);
-            }
-        }
         let was_open = open.is_some();
-        track_collected_fence(&mut open, text, true, indent_columns(line));
+        track_body_code_fence(&mut open, line.as_ref());
         if !was_open && open.is_some() {
             opener = at;
         }
     }
     open.map(|_| opener)
+}
+
+fn track_body_code_fence(open: &mut Option<FenceOpen>, line: &str) {
+    let mut text = trim_ascii_start(line);
+    if open.is_none() {
+        if let Some(marker) = detect_list_marker_full(text) {
+            text = innermost_marker_content(marker.content);
+        }
+    }
+    track_collected_fence(open, text, true, indent_columns(line));
+}
+
+/// [`body_lines_hold_open_code_fence`] over a body that only grows, read
+/// incrementally so a per-line question stays linear.
+#[derive(Default)]
+pub(crate) struct OpenCodeFenceScan {
+    scanned: usize,
+    open: Option<FenceOpen>,
+}
+
+impl OpenCodeFenceScan {
+    pub(crate) fn holds_open_fence<S: AsRef<str>>(&mut self, lines: &[S]) -> bool {
+        for line in &lines[self.scanned..] {
+            track_body_code_fence(&mut self.open, line.as_ref());
+        }
+        self.scanned = lines.len();
+        self.open.is_some()
+    }
 }
 
 pub(crate) fn track_collected_fence(
