@@ -364,6 +364,8 @@ struct NoteBody {
     positions: bool,
     /// `lines.len()` when the body last read as ending in an open paragraph.
     open_paragraph_at: Cell<Option<usize>>,
+    /// The code fence the trailing quoted run leaves open, with its quote depth.
+    quoted_fence: Option<(FenceOpen, usize)>,
 }
 
 impl NoteBody {
@@ -381,6 +383,7 @@ impl NoteBody {
         if self.positions {
             self.col_map.push(col(&line));
         }
+        self.quoted_fence = next_quoted_fence(self.quoted_fence, &line);
         self.lines.push(line);
         self.line_map.push(source_line);
     }
@@ -1031,6 +1034,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             },
             positions: self.positions,
             open_paragraph_at: Cell::new(None),
+            quoted_fence: next_quoted_fence(None, def.first),
         };
         let body_indent = footnote_body_floor(raw_def_line);
         let container = IndentContainer {
@@ -2819,7 +2823,9 @@ fn note_link_def_candidate<'a>(line: &'a str, note: &NoteBody) -> &'a str {
     let unquoted = without_blockquote_prefixes(text);
     if unquoted.len() == text.len()
         || parse_link_def_line(unquoted).is_none()
-        || quoted_fence_left_open(&note.lines, quote_depth(text))
+        || note
+            .quoted_fence
+            .is_some_and(|(_, fence_depth)| quote_depth(text) >= fence_depth)
     {
         return text;
     }
@@ -2842,30 +2848,22 @@ fn strip_quote_levels(mut text: &str, levels: usize) -> Option<&str> {
     Some(text)
 }
 
-/// Does the quoted run ending the note body leave a fence open at `depth`?
-fn quoted_fence_left_open(lines: &[String], depth: usize) -> bool {
-    let start = lines
-        .iter()
-        .rposition(|line| !trim_ascii_start(line).starts_with('>'))
-        .map_or(0, |at| at + 1);
-    let mut open: Option<(FenceOpen, usize)> = None;
-    for line in &lines[start..] {
-        let line_depth = quote_depth(line);
-        if let Some((fence, fence_depth)) = open {
-            // A deeper quoted line is the fence's payload, never its closer.
-            if line_depth < fence_depth
-                || line_depth == fence_depth
-                    && strip_quote_levels(line, fence_depth)
-                        .is_some_and(|body| is_fence_close(body, fence))
-            {
-                open = None;
-            }
-            continue;
-        }
-        let body = without_blockquote_prefixes(trim_ascii_start(line));
-        open = detect_fence_open(body).map(|fence| (fence, line_depth));
+/// The quoted code fence still open after `line`, with its quote depth.
+fn next_quoted_fence(open: Option<(FenceOpen, usize)>, line: &str) -> Option<(FenceOpen, usize)> {
+    if !trim_ascii_start(line).starts_with('>') {
+        return None;
     }
-    open.is_some_and(|(_, fence_depth)| depth >= fence_depth)
+    let line_depth = quote_depth(line);
+    if let Some((fence, fence_depth)) = open {
+        // A deeper quoted line is the fence's payload, never its closer.
+        let closes = line_depth < fence_depth
+            || line_depth == fence_depth
+                && strip_quote_levels(line, fence_depth)
+                    .is_some_and(|body| is_fence_close(body, fence));
+        return (!closes).then_some((fence, fence_depth));
+    }
+    detect_fence_open(without_blockquote_prefixes(trim_ascii_start(line)))
+        .map(|fence| (fence, line_depth))
 }
 
 /// Does the note body end on a comment that is still open at line `at`?
