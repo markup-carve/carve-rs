@@ -96,10 +96,18 @@ pub(in crate::parse) fn promote_block_images(
                     ),
                     _ => unreachable!(),
                 };
-                let InlineNode::Image(img) = children.remove(leading_quiet) else {
-                    unreachable!()
-                };
-                children.drain(..leading_quiet + quiet + 1); // comments and soft break
+                let mut target_children: Vec<_> =
+                    children.drain(..leading_quiet + quiet + 2).collect();
+                target_children.pop(); // soft break before the caption
+                let mut target_pos = para_pos.clone();
+                if let (Some(pos), Some(last)) = (
+                    target_pos.as_mut(),
+                    target_children.last().and_then(InlineNode::pos),
+                ) {
+                    pos.end_line = last.end_line;
+                    pos.end_column = last.end_column;
+                    pos.end_offset = last.end_offset;
+                }
                 if let InlineNode::Text(t) = &mut children[0] {
                     let n = caption_marker_len(&t.value).unwrap();
                     let rest = t.value[n..].to_string();
@@ -116,7 +124,7 @@ pub(in crate::parse) fn promote_block_images(
                 mark_promoted_caption_number(&mut children);
                 *block = BlockNode::Figure(Figure {
                     attrs,
-                    target: Box::new(FigureTarget::Image(img)),
+                    target: Box::new(captioned_image_target(target_children, target_pos, true)),
                     rendered_target: None,
                     caption: children,
                     short_caption: None,

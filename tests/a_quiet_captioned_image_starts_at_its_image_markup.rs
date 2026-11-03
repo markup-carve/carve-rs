@@ -1,4 +1,4 @@
-use carve::ast::{BlockNode, FigureTarget};
+use carve::ast::{BlockNode, FigureTarget, InlineNode};
 
 #[test]
 fn a_quiet_prefix_does_not_move_the_image_targets_start() {
@@ -7,8 +7,12 @@ fn a_quiet_prefix_does_not_move_the_image_targets_start() {
     let BlockNode::Figure(figure) = &doc.children[0] else {
         panic!("expected figure")
     };
-    let FigureTarget::Image(image) = &*figure.target else {
-        panic!("expected image target")
+    let FigureTarget::Paragraph(paragraph) = &*figure.target else {
+        panic!("expected paragraph target")
+    };
+    assert!(paragraph.block_image);
+    let [InlineNode::Comment(_), InlineNode::Image(image)] = paragraph.children.as_slice() else {
+        panic!("expected comment and image children")
     };
     let image_pos = image.pos.as_ref().expect("image position");
     assert_eq!(

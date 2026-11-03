@@ -84,28 +84,51 @@ pub(super) fn quiet_captioned_image(
     }
     let image_at = cur.pos;
     let anchor = inline_anchor_for_line(cur, image_at, line);
-    let mut inline = parse_inline_lines_with_anchor(line, options, vec![anchor]);
-    retain_caption_content(&mut inline);
-    let [InlineNode::Image(img)] = inline.as_slice() else {
-        return None;
+    let inline = parse_inline_lines_with_anchor(line, options, vec![anchor]);
+    let image_index = lone_rendered_image(&inline)?;
+    let InlineNode::Image(img) = &inline[image_index] else {
+        unreachable!()
     };
     if img.ref_label.is_some() {
         return None;
     }
-    let img = img.clone();
     cur.consume();
+    let target_pos = span_of(cur, image_at, cur.pos, options);
     let Some(caption) = consume_caption(cur, options) else {
         cur.pos = image_at;
         return None;
     };
     Some(BlockNode::Figure(Figure {
         attrs: None,
-        target: Box::new(FigureTarget::Image(img)),
+        target: Box::new(captioned_image_target(inline, target_pos, true)),
         rendered_target: None,
         caption,
         short_caption: None,
         pos: span_of(cur, image_at, cur.pos, options),
     }))
+}
+
+/// Keep the whole caption host when invisible siblings accompany its image.
+/// The single-image wire shape remains an image target.
+pub(super) fn captioned_image_target(
+    mut children: Vec<InlineNode>,
+    pos: Option<Pos>,
+    at_content_column: bool,
+) -> FigureTarget {
+    if children.len() == 1 {
+        let InlineNode::Image(image) = children.remove(0) else {
+            unreachable!()
+        };
+        FigureTarget::Image(image)
+    } else {
+        FigureTarget::Paragraph(Paragraph {
+            attrs: None,
+            children,
+            at_content_column,
+            block_image: true,
+            pos,
+        })
+    }
 }
 
 /// Comments render nothing when deciding whether a paragraph has a single
