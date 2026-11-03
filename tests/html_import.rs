@@ -229,20 +229,7 @@ struct AheadOfPin {
 // `]` where the fixture escapes the `[`. Both spellings conform, so the entry
 // died to a canonical-form decision rather than to a fix: the fixture is the
 // cross-engine contract for importer output, and this engine now writes it.
-const AHEAD_OF_PIN: &[AheadOfPin] = &[
-    AheadOfPin {
-        fixture: "derived-endnotes-section",
-        reason: "carve#4973: a plain <hr> is written `***`; the fixture moves at carve a6fd8b69",
-        carve: Some("***\n\n{loose}\n1. Note text.\n"),
-        ast: None,
-    },
-    AheadOfPin {
-        fixture: "empty-paragraph",
-        reason: "carve#4973: a plain <hr> is written `***`; the fixture moves at carve a6fd8b69",
-        carve: Some("a\n\nb\n\nc\n\n{#h}\n***\n"),
-        ast: None,
-    },
-];
+const AHEAD_OF_PIN: &[AheadOfPin] = &[];
 
 /// The two fields that record WHERE a node was written rather than what it is.
 ///
