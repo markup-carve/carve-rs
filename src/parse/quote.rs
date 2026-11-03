@@ -1565,6 +1565,10 @@ struct QuoteBody<'a> {
     // The last quoted line reached a nested quote, so `para_open` may have read a
     // fence one level down as prose; see `NestedFenceReplay`.
     last_nested: bool,
+    // The last quoted line opened an item or term one quote level down.
+    nested_marker_last: bool,
+    // The last quoted line was a term or a description lead, not paragraph text.
+    entry_last: bool,
     nested_verdict: Option<Option<bool>>,
     nested_replay: NestedFenceReplay,
     // No replay without a fence to find: every level of a quote ladder would
@@ -1636,6 +1640,8 @@ impl<'a> QuoteBody<'a> {
             unclosed_nested_attribute: false,
             attrs_scan_floor: 0,
             last_nested: false,
+            nested_marker_last: false,
+            entry_last: false,
             nested_verdict: None,
             nested_replay: NestedFenceReplay::default(),
             plus_scan: (0, false),
@@ -1776,16 +1782,36 @@ impl<'a> QuoteBody<'a> {
         if stripped.contains("%%%") && (opens || !marker) {
             self.note_comment_run(stripped);
         }
+        let (depth, _, quoted) = prepass_quote_scope(stripped);
+        let quoted = trim_ascii_start(quoted);
+        self.nested_marker_last = depth > 0
+            && (detect_list_marker_full(quoted).is_some() || is_definition_list_start(quoted));
+        self.entry_last = is_definition_list_start(quoted)
+            || strip_definition_marker(quoted).is_some() && self.description_opens();
     }
 
-    /// A line left of the item whose marker line opened the span ends it.
+    /// A line left of the item whose marker line opened the span, or a line
+    /// outside the span's quote, ends it (PART 0 S1).
     fn end_span_missing_its_item(&mut self, stripped: &str) {
-        let (Some((run, depth, _)), Some(host)) = (self.comment_run, self.comment_host) else {
+        let Some((run, depth, _)) = self.comment_run else {
             return;
         };
-        if is_blank_line(stripped)
-            || trim_ascii_start(stripped).starts_with('>')
-            || indent_columns(stripped) >= host
+        let mut body = stripped;
+        let mut left_quote = false;
+        for _ in 0..depth {
+            match strip_prepass_blockquote_prefix(body) {
+                Some(inner) => body = inner,
+                None => {
+                    left_quote = true;
+                    break;
+                }
+            }
+        }
+        if is_blank_line(body)
+            || !left_quote
+                && self.comment_host.map_or(true, |host| {
+                    trim_ascii_start(body).starts_with('>') || indent_columns(body) >= host
+                })
             || closes_open_comment_fence(
                 stripped,
                 OpenCommentFence {
@@ -1805,8 +1831,43 @@ impl<'a> QuoteBody<'a> {
         self.comment_host = None;
     }
 
+    /// A `: ` line opens a description after a term or an entry, never inside a paragraph.
+    fn description_opens(&mut self) -> bool {
+        self.may_have_term && (self.entry_last || !self.para_open.get())
+    }
+
+    /// The content column and body of the item or description lead `text` opens.
+    fn span_host<'l>(&mut self, text: &'l str) -> Option<(usize, &'l str)> {
+        let trimmed = trim_ascii_start(text);
+        if detect_list_marker_full(trimmed).is_some() {
+            let (depth, col, body) = prepass_quote_scope(text);
+            return (depth == 0).then_some((col, body));
+        }
+        if !self.description_opens() {
+            return None;
+        }
+        let (body, width) = strip_definition_marker(trimmed)?;
+        Some((indent_columns(text) + width, body))
+    }
+
     fn note_comment_run(&mut self, stripped: &str) {
-        let (comment_depth, _, comment_text) = prepass_quote_scope(stripped);
+        let (comment_depth, _, quoted_text) = prepass_quote_scope(stripped);
+        let (host_col, comment_text) = if comment_depth == 0 {
+            match self.span_host(stripped) {
+                Some((col, text)) => (Some(col), text),
+                None => (None, quoted_text),
+            }
+        } else {
+            // A span on a nested quote's item or description lead is that host's (PART 9 §28),
+            // unless the marker folds into an open paragraph there.
+            match self
+                .span_host(quoted_text)
+                .filter(|_| !self.para_open.get() || self.nested_marker_last)
+            {
+                Some((col, text)) => (Some(col), text),
+                None => (None, quoted_text),
+            }
+        };
         if let Some((run, depth, _)) = self.comment_run {
             if detect_list_marker_full(trim_ascii_start(stripped)).is_none()
                 && closes_open_comment_fence(
@@ -1827,12 +1888,14 @@ impl<'a> QuoteBody<'a> {
         } else if self.in_fence.is_none() {
             self.comment_run = detect_comment_fence_line_any_column(comment_text)
                 .map(|open| (open.fence_len, comment_depth, self.inner.lines.len()));
-            self.comment_host = if self.comment_run.is_none() || comment_depth != 0 {
+            self.comment_host = if self.comment_run.is_none() {
                 None
-            } else if detect_list_marker_full(trim_ascii_start(stripped)).is_some() {
-                Some(prepass_quote_scope(stripped).1)
-            } else {
+            } else if host_col.is_some() {
+                host_col
+            } else if comment_depth == 0 {
                 self.body_owning(indent_columns(stripped))
+            } else {
+                None
             };
         }
     }
