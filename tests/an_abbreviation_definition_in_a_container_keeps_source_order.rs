@@ -93,3 +93,20 @@ fn a_hoisted_definition_stands_after_its_container_without_positions() {
         assert_eq!(block_types(&positioned), expected, "{source:?}");
     }
 }
+
+#[test]
+fn a_quoted_definition_starts_at_its_star_with_lone_carriage_returns() {
+    let doc = carve::parse_with_options(
+        "x\r\r> *[A]: b\r\rA\r",
+        &carve::Options::default().with_positions(true),
+    );
+    let pos = doc
+        .children
+        .iter()
+        .find_map(|block| match block {
+            carve::ast::BlockNode::AbbreviationDef(def) => def.pos.clone(),
+            _ => None,
+        })
+        .expect("a positioned definition");
+    assert_eq!((pos.start_line, pos.start_column), (3, 3));
+}

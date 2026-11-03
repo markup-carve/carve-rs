@@ -272,7 +272,7 @@ pub(in crate::parse) fn prepass_abbreviation_nodes(
 ) -> Vec<AbbreviationDef> {
     let defs = take_prepass_abbreviations();
     let lines: Vec<&str> = if positions && !defs.is_empty() {
-        source.lines().collect()
+        original_lines(source)
     } else {
         Vec::new()
     };
