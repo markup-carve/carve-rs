@@ -431,19 +431,8 @@ fn intervening_blocks_end_term_ownership_before_a_later_paragraph_fence() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn term_fences_release_definitions_when_the_parent_list_ends() {
-    for source in [
-        "- > :: t\n  > ```\n  > code\n> [r]: /u\n> [^a]: note\n> use [^a]\n",
-        "> - > :: t\n>   > ```\n>   > code\n> > [r]: /u\n> > [^a]: note\n> > use [^a]\n",
-        "- head\n  > :: t\n  > ```\n> [r]: /u\n> [^a]: note\n> use [^a]\n",
-    ] {
-        let doc = carve::parse(source);
-        assert!(doc.footnote_defs.contains_key("a"), "{source:?}: {doc:?}");
-        let output = html(source);
-        assert!(output.contains("doc-noteref"), "{source:?}: {output}");
-        assert!(!output.contains("<code>code\n[r]"), "{source:?}: {output}");
-    }
+    assert_rule_a_pins("term_fences_release_definitions_when_the_parent_list_ends");
 }
 
 #[test]
@@ -483,53 +472,18 @@ fn a_fence_in_a_new_quote_uses_its_own_host_floor() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn an_unowned_description_marker_does_not_open_a_term_quote() {
-    let source = ":  > :: t\n   > ```\n   > [r]: /u\n   > [^a]: note\n";
-    let doc = carve::parse(source);
-    assert!(
-        matches!(doc.children.as_slice(), [BlockNode::Paragraph(_)]),
-        "{doc:?}"
-    );
-    assert!(doc.footnote_defs.is_empty(), "{doc:?}");
-    assert!(!html(source).contains("<pre>"));
+    assert_rule_a_pins("an_unowned_description_marker_does_not_open_a_term_quote");
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn indented_description_quotes_stay_literal_term_content() {
-    for source in [
-        ":: t\n  :  > [^a]: note\n",
-        "> :: t\n>   :  > [^a]: note\n",
-        "- :: t\n    :  > [^a]: note\n",
-    ] {
-        let doc = carve::parse(source);
-        assert!(doc.footnote_defs.is_empty(), "{source:?}: {doc:?}");
-        assert!(
-            html(source).contains("[^a]: note"),
-            "{source:?}: {}",
-            html(source)
-        );
-    }
-    let source = ": > :: t\n> ```\n> [^a]: note\n";
-    let doc = carve::parse(source);
-    assert!(doc.footnote_defs.is_empty(), "{doc:?}");
-    assert!(html(source).contains("<pre><code>[^a]: note\n</code></pre>"));
+    assert_rule_a_pins("indented_description_quotes_stay_literal_term_content");
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn indented_term_text_does_not_own_a_fence_past_a_paragraph_break() {
-    for indent in [" ", "  ", "    "] {
-        let source =
-            format!("{indent}:: t\n{indent}```\n\n{indent}- a\n{indent}  [^a]: note\n\nsee [^a]\n");
-        let output = html(&source);
-        assert!(
-            output.contains("role=\"doc-noteref\""),
-            "{source:?}: {output}"
-        );
-        assert!(!output.contains("<pre>"), "{source:?}: {output}");
-    }
+    assert_rule_a_pins("indented_term_text_does_not_own_a_fence_past_a_paragraph_break");
 }
 
 #[test]
@@ -565,53 +519,41 @@ fn repeated_admitted_list_terms_keep_their_final_fence_payload() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn collected_definitions_allow_following_list_terms_to_own_fences() {
-    for prefix in ["", "> "] {
-        for above in [
-            "[r]: /u\n",
-            "[^a]: note\n",
-            "[^a]: note\n  body\n",
-            "[r]: /u\n- head\n",
-        ] {
-            let above = above
-                .lines()
-                .map(|line| format!("{prefix}{line}\n"))
-                .collect::<String>();
-            let source = format!("{above}{prefix}- :: t\n{prefix}  ```\n{prefix}  [x]: /v\n");
-            let output = html(&source);
-            assert!(
-                output.contains("<pre><code>[x]: /v\n"),
-                "{source:?}: {output}"
-            );
-            assert!(!output.contains('\u{e005}'), "{source:?}: {output}");
-        }
-    }
-    let source = "p\n  [r]: /u\n- :: t\n  ```\n\n  - a\n    [^a]: note\n\nsee [^a]\n";
-    let output = html(source);
-    assert!(output.contains("role=\"doc-noteref\""), "{output}");
-    assert!(!output.contains("<pre>"), "{output}");
+    assert_rule_a_pins("collected_definitions_allow_following_list_terms_to_own_fences");
 }
 
+// Rule A (carve#3885): a definition indented past the term's column still
+// registers, and a fence opened under a folded term line keeps its payload.
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn description_bodies_preserve_their_admitted_list_term_host() {
     for prefix in ["", "> "] {
         let above = format!("{prefix}- :: a\n{prefix}  : desc a\n").repeat(100);
-        for continuation in [
-            "{prefix}    [x]: /v\n",
-            "{prefix}  ```\n{prefix}  [x]: /v\n",
+        for (continuation, payload) in [
+            ("{prefix}    [x]: /v\n", false),
+            ("{prefix}  ```\n{prefix}  [x]: /v\n", true),
         ] {
             let continuation = continuation.replace("{prefix}", prefix);
             let source = format!("{above}{prefix}- :: t\n{continuation}");
             let output = html(&source);
-            assert!(output.contains("[x]: /v"), "{source:?}: {output}");
+            assert_eq!(
+                output.contains("<pre><code>[x]: /v\n"),
+                payload,
+                "{source:?}: {output}"
+            );
+            if !payload {
+                assert!(!output.contains("[x]: /v"), "{source:?}: {output}");
+            }
             assert!(!output.contains('\u{e005}'), "{source:?}: {output}");
         }
         let source = format!("{above}{prefix}\n{prefix}p\n{prefix}- :: t\n{prefix}  ```\n{prefix}\n{prefix}  - a\n{prefix}    [^a]: note\n\nsee [^a]\n");
         let output = html(&source);
-        assert!(output.contains("role=\"doc-noteref\""), "{output}");
-        assert!(!output.contains("<pre>"), "{output}");
+        assert!(!output.contains("role=\"doc-noteref\""), "{output}");
+        assert!(output.contains("<p>p\n- :: t</p>"), "{output}");
+        assert!(
+            output.contains("<pre><code>\n- a\n  [^a]: note\n"),
+            "{output}"
+        );
         let source = format!("{above}{prefix}\n{prefix}- :: t\n{prefix}  ```\n{prefix}  [x]: /v\n");
         assert!(html(&source).contains("<pre><code>[x]: /v\n"));
     }
@@ -628,16 +570,22 @@ fn lazy_description_continuations_keep_the_admitted_list_host() {
     }
 }
 
+// Rule A (carve#3885), as in the test above.
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn root_block_boundaries_release_and_readmit_list_term_hosts() {
     let above = "- :: a\n  : desc\n# heading\n".repeat(100);
     let source = above + "- :: t\n    [x]: /v\n";
-    assert!(html(&source).contains("[x]: /v"));
+    let output = html(&source);
+    assert!(!output.contains("[x]: /v"), "{output}");
+    assert!(
+        output.ends_with("<dt>t</dt>\n      </dl>\n    </li>\n  </ul>\n</section>"),
+        "{output}"
+    );
     let source = "- :: a\n{.k}\np\n- :: t\n  ```\n\n  - a\n    [^a]: note\n\nsee [^a]\n";
-    let output = html(source);
-    assert!(output.contains("role=\"doc-noteref\""), "{output}");
-    assert!(!output.contains("<pre>"), "{output}");
+    assert_eq!(
+        html(source),
+        "<ul>\n  <li>\n    <dl>\n      <dt>a</dt>\n    </dl>\n  </li>\n</ul>\n<p class=\"k\">p\n- :: t</p>\n<pre><code>\n- a\n  [^a]: note\n\nsee [^a]\n</code></pre>"
+    );
 }
 
 #[test]
@@ -697,19 +645,8 @@ fn folded_generic_fence_does_not_admit_a_following_marker_term() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_folded_marker_does_not_admit_an_indented_bare_term_fence() {
-    for prefix in ["", "> "] {
-        for first in ["- x", "- :: a"] {
-            let source = format!("{prefix}p\n{prefix}{first}\n{prefix}  :: t\n{prefix}  ```\n{prefix}\n{prefix}  - y\n{prefix}    [^a]: note\n\nsee [^a]\n");
-            let output = html(&source);
-            assert!(
-                output.contains("role=\"doc-noteref\""),
-                "{source:?}: {output}"
-            );
-            assert!(!output.contains("<pre>"), "{source:?}: {output}");
-        }
-    }
+    assert_rule_a_pins("a_folded_marker_does_not_admit_an_indented_bare_term_fence");
 }
 
 #[test]
@@ -741,16 +678,8 @@ fn nested_term_fences_keep_the_proved_outer_item_through_paragraphs() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_marker_between_item_columns_does_not_reuse_a_proved_term_host() {
-    for prefix in ["", "> "] {
-        let source = format!("{prefix}- :: a\n{prefix}  ```\n{prefix}  c\n{prefix}  ```\n{prefix}- para\n{prefix} - :: t\n{prefix}   ```\n{prefix}\n{prefix}   - y\n{prefix}     [^a]: note\n\nsee [^a]\n");
-        let output = html(&source);
-        assert!(
-            output.contains("role=\"doc-noteref\""),
-            "{source:?}: {output}"
-        );
-    }
+    assert_rule_a_pins("a_marker_between_item_columns_does_not_reuse_a_proved_term_host");
 }
 
 #[test]
@@ -800,11 +729,8 @@ fn a_different_quote_at_the_same_depth_releases_a_proved_term_host() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_band_marker_inside_a_nested_item_does_not_reuse_its_outer_host() {
-    let source = "- x\n  - :: a\n    ```\n    c\n    ```\n  - para\n   - :: t\n     ```\n\n     - y\n       [^a]: note\n\nsee [^a]\n";
-    let output = html(source);
-    assert!(output.contains("role=\"doc-noteref\""), "{output}");
+    assert_rule_a_pins("a_band_marker_inside_a_nested_item_does_not_reuse_its_outer_host");
 }
 
 #[test]
@@ -914,5 +840,24 @@ fn a_folded_marker_fence_with_a_flush_closer_cannot_hide_later_definitions() {
                 assert!(doc.footnote_defs.is_empty(), "{source:?}: {output}");
             }
         }
+    }
+}
+
+/// Rule A (carve#3885) retired the reading some tests here were written for;
+/// their inputs are pinned to the spec model's HTML instead.
+fn assert_rule_a_pins(test: &str) {
+    let pins: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/rule_a_ledger_pins.json")).unwrap();
+    let module = module_path!().rsplit("::").next().unwrap();
+    for pin in pins[format!("{module}::{test}")]
+        .as_array()
+        .expect("pinned inputs")
+    {
+        let source = pin["source"].as_str().unwrap();
+        assert_eq!(
+            carve::to_html(source).trim(),
+            pin["html"].as_str().unwrap(),
+            "{source:?}"
+        );
     }
 }

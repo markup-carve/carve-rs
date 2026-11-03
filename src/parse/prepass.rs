@@ -2089,7 +2089,7 @@ pub(in crate::parse) fn extract_link_defs_with_guard_full(
             in_comment_fence = Some(OpenCommentFence {
                 fence_len: open.fence_len,
                 quote_depth: prepass_quote_scope(line).0,
-                floor: description_fence_content_column(line, &stripped, &columns),
+                floor: description_comment_floor(line, &stripped, &columns),
             });
             body.push(std::borrow::Cow::Borrowed(line));
             continue;
