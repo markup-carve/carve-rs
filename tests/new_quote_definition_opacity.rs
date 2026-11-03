@@ -546,7 +546,10 @@ fn assert_rule_a_pins(test: &str) {
     let pins: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/rule_a_ledger_pins.json")).unwrap();
     let module = module_path!().rsplit("::").next().unwrap();
-    for pin in pins[format!("{module}::{test}")].as_array().expect("pinned inputs") {
+    for pin in pins[format!("{module}::{test}")]
+        .as_array()
+        .expect("pinned inputs")
+    {
         let source = pin["source"].as_str().unwrap();
         assert_eq!(
             carve::to_html(source).trim(),

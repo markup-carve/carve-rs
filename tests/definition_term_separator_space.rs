@@ -550,7 +550,10 @@ fn description_bodies_preserve_their_admitted_list_term_host() {
         let output = html(&source);
         assert!(!output.contains("role=\"doc-noteref\""), "{output}");
         assert!(output.contains("<p>p\n- :: t</p>"), "{output}");
-        assert!(output.contains("<pre><code>\n- a\n  [^a]: note\n"), "{output}");
+        assert!(
+            output.contains("<pre><code>\n- a\n  [^a]: note\n"),
+            "{output}"
+        );
         let source = format!("{above}{prefix}\n{prefix}- :: t\n{prefix}  ```\n{prefix}  [x]: /v\n");
         assert!(html(&source).contains("<pre><code>[x]: /v\n"));
     }
@@ -574,7 +577,10 @@ fn root_block_boundaries_release_and_readmit_list_term_hosts() {
     let source = above + "- :: t\n    [x]: /v\n";
     let output = html(&source);
     assert!(!output.contains("[x]: /v"), "{output}");
-    assert!(output.ends_with("<dt>t</dt>\n      </dl>\n    </li>\n  </ul>\n</section>"), "{output}");
+    assert!(
+        output.ends_with("<dt>t</dt>\n      </dl>\n    </li>\n  </ul>\n</section>"),
+        "{output}"
+    );
     let source = "- :: a\n{.k}\np\n- :: t\n  ```\n\n  - a\n    [^a]: note\n\nsee [^a]\n";
     assert_eq!(
         html(source),
@@ -843,7 +849,10 @@ fn assert_rule_a_pins(test: &str) {
     let pins: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/rule_a_ledger_pins.json")).unwrap();
     let module = module_path!().rsplit("::").next().unwrap();
-    for pin in pins[format!("{module}::{test}")].as_array().expect("pinned inputs") {
+    for pin in pins[format!("{module}::{test}")]
+        .as_array()
+        .expect("pinned inputs")
+    {
         let source = pin["source"].as_str().unwrap();
         assert_eq!(
             carve::to_html(source).trim(),
