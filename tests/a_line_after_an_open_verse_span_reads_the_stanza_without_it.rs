@@ -121,8 +121,5 @@ fn a_nested_item_stanza_keeps_the_line_after_any_span() {
 #[test]
 fn an_item_in_a_description_keeps_the_body_line_after_a_blank_ended_stanza() {
     let html = carve::to_html(":: t\n: - ::: |\n    x\n\n    %%%\n    y\n  b\n");
-    assert!(
-        html.contains("</ul>\n    <p>b</p>\n  </dd>"),
-        "{html}"
-    );
+    assert!(html.contains("</ul>\n    <p>b</p>\n  </dd>"), "{html}");
 }
