@@ -500,6 +500,7 @@ impl NestedFenceReplay {
         }
         let trimmed = trim_ascii_start(text);
         let indent = indent_columns(text);
+        let mut opens_span = false;
         if let Some(comment) = detect_comment_fence_line(trimmed) {
             self.literal_comment_openers.insert(pos.at);
             let len = comment.fence_len;
@@ -510,6 +511,7 @@ impl NestedFenceReplay {
                 .closes_after(pos.lines, pos.at, level, len);
             if collected || future_quoted_comment_closes(pos.cur, level + 1, indent, len) {
                 self.chain[level].host_comment = Some((len, indent, !collected));
+                opens_span = true;
             }
         }
         if let Some(open) = detect_fence_open(trimmed) {
@@ -529,8 +531,9 @@ impl NestedFenceReplay {
         if (indent == floor || indent == column) && exact_colon_fence_len(trimmed) == Some(width) {
             here.host_verse = None;
             here.para = false;
-        } else {
-            // A comment payload line leaves the stanza open (PART 2 `line_block`).
+        } else if !opens_span {
+            // A comment payload line leaves the stanza open (PART 2 `line_block`),
+            // but a `%%%` span leaves it as it stood before (carve#4956).
             here.para = !is_blank_line(text);
         }
         here.colon_absorption = false;

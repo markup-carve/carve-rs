@@ -102,6 +102,22 @@ fn marker_line_block_stanza_open(
     scan.0.tail().is_some()
 }
 
+/// Feeds the lines collected since the last call; whether they end in an
+/// open stanza of a line block that held a `%%%` span, a nested block included.
+fn collected_spanned_stanza_open(
+    scan: &mut (crate::parse::definition::LineBlockTail, usize),
+    lines: &[String],
+) -> bool {
+    if lines.len() < scan.1 {
+        *scan = Default::default();
+    }
+    for line in &lines[scan.1..] {
+        scan.0.step(strip_lazy(line));
+    }
+    scan.1 = lines.len();
+    scan.0.in_block() == Some(true) && scan.0.held_span()
+}
+
 fn follows_plus_marker(lines: &[String]) -> bool {
     let run_start = lines
         .iter()
@@ -277,6 +293,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         .is_some_and(|content| detect_line_block_open(content).is_some());
     // Whether the marker-line line block still holds a stanza after `lines`.
     let mut marker_line_block_scan = (crate::parse::definition::LineBlockTail::default(), 0);
+    let mut collected_stanza_scan = (crate::parse::definition::LineBlockTail::default(), 0);
     if let Some(content) = marker_content.filter(|_| marker_line_block) {
         marker_line_block_scan.0.step(content);
     }
@@ -397,7 +414,14 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         } else {
             marker_comment_span
         };
+        // A span in a line block leaves nothing: the line that ends it folds
+        // into the stanza open before it (carve#4956).
+        let spanned_stanza_lazy = !admission.blank
+            && indent_columns(line) < strip_cols
+            && line_starts_paragraph(line)
+            && collected_spanned_stanza_open(&mut collected_stanza_scan, &lines);
         if held_span.is_some_and(|run| !is_comment_fence_close_any_column(line, run))
+            && !spanned_stanza_lazy
             && !admission.blank
             && !is_line_comment_any_column(line)
             && detect_comment_fence_line_any_column(line).is_none()
@@ -1175,6 +1199,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && !definition_comment_band
             && !definition_band_inline_closer
             && !fence_owns_flush_left
+            && !spanned_stanza_lazy
             && !comment_fence.is_some_and(|(run, _)| {
                 is_comment_fence_close_any_column(line, run)
                     || detect_comment_fence_line_any_column(line).is_some()
@@ -1228,7 +1253,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             break;
         }
         // A closed span in a line block leaves nothing for the stanza (carve#4956).
-        if closed_comment_span_above && indent < strip_cols && !stanza_lazy {
+        if closed_comment_span_above && indent < strip_cols && !stanza_lazy && !spanned_stanza_lazy
+        {
             break;
         }
         if indent >= strip_cols && comment_fence.is_none() && !is_line_comment_any_column(line) {
