@@ -356,8 +356,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 });
                 match opener {
                     Some(opener) => k = opener,
-                    // A closer of the marker line's span: its payload above stays in the scan.
-                    None if self.item_head_span == Some(open.fence_len) => {}
+                    // The closer of the marker line's span: its payload is the item's
+                    // interior, so a blank inside it does not loosen (carve#5030).
+                    None if self.item_head_span == Some(open.fence_len) => return false,
                     None => return false,
                 }
             } else if !(is_line_comment_any_column(line)
