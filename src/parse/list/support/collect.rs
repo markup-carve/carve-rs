@@ -118,6 +118,114 @@ fn collected_spanned_stanza_open(
     scan.0.in_block() == Some(true) && scan.0.held_span()
 }
 
+/// An open `%%%` span on a description's lead line (`: %%%`).
+#[derive(Clone, Copy)]
+struct LeadSpan {
+    run: usize,
+    owner: usize,
+    depth: usize,
+}
+
+/// Feeds the lines collected since the last call; whether they end inside a
+/// `%%%` span opened on a description's lead line. The span leaves nothing
+/// (CARVE-P9-047), so a line that ends it under S1 has no paragraph to fold
+/// into (carve#4998). Quote markers count toward a line's column.
+#[derive(Default)]
+pub(crate) struct DescriptionLeadSpanScan {
+    at: usize,
+    span: Option<LeadSpan>,
+}
+
+impl DescriptionLeadSpanScan {
+    pub(crate) fn open<S: AsRef<str>>(&mut self, lines: &[S]) -> bool {
+        self.open_by(lines.len(), |at| lines[at].as_ref())
+    }
+
+    pub(crate) fn open_by<'s>(&mut self, len: usize, line_at: impl Fn(usize) -> &'s str) -> bool {
+        if self.at > len {
+            *self = Self::default();
+        }
+        while self.at < len {
+            let line = line_at(self.at);
+            self.at += 1;
+            if self.span.is_none() && !line.contains("%%%") {
+                continue;
+            }
+            let (col, rest, quotes) = quote_free_measure(line);
+            if let Some(span) = self.span {
+                let closes = comment_fence_run(rest).is_some_and(|run| run == span.run);
+                let ends = if closes {
+                    true
+                } else if quotes.len() > span.depth {
+                    quotes[span.depth] < span.owner
+                } else {
+                    (!rest.is_empty()
+                        && !rest.starts_with("%%")
+                        && (col < span.owner || line.starts_with(LAZY)))
+                        || quotes.len() < span.depth
+                };
+                if ends {
+                    self.span = None;
+                }
+                continue;
+            }
+            let Some(body) = rest.strip_prefix(':') else {
+                continue;
+            };
+            let after = body.trim_start_matches(' ');
+            if after.len() == body.len() {
+                continue;
+            }
+            let Some(run) = comment_fence_run(after) else {
+                continue;
+            };
+            let lead = rest.len() - after.len();
+            // The entry above: the nearest line at or left of this column is its term.
+            for above in (0..self.at - 1).rev().map(&line_at) {
+                let (above_col, above_rest, _) = quote_free_measure(above);
+                if above_rest.is_empty() || above_col > col {
+                    continue;
+                }
+                if above_col == col
+                    && (above_rest.starts_with(": ") || above_rest.starts_with(":: "))
+                {
+                    self.span = Some(LeadSpan {
+                        run,
+                        owner: col + lead,
+                        depth: quotes.len(),
+                    });
+                }
+                break;
+            }
+        }
+        self.span.is_some()
+    }
+}
+
+fn comment_fence_run(rest: &str) -> Option<usize> {
+    let run = rest.bytes().take_while(|&b| b == b'%').count();
+    (run >= 3).then_some(run)
+}
+
+/// A line's column, counting quote markers, its text after them, and the
+/// column of each quote marker.
+fn quote_free_measure(line: &str) -> (usize, &str, Vec<usize>) {
+    let mut rest = strip_lazy(line);
+    let mut base = 0;
+    let mut quotes = Vec::new();
+    loop {
+        let col = indent_columns(rest);
+        let text = rest.trim_start_matches([' ', '\t']);
+        let Some(after) = text.strip_prefix('>') else {
+            return (base + col, text, quotes);
+        };
+        quotes.push(base + col);
+        let width = if after.starts_with(' ') { 2 } else { 1 };
+        base += col + width;
+        rest = &text[width..];
+    }
+}
+
 fn follows_plus_marker(lines: &[String]) -> bool {
     let run_start = lines
         .iter()
@@ -381,6 +489,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         });
     let mut lead_fence_scan = LeadFenceScan::default();
     let mut nested_blank_run: Option<usize> = None;
+    let mut lead_span_scan = DescriptionLeadSpanScan::default();
     run_indented_body!(cur.lines, cur.pos, container, |line, admission| {
         // PART 0 S1 and the recovery table (carve#4770): a nonblank line that
         // misses this item ends a span the item opened, even with its closer
@@ -452,6 +561,14 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         // Handle this before the special lazy and marker-line branches below:
         // the span left no paragraph for any of them to continue.
         if nested_item_columns.closed_marker_comment_span && indent_columns(line) < strip_cols {
+            break;
+        }
+        if indent_columns(line) < strip_cols
+            && !admission.blank
+            && !trim_ascii_start(strip_lazy(line)).starts_with("%%")
+            && lead_span_scan.open(&lines)
+        {
+            cur.comment_span_missed_at = Some(cur.pos);
             break;
         }
         if admission.blank {
