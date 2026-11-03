@@ -403,9 +403,44 @@ pub(in crate::parse) fn description_fence_content_column(
     columns: &ContentColumns,
 ) -> usize {
     let quote_columns = term_quote_columns_for(prefix.structural, columns);
-    let owned = strip_term_quote_prefixes(raw, &quote_columns).unwrap_or(raw);
+    // A quote opened on the lead itself (`: > ````) sits past the marker, not
+    // past indentation, so the column strip cannot see it.
+    let owned = strip_term_quote_prefixes(raw, &quote_columns)
+        .or_else(|| strip_lead_quote_prefixes(raw, quote_columns.len()))
+        .unwrap_or(raw);
+    lead_body_column(owned, prefix)
+}
+
+/// The floor of a comment span on a description's lead. `misses_comment_owner`
+/// strips every quote marker whatever its column, so a quote on the lead stays
+/// in this count.
+pub(in crate::parse) fn description_comment_floor(
+    raw: &str,
+    prefix: &StrippedContainerLine<'_>,
+    columns: &ContentColumns,
+) -> usize {
+    let quote_columns = term_quote_columns_for(prefix.structural, columns);
+    lead_body_column(
+        strip_term_quote_prefixes(raw, &quote_columns).unwrap_or(raw),
+        prefix,
+    )
+}
+
+fn lead_body_column(owned: &str, prefix: &StrippedContainerLine<'_>) -> usize {
     let before = prefix.bare.as_ptr() as usize - owned.as_ptr() as usize;
     owned[..before].chars().count() + leading_ws(prefix.bare)
+}
+
+/// `raw` past `depth` quote markers, each after the container markers in front
+/// of it, as `term_quote_columns_for` walks a lead line.
+fn strip_lead_quote_prefixes(mut raw: &str, depth: usize) -> Option<&str> {
+    for _ in 0..depth {
+        while let Some(content) = term_container_content(raw) {
+            raw = content;
+        }
+        raw = strip_prepass_blockquote_prefix(raw)?;
+    }
+    Some(raw)
 }
 
 pub(in crate::parse) fn strip_container_prefixes_keep_indent(mut line: &str) -> String {
