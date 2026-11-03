@@ -18,3 +18,14 @@ fn a_line_after_a_comment_below_a_marker_line_description_leaves_the_item() {
         "<ul>\n  <li>x\n    <ul>\n      <li>\n        <dl>\n          <dt>term</dt>\n          <dd>desc</dd>\n        </dl>\n      </li>\n    </ul>\n    after\n  </li>\n</ul>"
     );
 }
+
+#[test]
+fn a_line_after_a_quoted_definition_in_a_note_leaves_the_note() {
+    for source in [
+        "[^n]: a\n  > prose\n  > [r]: /x\ntail\n",
+        "[^n]: a\n\n  > prose\n  > [r]: /x\n tail\n",
+        "[^n]: > prose\n      > [r]: /x\ntail\n",
+    ] {
+        assert_eq!(carve::to_html(source), "<p>tail</p>", "{source:?}");
+    }
+}

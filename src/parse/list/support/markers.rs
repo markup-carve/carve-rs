@@ -1023,7 +1023,11 @@ pub(crate) fn quoted_body_ends_with_an_invisible_line(body: &str) -> bool {
         }
     }
     let dequote = |line: &str| trim_ascii_start(&residue(line).1).to_string();
-    if is_definition_placeholder(&dequote(last)) {
+    let last_line = dequote(last);
+    // A quoted link definition ends the paragraph before the prepass collects it.
+    if is_definition_placeholder(&last_line)
+        || crate::parse::prepass_links::parse_link_def_line(&last_line).is_some()
+    {
         return true;
     }
     let dequoted: Vec<String> = body.lines().map(dequote).collect();
