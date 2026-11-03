@@ -850,7 +850,11 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                         || comment_fence.is_some_and(|(run, column)| {
                             column == strip_cols
                                 && is_comment_fence_close_any_column(cur.lines.at(k), run)
-                        }));
+                        })
+                        // A blank inside a descendant's live span is payload; a
+                        // comment line below the column still closes it (carve#4996).
+                        || (trim_ascii_start(strip_lazy(cur.lines.at(k))).starts_with("%%")
+                            && body_open_comment_run(&lines).is_some()));
                 if !continues {
                     // Descendants may own these blanks as fence payload. Copy
                     // them without advancing the outer separator cursor.

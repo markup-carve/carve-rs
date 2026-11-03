@@ -1319,6 +1319,8 @@ const IMPLEMENTED: &[&str] = &[
     "attributed-bracket-spans-share-the-inline-cap",
     "folded-separator-lines-keep-a-description-in-a-div-in-an-item",
     "paragraphs-after-a-closed-marker-line-child-loosen-the-item",
+    "a-comment-span-on-a-description-or-note-marker-line-closes-below-its-column",
+    "a-marked-blank-inside-a-quoted-verse-span-leaves-the-stanza-open",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
@@ -1424,6 +1426,9 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     ("915-abbreviations-skip-caption-cross-reference-text-and-an-unresolved-cross-reference-2", "spec pin d4c64561: engine port pending", "<table id=\"t\">\n  <caption>A 1: c</caption>\n  <tbody>\n    <tr><td>a</td></tr>\n  </tbody>\n</table>\n<p>See <a href=\"#t\">A 1</a>.</p>"),
     ("923-a-line-block-stanza-remains-open-after-a-paired-payload-run", "spec pin d4c64561: engine port pending", "<dl>\n  <dt>u</dt>\n  <dd>\n    <div class=\"line-block\">\n      <p>~~~</p>\n      <p>~~~<br>\nb</p>\n    </div>\n  </dd>\n</dl>"),
     ("923-a-line-block-stanza-remains-open-after-a-paired-payload-run-2", "spec pin d4c64561: engine port pending", "<dl>\n  <dt>u</dt>\n  <dd>\n    <div class=\"line-block\">\n      <p><code></code></p>\n      <p><code>\nb</code></p>\n    </div>\n  </dd>\n</dl>"),
+    // Newly reached corpus pairs at spec b426bf87. Each actual HTML is measured.
+    ("941-a-marked-blank-inside-a-quoted-verse-span-leaves-the-stanza-open", "spec pin b426bf87: carve#5002 quoted verse span not ported yet", "<blockquote>\n  <dl>\n    <dt>t</dt>\n    <dd>\n      <div class=\"line-block\">\n        <p>x</p>\n      </div>\n    </dd>\n  </dl>\n</blockquote>\n<p>b</p>"),
+    ("941-a-marked-blank-inside-a-quoted-verse-span-leaves-the-stanza-open-2", "spec pin b426bf87: carve#5002 quoted verse span not ported yet", "<blockquote>\n  <blockquote>\n    <dl>\n      <dt>t</dt>\n      <dd>\n        <div class=\"line-block\">\n          <p>x</p>\n        </div>\n      </dd>\n    </dl>\n  </blockquote>\n</blockquote>\n<p>b</p>"),
     ("796-a-tab-past-an-off-stop-frame-column-is-measured-in-that-frame", "inline or layout ruling at the 8d8bd4a9 pin not ported yet", "<ul>\n  <li>\n    <ol>\n      <li>a</li>\n    </ol>\n    <pre><code>x\n</code></pre>\n  </li>\n</ul>"),
     ("796-a-tab-past-an-off-stop-frame-column-is-measured-in-that-frame-2", "inline or layout ruling at the 8d8bd4a9 pin not ported yet", "<ul>\n  <li>\n    <ul>\n      <li>\n        <ol start=\"10\">\n          <li>a</li>\n        </ol>\n        <p>b</p>\n      </li>\n    </ul>\n  </li>\n</ul>"),
     ("823-a-fence-in-a-list-a-quote-attaches-takes-no-separator-line-2", "inline or layout ruling at the 8d8bd4a9 pin not ported yet", "<blockquote>\n  <p>t</p>\n  <ul>\n    <li>\n      <pre><code>\n</code></pre>\n    </li>\n  </ul>\n  <p>b</p>\n</blockquote>"),

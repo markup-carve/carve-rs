@@ -1692,6 +1692,12 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 ContainerLine::OwnedContinuation => is_plus_marker(lines[after_run]),
                 _ => false,
             };
+        // A blank inside a live span is payload; a comment line below the
+        // column still closes it (PART 9 §28, carve#4996).
+        let resumes = resumes
+            || (after_run < lines.len()
+                && note.comment_state.comment.is_some()
+                && trim_ascii_start(strip_lazy(lines[after_run])).starts_with("%%"));
         if !resumes {
             // The run still reaches an open fence that ends with the note.
             if note.holds_open_fence() {
