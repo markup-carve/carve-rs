@@ -1256,7 +1256,7 @@ impl InlineRun<'_, '_> {
             _ => None,
         };
         if let (Some(raw), Ok(lit)) = (raw_ref, std::str::from_utf8(&bytes[i..next])) {
-            raw.push_str(lit);
+            raw.push_str(&logical_cell_reference_source(lit));
         }
         if let InlineNode::Footnote(f) = last {
             if f.inline.is_none() {
