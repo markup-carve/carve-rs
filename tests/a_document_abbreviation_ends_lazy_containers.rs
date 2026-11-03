@@ -15,15 +15,16 @@ fn a_definition_below_an_item_content_column_stands_in_the_document() {
 }
 
 #[test]
-fn an_abbreviation_spelling_inside_a_container_stays_text() {
+fn an_abbreviation_definition_inside_a_container_defines() {
+    // A definition in every container, with document scope (carve#4865).
     let cases = [
         (
             "::: box\n*[A]: Alpha\nA\n:::\n",
-            "<div class=\"box\">\n  <p>*[A]: Alpha\nA</p>\n</div>",
+            "<div class=\"box\">\n  <p><abbr title=\"Alpha\">A</abbr></p>\n</div>",
         ),
         (
             "- a\n  *[A]: Alpha\nA\n",
-            "<ul>\n  <li>a\n*[A]: Alpha\nA</li>\n</ul>",
+            "<ul>\n  <li>a</li>\n</ul>\n<p><abbr title=\"Alpha\">A</abbr></p>",
         ),
     ];
     for (source, expected) in cases {
