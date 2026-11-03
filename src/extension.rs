@@ -504,6 +504,36 @@ impl Default for Options<'_> {
 }
 
 impl<'a> Options<'a> {
+    /// The same parse settings with positions on. Renderers do not reach the
+    /// parser, so the copy leaves them empty.
+    pub(crate) fn positioned_parse_copy(&self) -> Self {
+        Self {
+            extensions: self.extensions.clone(),
+            lint_includes: self.lint_includes.clone(),
+            lint_caption_looking_paragraph: self.lint_caption_looking_paragraph,
+            mention_url: self.mention_url.clone(),
+            tag_url: self.tag_url.clone(),
+            mention_resolver: self.mention_resolver,
+            tag_resolver: self.tag_resolver,
+            social_context: self.social_context,
+            symbols: self.symbols.clone(),
+            labels: self.labels.clone(),
+            allow_raw_html: self.allow_raw_html,
+            smart_typography: self.smart_typography,
+            roundtrip: self.roundtrip,
+            align_tables: self.align_tables,
+            lowercase_heading_ids: self.lowercase_heading_ids,
+            ascii_heading_ids: self.ascii_heading_ids,
+            source_lines: self.source_lines,
+            positions: true,
+            profile: self.profile.clone(),
+            profile_base_host: self.profile_base_host.clone(),
+            mode: self.mode,
+            renderers: StaticRenderers::default(),
+            sections: self.sections,
+        }
+    }
+
     /// Supply include settings for linting.
     pub fn with_lint_includes(mut self, includes: crate::includes::IncludeOptions<'a>) -> Self {
         self.lint_includes = Some(includes);

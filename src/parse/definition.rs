@@ -32,16 +32,72 @@ pub(in crate::parse) fn append_skipped_sibling_abbreviations(
             if defs.is_empty() {
                 return;
             }
-            doc.children
-                .extend(std::mem::take(defs).into_iter().map(|mut def| {
+            let lines: Vec<&str> = if line_starts.is_some() {
+                original_lines(source)
+            } else {
+                Vec::new()
+            };
+            place_hoisted_abbreviations(
+                &mut doc.children,
+                std::mem::take(defs).into_iter().map(|mut def| {
                     if let (Some(pos), Some(starts)) = (&mut def.pos, line_starts) {
                         apply_offsets(pos, starts);
+                        anchor_on_authored_line(pos, &def.abbr, &lines, starts);
                     }
-                    BlockNode::AbbreviationDef(def)
-                }));
+                    def
+                }),
+            );
             order_abbreviation_blocks(&mut doc.children, source);
         }
     });
+}
+
+/// Place hoisted definitions after the top-level block they stood among, or at
+/// the end when they carry no position.
+pub(in crate::parse) fn place_hoisted_abbreviations(
+    blocks: &mut Vec<BlockNode>,
+    defs: impl IntoIterator<Item = AbbreviationDef>,
+) {
+    let (mut placed, unplaced): (Vec<_>, Vec<_>) =
+        defs.into_iter().partition(|def| def.pos.is_some());
+    if !placed.is_empty() {
+        placed.sort_by_key(|def| def.pos.as_ref().map(|pos| pos.start_line));
+        let mut placed = placed.into_iter().peekable();
+        let mut merged = Vec::with_capacity(blocks.len() + placed.len());
+        for block in std::mem::take(blocks) {
+            if let Some(start) = crate::ast_json::block_pos(&block).map(|pos| pos.start_line) {
+                while let Some(def) =
+                    placed.next_if(|def| def.pos.as_ref().is_some_and(|pos| pos.start_line < start))
+                {
+                    merged.push(BlockNode::AbbreviationDef(def));
+                }
+            }
+            merged.push(block);
+        }
+        merged.extend(placed.map(BlockNode::AbbreviationDef));
+        *blocks = merged;
+    }
+    blocks.extend(unplaced.into_iter().map(BlockNode::AbbreviationDef));
+}
+
+/// `line` with every container prefix stripped, as the prepass reads it.
+fn behind_container_prefixes(line: &str) -> &str {
+    let mut rest = trim_ascii_start(line);
+    loop {
+        let next = trim_ascii_start(strip_container_prefixes(rest, true).bare);
+        if next.len() == rest.len() {
+            return rest;
+        }
+        rest = next;
+    }
+}
+
+/// Whether a line defines an abbreviation, behind any container prefixes.
+pub(in crate::parse) fn source_may_hoist_abbreviation(source: &str) -> bool {
+    source.contains("*[")
+        && source
+            .lines()
+            .any(|line| detect_abbreviation_def(behind_container_prefixes(line)).is_some())
 }
 
 /// Put definitions back in authored order after a skipped one was appended
@@ -49,7 +105,8 @@ pub(in crate::parse) fn append_skipped_sibling_abbreviations(
 pub(in crate::parse) fn order_abbreviation_blocks(blocks: &mut [BlockNode], source: &str) {
     let mut lines: BTreeMap<(String, String), std::collections::VecDeque<usize>> = BTreeMap::new();
     for (index, line) in source.lines().enumerate() {
-        if let Some(def) = detect_abbreviation_def(line) {
+        // A container definition counts at its authored line too (carve#4865).
+        if let Some(def) = detect_abbreviation_def(behind_container_prefixes(line)) {
             lines
                 .entry((def.abbr, def.expansion))
                 .or_default()
@@ -106,6 +163,150 @@ pub(in crate::parse) fn record_skipped_sibling_abbreviation(
         return;
     };
     def.pos = span_of(cur, cur.pos, cur.pos + 1, options);
+    SKIPPED_SIBLING_ABBREVIATIONS.with(|cell| {
+        if let Some(defs) = cell.borrow_mut().last_mut() {
+            defs.push(def);
+        }
+    });
+}
+
+thread_local! {
+    static PREPASS_ABBREVIATIONS: std::cell::RefCell<Vec<(usize, AbbreviationDef)>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// A container definition the link prepass cut out, with its body line.
+pub(in crate::parse) fn record_prepass_abbreviation(line: usize, def: AbbreviationDef) {
+    PREPASS_ABBREVIATIONS.with(|cell| cell.borrow_mut().push((line, def)));
+}
+
+pub(in crate::parse) fn clear_prepass_abbreviations() {
+    PREPASS_ABBREVIATIONS.with(|cell| cell.borrow_mut().clear());
+}
+
+pub(in crate::parse) fn take_prepass_abbreviations() -> Vec<(usize, AbbreviationDef)> {
+    PREPASS_ABBREVIATIONS.with(|cell| std::mem::take(&mut *cell.borrow_mut()))
+}
+
+/// A column-0 definition a `+` skips: it defines in the document (carve#4449).
+pub(in crate::parse) fn is_document_abbreviation(line: &str) -> bool {
+    detect_abbreviation_def(line).is_some()
+}
+
+/// Consume the definition at the cursor and hoist it to the document.
+pub(in crate::parse) fn hoist_document_abbreviation(
+    cur: &mut LineCursor<'_>,
+    options: &Options<'_>,
+) {
+    let at = cur.pos;
+    if let Some(mut def) = cur.peek().and_then(detect_abbreviation_def) {
+        cur.consume();
+        def.pos = span_of(cur, at, at + 1, options);
+        hoist_abbreviation(def);
+    }
+}
+
+/// The authored span of a container definition on 1-based `line`, from its `*`.
+pub(in crate::parse) fn container_abbreviation_pos(lines: &[&str], line: usize, abbr: &str) -> Pos {
+    let text = lines.get(line - 1).copied().unwrap_or("");
+    let lead = text
+        .find(&format!("*[{abbr}]:"))
+        .map_or(0, |at| text[..at].chars().count());
+    Pos {
+        start_line: line,
+        end_line: line,
+        start_column: lead + 1,
+        end_column: text.chars().count() + 1,
+        start_offset: 0,
+        end_offset: 0,
+        file: None,
+    }
+}
+
+/// Start a definition's filled span at its own `*` on the authored line: a
+/// container prefix stays outside, and a walked line may have been re-indented
+/// (Rule A), so the column cannot come from the line the reader saw.
+pub(in crate::parse) fn anchor_on_authored_line(
+    pos: &mut Pos,
+    abbr: &str,
+    lines: &[&str],
+    line_starts: &CodepointLineStarts,
+) {
+    let Some(text) = lines.get(pos.start_line.wrapping_sub(1)) else {
+        return;
+    };
+    let bom = usize::from(pos.start_line == 1 && line_starts.has_leading_bom());
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+    let Some(at) = text.find(&format!("*[{abbr}]:")) else {
+        return;
+    };
+    let lead = text[..at].chars().count();
+    pos.start_column = 1 + bom + lead;
+    if let Some(start) = line_starts.get(pos.start_line - 1) {
+        pos.start_offset = start + lead;
+    }
+}
+
+/// Re-anchor every document-level definition once offsets are filled.
+pub(in crate::parse) fn anchor_abbreviation_defs(
+    blocks: &mut [BlockNode],
+    source: &str,
+    line_starts: &CodepointLineStarts,
+) {
+    let mut lines = None;
+    for block in blocks {
+        if let BlockNode::AbbreviationDef(def) = block {
+            if let Some(pos) = &mut def.pos {
+                let lines = lines.get_or_insert_with(|| original_lines(source));
+                anchor_on_authored_line(pos, &def.abbr, lines, line_starts);
+            }
+        }
+    }
+}
+
+/// The prepass's container definitions as nodes; `authored` maps a body line to
+/// its 1-based source line.
+pub(in crate::parse) fn prepass_abbreviation_nodes(
+    source: &str,
+    positions: bool,
+    authored: impl Fn(usize) -> Option<usize>,
+) -> Vec<AbbreviationDef> {
+    let defs = take_prepass_abbreviations();
+    let lines: Vec<&str> = if positions && !defs.is_empty() {
+        original_lines(source)
+    } else {
+        Vec::new()
+    };
+    defs.into_iter()
+        .map(|(line, mut def)| {
+            def.pos = positions
+                .then(|| {
+                    authored(line).map(|line| container_abbreviation_pos(&lines, line, &def.abbr))
+                })
+                .flatten();
+            def
+        })
+        .collect()
+}
+
+/// Hoist the prepass's container definitions through the sibling-gap list.
+#[cfg(feature = "experimental-event-parser")]
+pub(in crate::parse) fn hoist_prepass_abbreviations(
+    source: &str,
+    positions: bool,
+    authored: impl Fn(usize) -> Option<usize>,
+) -> bool {
+    let defs = prepass_abbreviation_nodes(source, positions, authored);
+    let any = !defs.is_empty();
+    defs.into_iter().for_each(hoist_abbreviation);
+    any
+}
+
+/// Hoist a definition read inside a container to the document (carve#4865).
+pub(in crate::parse) fn hoist_abbreviation(def: AbbreviationDef) {
+    // A throwaway parse publishes nothing.
+    if probing() {
+        return;
+    }
     SKIPPED_SIBLING_ABBREVIATIONS.with(|cell| {
         if let Some(defs) = cell.borrow_mut().last_mut() {
             defs.push(def);
@@ -437,8 +638,17 @@ pub(in crate::parse) fn parse_definition_list(
                 while cur.peek().is_some_and(is_blank_line) {
                     cur.consume();
                 }
+                // The `+` attaches past invisible lines (carve#4449).
+                let mut first_visible = cur.pos;
+                while cur.lines.line(first_visible).is_some_and(|line| {
+                    is_document_definition_placeholder(line)
+                        || is_document_abbreviation(line)
+                        || is_line_comment_any_column(line)
+                }) {
+                    first_visible += 1;
+                }
                 // A list marker inside an attached colon block is its content.
-                let attached_list = cur.peek().is_some_and(|line| {
+                let attached_list = cur.lines.line(first_visible).is_some_and(|line| {
                     is_list_marker(line)
                         || detect_container_open(line).is_some()
                         || detect_line_block_open(line).is_some()
@@ -458,14 +668,19 @@ pub(in crate::parse) fn parse_definition_list(
                     Some(decision)
                         if decision.owner == Some(continuation_marker::Kind::Description) =>
                     {
-                        attached_block_past_invisible(
+                        let end = attached_block_past_invisible(
                             lines,
-                            cur.pos,
+                            first_visible,
                             &mut cur.comment_closer_last_index,
                             &mut cur.code_closer_last_index,
                             options,
                             &mut boundary,
-                        )
+                        );
+                        if end > first_visible {
+                            end
+                        } else {
+                            cur.pos
+                        }
                     }
                     _ => cur.pos,
                 };

@@ -76,11 +76,12 @@ fn an_abbreviation_definition_below_the_column_registers() {
 }
 
 #[test]
-fn the_nested_spelling_answers_the_same_way_it_always_did() {
-    // The line misses the description but still reaches its outer item.
+fn the_nested_spelling_answers_the_same_way() {
+    // The definition is invisible in the description (carve#4865), so `tail`
+    // misses it and lands in the outer item.
     assert_eq!(
         html("- :: t\n  :  d\n   *[A]: a\n  tail\n"),
-        "<ul>\n  <li>\n    <dl>\n      <dt>t</dt>\n      <dd>d\n*[A]: a\ntail</dd>\n    </dl>\n  </li>\n</ul>"
+        "<ul>\n  <li>\n    <dl>\n      <dt>t</dt>\n      <dd>d</dd>\n    </dl>\n    tail\n  </li>\n</ul>"
     );
 }
 

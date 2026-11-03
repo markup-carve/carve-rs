@@ -220,19 +220,18 @@ fn a_definition_below_the_content_column_registers_nothing() {
     );
 }
 
-/// An ABBREVIATION definition is not on I5's list and is recognized at document
-/// level only, so at the same column it is ordinary prose that REOPENS the
-/// paragraph. Corpus `350-4` is the list spelling; this is the `dd`. A change
-/// that suppressed by container rather than by construct would move it.
+/// An ABBREVIATION definition is invisible in every container (carve#4865), so
+/// at the same column it leaves no paragraph open. Corpus `350-4` is the list
+/// spelling; this is the `dd`.
 #[test]
-fn an_abbreviation_definition_at_that_column_is_ordinary_prose() {
+fn an_abbreviation_definition_at_that_column_leaves_no_paragraph() {
     assert_eq!(
         html(":: t\n:  a\n   *[A]: x\ntail\n"),
-        "<dl>\n  <dt>t</dt>\n  <dd>a\n*[A]: x\ntail</dd>\n</dl>"
+        "<dl>\n  <dt>t</dt>\n  <dd>a</dd>\n</dl>\n<p>tail</p>"
     );
     assert_eq!(
         html("- a\n  *[A]: x\ntail\n"),
-        "<ul>\n  <li>a\n*[A]: x\ntail</li>\n</ul>"
+        "<ul>\n  <li>a</li>\n</ul>\n<p>tail</p>"
     );
 }
 

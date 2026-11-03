@@ -1357,12 +1357,23 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             if self.positions {
                 note.col_map[0] = None;
             }
+            let mut visible = false;
             while i < end {
-                note.push_with(
-                    attached[i - start].clone(),
-                    Some(self.first_source_line + i),
-                    |_| Some(marker_col as isize),
-                );
+                let line = attached[i - start].clone();
+                // Invisible definitions ahead of the block are the document's (carve#4449).
+                if !visible && self.hoist_note_link_def(&line, i) {
+                    note.push_with(
+                        definition_placeholder(),
+                        Some(self.first_source_line + i),
+                        |_| Some(marker_col as isize),
+                    );
+                    i += 1;
+                    continue;
+                }
+                visible |= !is_line_comment_any_column(&line);
+                note.push_with(line, Some(self.first_source_line + i), |_| {
+                    Some(marker_col as isize)
+                });
                 i += 1;
             }
             note.push_blank();

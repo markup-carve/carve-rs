@@ -49,13 +49,9 @@ fn a_footnote_definition_in_a_quoted_comment_registers_nothing() {
 
 #[test]
 fn the_abbreviation_kind_is_unchanged_by_this() {
-    // NOT a fix and not coverage. PART 12 §7 recognizes an abbreviation
-    // definition only as a direct child of the document, so a quoted one defines
-    // nothing whether a fence hides it or not. It is here as the control on the
-    // OTHER direction: a change that suppressed by container rather than by
-    // comment would move these two together, and they must not move.
+    // A quoted definition defines (carve#4865); a fence still hides it.
     assert!(!html("> %%%\n> *[ab]: abbrev\n> %%%\n\nSee ab.\n").contains("<abbr"));
-    assert!(!html("> *[ab]: abbrev\n\nSee ab.\n").contains("<abbr"));
+    assert!(html("> *[ab]: abbrev\n\nSee ab.\n").contains("<abbr title=\"abbrev\">ab</abbr>"));
     assert!(
         html("*[ab]: abbrev\n\nSee ab.\n").contains("<abbr title=\"abbrev\">ab</abbr>"),
         "the document-level control moved"

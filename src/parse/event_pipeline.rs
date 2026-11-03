@@ -715,6 +715,19 @@ fn take_indented_wrapped_attrs(
     Some((attrs, span_of(cur, at, cur.pos, options)))
 }
 
+fn reads_abbreviations(document_reads: bool, at_document_level: bool) -> bool {
+    document_reads || !at_document_level
+}
+
+/// The node a definition leaves in place: one at document level, none below it.
+fn placed_abbreviation(definition: AbbreviationDef, at_document_level: bool) -> Option<BlockNode> {
+    if at_document_level {
+        return Some(BlockNode::AbbreviationDef(definition));
+    }
+    hoist_abbreviation(definition);
+    None
+}
+
 fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>(
     lines: &[&str],
     options: &Options<'_>,
@@ -726,6 +739,8 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
 ) -> Option<Vec<BlockNode>> {
     let defer_pending = pending_out.is_some();
     let direct_owner = !defer_pending && extents.is_none();
+    // A definition in every container, with document scope (carve#4865).
+    let abbreviations = reads_abbreviations(ABBREVIATIONS, at_document_level);
     let mut out = Vec::new();
     let mut block_start_indices = Vec::new();
     let mut pending_bodies = Vec::new();
@@ -787,12 +802,14 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             }
         }
         let line = cur.peek().unwrap();
-        if ABBREVIATIONS {
+        if abbreviations {
             if let Some(mut definition) = detect_abbreviation_def(line) {
                 let at = cur.pos;
                 cur.consume();
                 definition.pos = span_of(&cur, at, cur.pos, options);
-                emit!(_block_source_line, BlockNode::AbbreviationDef(definition));
+                if let Some(node) = placed_abbreviation(definition, at_document_level) {
+                    emit!(_block_source_line, node);
+                }
                 continue;
             }
         }
@@ -1067,7 +1084,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             if DEFINITIONS && is_definition_placeholder(next) {
                 break;
             }
-            if ABBREVIATIONS
+            if abbreviations
                 && !paragraph_lines.is_empty()
                 && detect_abbreviation_def(next).is_some()
             {
@@ -3344,6 +3361,13 @@ fn has_fence_candidate_without_final_newline(source: &str) -> bool {
 }
 
 pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
+    if source_may_hoist_abbreviation(source) {
+        #[cfg(feature = "experimental-event-parser-options")]
+        return parse_document_with_custom_options(source, &Options::default(), ParseMode::Html)
+            .map(|(document, _, admitted)| (document, admitted));
+        #[cfg(not(feature = "experimental-event-parser-options"))]
+        return None;
+    }
     let _skipped_abbreviations = SkippedSiblingAbbreviationsGuard::install();
     let source_len = source.len();
     let normalized = if needs_event_normalization(source) {
@@ -3388,7 +3412,14 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
     } else {
         (String::new(), BTreeMap::new())
     };
-    let has_link_defs = !link_defs.is_empty();
+    let body_lines_before = source[..body.as_ptr() as usize - source.as_ptr() as usize]
+        .bytes()
+        .filter(|byte| *byte == b'\n')
+        .count();
+    let hoisted_abbreviations = hoist_prepass_abbreviations(source, options.positions, |line| {
+        Some(body_lines_before + line + 1)
+    });
+    let has_link_defs = !link_defs.is_empty() || hoisted_abbreviations;
     let body_source = if has_link_defs {
         stripped_body.as_str()
     } else {
@@ -3565,6 +3596,9 @@ fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Doc
     let mut budget = probe_budget_for(mapped.source.len());
     let (body_source, mut link_defs) =
         extract_link_defs_guarded(&mapped.source, &options, &mut budget);
+    hoist_prepass_abbreviations(source, options.positions, |line| {
+        mapped.line_map.get(line).and_then(|authored| *authored)
+    });
     for def in link_defs.values_mut() {
         if let Some(line) = def.line {
             def.line = mapped
@@ -3703,6 +3737,28 @@ pub(super) fn parse_document_with_custom_options(
     options: &Options<'_>,
     mode: ParseMode,
 ) -> Option<(Document, Option<CrossrefIndex>, bool)> {
+    // Hoisted definitions are placed by source line (CARVE-P12-070).
+    if !options.positions
+        && !matches!(mode, ParseMode::HtmlFacade)
+        && source_may_hoist_abbreviation(source)
+    {
+        let positioned = options.positioned_parse_copy();
+        return parse_document_with_custom_options_once(source, &positioned, mode).map(
+            |(mut doc, index, used)| {
+                crate::render_carve::strip_positions(&mut doc);
+                (doc, index, used)
+            },
+        );
+    }
+    parse_document_with_custom_options_once(source, options, mode)
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+fn parse_document_with_custom_options_once(
+    source: &str,
+    options: &Options<'_>,
+    mode: ParseMode,
+) -> Option<(Document, Option<CrossrefIndex>, bool)> {
     let _skipped_abbreviations = SkippedSiblingAbbreviationsGuard::install();
     if NESTING_DEPTH.with(|depth| depth.get() >= MAX_NESTING_DEPTH) {
         return None;
@@ -3746,7 +3802,14 @@ pub(super) fn parse_document_with_custom_options(
     } else {
         (String::new(), BTreeMap::new())
     };
-    let has_link_defs = !link_defs.is_empty();
+    let body_lines_before = source[..body.as_ptr() as usize - source.as_ptr() as usize]
+        .bytes()
+        .filter(|byte| *byte == b'\n')
+        .count();
+    let hoisted_abbreviations = hoist_prepass_abbreviations(source, options.positions, |line| {
+        Some(body_lines_before + line + 1)
+    });
+    let has_link_defs = !link_defs.is_empty() || hoisted_abbreviations;
     let body_source = if has_link_defs {
         stripped_body.as_str()
     } else {
@@ -4048,6 +4111,9 @@ fn parse_document_with_footnotes_options(
     let mut budget = probe_budget_for(mapped.source.len());
     let (body_source, mut link_defs) =
         extract_link_defs_guarded(&mapped.source, options, &mut budget);
+    hoist_prepass_abbreviations(source, options.positions, |line| {
+        mapped.line_map.get(line).and_then(|authored| *authored)
+    });
     for def in link_defs.values_mut() {
         if let Some(line) = def.line {
             def.line = mapped

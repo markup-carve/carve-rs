@@ -388,7 +388,8 @@ pub(in crate::parse) fn source_may_contain_link_definition(source: &str) -> bool
             loop {
                 let next = trim_ascii_start(strip_container_prefixes(rest, true).bare);
                 if next.len() == rest.len() {
-                    return parse_link_def_line_with_value(next).is_some();
+                    return parse_link_def_line_with_value(next).is_some()
+                        || (next.len() < line.len() && detect_abbreviation_def(next).is_some());
                 }
                 rest = next;
             }
@@ -1846,6 +1847,7 @@ pub(in crate::parse) fn extract_link_defs_guarded(
     options: &Options<'_>,
     budget: &mut usize,
 ) -> (String, BTreeMap<String, LinkDef>) {
+    clear_prepass_abbreviations();
     extract_link_defs_with_guard(source, options, Some(budget))
 }
 
@@ -2194,30 +2196,38 @@ pub(in crate::parse) fn extract_link_defs_with_guard_full(
         // See the footnote pass: the probe stays inside the filter so the shared
         // budget is spent only on lines that parsed as a definition.
         let mut unaffordable = false;
-        if let Some((label_part, _target_part, mut def)) = parse_link_def_line_with_value(def_line)
-            .filter(|_| {
-                let folds = marker_line_may_be_lazy(line)
-                    && guard.as_mut().is_some_and(|budget| {
-                        line_folds_into_an_open_paragraph(
-                            &body,
-                            line,
-                            options,
-                            budget,
-                            &mut unaffordable,
-                        )
-                    });
-                !(folds || unaffordable || folded_into_term.folded.contains(&line_index))
-            })
-        {
-            if label_part.starts_with('@') {
-                body.push(std::borrow::Cow::Borrowed(line));
-                continue;
+        let link_def = parse_link_def_line_with_value(def_line);
+        // A definition in every container, with document scope (carve#4865).
+        // At document level the block reader keeps it in place.
+        let abbreviation = (link_def.is_none() && guard.is_some() && line != def_line)
+            .then(|| detect_abbreviation_def(def_line))
+            .flatten();
+        if (link_def.is_some() || abbreviation.is_some()) && {
+            let folds = marker_line_may_be_lazy(line)
+                && guard.as_mut().is_some_and(|budget| {
+                    line_folds_into_an_open_paragraph(
+                        &body,
+                        line,
+                        options,
+                        budget,
+                        &mut unaffordable,
+                    )
+                });
+            !(folds || unaffordable || folded_into_term.folded.contains(&line_index))
+        } {
+            if let Some((label_part, _target_part, mut def)) = link_def {
+                if label_part.starts_with('@') {
+                    body.push(std::borrow::Cow::Borrowed(line));
+                    continue;
+                }
+                // The line the author wrote it on, for PART 12 §10's node: its `pos`
+                // and the SOURCE order of the hoisted definitions both come from here.
+                def.line = Some(line_index);
+                def.raw_label = Some(label_part.to_string());
+                defs.insert(label_key(label_part), def);
+            } else if let Some(def) = abbreviation {
+                record_prepass_abbreviation(line_index, def);
             }
-            // The line the author wrote it on, for PART 12 §10's node: its `pos`
-            // and the SOURCE order of the hoisted definitions both come from here.
-            def.line = Some(line_index);
-            def.raw_label = Some(label_part.to_string());
-            defs.insert(label_key(label_part), def);
             // Leave a blank line in place of the (invisible) definition so it
             // still acts as a block boundary (matches carve-js, where a
             // definition interrupts a paragraph / ends a lazy blockquote).
