@@ -43,8 +43,10 @@ fn a_past_column_quote_remains_term_text() {
 fn a_quote_in_a_description_keeps_the_outer_items_marker_as_text() {
     let source = "- a\n  :: outer\n  :  detail\n     :: inner\n     > quote\n  - sibling";
     let html = carve::to_html(source);
+    // The marker misses the description and its quote, so it opens a sublist
+    // of the outer item (carve#4860).
     assert!(
-        html.contains("<blockquote><p>quote\n- sibling</p></blockquote>"),
+        html.contains("<blockquote><p>quote</p></blockquote>\n      </dd>\n    </dl>\n    <ul>\n      <li>sibling</li>"),
         "{html}"
     );
 }

@@ -217,6 +217,8 @@ pub(in crate::parse) struct LineCursor<'a> {
     pub(in crate::parse) in_quoted_body: bool,
     /// True for the cursor reading a LIST ITEM's own body, and that body only.
     pub(in crate::parse) in_item_body: bool,
+    /// True for the cursor reading a description or footnote body.
+    pub(in crate::parse) in_note_or_description: bool,
     /// Whether the INVISIBLE arms of `interrupts_paragraph` are live for the
     /// question being asked. True everywhere except a container's BELOW-COLUMN
     /// band, where §10 I5 makes a block-attribute line lazy paragraph text of
@@ -259,6 +261,12 @@ pub(in crate::parse) struct LineCursor<'a> {
 }
 
 impl<'a> LineCursor<'a> {
+    /// A list item, description or footnote body: a list marker opens a list
+    /// here (PART 0 S3, carve#4860).
+    pub(in crate::parse) fn in_marker_body(&self) -> bool {
+        self.in_item_body || self.in_note_or_description
+    }
+
     pub(in crate::parse) fn new_with_cols(
         lines: &'a [&'a str],
         line_map: Option<&'a [Option<usize>]>,
@@ -287,6 +295,7 @@ impl<'a> LineCursor<'a> {
             at_document_level: false,
             in_quoted_body: false,
             in_item_body: false,
+            in_note_or_description: false,
             invisible_arms: true,
             reached: None,
             sublists_carry_authored_base: false,

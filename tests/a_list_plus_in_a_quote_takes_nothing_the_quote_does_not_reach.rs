@@ -46,7 +46,7 @@ fn a_follower_past_the_quote_joins_the_enclosing_item() {
         ),
         (
             "- > - +\n    - s\n",
-            "<ul><li><blockquote><ul><li>+-s</li></ul></blockquote></li></ul>",
+            "<ul><li><blockquote><ul><li>+</li></ul></blockquote><ul><li>s</li></ul></li></ul>",
         ),
     ] {
         assert_eq!(flat(source), expected, "{source:?}");

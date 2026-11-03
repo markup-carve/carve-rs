@@ -635,7 +635,8 @@ pub(in crate::parse) fn parse_definition_list(
                 let mut boundary = |a: &str, _| {
                     is_blank_line(a)
                         || is_plus_marker(a)
-                        || (!attached_list && indent_columns(a) == 0 && is_list_marker(a))
+                        // A list marker ends an attached block that is no list (PART 0 S3, carve#4860).
+                        || (!attached_list && is_list_marker(trim_ascii_start(a)))
                         || strip_lazy(a).strip_prefix(":: ").is_some()
                         || strip_definition_marker(strip_lazy(a)).is_some()
                 };
@@ -1099,7 +1100,7 @@ pub(in crate::parse) fn definition_body_fold(source: &str, options: &Options<'_>
     {
         return (false, false);
     }
-    let blocks = probe_blocks(source, options);
+    let blocks = probe_marker_body_blocks(source, options);
     if block_ends_with_open_paragraph(blocks.last(), colon_fences_left_open(source), false) {
         let frame = open_frame(&blocks);
         return (true, frame.contains_quote && frame.ends_in_paragraph);
@@ -1643,6 +1644,9 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         cur.consume();
         let mut attached = LineBuffer::default();
         let cursor_lines = cur.lines;
+        let attached_paragraph = cur
+            .peek()
+            .is_some_and(|line| line_starts_paragraph(trim_ascii_start(line)));
         let end = attached_block_past_invisible(
             cursor_lines,
             cur.pos,
@@ -1652,6 +1656,8 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             &mut |a, _| {
                 is_blank_line(a)
                     || is_plus_marker(a)
+                    // A list marker ends an attached paragraph (PART 0 S3, carve#4860).
+                    || (attached_paragraph && is_list_marker(trim_ascii_start(a)))
                     || a.strip_prefix(":: ").is_some()
                     || strip_definition_marker(a).is_some()
             },
@@ -1985,6 +1991,11 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         {
             return BodyStep::Stop;
         }
+        // A list marker that misses a marker body closes it, and a quote in the
+        // body takes no unmarked marker (PART 0 S3, carve#4860).
+        if !line.starts_with(LAZY) && is_list_marker(trim_ascii_start(line)) {
+            return BodyStep::Stop;
+        }
         // A surviving quote owns this line before the definition column (CARVE-P0-004).
         if self.folded_into_quote
             && (indent > 0 || is_list_marker(trim_ascii_start(line)))
@@ -2046,6 +2057,10 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         // the one that ejected them: the interrupt test below never got the
         // line.
         let opener = trim_ascii_start(line);
+        // A list marker that misses a marker body closes it (PART 0 S3, carve#4860).
+        if !line.starts_with(LAZY) && indent < self.content_column && is_list_marker(opener) {
+            return BodyStep::Stop;
+        }
         let fold_below_column_opener = self.folds_below_column_opener(opener, indent);
         if self.opener_ends_body(cur, line, indent, fold_below_column_opener) {
             return BodyStep::Stop;

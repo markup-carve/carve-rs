@@ -24,6 +24,13 @@ pub(super) enum Kind {
     Colon,
 }
 
+impl Kind {
+    /// A list item, description body or footnote body (PART 0 S3, carve#4860).
+    fn is_marker_body(self) -> bool {
+        matches!(self, Kind::Item | Kind::Dd | Kind::Note)
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Last {
     None,
@@ -1780,10 +1787,11 @@ impl<'a> Walk<'a> {
             && !lazy_refused
             && !form.interrupts()
             && !matches!(form, Form::Dd(_))
-            // A marker that misses an item is a sibling or a new list, never lazy
-            // text: leading space stops no line form (PART 0 S3, carve#4545).
+            // A marker that a marker body owns, or that misses one, opens a list
+            // (PART 0 S3, carve#4545, carve#4860).
             && !(matches!(form, Form::Item(..))
-                && self.frames[reached + 1..].iter().any(|f| f.kind == Kind::Item))
+                && (self.frames[reached].kind.is_marker_body()
+                    || self.frames[reached + 1..].iter().any(|f| f.kind.is_marker_body())))
         {
             if self.decide && matches!(form, Form::Item(..)) {
                 self.decide_folded_marker(at, c.rest, reached);
@@ -2493,7 +2501,8 @@ impl<'a> Walk<'a> {
         }
         if let Some((width, head, axes)) = list_marker(rest) {
             // A term is not a paragraph a marker continues.
-            if owner_para && owner_kind != Kind::Item && owner_last != Last::Term {
+            // §10 I2: under an open paragraph a marker opens only in a marker body (carve#4860).
+            if owner_para && !owner_kind.is_marker_body() && owner_last != Last::Term {
                 return Form::Text;
             }
             return Form::Item(width, head, axes);

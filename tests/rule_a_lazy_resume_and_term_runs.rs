@@ -72,6 +72,6 @@ fn a_blank_after_a_lazy_term_line_loosens_the_outer_item() {
 fn a_hosted_notes_lazy_line_keeps_its_paragraph_open() {
     check(
         "R[^a].\n\n- [^a]: first\n more\n     - i\n",
-        "<p>R<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a>.</p>\n<ul>\n  <li></li>\n</ul>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>first\nmore\n- i<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>",
+        "<p>R<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a>.</p>\n<ul>\n  <li></li>\n</ul>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>first\nmore</p>\n      <ul>\n        <li>i</li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>",
     );
 }

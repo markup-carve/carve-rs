@@ -322,7 +322,7 @@ pub(super) fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool
     // folds as lazy item text", and the collector forwards such a line with its
     // residual indent intact. `is_list_marker` trims, so without the guard the
     // two bands would answer the same.
-    if cur.in_item_body
+    if cur.in_marker_body()
         && cur.carried_reach(cur.pos) != Some(false)
         && !line.starts_with([' ', '\t'])
         && is_list_marker(line)

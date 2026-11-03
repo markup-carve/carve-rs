@@ -143,7 +143,7 @@ fn note_paragraph_open(note: &NoteBody, rest: &str, options: &Options<'_>) -> bo
     // A nested note that still holds the last line is the deepest leaf; the
     // probe below lifts it out and would answer for the outer note instead.
     let body = open_nested_note_body(lines).unwrap_or_else(|| lines.join("\n"));
-    let open = body_ends_with_open_paragraph(&body, options);
+    let open = marker_body_ends_with_open_paragraph(&body, options);
     note.open_paragraph_at.set(open.then_some(lines.len()));
     open
 }
@@ -162,7 +162,7 @@ fn nested_note_paragraph_open(note: &NoteBody, options: &Options<'_>) -> bool {
         }
     }
     let open = open_nested_note_body(lines)
-        .is_some_and(|body| body_ends_with_open_paragraph(&body, options));
+        .is_some_and(|body| marker_body_ends_with_open_paragraph(&body, options));
     note.open_paragraph_at.set(open.then_some(lines.len()));
     open
 }
@@ -446,8 +446,6 @@ struct IndentedNote<'a> {
     // paragraph for a later line below this note's body column to continue.
     closed_comment_paragraph: bool,
     lazy_open: bool,
-    /// The definition line starts at column 0, so no container hosts the note.
-    flush_def: bool,
     marker_line_note: bool,
 }
 
@@ -457,9 +455,8 @@ struct NoteHost {
     quote_indents: Vec<usize>,
     quote_depth: usize,
     note_floor: usize,
-    /// Content column of the innermost list item hosting the note, if any.
-    list_floor: Option<usize>,
-    /// The same, for the document level outside the note's quotes.
+    /// Content column of the item hosting the note at the document level,
+    /// outside the note's quotes.
     outer_list_floor: Option<usize>,
     /// A task box keeps the note at its literal column (carve#4352).
     behind_task_box: bool,
@@ -493,14 +490,6 @@ fn behind_task_box(raw_def_line: &str) -> bool {
         line = marker.content;
     }
     false
-}
-
-fn note_opens_with_term(note: &NoteBody) -> bool {
-    note.lines
-        .iter()
-        .rev()
-        .find(|line| !line.starts_with(LAZY))
-        .is_some_and(|line| term_start_column(line).is_some())
 }
 
 fn item_floor(frame: &ColumnFrame) -> Option<usize> {
@@ -1052,7 +1041,6 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 below_comment_span: None,
                 closed_comment_paragraph: false,
                 lazy_open: false,
-                flush_def: indent_columns(raw_def_line) == 0,
                 // A note on its outer note's marker line takes the lazy lines that note gave up.
                 marker_line_note: i == 1,
             };
@@ -1270,6 +1258,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             .collect();
         let attached_refs: Vec<&str> = attached.iter().map(String::as_str).collect();
         let first_visible_at = first_visible_note_line(&attached_refs).unwrap_or(0);
+        // A list marker ends an attached paragraph; the body then opens its
+        // list there (PART 0 S3, carve#4860).
+        let lead_is_paragraph = attached_refs
+            .get(first_visible_at)
+            .is_some_and(|line| line_starts_paragraph(trim_ascii_start(line)));
+        let ends_at_marker = |at: usize, raw: &str| {
+            at > first_visible_at && lead_is_paragraph && is_list_marker(trim_ascii_start(raw))
+        };
         let mut comment_closers = None;
         let mut closer_index = None;
         let mut end = attached_block_past_invisible(
@@ -1282,6 +1278,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 let raw = lines[start + at];
                 is_blank_line(line)
                     || is_plus_marker(line)
+                    || ends_at_marker(at, raw)
                     || (at > first_visible_at
                         && marker_col > 0
                         && indent_columns(raw) <= marker_col
@@ -1298,6 +1295,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 &mut |line, at| {
                     is_blank_line(line)
                         || is_plus_marker(line)
+                        || ends_at_marker(at, lines[start + at])
                         || (at > first_visible_at
                             && marker_col > 0
                             && indent_columns(lines[start + at]) <= marker_col
@@ -1453,10 +1451,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 &self.columns,
                 self.document_colon_open.get(*i).copied().unwrap_or(false),
             )
-            // §10 I2: under a note's paragraph a marker is text, unless an
-            // item hosts the note and the marker may continue that list.
-            // A marker below a term ends the note (corpus 855).
-            && ((state.flush_def && !state.open_term) || !is_list_marker(rest))
+            // A list marker that misses a marker body closes it (PART 0 S3, carve#4860).
+            && !is_list_marker(rest)
             && !opens_code_fence(rest)
             && (lazy_open || note_paragraph_open(note, rest, self.options))
         {
@@ -2013,7 +2009,6 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             quote_depth: quote_indents.len(),
             quote_indents,
             note_floor: prefix_cols + footnote_body_floor(def.def_line),
-            list_floor: item_floor(self.columns.current()),
             outer_list_floor: item_floor(&self.columns.frames[0]),
             description_host,
             behind_task_box: behind_task_box(raw_def_line),
@@ -2099,13 +2094,26 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                     .and_then(|raw| host.content(raw))
                     .is_some_and(|line| !is_blank_line(line)),
         );
-        let attached: Vec<String> = lines[i..]
+        let mut attached: Vec<String> = lines[i..]
             .iter()
             .map_while(|raw| host.content(raw).filter(|line| !is_blank_line(line)))
             .map(|line| strip_leading_columns(line, host.note_floor.saturating_sub(2)))
             .collect();
         if attached.is_empty() {
             return i;
+        }
+        // A list marker ends an attached paragraph; the note then opens its
+        // list there (PART 0 S3, carve#4860).
+        let attached_refs: Vec<&str> = attached.iter().map(String::as_str).collect();
+        let lead = first_visible_note_line(&attached_refs).unwrap_or(0);
+        if line_starts_paragraph(trim_ascii_start(&attached[lead])) {
+            if let Some(at) = attached
+                .iter()
+                .skip(lead + 1)
+                .position(|line| is_list_marker(trim_ascii_start(line)))
+            {
+                attached.truncate(lead + 1 + at);
+            }
         }
         let attached_refs: Vec<&str> = attached.iter().map(String::as_str).collect();
         let count = attached_one_block_lines(CursorLines::Slice(&attached_refs), self.options);
@@ -2245,16 +2253,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             && !exact_colon_fence_len(rest).is_some_and(|run| run >= 3)
             && parse_link_def_line(rest).is_none()
             && parse_footnote_def_line(rest).is_none()
-            // §10 I2: a marker below a hosting item's content column continues
-            // that list; at or past it, or under a description, it is text
-            // under the note's paragraph.
-            && !(is_list_marker(rest)
-                && inside.is_some_and(|line| {
-                    host.list_floor
-                        .is_some_and(|floor| indent_columns(line) < floor)
-                }))
-            // A marker below a term ends the note (corpus 846, 855).
-            && !(is_list_marker(rest) && note_opens_with_term(note))
+            // A list marker that misses a marker body closes it (PART 0 S3, carve#4860).
+            && !is_list_marker(rest)
             // Outside the note's quotes, a marker or a quote left of an outer
             // item's content column leaves the item.
             && !(inside.is_none()

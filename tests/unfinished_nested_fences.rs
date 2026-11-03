@@ -15,8 +15,8 @@ fn unfinished_nested_fences_release_below_column_lines() {
 #[test]
 fn a_marker_in_an_open_description_paragraph_is_inline_text() {
     let source = "> :: t\n> :  d\n>    - ```\n>      x\nflush\n";
-    // Corpus 514-12 at spec 4577df8f reads the marker as a list (markup-carve/carve#4860, not ported yet).
-    let expected = "<blockquote>\n  <dl>\n    <dt>t</dt>\n    <dd>d\n- <code>\nx\nflush</code></dd>\n  </dl>\n</blockquote>";
+    // Corpus 514-12: the marker opens a list in the description body (markup-carve/carve#4860).
+    let expected = "<blockquote>\n  <dl>\n    <dt>t</dt>\n    <dd>\n      <p>d</p>\n      <ul>\n        <li>\n          <pre><code>x\n</code></pre>\n        </li>\n      </ul>\n    </dd>\n  </dl>\n</blockquote>\n<p>flush</p>";
     assert_eq!(carve::to_html(source).trim(), expected);
 }
 
