@@ -907,6 +907,17 @@ pub(in crate::parse) fn definition_body_fold(source: &str, options: &Options<'_>
     if body_ends_in_line_block_payload(source) {
         return (true, false);
     }
+    // A span leaves nothing, so the body's own line block takes no lazy line
+    // once a blank ended its stanza or before it has one (carve#4956).
+    if source.contains(":::") {
+        let mut scan = LineBlockTail::default();
+        for line in source.lines() {
+            scan.step(line);
+        }
+        if scan.host_col == 0 && scan.in_block() == Some(false) {
+            return (false, false);
+        }
+    }
     if body_ends_with_an_unnoded_interrupter(source)
         || (quoted_body_ends_with_an_invisible_line(source)
             && !body_ends_in_line_block_payload(source))

@@ -81,3 +81,48 @@ fn the_block_closer_after_the_missed_line_still_closes() {
         );
     }
 }
+
+#[test]
+fn a_description_stanza_a_blank_ended_takes_no_line_after_a_span() {
+    assert_eq!(
+        carve::to_html(":: t\n: ::: |\n  x\n\n  %%%\n  y\nb\n").trim_end(),
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <div class=\"line-block\">\n      <p>x</p>\n    </div>\n  </dd>\n</dl>\n<p>b</p>"
+    );
+}
+
+#[test]
+fn a_closed_quoted_span_opens_no_stanza() {
+    for source in [
+        "> ::: |\n> %%%\n> y\n> %%%\nb\n",
+        "> ::: |\n> %%%\n> %%%\nb\n",
+        "> ::: |\n> x\n>\n> %%%\n> y\n> %%%\nb\n",
+    ] {
+        let html = carve::to_html(source);
+        assert!(
+            html.trim_end().ends_with("</blockquote>\n<p>b</p>"),
+            "{source:?}\n{html}"
+        );
+    }
+}
+
+#[test]
+fn a_nested_item_stanza_keeps_the_line_after_any_span() {
+    for source in [
+        "- a\n  - ::: |\n    x\n    %%%\n    y\n    %%%\nb\n",
+        "- a\n  - ::: |\n    x\n    %%%\n    %%%\nb\n",
+        "- a\n  - ::: |\n    x\n    %%%\nb\n",
+        "- a\n  - ::: |\n    x\n    %%%\n    y\n    %%%\n  b\n",
+    ] {
+        let html = carve::to_html(source);
+        assert!(html.contains("<p>x<br>\nb</p>"), "{source:?}\n{html}");
+    }
+}
+
+#[test]
+fn an_item_in_a_description_keeps_the_body_line_after_a_blank_ended_stanza() {
+    let html = carve::to_html(":: t\n: - ::: |\n    x\n\n    %%%\n    y\n  b\n");
+    assert!(
+        html.contains("</ul>\n    <p>b</p>\n  </dd>"),
+        "{html}"
+    );
+}
