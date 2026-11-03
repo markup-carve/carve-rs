@@ -8,7 +8,10 @@ use carve::{to_html, to_html_with_options, Options};
 fn both_paths(src: &str) -> String {
     let facade = to_html(src);
     let authoritative = to_html_with_options(src, &Options::default().with_positions(true));
-    assert_eq!(facade, authoritative, "the two parse paths disagree on {src:?}");
+    assert_eq!(
+        facade, authoritative,
+        "the two parse paths disagree on {src:?}"
+    );
     facade
 }
 
