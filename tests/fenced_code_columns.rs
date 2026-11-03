@@ -33,7 +33,9 @@ fn opener_at_document_column_zero_opens_fence() {
 
 #[test]
 fn indented_document_openers_do_not_open_fences() {
-    crate::common::assert_rule_a_pins("fenced_code_columns::indented_document_openers_do_not_open_fences");
+    crate::common::assert_rule_a_pins(
+        "fenced_code_columns::indented_document_openers_do_not_open_fences",
+    );
 }
 
 #[test]

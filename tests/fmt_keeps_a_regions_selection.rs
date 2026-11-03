@@ -93,5 +93,7 @@ fn fmt_writes_the_region_marker_fixture_bytes() {
 
 #[test]
 fn a_region_marker_keeps_the_reading_it_had() {
-    crate::common::assert_rule_a_pins("fmt_keeps_a_regions_selection::a_region_marker_keeps_the_reading_it_had");
+    crate::common::assert_rule_a_pins(
+        "fmt_keeps_a_regions_selection::a_region_marker_keeps_the_reading_it_had",
+    );
 }

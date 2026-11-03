@@ -257,7 +257,9 @@ fn footnote_refusals_identify_the_verbatim_node() {
 
 #[test]
 fn nested_hosts_keep_exact_verbatim_payloads() {
-    crate::common::assert_rule_a_pins("verbatim_continuation_guards::nested_hosts_keep_exact_verbatim_payloads");
+    crate::common::assert_rule_a_pins(
+        "verbatim_continuation_guards::nested_hosts_keep_exact_verbatim_payloads",
+    );
 }
 
 #[test]

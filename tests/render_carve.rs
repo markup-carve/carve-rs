@@ -907,7 +907,9 @@ fn the_render_cap_still_bounds_a_hand_built_ast() {
 
 #[test]
 fn a_literal_marker_escapes_only_the_character_that_opens_it() {
-    crate::common::assert_rule_a_pins("render_carve::a_literal_marker_escapes_only_the_character_that_opens_it");
+    crate::common::assert_rule_a_pins(
+        "render_carve::a_literal_marker_escapes_only_the_character_that_opens_it",
+    );
 }
 
 // ---------------------------------------------------------------------------

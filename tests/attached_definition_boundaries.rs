@@ -120,7 +120,9 @@ fn definitions_keep_their_attached_block_ownership() {
 
 #[test]
 fn extension_blocks_keep_their_definition_shaped_payload() {
-    crate::common::assert_rule_a_pins("attached_definition_boundaries::extension_blocks_keep_their_definition_shaped_payload");
+    crate::common::assert_rule_a_pins(
+        "attached_definition_boundaries::extension_blocks_keep_their_definition_shaped_payload",
+    );
 }
 
 #[test]

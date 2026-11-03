@@ -36,7 +36,9 @@ fn a_closed_item_fence_does_not_hide_a_later_note_definition() {
 
 #[test]
 fn continued_marker_notes_follow_code_ownership() {
-    crate::common::assert_rule_a_pins("continued_marker_note_code_floor::continued_marker_notes_follow_code_ownership");
+    crate::common::assert_rule_a_pins(
+        "continued_marker_note_code_floor::continued_marker_notes_follow_code_ownership",
+    );
 }
 
 #[test]

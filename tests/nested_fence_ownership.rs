@@ -4,12 +4,16 @@ use carve::Options;
 
 #[test]
 fn nested_fence_ownership_matches_spec_509() {
-    crate::common::assert_rule_a_pins("nested_fence_ownership::nested_fence_ownership_matches_spec_509");
+    crate::common::assert_rule_a_pins(
+        "nested_fence_ownership::nested_fence_ownership_matches_spec_509",
+    );
 }
 
 #[test]
 fn nested_fence_markers_payload_and_siblings() {
-    crate::common::assert_rule_a_pins("nested_fence_ownership::nested_fence_markers_payload_and_siblings");
+    crate::common::assert_rule_a_pins(
+        "nested_fence_ownership::nested_fence_markers_payload_and_siblings",
+    );
 }
 
 #[test]

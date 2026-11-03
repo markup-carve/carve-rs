@@ -57,5 +57,7 @@ fn thematic_looking_lines_preserve_layout_and_settle() {
 
 #[test]
 fn ordinary_paragraph_guards_and_thematic_breaks_stay_unchanged() {
-    crate::common::assert_rule_a_pins("line_block_thematic_padding::ordinary_paragraph_guards_and_thematic_breaks_stay_unchanged");
+    crate::common::assert_rule_a_pins(
+        "line_block_thematic_padding::ordinary_paragraph_guards_and_thematic_breaks_stay_unchanged",
+    );
 }

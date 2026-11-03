@@ -19,7 +19,9 @@ fn a_marker_line_opaque_quote_preserves_authored_ownership() {
 
 #[test]
 fn a_closed_quoted_comment_preserves_lazy_payload_indentation() {
-    crate::common::assert_rule_a_pins("opaque_marker_quote_ownership::a_closed_quoted_comment_preserves_lazy_payload_indentation");
+    crate::common::assert_rule_a_pins(
+        "opaque_marker_quote_ownership::a_closed_quoted_comment_preserves_lazy_payload_indentation",
+    );
 }
 
 #[test]

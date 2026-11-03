@@ -110,7 +110,9 @@ fn djot_migration_keeps_rejected_opener_text() {
 
 #[test]
 fn prose_opener_does_not_block_formatting() {
-    crate::common::assert_rule_a_pins("invalid_container_metadata::prose_opener_does_not_block_formatting");
+    crate::common::assert_rule_a_pins(
+        "invalid_container_metadata::prose_opener_does_not_block_formatting",
+    );
 }
 
 #[test]

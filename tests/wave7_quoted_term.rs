@@ -1,6 +1,8 @@
 #[test]
 fn an_indented_unmarked_term_folds_into_the_open_quoted_term() {
-    crate::common::assert_rule_a_pins("wave7_quoted_term::an_indented_unmarked_term_folds_into_the_open_quoted_term");
+    crate::common::assert_rule_a_pins(
+        "wave7_quoted_term::an_indented_unmarked_term_folds_into_the_open_quoted_term",
+    );
 }
 
 #[test]
