@@ -440,8 +440,16 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             }
         }
         if let Some(block) = attached {
-            self.item_paragraph_open =
-                ParagraphOpen::Known(block_ends_with_open_paragraph(Some(&block), 0, false));
+            // A quote in a marker body ends at an unmarked list marker, so its
+            // paragraph is not open for one below the content column (PART 0 S3).
+            let quote_meets_marker = matches!(block, BlockNode::BlockQuote(_))
+                && self
+                    .cur
+                    .peek()
+                    .is_some_and(|line| is_list_marker(line) && indent_columns(line) < content_col);
+            self.item_paragraph_open = ParagraphOpen::Known(
+                !quote_meets_marker && block_ends_with_open_paragraph(Some(&block), 0, false),
+            );
             // Hoisted definitions leave no paragraph node behind (carve#801).
             let is_empty_paragraph = matches!(
                 &block,

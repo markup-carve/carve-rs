@@ -852,6 +852,9 @@ pub(crate) fn parse_continuation_block(
         cur.line_map.is_some().then_some(line_map.as_slice()),
         cur.col_map.is_some().then_some(col_map.as_slice()),
     );
+    // The attached block is the item's content, a marker body (PART 0 S3: an
+    // unmarked list marker below the content column ends a quote there).
+    sub.in_note_or_description = true;
     let mut floating_attrs: Option<Attrs> = None;
     let mut floating_attr_slots = None;
     let mut floating_attrs_pos: Option<Pos> = None;
