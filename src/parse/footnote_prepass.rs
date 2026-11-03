@@ -2816,20 +2816,30 @@ fn marker_line_fence(line: &str) -> Option<(FenceOpen, usize)> {
 
 fn note_link_def_candidate<'a>(line: &'a str, note: &NoteBody) -> &'a str {
     let text = trim_ascii_start(line);
-    if !text.starts_with('>') || quoted_fence_left_open(&note.lines, quote_depth(text)) {
+    let unquoted = without_blockquote_prefixes(text);
+    if unquoted.len() == text.len()
+        || parse_link_def_line(unquoted).is_none()
+        || quoted_fence_left_open(&note.lines, quote_depth(text))
+    {
         return text;
     }
     // A quoted definition defines beside an open quote paragraph too (PART 9R R1a).
-    without_blockquote_prefixes(text)
+    unquoted
 }
 
-fn quote_depth(mut text: &str) -> usize {
+fn quote_depth(text: &str) -> usize {
     let mut depth = 0;
-    while let Some(rest) = strip_blockquote_prefix(trim_ascii_start(text)) {
-        text = rest;
+    while strip_quote_levels(text, depth + 1).is_some() {
         depth += 1;
     }
     depth
+}
+
+fn strip_quote_levels(mut text: &str, levels: usize) -> Option<&str> {
+    for _ in 0..levels {
+        text = strip_blockquote_prefix(trim_ascii_start(text))?;
+    }
+    Some(text)
 }
 
 /// Does the quoted run ending the note body leave a fence open at `depth`?
@@ -2841,13 +2851,18 @@ fn quoted_fence_left_open(lines: &[String], depth: usize) -> bool {
     let mut open: Option<(FenceOpen, usize)> = None;
     for line in &lines[start..] {
         let line_depth = quote_depth(line);
-        let body = without_blockquote_prefixes(trim_ascii_start(line));
         if let Some((fence, fence_depth)) = open {
-            if line_depth < fence_depth || is_fence_close(body, fence) {
+            // A deeper quoted line is the fence's payload, never its closer.
+            if line_depth < fence_depth
+                || line_depth == fence_depth
+                    && strip_quote_levels(line, fence_depth)
+                        .is_some_and(|body| is_fence_close(body, fence))
+            {
                 open = None;
             }
             continue;
         }
+        let body = without_blockquote_prefixes(trim_ascii_start(line));
         open = detect_fence_open(body).map(|fence| (fence, line_depth));
     }
     open.is_some_and(|(_, fence_depth)| depth >= fence_depth)

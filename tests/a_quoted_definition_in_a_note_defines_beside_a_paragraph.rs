@@ -27,3 +27,10 @@ fn a_definition_shaped_line_in_a_quoted_fence_stays_code() {
     assert!(out.contains("[x][r]"), "{out}");
     assert!(out.contains("code\n[r]: /x"), "{out}");
 }
+
+#[test]
+fn a_deeper_quoted_fence_line_does_not_close_the_outer_fence() {
+    let out = html("[^n]: a\n  > ```\n  > > ```\n  > prose\n  > [r]: /x\n\n[x][r] [^n]\n");
+    assert!(out.contains("[x][r]"), "{out}");
+    assert!(out.contains("prose\n[r]: /x"), "{out}");
+}
