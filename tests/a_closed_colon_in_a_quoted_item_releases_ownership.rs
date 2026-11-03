@@ -388,7 +388,6 @@ fn a_marker_between_deeper_ancestor_columns_keeps_the_closed_leaf_owner() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn an_ancestor_colon_closer_and_a_folded_malformed_marker_leave_no_claim() {
     for source in [
         "> - ::: box\n>   - ::: inner\n>     body\n>   :::\n- tail\n",
