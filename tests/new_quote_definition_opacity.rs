@@ -1,28 +1,27 @@
 use carve::{parse, render_html};
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_fence_tests_paragraph_ownership_in_its_admitted_quote() {
     let cases = [
         ("new-quote-note", "p\n> ```\n> [^a]: note\n", "<p>p</p>\n<blockquote>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>", 0),
         ("new-quote-link", "p\n> ```\n> [r]: /target\n", "<p>p</p>\n<blockquote>\n  <pre><code>[r]: /target\n</code></pre>\n</blockquote>", 0),
         ("new-quote-citation", "p\n> ```\n> [@a]: expansion\n", "<p>p</p>\n<blockquote>\n  <pre><code>[@a]: expansion\n</code></pre>\n</blockquote>", 0),
-        ("same-quote-paragraph", "> p\n> ```\n> [^a]: note\n", "<blockquote><p>p\n<code></code></p></blockquote>", 0),
-        ("indented-new-quote", "p\n  > ```\n  > [^a]: note\n", "<p>p\n&gt; <code>\n&gt; [^a]: note</code></p>", 0),
+        ("same-quote-paragraph", "> p\n> ```\n> [^a]: note\n", "<blockquote>\n  <p>p</p>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>", 0),
+        ("indented-new-quote", "p\n  > ```\n  > [^a]: note\n", "<p>p</p>\n<blockquote>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>", 0),
         ("blank-before-new-quote", "p\n\n> ```\n> [^a]: note\n", "<p>p</p>\n<blockquote>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>", 0),
         ("deeper-new-quote", "> p\n> > ```\n> > [^a]: note\n", "<blockquote>\n  <p>p</p>\n  <blockquote>\n    <pre><code>[^a]: note\n</code></pre>\n  </blockquote>\n</blockquote>", 0),
         ("tilde-new-quote", "p\n> ~~~\n> [^a]: note\n", "<p>p</p>\n<blockquote>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>", 0),
-        ("review-paragraph-0", "> p\n>   # not a heading\n> ```\n> [^a]: note\n", "<blockquote><p>p\n# not a heading\n<code></code></p></blockquote>", 0),
-        ("review-paragraph-1", "> p\n> ![a](b.png)\n> ```\n> [^a]: note\n", "<blockquote><p>p\n<img src=\"b.png\" alt=\"a\">\n<code></code></p></blockquote>", 0),
-        ("review-paragraph-2", "> p\n> : x\n> ```\n> [^a]: note\n", "<blockquote><p>p\n: x\n<code></code></p></blockquote>", 0),
-        ("review-paragraph-3", ":: t\n: a\n  more\n: > p\n  > ```\n  > [^a]: note\n", "<dl>\n  <dt>t</dt>\n  <dd>a\nmore</dd>\n  <dd>\n    <blockquote><p>p\n<code></code></p></blockquote>\n  </dd>\n</dl>", 0),
-        ("review-marker-paragraph-0", "> p\n> - # h\n> ```\n> [^a]: note\n", "<blockquote><p>p\n- # h\n<code></code></p></blockquote>", 0),
-        ("review-marker-paragraph-1", ":: t\n: d\n\n> p\n> : # x\n> ```\n> [^a]: note\n", "<dl>\n  <dt>t</dt>\n  <dd>d</dd>\n</dl>\n<blockquote><p>p\n: # x\n<code></code></p></blockquote>", 0),
-        ("review-lazy-marker-paragraph", "> p\n- # h\n> ```\n> [^a]: note\n", "<blockquote><p>p\n- # h\n<code></code></p></blockquote>", 0),
-        ("review-host-boundary-0", "> > p\n>   > # h\n> > ```\n> > [^a]: note\n", "<blockquote>\n  <blockquote><p>p\n&gt; # h\n<code></code></p></blockquote>\n</blockquote>", 0),
+        ("review-paragraph-0", "> p\n>   # not a heading\n> ```\n> [^a]: note\n", "<blockquote>\n  <p>p</p>\n  <h1 id=\"not-a-heading\">not a heading</h1>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>", 0),
+        ("review-paragraph-1", "> p\n> ![a](b.png)\n> ```\n> [^a]: note\n", "<blockquote>\n  <p>p\n<img src=\"b.png\" alt=\"a\"></p>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>", 0),
+        ("review-paragraph-2", "> p\n> : x\n> ```\n> [^a]: note\n", "<blockquote>\n  <p>p\n: x</p>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>", 0),
+        ("review-paragraph-3", ":: t\n: a\n  more\n: > p\n  > ```\n  > [^a]: note\n", "<dl>\n  <dt>t</dt>\n  <dd>a\nmore</dd>\n  <dd>\n    <blockquote>\n      <p>p</p>\n      <pre><code>[^a]: note\n</code></pre>\n    </blockquote>\n  </dd>\n</dl>", 0),
+        ("review-marker-paragraph-0", "> p\n> - # h\n> ```\n> [^a]: note\n", "<blockquote>\n  <p>p\n- # h</p>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>", 0),
+        ("review-marker-paragraph-1", ":: t\n: d\n\n> p\n> : # x\n> ```\n> [^a]: note\n", "<dl>\n  <dt>t</dt>\n  <dd>d</dd>\n</dl>\n<blockquote>\n  <p>p\n: # x</p>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>", 0),
+        ("review-lazy-marker-paragraph", "> p\n- # h\n> ```\n> [^a]: note\n", "<blockquote>\n  <p>p\n- # h</p>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>", 0),
+        ("review-host-boundary-0", "> > p\n>   > # h\n> > ```\n> > [^a]: note\n", "<blockquote>\n  <blockquote>\n    <p>p</p>\n    <h1 id=\"h\">h</h1>\n    <pre><code>[^a]: note\n</code></pre>\n  </blockquote>\n</blockquote>", 0),
         ("review-host-boundary-1", "p\n> ```\n> [^a]: note\n\n:: u\n~~~\n[r]: /u\n\n[x][r]\n", "<p>p</p>\n<blockquote>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>\n<dl>\n  <dt>u</dt>\n</dl>\n<pre><code>[r]: /u\n\n[x][r]\n</code></pre>", 0),
         ("review-quoted-payload-0", "> - a\n>     ```\n>   [r]: /u\n>     ```\n", "<blockquote>\n  <ul>\n    <li>a\n      <pre><code>[r]: /u\n</code></pre>\n    </li>\n  </ul>\n</blockquote>", 0),
-        ("review-quoted-payload-1", "> :::note\n> :::\n> ```\n> [^a]: n\n", "<blockquote><p>:::note\n:::\n<code></code></p></blockquote>", 0),
+        ("review-quoted-payload-1", "> :::note\n> :::\n> ```\n> [^a]: n\n", "<blockquote>\n  <p>:::note</p>\n  <div>\n    <pre><code>[^a]: n\n</code></pre>\n  </div>\n</blockquote>", 0),
     ];
     for (name, source, expected, notes) in cases {
         let doc = parse(source);
@@ -43,41 +42,40 @@ fn definitions_after_an_unclosed_quote_fence_are_outside_its_payload() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn quote_host_transitions_keep_folding_and_definition_boundaries() {
     let cases = [
         ("quoted-marker-code-then-note", "> - ```\n>   code\n>   ```\n> [^a]: note\n", "<blockquote>\n  <ul>\n    <li>\n      <pre><code>code\n</code></pre>\n    </li>\n  </ul>\n</blockquote>"),
-        ("blank-description-followed-term-code", ":: t\n\n: > p\n  > ```\n  > [^a]: note\n\n:: u\n~~~\n[r]: /u\n\n[x][r]\n", "<dl>\n  <dt>t</dt>\n  <dd>\n    <blockquote><p>p\n<code></code></p></blockquote>\n  </dd>\n  <dt>u</dt>\n</dl>\n<pre><code>[r]: /u\n\n[x][r]\n</code></pre>"),
+        ("blank-description-followed-term-code", ":: t\n\n: > p\n  > ```\n  > [^a]: note\n\n:: u\n~~~\n[r]: /u\n\n[x][r]\n", "<dl>\n  <dt>t</dt>\n  <dd>\n    <blockquote>\n      <p>p</p>\n      <pre><code>[^a]: note\n</code></pre>\n    </blockquote>\n  </dd>\n  <dt>u</dt>\n</dl>\n<pre><code>[r]: /u\n\n[x][r]\n</code></pre>"),
         ("indented-fence-text", ">  ~~~\n> ~~~\n> [^a]: n\n", "<blockquote>\n  <pre><code></code></pre>\n</blockquote>"),
-        ("indented-list-quote", "- a\n   > b\n   ~~~\n[r]: /u\n", "<ul>\n  <li>a\n    <blockquote><p>b\n~~~</p></blockquote>\n  </li>\n</ul>"),
-        ("indented-inner-quote", "> p\n>   > b\n> ```\n> [^a]: n\n", "<blockquote>\n  <p>p</p>\n  <blockquote><p>b\n<code></code></p></blockquote>\n</blockquote>"),
+        ("indented-list-quote", "- a\n   > b\n   ~~~\n[r]: /u\n", "<ul>\n  <li>a\n    <blockquote><p>b</p></blockquote>\n    <pre><code></code></pre>\n  </li>\n</ul>"),
+        ("indented-inner-quote", "> p\n>   > b\n> ```\n> [^a]: n\n", "<blockquote>\n  <p>p</p>\n  <blockquote><p>b</p></blockquote>\n  <pre><code>[^a]: n\n</code></pre>\n</blockquote>"),
         ("lazy-after-code-payload", "> ```\n> x\nlazy\n> ~~~\n> [^a]: note\n", "<blockquote>\n  <pre><code>x\n</code></pre>\n</blockquote>\n<p>lazy</p>\n<blockquote>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>"),
         ("lazy-after-closed-code-payload", "> ```\n> x\n> ```\nlazy\n> ~~~\n> [^a]: note\n", "<blockquote>\n  <pre><code>x\n</code></pre>\n</blockquote>\n<p>lazy</p>\n<blockquote>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>"),
         ("lazy-after-comment-payload", "> %%%\n> x\n> %%%\nlazy\n> ```\n> [^a]: note\n", "<blockquote>\n\n</blockquote>\n<p>lazy</p>\n<blockquote>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>"),
-        ("lazy-list-host-term", "- > p\n  lazy\n  > ```\n  > [^a]: note\n\n:: t\n", "<ul>\n  <li>\n    <blockquote><p>p\nlazy\n<code></code></p></blockquote>\n  </li>\n</ul>\n<dl>\n  <dt>t</dt>\n</dl>"),
+        ("lazy-list-host-term", "- > p\n  lazy\n  > ```\n  > [^a]: note\n\n:: t\n", "<ul>\n  <li>\n    <blockquote>\n      <p>p\nlazy</p>\n      <pre><code>[^a]: note\n</code></pre>\n    </blockquote>\n  </li>\n</ul>\n<dl>\n  <dt>t</dt>\n</dl>"),
         ("lazy-after-code", "> ```\nlazy\n> ~~~\n> [^a]: note\n", "<blockquote>\n  <pre><code></code></pre>\n</blockquote>\n<p>lazy</p>\n<blockquote>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>"),
         ("lazy-after-hr", "> ---\nlazy\n> ```\n> [^a]: note\n", "<blockquote>\n  <hr>\n</blockquote>\n<p>lazy</p>\n<blockquote>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>"),
-        ("lazy-description-host", ":: t\n\n: > p\nlazy\n  > ```\n  > [^a]: note\n", "<dl>\n  <dt>t</dt>\n  <dd>\n    <blockquote><p>p\nlazy\n<code></code></p></blockquote>\n  </dd>\n</dl>"),
-        ("lazy-after-inline-fence", "> p\n> ```\nlazy\n> ~~~\n> [^a]: note\n", "<blockquote><p>p\n<code>\nlazy\n~~~</code></p></blockquote>"),
-        ("lazy-quote", "> p\nlazy\n> ```\n> [^a]: note\n", "<blockquote><p>p\nlazy\n<code></code></p></blockquote>"),
-        ("lazy-deep-quote", "> > p\n> lazy\n> > ```\n> > [^a]: note\n", "<blockquote>\n  <blockquote><p>p\nlazy\n<code></code></p></blockquote>\n</blockquote>"),
+        ("lazy-description-host", ":: t\n\n: > p\nlazy\n  > ```\n  > [^a]: note\n", "<dl>\n  <dt>t</dt>\n  <dd>\n    <blockquote>\n      <p>p\nlazy</p>\n      <pre><code>[^a]: note\n</code></pre>\n    </blockquote>\n  </dd>\n</dl>"),
+        ("lazy-after-inline-fence", "> p\n> ```\nlazy\n> ~~~\n> [^a]: note\n", "<blockquote>\n  <p>p</p>\n  <pre><code></code></pre>\n</blockquote>\n<p>lazy</p>\n<blockquote>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>"),
+        ("lazy-quote", "> p\nlazy\n> ```\n> [^a]: note\n", "<blockquote>\n  <p>p\nlazy</p>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>"),
+        ("lazy-deep-quote", "> > p\n> lazy\n> > ```\n> > [^a]: note\n", "<blockquote>\n  <blockquote>\n    <p>p\nlazy</p>\n    <pre><code>[^a]: note\n</code></pre>\n  </blockquote>\n</blockquote>"),
         ("lazy-blank-boundary", "> p\nlazy\n\n> ```\n> [^a]: note\n", "<blockquote><p>p\nlazy</p></blockquote>\n<blockquote>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>"),
         ("lazy-heading-boundary", "> p\nlazy\n# h\n> ```\n> [^a]: note\n", "<blockquote><p>p\nlazy</p></blockquote>\n<section id=\"h\">\n  <h1>h</h1>\n  <blockquote>\n    <pre><code>[^a]: note\n</code></pre>\n  </blockquote>\n</section>"),
         ("lazy-comment-boundary", "> p\nlazy\n%% comment\n> ```\n> [^a]: note\n", "<blockquote><p>p\nlazy</p></blockquote>\n<blockquote>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>"),
-        ("lazy-list-boundary", "> p\nlazy\n- next\n> ```\n> [^a]: note\n", "<blockquote><p>p\nlazy\n- next\n<code></code></p></blockquote>"),
-        ("review-description-floor", ":: t\n\n: > p\n  > ```\n  > [^a]: note\n", "<dl>\n  <dt>t</dt>\n  <dd>\n    <blockquote><p>p\n<code></code></p></blockquote>\n  </dd>\n</dl>"),
-        ("exit-note", "> p\n```\n\n[^a]: note\n", "<blockquote><p>p\n<code></code></p></blockquote>"),
-        ("exit-link", "> p\n```\n\n[r]: /u\n", "<blockquote><p>p\n<code></code></p></blockquote>"),
-        ("exit-abbr", "> p\n```\n\n*[a]: expansion\n", "<blockquote><p>p\n<code></code></p></blockquote>"),
-        ("nested-exit", "> > p\n> ```\n> [^a]: note\n", "<blockquote>\n  <blockquote><p>p\n<code></code></p></blockquote>\n</blockquote>"),
+        ("lazy-list-boundary", "> p\nlazy\n- next\n> ```\n> [^a]: note\n", "<blockquote>\n  <p>p\nlazy\n- next</p>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>"),
+        ("review-description-floor", ":: t\n\n: > p\n  > ```\n  > [^a]: note\n", "<dl>\n  <dt>t</dt>\n  <dd>\n    <blockquote>\n      <p>p</p>\n      <pre><code>[^a]: note\n</code></pre>\n    </blockquote>\n  </dd>\n</dl>"),
+        ("exit-note", "> p\n```\n\n[^a]: note\n", "<blockquote><p>p</p></blockquote>\n<pre><code>\n[^a]: note\n</code></pre>"),
+        ("exit-link", "> p\n```\n\n[r]: /u\n", "<blockquote><p>p</p></blockquote>\n<pre><code>\n[r]: /u\n</code></pre>"),
+        ("exit-abbr", "> p\n```\n\n*[a]: expansion\n", "<blockquote><p>p</p></blockquote>\n<pre><code>\n*[a]: expansion\n</code></pre>"),
+        ("nested-exit", "> > p\n> ```\n> [^a]: note\n", "<blockquote>\n  <blockquote><p>p</p></blockquote>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>"),
         ("closed-list-quote", "> - ```\n> [r]: /u\n>   ```\n", "<blockquote>\n  <ul>\n    <li>\n      <pre><code></code></pre>\n    </li>\n  </ul>\n  <pre><code></code></pre>\n</blockquote>"),
         ("term-blank-quote", ":: t\n\n: > ```\n> [^a]: note\n\n[^outside]: body\n", "<dl>\n  <dt>t</dt>\n  <dd>\n    <blockquote>\n      <pre><code></code></pre>\n    </blockquote>\n  </dd>\n</dl>\n<blockquote>\n\n</blockquote>"),
-        ("same-list-host", "- > p\n  > ```\n  > [^a]: note\n", "<ul>\n  <li>\n    <blockquote><p>p\n<code></code></p></blockquote>\n  </li>\n</ul>"),
+        ("same-list-host", "- > p\n  > ```\n  > [^a]: note\n", "<ul>\n  <li>\n    <blockquote>\n      <p>p</p>\n      <pre><code>[^a]: note\n</code></pre>\n    </blockquote>\n  </li>\n</ul>"),
         ("blank-list-host", "- > p\n\n  > ```\n  > [^a]: note\n", "<ul>\n  <li>\n    <blockquote><p>p</p></blockquote>\n    <blockquote>\n      <pre><code>[^a]: note\n</code></pre>\n    </blockquote>\n  </li>\n</ul>"),
         ("quote-root-link-after", "p\n> ```\n> [^a]: note\n\n[r]: /u\n\n[x][r]\n", "<p>p</p>\n<blockquote>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
         ("closed-list-quote-owned", "> - ```\n>   [r]: /u\n>   ```\n", "<blockquote>\n  <ul>\n    <li>\n      <pre><code>[r]: /u\n</code></pre>\n    </li>\n  </ul>\n</blockquote>"),
-        ("description-blank-owned-note", ":: t\n\n: > ```\n   > [^a]: note\n\n[^outside]: body\n", "<dl>\n  <dt>t</dt>\n  <dd>\n    <blockquote>\n      <pre><code>%%\u{e006}       \n</code></pre>\n    </blockquote>\n  </dd>\n</dl>"),
-        ("description-blank-paragraph", ":: t\n\n: > p\n   > ```\n   > [^a]: note\n", "<dl>\n  <dt>t</dt>\n  <dd>\n    <blockquote><p>p\n&gt; <code>\n&gt; [^a]: note</code></p></blockquote>\n  </dd>\n</dl>"),
+        ("description-blank-owned-note", ":: t\n\n: > ```\n   > [^a]: note\n\n[^outside]: body\n", "<dl>\n  <dt>t</dt>\n  <dd>\n    <blockquote>\n      <pre><code>[^a]: note\n</code></pre>\n    </blockquote>\n  </dd>\n</dl>"),
+        ("description-blank-paragraph", ":: t\n\n: > p\n   > ```\n   > [^a]: note\n", "<dl>\n  <dt>t</dt>\n  <dd>\n    <blockquote>\n      <p>p</p>\n      <pre><code>[^a]: note\n</code></pre>\n    </blockquote>\n  </dd>\n</dl>"),
         ("description-blank-owned-link", ":: t\n\n: > ```\n   > [r]: /u\n\n[x][r]\n", "<dl>\n  <dt>t</dt>\n  <dd>\n    <blockquote>\n      <pre><code>[r]: /u\n</code></pre>\n    </blockquote>\n  </dd>\n</dl>\n<p>[x][r]</p>"),
         ("new-quote-true-abbr", "p\n> ```\n> *[a]: expansion\n", "<p>p</p>\n<blockquote>\n  <pre><code>*[a]: expansion\n</code></pre>\n</blockquote>"),
     ];
@@ -206,7 +204,6 @@ fn folded_inline_fences_keep_neighboring_block_boundaries() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn quoted_item_witness_and_owned_absorption_match_native() {
     let cases = [
         (
@@ -217,7 +214,7 @@ fn quoted_item_witness_and_owned_absorption_match_native() {
         (
             "item-witness-1-1",
             "> - a\n>  - ```\n>    x\n> \n>    ~~~\n>    ```\n>    [r]: /u\n\n[x][r]\n",
-            "<blockquote>\n  <ul>\n    <li>a\n- <code>\nx</code>\n      <pre><code>```\n[r]: /u\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p>[x][r]</p>",
+            "<blockquote>\n  <ul>\n    <li>a</li>\n    <li>\n      <pre><code>x\n\n~~~\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>",
         ),
         (
             "item-witness-1-2",
@@ -237,52 +234,52 @@ fn quoted_item_witness_and_owned_absorption_match_native() {
         (
             "item-witness-1-5",
             "> p\n> - ```\n>   x\n> \n>   ~~~\n>   ```\n>   [r]: /u\n\n[x][r]\n",
-            "<blockquote>\n  <p>p\n- <code>\nx</code></p>\n  <p>~~~\n<code>\n[r]: /u</code></p>\n</blockquote>\n<p>[x][r]</p>",
+            "<blockquote>\n  <p>p\n- <code>\nx</code></p>\n  <pre><code>```\n[r]: /u\n</code></pre>\n</blockquote>\n<p>[x][r]</p>",
         ),
         (
             "item-witness-1-6",
             "> p\n>  - ```\n>    x\n> \n>    ~~~\n>    ```\n>    [r]: /u\n\n[x][r]\n",
-            "<blockquote>\n  <p>p\n- <code>\nx</code></p>\n  <p>~~~\n<code>\n[r]: /u</code></p>\n</blockquote>\n<p>[x][r]</p>",
+            "<blockquote>\n  <p>p\n- <code>\nx</code></p>\n  <pre><code>```\n[r]: /u\n</code></pre>\n</blockquote>\n<p>[x][r]</p>",
         ),
         (
             "item-witness-1-7",
             "> p\n>   - ```\n>     x\n> \n>     ~~~\n>     ```\n>     [r]: /u\n\n[x][r]\n",
-            "<blockquote>\n  <p>p\n- <code>\nx</code></p>\n  <p>~~~\n<code>\n[r]: /u</code></p>\n</blockquote>\n<p>[x][r]</p>",
+            "<blockquote>\n  <p>p\n- <code>\nx</code></p>\n  <pre><code>```\n[r]: /u\n</code></pre>\n</blockquote>\n<p>[x][r]</p>",
         ),
         (
             "item-witness-1-8",
             "> p\n>    - ```\n>      x\n> \n>      ~~~\n>      ```\n>      [r]: /u\n\n[x][r]\n",
-            "<blockquote>\n  <p>p\n- <code>\nx</code></p>\n  <p>~~~\n<code>\n[r]: /u</code></p>\n</blockquote>\n<p>[x][r]</p>",
+            "<blockquote>\n  <p>p\n- <code>\nx</code></p>\n  <pre><code>```\n[r]: /u\n</code></pre>\n</blockquote>\n<p>[x][r]</p>",
         ),
         (
             "item-witness-1-9",
             "> p\n>     - ```\n>       x\n> \n>       ~~~\n>       ```\n>       [r]: /u\n\n[x][r]\n",
-            "<blockquote>\n  <p>p\n- <code>\nx</code></p>\n  <p>~~~\n<code>\n[r]: /u</code></p>\n</blockquote>\n<p>[x][r]</p>",
+            "<blockquote>\n  <p>p\n- <code>\nx</code></p>\n  <pre><code>```\n[r]: /u\n</code></pre>\n</blockquote>\n<p>[x][r]</p>",
         ),
         (
             "item-witness-1-10",
             "> p\n> - a\n> - ```\n>   x\n> \n>   ~~~\n>   ```\n>   [r]: /u\n\n[x][r]\n",
-            "<blockquote>\n  <p>p\n- a\n- <code>\nx</code></p>\n  <p>~~~\n<code>\n[r]: /u</code></p>\n</blockquote>\n<p>[x][r]</p>",
+            "<blockquote>\n  <p>p\n- a\n- <code>\nx</code></p>\n  <pre><code>```\n[r]: /u\n</code></pre>\n</blockquote>\n<p>[x][r]</p>",
         ),
         (
             "item-witness-1-11",
             "> p\n> - a\n>  - ```\n>    x\n> \n>    ~~~\n>    ```\n>    [r]: /u\n\n[x][r]\n",
-            "<blockquote>\n  <p>p\n- a\n- <code>\nx</code></p>\n  <p>~~~\n<code>\n[r]: /u</code></p>\n</blockquote>\n<p>[x][r]</p>",
+            "<blockquote>\n  <p>p\n- a\n- <code>\nx</code></p>\n  <pre><code>```\n[r]: /u\n</code></pre>\n</blockquote>\n<p>[x][r]</p>",
         ),
         (
             "item-witness-1-12",
             "> p\n> - a\n>   - ```\n>     x\n> \n>     ~~~\n>     ```\n>     [r]: /u\n\n[x][r]\n",
-            "<blockquote>\n  <p>p\n- a\n- <code>\nx</code></p>\n  <p>~~~\n<code>\n[r]: /u</code></p>\n</blockquote>\n<p>[x][r]</p>",
+            "<blockquote>\n  <p>p\n- a\n- <code>\nx</code></p>\n  <pre><code>```\n[r]: /u\n</code></pre>\n</blockquote>\n<p>[x][r]</p>",
         ),
         (
             "item-witness-1-13",
             "> p\n> - a\n>    - ```\n>      x\n> \n>      ~~~\n>      ```\n>      [r]: /u\n\n[x][r]\n",
-            "<blockquote>\n  <p>p\n- a\n- <code>\nx</code></p>\n  <p>~~~\n<code>\n[r]: /u</code></p>\n</blockquote>\n<p>[x][r]</p>",
+            "<blockquote>\n  <p>p\n- a\n- <code>\nx</code></p>\n  <pre><code>```\n[r]: /u\n</code></pre>\n</blockquote>\n<p>[x][r]</p>",
         ),
         (
             "item-witness-1-14",
             "> p\n> - a\n>     - ```\n>       x\n> \n>       ~~~\n>       ```\n>       [r]: /u\n\n[x][r]\n",
-            "<blockquote>\n  <p>p\n- a\n- <code>\nx</code></p>\n  <p>~~~\n<code>\n[r]: /u</code></p>\n</blockquote>\n<p>[x][r]</p>",
+            "<blockquote>\n  <p>p\n- a\n- <code>\nx</code></p>\n  <pre><code>```\n[r]: /u\n</code></pre>\n</blockquote>\n<p>[x][r]</p>",
         ),
         (
             "item-witness-1-15",
@@ -292,7 +289,7 @@ fn quoted_item_witness_and_owned_absorption_match_native() {
         (
             "item-witness-1-16",
             "> - a\n> lazy\n>  - ```\n>    x\n> \n>    ~~~\n>    ```\n>    [r]: /u\n\n[x][r]\n",
-            "<blockquote>\n  <ul>\n    <li>a\nlazy\n- <code>\nx</code>\n      <pre><code>```\n[r]: /u\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p>[x][r]</p>",
+            "<blockquote>\n  <ul>\n    <li>a\nlazy</li>\n    <li>\n      <pre><code>x\n\n~~~\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>",
         ),
         (
             "item-witness-1-17",
@@ -312,7 +309,7 @@ fn quoted_item_witness_and_owned_absorption_match_native() {
         (
             "owned-absorption-1-true",
             "> p\n> - ```\n>   x\n> :::bad\n> :::\n> ```\n> [r]: /u\n\n[x][r]\n",
-            "<blockquote><p>p\n- <code>\nx\n:::bad\n:::\n</code></p></blockquote>\n<p><a href=\"/u\">x</a></p>",
+            "<blockquote>\n  <p>p\n- <code>\nx\n:::bad</code></p>\n  <div>\n    <pre><code>[r]: /u\n</code></pre>\n  </div>\n</blockquote>\n<p>[x][r]</p>",
         ),
         (
             "owned-absorption-1-false",
@@ -327,7 +324,7 @@ fn quoted_item_witness_and_owned_absorption_match_native() {
         (
             "item-witness-2-23",
             "> > - a\n> >  - ```\n> >    x\n> > \n> >    ~~~\n> >    ```\n> >    [r]: /u\n\n[x][r]\n",
-            "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n- <code>\nx</code>\n        <pre><code>```\n[r]: /u\n</code></pre>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
+            "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a</li>\n      <li>\n        <pre><code>x\n\n~~~\n</code></pre>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>",
         ),
         (
             "item-witness-2-24",
@@ -347,52 +344,52 @@ fn quoted_item_witness_and_owned_absorption_match_native() {
         (
             "item-witness-2-27",
             "> > p\n> > - ```\n> >   x\n> > \n> >   ~~~\n> >   ```\n> >   [r]: /u\n\n[x][r]\n",
-            "<blockquote>\n  <blockquote>\n    <p>p\n- <code>\nx</code></p>\n    <p>~~~\n<code>\n[r]: /u</code></p>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
+            "<blockquote>\n  <blockquote>\n    <p>p\n- <code>\nx</code></p>\n    <pre><code>```\n[r]: /u\n</code></pre>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
         ),
         (
             "item-witness-2-28",
             "> > p\n> >  - ```\n> >    x\n> > \n> >    ~~~\n> >    ```\n> >    [r]: /u\n\n[x][r]\n",
-            "<blockquote>\n  <blockquote>\n    <p>p\n- <code>\nx</code></p>\n    <p>~~~\n<code>\n[r]: /u</code></p>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
+            "<blockquote>\n  <blockquote>\n    <p>p\n- <code>\nx</code></p>\n    <pre><code>```\n[r]: /u\n</code></pre>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
         ),
         (
             "item-witness-2-29",
             "> > p\n> >   - ```\n> >     x\n> > \n> >     ~~~\n> >     ```\n> >     [r]: /u\n\n[x][r]\n",
-            "<blockquote>\n  <blockquote>\n    <p>p\n- <code>\nx</code></p>\n    <p>~~~\n<code>\n[r]: /u</code></p>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
+            "<blockquote>\n  <blockquote>\n    <p>p\n- <code>\nx</code></p>\n    <pre><code>```\n[r]: /u\n</code></pre>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
         ),
         (
             "item-witness-2-30",
             "> > p\n> >    - ```\n> >      x\n> > \n> >      ~~~\n> >      ```\n> >      [r]: /u\n\n[x][r]\n",
-            "<blockquote>\n  <blockquote>\n    <p>p\n- <code>\nx</code></p>\n    <p>~~~\n<code>\n[r]: /u</code></p>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
+            "<blockquote>\n  <blockquote>\n    <p>p\n- <code>\nx</code></p>\n    <pre><code>```\n[r]: /u\n</code></pre>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
         ),
         (
             "item-witness-2-31",
             "> > p\n> >     - ```\n> >       x\n> > \n> >       ~~~\n> >       ```\n> >       [r]: /u\n\n[x][r]\n",
-            "<blockquote>\n  <blockquote>\n    <p>p\n- <code>\nx</code></p>\n    <p>~~~\n<code>\n[r]: /u</code></p>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
+            "<blockquote>\n  <blockquote>\n    <p>p\n- <code>\nx</code></p>\n    <pre><code>```\n[r]: /u\n</code></pre>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
         ),
         (
             "item-witness-2-32",
             "> > p\n> > - a\n> > - ```\n> >   x\n> > \n> >   ~~~\n> >   ```\n> >   [r]: /u\n\n[x][r]\n",
-            "<blockquote>\n  <blockquote>\n    <p>p\n- a\n- <code>\nx</code></p>\n    <p>~~~\n<code>\n[r]: /u</code></p>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
+            "<blockquote>\n  <blockquote>\n    <p>p\n- a\n- <code>\nx</code></p>\n    <pre><code>```\n[r]: /u\n</code></pre>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
         ),
         (
             "item-witness-2-33",
             "> > p\n> > - a\n> >  - ```\n> >    x\n> > \n> >    ~~~\n> >    ```\n> >    [r]: /u\n\n[x][r]\n",
-            "<blockquote>\n  <blockquote>\n    <p>p\n- a\n- <code>\nx</code></p>\n    <p>~~~\n<code>\n[r]: /u</code></p>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
+            "<blockquote>\n  <blockquote>\n    <p>p\n- a\n- <code>\nx</code></p>\n    <pre><code>```\n[r]: /u\n</code></pre>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
         ),
         (
             "item-witness-2-34",
             "> > p\n> > - a\n> >   - ```\n> >     x\n> > \n> >     ~~~\n> >     ```\n> >     [r]: /u\n\n[x][r]\n",
-            "<blockquote>\n  <blockquote>\n    <p>p\n- a\n- <code>\nx</code></p>\n    <p>~~~\n<code>\n[r]: /u</code></p>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
+            "<blockquote>\n  <blockquote>\n    <p>p\n- a\n- <code>\nx</code></p>\n    <pre><code>```\n[r]: /u\n</code></pre>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
         ),
         (
             "item-witness-2-35",
             "> > p\n> > - a\n> >    - ```\n> >      x\n> > \n> >      ~~~\n> >      ```\n> >      [r]: /u\n\n[x][r]\n",
-            "<blockquote>\n  <blockquote>\n    <p>p\n- a\n- <code>\nx</code></p>\n    <p>~~~\n<code>\n[r]: /u</code></p>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
+            "<blockquote>\n  <blockquote>\n    <p>p\n- a\n- <code>\nx</code></p>\n    <pre><code>```\n[r]: /u\n</code></pre>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
         ),
         (
             "item-witness-2-36",
             "> > p\n> > - a\n> >     - ```\n> >       x\n> > \n> >       ~~~\n> >       ```\n> >       [r]: /u\n\n[x][r]\n",
-            "<blockquote>\n  <blockquote>\n    <p>p\n- a\n- <code>\nx</code></p>\n    <p>~~~\n<code>\n[r]: /u</code></p>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
+            "<blockquote>\n  <blockquote>\n    <p>p\n- a\n- <code>\nx</code></p>\n    <pre><code>```\n[r]: /u\n</code></pre>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
         ),
         (
             "item-witness-2-37",
@@ -402,7 +399,7 @@ fn quoted_item_witness_and_owned_absorption_match_native() {
         (
             "item-witness-2-38",
             "> > - a\n> > lazy\n> >  - ```\n> >    x\n> > \n> >    ~~~\n> >    ```\n> >    [r]: /u\n\n[x][r]\n",
-            "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\nlazy\n- <code>\nx</code>\n        <pre><code>```\n[r]: /u\n</code></pre>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
+            "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\nlazy</li>\n      <li>\n        <pre><code>x\n\n~~~\n</code></pre>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>",
         ),
         (
             "item-witness-2-39",
@@ -422,7 +419,7 @@ fn quoted_item_witness_and_owned_absorption_match_native() {
         (
             "owned-absorption-2-true",
             "> > p\n> > - ```\n> >   x\n> > :::bad\n> > :::\n> > ```\n> > [r]: /u\n\n[x][r]\n",
-            "<blockquote>\n  <blockquote><p>p\n- <code>\nx\n:::bad\n:::\n</code></p></blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>",
+            "<blockquote>\n  <blockquote>\n    <p>p\n- <code>\nx\n:::bad</code></p>\n    <div>\n      <pre><code>[r]: /u\n</code></pre>\n    </div>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
         ),
         (
             "owned-absorption-2-false",
@@ -440,20 +437,19 @@ fn quoted_item_witness_and_owned_absorption_match_native() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn nested_item_paragraphs_refresh_their_actual_marker_witness() {
     let cases = [
 ("nested-item-1-0","> - a\n>   - b\n> - ```\n>   x\n> \n>   ~~~\n>   ```\n>   [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>b</li>\n      </ul>\n    </li>\n    <li>\n      <pre><code>x\n\n~~~\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
-("nested-item-1-1","> - a\n>   - b\n>  - ```\n>    x\n> \n>    ~~~\n>    ```\n>    [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>b\n- <code>\nx</code></li>\n      </ul>\n      <pre><code>```\n[r]: /u\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p>[x][r]</p>"),
+("nested-item-1-1","> - a\n>   - b\n>  - ```\n>    x\n> \n>    ~~~\n>    ```\n>    [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>b</li>\n      </ul>\n    </li>\n    <li>\n      <pre><code>x\n\n~~~\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
 ("nested-item-1-2","> - a\n>   - b\n>   - ```\n>     x\n> \n>     ~~~\n>     ```\n>     [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>b</li>\n        <li>\n          <pre><code>x\n\n~~~\n</code></pre>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
-("nested-item-1-3","> - a\n>   - b\n>    - ```\n>      x\n> \n>      ~~~\n>      ```\n>      [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>b\n- <code>\nx</code>\n          <pre><code>```\n[r]: /u\n</code></pre>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<p>[x][r]</p>"),
+("nested-item-1-3","> - a\n>   - b\n>    - ```\n>      x\n> \n>      ~~~\n>      ```\n>      [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>b</li>\n        <li>\n          <pre><code>x\n\n~~~\n</code></pre>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
 ("nested-item-1-4","> - a\n>   - b\n>     - ```\n>       x\n> \n>       ~~~\n>       ```\n>       [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>b\n          <ul>\n            <li>\n              <pre><code>x\n\n~~~\n</code></pre>\n            </li>\n          </ul>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
 ("nested-item-1-5","> - a\n>   - b\n>      - ```\n>        x\n> \n>        ~~~\n>        ```\n>        [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>b\n          <ul>\n            <li>\n              <pre><code>x\n\n~~~\n</code></pre>\n            </li>\n          </ul>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
 ("nested-item-1-6","> - a\n>   - b\n>       - ```\n>         x\n> \n>         ~~~\n>         ```\n>         [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>b\n          <ul>\n            <li>\n              <pre><code>x\n\n~~~\n</code></pre>\n            </li>\n          </ul>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
 ("nested-item-2-0","> > - a\n> >   - b\n> > - ```\n> >   x\n> > \n> >   ~~~\n> >   ```\n> >   [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <ul>\n          <li>b</li>\n        </ul>\n      </li>\n      <li>\n        <pre><code>x\n\n~~~\n</code></pre>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
-("nested-item-2-1","> > - a\n> >   - b\n> >  - ```\n> >    x\n> > \n> >    ~~~\n> >    ```\n> >    [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <ul>\n          <li>b\n- <code>\nx</code></li>\n        </ul>\n        <pre><code>```\n[r]: /u\n</code></pre>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>"),
+("nested-item-2-1","> > - a\n> >   - b\n> >  - ```\n> >    x\n> > \n> >    ~~~\n> >    ```\n> >    [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <ul>\n          <li>b</li>\n        </ul>\n      </li>\n      <li>\n        <pre><code>x\n\n~~~\n</code></pre>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
 ("nested-item-2-2","> > - a\n> >   - b\n> >   - ```\n> >     x\n> > \n> >     ~~~\n> >     ```\n> >     [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <ul>\n          <li>b</li>\n          <li>\n            <pre><code>x\n\n~~~\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
-("nested-item-2-3","> > - a\n> >   - b\n> >    - ```\n> >      x\n> > \n> >      ~~~\n> >      ```\n> >      [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <ul>\n          <li>b\n- <code>\nx</code>\n            <pre><code>```\n[r]: /u\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>"),
+("nested-item-2-3","> > - a\n> >   - b\n> >    - ```\n> >      x\n> > \n> >      ~~~\n> >      ```\n> >      [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <ul>\n          <li>b</li>\n          <li>\n            <pre><code>x\n\n~~~\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
 ("nested-item-2-4","> > - a\n> >   - b\n> >     - ```\n> >       x\n> > \n> >       ~~~\n> >       ```\n> >       [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <ul>\n          <li>b\n            <ul>\n              <li>\n                <pre><code>x\n\n~~~\n</code></pre>\n              </li>\n            </ul>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
 ("nested-item-2-5","> > - a\n> >   - b\n> >      - ```\n> >        x\n> > \n> >        ~~~\n> >        ```\n> >        [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <ul>\n          <li>b\n            <ul>\n              <li>\n                <pre><code>x\n\n~~~\n</code></pre>\n              </li>\n            </ul>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
 ("nested-item-2-6","> > - a\n> >   - b\n> >       - ```\n> >         x\n> > \n> >         ~~~\n> >         ```\n> >         [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <ul>\n          <li>b\n            <ul>\n              <li>\n                <pre><code>x\n\n~~~\n</code></pre>\n              </li>\n            </ul>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
@@ -468,17 +464,16 @@ fn nested_item_paragraphs_refresh_their_actual_marker_witness() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn lazy_item_markers_preserve_the_owned_paragraph_witness() {
     let cases = [
-("lazy-witness-0","> - a\n- b\n> - ```\n>   x\n> \n>   ~~~\n>   ```\n>   [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a\n- b</li>\n    <li>\n      <pre><code>x\n\n~~~\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
-("lazy-witness-1","> - a\n- b\n>  - ```\n>    x\n> \n>    ~~~\n>    ```\n>    [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a\n- b\n- <code>\nx</code>\n      <pre><code>```\n[r]: /u\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p>[x][r]</p>"),
-("lazy-witness-2","> - a\n- b\n>   - ```\n>     x\n> \n>     ~~~\n>     ```\n>     [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a\n- b\n      <ul>\n        <li>\n          <pre><code>x\n\n~~~\n</code></pre>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
-("lazy-witness-3","> - a\n- b\n>    - ```\n>      x\n> \n>      ~~~\n>      ```\n>      [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a\n- b\n      <ul>\n        <li>\n          <pre><code>x\n\n~~~\n</code></pre>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
-("lazy-witness-4","> > - a\n> - b\n> > - ```\n> >   x\n> > \n> >   ~~~\n> >   ```\n> >   [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n- b</li>\n      <li>\n        <pre><code>x\n\n~~~\n</code></pre>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
-("lazy-witness-5","> > - a\n> - b\n> >  - ```\n> >    x\n> > \n> >    ~~~\n> >    ```\n> >    [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n- b\n- <code>\nx</code>\n        <pre><code>```\n[r]: /u\n</code></pre>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>"),
-("lazy-witness-6","> > - a\n> - b\n> >   - ```\n> >     x\n> > \n> >     ~~~\n> >     ```\n> >     [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n- b\n        <ul>\n          <li>\n            <pre><code>x\n\n~~~\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
-("lazy-witness-7","> > - a\n> - b\n> >    - ```\n> >      x\n> > \n> >      ~~~\n> >      ```\n> >      [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n- b\n        <ul>\n          <li>\n            <pre><code>x\n\n~~~\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+("lazy-witness-0","> - a\n- b\n> - ```\n>   x\n> \n>   ~~~\n>   ```\n>   [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a</li>\n  </ul>\n</blockquote>\n<ul>\n  <li>b</li>\n</ul>\n<blockquote>\n  <ul>\n    <li>\n      <pre><code>x\n\n~~~\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+("lazy-witness-1","> - a\n- b\n>  - ```\n>    x\n> \n>    ~~~\n>    ```\n>    [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a</li>\n  </ul>\n</blockquote>\n<ul>\n  <li>b</li>\n</ul>\n<blockquote>\n  <ul>\n    <li>\n      <pre><code>x\n\n~~~\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+("lazy-witness-2","> - a\n- b\n>   - ```\n>     x\n> \n>     ~~~\n>     ```\n>     [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a</li>\n  </ul>\n</blockquote>\n<ul>\n  <li>b</li>\n</ul>\n<blockquote>\n  <ul>\n    <li>\n      <pre><code>x\n\n~~~\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+("lazy-witness-3","> - a\n- b\n>    - ```\n>      x\n> \n>      ~~~\n>      ```\n>      [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a</li>\n  </ul>\n</blockquote>\n<ul>\n  <li>b</li>\n</ul>\n<blockquote>\n  <ul>\n    <li>\n      <pre><code>x\n\n~~~\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+("lazy-witness-4","> > - a\n> - b\n> > - ```\n> >   x\n> > \n> >   ~~~\n> >   ```\n> >   [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a</li>\n    </ul>\n  </blockquote>\n  <ul>\n    <li>b</li>\n  </ul>\n  <blockquote>\n    <ul>\n      <li>\n        <pre><code>x\n\n~~~\n</code></pre>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+("lazy-witness-5","> > - a\n> - b\n> >  - ```\n> >    x\n> > \n> >    ~~~\n> >    ```\n> >    [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a</li>\n    </ul>\n  </blockquote>\n  <ul>\n    <li>b</li>\n  </ul>\n  <blockquote>\n    <ul>\n      <li>\n        <pre><code>x\n\n~~~\n</code></pre>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+("lazy-witness-6","> > - a\n> - b\n> >   - ```\n> >     x\n> > \n> >     ~~~\n> >     ```\n> >     [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a</li>\n    </ul>\n  </blockquote>\n  <ul>\n    <li>b</li>\n  </ul>\n  <blockquote>\n    <ul>\n      <li>\n        <pre><code>x\n\n~~~\n</code></pre>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+("lazy-witness-7","> > - a\n> - b\n> >    - ```\n> >      x\n> > \n> >      ~~~\n> >      ```\n> >      [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a</li>\n    </ul>\n  </blockquote>\n  <ul>\n    <li>b</li>\n  </ul>\n  <blockquote>\n    <ul>\n      <li>\n        <pre><code>x\n\n~~~\n</code></pre>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
 ];
     for (name, source, expected) in cases {
         assert_eq!(
@@ -507,13 +502,8 @@ fn folded_markers_preserve_frames_and_real_quote_exits() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn folded_marker_definition_collection_preserves_preceding_items() {
-    let source = "> - a\n>  - x\n>   - b\n> - c\n>  - ```\n> [r]: /t\n> ```\n\n[x][r]\n";
-    let html = render_html(&parse(source)).unwrap();
-    assert!(html.starts_with("<blockquote>\n  <ul>\n    <li>a\n- x\n      <ul>\n        <li>b</li>\n      </ul>\n    </li>\n"));
-    assert!(!html.contains("[r]: /t"));
-    assert!(html.ends_with("<p><a href=\"/t\">x</a></p>"));
+    assert_rule_a_pins("folded_marker_definition_collection_preserves_preceding_items");
 }
 
 #[test]
@@ -546,6 +536,22 @@ fn flush_left_attachment_ends_the_inherited_quote_paragraph() {
             render_html(&parse(source)).unwrap().trim(),
             expected,
             "{source}"
+        );
+    }
+}
+
+/// Rule A (carve#3885) retired the reading some tests here were written for;
+/// their inputs are pinned to the spec model's HTML instead.
+fn assert_rule_a_pins(test: &str) {
+    let pins: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/rule_a_ledger_pins.json")).unwrap();
+    let module = module_path!().rsplit("::").next().unwrap();
+    for pin in pins[format!("{module}::{test}")].as_array().expect("pinned inputs") {
+        let source = pin["source"].as_str().unwrap();
+        assert_eq!(
+            carve::to_html(source).trim(),
+            pin["html"].as_str().unwrap(),
+            "{source:?}"
         );
     }
 }

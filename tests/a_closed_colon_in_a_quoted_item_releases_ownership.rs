@@ -61,34 +61,8 @@ fn paragraph_and_explicit_quote_continuations_keep_their_owner() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn hosted_colon_interruption_and_dedent_do_not_keep_stale_claims() {
-    for source in [
-        "> - item\n>   ::: box\n>   :::\n- tail\n",
-        "> - item\n>   ::: box\n>   body\n>   :::\n  - tail\n",
-    ] {
-        let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
-        assert_eq!(
-            ast["children"].as_array().unwrap().len(),
-            2,
-            "{source}: {ast}"
-        );
-        assert_eq!(ast["children"][1]["type"], "list");
-    }
-    for source in [
-        ">   ::: box\n- tail\n",
-        "> - ::: box\n>\n> para\n>   :::\n- tail\n",
-        "> - :::box\n>   :::\n- tail\n",
-        "> - paragraph\n>   :::box\n>   :::\n- tail\n",
-    ] {
-        let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
-        assert_eq!(
-            ast["children"].as_array().unwrap().len(),
-            1,
-            "{source}: {ast}"
-        );
-        assert!(carve::to_html(source).contains("- tail"), "{source}");
-    }
+    assert_rule_a_pins("hosted_colon_interruption_and_dedent_do_not_keep_stale_claims");
 }
 
 #[test]
@@ -197,25 +171,8 @@ fn a_comment_inside_verse_keeps_colon_payload_opaque() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_new_item_or_later_bare_block_does_not_inherit_absorption() {
-    for (source, expected_count, expected_type) in [
-        (
-            "> - prose\n>   :::bad\n> - next\n>   :::\n- tail\n",
-            2,
-            "list",
-        ),
-        ("> - ::: box\nlazy\n>   :::\n- tail\n", 3, "paragraph"),
-        ("> - ::: box\n>   body\nlazy\n>   :::\n- tail\n", 2, "list"),
-    ] {
-        let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
-        assert_eq!(
-            ast["children"].as_array().unwrap().len(),
-            expected_count,
-            "{source}: {ast}"
-        );
-        assert_eq!(ast["children"][1]["type"], expected_type, "{source}: {ast}");
-    }
+    assert_rule_a_pins("a_new_item_or_later_bare_block_does_not_inherit_absorption");
 }
 
 #[test]
@@ -247,20 +204,8 @@ fn a_comment_closer_below_the_item_does_not_hide_its_code_fence() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn dedented_interrupters_end_stale_hosts_and_colon_scopes() {
-    for source in [
-        "> - item\n> # heading\n>   ::: box\n>   :::\n- tail\n",
-        "> - ::: box\n>   body\n> # heading\n>   :::\n- tail\n",
-    ] {
-        let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
-        assert_eq!(
-            ast["children"].as_array().unwrap().len(),
-            1,
-            "{source}: {ast}"
-        );
-        assert!(carve::to_html(source).contains("- tail"), "{source}");
-    }
+    assert_rule_a_pins("dedented_interrupters_end_stale_hosts_and_colon_scopes");
 }
 
 #[test]
@@ -404,12 +349,8 @@ fn an_ancestor_colon_closer_and_a_folded_malformed_marker_leave_no_claim() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_closed_hosted_comment_ends_the_paragraph_before_quoted_dedent() {
-    let source = "> - ::: box\n>   text\n>   %%%\n>   c\n>   %%%\n> out\n>   :::\n- tail\n";
-    let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
-    assert_eq!(ast["children"].as_array().unwrap().len(), 1, "{ast}");
-    assert!(carve::to_html(source).contains("out\n:::\n- tail"));
+    assert_rule_a_pins("a_closed_hosted_comment_ends_the_paragraph_before_quoted_dedent");
 }
 
 #[test]
@@ -599,5 +540,21 @@ fn hosted_colon_wave_matches_checker() {
                 row["id"]
             );
         }
+    }
+}
+
+/// Rule A (carve#3885) retired the reading some tests here were written for;
+/// their inputs are pinned to the spec model's HTML instead.
+fn assert_rule_a_pins(test: &str) {
+    let pins: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/rule_a_ledger_pins.json")).unwrap();
+    let module = module_path!().rsplit("::").next().unwrap();
+    for pin in pins[format!("{module}::{test}")].as_array().expect("pinned inputs") {
+        let source = pin["source"].as_str().unwrap();
+        assert_eq!(
+            carve::to_html(source).trim(),
+            pin["html"].as_str().unwrap(),
+            "{source:?}"
+        );
     }
 }
