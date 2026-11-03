@@ -58,3 +58,38 @@ fn an_indented_document_definition_keeps_its_place_in_the_order() {
         "first"
     );
 }
+
+fn block_types(doc: &carve::ast::Document) -> Vec<&'static str> {
+    doc.children
+        .iter()
+        .map(|block| match block {
+            carve::ast::BlockNode::AbbreviationDef(_) => "abbreviation_def",
+            carve::ast::BlockNode::BlockQuote(_) => "block_quote",
+            carve::ast::BlockNode::List(_) => "list",
+            carve::ast::BlockNode::Paragraph(_) => "paragraph",
+            _ => "other",
+        })
+        .collect()
+}
+
+#[test]
+fn a_hoisted_definition_stands_after_its_container_without_positions() {
+    // CARVE-P12-070: document order by source position, whether or not the
+    // caller asked for positions.
+    for (source, expected) in [
+        (
+            "> *[HTML]: Hyper Text\n\nThe HTML spec.\n",
+            vec!["block_quote", "abbreviation_def", "paragraph"],
+        ),
+        (
+            "- a\n  *[A]: b\n\nA here.\n",
+            vec!["list", "abbreviation_def", "paragraph"],
+        ),
+    ] {
+        let plain = carve::parse(source);
+        let positioned =
+            carve::parse_with_options(source, &carve::Options::default().with_positions(true));
+        assert_eq!(block_types(&plain), expected, "{source:?}");
+        assert_eq!(block_types(&positioned), expected, "{source:?}");
+    }
+}

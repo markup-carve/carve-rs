@@ -960,7 +960,7 @@ fn strip_redundant_heading_ids(doc: &mut Document) {
 /// same way and carry none, which is why dropping them is a no-op for them -
 /// but the WRITER's own document was parsed with positions on, and comparing
 /// through them answered "different" for every document.
-fn strip_positions(doc: &mut Document) {
+pub(crate) fn strip_positions(doc: &mut Document) {
     use crate::include_walk::{visit_block_children, visit_inline_children, SubtreeVisitor};
 
     struct Strip;

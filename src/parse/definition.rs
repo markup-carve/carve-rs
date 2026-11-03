@@ -32,11 +32,17 @@ pub(in crate::parse) fn append_skipped_sibling_abbreviations(
             if defs.is_empty() {
                 return;
             }
+            let lines: Vec<&str> = if line_starts.is_some() {
+                original_lines(source)
+            } else {
+                Vec::new()
+            };
             place_hoisted_abbreviations(
                 &mut doc.children,
                 std::mem::take(defs).into_iter().map(|mut def| {
                     if let (Some(pos), Some(starts)) = (&mut def.pos, line_starts) {
                         apply_offsets(pos, starts);
+                        anchor_on_authored_line(pos, &def.abbr, &lines, starts);
                     }
                     def
                 }),
@@ -84,6 +90,14 @@ fn behind_container_prefixes(line: &str) -> &str {
         }
         rest = next;
     }
+}
+
+/// Whether a line defines an abbreviation, behind any container prefixes.
+pub(in crate::parse) fn source_may_hoist_abbreviation(source: &str) -> bool {
+    source.contains("*[")
+        && source
+            .lines()
+            .any(|line| detect_abbreviation_def(behind_container_prefixes(line)).is_some())
 }
 
 /// Put definitions back in authored order after a skipped one was appended
@@ -205,6 +219,47 @@ pub(in crate::parse) fn container_abbreviation_pos(lines: &[&str], line: usize, 
         start_offset: 0,
         end_offset: 0,
         file: None,
+    }
+}
+
+/// Start a definition's filled span at its own `*` on the authored line: a
+/// container prefix stays outside, and a walked line may have been re-indented
+/// (Rule A), so the column cannot come from the line the reader saw.
+pub(in crate::parse) fn anchor_on_authored_line(
+    pos: &mut Pos,
+    abbr: &str,
+    lines: &[&str],
+    line_starts: &CodepointLineStarts,
+) {
+    let Some(text) = lines.get(pos.start_line.wrapping_sub(1)) else {
+        return;
+    };
+    let bom = usize::from(pos.start_line == 1 && line_starts.has_leading_bom());
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+    let Some(at) = text.find(&format!("*[{abbr}]:")) else {
+        return;
+    };
+    let lead = text[..at].chars().count();
+    pos.start_column = 1 + bom + lead;
+    if let Some(start) = line_starts.get(pos.start_line - 1) {
+        pos.start_offset = start + lead;
+    }
+}
+
+/// Re-anchor every document-level definition once offsets are filled.
+pub(in crate::parse) fn anchor_abbreviation_defs(
+    blocks: &mut [BlockNode],
+    source: &str,
+    line_starts: &CodepointLineStarts,
+) {
+    let mut lines = None;
+    for block in blocks {
+        if let BlockNode::AbbreviationDef(def) = block {
+            if let Some(pos) = &mut def.pos {
+                let lines = lines.get_or_insert_with(|| original_lines(source));
+                anchor_on_authored_line(pos, &def.abbr, lines, line_starts);
+            }
+        }
     }
 }
 

@@ -3361,6 +3361,13 @@ fn has_fence_candidate_without_final_newline(source: &str) -> bool {
 }
 
 pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
+    if source_may_hoist_abbreviation(source) {
+        #[cfg(feature = "experimental-event-parser-options")]
+        return parse_document_with_custom_options(source, &Options::default(), ParseMode::Html)
+            .map(|(document, _, admitted)| (document, admitted));
+        #[cfg(not(feature = "experimental-event-parser-options"))]
+        return None;
+    }
     let _skipped_abbreviations = SkippedSiblingAbbreviationsGuard::install();
     let source_len = source.len();
     let normalized = if needs_event_normalization(source) {
@@ -3726,6 +3733,28 @@ fn has_marker_description_comment_risk(source: &str) -> bool {
 
 #[cfg(feature = "experimental-event-parser-options")]
 pub(super) fn parse_document_with_custom_options(
+    source: &str,
+    options: &Options<'_>,
+    mode: ParseMode,
+) -> Option<(Document, Option<CrossrefIndex>, bool)> {
+    // Hoisted definitions are placed by source line (CARVE-P12-070).
+    if !options.positions
+        && !matches!(mode, ParseMode::HtmlFacade)
+        && source_may_hoist_abbreviation(source)
+    {
+        let positioned = options.positioned_parse_copy();
+        return parse_document_with_custom_options_once(source, &positioned, mode).map(
+            |(mut doc, index, used)| {
+                crate::render_carve::strip_positions(&mut doc);
+                (doc, index, used)
+            },
+        );
+    }
+    parse_document_with_custom_options_once(source, options, mode)
+}
+
+#[cfg(feature = "experimental-event-parser-options")]
+fn parse_document_with_custom_options_once(
     source: &str,
     options: &Options<'_>,
     mode: ParseMode,

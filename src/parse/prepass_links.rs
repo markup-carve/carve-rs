@@ -475,7 +475,7 @@ pub(in crate::parse) fn strip_blockquote_prefix(line: &str) -> Option<&str> {
 /// Hoist every authored `[label]: /url` definition into the document as a
 /// `LinkReferenceDefinition` node (PART 12 §10, NORMATIVE).
 /// The ORIGINAL source's lines, split the way `CodepointLineStarts` counts them.
-fn original_lines(source: &str) -> Vec<&str> {
+pub(in crate::parse) fn original_lines(source: &str) -> Vec<&str> {
     let mut lines = Vec::new();
     let mut rest = source;
     while let Some(at) = rest.find(['\r', '\n']) {
