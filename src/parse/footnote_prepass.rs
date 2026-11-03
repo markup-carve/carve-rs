@@ -2856,11 +2856,15 @@ fn next_quoted_fence(open: Option<(FenceOpen, usize)>, line: &str) -> Option<(Fe
     let line_depth = quote_depth(line);
     if let Some((fence, fence_depth)) = open {
         // A deeper quoted line is the fence's payload, never its closer.
-        let closes = line_depth < fence_depth
-            || line_depth == fence_depth
-                && strip_quote_levels(line, fence_depth)
-                    .is_some_and(|body| is_fence_close(body, fence));
-        return (!closes).then_some((fence, fence_depth));
+        if line_depth > fence_depth {
+            return open;
+        }
+        if line_depth == fence_depth {
+            let closes = strip_quote_levels(line, fence_depth)
+                .is_some_and(|body| is_fence_close(body, fence));
+            return (!closes).then_some((fence, fence_depth));
+        }
+        // A shallower line ended the fence's quote and may open a fence of its own.
     }
     detect_fence_open(without_blockquote_prefixes(trim_ascii_start(line)))
         .map(|fence| (fence, line_depth))

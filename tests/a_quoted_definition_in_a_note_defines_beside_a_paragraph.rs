@@ -34,3 +34,9 @@ fn a_deeper_quoted_fence_line_does_not_close_the_outer_fence() {
     assert!(out.contains("[x][r]"), "{out}");
     assert!(out.contains("prose\n[r]: /x"), "{out}");
 }
+
+#[test]
+fn an_outer_quoted_fence_opened_as_a_nested_quote_ends_hides_the_definition() {
+    let out = html("[^n]: a\n  > > ```\n  > ```\n  > [r]: /x\n\n[x][r] [^n]\n");
+    assert!(out.contains("<p>[x][r] "), "{out}");
+}
