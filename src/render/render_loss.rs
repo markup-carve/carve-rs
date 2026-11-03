@@ -260,11 +260,6 @@ pub(crate) fn collect_markdown_unattached(spans: Vec<Pos>) {
     );
 }
 
-pub(crate) fn collect_markdown_promoted_image_runs(spans: Vec<Pos>) {
-    let (_, message) = MarkdownLoss::Attributes.details();
-    collect_markdown_block_spans(spans, message);
-}
-
 fn collect_markdown_block_spans(spans: Vec<Pos>, message: &str) {
     if spans.is_empty() {
         return;
