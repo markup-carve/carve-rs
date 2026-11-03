@@ -11,7 +11,10 @@ fn html(source: &str) -> String {
 fn a_quoted_link_definition_after_a_quoted_paragraph_defines() {
     let out = html("[^n]: a\n  > prose\n  > [r]: /x\n[x][r] [^n]\n");
     assert!(out.contains("<a href=\"/x\">x</a>"), "{out}");
-    assert!(out.contains("<blockquote><p>prose</p></blockquote>"), "{out}");
+    assert!(
+        out.contains("<blockquote><p>prose</p></blockquote>"),
+        "{out}"
+    );
     assert!(!out.contains("[r]: /x"), "{out}");
 }
 
