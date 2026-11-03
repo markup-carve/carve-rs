@@ -367,6 +367,31 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         // PART 0 S1 and the recovery table (carve#4770): a nonblank line that
         // misses this item ends a span the item opened, even with its closer
         // ahead. The re-parsed body then degrades the opener to a `%%` line.
+        // A line that misses the descendant holding an open span ends the span
+        // there (PART 0 S1), so the blanks before it separate blocks again.
+        if let Some((run, column)) = comment_fence.filter(|&(_, column)| column > strip_cols) {
+            let host = nested_item_columns
+                .iter()
+                .map(|&(_, content)| content)
+                .filter(|&content| content <= column)
+                .max()
+                .unwrap_or(column);
+            if !admission.blank
+                && !line.starts_with(LAZY)
+                && indent_columns(line) < host
+                && !is_comment_fence_close_any_column(line, run)
+            {
+                comment_fence = None;
+                comment_fence_strip = None;
+                let mut at = lines.len();
+                while at > 0 && is_blank_line(&lines[at - 1]) {
+                    at -= 1;
+                    if opaque_blank_lines.last() == Some(&at) {
+                        opaque_blank_lines.pop();
+                    }
+                }
+            }
+        }
         let held_span = if span_reached_this_frame {
             comment_fence.map(|(run, _)| run)
         } else {
@@ -1391,8 +1416,10 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             break;
         }
         let was_in_comment_span = comment_fence_strip.is_some();
+        let mut closed_marker_span = false;
         if let Some(width) = marker_comment_span {
             if is_comment_fence_close_any_column(line, width) {
+                closed_marker_span = true;
                 marker_comment_span = None;
                 closed_comment_span_above = true;
                 nested_item_columns.closed_marker_comment_span = true;
@@ -1419,8 +1446,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 closed_comment_span_above |= span_reached_this_frame;
                 span_reached_this_frame = false;
             }
-        } else if let Some(open) =
-            detect_comment_fence_line_any_column(line).filter(|_| fence.is_none())
+        } else if let Some(open) = detect_comment_fence_line_any_column(line)
+            .filter(|_| fence.is_none() && !closed_marker_span)
         {
             let closes = if let Some((_, _, floor)) = literal_colon {
                 if cur.literal_comments.is_none() {

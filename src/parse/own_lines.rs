@@ -1676,6 +1676,9 @@ impl<'a> Walk<'a> {
         if self.carry_attr_continuation(at, line, reached, c, tracing) {
             return;
         }
+        if missed && self.close_comment_below_host(at, line, reached, c, tracing) {
+            return;
+        }
         let inner = self.frames.last().expect("document frame");
         if inner.kind == Kind::Fence && !missed {
             // S1: an open payload tests its closer first (B-<family>-keep, -end).
@@ -1926,6 +1929,36 @@ impl<'a> Walk<'a> {
             }
         }
         self.emit_applied(at, record, None);
+    }
+
+    /// A comment closer below its host's column still closes the span (PART 9 §28).
+    fn close_comment_below_host(
+        &mut self,
+        at: usize,
+        line: usize,
+        reached: usize,
+        c: &mut Cursor<'_>,
+        tracing: bool,
+    ) -> bool {
+        let inner = self.frames.last().expect("document frame");
+        let closes = inner.kind == Kind::Fence
+            && inner.span.is_none()
+            && !c.rest.is_empty()
+            && matches!(inner.closer, Some(cl @ Closer::Comment(_)) if cl.closes(c.rest, c.col, inner.open_col));
+        if !closes {
+            return false;
+        }
+        let inner = self.frames.pop();
+        self.top().last = last_after_closer(inner.as_ref());
+        let (canon, shift) = (self.frames[reached].canon, self.frames[reached].shift);
+        c.lead_in(canon, shift, false);
+        if tracing {
+            let record =
+                TraceRecord::new(line, "S1", self.deepest(), Some("CARVE-P0-005"), "closer")
+                    .cell(Some("B-comment-end".into()));
+            self.emit(at, record);
+        }
+        true
     }
 
     /// A comment or one-line definition closes no indentation frame: the next
