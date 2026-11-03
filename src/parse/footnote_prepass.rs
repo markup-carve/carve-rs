@@ -216,10 +216,18 @@ fn first_visible_note_line(lines: &[&str]) -> Option<usize> {
     let mut at = 0;
     while let Some(&line) = lines.get(at) {
         let text = trim_ascii_start(line);
-        if is_blank_line(line)
+        if parse_footnote_def_line(text).is_some() {
+            // A note definition's body belongs to the note (CARVE-P9-067, carve#5034).
+            at += 1;
+            while lines
+                .get(at)
+                .is_some_and(|line| own_lines::foldable_plain_line(trim_ascii_start(line)))
+            {
+                at += 1;
+            }
+        } else if is_blank_line(line)
             || is_line_comment_any_column(line)
             || parse_link_def_line(text).is_some()
-            || parse_footnote_def_line(text).is_some()
         {
             at += 1;
         } else if let Some(open) = detect_comment_fence_line(text) {
@@ -1358,8 +1366,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 note.col_map[0] = None;
             }
             let mut visible = false;
+            // A skipped note definition keeps its folded body (CARVE-P9-067, carve#5034).
+            let mut in_skipped_note = false;
             while i < end {
-                let line = attached[i - start].clone();
+                let at = i - start;
+                let line = attached[at].clone();
                 // Invisible definitions ahead of the block are the document's (carve#4449).
                 if !visible && self.hoist_note_link_def(&line, i) {
                     note.push_with(
@@ -1367,11 +1378,28 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                         Some(self.first_source_line + i),
                         |_| Some(marker_col as isize),
                     );
+                    in_skipped_note = false;
                     i += 1;
                     continue;
                 }
+                in_skipped_note = if at <= first_visible_at
+                    && !line.starts_with([' ', '\t'])
+                    && parse_footnote_def_line(&line).is_some()
+                {
+                    false
+                } else {
+                    at < first_visible_at
+                        && (in_skipped_note
+                            || at > 0 && parse_footnote_def_line(&attached[at - 1]).is_some())
+                        && own_lines::foldable_plain_line(trim_ascii_start(&line))
+                };
                 visible |= !is_line_comment_any_column(&line);
-                note.push_with(line, Some(self.first_source_line + i), |_| {
+                let kept = if in_skipped_note {
+                    format!("{LAZY}{}", trim_ascii_start(&line))
+                } else {
+                    line
+                };
+                note.push_with(kept, Some(self.first_source_line + i), |_| {
                     Some(marker_col as isize)
                 });
                 i += 1;

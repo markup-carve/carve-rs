@@ -625,6 +625,17 @@ pub(crate) fn attached_block_lines_classified(
     start + attached_one_block_lines(lines.window(start..end, &materialized), options)
 }
 
+/// Whether `from..to` is a column-0 note definition and its folded body lines,
+/// which belong to the note (CARVE-P9-067, carve#5034).
+fn note_definition_with_body(lines: CursorLines<'_>, from: usize, to: usize) -> bool {
+    to > from + 1
+        && lines.line(from).is_some_and(|first| {
+            !first.starts_with([' ', '\t']) && parse_footnote_def_line(first).is_some()
+        })
+        && (from + 1..to)
+            .all(|at| crate::parse::own_lines::foldable_plain_line(trim_ascii_start(lines.at(at))))
+}
+
 /// One past the block a `+` attached in a host with no marker column: a comment or
 /// a definition is invisible, so the block it leads is attached with it (CARVE-P0-004).
 pub(crate) fn attached_block_past_invisible(
@@ -643,17 +654,19 @@ pub(crate) fn attached_block_past_invisible(
         options,
         is_boundary,
     );
+    let mut block = start;
     while end > start
-        && lines.line(end - 1).is_some_and(|last| {
+        && (lines.line(end - 1).is_some_and(|last| {
             is_line_comment_any_column(last)
                 || (!last.starts_with([' ', '\t'])
                     && (parse_link_def_line(last).is_some()
                         || parse_footnote_def_line(last).is_some()
                         || detect_abbreviation_def(last).is_some()))
-        })
+        }) || note_definition_with_body(lines, block, end))
         && lines.line(end).is_some_and(|next| !is_boundary(next, end))
     {
         let prior = end;
+        block = prior;
         end = attached_block_lines_classified(
             lines,
             prior,

@@ -2,6 +2,13 @@
   "comment": "Conformance pack cases this engine renders differently from the spec model, one entry per cause with its open ticket. See tests/conformance_pack.rs.",
   "entries": [
     {
+      "ticket": "markup-carve/carve#5034",
+      "cause": "a skipped note definition keeps its body before a plus's block: the pin's model predates carve#5041, which moved this case to the ticket's Expected output",
+      "cases": [
+        "notes-4dc51b5608ab"
+      ]
+    },
+    {
       "ticket": "markup-carve/carve#4033",
       "cause": "an unclosed fence's trailing blank run in a description body: the pin's model predates carve main, and the model reads a reopened item fence differently",
       "cases": [
