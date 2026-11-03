@@ -40,6 +40,6 @@ fn a_literal_plus_after_a_nested_task_fence_is_escaped_at_the_item_column() {
 fn a_comment_after_an_attached_paragraph_stays_at_the_content_column() {
     assert_written(
         ". a\n  . %%%\n    n\n  zz\n%%%\n",
-        ". a\n  . %%%\n    n\n    %%%\n  zz\n  %%%\n\n  %%%\n",
+        ". a\n  . %%%\n    n\n    %%%\n  zz\n  %%%\n  %%%\n",
     );
 }
