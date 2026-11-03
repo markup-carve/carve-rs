@@ -124,9 +124,7 @@ fn a_break_only_term_has_no_carve_spelling() {
             mode,
             ..Default::default()
         };
-        assert!(
-            html_to_carve("<dl><dt><br></dt><dd>definition body</dd></dl>", &options).is_err()
-        );
+        assert!(html_to_carve("<dl><dt><br></dt><dd>definition body</dd></dl>", &options).is_err());
     }
 }
 

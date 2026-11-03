@@ -18,7 +18,10 @@ fn the_released_item_paragraph_allows_later_markers() {
     let html = to_html(source);
     assert!(html.contains("</ul>\n    : a\n    <dl>"), "{html}");
     // A term is one line (carve#4861).
-    assert!(html.contains("<dt>sibling</dt>\n    </dl>\n    tail"), "{html}");
+    assert!(
+        html.contains("<dt>sibling</dt>\n    </dl>\n    tail"),
+        "{html}"
+    );
     assert_eq!(
         to_html_with_options(source, &Options::default().with_positions(true)),
         html

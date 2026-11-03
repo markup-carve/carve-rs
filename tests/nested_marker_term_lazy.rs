@@ -9,7 +9,10 @@ fn a_separator_below_a_nested_marker_line_term_is_text() {
         let html = to_html(&source);
         assert!(html.contains("<dt>t</dt>"), "{source:?}: {html}");
         if spaces.len() >= 2 {
-            assert!(html.contains("</ul>\n    : a\n  </li>"), "{source:?}: {html}");
+            assert!(
+                html.contains("</ul>\n    : a\n  </li>"),
+                "{source:?}: {html}"
+            );
         } else {
             assert!(html.ends_with("</ul>\n<p>: a</p>"), "{source:?}: {html}");
         }

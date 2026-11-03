@@ -18,13 +18,19 @@ fn a_line_below_a_note_term_ends_the_note_in_every_host_shape() {
     // A term is one line (carve#4861), so it leaves the note no paragraph.
     for (source, term) in [
         ("[^f]: :: t\nx\n\n[^f]\n", "<p>x</p> <p><a id=\"fnref1\""),
-        ("[^f]: [^g]: :: t\nx\n\n[^g] [^f]\n", "<p>x</p> <p><a id=\"fnref1\""),
+        (
+            "[^f]: [^g]: :: t\nx\n\n[^g] [^f]\n",
+            "<p>x</p> <p><a id=\"fnref1\"",
+        ),
         ("[^f]: - :: t\nx\n\n[^f]\n", "<p>x</p> <p><a id=\"fnref1\""),
         (
             "[^f]: [^g]: - :: t\n      : d\n\n[^g] [^f]\n",
             "<dt>t</dt> </dl> </li> </ul>",
         ),
-        ("[^f]: a\n\n      :: t\nx\n\n[^f]\n", "<p>x</p> <p><a id=\"fnref1\""),
+        (
+            "[^f]: a\n\n      :: t\nx\n\n[^f]\n",
+            "<p>x</p> <p><a id=\"fnref1\"",
+        ),
     ] {
         contains(source, term);
         contains(source, "<dt>t</dt>");
@@ -33,9 +39,7 @@ fn a_line_below_a_note_term_ends_the_note_in_every_host_shape() {
 
 #[test]
 fn a_line_below_a_note_term_is_paragraph_text_before_a_marker() {
-    assert!(
-        html("[^n]: :: t\nmore\n- x\n\n[^n]\n").starts_with("<p>more - x</p>"),
-    );
+    assert!(html("[^n]: :: t\nmore\n- x\n\n[^n]\n").starts_with("<p>more - x</p>"),);
 }
 
 #[test]

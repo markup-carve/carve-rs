@@ -41,7 +41,10 @@ fn a_colon_plus_spaces_is_a_paragraph_after_the_term() {
 #[test]
 fn it_reads_exactly_as_the_tab_and_bare_spellings_do() {
     assert_eq!(flat(":: t\n:\t\nx\n"), FOLDED);
-    assert_eq!(flat(":: t\n:\n\nx\n"), "<dl> <dt>t</dt> </dl> <p>:</p> <p>x</p>");
+    assert_eq!(
+        flat(":: t\n:\n\nx\n"),
+        "<dl> <dt>t</dt> </dl> <p>:</p> <p>x</p>"
+    );
     assert_eq!(flat(":: t\n:\nx\n"), FOLDED);
 }
 
