@@ -2,20 +2,6 @@
   "comment": "Conformance pack cases this engine renders differently from the spec model, one entry per cause with its open ticket. See tests/conformance_pack.rs.",
   "entries": [
     {
-      "ticket": "markup-carve/carve-rs#3534",
-      "cause": "untriaged day-one drift in the fences family",
-      "cases": [
-        "fences-5e87d36367a5"
-      ]
-    },
-    {
-      "ticket": "markup-carve/carve-rs#3534",
-      "cause": "untriaged day-one drift in the lazy family",
-      "cases": [
-        "lazy-fec6f2fc03b0"
-      ]
-    },
-    {
       "ticket": "markup-carve/carve#4033",
       "cause": "an unclosed fence's trailing blank run in a description body: the pin's model predates carve main, and the model reads a reopened item fence differently",
       "cases": [

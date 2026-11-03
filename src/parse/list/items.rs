@@ -3057,6 +3057,11 @@ fn rebase_quoted_fence_payload(stream: &mut MappedSource, marker_leaf: &str) {
         }
         let leading = indent_columns(line);
         let stripped = trim_ascii_start(line);
+        // A line without a quote prefix ends the quote, and with it the fence.
+        if open.is_some() && strip_blockquote_prefix(stripped).is_none() {
+            lines.extend(stream.source.split('\n').skip(at).map(str::to_string));
+            break;
+        }
         if open.is_some()
             && payload_column.is_none()
             && strip_blockquote_prefix(stripped).is_some_and(|body| {
