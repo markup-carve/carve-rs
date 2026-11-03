@@ -2077,6 +2077,20 @@ pub(in crate::parse) fn extract_link_defs_with_guard_full(
             // stopped (carve-php#698); this brings the third engine into line.
             body.push(std::borrow::Cow::Borrowed(line));
             continue;
+        } else if let Some(open) = stripped
+            .description
+            .then(|| detect_comment_fence_line(trim_ascii_start(stripped.bare)))
+            .flatten()
+        {
+            // A span on a description's lead line is held by the body.
+            end_prepass_paragraph_at(&folded_into_term, line_index);
+            in_comment_fence = Some(OpenCommentFence {
+                fence_len: open.fence_len,
+                quote_depth: prepass_quote_scope(line).0,
+                floor: description_fence_content_column(line, &stripped, &columns),
+            });
+            body.push(std::borrow::Cow::Borrowed(line));
+            continue;
         } else if let Some((open, scope)) = detect_comment_fence_opener_scoped(line, &columns) {
             // The same scopes as the footnote prepass above: the fence is gated
             // by the column it REACHES, and its span is bounded by the container
