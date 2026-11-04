@@ -29,6 +29,7 @@ fn a_djot_sub_list_after_a_blank_stays_in_a_tight_item() {
         ("- outer\n\n  - inner\n", "- outer\n  - inner\n"),
         ("- outer\n\n\n  - inner\n- peer\n", "- outer\n  - inner\n- peer\n"),
         ("> - outer\n>\n>   - inner\n", "> - outer\n>   - inner\n"),
+        ("> - x\n>\n>   : t\n>\n>     a\n", "> - x\n>   :: t\n>   :  a\n"),
         // A blank above a later block of the item is Djot's too.
         ("- a\n\n  # h\n\n  - c\n", "- a\n\n  # h\n\n  - c\n"),
     ] {

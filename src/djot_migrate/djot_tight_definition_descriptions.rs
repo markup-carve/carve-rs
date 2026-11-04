@@ -22,6 +22,18 @@ impl Layout<'_> {
             return;
         };
         let line = pos.start_line - 2;
+        // A blank or an erased `%%` above an item's block loosens the list
+        // (carve#5015), so a lone marker line goes entirely.
+        if self.lines[line].trim_matches([' ', '\t', '>']) == "{loose}" {
+            self.edits.push(Edit {
+                start: self.offsets[line],
+                end: self.offsets[line]
+                    + self.lines[line].len()
+                    + usize::from(line + 1 < self.lines.len()),
+                value: String::new(),
+            });
+            return;
+        }
         if let Some(marker) = cached_regex!(r"\{loose\}[ \t]*$")
             .unwrap()
             .find(self.lines[line])
@@ -275,7 +287,12 @@ pub(super) fn normalize(source: &str) -> String {
                 for item in &list.items {
                     for pair in item.children.windows(2) {
                         if !layout.attach_after_description(item.pos.as_ref(), &pair[0], &pair[1]) {
-                            layout.clear_gap(position(&pair[0]), position(&pair[1]), true);
+                            // A term interrupts the paragraph above it, so it needs no boundary.
+                            let boundary = !matches!(
+                                (&pair[0], &pair[1]),
+                                (BlockNode::Paragraph(_), BlockNode::DefinitionList(_))
+                            );
+                            layout.clear_gap(position(&pair[0]), position(&pair[1]), boundary);
                         }
                     }
                 }
