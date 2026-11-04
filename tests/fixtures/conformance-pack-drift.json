@@ -42,20 +42,6 @@
         "lazy-f7be6fb648d9",
         "ownership-6414535f3c3c"
       ]
-    },
-    {
-      "ticket": "markup-carve/carve#5156",
-      "cause": "pin move to carve 62b41b27: a quote line after a paragraph that follows a refused quote plus folds as text; the carve-rs fix is in review",
-      "cases": [
-        "lazy-408e39e5714b"
-      ]
-    },
-    {
-      "ticket": "markup-carve/carve#5156",
-      "cause": "a refused quote plus opens no paragraph, so the line below the document paragraph opens its quote; carve-rs follows carve main's model, the pin's pack predates carve d5ba112b",
-      "cases": [
-        "lazy-408e39e5714b"
-      ]
     }
   ]
 }
