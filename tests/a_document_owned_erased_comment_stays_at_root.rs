@@ -41,8 +41,5 @@ fn the_writer_puts_it_at_column_zero_and_settles() {
 
 #[test]
 fn a_comment_between_two_blocks_of_one_item_stays_in_it() {
-    assert_eq!(
-        top_level_types("- a\n\n%% c\n\n  b\n"),
-        ["list"],
-    );
+    assert_eq!(top_level_types("- a\n\n%% c\n\n  b\n"), ["list"],);
 }
