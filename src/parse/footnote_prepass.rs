@@ -2976,21 +2976,35 @@ pub(in crate::parse) fn parse_footnote_def_line(line: &str) -> Option<(&str, &st
 /// The first line from `from` that ends a note holding a live `%%%` span
 /// (nonblank, not `%%`-led, left of `body_indent`), and whether it stands
 /// left of the note's marker column `def_column`, so nothing of the host
-/// follows a blank before it. The end of the lines also separates.
+/// follows a blank before it. The end of the lines also separates. A line at
+/// the body column outside a `%%%` span opened here is visible: the blank
+/// before it separates nothing (§17 L1c).
 fn span_note_end(
     lines: &[&str],
     from: usize,
     def_column: usize,
     body_indent: usize,
 ) -> (usize, bool) {
+    let mut span = None;
     for (at, line) in lines.iter().enumerate().skip(from) {
         let line = strip_lazy(line);
-        if is_blank_line(line) || trim_ascii_start(line).starts_with("%%") {
+        if is_blank_line(line) {
             continue;
         }
         let column = indent_columns(line);
-        if column < body_indent {
+        let rest = trim_ascii_start(line);
+        if !rest.starts_with("%%") && column < body_indent {
             return (at, column < def_column);
+        }
+        let run = rest.bytes().take_while(|&b| b == b'%').count();
+        if run >= 3 {
+            span = if span == Some(run) {
+                None
+            } else {
+                span.or(Some(run))
+            };
+        } else if span.is_none() && !rest.starts_with("%%") {
+            return (at, false);
         }
     }
     (lines.len(), true)

@@ -479,7 +479,11 @@ impl NestedFenceReplay {
         let Some((width, column, provisional)) = here.host_comment else {
             return false;
         };
-        if !is_blank_line(text) && indent_columns(text) < column {
+        // A `%%` line below the column stays payload (PART 0 S1, carve#4994).
+        if !is_blank_line(text)
+            && indent_columns(text) < column
+            && !trim_ascii_start(text).starts_with("%%")
+        {
             here.host_comment = None;
             return false;
         }

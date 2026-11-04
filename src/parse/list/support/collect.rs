@@ -522,6 +522,15 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                         opaque_blank_lines.pop();
                     }
                 }
+                // The span left no paragraph open, so a line below this item is
+                // not lazy, unless a stanza is open before the span (carve#4956).
+                if indent_columns(line) < strip_cols
+                    && !(line_starts_paragraph(line)
+                        && collected_spanned_stanza_open(&mut collected_stanza_scan, &lines))
+                {
+                    cur.comment_span_missed_at = Some(cur.pos);
+                    break;
+                }
             }
         }
         let held_span = if span_reached_this_frame {
