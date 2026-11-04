@@ -34,6 +34,13 @@
         "fences-36b9dbadcbb3",
         "notes-246d1f499031"
       ]
+    },
+    {
+      "ticket": "markup-carve/carve#5113",
+      "cause": "the spec model keeps the list tight for a blank after a fence that a consumed plus ended; carve-rs follows the ticket's Expected and is loose",
+      "cases": [
+        "fences-7b1ba5bdbbb8"
+      ]
     }
   ]
 }
