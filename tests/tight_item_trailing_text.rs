@@ -117,3 +117,12 @@ fn lead_fence_blank_trailing_text_loosens() {
         "<ul>\n  <li>\n    <pre><code>c\n</code></pre>\n    <p>tail</p>\n  </li>\n</ul>"
     );
 }
+
+#[test]
+fn a_blank_after_a_closed_fence_ending_in_a_payload_blank_loosens() {
+    // The payload blank is the fence's; the blank after its closer is the item's (carve#5015).
+    assert_eq!(
+        carve::to_html("- a\n  ```\n  x\n\n  ```\n\n  # h\n"),
+        "<ul>\n  <li><p>a</p>\n    <pre><code>x\n\n</code></pre>\n    <h1 id=\"h\">h</h1>\n  </li>\n</ul>"
+    );
+}

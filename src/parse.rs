@@ -3054,9 +3054,14 @@ fn item_chunk_tree_looseness(
         // unless the blank is still a descendant fence's payload. A blank a
         // nested fence run discarded is pending only for a paragraph.
         let paragraph = block_is_paragraph_shaped(child);
+        let blank_past_previous = (previous_end..start).any(|line| {
+            lines.get(line).is_some_and(|text| is_blank_line(text))
+                && opaque_blank_lines.binary_search(&line).is_err()
+                && separator_lines.binary_search(&line).is_err()
+        });
         let block = !paragraph
             && !block_renders_nothing(child)
-            && !previous_child.is_some_and(fence_payload_ends_in_blank);
+            && (blank_past_previous || !previous_child.is_some_and(fence_payload_ends_in_blank));
         if (paragraph || block)
             && (previous_end > 0 || start > 1)
             && item_shown
