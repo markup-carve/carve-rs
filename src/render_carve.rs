@@ -1786,46 +1786,62 @@ fn splice_crossing_line(
         BlockNode::AbbreviationDef(def) => def.pos.as_ref(),
         _ => None,
     };
-    let (Some(erased), Some(host)) = (erased, paragraph.pos.as_ref()) else {
+    let Some(erased) = erased else {
         return false;
     };
-    if line.contains('\n')
-        || erased.start_line <= host.start_line
-        || erased.start_line >= host.end_line
-    {
-        return false;
+    // A paragraph and break joined across the erased line carry no span
+    // (carve#5136); the placed text around them still gives the lines.
+    struct Breaks {
+        lines: Vec<usize>,
+        first: Option<usize>,
+        last: usize,
     }
-    struct Breaks(Vec<usize>);
     impl SubtreeVisitor for Breaks {
         fn inlines(&mut self, inlines: &mut Vec<InlineNode>) {
             for inline in inlines {
                 if let InlineNode::SoftBreak(b) | InlineNode::HardBreak(b) = inline {
-                    let Some(pos) = &b.pos else {
-                        self.0.push(usize::MAX);
-                        continue;
-                    };
-                    self.0.push(if pos.end_line > pos.start_line {
-                        pos.end_line
-                    } else {
-                        pos.start_line + 1
+                    self.lines.push(match &b.pos {
+                        Some(pos) if pos.end_line > pos.start_line => pos.end_line,
+                        Some(pos) => pos.start_line + 1,
+                        None => usize::MAX,
                     });
+                    continue;
                 }
                 visit_inline_children(inline, self);
             }
         }
+        fn position(&mut self, pos: &mut Pos) {
+            if self.lines.last() == Some(&usize::MAX) {
+                *self.lines.last_mut().expect("a pending break") = pos.start_line;
+            }
+            self.first.get_or_insert(pos.start_line);
+            self.last = self.last.max(pos.end_line);
+        }
     }
-    let mut breaks = Breaks(Vec::new());
+    let mut breaks = Breaks {
+        lines: Vec::new(),
+        first: None,
+        last: 0,
+    };
     breaks.inlines(&mut paragraph.children.clone());
-    if breaks.0.contains(&usize::MAX) {
+    let (start_line, end_line) = match (&paragraph.pos, breaks.first) {
+        (Some(host), _) => (host.start_line, host.end_line),
+        (None, Some(first)) => (first, breaks.last),
+        (None, None) => return false,
+    };
+    if line.contains('\n') || erased.start_line <= start_line || erased.start_line >= end_line {
+        return false;
+    }
+    if breaks.lines.contains(&usize::MAX) {
         return false;
     }
     let lines = text.split('\n').count();
-    let lead = lines.checked_sub(breaks.0.len() + 1 + spliced);
+    let lead = lines.checked_sub(breaks.lines.len() + 1 + spliced);
     let Some(lead @ 0..=1) = lead else {
         return false;
     };
     let passed = breaks
-        .0
+        .lines
         .iter()
         .filter(|next| **next <= erased.start_line)
         .count();
