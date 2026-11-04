@@ -1399,7 +1399,10 @@ fn a_marker_body_list_follows_its_paragraph_without_a_blank() {
         carve::to_carve("x[^n]\n\n[^n]: e\n\n  - a\n"),
         "x[^n]\n\n[^n]: e\n  - a\n"
     );
-    assert_eq!(carve::to_carve(":: t\n: e\n\n  - a\n"), ":: t\n: e\n  - a\n");
+    assert_eq!(
+        carve::to_carve(":: t\n: e\n\n  - a\n"),
+        ":: t\n: e\n  - a\n"
+    );
     // A quote is not a list: it keeps its blank.
     assert_eq!(
         carve::to_carve("x[^n]\n\n[^n]: e\n  > q\n"),
