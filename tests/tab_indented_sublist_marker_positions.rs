@@ -73,7 +73,6 @@ fn the_sublist_under_a_tab_is_placed() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn the_sublist_span_includes_its_container_indentation() {
     // Stronger than "present". The exact-span consensus keeps the tab that
     // establishes the nested block's source extent; the text still owns only

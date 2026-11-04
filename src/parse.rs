@@ -890,7 +890,7 @@ fn parse_with_options_mode_and_index(
             let owner = doc
                 .footnote_def_pos
                 .get(label)
-                .map_or(1, |pos| pos.start_column + 2);
+                .map_or(1, |pos| positions::visual_owner_at_column(pos, &lines, 2));
             positions::anchor_list_starts(blocks, &lines, owner);
         }
     }
