@@ -293,7 +293,7 @@ pub(super) fn write_footnote_def(
             // This one was a widen and the parser's was a widen, so both agreed
             // and both were half the rule; an ingested definition (§6) reaches
             // only this one, so a copy of it has to end where the parse did.
-            let last = children.iter().rev().find_map(block_pos).cloned();
+            let last = crate::parse::furthest_block_pos(children).cloned();
             crate::parse::end_at_last_placed_child(&mut pos, last);
             Some(pos)
         }

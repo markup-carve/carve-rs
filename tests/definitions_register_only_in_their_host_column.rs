@@ -45,7 +45,7 @@ fn a_definition_past_a_description_note_column_registers_in_the_note() {
 fn a_definition_in_a_description_note_ends_its_paragraph_before_tail() {
     assert_eq!(
         html("[r][] [^p] [^c]\n:: t\n: [^c]: para\n    [r]: /u\n    tail\n"),
-        format!("{LEAD}<dl><dt>t</dt><dd></dd></dl><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>para</p><p>tail<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>")
+        format!("{LEAD}<dl><dt>t</dt><dd></dd></dl><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>para tail<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>")
     );
 }
 

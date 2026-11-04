@@ -66,7 +66,7 @@ fn an_already_escaped_run_keeps_its_one_escape() {
 fn an_authored_comment_still_parses() {
     assert_eq!(
         to_plain_text("before\n%% a comment\nafter\n"),
-        "before\n\nafter\n"
+        "before after\n"
     );
     assert_eq!(to_plain_text("after %% trailing\n"), "after\n");
 }

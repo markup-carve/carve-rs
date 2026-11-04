@@ -43,14 +43,12 @@ fn a_definition_between_a_table_and_caption_prevents_attachment() {
     let source = "^ cap\n# head\n{.cls}\n@user\n| a | b |\n[a]: /u\n^ cap\n";
     let html = carve::to_html(source);
 
-    assert!(
-        !html.contains("<caption>"),
-        "definition was skipped: {html}"
-    );
+    // carve#5012: the erased definition no longer stands between them.
+    assert!(html.contains("<caption>"), "caption did not attach: {html}");
     assert!(html.contains("<p>^ cap</p>"));
     assert_eq!(
         carve::to_carve(source),
-        "^ cap\n\n# head\n\n{.cls}\n@user\n\n| a | b |\n\n\\^ cap\n\n[a]: /u\n"
+        "^ cap\n\n# head\n\n{.cls}\n@user\n\n| a | b |\n^ cap\n\n[a]: /u\n"
     );
 }
 

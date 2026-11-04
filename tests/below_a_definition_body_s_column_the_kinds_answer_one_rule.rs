@@ -29,7 +29,7 @@ fn a_link_definition_below_the_column_folds_like_the_footnote_one() {
     for indent in ["  ", " "] {
         assert_eq!(
             html(&format!(":: t\n:  d\n{indent}[r]: /u\ntail\n")),
-            format!("{ENDS}<p>tail</p>"),
+            format!("{FOLDS_HEAD}tail</dd>\n</dl>"),
             "indent {:?}",
             indent
         );
@@ -49,7 +49,7 @@ fn a_link_definition_below_the_column_still_registers_nothing() {
     // reference is literal. Text plus a registration is the half fold corpus 430
     // exists to catch.
     let out = html(":: t\n:  d\n  [r]: /u\ntail\n\n[link][r]\n");
-    assert!(out.contains("<dd>d</dd>"), "{out}");
+    assert!(out.contains("<dd>d\ntail</dd>"), "{out}");
     assert!(!out.contains("<p>[link][r]</p>"), "{out}");
     assert!(out.contains("<p><a href=\"/u\">link</a></p>"), "{out}");
 }
@@ -59,7 +59,7 @@ fn an_abbreviation_definition_below_the_column_defines_in_the_document() {
     for indent in ["", " ", "  "] {
         assert_eq!(
             html(&format!(":: t\n:  d\n{indent}*[A]: a\ntail\n")),
-            format!("{ENDS}<p>tail</p>"),
+            format!("{FOLDS_HEAD}tail</dd>\n</dl>"),
             "indent {:?}",
             indent
         );
@@ -81,7 +81,7 @@ fn the_nested_spelling_answers_the_same_way() {
     // misses it and lands in the outer item.
     assert_eq!(
         html("- :: t\n  :  d\n   *[A]: a\n  tail\n"),
-        "<ul>\n  <li>\n    <dl>\n      <dt>t</dt>\n      <dd>d</dd>\n    </dl>\n    tail\n  </li>\n</ul>"
+        "<ul>\n  <li>\n    <dl>\n      <dt>t</dt>\n      <dd>d\ntail</dd>\n    </dl>\n  </li>\n</ul>"
     );
 }
 
@@ -103,7 +103,7 @@ fn controls_the_plain_line_and_the_comment_bound_the_band() {
     );
     assert_eq!(
         html(":: t\n:  d\n  %% c\ntail\n"),
-        format!("{ENDS}<p>tail</p>")
+        format!("{FOLDS_HEAD}tail</dd>\n</dl>")
     );
 }
 
@@ -113,7 +113,7 @@ fn controls_at_and_above_the_content_column_are_untouched() {
     // dropped inside the description; the band being fixed is strictly BELOW.
     assert_eq!(
         html(":: t\n:  d\n   [r]: /u\ntail\n\n[link][r]\n"),
-        format!("{ENDS}<p>tail</p>\n<p><a href=\"/u\">link</a></p>")
+        format!("{FOLDS_HEAD}tail</dd>\n</dl>\n<p><a href=\"/u\">link</a></p>")
     );
     assert_eq!(
         html(":: t\n:  d\n   {.k}\ntail\n"),

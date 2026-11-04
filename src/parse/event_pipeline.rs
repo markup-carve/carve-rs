@@ -3361,6 +3361,10 @@ fn has_fence_candidate_without_final_newline(source: &str) -> bool {
 }
 
 pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
+    // Erased invisible lines (carve#5012) take the tree parser's route.
+    if super::transparent_lines::erases_lines(source) {
+        return None;
+    }
     if source_may_hoist_abbreviation(source) {
         #[cfg(feature = "experimental-event-parser-options")]
         return parse_document_with_custom_options(source, &Options::default(), ParseMode::Html)
@@ -3737,6 +3741,9 @@ pub(super) fn parse_document_with_custom_options(
     options: &Options<'_>,
     mode: ParseMode,
 ) -> Option<(Document, Option<CrossrefIndex>, bool)> {
+    if super::transparent_lines::erases_lines(source) {
+        return None;
+    }
     // Hoisted definitions are placed by source line (CARVE-P12-070).
     if !options.positions
         && !matches!(mode, ParseMode::HtmlFacade)
@@ -4304,26 +4311,16 @@ mod link_definition_tests {
     fn nested_parse_installs_its_own_definition_placeholders() {
         let _outer = PlaceholderGuard::install(['\u{e007}', '\u{e008}']);
         let source = "```\n%%\u{e007}\n```\n\n[ref]: /target\n\nSee [ref][]\n";
-        let (actual, admitted) = parse_document(source).unwrap();
-        assert!(admitted);
-        let expected = parse_with_options(source, &Options::default());
-        assert_eq!(
-            crate::ast_json::to_json(&actual),
-            crate::ast_json::to_json(&expected)
-        );
+        // carve#5012: a document that erases a line takes the standard parse.
+        assert!(parse_document(source).is_none());
     }
 
     #[test]
     fn nested_parse_without_definitions_resets_placeholder_pair() {
         let _outer = PlaceholderGuard::install(['\u{e007}', '\u{e008}']);
         let source = "A paragraph\n\n%%\u{e007}\n";
-        let (actual, admitted) = parse_document(source).unwrap();
-        assert!(admitted);
-        let expected = parse_with_options(source, &Options::default());
-        assert_eq!(
-            crate::ast_json::to_json(&actual),
-            crate::ast_json::to_json(&expected)
-        );
+        // carve#5012: a document that erases a line takes the standard parse.
+        assert!(parse_document(source).is_none());
     }
 }
 

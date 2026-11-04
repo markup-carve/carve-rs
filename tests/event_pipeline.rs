@@ -11,6 +11,26 @@ fn parse_standard(source: &str) -> carve::Document {
     parse_with_options(source, &Options::default())
 }
 
+// carve#5012: an unquoted `%%` comment or one-line link/abbreviation definition
+// is erased before layout, and the event route declines such a document.
+fn erases_a_line(source: &str) -> bool {
+    let mut fenced = false;
+    source.lines().any(|line| {
+        let text = line
+            .trim_start_matches('\u{feff}')
+            .trim_start_matches([' ', '\t']);
+        if text.starts_with("```") || text.starts_with("~~~") {
+            fenced = !fenced;
+            return false;
+        }
+        let footnote = text.starts_with("[^") && !text.starts_with("[^]");
+        !fenced
+            && ((text.starts_with("%%") && !text.starts_with("%%%"))
+                || (text.starts_with("*[") && text.contains("]:"))
+                || (text.starts_with('[') && !footnote && text.contains("]:")))
+    })
+}
+
 #[cfg(feature = "experimental-event-parser-options")]
 #[test]
 #[ignore = "rule A ledger: carve-rs#3524"]
@@ -568,8 +588,9 @@ fn abbreviation_definitions_keep_editor_positions_and_source_lines() {
                     .with_source_lines(source_lines);
                 let (candidate, used) =
                     parse_experimental_event_blocks_with_options(&source, &options);
-                assert!(
+                assert_eq!(
                     used,
+                    !erases_a_line(&source),
                     "{name}; positions={positions}; source_lines={source_lines}"
                 );
                 assert_eq!(candidate, parse_with_options(&source, &options), "{name}");
@@ -873,7 +894,7 @@ fn footnote_abbreviation_scopes_match_full_document() {
             let (candidate, admitted) =
                 parse_experimental_event_blocks_with_options(source, &options);
             if option_index == 0 {
-                assert!(admitted);
+                assert_eq!(admitted, !erases_a_line(source), "{source:?}");
             }
             assert_eq!(
                 candidate,
@@ -961,7 +982,7 @@ fn supported_options_match_across_direct_block_families() {
         ] {
             let (candidate, admitted) =
                 parse_experimental_event_blocks_with_options(source, &options);
-            assert!(admitted, "{source:?}");
+            assert_eq!(admitted, !erases_a_line(source), "{source:?}");
             let baseline = parse_with_options(source, &options);
             assert_eq!(candidate, baseline, "{source:?}");
             assert_eq!(
@@ -985,10 +1006,10 @@ fn positioned_event_entry_matches_editor_spans() {
         (":: term\n:  meaning\n", true),
         ("::: note\nbody\n:::\n", true),
         ("![alt](/image)\n", true),
-        ("[ref]: /target\n\nSee [ref][].\n", true),
-        ("\u{feff}[ref]: /target\r\n\r\nSee [ref][].\r\n", true),
+        ("[ref]: /target\n\nSee [ref][].\n", false),
+        ("\u{feff}[ref]: /target\r\n\r\nSee [ref][].\r\n", false),
         ("A literal ]: token.\n", true),
-        ("*[dl]: definition list\n\nA dl.\n", true),
+        ("*[dl]: definition list\n\nA dl.\n", false),
         ("[^note]: footnote\n\nSee [^note].\n", true),
         ("[^note]: intro\n  > quote\n\nSee [^note].\n", true),
         ("\u{feff}[^note]: footnote\r\n\r\nSee [^note].\r\n", true),
@@ -1147,7 +1168,8 @@ fn nested_list_abbreviation_line_stays_in_list_item() {
         "::: note\n- a\n\n  a\n  *[X]: y\n\n  more\n:::\n",
     ] {
         let (candidate, admitted) = parse_experimental_event_blocks(source);
-        assert!(admitted, "{source:?}");
+        // carve#5012: both definitions are erased, so the event route declines.
+        assert!(!admitted, "{source:?}");
         assert_eq!(candidate, parse_standard(source), "{source:?}");
     }
 }
@@ -1459,7 +1481,7 @@ fn indented_image_with_flush_caption_keeps_figure() {
         ] {
             let (candidate, admitted) =
                 parse_experimental_event_blocks_with_options(source, &options);
-            assert!(admitted, "{source:?}");
+            assert_eq!(admitted, !erases_a_line(source), "{source:?}");
             assert_eq!(
                 candidate,
                 parse_with_options(source, &options),
@@ -1481,7 +1503,7 @@ fn root_comments_use_event_route() {
         "{.lead}\n%% comment\n\nAfterward.\n",
     ] {
         let (actual, admitted) = parse_experimental_event_blocks(source);
-        assert!(admitted, "{source:?}");
+        assert_eq!(admitted, !erases_a_line(source), "{source:?}");
         let expected = parse_standard(source);
         assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
         assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
@@ -1499,7 +1521,7 @@ fn root_comments_use_event_route() {
         assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
     }
     let (actual, admitted) = parse_experimental_event_blocks("Paragraph.\n%% comment\n");
-    assert!(admitted);
+    assert!(!admitted);
     assert_eq!(actual, parse_standard("Paragraph.\n%% comment\n"));
 }
 
@@ -1758,7 +1780,7 @@ fn isolated_root_link_definitions_keep_public_nodes_and_references() {
         "[r]: /u\n[s]: /v\n\nA [link][r] and [other][s].\n",
     ] {
         let (actual, admitted) = parse_experimental_event_blocks(source);
-        assert!(admitted, "{source:?}");
+        assert_eq!(admitted, !erases_a_line(source), "{source:?}");
         let expected = parse_standard(source);
         assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
         assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
@@ -2133,7 +2155,7 @@ fn event_route_lifts_root_link_definitions() {
         "[ref]: https://example.com\n",
     ] {
         let (actual, admitted) = parse_experimental_event_blocks(source);
-        assert!(admitted, "{source:?}");
+        assert_eq!(admitted, !erases_a_line(source), "{source:?}");
         let expected = parse_standard(source);
         assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
         assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
@@ -2183,7 +2205,7 @@ fn event_route_lifts_root_abbreviations() {
         "Text[^n] uses HTML.\n\n[^n]: Note.\n\n*[HTML]: HyperText Markup Language\n",
     ] {
         let (actual, admitted) = parse_experimental_event_blocks(source);
-        assert!(admitted, "{source:?}");
+        assert_eq!(admitted, !erases_a_line(source), "{source:?}");
         let expected = parse_standard(source);
         assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
         assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
@@ -2204,7 +2226,7 @@ fn event_route_attaches_root_attributes() {
         "{#x .a}\n*[HTML]: HyperText\n{.b}\nHTML text.\n",
     ] {
         let (actual, admitted) = parse_experimental_event_blocks(source);
-        assert!(admitted, "{source:?}");
+        assert_eq!(admitted, !erases_a_line(source), "{source:?}");
         let expected = parse_standard(source);
         assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
         assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
@@ -2279,7 +2301,11 @@ fn quote_marker_and_raw_fence_boundaries_keep_exact_output() {
         "> a\nlazy\n*[HTML]: HyperText\n\nHTML\n",
     ] {
         let (actual, admitted) = parse_experimental_event_blocks(source);
-        assert_eq!(admitted, source != "> ```=html\n> ", "{source:?}");
+        assert_eq!(
+            admitted,
+            source != "> ```=html\n> " && !erases_a_line(source),
+            "{source:?}"
+        );
         let expected = parse_standard(source);
         assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
         assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
@@ -3037,19 +3063,22 @@ fn footnote_like_lines_after_extraction_keep_link_semantics() {
             }
         }
     }
-    let source = "[^]: /url\n\nsee [x][^].\n";
-    let (_, admitted) = parse_experimental_event_blocks(source);
-    assert!(admitted);
-    let source = "> [r]: /url \"[^a]: x\"\n\nroot [r][]\n";
-    let (_, admitted) = parse_experimental_event_blocks(source);
-    assert!(admitted);
+    for source in [
+        "[^]: /url\n\nsee [x][^].\n",
+        "> [r]: /url \"[^a]: x\"\n\nroot [r][]\n",
+    ] {
+        let (candidate, admitted) = parse_experimental_event_blocks(source);
+        assert_eq!(admitted, !erases_a_line(source), "{source:?}");
+        assert_eq!(candidate, parse_standard(source), "{source:?}");
+    }
     let bracket_heavy = format!(
         "see[^n]\n\n{}{}[^n]: note\n",
         "[".repeat(33),
         "x".repeat(1025)
     );
     let (candidate, admitted) = parse_experimental_event_blocks(&bracket_heavy);
-    assert!(admitted);
+    // carve#5012: the standard parse reads the bracket line as a definition and erases it.
+    assert!(!admitted);
     assert_eq!(candidate, parse_standard(&bracket_heavy));
 }
 

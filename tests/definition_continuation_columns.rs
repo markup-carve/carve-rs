@@ -33,10 +33,10 @@ fn collected_definitions_close_the_below_content_column_path() {
                     continue;
                 }
                 assert!(
-                    !tail_is_inside(&html),
+                    tail_is_inside(&html),
                     "{head:?} {definition:?} column {column}: {html}"
                 );
-                assert!(html.contains("<p>more\ntail</p>"), "{html}");
+                assert!(html.contains("a\nmore\ntail</li>"), "{html}");
             }
         }
     }
@@ -86,7 +86,7 @@ fn an_abbreviation_definition_closes_the_path_like_a_link_definition() {
     // A definition in every container (carve#4865).
     for (head, content_column) in HEADS {
         let html = carve::to_html(&source(head, content_column, "*[A]: expansion", 1));
-        assert!(!tail_is_inside(&html), "{head:?}: {html}");
-        assert!(html.contains("<p>more\ntail</p>"), "{html}");
+        assert!(tail_is_inside(&html), "{head:?}: {html}");
+        assert!(html.contains("a\nmore\ntail</li>"), "{html}");
     }
 }

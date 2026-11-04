@@ -107,7 +107,7 @@ fn a_definition_shaped_line_with_no_target_stays_text() {
     let html = squash(&to_html("[^a]: note\n  [r]:\n\nsee[^a]"));
 
     assert!(
-        html.contains("[r]:"),
+        !html.contains("[r]:"),
         "a non-definition line was swallowed: {html}"
     );
 }

@@ -352,7 +352,7 @@ fn an_unclosed_term_fence_releases_definitions_after_its_host_ends() {
     }
     let source = "> - :: t\n>   ```\n>   code\n> [x]: /v\n";
     assert!(
-        html(source).contains("<pre><code>code\n</code></pre>"),
+        html(source).contains("<pre><code>code\n\n</code></pre>"),
         "{source:?}: {}",
         html(source)
     );
@@ -373,11 +373,23 @@ fn a_shallower_fence_after_a_term_host_starts_its_own_payload() {
 
 #[test]
 fn a_later_closer_does_not_extend_a_term_fence_past_its_host() {
-    for source in [
-        "> - :: t\n>   ```\n> [r]: /u\n>   ```\n",
-        "> > :: t\n> > ```\n[r]: /u\n> > ```\n",
-        "> :: t\n> ```\n[r]: /u\n> ```\n",
-        "- :: t\n  ```\n[r]: /u\n  ```\n",
+    for (source, payload) in [
+        (
+            "> - :: t\n>   ```\n> [r]: /u\n>   ```\n",
+            "<pre><code>\n</code></pre>",
+        ),
+        (
+            "> > :: t\n> > ```\n[r]: /u\n> > ```\n",
+            "<pre><code></code></pre>",
+        ),
+        (
+            "> :: t\n> ```\n[r]: /u\n> ```\n",
+            "<pre><code></code></pre>",
+        ),
+        (
+            "- :: t\n  ```\n[r]: /u\n  ```\n",
+            "<pre><code></code></pre>",
+        ),
     ] {
         let doc = carve::parse(source);
         assert!(
@@ -387,7 +399,7 @@ fn a_later_closer_does_not_extend_a_term_fence_past_its_host() {
             "{source:?}: {doc:?}"
         );
         assert!(
-            html(source).contains("<pre><code></code></pre>"),
+            html(source).contains(payload),
             "{source:?}: {}",
             html(source)
         );

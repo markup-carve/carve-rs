@@ -178,7 +178,7 @@ fn a_blank_separated_sublist_keeps_the_follower_too() {
 /// the one the substitution requires the fence spelling to equal.
 #[test]
 fn the_line_form_is_unchanged() {
-    assert_html("- x\n%% z\ny\n", "<ul><li>x</li></ul><p>y</p>");
+    assert_html("- x\n%% z\ny\n", "<ul><li>x y</li></ul>");
 }
 
 /// Corpus 445-3: a TERMINATED fence at that column is a comment BLOCK written

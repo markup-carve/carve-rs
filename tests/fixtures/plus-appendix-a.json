@@ -497,32 +497,32 @@
  {
   "name": "826-a-comment-or-link-definition-at-a-body-s-column-spends-its-first-block-plus-2",
   "source": "- +\n  %% c\nafter\n",
-  "html": "<ul>\n  <li>+</li>\n</ul>\n<p>after</p>\n"
+  "html": "<ul>\n  <li>after</li>\n</ul>\n"
  },
  {
   "name": "826-a-comment-or-link-definition-at-a-body-s-column-spends-its-first-block-plus-3",
   "source": "- a\n  * +\n    [r]: /u\nafter\n",
-  "html": "<ul>\n  <li>a\n    <ul>\n      <li>+</li>\n    </ul>\n  </li>\n</ul>\n<p>after</p>\n"
+  "html": "<ul>\n  <li>a\n    <ul>\n      <li>+\nafter</li>\n    </ul>\n  </li>\n</ul>\n"
  },
  {
   "name": "826-a-comment-or-link-definition-at-a-body-s-column-spends-its-first-block-plus-4",
   "source": "- +\n  %% c\n  %% d\n```\nz\n```\n",
-  "html": "<ul>\n  <li>+</li>\n</ul>\n<pre><code>z\n</code></pre>\n"
+  "html": "<ul>\n  <li>\n    <pre><code>z\n</code></pre>\n  </li>\n</ul>\n"
  },
  {
   "name": "826-a-comment-or-link-definition-at-a-body-s-column-spends-its-first-block-plus-5",
   "source": "- a\n  * +\n[r]: /u\n  after\n",
-  "html": "<ul>\n  <li>a\n    <ul>\n      <li>+</li>\n    </ul>\n    after\n  </li>\n</ul>\n"
+  "html": "<ul>\n  <li>a\n    <ul>\n      <li>after</li>\n    </ul>\n  </li>\n</ul>\n"
  },
  {
   "name": "826-a-comment-or-link-definition-at-a-body-s-column-spends-its-first-block-plus-6",
   "source": "- a\n  * +\n%% c\n  after\n",
-  "html": "<ul>\n  <li>a\n    <ul>\n      <li>+</li>\n    </ul>\n    after\n  </li>\n</ul>\n"
+  "html": "<ul>\n  <li>a\n    <ul>\n      <li>after</li>\n    </ul>\n  </li>\n</ul>\n"
  },
  {
   "name": "826-a-comment-or-link-definition-at-a-body-s-column-spends-its-first-block-plus",
   "source": "- a\n  * +\n    %% c\nafter\n",
-  "html": "<ul>\n  <li>a\n    <ul>\n      <li>+</li>\n    </ul>\n  </li>\n</ul>\n<p>after</p>\n"
+  "html": "<ul>\n  <li>a\n    <ul>\n      <li>+\nafter</li>\n    </ul>\n  </li>\n</ul>\n"
  },
  {
   "name": "838-an-item-on-a-body-s-marker-line-takes-a-column-zero-block-after-its-plus-2",

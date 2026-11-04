@@ -176,7 +176,7 @@ fn the_two_exceptions_still_dedent_all_the_way() {
     // The comment is invisible and the line below it stays in the item, which
     // is the executable spec's own answer for this document.
     let comment = both_paths("- - - a\n b\n %% c\n d\n");
-    assert!(comment.contains("<li>a\nb</li>"), "{comment}");
+    assert!(comment.contains("<li>a\nb\nd</li>"), "{comment}");
     assert!(!comment.contains("%%"), "{comment}");
-    assert!(comment.ends_with("</ul>\n<p>d</p>"), "{comment}");
+    assert!(comment.ends_with("</li>\n</ul>"), "{comment}");
 }

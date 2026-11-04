@@ -24,11 +24,9 @@ fn comment_contents(source: &str) -> Vec<String> {
 fn a_line_comment_drops_trailing_ascii_whitespace() {
     for source in [":::\n%%. \n", ":::\n%%. \t\n", ":::\n%%.\t\n"] {
         let formatted = to_carve(source);
-        assert_eq!(formatted, ":::\n%% .\n:::\n");
-        let BlockNode::Div(div) = &parse(source).children[0] else {
-            panic!("expected a div");
-        };
-        let BlockNode::Comment(comment) = &div.children[0] else {
+        assert_eq!(formatted, ":::\n\n:::\n\n%% .\n");
+        // carve#5012: the erased comment stands after the unclosed div.
+        let BlockNode::Comment(comment) = &parse(source).children[1] else {
             panic!("expected a comment");
         };
         assert_eq!(comment.content, ".");

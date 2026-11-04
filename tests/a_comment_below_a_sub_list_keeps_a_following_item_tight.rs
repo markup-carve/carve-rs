@@ -38,15 +38,15 @@ fn a_following_sibling_takes_no_separator() {
     );
     assert_eq!(
         carve::to_carve("- o\n  - - s\n  %% c\n  - s\n"),
-        "- o\n  - - s\n    %% c\n  - s\n"
+        "- o\n  - - s\n  - s\n\n  %% c\n"
     );
 }
 
 #[test]
 fn a_description_s_trailing_comment_takes_no_separator_before_a_sibling() {
     assert_eq!(
-        carve::to_carve("- :: t\n  : d\n    %% c\n- s\n"),
-        "- :: t\n  : d\n    %% c\n- s\n"
+        carve::to_carve("- :: t\n  : d\n- s\n\n%% c\n"),
+        "- :: t\n  : d\n- s\n\n%% c\n"
     );
 }
 

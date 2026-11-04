@@ -250,7 +250,7 @@ fn a_marker_after_a_collected_definition_reaches_the_surviving_item() {
         ),
         (
             "[r]: /target",
-            "<ul>\n  <li>a\n    <ol>\n      <li>ordered</li>\n    </ol>\n    +\n    <blockquote><p>quote</p></blockquote>\n  </li>\n</ul>",
+            "<ul>\n  <li>a\n    <ol>\n      <li>ordered\n        <blockquote><p>quote</p></blockquote>\n      </li>\n    </ol>\n  </li>\n</ul>",
         ),
     ] {
         let source = format!("- a\n  1. ordered\n    {definition}\n  +\n  > quote\n");

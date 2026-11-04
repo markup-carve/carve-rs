@@ -24,7 +24,12 @@ fn blank_payload_survives_each_list_depth_and_follower() {
                         follower,
                         final_break
                     );
-                    let payload = format!("<pre><code>{}</code></pre>", "\n".repeat(blanks));
+                    let kept = if follower == "[r]: /u" && final_break.is_empty() {
+                        blanks - 1
+                    } else {
+                        blanks
+                    };
+                    let payload = format!("<pre><code>{}</code></pre>", "\n".repeat(kept));
                     for html in [
                         to_html(&source),
                         to_html_with_options(&source, &Options::default().with_positions(true)),

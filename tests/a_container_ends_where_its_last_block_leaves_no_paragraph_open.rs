@@ -120,7 +120,7 @@ fn every_container_ending_on_a_continuation_row_ends_at_the_flush_left_line() {
 fn a_link_definition_at_a_definition_bodys_content_column_ends_the_paragraph() {
     assert_eq!(
         html(":: t\n:  a\n   [r]: /u\ntail\n\n[r][]\n"),
-        "<dl>\n  <dt>t</dt>\n  <dd>a</dd>\n</dl>\n<p>tail</p>\n\
+        "<dl>\n  <dt>t</dt>\n  <dd>a\ntail</dd>\n</dl>\n\
          <p><a href=\"/u\">r</a></p>"
     );
 }
@@ -147,7 +147,7 @@ fn a_footnote_definition_at_that_column_answers_the_same_way() {
 fn a_comment_at_that_column_ends_the_paragraph_too() {
     assert_eq!(
         html(":: t\n:  a\n   %% c\ntail\n"),
-        "<dl>\n  <dt>t</dt>\n  <dd>a</dd>\n</dl>\n<p>tail</p>"
+        "<dl>\n  <dt>t</dt>\n  <dd>a\ntail</dd>\n</dl>"
     );
 }
 
@@ -216,7 +216,7 @@ fn a_definition_below_the_content_column_registers_nothing() {
     // published as the item's own text.
     assert_eq!(
         html("- a\n [r]: /u\ntail\n\n[r][]\n"),
-        "<ul>\n  <li>a</li>\n</ul>\n<p>tail</p>\n<p><a href=\"/u\">r</a></p>"
+        "<ul>\n  <li>a\ntail</li>\n</ul>\n<p><a href=\"/u\">r</a></p>"
     );
 }
 
@@ -227,11 +227,11 @@ fn a_definition_below_the_content_column_registers_nothing() {
 fn an_abbreviation_definition_at_that_column_leaves_no_paragraph() {
     assert_eq!(
         html(":: t\n:  a\n   *[A]: x\ntail\n"),
-        "<dl>\n  <dt>t</dt>\n  <dd>a</dd>\n</dl>\n<p>tail</p>"
+        "<dl>\n  <dt>t</dt>\n  <dd>a\ntail</dd>\n</dl>"
     );
     assert_eq!(
         html("- a\n  *[A]: x\ntail\n"),
-        "<ul>\n  <li>a</li>\n</ul>\n<p>tail</p>"
+        "<ul>\n  <li>a\ntail</li>\n</ul>"
     );
 }
 
@@ -242,8 +242,14 @@ fn an_abbreviation_definition_at_that_column_leaves_no_paragraph() {
 /// read off a delimiter.
 #[test]
 fn a_comment_at_a_list_items_content_column_ends_the_paragraph_too() {
-    for src in ["- a\n  %% c\ntail\n", "- a\n  %%% c\n  %%%\ntail\n"] {
-        assert_eq!(html(src), "<ul>\n  <li>a</li>\n</ul>\n<p>tail</p>", "{src}");
+    for (src, want) in [
+        ("- a\n  %% c\ntail\n", "<ul>\n  <li>a\ntail</li>\n</ul>"),
+        (
+            "- a\n  %%% c\n  %%%\ntail\n",
+            "<ul>\n  <li>a</li>\n</ul>\n<p>tail</p>",
+        ),
+    ] {
+        assert_eq!(html(src), want, "{src}");
     }
 }
 
@@ -287,7 +293,7 @@ fn a_footnote_definitions_body_continuation_is_part_of_its_block() {
 #[test]
 fn a_link_definition_has_no_body_for_an_indented_line_to_join() {
     let expected = format!(
-        "<ul>\n  <li>a\n    {}T{}\ntail\n  </li>\n</ul>\n<p><a href=\"/u\">r</a></p>",
+        "<ul>\n  <li>a\n{}T{}\ntail</li>\n</ul>\n<p><a href=\"/u\">r</a></p>",
         '\u{201c}', '\u{201d}'
     );
     assert_eq!(html("- a\n  [r]: /u\n    \"T\"\ntail\n\n[r][]\n"), expected);
@@ -302,10 +308,7 @@ fn a_link_definition_has_no_body_for_an_indented_line_to_join() {
 /// body, where the dedent has already erased it.
 #[test]
 fn a_comment_below_the_content_column_still_lets_the_line_under_it_fold() {
-    assert_eq!(
-        html("- a\n %% c\nb\n"),
-        "<ul>\n  <li>a</li>\n</ul>\n<p>b</p>"
-    );
+    assert_eq!(html("- a\n %% c\nb\n"), "<ul>\n  <li>a\nb</li>\n</ul>");
     let nested = html("- - a\n %%% c\n x\n %%%\n b\n");
     let expected = [
         "<ul>",

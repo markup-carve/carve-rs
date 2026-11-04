@@ -751,6 +751,7 @@ fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: Esc
     let mut adjacent_list_indent = 0;
     let mut separated_from_previous = false;
     let mut previous_emitted: Option<&BlockNode> = None;
+    let mut paragraph_entry: Option<(usize, &crate::ast::Paragraph, usize)> = None;
     let entries = definitions_above_a_marker_in_place(
         crate::ast_json::ordered_document_entries(doc, &footnote_defs),
         last_region_marker_line(doc),
@@ -820,6 +821,20 @@ fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: Esc
             }
         };
         escape_window::leave(session, recorded);
+        if let (Some((entry, paragraph, spliced)), Some(block)) = (paragraph_entry.as_mut(), block)
+        {
+            if splice_crossing_line(
+                session,
+                &mut rendered[*entry],
+                paragraph,
+                *spliced,
+                block,
+                &text,
+            ) {
+                *spliced += 1;
+                continue;
+            }
+        }
         if !writes_nothing(&text) {
             let adjacent = match (previous_emitted, block, footnote_line) {
                 (Some(previous), Some(block), _) => region_marker_adjacent(previous, block, &text),
@@ -849,6 +864,12 @@ fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: Esc
                     text
                 });
             }
+            paragraph_entry = match block {
+                Some(BlockNode::Paragraph(paragraph)) if !after_empty_nested && !adjacent => {
+                    Some((rendered.len() - 1, paragraph, 0))
+                }
+                _ => None,
+            };
             previous_emitted = block;
         }
     }
@@ -1504,6 +1525,8 @@ fn render_blocks(
     let mut separated_from_previous = false;
     let mut previous_emitted: Option<&BlockNode> = None;
     let mut moved_marker: Option<&BlockNode> = None;
+    // The last entry written by a paragraph alone, and the lines spliced into it.
+    let mut paragraph_entry: Option<(usize, &crate::ast::Paragraph, usize)> = None;
     let list = blocks.as_ptr() as usize;
     for (index, block) in blocks.iter().enumerate() {
         let escape_window::Visit::Render(recorded) = escape_window::visit(session, list, index)
@@ -1512,6 +1535,20 @@ fn render_blocks(
         };
         ctx.paragraph_starts_after_caption_host = ctx.after_caption_host;
         let mut text = render_block(session, block, ctx);
+        if let Some((entry, paragraph, spliced)) = paragraph_entry.as_mut() {
+            if splice_crossing_line(
+                session,
+                &mut rendered[*entry],
+                paragraph,
+                *spliced,
+                block,
+                &text,
+            ) {
+                *spliced += 1;
+                escape_window::leave(session, recorded);
+                continue;
+            }
+        }
         if item.is_some() {
             guard_literal_plus_after_nested_list(previous_emitted, block, &mut text);
         }
@@ -1566,6 +1603,12 @@ fn render_blocks(
                     text
                 });
             }
+            paragraph_entry = match block {
+                BlockNode::Paragraph(paragraph) if !after_empty_nested && !adjacent => {
+                    Some((rendered.len() - 1, paragraph, 0))
+                }
+                _ => None,
+            };
             previous_emitted = Some(block);
             moved_marker = moved.then_some(block);
         }
@@ -1575,6 +1618,79 @@ fn render_blocks(
     ctx.paragraph_starts_after_caption_host = previous_paragraph_start;
     ctx.block_depth -= 1;
     out
+}
+
+/// carve#5012: a line comment or abbreviation definition erased from inside a
+/// paragraph stands after it in the tree. Its line goes back where it crossed
+/// the paragraph, so the comment keeps its place and the next parse its owner.
+fn splice_crossing_line(
+    session: &RenderSession,
+    text: &mut String,
+    paragraph: &crate::ast::Paragraph,
+    spliced: usize,
+    block: &BlockNode,
+    line: &str,
+) -> bool {
+    use crate::include_walk::{visit_inline_children, SubtreeVisitor};
+    let erased = match block {
+        BlockNode::Comment(comment) if !comment.block && !comment.delimited => comment.pos.as_ref(),
+        BlockNode::AbbreviationDef(def) => def.pos.as_ref(),
+        _ => None,
+    };
+    let (Some(erased), Some(host)) = (erased, paragraph.pos.as_ref()) else {
+        return false;
+    };
+    if line.contains('\n')
+        || erased.start_line <= host.start_line
+        || erased.start_line >= host.end_line
+    {
+        return false;
+    }
+    struct Breaks(Vec<usize>);
+    impl SubtreeVisitor for Breaks {
+        fn inlines(&mut self, inlines: &mut Vec<InlineNode>) {
+            for inline in inlines {
+                if let InlineNode::SoftBreak(b) | InlineNode::HardBreak(b) = inline {
+                    let Some(pos) = &b.pos else {
+                        self.0.push(usize::MAX);
+                        continue;
+                    };
+                    self.0.push(if pos.end_line > pos.start_line {
+                        pos.end_line
+                    } else {
+                        pos.start_line + 1
+                    });
+                }
+                visit_inline_children(inline, self);
+            }
+        }
+    }
+    let mut breaks = Breaks(Vec::new());
+    breaks.inlines(&mut paragraph.children.clone());
+    if breaks.0.contains(&usize::MAX) {
+        return false;
+    }
+    let lines = text.split('\n').count();
+    let lead = lines.checked_sub(breaks.0.len() + 1 + spliced);
+    let Some(lead @ 0..=1) = lead else {
+        return false;
+    };
+    let passed = breaks
+        .0
+        .iter()
+        .filter(|next| **next <= erased.start_line)
+        .count();
+    let at = lead + passed + spliced;
+    let Some(offset) = text.match_indices('\n').nth(at).map(|(i, _)| i) else {
+        return false;
+    };
+    // The line crossed the paragraph without a quote prefix, which a scaffold
+    // would have kept, so it goes back at its authored column and nothing else.
+    note_inserted(session, S_AUTHORED_LINE);
+    let column = " ".repeat(erased.start_column.saturating_sub(1));
+    let marker = sentinel(session, S_AUTHORED_LINE);
+    text.insert_str(offset, &format!("\n{marker}{column}{}", line.trim_start()));
+    true
 }
 
 /// CARVE-P11-073: a `%%` line that I1b reads as a region marker.
@@ -1939,7 +2055,7 @@ fn definition_in_gap(
     before: &BlockNode,
     after: &BlockNode,
     ctx: &mut CarveContext,
-) -> Option<String> {
+) -> Option<(String, bool)> {
     let from = block_pos(before)?.end_line;
     let to = block_pos(after)?.start_line;
     let pending: Vec<usize> = ((from + 1)..to)
@@ -1958,13 +2074,20 @@ fn definition_in_gap(
         Some(line) => vec![line],
         None => pending,
     };
+    // A one-line link definition is erased before layout (carve#5012), so only
+    // a note in the gap still separates the blocks around it.
+    let separates = lines.iter().any(|line| {
+        ctx.definitions_by_line[line]
+            .iter()
+            .any(|d| matches!(d, DefinitionAtLine::Footnote(..)))
+    });
     let mut parts = Vec::new();
     for line in lines {
         if let Some(written) = definition_at_line(session, line, ctx) {
             parts.push(written);
         }
     }
-    (!parts.is_empty()).then(|| parts.join("\n"))
+    (!parts.is_empty()).then(|| (parts.join("\n"), separates))
 }
 
 /// Write the hoisted definition whose authored source line is `line`.
@@ -2070,6 +2193,18 @@ fn guard_literal_plus_after_nested_list(
     }
 }
 
+/// A block parsed from a line that is erased before layout (carve#5012).
+fn is_erased_line(block: &BlockNode) -> bool {
+    if block_pos(block).is_none() {
+        return false;
+    }
+    match block {
+        BlockNode::Comment(comment) => !comment.block && !comment.delimited,
+        BlockNode::AbbreviationDef(_) | BlockNode::LinkReferenceDefinition(_) => true,
+        _ => false,
+    }
+}
+
 fn is_visible_block(block: &BlockNode) -> bool {
     !matches!(
         block,
@@ -2122,7 +2257,9 @@ fn render_item_blocks(
     // opening below the paragraph above it. See `needs_a_blank_line_above`.
     let mut a_sub_list_already_opened = false;
     let mut moved_marker: Option<&BlockNode> = None;
+    let mut paragraph_tail: Option<(usize, &crate::ast::Paragraph, usize)> = None;
     let mut last_shown: Option<&BlockNode> = None;
+    let mut last_kept: Option<&BlockNode> = None;
     let list = blocks.as_ptr() as usize;
     let last_visible = blocks.iter().rposition(is_visible_block);
     for (index, block) in blocks.iter().enumerate() {
@@ -2141,6 +2278,17 @@ fn render_item_blocks(
         if writes_nothing(&rendered) {
             continue;
         }
+        if let Some((start, paragraph, spliced)) = paragraph_tail.as_mut() {
+            let mut tail = out.split_off(*start);
+            let placed =
+                splice_crossing_line(session, &mut tail, paragraph, *spliced, block, &rendered);
+            out.push_str(&tail);
+            if placed {
+                *spliced += 1;
+                continue;
+            }
+        }
+        paragraph_tail = None;
         // An invisible line between two sub-lists does not keep them apart on
         // re-parse (carve-rs#3774).
         let merges_with = match prev {
@@ -2164,17 +2312,23 @@ fn render_item_blocks(
             // blank the author never wrote and diverge from carve-js/carve-php.
             out.push('\n');
             let gap_guard_start = ctx.footnote_guard_types.len();
-            if let Some(written) = definition_in_gap(session, prev_block, block, ctx) {
+            if let Some((written, separates)) = definition_in_gap(session, prev_block, block, ctx) {
                 ctx.footnote_guard_types[guard_start..].rotate_left(gap_guard_start - guard_start);
                 out.push_str(&written);
                 out.push('\n');
-                // A definition written back BETWEEN the two blocks already ends
-                // the paragraph above it, so the marker below is not needed -
-                // and emitting it anyway changes the canonical form of corpus
-                // 228, whose point is that a line at the definition's own
-                // column forms its own tight block.
-                separated = true;
+                // A note written back between the two blocks ends the paragraph
+                // above it, so the marker below is not needed.
+                separated = separates;
             }
+        }
+        // An erased line between two blocks leaves them adjacent (carve#5012).
+        let above = if prev.is_some_and(is_erased_line) {
+            last_kept
+        } else {
+            prev
+        };
+        if !is_erased_line(block) {
+            last_kept = Some(block);
         }
         // THE QUESTION IS WHETHER THE BLOCK ABOVE LEAVES A PARAGRAPH OPEN, not
         // whether it IS one. A sub-list, a quote or a definition list ends in an
@@ -2182,7 +2336,7 @@ fn render_item_blocks(
         // content column continues it: the image lands INSIDE the sub-list's
         // last item, not beside it (carve-rs#1595). carve-js settled the same
         // site in carve-js#1682; this engine asked only the bare-paragraph half.
-        let folds_into_the_paragraph_above = prev.is_some_and(an_open_paragraph_reaches_down)
+        let folds_into_the_paragraph_above = above.is_some_and(an_open_paragraph_reaches_down)
             && folds_into_an_open_paragraph(block, &rendered);
         let continues_a_run_at_the_marker_column = prev.is_some() && prev_at_marker_column;
         if matches!(block, BlockNode::List(_)) {
@@ -2282,7 +2436,7 @@ fn render_item_blocks(
         let opens_a_merging_run_below = prev.is_some()
             && next.is_some_and(|next_block| adjacent_blocks_merge(block, next_block));
         let closes_a_merging_run_above =
-            prev.is_some_and(|previous| adjacent_blocks_merge(previous, block));
+            above.is_some_and(|previous| adjacent_blocks_merge(previous, block));
         if !separated
             && (continues_a_run_at_the_marker_column
                 || opens_a_merging_run_below
@@ -2334,6 +2488,9 @@ fn render_item_blocks(
             out.push_str(&at_marker_column(session, &rendered));
             moved_marker = Some(block);
         } else {
+            if let BlockNode::Paragraph(paragraph) = block {
+                paragraph_tail = Some((out.len(), paragraph, 0));
+            }
             out.push_str(&rendered);
         }
         prev = Some(block);
@@ -5455,11 +5612,13 @@ fn align_marker(align: Option<TableAlign>) -> &'static str {
 /// The staging characters an AUTHORED occurrence can be mistaken for.
 const SENTINEL_DEFAULTS: [char; SENTINEL_COUNT] = [
     '\u{e003}', '\u{e004}', '\u{e005}', '\u{e010}', '\u{e011}', '\u{e012}', '\u{e013}', '\u{e014}',
+    '\u{e015}',
 ];
 
-const SENTINEL_COUNT: usize = 8;
+const SENTINEL_COUNT: usize = 9;
 const S_CODE_LINE: usize = 6;
 const S_FOOTNOTE_CODE_LINE: usize = 7;
+const S_AUTHORED_LINE: usize = 8;
 
 const S_BLANK: usize = 0;
 const S_GUARD: usize = 1;
@@ -5864,9 +6023,15 @@ fn restore_verbatim(session: &RenderSession, text: &str) -> String {
     let guard = thematic_guard(session);
     let space = staged_space(session);
     let tab = staged_tab(session);
+    let authored_line = sentinel(session, S_AUTHORED_LINE);
     let text = text
         .split('\n')
         .map(|line| {
+            if let Some((prefix, rest)) = line.split_once(authored_line.as_str()) {
+                if prefix.chars().all(|ch| matches!(ch, ' ' | '\t' | '>')) {
+                    return rest.to_owned();
+                }
+            }
             if let Some((prefix, rest)) = line.split_once(footnote_code_line.as_str()) {
                 if prefix.chars().all(|ch| matches!(ch, ' ' | '\t' | '>')) && rest.starts_with('[')
                 {

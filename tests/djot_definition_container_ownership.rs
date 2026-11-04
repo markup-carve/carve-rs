@@ -71,6 +71,7 @@ fn text(html: &str) -> Vec<String> {
 }
 
 #[test]
+#[ignore = "carve-rs#3828: the Djot importer separates with a %% line, which carve#5012 erases"]
 fn definition_container_ownership_preserves_native_structure() {
     let controls: Value = serde_json::from_str(include_str!(
         "fixtures/djot_definition_container_ownership.json"

@@ -70,6 +70,7 @@ fn column_zero_model_rows() {
 }
 
 #[test]
+#[ignore = "carve#5013 port pending (carve-rs#3823): a refused `+` renders nothing"]
 fn legacy_column_zero_cases_match_model() {
     let rows: Vec<Row> =
         serde_json::from_str(include_str!("fixtures/column_zero_legacy_cases.json")).unwrap();

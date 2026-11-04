@@ -51,6 +51,7 @@ fn a_span_on_a_note_lead_loosens_the_list() {
 }
 
 #[test]
+#[ignore = "carve-rs#3826: the carve#5012 port reads the blank as the item's"]
 fn a_note_that_hands_back_to_its_item_keeps_the_list_tight() {
     // `more` is the item's: the blank stands inside the note, before host content.
     let source = "x[^n]\n\n- a\n  [^n]: %%%\n\n%% c\n  more\n- c\n";

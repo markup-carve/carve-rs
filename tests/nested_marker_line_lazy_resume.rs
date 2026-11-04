@@ -11,9 +11,9 @@ fn every_column_resumes_the_innermost_open_paragraph() {
             } else {
                 // carve#4862: the `%%` line closes no item; `:` picks its owner.
                 [
-                    "<ul>\n  <li>\n    <ul>\n      <li>u</li>\n    </ul>\n  </li>\n</ul>\n<p>:</p>",
-                    "<ul>\n  <li>\n    <ul>\n      <li>u</li>\n    </ul>\n    :\n  </li>\n</ul>",
-                    "<ul>\n  <li>\n    <ul>\n      <li>u\n        :\n      </li>\n    </ul>\n  </li>\n</ul>",
+                    "<ul>\n  <li>\n    <ul>\n      <li>u\n:</li>\n    </ul>\n  </li>\n</ul>",
+                    "<ul>\n  <li>\n    <ul>\n      <li>u\n:</li>\n    </ul>\n  </li>\n</ul>",
+                    "<ul>\n  <li>\n    <ul>\n      <li>u\n:</li>\n    </ul>\n  </li>\n</ul>",
                 ][column / 2]
             };
             assert_eq!(

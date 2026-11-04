@@ -145,7 +145,7 @@ fn a_column_zero_comment_after_a_footnote_term_keeps_its_lazy_paragraph() {
 fn a_caption_after_a_retained_description_comment_stays_in_the_body() {
     assert_eq!(
         html(":: t\n: para\n%% c\n^ cap\n"),
-        "<dl><dt>t</dt><dd>para</dd></dl><p>^ cap</p>"
+        "<dl><dt>t</dt><dd>para ^ cap</dd></dl>"
     );
 }
 

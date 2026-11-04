@@ -48,7 +48,7 @@ fn a_footnote_in_an_item_gap_is_written_back_on_that_line() {
 
 #[test]
 fn a_link_definition_in_an_item_gap_is_written_back_on_that_line() {
-    let source = "- a\n  [r]: /u\n  more\n\nsee [t][r]\n";
+    let source = "- a\n  more\n\nsee [t][r]\n\n[r]: /u\n";
     assert_eq!(fmt(source), source);
     assert!(round_trips(source));
 }
@@ -56,7 +56,7 @@ fn a_link_definition_in_an_item_gap_is_written_back_on_that_line() {
 #[test]
 fn the_definition_is_not_also_written_at_document_level() {
     // Writing it in both places would define the label twice.
-    let out = fmt("- a\n  [r]: /u\n  more\n\nsee [t][r]\n");
+    let out = fmt("- a\n  more\n\nsee [t][r]\n\n[r]: /u\n");
     assert_eq!(out.matches("[r]: /u").count(), 1, "written twice:\n{out}");
 }
 

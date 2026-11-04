@@ -46,7 +46,7 @@ fn a_line_comment_leaves_the_item_open_where_a_degraded_fence_ends_it() {
     // inside - the executable spec's own answer for that document, measured
     // rather than inherited.
     let html = to_html("- a\n  %% x\n b");
-    assert_eq!(html, "<ul>\n  <li>a</li>\n</ul>\n<p>b</p>", "{html}");
+    assert_eq!(html, "<ul>\n  <li>a\nb</li>\n</ul>", "{html}");
 }
 
 #[test]

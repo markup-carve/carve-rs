@@ -25,10 +25,16 @@ fn each_kind_uses_its_ownership_rule_at_both_band_columns() {
     // The band is two columns wide under a `:  ` body.
     for indent in [" ", "  "] {
         for (line, expected) in [
-            ("[r]: /u", format!("{ENDS}<p>tail</p>")),
+            (
+                "[r]: /u",
+                "<dl>\n  <dt>t</dt>\n  <dd>d\ntail</dd>\n</dl>".to_string(),
+            ),
             ("[^f]: n", ENDS.trim_end_matches('\n').to_string()),
             ("{.k}", format!("{ENDS}<p class=\"k\">tail</p>")),
-            ("*[A]: a", format!("{ENDS}<p>tail</p>")),
+            (
+                "*[A]: a",
+                "<dl>\n  <dt>t</dt>\n  <dd>d\ntail</dd>\n</dl>".to_string(),
+            ),
             ("x", folds("x")),
         ] {
             assert_eq!(
@@ -44,7 +50,7 @@ fn each_kind_uses_its_ownership_rule_at_both_band_columns() {
 fn registrations_follow_each_definition_kind() {
     assert_eq!(
         html(":: t\n:  d\n  [r]: /u\ntail\n\nSee [text][r].\n"),
-        format!("{ENDS}<p>tail</p>\n<p>See <a href=\"/u\">text</a>.</p>")
+        "<dl>\n  <dt>t</dt>\n  <dd>d\ntail</dd>\n</dl>\n<p>See <a href=\"/u\">text</a>.</p>"
     );
     assert_eq!(
         html(":: t\n:  d\n  [^f]: n\ntail\n\nSee[^f]\n"),
@@ -55,7 +61,7 @@ fn registrations_follow_each_definition_kind() {
     let abbr = html(":: t\n:  d\n  *[A]: a\ntail\n\nA here\n");
     assert_eq!(
         abbr,
-        format!("{ENDS}<p>tail</p>\n<p><abbr title=\"a\">A</abbr> here</p>")
+        "<dl>\n  <dt>t</dt>\n  <dd>d\ntail</dd>\n</dl>\n<p><abbr title=\"a\">A</abbr> here</p>"
     );
 }
 
@@ -76,7 +82,7 @@ fn control_a_comment_is_column_exempt_and_renders_nothing() {
     );
     assert_eq!(
         html(":: t\n:  d\n  %% c\ntail\n"),
-        "<dl>\n  <dt>t</dt>\n  <dd>d</dd>\n</dl>\n<p>tail</p>"
+        "<dl>\n  <dt>t</dt>\n  <dd>d\ntail</dd>\n</dl>"
     );
 }
 
@@ -122,7 +128,7 @@ fn control_at_the_content_column_the_line_is_inside_the_description() {
     // 329-a-floating-attribute-is-scoped-to-the-container-that-holds-it-5.
     assert_eq!(
         html(":: t\n:  d\n   [r]: /u\ntail\n\nSee [text][r].\n"),
-        format!("{ENDS}<p>tail</p>\n<p>See <a href=\"/u\">text</a>.</p>")
+        "<dl>\n  <dt>t</dt>\n  <dd>d\ntail</dd>\n</dl>\n<p>See <a href=\"/u\">text</a>.</p>"
     );
     assert_eq!(
         html(":: t\n:  d\n   {.k}\ntail\n"),
@@ -136,7 +142,7 @@ fn control_the_list_item_host_it_agrees_with() {
     // DISAGREEMENT that was the defect, so one host cannot record it.
     assert_eq!(
         html("- d\n [r]: /u\ntail\n"),
-        "<ul>\n  <li>d</li>\n</ul>\n<p>tail</p>"
+        "<ul>\n  <li>d\ntail</li>\n</ul>"
     );
     assert_eq!(
         html("- para\n  {.k}\n\n  more\n"),

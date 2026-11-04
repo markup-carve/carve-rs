@@ -178,15 +178,12 @@ fn an_item_answers_s4_for_itself_rather_than_with_the_previous_item_s_answer() {
     // exception declined, so `tail` left an item that does hold a paragraph.
     assert_eq!(
         both_paths("- # h\n- t\n%% c\ntail\n").trim(),
-        "<ul>\n  <li>\n    <h1 id=\"h\">h</h1>\n  </li>\n  <li>t</li>\n</ul>\n<p>tail</p>",
+        "<ul>\n  <li>\n    <h1 id=\"h\">h</h1>\n  </li>\n  <li>t\ntail</li>\n</ul>",
     );
     // Without the heading above it the same item always answered true, which is
     // why this went unseen.
     let control = both_paths("- t\n- t2\n%% c\ntail\n");
-    assert!(
-        control.contains("<li>t2</li>\n</ul>\n<p>tail</p>"),
-        "{control}"
-    );
+    assert!(control.contains("<li>t2\ntail</li>\n</ul>"), "{control}");
 }
 
 #[test]

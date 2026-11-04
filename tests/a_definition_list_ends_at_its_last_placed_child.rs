@@ -87,7 +87,7 @@ fn it_stops_before_the_definition_hoisted_out_of_it() {
     // list's SIBLING - and the two used to claim 10..20 at once.
     let source = ":: t\n:  a\n   [r]: /u\ntail\n\n[r][]\n";
 
-    assert_eq!(nth(source, "definition_list", 0), (0, 9));
+    assert_eq!(nth(source, "definition_list", 0), (0, 25));
     let (def_start, _) = nth(source, "link_reference_definition", 0);
     assert!(def_start >= 9, "the definition starts after the list ends");
 }

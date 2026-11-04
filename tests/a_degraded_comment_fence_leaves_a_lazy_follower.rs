@@ -129,7 +129,7 @@ fn a_document_column_follower_still_ends_the_item() {
     );
     assert_eq!(
         both_paths("- x\n  %% z\ny\n"),
-        "<ul>\n  <li>x</li>\n</ul>\n<p>y</p>",
+        "<ul>\n  <li>x\ny</li>\n</ul>",
     );
 }
 
@@ -164,7 +164,7 @@ fn a_line_comment_leaves_the_item_open() {
     // than the one it is distinguished from.
     assert_eq!(
         both_paths("- x\n  %% x\n b\n"),
-        "<ul>\n  <li>x</li>\n</ul>\n<p>b</p>",
+        "<ul>\n  <li>x\nb</li>\n</ul>",
     );
 }
 

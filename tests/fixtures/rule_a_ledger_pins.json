@@ -86,7 +86,7 @@
     },
     {
       "source": "p\n  [r]: /u\n- :: t\n  ```\n\n  - a\n    [^a]: note\n\nsee [^a]\n",
-      "html": "<p>p</p>\n<ul>\n  <li>\n    <dl>\n      <dt>t</dt>\n    </dl>\n    <pre><code>\n- a\n  [^a]: note\n\n</code></pre>\n  </li>\n</ul>\n<p>see [^a]</p>"
+      "html": "<p>p\n- :: t</p>\n<pre><code>\n- a\n  [^a]: note\n\nsee [^a]\n</code></pre>"
     }
   ],
   "definition_term_separator_space::a_folded_marker_does_not_admit_an_indented_bare_term_fence": [
@@ -182,7 +182,7 @@
   "new_quote_definition_opacity::folded_marker_definition_collection_preserves_preceding_items": [
     {
       "source": "> - a\n>  - x\n>   - b\n> - c\n>  - ```\n> [r]: /t\n> ```\n\n[x][r]\n",
-      "html": "<blockquote>\n  <ul>\n    <li>a</li>\n    <li>x</li>\n    <li>b</li>\n    <li>c</li>\n    <li>\n      <pre><code></code></pre>\n    </li>\n  </ul>\n  <pre><code></code></pre>\n</blockquote>\n<p><a href=\"/t\">x</a></p>"
+      "html": "<blockquote>\n  <ul>\n    <li>a</li>\n    <li>x</li>\n    <li>b</li>\n    <li>c</li>\n    <li>\n      <pre><code>\n</code></pre>\n    </li>\n  </ul>\n  <pre><code></code></pre>\n</blockquote>\n<p><a href=\"/t\">x</a></p>"
     }
   ],
   "a_block_below_an_empty_nested_item_uses_one_column::a_quote_below_an_empty_nested_item_uses_one_column": [
@@ -917,8 +917,8 @@
   "definition_at_document_column_closes_list::a_nonzero_definition_below_the_content_column_is_literal_text": [
     {
       "source": "1. x\n [r]: /u\n[t][r]\n",
-      "html": "<ol>\n  <li>x</li>\n</ol>\n<p><a href=\"/u\">t</a></p>",
-      "carve": "1. x\n\n[t][r]\n\n[r]: /u"
+      "html": "<ol>\n  <li>x\n<a href=\"/u\">t</a></li>\n</ol>",
+      "carve": "1. x\n   [t][r]\n\n[r]: /u"
     },
     {
       "source": "1. x\n\n[t][r]\n\n[r]: /u\n",
@@ -1027,11 +1027,11 @@
     },
     {
       "source": "- ::: box\n  - inner\n    %%\n    x\n    %%\n   ::: n\n   x\n   :::\n- tail\n",
-      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner\n          x\n        </li>\n      </ul>\n      <div class=\"n\">\n        <p>x</p>\n      </div>\n    </div>\n  </li>\n  <li>tail</li>\n</ul>"
+      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner\nx</li>\n      </ul>\n      <div class=\"n\">\n        <p>x</p>\n      </div>\n    </div>\n  </li>\n  <li>tail</li>\n</ul>"
     },
     {
       "source": "- ::: box\n  - inner\n    %%\n    x\n    %%\n   ::: n\n   x\n   :::\n",
-      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner\n          x\n        </li>\n      </ul>\n      <div class=\"n\">\n        <p>x</p>\n      </div>\n    </div>\n  </li>\n</ul>"
+      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner\nx</li>\n      </ul>\n      <div class=\"n\">\n        <p>x</p>\n      </div>\n    </div>\n  </li>\n</ul>"
     },
     {
       "source": "- ::: box\n  - inner\n    %% line\n   ::: n\n   x\n   :::\n- tail\n",
@@ -1043,11 +1043,11 @@
     },
     {
       "source": "- ::: box\n  - inner\n     %%\n     x\n     %%\n   ::: n\n   x\n   :::\n- tail\n",
-      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner\n          x\n        </li>\n      </ul>\n      <div class=\"n\">\n        <p>x</p>\n      </div>\n    </div>\n  </li>\n  <li>tail</li>\n</ul>"
+      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner\nx</li>\n      </ul>\n      <div class=\"n\">\n        <p>x</p>\n      </div>\n    </div>\n  </li>\n  <li>tail</li>\n</ul>"
     },
     {
       "source": "- ::: box\n  - inner\n     %%\n     x\n     %%\n   ::: n\n   x\n   :::\n",
-      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner\n          x\n        </li>\n      </ul>\n      <div class=\"n\">\n        <p>x</p>\n      </div>\n    </div>\n  </li>\n</ul>"
+      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner\nx</li>\n      </ul>\n      <div class=\"n\">\n        <p>x</p>\n      </div>\n    </div>\n  </li>\n</ul>"
     },
     {
       "source": "- ::: box\n  - inner\n     %% line\n   ::: n\n   x\n   :::\n- tail\n",
@@ -1059,43 +1059,43 @@
     },
     {
       "source": "- ::: box\n  - inner\n   %%\n   x\n   %%\n   ::: n\n   x\n   :::\n- tail\n",
-      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner</li>\n      </ul>\n      <p>x</p>\n      <div class=\"n\">\n        <p>x</p>\n      </div>\n    </div>\n  </li>\n  <li>tail</li>\n</ul>"
+      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner\nx</li>\n      </ul>\n      <div class=\"n\">\n        <p>x</p>\n      </div>\n    </div>\n  </li>\n  <li>tail</li>\n</ul>"
     },
     {
       "source": "- ::: box\n  - inner\n   %%\n   x\n   %%\n   ::: n\n   x\n   :::\n",
-      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner</li>\n      </ul>\n      <p>x</p>\n      <div class=\"n\">\n        <p>x</p>\n      </div>\n    </div>\n  </li>\n</ul>"
+      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner\nx</li>\n      </ul>\n      <div class=\"n\">\n        <p>x</p>\n      </div>\n    </div>\n  </li>\n</ul>"
     },
     {
       "source": "- ::: box\n  - inner\n   %%\n   x\n   %%\n    ::: n\n    x\n    :::\n- tail\n",
-      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner</li>\n      </ul>\n      <p>x</p>\n      <div class=\"n\">\n        <p>x</p>\n      </div>\n    </div>\n  </li>\n  <li>tail</li>\n</ul>"
+      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner\nx\n          <div class=\"n\">\n            <p>x</p>\n          </div>\n        </li>\n      </ul>\n    </div>\n  </li>\n  <li>tail</li>\n</ul>"
     },
     {
       "source": "- ::: box\n  - inner\n   %%\n   x\n   %%\n    ::: n\n    x\n    :::\n",
-      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner</li>\n      </ul>\n      <p>x</p>\n      <div class=\"n\">\n        <p>x</p>\n      </div>\n    </div>\n  </li>\n</ul>"
+      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner\nx\n          <div class=\"n\">\n            <p>x</p>\n          </div>\n        </li>\n      </ul>\n    </div>\n  </li>\n</ul>"
     },
     {
       "source": "- ::: box\n  - inner\n   %%\n   x\n   %%\n     ::: n\n     x\n     :::\n- tail\n",
-      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner</li>\n      </ul>\n      <p>x</p>\n      <div class=\"n\">\n        <p>x</p>\n      </div>\n    </div>\n  </li>\n  <li>tail</li>\n</ul>"
+      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner\nx\n          <div class=\"n\">\n            <p>x</p>\n          </div>\n        </li>\n      </ul>\n    </div>\n  </li>\n  <li>tail</li>\n</ul>"
     },
     {
       "source": "- ::: box\n  - inner\n   %%\n   x\n   %%\n     ::: n\n     x\n     :::\n",
-      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner</li>\n      </ul>\n      <p>x</p>\n      <div class=\"n\">\n        <p>x</p>\n      </div>\n    </div>\n  </li>\n</ul>"
+      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner\nx\n          <div class=\"n\">\n            <p>x</p>\n          </div>\n        </li>\n      </ul>\n    </div>\n  </li>\n</ul>"
     },
     {
       "source": "- ::: box\n  - inner\n   %%\n   x\n   %%\n      ::: n\n      x\n      :::\n- tail\n",
-      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner</li>\n      </ul>\n      <p>x</p>\n      <div class=\"n\">\n        <p>x</p>\n      </div>\n    </div>\n  </li>\n  <li>tail</li>\n</ul>"
+      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner\nx\n          <div class=\"n\">\n            <p>x</p>\n          </div>\n        </li>\n      </ul>\n    </div>\n  </li>\n  <li>tail</li>\n</ul>"
     },
     {
       "source": "- ::: box\n  - inner\n   %%\n   x\n   %%\n      ::: n\n      x\n      :::\n",
-      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner</li>\n      </ul>\n      <p>x</p>\n      <div class=\"n\">\n        <p>x</p>\n      </div>\n    </div>\n  </li>\n</ul>"
+      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner\nx\n          <div class=\"n\">\n            <p>x</p>\n          </div>\n        </li>\n      </ul>\n    </div>\n  </li>\n</ul>"
     },
     {
       "source": "- ::: box\n  - inner\n   %%\n   x\n   %%\n       ::: n\n       x\n       :::\n- tail\n",
-      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner</li>\n      </ul>\n      <p>x</p>\n      <div class=\"n\">\n        <p>x</p>\n      </div>\n    </div>\n  </li>\n  <li>tail</li>\n</ul>"
+      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner\nx\n          <div class=\"n\">\n            <p>x</p>\n          </div>\n        </li>\n      </ul>\n    </div>\n  </li>\n  <li>tail</li>\n</ul>"
     },
     {
       "source": "- ::: box\n  - inner\n   %%\n   x\n   %%\n       ::: n\n       x\n       :::\n",
-      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner</li>\n      </ul>\n      <p>x</p>\n      <div class=\"n\">\n        <p>x</p>\n      </div>\n    </div>\n  </li>\n</ul>"
+      "html": "<ul>\n  <li>\n    <div class=\"box\">\n      <ul>\n        <li>inner\nx\n          <div class=\"n\">\n            <p>x</p>\n          </div>\n        </li>\n      </ul>\n    </div>\n  </li>\n</ul>"
     },
     {
       "source": "- ::: box\n  - inner\n   %% line\n   ::: n\n   x\n   :::\n- tail\n",
@@ -1271,11 +1271,11 @@
     },
     {
       "source": "> - ::: box\n>   - inner\n>     %%\n>     x\n>     %%\n>    ::: n\n>    x\n>    :::\n> - tail\n",
-      "html": "<blockquote>\n  <ul>\n    <li>\n      <div class=\"box\">\n        <ul>\n          <li>inner\n            x\n          </li>\n        </ul>\n        <div class=\"n\">\n          <p>x</p>\n        </div>\n      </div>\n    </li>\n    <li>tail</li>\n  </ul>\n</blockquote>"
+      "html": "<blockquote>\n  <ul>\n    <li>\n      <div class=\"box\">\n        <ul>\n          <li><p>inner</p>\n            <p>x</p>\n          </li>\n        </ul>\n        <div class=\"n\">\n          <p>x</p>\n        </div>\n      </div>\n    </li>\n    <li>tail</li>\n  </ul>\n</blockquote>"
     },
     {
       "source": "> - ::: box\n>   - inner\n>     %%\n>     x\n>     %%\n>    ::: n\n>    x\n>    :::\n",
-      "html": "<blockquote>\n  <ul>\n    <li>\n      <div class=\"box\">\n        <ul>\n          <li>inner\n            x\n          </li>\n        </ul>\n        <div class=\"n\">\n          <p>x</p>\n        </div>\n      </div>\n    </li>\n  </ul>\n</blockquote>"
+      "html": "<blockquote>\n  <ul>\n    <li>\n      <div class=\"box\">\n        <ul>\n          <li><p>inner</p>\n            <p>x</p>\n          </li>\n        </ul>\n        <div class=\"n\">\n          <p>x</p>\n        </div>\n      </div>\n    </li>\n  </ul>\n</blockquote>"
     },
     {
       "source": "> - ::: box\n>   - inner\n>     %% line\n>    ::: n\n>    x\n>    :::\n> - tail\n",
@@ -1287,11 +1287,11 @@
     },
     {
       "source": "> - ::: box\n>   - inner\n>      %%\n>      x\n>      %%\n>    ::: n\n>    x\n>    :::\n> - tail\n",
-      "html": "<blockquote>\n  <ul>\n    <li>\n      <div class=\"box\">\n        <ul>\n          <li>inner\n            x\n          </li>\n        </ul>\n        <div class=\"n\">\n          <p>x</p>\n        </div>\n      </div>\n    </li>\n    <li>tail</li>\n  </ul>\n</blockquote>"
+      "html": "<blockquote>\n  <ul>\n    <li>\n      <div class=\"box\">\n        <ul>\n          <li><p>inner</p>\n            <p>x</p>\n          </li>\n        </ul>\n        <div class=\"n\">\n          <p>x</p>\n        </div>\n      </div>\n    </li>\n    <li>tail</li>\n  </ul>\n</blockquote>"
     },
     {
       "source": "> - ::: box\n>   - inner\n>      %%\n>      x\n>      %%\n>    ::: n\n>    x\n>    :::\n",
-      "html": "<blockquote>\n  <ul>\n    <li>\n      <div class=\"box\">\n        <ul>\n          <li>inner\n            x\n          </li>\n        </ul>\n        <div class=\"n\">\n          <p>x</p>\n        </div>\n      </div>\n    </li>\n  </ul>\n</blockquote>"
+      "html": "<blockquote>\n  <ul>\n    <li>\n      <div class=\"box\">\n        <ul>\n          <li><p>inner</p>\n            <p>x</p>\n          </li>\n        </ul>\n        <div class=\"n\">\n          <p>x</p>\n        </div>\n      </div>\n    </li>\n  </ul>\n</blockquote>"
     },
     {
       "source": "> - ::: box\n>   - inner\n>      %% line\n>    ::: n\n>    x\n>    :::\n> - tail\n",
@@ -1759,8 +1759,8 @@
   "quoted_document_definition_boundary::quoted_document_definitions_end_the_item_claim": [
     {
       "source": "> - a\n>  - x\n>   - b\n> - c\n>  - ```\n> [r]: /t\n> ```\n",
-      "html": "<blockquote>\n  <ul>\n    <li>a</li>\n    <li>x</li>\n    <li>b</li>\n    <li>c</li>\n    <li>\n      <pre><code></code></pre>\n    </li>\n  </ul>\n  <pre><code></code></pre>\n</blockquote>",
-      "carve": "> - a\n> - x\n> - b\n> - c\n> - ```\n>   ```\n>\n> ```\n> ```\n\n[r]: /t"
+      "html": "<blockquote>\n  <ul>\n    <li>a</li>\n    <li>x</li>\n    <li>b</li>\n    <li>c</li>\n    <li>\n      <pre><code>\n</code></pre>\n    </li>\n  </ul>\n  <pre><code></code></pre>\n</blockquote>",
+      "carve": "> - a\n> - x\n> - b\n> - c\n> - ```\n>\n>   ```\n>\n> ```\n> ```\n\n[r]: /t"
     },
     {
       "source": "> - a\n> - x\n> - b\n> - c\n> - ```\n>   ```\n>\n> ```\n> ```\n\n[r]: /t\n",
@@ -1859,8 +1859,8 @@
     },
     {
       "source": "> > - a\n> >  - x\n> >   - b\n> > - c\n> >  - ```\n> > [r]: /t\n> > ```\n",
-      "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a</li>\n      <li>x</li>\n      <li>b</li>\n      <li>c</li>\n      <li>\n        <pre><code></code></pre>\n      </li>\n    </ul>\n    <pre><code></code></pre>\n  </blockquote>\n</blockquote>",
-      "carve": "> > - a\n> > - x\n> > - b\n> > - c\n> > - ```\n> >   ```\n> >\n> > ```\n> > ```\n\n[r]: /t"
+      "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a</li>\n      <li>x</li>\n      <li>b</li>\n      <li>c</li>\n      <li>\n        <pre><code>\n</code></pre>\n      </li>\n    </ul>\n    <pre><code></code></pre>\n  </blockquote>\n</blockquote>",
+      "carve": "> > - a\n> > - x\n> > - b\n> > - c\n> > - ```\n> >\n> >   ```\n> >\n> > ```\n> > ```\n\n[r]: /t"
     },
     {
       "source": "> > - a\n> > - x\n> > - b\n> > - c\n> > - ```\n> >   ```\n> >\n> > ```\n> > ```\n\n[r]: /t\n",
@@ -1968,8 +1968,8 @@
     },
     {
       "source": "> - a\n> [r]: /t\n> - b\n",
-      "html": "<blockquote>\n  <ul>\n    <li>a</li>\n    <li>b</li>\n  </ul>\n</blockquote>",
-      "carve": "> - a\n> - b\n\n[r]: /t"
+      "html": "<blockquote>\n  <ul>\n    <li><p>a</p></li>\n    <li><p>b</p></li>\n  </ul>\n</blockquote>",
+      "carve": "> - a\n>\n> - b\n\n[r]: /t"
     },
     {
       "source": "> - a\n> - b\n\n[r]: /t\n",
@@ -2022,8 +2022,8 @@
     },
     {
       "source": "> > - a\n> > [r]: /t\n> > - b\n",
-      "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a</li>\n      <li>b</li>\n    </ul>\n  </blockquote>\n</blockquote>",
-      "carve": "> > - a\n> > - b\n\n[r]: /t"
+      "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li><p>a</p></li>\n      <li><p>b</p></li>\n    </ul>\n  </blockquote>\n</blockquote>",
+      "carve": "> > - a\n> >\n> > - b\n\n[r]: /t"
     },
     {
       "source": "> > - a\n> > - b\n\n[r]: /t\n",
@@ -2098,11 +2098,11 @@
     },
     {
       "source": "- a\n  [n]: /u\n   q\n   | a |\n",
-      "html": "<ul>\n  <li>a\n    q\n    <table>\n      <tbody>\n        <tr><td>a</td></tr>\n      </tbody>\n    </table>\n  </li>\n</ul>"
+      "html": "<ul>\n  <li>a\nq\n    <table>\n      <tbody>\n        <tr><td>a</td></tr>\n      </tbody>\n    </table>\n  </li>\n</ul>"
     },
     {
       "source": "- a\n  %% hidden\n   q\n   | a |\n",
-      "html": "<ul>\n  <li>a\n    q\n    <table>\n      <tbody>\n        <tr><td>a</td></tr>\n      </tbody>\n    </table>\n  </li>\n</ul>"
+      "html": "<ul>\n  <li>a\nq\n    <table>\n      <tbody>\n        <tr><td>a</td></tr>\n      </tbody>\n    </table>\n  </li>\n</ul>"
     },
     {
       "source": "- a\n  %%%\n  hidden\n  %%%\n   q\n   | a |\n",

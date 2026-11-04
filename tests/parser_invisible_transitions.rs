@@ -64,6 +64,6 @@ fn ordered_item_matched_comment_payload_is_opaque_across_indent() {
 fn nested_comment_blank_does_not_loosen_an_ancestor_item() {
     assert_eq!(
         to_html("- host\n  - - a\n\n    %% note\n  x\n"),
-        "<ul>\n  <li>host\n    <ul>\n      <li>\n        <ul>\n          <li>a</li>\n        </ul>\n      </li>\n    </ul>\n    x\n  </li>\n</ul>"
+        "<ul>\n  <li><p>host</p>\n    <ul>\n      <li>\n        <ul>\n          <li>a</li>\n        </ul>\n      </li>\n    </ul>\n    <p>x</p>\n  </li>\n</ul>"
     );
 }

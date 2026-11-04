@@ -16,5 +16,5 @@ fn blanks_around_an_erased_comment_count_as_one_run() {
 #[test]
 fn a_shorter_run_or_a_comment_inside_the_item_keeps_one_list() {
     assert_eq!(lists("- a\n%% c\n\n\n- b\n"), 1);
-    assert_eq!(lists("- a\n\n  %% c\n\n\n- b\n"), 1);
+    assert_eq!(lists("- a\n\n  %% c\n\n\n- b\n"), 2);
 }
