@@ -553,10 +553,11 @@ pub(in crate::parse) fn open_quote_at_end(s: &str) -> Option<char> {
 pub(in crate::parse) fn split_trailing_attrs(
     nested: &mut MappedSource,
 ) -> Option<(Attrs, Option<Pos>)> {
-    let lines: Vec<&str> = nested.source.lines().collect();
-    if lines.is_empty() {
-        return None;
-    }
+    let all_lines: Vec<&str> = nested.source.lines().collect();
+    // Pending attributes survive blank lines (§15 A2), so trailing blanks do
+    // not hide the run from the block in the next chunk.
+    let end = all_lines.iter().rposition(|line| !is_blank_line(line))? + 1;
+    let lines = &all_lines[..end];
     // A trailing attribute block ends on the last line, so that line must close
     // one. Anything else is ordinary content and there is nothing to split.
     if !trim_ascii_end(lines[lines.len() - 1]).ends_with('}') {
@@ -611,8 +612,8 @@ pub(in crate::parse) fn split_trailing_attrs(
     // entries left to read. A set lifted off a chunk and never placed is
     // dropped when the list ends or when a sibling marker opens
     // (markup-carve/carve#1281), and the drop is a finding wherever it happens.
-    let pos = mapped_span_of(nested, start, lines.len(), &lines);
-    let line_count = lines.len();
+    let pos = mapped_span_of(nested, start, lines.len(), lines);
+    let line_count = all_lines.len();
     let kept: Vec<&str> = lines[..start].to_vec();
     let source = kept.join("\n");
     nested.set_source(source);
