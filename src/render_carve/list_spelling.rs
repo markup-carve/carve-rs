@@ -319,6 +319,44 @@ pub(super) fn list_item_reads_back(
     crate::ast_json::to_json(&actual) == crate::ast_json::to_json(&target)
 }
 
+/// An item's marker as written, attributes included, and the continuation
+/// width the item's body lines take.
+pub(super) fn item_prefix(node: &List, item: &ListItem, number: usize) -> (String, usize) {
+    let delim = node.delim.unwrap_or('.');
+    let bullet = node.bullet_char.unwrap_or('-');
+    let mut prefix = if node.ordered {
+        let marker = if node.bare_marker {
+            String::new()
+        } else {
+            ordered_marker(number, node.ol_type)
+        };
+        // A letter or roman marker with `.` takes two spaces (carve#4811).
+        let gap = if delim == '.' && marker.bytes().any(|b| b.is_ascii_alphabetic()) {
+            "  "
+        } else {
+            " "
+        };
+        format!("{marker}{delim}{gap}")
+    } else if item.checked.is_some() {
+        format!("{bullet} {} ", task_marker(item))
+    } else {
+        format!("{bullet} ")
+    };
+    let continuation_width = if node.ordered { prefix.len() } else { 2 };
+    let item_attrs = render_attrs(&item.attrs);
+    if !item_attrs.is_empty() {
+        prefix = if node.ordered {
+            let gap = &prefix[prefix.trim_end().len()..];
+            format!("{}{item_attrs}{gap}", prefix.trim_end())
+        } else if item.checked.is_some() {
+            format!("{bullet}{item_attrs} {} ", task_marker(item))
+        } else {
+            format!("{bullet}{item_attrs} ")
+        };
+    }
+    (prefix, continuation_width)
+}
+
 pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveContext) -> String {
     ctx.list_depth += 1;
     let tight = node.effective_tight();
@@ -327,8 +365,6 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
     // The marker is semantic (§11: a different bullet char / ordered delim
     // starts a new list), so emit it as authored - normalizing would merge
     // adjacent sibling lists on re-parse (carve issue 286).
-    let delim = node.delim.unwrap_or('.');
-    let bullet = node.bullet_char.unwrap_or('-');
     let items = node.items.as_ptr() as usize;
     let list_followed_by_marker = ctx.item_followed_by_marker;
     for (idx, item) in node.items.iter().enumerate() {
@@ -347,41 +383,14 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
         // O(depth^2), and `05-lists-5` came back with four spaces where it was
         // written with two (carve-rs#594, the same defect carve-js fixed in its
         // #653).
-        let mut prefix = if node.ordered {
-            let marker = if node.bare_marker {
-                String::new()
-            } else {
-                ordered_marker(counter, node.ol_type)
-            };
+        let (prefix, continuation_width) = item_prefix(node, item, counter);
+        if node.ordered {
             counter += 1;
-            // A letter or roman marker with `.` takes two spaces (carve#4811).
-            let gap = if delim == '.' && marker.bytes().any(|b| b.is_ascii_alphabetic()) {
-                "  "
-            } else {
-                " "
-            };
-            format!("{marker}{delim}{gap}")
-        } else if item.checked.is_some() {
-            format!("{bullet} {} ", task_marker(item))
-        } else {
-            format!("{bullet} ")
-        };
-        let continuation_width = if node.ordered { prefix.len() } else { 2 };
-        let item_attrs = render_attrs(&item.attrs);
-        if !item_attrs.is_empty() {
-            prefix = if node.ordered {
-                let gap = &prefix[prefix.trim_end().len()..];
-                format!("{}{item_attrs}{gap}", prefix.trim_end())
-            } else if item.checked.is_some() {
-                format!("{bullet}{item_attrs} {} ", task_marker(item))
-            } else {
-                format!("{bullet}{item_attrs} ")
-            };
         }
         let inserted_before_item = session.inserted.with(std::cell::Cell::get);
         let seen_before_item = session.seen.with(std::cell::Cell::get);
         let mut relative_boundaries = Vec::new();
-        let task_box_shift = if item.checked.is_some() && item_attrs.is_empty() {
+        let task_box_shift = if item.checked.is_some() && render_attrs(&item.attrs).is_empty() {
             "[ ] ".len()
         } else {
             0

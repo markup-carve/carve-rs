@@ -1406,3 +1406,17 @@ fn a_marker_body_list_follows_its_paragraph_without_a_blank() {
         "x[^n]\n\n[^n]: e\n\n  > q\n"
     );
 }
+
+#[test]
+fn a_note_with_a_line_below_its_body_column_stays_in_its_item() {
+    // markup-carve/carve#5109, corpus 228 (CARVE-P11-079 (a)).
+    let source = "- a\n  [^f]: x\n  more\n\nsee[^f]\n";
+    assert_eq!(carve::to_carve(source), source);
+    let source = "> - a\n>   [^f]: x\n>   more\n\nsee[^f]\n";
+    assert_eq!(carve::to_carve(source), source);
+    // Not the last item: the note is collected.
+    assert_eq!(
+        carve::to_carve("1. a\n   [^f]: x\n   more\n2. b\n\nsee[^f]\n"),
+        "1. a\n2. b\n\nsee[^f]\n\n[^f]: x\n  more\n"
+    );
+}

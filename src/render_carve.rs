@@ -79,6 +79,11 @@ struct CarveContext {
     in_footnote_body: bool,
     /// The block slice of the footnote or description body being written.
     marker_body: usize,
+    /// Start line of the block after the one being written, or of an
+    /// enclosing one: a note past it is not the list's to write back.
+    list_note_limit: usize,
+    /// Notes a list may write back into its last item: (line, column, label, body).
+    item_notes: Vec<(usize, usize, String, Vec<BlockNode>)>,
     footnote_guard_types: Vec<&'static str>,
     escape_mode: EscapeMode,
     /// The unit the character being written now belongs to (PART 11 §2b).
@@ -573,6 +578,107 @@ fn emptied_marker_lines_at(
 ///
 /// "Those lines" is both cases: an emptied description's own line, and a line
 /// inside an item's gap. A definition on either belongs back on it.
+/// CARVE-P11-079 (a): a note stays where it was written when a region marker
+/// below fixes it, or when a body line sits left of its body column and needs
+/// the note's own column (corpus 228, 637).
+fn item_notes(doc: &Document) -> Vec<(usize, usize, String, Vec<BlockNode>)> {
+    let last_marker = last_region_marker_line(doc);
+    let mut notes: Vec<_> = doc
+        .footnote_defs
+        .iter()
+        .filter_map(|(label, blocks)| {
+            let pos = doc.footnote_def_pos.get(label)?;
+            (above_a_marker(Some(pos.start_line), last_marker)
+                || body_line_below_column(blocks, pos.start_column + 2))
+            .then(|| {
+                (
+                    pos.start_line,
+                    pos.start_column,
+                    label.clone(),
+                    blocks.clone(),
+                )
+            })
+        })
+        .collect();
+    notes.sort_by_key(|&(line, column, ..)| (line, column));
+    notes
+}
+
+fn body_line_below_column(blocks: &[BlockNode], body_column: usize) -> bool {
+    if let [BlockNode::Paragraph(only)] = blocks {
+        let first = only.pos.as_ref().map(|pos| pos.start_line);
+        if only.children.iter().any(|child| {
+            child
+                .pos()
+                .is_some_and(|pos| Some(pos.start_line) != first && pos.start_column < body_column)
+        }) {
+            return true;
+        }
+    }
+    blocks
+        .windows(2)
+        .any(|pair| match (block_pos(&pair[0]), block_pos(&pair[1])) {
+            (Some(above), Some(pos)) => {
+                pos.start_line == above.end_line + 1 && pos.start_column < body_column
+            }
+            _ => false,
+        })
+}
+
+/// The notes written inside a list's last item, below the list and above
+/// `to`, written back at that item's content column (CARVE-P11-079 (a)).
+fn list_notes_after(
+    session: &RenderSession,
+    before: &BlockNode,
+    to: Option<usize>,
+    ctx: &mut CarveContext,
+) -> Option<String> {
+    let BlockNode::List(list) = before else {
+        return None;
+    };
+    let to = to?;
+    let from = list.pos.as_ref()?.end_line;
+    let index = list.items.len().checked_sub(1)?;
+    let item = &list.items[index];
+    let item_column = item.pos.as_ref()?.start_column;
+    let first_column = item.children.first().and_then(block_pos)?.start_column;
+    let number = list.start.unwrap_or(1) + index;
+    let marker_width = list_spelling::item_prefix(list, item, number).0.len();
+    let content_column = first_column.max(item_column + marker_width);
+    // `item_notes` is sorted by line, so only the notes between the two lines are read.
+    let first = ctx.item_notes.partition_point(|(line, ..)| *line <= from);
+    let candidates: Vec<(usize, String, Vec<BlockNode>)> = ctx.item_notes[first..]
+        .iter()
+        .take_while(|(line, ..)| *line < to)
+        .filter(|(line, column, ..)| {
+            *column >= content_column && !ctx.written_in_place.contains(line)
+        })
+        .map(|(line, _, label, blocks)| (*line, label.clone(), blocks.clone()))
+        .collect();
+    let offset = " ".repeat(content_column - item_column);
+    let mut written = Vec::new();
+    for (line, label, blocks) in candidates {
+        let text = render_footnote_def_source(session, &label, &blocks, ctx);
+        ctx.written_in_place.insert(line);
+        let paragraph = matches!(blocks.as_slice(), [BlockNode::Paragraph(_)]);
+        written.push(
+            text.split('\n')
+                .enumerate()
+                .map(|(k, line)| {
+                    let line = if k > 0 && paragraph {
+                        line.strip_prefix("  ").unwrap_or(line)
+                    } else {
+                        line
+                    };
+                    format!("{offset}{line}")
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
+    }
+    (!written.is_empty()).then(|| written.join("\n"))
+}
+
 fn definitions_by_description_line(doc: &Document) -> HashMap<usize, Vec<DefinitionAtLine>> {
     let mut lines = HashSet::new();
     emptied_marker_lines(&doc.children, &mut lines, last_region_marker_line(doc));
@@ -753,6 +859,8 @@ fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: Esc
         join_trailing_comments: false,
         in_footnote_body: false,
         marker_body: 0,
+        list_note_limit: usize::MAX,
+        item_notes: item_notes(doc),
         footnote_guard_types: Vec::new(),
         escape_mode,
         escape_unit: 0,
@@ -805,6 +913,15 @@ fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: Esc
         crate::ast_json::ordered_document_entries(doc, &footnote_defs),
         last_region_marker_line(doc),
     );
+    // The start line of the next block after each entry, for a list's notes.
+    let mut next_lines = vec![Some(usize::MAX); entries.len()];
+    let mut next = Some(usize::MAX);
+    for (index, entry) in entries.iter().enumerate().rev() {
+        next_lines[index] = next;
+        if let crate::ast_json::DocEntry::Block(block) = entry {
+            next = block_pos(block).map(|pos| pos.start_line);
+        }
+    }
     for (index, entry) in entries.into_iter().enumerate() {
         let escape_window::Visit::Render(recorded) =
             escape_window::visit(session, escape_window::ROOT, index)
@@ -823,7 +940,12 @@ fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: Esc
         let text = match entry {
             crate::ast_json::DocEntry::Block(child) => {
                 ctx.paragraph_starts_after_caption_host = ctx.after_caption_host;
-                let text = render_block(session, child, &mut ctx);
+                ctx.list_note_limit = next_lines[index].unwrap_or(usize::MAX);
+                let mut text = render_block(session, child, &mut ctx);
+                if let Some(notes) = list_notes_after(session, child, next_lines[index], &mut ctx) {
+                    text.push('\n');
+                    text.push_str(&notes);
+                }
                 ctx.after_caption_host = hosts_caption(child);
                 if let BlockNode::List(list) = child {
                     after_empty_nested = list.attrs.is_none()
@@ -1532,6 +1654,7 @@ fn render_blocks(
     let previous_paragraph_start = ctx.paragraph_starts_after_caption_host;
     ctx.after_caption_host = false;
     let join_trailing_comments = std::mem::take(&mut ctx.join_trailing_comments);
+    let enclosing_note_limit = ctx.list_note_limit;
     let last_visible = blocks.iter().rposition(is_visible_block);
     let mut rendered: Vec<String> = Vec::new();
     // TWO ADJACENT SIBLING LISTS NEED SOMETHING BETWEEN THEM. Written at the
@@ -1566,7 +1689,19 @@ fn render_blocks(
             continue;
         };
         ctx.paragraph_starts_after_caption_host = ctx.after_caption_host;
+        let next_line = blocks
+            .get(index + 1)
+            .map_or(Some(enclosing_note_limit), |next| {
+                block_pos(next).map(|pos| pos.start_line)
+            });
+        ctx.list_note_limit = next_line.unwrap_or(enclosing_note_limit);
         let mut text = render_block(session, block, ctx);
+        if item.is_none() {
+            if let Some(notes) = list_notes_after(session, block, next_line, ctx) {
+                text.push('\n');
+                text.push_str(&notes);
+            }
+        }
         if let Some((entry, paragraph, spliced)) = paragraph_entry.as_mut() {
             if splice_crossing_line(
                 session,
@@ -1651,6 +1786,7 @@ fn render_blocks(
         }
     }
     let out = rendered.join("\n\n");
+    ctx.list_note_limit = enclosing_note_limit;
     ctx.after_caption_host = previous_host;
     ctx.paragraph_starts_after_caption_host = previous_paragraph_start;
     ctx.block_depth -= 1;
