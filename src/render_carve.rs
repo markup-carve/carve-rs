@@ -1870,6 +1870,7 @@ fn splice_crossing_line(
         let below = breaks.columns.iter().skip(passed);
         for (row, column) in written.iter_mut().skip(at + 1).zip(below) {
             if let Some(column) = column {
+                note_inserted(session, S_AUTHORED_LINE);
                 *row = format!("{marker}{}{row}", " ".repeat(column.saturating_sub(1)));
             }
         }
