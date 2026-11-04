@@ -578,9 +578,8 @@ fn emptied_marker_lines_at(
 ///
 /// "Those lines" is both cases: an emptied description's own line, and a line
 /// inside an item's gap. A definition on either belongs back on it.
-/// CARVE-P11-079 (a): a note stays where it was written when a region marker
-/// below fixes it, or when a body line sits left of its body column and needs
-/// the note's own column (corpus 228, 637).
+/// CARVE-P11-079 (a): a note stays where it was written only when a region
+/// marker below fixes it; otherwise it is collected (markup-carve/carve#5109).
 fn item_notes(doc: &Document) -> Vec<(usize, usize, String, Vec<BlockNode>)> {
     let last_marker = last_region_marker_line(doc);
     let mut notes: Vec<_> = doc
@@ -588,9 +587,7 @@ fn item_notes(doc: &Document) -> Vec<(usize, usize, String, Vec<BlockNode>)> {
         .iter()
         .filter_map(|(label, blocks)| {
             let pos = doc.footnote_def_pos.get(label)?;
-            (above_a_marker(Some(pos.start_line), last_marker)
-                || body_line_below_column(blocks, pos.start_column + 2))
-            .then(|| {
+            above_a_marker(Some(pos.start_line), last_marker).then(|| {
                 (
                     pos.start_line,
                     pos.start_column,
@@ -602,27 +599,6 @@ fn item_notes(doc: &Document) -> Vec<(usize, usize, String, Vec<BlockNode>)> {
         .collect();
     notes.sort_by_key(|&(line, column, ..)| (line, column));
     notes
-}
-
-fn body_line_below_column(blocks: &[BlockNode], body_column: usize) -> bool {
-    if let [BlockNode::Paragraph(only)] = blocks {
-        let first = only.pos.as_ref().map(|pos| pos.start_line);
-        if only.children.iter().any(|child| {
-            child
-                .pos()
-                .is_some_and(|pos| Some(pos.start_line) != first && pos.start_column < body_column)
-        }) {
-            return true;
-        }
-    }
-    blocks
-        .windows(2)
-        .any(|pair| match (block_pos(&pair[0]), block_pos(&pair[1])) {
-            (Some(above), Some(pos)) => {
-                pos.start_line == above.end_line + 1 && pos.start_column < body_column
-            }
-            _ => false,
-        })
 }
 
 /// The notes written inside a list's last item, below the list and above

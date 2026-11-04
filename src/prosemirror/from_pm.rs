@@ -177,7 +177,10 @@ impl Reader {
                 // content and needs its paragraph. Unwrapping it produced a
                 // bare `![moon][gone]` outside any block.
                 let content = array_field(obj, "content");
-                if content.len() == 1 {
+                // The paragraph's own attributes are the block image's block
+                // attributes; unwrapping would drop them (corpus 754).
+                let authored = a.keys().any(|key| key != "carvePos");
+                if content.len() == 1 && !authored {
                     let only = object_ref(&content[0], "paragraph child")?;
                     if let Some((mapped, _)) = self.resolve(string_field(only, "type")?) {
                         let ia = attrs_obj(only);

@@ -169,7 +169,6 @@ fn read_ledger() -> (BTreeMap<String, Row>, Vec<String>) {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn the_render_ledger_pins_every_corpus_document() {
     let rendered = rendered();
 
