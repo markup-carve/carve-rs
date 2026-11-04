@@ -111,8 +111,10 @@ fn a_list_hosted_quote_owns_its_marker_column() {
 
 #[test]
 fn a_refused_quoted_plus_after_a_closed_block_can_precede_a_list() {
+    // The refused marker renders nothing, so `- s` is the list's next item (carve#5013).
     let html = carve::to_html("> - ```\n> +\n> - s");
-    assert!(html.contains("<p>+\n- s</p>"), "{html}");
+    assert!(html.contains("<li>s</li>"), "{html}");
+    assert!(!html.contains('+'), "{html}");
 }
 
 #[test]
@@ -269,11 +271,13 @@ fn an_indented_footnote_marker_attaches_at_the_notes_marker_column() {
 
 #[test]
 fn a_below_column_list_line_stays_lazy_after_either_plus_or_prose() {
-    let expected =
-        "<ul>\n  <li>\n    <ul>\n      <li></li>\n    </ul>\n  </li>\n  <li>x</li>\n</ul>";
-    for text in ["+", "ordinary"] {
+    // A `+` there is a consumed marker and renders nothing; prose stays (carve#5013).
+    for (text, item) in [("+", ""), ("ordinary", "ordinary")] {
         let source = format!("- - +\n  {text}\n - x\n");
-        assert_eq!(carve::to_html(&source).replace(text, "+"), expected);
+        let expected = format!(
+            "<ul>\n  <li>\n    <ul>\n      <li>{item}</li>\n    </ul>\n  </li>\n  <li>x</li>\n</ul>"
+        );
+        assert_eq!(carve::to_html(&source), expected);
     }
 }
 
@@ -295,8 +299,9 @@ fn a_refused_plus_keeps_the_same_below_column_code_run_as_prose() {
 
 #[test]
 fn a_lazy_nested_item_before_a_refused_plus_still_precedes_a_list() {
+    // The refused marker renders nothing, so `- s` is the next item (carve#5013).
     let source = "- a\n  - b\nlazy\n\n+\n- s\n";
-    assert!(carve::to_html(source).ends_with("<p>+\n- s</p>"));
+    assert!(carve::to_html(source).ends_with("<li><p>s</p></li>\n</ul>"));
 }
 
 #[test]
