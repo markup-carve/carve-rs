@@ -2772,6 +2772,7 @@ struct ResolvedBody {
 struct ItemLayout {
     source: String,
     opaque_blank_lines: Vec<usize>,
+    separator_lines: Vec<usize>,
     discarded_outer_blank: bool,
     outer_plus_after_blank: bool,
     extents: Vec<(usize, usize)>,
@@ -2936,6 +2937,7 @@ fn parse_item_body_into(
                     loose_inside_chunk = item_chunk_tree_looseness(
                         &source.source,
                         &source.opaque_blank_lines,
+                        &collector_separator_lines(&source),
                         source.discarded_outer_blank,
                         &children,
                         &extents,
@@ -2943,6 +2945,7 @@ fn parse_item_body_into(
                     );
                 } else {
                     layout = Some(ItemLayout {
+                        separator_lines: collector_separator_lines(&source),
                         source: source.source,
                         opaque_blank_lines: source.opaque_blank_lines,
                         discarded_outer_blank: source.discarded_outer_blank,
@@ -2972,6 +2975,7 @@ fn parse_item_body_into(
 fn item_chunk_tree_looseness(
     source: &str,
     opaque_blank_lines: &[usize],
+    separator_lines: &[usize],
     discarded_outer_blank: bool,
     children: &[BlockNode],
     extents: &[(usize, usize)],
@@ -2996,6 +3000,9 @@ fn item_chunk_tree_looseness(
             .rev()
             .take_while(|&line| lines.get(line).is_some_and(|text| is_blank_line(text)))
         {
+            if separator_lines.binary_search(&line).is_ok() {
+                continue;
+            }
             if opaque_blank_lines.binary_search(&line).is_ok() {
                 opaque_trailing += 1;
             } else {
@@ -3025,6 +3032,9 @@ fn item_chunk_tree_looseness(
             (previous_start..start)
                 .rev()
                 .find(|&line| {
+                    if separator_lines.binary_search(&line).is_ok() {
+                        return false;
+                    }
                     if line < previous_end && !reach_into_anchor {
                         return true;
                     }
@@ -3100,6 +3110,27 @@ fn trailing_payload_blank_count(mut block: &BlockNode) -> usize {
             _ => return 0,
         };
     }
+}
+
+/// Blank lines a collector inserted between re-parsed lines: they carry no
+/// origin in a mapped source, so they separate nothing (carve#5015).
+fn collector_separator_lines(source: &MappedSource) -> Vec<usize> {
+    let mapped = source.line_map.iter().any(Option::is_some);
+    let lines: Vec<&str> = source.source.lines().collect();
+    (0..lines.len())
+        .filter(|&k| {
+            is_blank_line(lines[k])
+                && if mapped {
+                    source.line_map.get(k) == Some(&None)
+                } else {
+                    // Unmapped, the collector marks it as reaching the column.
+                    source.reached.get(k) == Some(&true)
+                        && lines
+                            .get(k + 1)
+                            .is_some_and(|next| detect_fence_open(trim_ascii_start(next)).is_some())
+                }
+        })
+        .collect()
 }
 
 /// Whether the last leaf of `block` is a fence whose payload ends in a blank line.
@@ -3282,6 +3313,7 @@ fn parse_item_chunk(
         let loose = item_chunk_tree_looseness(
             &source.source,
             &source.opaque_blank_lines,
+            &collector_separator_lines(source),
             source.discarded_outer_blank,
             &children,
             &extents,
@@ -3301,6 +3333,7 @@ fn parse_item_chunk(
     let loose = item_chunk_tree_looseness(
         &source.source,
         &source.opaque_blank_lines,
+        &collector_separator_lines(source),
         source.discarded_outer_blank,
         &children,
         &extents,

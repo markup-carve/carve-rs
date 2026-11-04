@@ -247,6 +247,7 @@ pub(in crate::parse) fn resolve_pending_bodies(
             loose_inside_chunk |= item_chunk_tree_looseness(
                 &layout.source,
                 &layout.opaque_blank_lines,
+                &layout.separator_lines,
                 layout.discarded_outer_blank,
                 &children,
                 &layout.extents,
