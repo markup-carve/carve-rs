@@ -1939,6 +1939,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             state.note_fence = Some(open);
         } else if !in_marker_fence
             && !in_line_block
+            && note.comment_state.comment.is_none()
             && (!state.open_term || indent_columns(trimmed) == 0)
             && self.hoist_note_link_def(note_link_def_candidate(trimmed, note), *i)
         {

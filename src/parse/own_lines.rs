@@ -495,6 +495,8 @@ pub(crate) struct TraceRecord {
     closed: Option<usize>,
     reached: Option<String>,
     plus: Option<usize>,
+    /// A skipped line inside a `%%%` span: payload, never an erasable line.
+    in_comment: bool,
 }
 
 impl TraceRecord {
@@ -515,6 +517,7 @@ impl TraceRecord {
             closed: None,
             reached: None,
             plus: None,
+            in_comment: false,
         }
     }
 
@@ -680,6 +683,8 @@ struct Skipped {
     end: usize,
     column: usize,
     fenced: Vec<usize>,
+    /// The skipped lines inside a `%%%` span, opener and closer included.
+    comment: Vec<usize>,
     lead: String,
     /// The brace run open in the skipped lines: its `{` column, whether it is
     /// a comment, and its depth. Its lines keep their offset past that column.
@@ -1237,8 +1242,15 @@ impl<'a> Walk<'a> {
         lead: Option<String>,
     ) -> usize {
         let mut fenced = Vec::new();
+        let mut comment = Vec::new();
         let in_item = self.frames[host].kind == Kind::Item;
-        let end = self.first_visible_line(at + 1, host, column, in_item, Some(&mut fenced));
+        let end = self.first_visible_line(
+            at + 1,
+            host,
+            column,
+            in_item,
+            Some((&mut fenced, &mut comment)),
+        );
         if end == at + 1 || end >= self.lines.len() {
             return at + 1;
         }
@@ -1254,6 +1266,7 @@ impl<'a> Walk<'a> {
             end,
             column,
             fenced,
+            comment,
             lead,
             brace: None,
         });
@@ -1319,6 +1332,7 @@ impl<'a> Walk<'a> {
         // marker took: it is consumed and linted (carve#5013). Off the column a
         // skipped note's `+` is a letter of its body (carve#5034).
         let (host, from, end) = (skipped.host, skipped.at, skipped.end);
+        let in_comment = skipped.comment.contains(&at);
         if !skipped.fenced.contains(&at) && is_plus_marker(rest) {
             let column = doc_column(line, rest);
             if column == skipped.column {
@@ -1342,6 +1356,7 @@ impl<'a> Walk<'a> {
             let mut record =
                 TraceRecord::new(line, "S5", self.deepest(), Some("CARVE-P0-024"), "leaf");
             record.plus = Some(line - 1);
+            record.in_comment = in_comment;
             self.emit(at, record);
         }
         true
@@ -1349,14 +1364,15 @@ impl<'a> Walk<'a> {
 
     /// The first line past the invisible lines from `from` (CARVE-P9-013,
     /// carve#4449). Off the marker column an invisible line is that next line.
-    /// `fenced` collects the skipped lines the readers take as `%%` lines.
+    /// `collect` gathers the skipped lines the readers take as `%%` lines, and
+    /// the lines of each `%%%` span.
     fn first_visible_line(
         &self,
         from: usize,
         host: usize,
         column: usize,
         in_item: bool,
-        mut fenced: Option<&mut Vec<usize>>,
+        mut collect: Option<(&mut Vec<usize>, &mut Vec<usize>)>,
     ) -> usize {
         let view = |k: usize| -> &'a str {
             trim_ws_start(
@@ -1398,8 +1414,11 @@ impl<'a> Walk<'a> {
                 }
                 // The list readers keep the span as one comment; the others
                 // read its lines as `%%` lines.
-                if let Some(fenced) = fenced.as_deref_mut().filter(|_| !in_item) {
-                    fenced.extend(opener..k.min(self.lines.len()));
+                if let Some((fenced, comment)) = collect.as_mut() {
+                    comment.extend(opener..k.min(self.lines.len()));
+                    if !in_item {
+                        fenced.extend(opener..k.min(self.lines.len()));
+                    }
                 }
             } else if parse_footnote_def_line(rest).is_some() {
                 k += 1;
@@ -1423,7 +1442,7 @@ impl<'a> Walk<'a> {
                 .flatten()
             {
                 // A paragraph of only comments is skipped as a `%%` line is (carve#4799).
-                if let Some(fenced) = fenced.as_deref_mut() {
+                if let Some((fenced, _)) = collect.as_mut() {
                     fenced.extend(k..end);
                 }
                 k = end;
@@ -2982,7 +3001,7 @@ pub(crate) fn traced_leaves(source: &str) -> Vec<(usize, String, bool)> {
         .1
         .unwrap_or_default()
         .into_iter()
-        .filter(|record| record.step == "S5" && record.form == "leaf")
+        .filter(|record| record.step == "S5" && record.form == "leaf" && !record.in_comment)
         .map(|record| (record.line - 1, record.owner, record.plus.is_some()))
         .collect()
 }
